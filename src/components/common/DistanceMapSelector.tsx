@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, Minus, Plus } from 'lucide-react';
+import { Loader } from '@googlemaps/js-api-loader';
 
 interface DistanceMapSelectorProps {
-  value: number;
-  onChange: (distance: number) => void;
+  address: string;
+  distance: number;
+  onDistanceChange: (distance: number) => void;
   min?: number;
   max?: number;
   step?: number;
@@ -12,8 +14,9 @@ interface DistanceMapSelectorProps {
 }
 
 const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
-  value,
-  onChange,
+  address,
+  distance,
+  onDistanceChange,
   min = 1,
   max = 100,
   step = 1,
@@ -21,33 +24,158 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
   error
 }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [circle, setCircle] = useState<google.maps.Circle | null>(null);
+  const [marker, setMarker] = useState<google.maps.Marker | null>(null);
+  const [center, setCenter] = useState<google.maps.LatLngLiteral>({ lat: 40.4168, lng: -3.7038 }); // Madrid por defecto
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+
+  // Cargar Google Maps API
+  useEffect(() => {
+    const loader = new Loader({
+      apiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+      version: 'weekly',
+      libraries: ['places', 'geometry']
+    });
+
+    loader.load().then(() => {
+      setIsGoogleMapsLoaded(true);
+    }).catch((error) => {
+      console.error('Error loading Google Maps:', error);
+      setIsLoading(false);
+    });
+  }, []);
+
+  // Inicializar el mapa
+  useEffect(() => {
+    if (mapRef.current && !map && isGoogleMapsLoaded) {
+      const newMap = new google.maps.Map(mapRef.current, {
+        zoom: 12,
+        center: center,
+        mapTypeId: google.maps.MapTypeId.ROADMAP,
+        styles: [
+          {
+            featureType: 'poi',
+            elementType: 'labels',
+            stylers: [{ visibility: 'off' }]
+          }
+        ]
+      });
+      setMap(newMap);
+      setIsLoading(false);
+    }
+  }, [map, center, isGoogleMapsLoaded]);
+
+  // Geocodificar la dirección cuando cambie
+  useEffect(() => {
+    if (!address || !map || !isGoogleMapsLoaded) return;
+
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ address: address }, (results, status) => {
+      if (status === 'OK' && results && results[0]) {
+        const location = results[0].geometry.location;
+        const newCenter = {
+          lat: location.lat(),
+          lng: location.lng()
+        };
+        
+        setCenter(newCenter);
+        map.setCenter(newCenter);
+
+        // Crear o actualizar el marcador
+        if (marker) {
+          marker.setMap(null);
+        }
+        
+        const newMarker = new google.maps.Marker({
+          position: newCenter,
+          map: map,
+          title: 'Tu ubicación',
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#3B82F6',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2
+          }
+        });
+        
+        setMarker(newMarker);
+      }
+    });
+  }, [address, map, isGoogleMapsLoaded]);
+
+  // Actualizar círculo cuando cambie la distancia
+  useEffect(() => {
+    if (!map || !center || !isGoogleMapsLoaded) return;
+
+    // Limpiar círculo anterior
+    if (circle) {
+      circle.setMap(null);
+    }
+
+    // Crear nuevo círculo
+    const newCircle = new google.maps.Circle({
+      strokeColor: '#3B82F6',
+      strokeOpacity: 0.8,
+      strokeWeight: 2,
+      fillColor: '#3B82F6',
+      fillOpacity: 0.15,
+      map: map,
+      center: center,
+      radius: distance * 1000 // Convertir km a metros
+    });
+
+    setCircle(newCircle);
+
+    // Ajustar el zoom para mostrar todo el círculo
+    const listener = google.maps.event.addListenerOnce(map, 'bounds_changed', () => {
+      const bounds = newCircle.getBounds();
+      if (bounds) {
+        map.fitBounds(bounds);
+        if (map.getZoom() && map.getZoom()! > 15) {
+          map.setZoom(15);
+        }
+      }
+    });
+
+    // Trigger bounds_changed
+    google.maps.event.trigger(map, 'bounds_changed');
+
+    return () => {
+      google.maps.event.removeListener(listener);
+    };
+  }, [map, center, distance, isGoogleMapsLoaded]);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = parseInt(e.target.value);
-    onChange(newValue);
+    onDistanceChange(newValue);
   };
 
   const handleIncrement = () => {
-    if (value < max) {
-      onChange(Math.min(value + step, max));
+    if (distance < max) {
+      onDistanceChange(Math.min(distance + step, max));
     }
   };
 
   const handleDecrement = () => {
-    if (value > min) {
-      onChange(Math.max(value - step, min));
+    if (distance > min) {
+      onDistanceChange(Math.max(distance - step, min));
     }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = parseInt(e.target.value) || min;
     if (newValue >= min && newValue <= max) {
-      onChange(newValue);
+      onDistanceChange(newValue);
     }
   };
 
   // Calcular el porcentaje para el indicador visual
-  const percentage = ((value - min) / (max - min)) * 100;
+  const percentage = ((distance - min) / (max - min)) * 100;
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -63,14 +191,14 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
           <button
             type="button"
             onClick={handleDecrement}
-            disabled={value <= min}
+            disabled={distance <= min}
             className="p-1 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Minus className="h-4 w-4" />
           </button>
           <input
             type="number"
-            value={value}
+            value={distance}
             onChange={handleInputChange}
             min={min}
             max={max}
@@ -80,7 +208,7 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
           <button
             type="button"
             onClick={handleIncrement}
-            disabled={value >= max}
+            disabled={distance >= max}
             className="p-1 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="h-4 w-4" />
@@ -95,7 +223,7 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
           min={min}
           max={max}
           step={step}
-          value={value}
+          value={distance}
           onChange={handleSliderChange}
           onMouseDown={() => setIsDragging(true)}
           onMouseUp={() => setIsDragging(false)}
@@ -113,43 +241,31 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
         </div>
       </div>
 
-      {/* Mapa visual simplificado */}
-      <div className="relative bg-gray-50 rounded-lg p-4 h-32 overflow-hidden">
-        <div className="absolute inset-0 flex items-center justify-center">
-          {/* Centro (ubicación del jardinero) */}
-          <div className="relative">
-            <div className="w-3 h-3 bg-green-600 rounded-full z-10 relative"></div>
-            
-            {/* Círculo de radio */}
-            <div 
-              className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 border-2 border-green-300 rounded-full transition-all duration-300 ${
-                isDragging ? 'border-green-500' : ''
-              }`}
-              style={{
-                width: `${Math.min(percentage * 1.2, 120)}px`,
-                height: `${Math.min(percentage * 1.2, 120)}px`,
-                opacity: 0.6
-              }}
-            ></div>
-            
-            {/* Área de cobertura */}
-            <div 
-              className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-green-200 rounded-full transition-all duration-300 ${
-                isDragging ? 'bg-green-300' : ''
-              }`}
-              style={{
-                width: `${Math.min(percentage * 1.2, 120)}px`,
-                height: `${Math.min(percentage * 1.2, 120)}px`,
-                opacity: 0.3
-              }}
-            ></div>
-          </div>
-        </div>
+      {/* Mapa de Google Maps */}
+      <div className="relative bg-gray-50 rounded-lg overflow-hidden border border-gray-200">
+        <div 
+          ref={mapRef}
+          className="w-full h-80"
+          style={{ minHeight: '320px' }}
+        />
         
         {/* Etiqueta de distancia */}
-        <div className="absolute top-2 right-2 bg-white px-2 py-1 rounded shadow text-xs font-medium">
-          {value} km
+        <div className="absolute top-4 right-4 bg-white px-3 py-2 rounded-lg shadow-lg text-sm font-medium border">
+          <div className="flex items-center space-x-2">
+            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+            <span>Radio: {distance} km</span>
+          </div>
         </div>
+
+        {/* Indicador de carga */}
+        {!map && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500 mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Cargando mapa...</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Descripción */}

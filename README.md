@@ -48,7 +48,9 @@ VITE_GOOGLE_MAPS_API_KEY=tu_clave_de_google_maps
 
 ## 📦 Despliegue
 
-Este proyecto está configurado para desplegarse fácilmente en Vercel.
+La aplicación está configurada para desplegarse automáticamente en Vercel.
+
+**Última actualización:** Mapa en tiempo real implementado ✅
 
 Ver [DEPLOY_VERCEL.md](./DEPLOY_VERCEL.md) para instrucciones detalladas.
 

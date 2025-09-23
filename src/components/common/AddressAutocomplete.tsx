@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MapPin, ChevronDown, Loader2 } from 'lucide-react';
+import googleMapsLoader from '../../lib/googleMapsLoader';
 
 interface AddressAutocompleteProps {
   value: string;
@@ -7,13 +8,6 @@ interface AddressAutocompleteProps {
   placeholder?: string;
   className?: string;
   error?: string;
-}
-
-declare global {
-  interface Window {
-    google: any;
-    initGoogleMaps: () => void;
-  }
 }
 
 const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
@@ -32,70 +26,42 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
 
-  // Cargar Google Maps JavaScript API
+  // Cargar Google Maps JavaScript API usando el loader centralizado
   useEffect(() => {
-    const loadGoogleMapsAPI = () => {
-      // Si ya está cargado, inicializar directamente
-      if (window.google && window.google.maps) {
-        initializeAutocompleteService();
-        return;
-      }
-
-      // Si ya existe el script, esperar a que cargue
-      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (existingScript) {
-        existingScript.addEventListener('load', initializeAutocompleteService);
-        return;
-      }
-
-      // Crear y cargar el script
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&libraries=places&callback=initGoogleMaps`;
-      script.async = true;
-      script.defer = true;
-
-      // Función global de callback
-      window.initGoogleMaps = initializeAutocompleteService;
-
-      script.onerror = () => {
-        console.error('Error loading Google Maps API');
-        setIsGoogleMapsLoaded(false);
-      };
-
-      document.head.appendChild(script);
-    };
-
     const initializeAutocompleteService = () => {
-    try {
-      if (window.google && window.google.maps && window.google.maps.places) {
-        // Usar la nueva API si está disponible, sino usar la legacy
-        if (window.google.maps.places.AutocompleteSuggestion) {
-          setAutocompleteService('new');
-          console.log('Google Maps new Autocomplete API initialized successfully');
+      try {
+        if (window.google && window.google.maps && window.google.maps.places) {
+          // Usar la nueva API si está disponible, sino usar la legacy
+          if (window.google.maps.places.AutocompleteSuggestion) {
+            setAutocompleteService('new');
+            console.log('Google Maps new Autocomplete API initialized successfully');
+          } else {
+            const service = new window.google.maps.places.AutocompleteService();
+            setAutocompleteService(service);
+            console.log('Google Maps legacy Autocomplete Service initialized successfully');
+          }
+          setIsGoogleMapsLoaded(true);
         } else {
-          const service = new window.google.maps.places.AutocompleteService();
-          setAutocompleteService(service);
-          console.log('Google Maps legacy Autocomplete Service initialized successfully');
+          console.error('Google Maps Places library not available');
+          setIsGoogleMapsLoaded(false);
         }
-        setIsGoogleMapsLoaded(true);
-      } else {
-        console.error('Google Maps Places library not available');
+      } catch (error) {
+        console.error('Error initializing Google Maps Autocomplete Service:', error);
         setIsGoogleMapsLoaded(false);
       }
-    } catch (error) {
-      console.error('Error initializing Google Maps Autocomplete Service:', error);
-      setIsGoogleMapsLoaded(false);
-    }
-  };
-
-    loadGoogleMapsAPI();
-
-    // Cleanup
-    return () => {
-      if (window.initGoogleMaps) {
-        delete window.initGoogleMaps;
-      }
     };
+
+    // Usar el loader centralizado
+    if (googleMapsLoader.isGoogleMapsLoaded()) {
+      initializeAutocompleteService();
+    } else {
+      googleMapsLoader.load()
+        .then(initializeAutocompleteService)
+        .catch((error) => {
+          console.error('Error loading Google Maps API:', error);
+          setIsGoogleMapsLoaded(false);
+        });
+    }
   }, []);
 
   // Función para buscar direcciones

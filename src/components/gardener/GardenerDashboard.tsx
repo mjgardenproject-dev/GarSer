@@ -49,7 +49,7 @@ const GardenerDashboard = () => {
         .select(`
           *,
           services(name),
-          profiles!client_id(full_name)
+          client_profile:profiles!client_id(full_name)
         `)
         .eq('gardener_id', user?.id)
         .order('date', { ascending: true });
@@ -236,7 +236,7 @@ const GardenerDashboard = () => {
                             {booking.services?.name}
                           </h3>
                           <p className="text-gray-600">
-                            Cliente: {booking.profiles?.full_name}
+                            Cliente: {booking.client_profile?.full_name}
                           </p>
                         </div>
                       </div>
@@ -302,7 +302,7 @@ const GardenerDashboard = () => {
                       
                       {(booking.status === 'confirmed' || booking.status === 'in_progress') && (
                         <button
-                          onClick={() => openChat(booking.id, booking.profiles?.full_name || 'Cliente')}
+                          onClick={() => openChat(booking.id, booking.client_profile?.full_name || 'Cliente')}
                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ml-2"
                         >
                           <MessageCircle className="w-4 h-4 mr-2 inline" />

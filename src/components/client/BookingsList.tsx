@@ -29,7 +29,7 @@ const BookingsList = () => {
         .select(`
           *,
           services(name, icon),
-          profiles!gardener_id(full_name, phone)
+          gardener_profile:profiles!gardener_id(full_name, phone)
         `)
         .eq('client_id', user?.id)
         .order('date', { ascending: false });
@@ -114,7 +114,7 @@ const BookingsList = () => {
                         {booking.services?.name}
                       </h3>
                       <p className="text-gray-600">
-                        Jardinero: {booking.gardener_profiles?.full_name}
+                        Jardinero: {booking.gardener_profile?.full_name}
                       </p>
                     </div>
                   </div>
@@ -161,7 +161,7 @@ const BookingsList = () => {
                   <div className="flex space-x-2">
                     {(booking.status === 'confirmed' || booking.status === 'in_progress') && (
                       <button
-                        onClick={() => openChat(booking.id, booking.gardener_profiles?.full_name || 'Jardinero')}
+                        onClick={() => openChat(booking.id, booking.gardener_profile?.full_name || 'Jardinero')}
                         className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                       >
                         <MessageCircle className="w-4 h-4 mr-2" />

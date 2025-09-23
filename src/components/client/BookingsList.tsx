@@ -29,7 +29,7 @@ const BookingsList = () => {
         .select(`
           *,
           services(name, icon),
-          profiles!bookings_gardener_id_fkey(full_name, phone)
+          profiles!gardener_id(full_name, phone)
         `)
         .eq('client_id', user?.id)
         .order('date', { ascending: false });

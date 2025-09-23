@@ -49,7 +49,7 @@ const GardenerDashboard = () => {
         .select(`
           *,
           services(name),
-          profiles!bookings_client_id_fkey(full_name)
+          profiles!client_id(full_name)
         `)
         .eq('gardener_id', user?.id)
         .order('date', { ascending: true });

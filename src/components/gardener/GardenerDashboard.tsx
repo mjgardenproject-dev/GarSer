@@ -44,18 +44,39 @@ const GardenerDashboard = () => {
 
   const fetchBookings = async () => {
     try {
-      const { data, error } = await supabase
+      // Primero obtenemos las reservas básicas
+      const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
           *,
-          services(name),
-          client_profile:profiles!client_id(full_name)
+          services(name)
         `)
         .eq('gardener_id', user?.id)
         .order('date', { ascending: true });
 
-      if (error) throw error;
-      setBookings(data || []);
+      if (bookingsError) throw bookingsError;
+
+      // Luego obtenemos los perfiles de los clientes
+      if (bookingsData && bookingsData.length > 0) {
+        const clientIds = [...new Set(bookingsData.map(booking => booking.client_id))];
+        
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, full_name')
+          .in('user_id', clientIds);
+
+        if (profilesError) throw profilesError;
+
+        // Combinar los datos
+        const bookingsWithProfiles = bookingsData.map(booking => ({
+          ...booking,
+          client_profile: profilesData?.find(profile => profile.user_id === booking.client_id) || null
+        }));
+
+        setBookings(bookingsWithProfiles);
+      } else {
+        setBookings([]);
+      }
     } catch (error) {
       console.error('Error fetching bookings:', error);
     } finally {

@@ -17,7 +17,7 @@ class GoogleMapsLoader {
 
   async load(): Promise<void> {
     // Si ya está cargado, resolver inmediatamente
-    if (this.isLoaded) {
+    if (this.isLoaded && window.google?.maps?.places) {
       return Promise.resolve();
     }
 
@@ -26,9 +26,9 @@ class GoogleMapsLoader {
       return this.loadPromise;
     }
 
-    // Verificar si ya existe el script
+    // Verificar si ya existe el script y está completamente cargado
     const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-    if (existingScript && window.google?.maps) {
+    if (existingScript && window.google?.maps?.places) {
       this.isLoaded = true;
       this.executeCallbacks();
       return Promise.resolve();
@@ -36,40 +36,71 @@ class GoogleMapsLoader {
 
     this.isLoading = true;
     this.loadPromise = new Promise((resolve, reject) => {
-      // Limpiar callback global anterior si existe
+      // Limpiar callbacks globales anteriores
       if (window.initGoogleMaps) {
         delete window.initGoogleMaps;
       }
 
-      // Crear callback global único
+      // Crear callback global único con validación
       window.initGoogleMaps = () => {
-        this.isLoaded = true;
-        this.isLoading = false;
-        this.executeCallbacks();
-        resolve();
+        // Verificar que Google Maps esté completamente cargado
+        if (window.google && window.google.maps && window.google.maps.places) {
+          this.isLoaded = true;
+          this.isLoading = false;
+          this.executeCallbacks();
+          resolve();
+        } else {
+          // Si no está completamente cargado, esperar un poco más
+          setTimeout(() => {
+            if (window.google && window.google.maps && window.google.maps.places) {
+              this.isLoaded = true;
+              this.isLoading = false;
+              this.executeCallbacks();
+              resolve();
+            } else {
+              this.isLoading = false;
+              this.loadPromise = null;
+              reject(new Error('Google Maps API not fully loaded'));
+            }
+          }, 100);
+        }
       };
 
       // Crear script solo si no existe
       if (!existingScript) {
         const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&libraries=places&callback=initGoogleMaps`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&libraries=places,geometry&callback=initGoogleMaps`;
         script.async = true;
         script.defer = true;
         
         script.onerror = () => {
           this.isLoading = false;
           this.loadPromise = null;
+          if (window.initGoogleMaps) {
+            delete window.initGoogleMaps;
+          }
           reject(new Error('Failed to load Google Maps API'));
         };
 
         document.head.appendChild(script);
       } else {
-        // Si el script existe pero no se ha cargado completamente
-        existingScript.addEventListener('load', () => {
-          if (window.google?.maps) {
-            window.initGoogleMaps();
-          }
-        });
+        // Si el script existe, verificar si ya se cargó
+        if (window.google?.maps?.places) {
+          window.initGoogleMaps();
+        } else {
+          // Esperar a que se cargue
+          existingScript.addEventListener('load', () => {
+            setTimeout(() => {
+              if (window.google?.maps?.places) {
+                window.initGoogleMaps();
+              } else {
+                this.isLoading = false;
+                this.loadPromise = null;
+                reject(new Error('Google Maps API not available after load'));
+              }
+            }, 100);
+          });
+        }
       }
     });
 
@@ -90,7 +121,7 @@ class GoogleMapsLoader {
   }
 
   isGoogleMapsLoaded(): boolean {
-    return this.isLoaded && !!window.google?.maps;
+    return this.isLoaded && !!window.google?.maps?.places && !!window.google?.maps?.geometry;
   }
 }
 

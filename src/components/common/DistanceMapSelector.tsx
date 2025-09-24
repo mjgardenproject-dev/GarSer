@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, Minus, Plus } from 'lucide-react';
-import { Loader } from '@googlemaps/js-api-loader';
+import googleMapsLoader from '../../lib/googleMapsLoader';
 
 interface DistanceMapSelectorProps {
   address: string;
@@ -32,20 +32,20 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
   const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
 
-  // Cargar Google Maps API
+  // Cargar Google Maps API usando el loader centralizado
   useEffect(() => {
-    const loader = new Loader({
-      apiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
-      version: 'weekly',
-      libraries: ['places', 'geometry']
-    });
-
-    loader.load().then(() => {
+    if (googleMapsLoader.isGoogleMapsLoaded()) {
       setIsGoogleMapsLoaded(true);
-    }).catch((error) => {
-      console.error('Error loading Google Maps:', error);
-      setIsLoading(false);
-    });
+    } else {
+      googleMapsLoader.load()
+        .then(() => {
+          setIsGoogleMapsLoaded(true);
+        })
+        .catch((error) => {
+          console.error('Error loading Google Maps:', error);
+          setIsLoading(false);
+        });
+    }
   }, []);
 
   // Inicializar el mapa

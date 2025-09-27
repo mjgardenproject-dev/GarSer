@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import AddressAutocomplete from '../common/AddressAutocomplete';
 
 const schema = yup.object({
   service_id: yup.string().required('Servicio requerido'),
@@ -31,8 +32,9 @@ const ServiceBooking = () => {
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [priceCalculation, setPriceCalculation] = useState<PriceCalculation | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedAddress, setSelectedAddress] = useState('');
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
     defaultValues: {
       service_id: location.state?.selectedServiceId || ''
@@ -120,23 +122,12 @@ const ServiceBooking = () => {
 
     setLoading(true);
     try {
-      // Simular asignación con IA (en producción sería más compleja)
-      const { data: gardeners, error: gardenersError } = await supabase
-        .from('gardener_profiles')
-        .select('*')
-        .contains('services', [data.service_id])
-        .eq('is_available', true)
-        .order('rating', { ascending: false })
-        .limit(1);
-
-      if (gardenersError) throw gardenersError;
-
-      if (!gardeners || gardeners.length === 0) {
-        toast.error('No hay jardineros disponibles para este servicio');
-        return;
-      }
-
-      const assignedGardener = gardeners[0];
+      // Usar la nueva lógica de selección inteligente de jardineros
+      console.log('🚀 Iniciando proceso de reserva con selección inteligente');
+      
+      const assignedGardener = await selectBestGardener(data.service_id, data.client_address);
+      
+      console.log('✅ Jardinero asignado:', assignedGardener.user_profiles?.full_name);
 
       const { error } = await supabase
         .from('bookings')
@@ -195,6 +186,177 @@ const ServiceBooking = () => {
       });
     }
     return dates;
+  };
+
+  const handleAddressSelect = (address: string) => {
+    setSelectedAddress(address);
+    setValue('client_address', address);
+  };
+
+  // Función para calcular la distancia entre dos coordenadas usando la fórmula de Haversine
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Radio de la Tierra en kilómetros
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Función para obtener coordenadas de una dirección usando Google Maps Geocoding
+  const getCoordinatesFromAddress = async (address: string): Promise<{lat: number, lng: number} | null> => {
+    try {
+      if (!window.google?.maps?.Geocoder) {
+        console.error('Google Maps Geocoder no está disponible');
+        return null;
+      }
+
+      const geocoder = new window.google.maps.Geocoder();
+      
+      return new Promise((resolve, reject) => {
+        geocoder.geocode({ address: address }, (results, status) => {
+          if (status === 'OK' && results && results[0]) {
+            const location = results[0].geometry.location;
+            resolve({
+              lat: location.lat(),
+              lng: location.lng()
+            });
+          } else {
+            console.error('Geocoding falló:', status);
+            resolve(null);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Error en geocoding:', error);
+      return null;
+    }
+  };
+
+  // Función de selección básica como fallback
+  const basicGardenerSelection = async (serviceId: string) => {
+    const { data: gardeners, error: gardenersError } = await supabase
+      .from('gardener_profiles')
+      .select(`
+        *,
+        user_profiles!inner(full_name)
+      `)
+      .contains('services', [serviceId])
+      .eq('is_available', true)
+      .order('rating', { ascending: false })
+      .limit(1);
+
+    if (gardenersError) throw gardenersError;
+
+    if (!gardeners || gardeners.length === 0) {
+      throw new Error('No hay jardineros disponibles para este servicio');
+    }
+
+    return gardeners[0];
+  };
+
+  // Función mejorada para seleccionar el mejor jardinero
+  const selectBestGardener = async (serviceId: string, clientAddress: string) => {
+    try {
+      console.log('🔍 Iniciando selección de jardinero para:', { serviceId, clientAddress });
+
+      // 1. Obtener coordenadas de la dirección del cliente
+      const clientCoords = await getCoordinatesFromAddress(clientAddress);
+      if (!clientCoords) {
+        console.warn('No se pudieron obtener las coordenadas del cliente, usando selección básica');
+        return await basicGardenerSelection(serviceId);
+      }
+
+      console.log('📍 Coordenadas del cliente:', clientCoords);
+
+      // 2. Obtener todos los jardineros que ofrecen el servicio y están disponibles
+      const { data: gardeners, error: gardenersError } = await supabase
+        .from('gardener_profiles')
+        .select(`
+          *,
+          user_profiles!inner(full_name)
+        `)
+        .contains('services', [serviceId])
+        .eq('is_available', true);
+
+      if (gardenersError) throw gardenersError;
+
+      if (!gardeners || gardeners.length === 0) {
+        throw new Error('No hay jardineros disponibles para este servicio');
+      }
+
+      console.log(`👥 Encontrados ${gardeners.length} jardineros disponibles`);
+
+      // 3. Filtrar jardineros por rango de distancia y calcular distancias
+      const gardenersWithDistance = [];
+      
+      for (const gardener of gardeners) {
+        if (!gardener.address) {
+          console.warn(`Jardinero ${gardener.user_profiles?.full_name} no tiene dirección configurada`);
+          continue;
+        }
+
+        const gardenerCoords = await getCoordinatesFromAddress(gardener.address);
+        if (!gardenerCoords) {
+          console.warn(`No se pudieron obtener coordenadas para ${gardener.user_profiles?.full_name}`);
+          continue;
+        }
+
+        const distance = calculateDistance(
+          clientCoords.lat, 
+          clientCoords.lng, 
+          gardenerCoords.lat, 
+          gardenerCoords.lng
+        );
+
+        // Verificar si está dentro del rango de trabajo del jardinero
+        const maxRange = gardener.work_radius || 20; // Default 20km si no está especificado
+        
+        if (distance <= maxRange) {
+          gardenersWithDistance.push({
+            ...gardener,
+            distance,
+            maxRange
+          });
+          console.log(`✅ ${gardener.user_profiles?.full_name}: ${distance.toFixed(2)}km (rango: ${maxRange}km)`);
+        } else {
+          console.log(`❌ ${gardener.user_profiles?.full_name}: ${distance.toFixed(2)}km (fuera de rango: ${maxRange}km)`);
+        }
+      }
+
+      if (gardenersWithDistance.length === 0) {
+        throw new Error('No hay jardineros disponibles en tu área para este servicio');
+      }
+
+      // 4. Ordenar por mejores reseñas (rating) y luego por distancia
+      gardenersWithDistance.sort((a, b) => {
+        // Primero por rating (descendente)
+        if (b.rating !== a.rating) {
+          return (b.rating || 0) - (a.rating || 0);
+        }
+        // Si tienen el mismo rating, por distancia (ascendente)
+        return a.distance - b.distance;
+      });
+
+      const selectedGardener = gardenersWithDistance[0];
+      
+      console.log('🏆 Jardinero seleccionado:', {
+        name: selectedGardener.user_profiles?.full_name,
+        rating: selectedGardener.rating,
+        distance: selectedGardener.distance.toFixed(2) + 'km',
+        reviews: selectedGardener.total_reviews || 0
+      });
+
+      return selectedGardener;
+
+    } catch (error) {
+      console.error('Error en selección avanzada de jardinero:', error);
+      // Fallback a selección básica
+      return await basicGardenerSelection(serviceId);
+    }
   };
 
   return (
@@ -312,11 +474,16 @@ const ServiceBooking = () => {
               <MapPin className="inline w-5 h-5 mr-2" />
               Dirección del servicio
             </label>
-            <textarea
-              {...register('client_address')}
-              rows={3}
-              className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            <AddressAutocomplete
+              value={selectedAddress}
+              onAddressSelect={handleAddressSelect}
               placeholder="Ingresa la dirección completa donde se realizará el servicio"
+              className="w-full"
+            />
+            <input
+              type="hidden"
+              {...register('client_address')}
+              value={selectedAddress}
             />
             {errors.client_address && (
               <p className="mt-2 text-sm text-red-600">{errors.client_address.message}</p>

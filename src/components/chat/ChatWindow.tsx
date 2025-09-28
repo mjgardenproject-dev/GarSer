@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Send, MessageCircle, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 
@@ -164,7 +164,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
                       message.sender_id === user?.id ? 'text-green-100' : 'text-gray-500'
                     }`}
                   >
-                    {format(new Date(message.created_at), 'HH:mm', { locale: es })}
+                    {format(parseISO(message.created_at), 'HH:mm', { locale: es })}
                   </p>
                 </div>
               </div>

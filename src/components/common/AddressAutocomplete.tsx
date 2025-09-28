@@ -21,7 +21,6 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
-  const [autocompleteService, setAutocompleteService] = useState<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
@@ -31,17 +30,14 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     const initializeAutocompleteService = () => {
       try {
         if (window.google && window.google.maps && window.google.maps.places) {
-          // Usar solo la API legacy que es estable y ampliamente soportada
-          const service = new window.google.maps.places.AutocompleteService();
-          setAutocompleteService(service);
           setIsGoogleMapsLoaded(true);
-          console.log('Google Maps Autocomplete Service initialized successfully');
+          console.log('Google Maps Places API initialized successfully');
         } else {
           console.error('Google Maps Places library not available');
           setIsGoogleMapsLoaded(false);
         }
       } catch (error) {
-        console.error('Error initializing Google Maps Autocomplete Service:', error);
+        console.error('Error initializing Google Maps Places API:', error);
         setIsGoogleMapsLoaded(false);
       }
     };
@@ -59,9 +55,9 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     }
   }, []);
 
-  // Función para buscar direcciones
+  // Función para buscar direcciones usando la nueva API
   const searchAddresses = async (input: string) => {
-    if (!autocompleteService || !isGoogleMapsLoaded || input.length < 3) {
+    if (!isGoogleMapsLoaded || input.length < 3) {
       setSuggestions([]);
       setIsOpen(false);
       setLoading(false);
@@ -71,27 +67,61 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     setLoading(true);
 
     try {
-      const request = {
-        input,
-        componentRestrictions: { country: 'es' },
-        types: ['address']
-      };
+      // Usar la nueva API AutocompleteSuggestion si está disponible
+      if (window.google.maps.places.AutocompleteSuggestion) {
+        const request = {
+          input,
+          locationRestriction: { country: 'es' },
+          includedPrimaryTypes: ['address']
+        };
 
-      autocompleteService.getPlacePredictions(request, (predictions: any[], status: any) => {
+        const { suggestions } = await window.google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+        
         setLoading(false);
         
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-          setSuggestions(predictions);
-          setIsOpen(predictions.length > 0);
-          console.log('Autocomplete predictions received:', predictions.length);
+        if (suggestions && suggestions.length > 0) {
+          // Convertir el formato de la nueva API al formato esperado
+          const formattedSuggestions = suggestions.map((suggestion: any) => ({
+            place_id: suggestion.placePrediction?.placeId || suggestion.placeId,
+            description: suggestion.placePrediction?.text?.text || suggestion.text,
+            structured_formatting: {
+              main_text: suggestion.placePrediction?.structuredFormat?.mainText?.text || suggestion.mainText || suggestion.text,
+              secondary_text: suggestion.placePrediction?.structuredFormat?.secondaryText?.text || suggestion.secondaryText || ''
+            }
+          }));
+          
+          setSuggestions(formattedSuggestions);
+          setIsOpen(formattedSuggestions.length > 0);
+          console.log('Autocomplete suggestions received:', formattedSuggestions.length);
         } else {
           setSuggestions([]);
           setIsOpen(false);
-          if (status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-            console.warn('Google Places API error:', status);
-          }
         }
-      });
+      } else {
+        // Fallback a la API legacy si la nueva no está disponible
+        const service = new window.google.maps.places.AutocompleteService();
+        const request = {
+          input,
+          componentRestrictions: { country: 'es' },
+          types: ['address']
+        };
+
+        service.getPlacePredictions(request, (predictions: any[], status: any) => {
+          setLoading(false);
+          
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setSuggestions(predictions);
+            setIsOpen(predictions.length > 0);
+            console.log('Autocomplete predictions received (legacy):', predictions.length);
+          } else {
+            setSuggestions([]);
+            setIsOpen(false);
+            if (status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+              console.warn('Google Places API error:', status);
+            }
+          }
+        });
+      }
     } catch (error) {
       console.error('Error searching addresses:', error);
       setLoading(false);
@@ -111,8 +141,8 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
 
     if (inputValue.length > 2) {
       console.log('Starting autocomplete search for:', inputValue);
-      console.log('Autocomplete service available:', !!autocompleteService);
       console.log('Google Maps loaded:', isGoogleMapsLoaded);
+      console.log('New AutocompleteSuggestion API available:', !!window.google?.maps?.places?.AutocompleteSuggestion);
       
       // Debounce la búsqueda
       timeoutRef.current = setTimeout(() => {

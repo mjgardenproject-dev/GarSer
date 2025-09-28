@@ -39,6 +39,16 @@ const ServiceCatalog = () => {
     navigate(`/service/${serviceId}`);
   };
 
+  const handleBookNow = (service: Service, e: React.MouseEvent) => {
+    e.stopPropagation(); // Evitar que se active el click del contenedor
+    navigate('/booking', { 
+      state: { 
+        selectedServiceId: service.id,
+        selectedService: service 
+      } 
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -112,13 +122,28 @@ const ServiceCatalog = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center">
                   <Star className="w-4 h-4 text-yellow-400 fill-current" />
                   <span className="text-sm text-gray-600 ml-1">4.8 (127 reseñas)</span>
                 </div>
-                <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium">
+              </div>
+              
+              <div className="flex gap-2">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleServiceClick(service.id);
+                  }}
+                  className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                >
                   Ver detalles
+                </button>
+                <button 
+                  onClick={(e) => handleBookNow(service, e)}
+                  className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  Reservar
                 </button>
               </div>
             </div>

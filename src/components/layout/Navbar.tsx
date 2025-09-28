@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Leaf, LogOut, User, Calendar, MessageCircle } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const Navbar = () => {
   const { user, profile, signOut } = useAuth();
+  
+  // Log para depuración
+  useEffect(() => {
+    console.log('Navbar - Profile updated:', profile);
+  }, [profile]);
   const navigate = useNavigate();
   const location = useLocation();
 

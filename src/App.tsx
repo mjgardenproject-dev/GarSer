@@ -10,6 +10,9 @@ import ServiceBooking from './components/client/ServiceBooking';
 import BookingsList from './components/client/BookingsList';
 import GardenerDashboard from './components/gardener/GardenerDashboard';
 import GoogleMapsDebug from './components/common/GoogleMapsDebug';
+import ChatList from './components/chat/ChatList';
+import RoleDebug from './components/debug/RoleDebug';
+import RoleMonitor from './components/admin/RoleMonitor';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -80,10 +83,7 @@ const AppContent = () => {
           path="/chat" 
           element={
             <ProtectedRoute>
-              <div className="p-8 text-center">
-                <h1 className="text-2xl font-bold">Chat</h1>
-                <p className="text-gray-600 mt-2">Próximamente...</p>
-              </div>
+              <ChatList />
             </ProtectedRoute>
           } 
         />
@@ -94,6 +94,22 @@ const AppContent = () => {
               <div className="p-8">
                 <GoogleMapsDebug />
               </div>
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/debug-roles" 
+          element={
+            <ProtectedRoute>
+              <RoleDebug />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/role-monitor" 
+          element={
+            <ProtectedRoute>
+              <RoleMonitor />
             </ProtectedRoute>
           } 
         />

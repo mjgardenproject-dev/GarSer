@@ -12,6 +12,7 @@ export interface Profile {
   phone: string;
   address: string;
   avatar_url?: string;
+  role: 'client' | 'gardener';
   created_at: string;
   updated_at: string;
 }

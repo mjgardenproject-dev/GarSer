@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, Clock, MapPin, MessageCircle, Star, Euro } from 'lucide-react';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from '../chat/ChatWindow';
 
@@ -147,7 +147,7 @@ const BookingsList = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
-                    {format(new Date(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                    {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2" />
@@ -176,7 +176,7 @@ const BookingsList = () => {
 
                 <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                   <div className="text-sm text-gray-500">
-                    Reservado el {format(new Date(booking.created_at), 'd MMM yyyy', { locale: es })}
+                    Reservado el {format(parseISO(booking.created_at), 'd MMM yyyy', { locale: es })}
                   </div>
                   
                   <div className="flex space-x-2">

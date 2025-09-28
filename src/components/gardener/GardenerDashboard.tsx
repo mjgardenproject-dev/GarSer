@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, Star, MapPin, Clock, Settings, User, Briefcase, MessageCircle } from 'lucide-react';
 import { GardenerProfile, Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
@@ -35,10 +35,60 @@ const GardenerDashboard = () => {
         .eq('user_id', user?.id)
         .single();
 
+      if (error && error.code === 'PGRST116') {
+        // No existe perfil de jardinero, crear uno automáticamente
+        console.log('No gardener profile found, creating one...');
+        await createGardenerProfile();
+        return;
+      }
+
       if (error) throw error;
       setProfile(data);
     } catch (error) {
       console.error('Error fetching gardener profile:', error);
+    }
+  };
+
+  const createGardenerProfile = async () => {
+    try {
+      // Obtener información del perfil básico
+      const { data: basicProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name, phone, address')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (profileError) {
+        console.error('Error fetching basic profile:', profileError);
+        return;
+      }
+
+      // Crear perfil de jardinero con valores por defecto
+      const { data, error } = await supabase
+        .from('gardener_profiles')
+        .insert([
+          {
+            user_id: user?.id,
+            full_name: basicProfile?.full_name || '',
+            phone: basicProfile?.phone || '',
+            address: basicProfile?.address || '',
+            description: '',
+            services: [],
+            max_distance: 25,
+            rating: 5.0,
+            total_reviews: 0,
+            is_available: true
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      console.log('Gardener profile created successfully:', data);
+      setProfile(data);
+    } catch (error) {
+      console.error('Error creating gardener profile:', error);
     }
   };
 
@@ -86,12 +136,36 @@ const GardenerDashboard = () => {
 
   const updateBookingStatus = async (bookingId: string, status: string) => {
     try {
+      // Obtener información de la reserva antes de actualizarla
+      const booking = bookings.find(b => b.id === bookingId);
+      if (!booking) return;
+
       const { error } = await supabase
         .from('bookings')
         .update({ status })
         .eq('id', bookingId);
 
       if (error) throw error;
+
+      // Enviar mensaje automático según el estado
+      let message = '';
+      if (status === 'confirmed') {
+        message = `¡Excelente! He confirmado tu reserva para el ${format(parseISO(booking.date), 'dd/MM/yyyy', { locale: es })} a las ${booking.start_time}. Estaré allí puntualmente. ¡Nos vemos pronto!`;
+      } else if (status === 'cancelled') {
+        message = `Lamento informarte que no podré realizar el servicio solicitado para el ${format(parseISO(booking.date), 'dd/MM/yyyy', { locale: es })}. Disculpa las molestias.`;
+      }
+
+      if (message) {
+        await supabase
+          .from('chat_messages')
+          .insert([
+            {
+              booking_id: bookingId,
+              sender_id: user?.id,
+              message: message
+            }
+          ]);
+      }
       
       // Refresh bookings
       fetchBookings();
@@ -194,7 +268,7 @@ const GardenerDashboard = () => {
             </div>
 
             {profile && (
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-5 gap-6">
                 <div className="bg-green-50 p-4 rounded-lg">
                   <div className="flex items-center">
                     <Star className="w-8 h-8 text-yellow-500 mr-3" />
@@ -210,6 +284,15 @@ const GardenerDashboard = () => {
                     <div>
                       <p className="text-2xl font-bold text-gray-900">{bookings.length}</p>
                       <p className="text-sm text-gray-600">Reservas Totales</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <div className="flex items-center">
+                    <Clock className="w-8 h-8 text-yellow-600 mr-3" />
+                    <div>
+                      <p className="text-2xl font-bold text-gray-900">{bookings.filter(b => b.status === 'pending').length}</p>
+                      <p className="text-sm text-gray-600">Pendientes</p>
                     </div>
                   </div>
                 </div>
@@ -269,7 +352,7 @@ const GardenerDashboard = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div className="flex items-center text-gray-600">
                         <Calendar className="w-4 h-4 mr-2" />
-                        {format(new Date(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                        {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
                       </div>
                       <div className="flex items-center text-gray-600">
                         <Clock className="w-4 h-4 mr-2" />

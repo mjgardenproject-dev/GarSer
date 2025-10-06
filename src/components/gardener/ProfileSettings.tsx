@@ -3,8 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { User, MapPin, Briefcase, Star, Save } from 'lucide-react';
-import { GardenerProfile, Service } from '../../types';
+import { Save, User, MapPin, Phone, Briefcase, Star } from 'lucide-react';
+import { Service, GardenerProfile } from '../../types';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import AddressAutocomplete from '../common/AddressAutocomplete';
@@ -53,37 +53,60 @@ const ProfileSettings = () => {
   };
 
   const fetchGardenerProfile = async () => {
-    if (!user) return;
+    if (!user) {
+      console.error('No user found when trying to fetch profile');
+      return;
+    }
+
+    console.log('Starting to fetch gardener profile for user:', user.id);
 
     try {
       const { data, error } = await supabase
         .from('gardener_profiles')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error) {
+        console.error('Error fetching gardener profile:', error);
+        throw error;
+      }
+
+      console.log('Fetched gardener profile data:', data);
       
       if (data) {
         setGardenerProfile(data);
+        console.log('Setting form values with profile data');
         setValue('full_name', data.full_name);
         setValue('phone', data.phone);
         setValue('address', data.address);
         setValue('description', data.description);
         setValue('max_distance', data.max_distance);
         setValue('services', data.services);
+        console.log('Form values set successfully');
       } else if (profile) {
+        console.log('No existing profile found, using main profile data');
         setValue('full_name', profile.full_name);
         setValue('phone', profile.phone);
         setValue('address', profile.address);
+      } else {
+        console.log('No profile data found');
       }
     } catch (error) {
       console.error('Error fetching gardener profile:', error);
     }
   };
 
+
+
   const onSubmit = async (data: FormData) => {
-    if (!user) return;
+    if (!user) {
+      console.error('No user found when trying to save profile');
+      return;
+    }
+
+    console.log('Starting to save profile for user:', user.id);
+    console.log('Profile data to save:', data);
 
     setLoading(true);
     try {
@@ -101,27 +124,66 @@ const ProfileSettings = () => {
         total_reviews: gardenerProfile?.total_reviews || 0
       };
 
-      const { error: profileError } = await supabase
-        .from('gardener_profiles')
-        .upsert(profileData);
+      console.log('Saving to gardener_profiles table:', profileData);
 
-      if (profileError) throw profileError;
+      // Check if gardener profile already exists
+      const { data: existingProfile } = await supabase
+        .from('gardener_profiles')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single();
+
+      let profileError;
+      
+      if (existingProfile) {
+        // Profile exists, update it
+        console.log('Profile exists, updating...');
+        const { error } = await supabase
+          .from('gardener_profiles')
+          .update(profileData)
+          .eq('user_id', user.id);
+        profileError = error;
+      } else {
+        // Profile doesn't exist, create it
+        console.log('Profile does not exist, creating...');
+        const { error } = await supabase
+          .from('gardener_profiles')
+          .insert(profileData);
+        profileError = error;
+      }
+
+      if (profileError) {
+        console.error('Error saving to gardener_profiles:', profileError);
+        throw profileError;
+      }
+
+      console.log('Successfully saved to gardener_profiles');
 
       // Also update the main profiles table
+      const mainProfileData = {
+        full_name: data.full_name,
+        phone: data.phone,
+        address: data.address
+      };
+
+      console.log('Updating main profiles table:', mainProfileData);
+
       const { error: mainProfileError } = await supabase
         .from('profiles')
-        .update({
-          full_name: data.full_name,
-          phone: data.phone,
-          address: data.address
-        })
+        .update(mainProfileData)
         .eq('user_id', user.id);
 
-      if (mainProfileError) throw mainProfileError;
+      if (mainProfileError) {
+        console.error('Error updating main profiles:', mainProfileError);
+        throw mainProfileError;
+      }
+
+      console.log('Successfully updated main profiles');
 
       toast.success('Perfil actualizado correctamente');
       fetchGardenerProfile();
     } catch (error: any) {
+      console.error('Error in profile submission:', error);
       toast.error(error.message || 'Error al actualizar el perfil');
     } finally {
       setLoading(false);
@@ -129,13 +191,15 @@ const ProfileSettings = () => {
   };
 
   const handleServiceToggle = (serviceId: string) => {
-    const currentServices = watchedServices;
+    const currentServices = watchedServices || [];
     const updatedServices = currentServices.includes(serviceId)
       ? currentServices.filter(id => id !== serviceId)
       : [...currentServices, serviceId];
     
     setValue('services', updatedServices);
   };
+
+
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-8">
@@ -292,6 +356,8 @@ const ProfileSettings = () => {
             </div>
           </div>
         )}
+
+
 
         <button
           type="submit"

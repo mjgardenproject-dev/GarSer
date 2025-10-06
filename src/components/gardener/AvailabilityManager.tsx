@@ -1,111 +1,188 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, Plus, Trash2, Save } from 'lucide-react';
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
+import { Calendar, Clock, Save, Check, X, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { supabase } from '../../lib/supabase';
+import { 
+  generateDailyTimeBlocks, 
+  getGardenerAvailability, 
+  setGardenerAvailability 
+} from '../../utils/availabilityService';
+import { AvailabilityBlock, TimeBlock } from '../../types';
 import toast from 'react-hot-toast';
-
-interface TimeSlot {
-  id?: string;
-  date: string;
-  start_time: string;
-  end_time: string;
-  is_available: boolean;
-}
 
 const AvailabilityManager = () => {
   const { user } = useAuth();
   const [selectedWeek, setSelectedWeek] = useState(new Date());
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [weeklyAvailability, setWeeklyAvailability] = useState<{ [date: string]: { [hour: number]: boolean } }>({});
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Generar bloques de tiempo de 1 hora (8:00 AM a 8:00 PM)
+  const timeBlocks = generateDailyTimeBlocks();
 
   useEffect(() => {
-    fetchAvailability();
+    fetchWeeklyAvailability();
   }, [selectedWeek, user]);
 
-  const fetchAvailability = async () => {
-    if (!user) return;
-
-    try {
-      const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
-
-      const { data, error } = await supabase
-        .from('availability')
-        .select('*')
-        .eq('gardener_id', user.id)
-        .gte('date', format(weekStart, 'yyyy-MM-dd'))
-        .lte('date', format(weekEnd, 'yyyy-MM-dd'))
-        .order('date')
-        .order('start_time');
-
-      if (error) throw error;
-      setTimeSlots(data || []);
-    } catch (error) {
-      console.error('Error fetching availability:', error);
+  const fetchWeeklyAvailability = async () => {
+    if (!user) {
+      console.error('No user found when trying to fetch availability');
+      return;
     }
-  };
 
-  const addTimeSlot = (date: string) => {
-    const newSlot: TimeSlot = {
-      date,
-      start_time: '09:00',
-      end_time: '17:00',
-      is_available: true
-    };
-    setTimeSlots([...timeSlots, newSlot]);
-  };
-
-  const updateTimeSlot = (index: number, field: keyof TimeSlot, value: string | boolean) => {
-    const updatedSlots = [...timeSlots];
-    updatedSlots[index] = { ...updatedSlots[index], [field]: value };
-    setTimeSlots(updatedSlots);
-  };
-
-  const removeTimeSlot = (index: number) => {
-    const updatedSlots = timeSlots.filter((_, i) => i !== index);
-    setTimeSlots(updatedSlots);
-  };
-
-  const saveAvailability = async () => {
-    if (!user) return;
+    console.log('Starting to fetch weekly availability for user:', user.id);
 
     setLoading(true);
     try {
-      // Delete existing availability for the week
       const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
-
-      await supabase
-        .from('availability')
-        .delete()
-        .eq('gardener_id', user.id)
-        .gte('date', format(weekStart, 'yyyy-MM-dd'))
-        .lte('date', format(weekEnd, 'yyyy-MM-dd'));
-
-      // Insert new availability
-      const slotsToInsert = timeSlots.map(slot => ({
-        gardener_id: user.id,
-        date: slot.date,
-        start_time: slot.start_time,
-        end_time: slot.end_time,
-        is_available: slot.is_available
-      }));
-
-      if (slotsToInsert.length > 0) {
-        const { error } = await supabase
-          .from('availability')
-          .insert(slotsToInsert);
-
-        if (error) throw error;
+      const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+      
+      console.log('Fetching availability for week:', format(weekStart, 'yyyy-MM-dd'), 'to', format(weekEnd, 'yyyy-MM-dd'));
+      
+      const weeklyData: { [date: string]: { [hour: number]: boolean } } = {};
+      
+      for (const day of weekDays) {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        console.log('Fetching availability for date:', dateStr);
+        
+        const availability = await getGardenerAvailability(user.id, dateStr);
+        console.log(`Availability for ${dateStr}:`, availability);
+        
+        // Convertir a formato de horas
+        const dayAvailability: { [hour: number]: boolean } = {};
+        availability.forEach(block => {
+          if (block.is_available) {
+            dayAvailability[block.hour_block] = true;
+          }
+        });
+        weeklyData[dateStr] = dayAvailability;
       }
-
-      toast.success('Disponibilidad guardada correctamente');
-    } catch (error: any) {
-      toast.error(error.message || 'Error al guardar la disponibilidad');
+      
+      console.log('Final weekly availability data:', weeklyData);
+      setWeeklyAvailability(weeklyData);
+    } catch (error) {
+      console.error('Error fetching availability:', error);
+      toast.error('Error al cargar la disponibilidad');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleBlockAvailability = (date: string, hour: number) => {
+    setWeeklyAvailability(prev => {
+      const dayAvailability = prev[date] || {};
+      return {
+        ...prev,
+        [date]: {
+          ...dayAvailability,
+          [hour]: !dayAvailability[hour]
+        }
+      };
+    });
+  };
+
+  const saveWeeklyAvailability = async () => {
+    if (!user) {
+      console.error('No user found when trying to save availability');
+      return;
+    }
+
+    console.log('Starting to save weekly availability for user:', user.id);
+    console.log('Weekly availability data:', weeklyAvailability);
+
+    setSaving(true);
+    try {
+      const promises = Object.entries(weeklyAvailability).map(([date, dayAvailability]) => {
+        const availableHours = Object.entries(dayAvailability)
+          .filter(([_, isAvailable]) => isAvailable)
+          .map(([hour, _]) => parseInt(hour));
+        
+        console.log(`Saving availability for date ${date}:`, availableHours);
+        return setGardenerAvailability(user.id, date, availableHours);
+      });
+
+      const results = await Promise.all(promises);
+      console.log('Save results:', results);
+      toast.success('Disponibilidad guardada correctamente');
+    } catch (error: any) {
+      console.error('Error saving availability:', error);
+      toast.error('Error al guardar la disponibilidad');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const navigateWeek = (direction: 'prev' | 'next') => {
+    setSelectedWeek(prev => direction === 'prev' ? subWeeks(prev, 1) : addWeeks(prev, 1));
+  };
+
+  const copyPreviousWeekSchedule = async () => {
+    if (!user) return;
+
+    setSaving(true);
+    try {
+      const previousWeek = subWeeks(selectedWeek, 1);
+      const prevWeekStart = startOfWeek(previousWeek, { weekStartsOn: 1 });
+      const prevWeekEnd = endOfWeek(previousWeek, { weekStartsOn: 1 });
+      const prevWeekDays = eachDayOfInterval({ start: prevWeekStart, end: prevWeekEnd });
+      
+      const currentWeekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
+      const currentWeekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
+      const currentWeekDays = eachDayOfInterval({ start: currentWeekStart, end: currentWeekEnd });
+
+      const previousWeekData: { [date: string]: { [hour: number]: boolean } } = {};
+      
+      // Obtener datos de la semana anterior
+      for (const day of prevWeekDays) {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        const availability = await getGardenerAvailability(user.id, dateStr);
+        
+        const dayAvailability: { [hour: number]: boolean } = {};
+        for (let hour = 8; hour <= 19; hour++) {
+          dayAvailability[hour] = availability.some(block => block.hour_block === hour && block.is_available);
+        }
+        previousWeekData[dateStr] = dayAvailability;
+      }
+
+      // Aplicar a la semana actual
+      const newWeeklyAvailability = { ...weeklyAvailability };
+      currentWeekDays.forEach((day, index) => {
+        const currentDateStr = format(day, 'yyyy-MM-dd');
+        const previousDateStr = format(prevWeekDays[index], 'yyyy-MM-dd');
+        
+        if (previousWeekData[previousDateStr]) {
+          newWeeklyAvailability[currentDateStr] = { ...previousWeekData[previousDateStr] };
+        }
+      });
+
+      // Actualizar el estado local
+      setWeeklyAvailability(newWeeklyAvailability);
+
+      // Guardar automáticamente en la base de datos solo para los días de la semana actual
+      const savePromises = currentWeekDays.map((day) => {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        const dayAvailability = newWeeklyAvailability[dateStr] || {};
+        const availableHours = Object.entries(dayAvailability)
+          .filter(([_, isAvailable]) => isAvailable)
+          .map(([hour, _]) => parseInt(hour));
+        
+        console.log(`Auto-saving availability for date ${dateStr}:`, availableHours);
+        return setGardenerAvailability(user.id, dateStr, availableHours);
+      });
+
+      await Promise.all(savePromises);
+      
+      // Refrescar los datos desde la base de datos para asegurar sincronización
+      await fetchWeeklyAvailability();
+      
+      toast.success('Horario de la semana anterior copiado y guardado correctamente');
+    } catch (error) {
+      console.error('Error copying previous week schedule:', error);
+      toast.error('Error al copiar el horario de la semana anterior');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -115,127 +192,148 @@ const AvailabilityManager = () => {
     return eachDayOfInterval({ start: weekStart, end: weekEnd });
   };
 
-  const getSlotsForDate = (date: string) => {
-    return timeSlots.filter(slot => slot.date === date);
-  };
-
-  const navigateWeek = (direction: 'prev' | 'next') => {
-    const newWeek = addDays(selectedWeek, direction === 'next' ? 7 : -7);
-    setSelectedWeek(newWeek);
+  const isBlockAvailable = (date: string, hour: number): boolean => {
+    const dayAvailability = weeklyAvailability[date] || {};
+    return dayAvailability[hour] || false;
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-8">
-      <div className="flex items-center justify-between mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-          <Calendar className="w-6 h-6 mr-3" />
-          Gestión de Disponibilidad
-        </h2>
-        <button
-          onClick={saveAvailability}
-          disabled={loading}
-          className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-        >
-          <Save className="w-4 h-4 mr-2" />
-          {loading ? 'Guardando...' : 'Guardar'}
-        </button>
-      </div>
-
-      {/* Week Navigation */}
-      <div className="flex items-center justify-between mb-6">
-        <button
-          onClick={() => navigateWeek('prev')}
-          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          ← Semana anterior
-        </button>
-        <h3 className="text-lg font-semibold text-gray-900">
-          {format(startOfWeek(selectedWeek, { weekStartsOn: 1 }), 'd MMM', { locale: es })} - {' '}
-          {format(endOfWeek(selectedWeek, { weekStartsOn: 1 }), 'd MMM yyyy', { locale: es })}
-        </h3>
-        <button
-          onClick={() => navigateWeek('next')}
-          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Semana siguiente →
-        </button>
-      </div>
-
-      {/* Days Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
-        {getWeekDays().map((day) => {
-          const dateStr = format(day, 'yyyy-MM-dd');
-          const daySlots = getSlotsForDate(dateStr);
+    <div className="max-w-7xl mx-auto p-6">
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <Calendar className="w-6 h-6 text-green-600 mr-3" />
+            <h2 className="text-2xl font-bold text-gray-900">Gestión de Disponibilidad</h2>
+          </div>
           
-          return (
-            <div key={dateStr} className="border border-gray-200 rounded-lg p-4">
-              <div className="text-center mb-4">
-                <h4 className="font-semibold text-gray-900">
-                  {format(day, 'EEEE', { locale: es })}
-                </h4>
-                <p className="text-sm text-gray-600">
-                  {format(day, 'd MMM', { locale: es })}
-                </p>
-              </div>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => navigateWeek('prev')}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            
+            <div className="text-center">
+              <p className="text-lg font-semibold text-gray-900">
+                {format(startOfWeek(selectedWeek, { weekStartsOn: 1 }), 'dd MMM', { locale: es })} - {' '}
+                {format(endOfWeek(selectedWeek, { weekStartsOn: 1 }), 'dd MMM yyyy', { locale: es })}
+              </p>
+            </div>
+            
+            <button
+              onClick={() => navigateWeek('next')}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={copyPreviousWeekSchedule}
+              disabled={saving}
+              className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              {saving ? 'Copiando...' : 'Copiar Semana Anterior'}
+            </button>
+            
+            <button
+              onClick={saveWeeklyAvailability}
+              disabled={saving}
+              className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </div>
 
-              <div className="space-y-3">
-                {daySlots.map((slot, index) => {
-                  const globalIndex = timeSlots.findIndex(s => 
-                    s.date === slot.date && 
-                    s.start_time === slot.start_time && 
-                    s.end_time === slot.end_time
-                  );
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+            <span className="ml-3 text-gray-600">Cargando disponibilidad...</span>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Days header */}
+            <div className="grid grid-cols-8 gap-2 mb-4">
+              <div className="flex items-center justify-center py-3 bg-gray-100 rounded-lg">
+                <Clock className="w-4 h-4 mr-2 text-gray-500" />
+                <span className="text-sm font-medium text-gray-700">Horario</span>
+              </div>
+              
+              {getWeekDays().map((day) => (
+                <div key={day.toISOString()} className="text-center py-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm font-medium text-gray-900">
+                    {format(day, 'EEE', { locale: es })}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {format(day, 'dd/MM')}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Time blocks grid */}
+            {timeBlocks.map((timeBlock) => (
+              <div key={timeBlock.hour} className="grid grid-cols-8 gap-2">
+                <div className="flex items-center justify-center py-4 bg-gray-50 rounded-lg border">
+                  <span className="text-sm font-medium text-gray-700">
+                    {timeBlock.label}
+                  </span>
+                </div>
+                
+                {getWeekDays().map((day) => {
+                  const dateStr = format(day, 'yyyy-MM-dd');
+                  const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);
                   
                   return (
-                    <div key={index} className="bg-gray-50 p-3 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <Clock className="w-4 h-4 text-gray-500" />
-                        <button
-                          onClick={() => removeTimeSlot(globalIndex)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <input
-                          type="time"
-                          value={slot.start_time}
-                          onChange={(e) => updateTimeSlot(globalIndex, 'start_time', e.target.value)}
-                          className="w-full text-sm border border-gray-300 rounded px-2 py-1"
-                        />
-                        <input
-                          type="time"
-                          value={slot.end_time}
-                          onChange={(e) => updateTimeSlot(globalIndex, 'end_time', e.target.value)}
-                          className="w-full text-sm border border-gray-300 rounded px-2 py-1"
-                        />
-                        <label className="flex items-center text-sm">
-                          <input
-                            type="checkbox"
-                            checked={slot.is_available}
-                            onChange={(e) => updateTimeSlot(globalIndex, 'is_available', e.target.checked)}
-                            className="mr-2"
-                          />
-                          Disponible
-                        </label>
-                      </div>
-                    </div>
+                    <button
+                      key={`${dateStr}-${timeBlock.hour}`}
+                      onClick={() => toggleBlockAvailability(dateStr, timeBlock.hour)}
+                      className={`
+                        py-4 px-3 rounded-lg border-2 transition-all duration-200 
+                        flex items-center justify-center font-medium text-sm
+                        ${isAvailable 
+                          ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
+                          : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
+                        }
+                      `}
+                    >
+                      <span className="text-xs">
+                        {timeBlock.label}
+                      </span>
+                    </button>
                   );
                 })}
-                
-                <button
-                  onClick={() => addTimeSlot(dateStr)}
-                  className="w-full flex items-center justify-center py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-400 hover:bg-green-50 transition-colors text-gray-600 hover:text-green-600"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Añadir horario
-                </button>
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Legend and Instructions */}
+      <div className="mt-6 bg-gray-50 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-6 text-sm">
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-green-100 border-2 border-green-400 rounded mr-2"></div>
+              <span className="text-gray-700">Disponible</span>
             </div>
-          );
-        })}
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-gray-50 border-2 border-gray-300 rounded mr-2"></div>
+              <span className="text-gray-700">No disponible</span>
+            </div>
+          </div>
+          
+          <div className="text-sm text-gray-600">
+            <p>Haz clic en cada bloque para cambiar tu disponibilidad</p>
+            <p>Horario: 8:00 AM - 8:00 PM (bloques de 1 hora)</p>
+          </div>
+        </div>
       </div>
     </div>
   );

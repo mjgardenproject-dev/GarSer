@@ -22,7 +22,7 @@ interface GardenerProfileData {
 }
 
 const RoleDebug = () => {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, fixAllUserRoles } = useAuth();
   const [profiles, setProfiles] = useState<ProfileData[]>([]);
   const [gardenerProfiles, setGardenerProfiles] = useState<GardenerProfileData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -267,6 +267,24 @@ const RoleDebug = () => {
     }
   };
 
+  const handleFixAllRoles = async () => {
+    if (!confirm('¿Estás seguro de que quieres corregir todos los roles inconsistentes? Esta acción afectará a todos los usuarios.')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const correctedCount = await fixAllUserRoles();
+      toast.success(`✅ Corrección masiva completada. ${correctedCount} usuarios corregidos.`);
+      await fetchAllData();
+    } catch (error) {
+      console.error('Error in mass role correction:', error);
+      toast.error('Error en la corrección masiva de roles');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="p-6 bg-white rounded-lg shadow-lg">
@@ -398,6 +416,32 @@ const RoleDebug = () => {
             </div>
           </div>
         )}
+
+        {/* Acciones globales */}
+        <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <h3 className="text-lg font-semibold text-yellow-800 mb-2">Acciones Administrativas</h3>
+          <p className="text-sm text-yellow-700 mb-3">
+            Estas acciones afectan a todos los usuarios del sistema. Úsalas con precaución.
+          </p>
+          <div className="space-x-2">
+            <button
+              onClick={handleFixAllRoles}
+              disabled={loading}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Corregir Todos los Roles
+            </button>
+            <button
+              onClick={fetchAllData}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Actualizar Datos
+            </button>
+          </div>
+        </div>
 
         {/* Resumen de datos */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

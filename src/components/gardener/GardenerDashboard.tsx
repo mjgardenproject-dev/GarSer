@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Star, MapPin, Clock, Settings, User, Briefcase, MessageCircle } from 'lucide-react';
+import { Calendar, Star, MapPin, Clock, Settings, User, Briefcase, MessageCircle, Bell } from 'lucide-react';
 import { GardenerProfile, Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
@@ -8,13 +8,14 @@ import { es } from 'date-fns/locale';
 import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
+import BookingRequestsManager from './BookingRequestsManager';
 
 const GardenerDashboard = () => {
   const { user } = useAuth();
   const [profile, setProfile] = useState<GardenerProfile | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'availability' | 'profile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile'>('dashboard');
   const [selectedChat, setSelectedChat] = useState<{
     bookingId: string;
     clientName: string;
@@ -33,16 +34,17 @@ const GardenerDashboard = () => {
         .from('gardener_profiles')
         .select('*')
         .eq('user_id', user?.id)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code === 'PGRST116') {
+      if (error) throw error;
+      
+      if (!data) {
         // No existe perfil de jardinero, crear uno automáticamente
         console.log('No gardener profile found, creating one...');
         await createGardenerProfile();
         return;
       }
 
-      if (error) throw error;
       setProfile(data);
     } catch (error) {
       console.error('Error fetching gardener profile:', error);
@@ -56,7 +58,7 @@ const GardenerDashboard = () => {
         .from('profiles')
         .select('full_name, phone, address')
         .eq('user_id', user?.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
         console.error('Error fetching basic profile:', profileError);
@@ -214,6 +216,7 @@ const GardenerDashboard = () => {
 
   const tabs = [
     { id: 'dashboard', label: 'Panel Principal', icon: Calendar },
+    { id: 'requests', label: 'Solicitudes', icon: Bell },
     { id: 'availability', label: 'Disponibilidad', icon: Clock },
     { id: 'profile', label: 'Mi Perfil', icon: User }
   ];
@@ -430,6 +433,7 @@ const GardenerDashboard = () => {
         </>
       )}
 
+      {activeTab === 'requests' && <BookingRequestsManager />}
       {activeTab === 'availability' && <AvailabilityManager />}
       {activeTab === 'profile' && <ProfileSettings />}
       

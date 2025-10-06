@@ -7,9 +7,21 @@ import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from '../chat/ChatWindow';
 
+interface BookingWithDetails extends Booking {
+  services?: {
+    name: string;
+    icon?: string;
+  } | null;
+  gardener_profile?: {
+    user_id: string;
+    full_name: string;
+    phone?: string;
+  } | null;
+}
+
 const BookingsList = () => {
   const { user } = useAuth();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookings, setBookings] = useState<BookingWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<{
     bookingId: string;

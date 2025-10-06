@@ -1,0 +1,294 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { Calendar, Clock, MapPin, User, MessageSquare, Check, X, AlertCircle } from 'lucide-react';
+import { BookingRequest, BookingResponse, TimeBlock } from '../../types';
+import { supabase } from '../../lib/supabase';
+import { format, parseISO, isAfter } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { toast } from 'react-hot-toast';
+
+interface BookingRequestWithDetails extends BookingRequest {
+  client_profile?: {
+    full_name: string;
+    phone: string;
+  };
+  services?: {
+    name: string;
+    price_per_hour: number;
+  };
+  booking_blocks?: {
+    start_time: string;
+    end_time: string;
+  }[];
+  existing_response?: BookingResponse;
+}
+
+const BookingRequestsManager = () => {
+  const { user } = useAuth();
+  const [requests, setRequests] = useState<BookingRequestWithDetails[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [responding, setResponding] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      fetchBookingRequests();
+    }
+  }, [user]);
+
+  const fetchBookingRequests = async () => {
+    try {
+      setLoading(true);
+
+      // Obtener reservas pendientes para este jardinero desde la tabla bookings
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('gardener_id', user?.id)
+        .eq('status', 'pending');
+
+      if (bookingsError) throw bookingsError;
+
+      if (!bookings || bookings.length === 0) {
+        setRequests([]);
+        return;
+      }
+
+      // Obtener datos de clientes y servicios por separado
+      const clientIds = [...new Set(bookings.map(b => b.client_id))];
+      const serviceIds = [...new Set(bookings.map(b => b.service_id))];
+
+      const [clientsResult, servicesResult] = await Promise.all([
+        supabase.from('profiles').select('id, full_name, phone').in('id', clientIds),
+        supabase.from('services').select('id, name, price_per_hour').in('id', serviceIds)
+      ]);
+
+      const clientsMap = new Map(clientsResult.data?.map(c => [c.id, c]) || []);
+      const servicesMap = new Map(servicesResult.data?.map(s => [s.id, s]) || []);
+
+      // Transformar los datos para que coincidan con la interfaz esperada
+      const transformedRequests = bookings.map((booking) => ({
+        id: booking.id,
+        client_id: booking.client_id,
+        service_id: booking.service_id,
+        date: booking.date,
+        start_hour: booking.start_time ? parseInt(booking.start_time.split(':')[0]) : 9,
+        duration_hours: booking.duration_hours || 1,
+        client_address: booking.client_address || 'Dirección no especificada',
+        notes: booking.notes,
+        status: booking.status,
+        total_price: booking.total_price,
+        created_at: booking.created_at,
+        expires_at: booking.created_at, // Usar created_at como referencia
+        client_profile: clientsMap.get(booking.client_id) || { full_name: 'Cliente desconocido', phone: '' },
+        services: servicesMap.get(booking.service_id) || { name: 'Servicio desconocido', price_per_hour: 0 },
+        booking_blocks: [{
+          start_time: booking.start_time || '09:00',
+          end_time: booking.end_time || '10:00'
+        }],
+        existing_response: null // No hay respuestas separadas en este modelo simplificado
+      }));
+
+      setRequests(transformedRequests);
+    } catch (error) {
+      console.error('Error fetching booking requests:', error);
+      toast.error('Error al cargar las solicitudes de reserva');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const respondToRequest = async (requestId: string, responseType: 'accept' | 'reject', message?: string) => {
+    try {
+      setResponding(requestId);
+
+      if (responseType === 'accept') {
+        // Si acepta, actualizar el estado de la reserva a confirmada
+        const { error: updateError } = await supabase
+          .from('bookings')
+          .update({
+            status: 'confirmed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', requestId)
+          .eq('gardener_id', user?.id);
+
+        if (updateError) throw updateError;
+
+        toast.success('¡Solicitud aceptada! La reserva ha sido confirmada.');
+      } else {
+        // Si rechaza, actualizar el estado de la reserva a rechazada
+        const { error: updateError } = await supabase
+          .from('bookings')
+          .update({
+            status: 'rejected',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', requestId)
+          .eq('gardener_id', user?.id);
+
+        if (updateError) throw updateError;
+
+        toast.success('Solicitud rechazada.');
+      }
+
+      // Recargar solicitudes
+      fetchBookingRequests();
+    } catch (error) {
+      console.error('Error responding to request:', error);
+      toast.error('Error al responder a la solicitud');
+    } finally {
+      setResponding(null);
+    }
+  };
+
+  const formatTimeBlocks = (blocks: { start_time: string; end_time: string }[]) => {
+    if (!blocks || blocks.length === 0) return '';
+    
+    const sortedBlocks = blocks.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    const startTime = sortedBlocks[0].start_time;
+    const endTime = sortedBlocks[sortedBlocks.length - 1].end_time;
+    
+    return `${startTime} - ${endTime}`;
+  };
+
+  const getBookingStatus = (createdAt: string) => {
+    const created = parseISO(createdAt);
+    const now = new Date();
+    const diffInHours = Math.ceil((now.getTime() - created.getTime()) / (1000 * 60 * 60));
+    
+    if (diffInHours < 1) return 'Recién recibida';
+    if (diffInHours === 1) return 'Hace 1 hora';
+    if (diffInHours < 24) return `Hace ${diffInHours} horas`;
+    const diffInDays = Math.ceil(diffInHours / 24);
+    if (diffInDays === 1) return 'Hace 1 día';
+    return `Hace ${diffInDays} días`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Solicitudes de Reserva</h1>
+            <p className="text-gray-600 mt-2">Gestiona las solicitudes de tus clientes</p>
+          </div>
+          <div className="bg-green-100 px-4 py-2 rounded-lg">
+            <span className="text-green-800 font-semibold">{requests.length} solicitudes pendientes</span>
+          </div>
+        </div>
+
+        {requests.length === 0 ? (
+          <div className="text-center py-12">
+            <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 text-lg">No tienes solicitudes pendientes</p>
+            <p className="text-gray-500">Las nuevas solicitudes aparecerán aquí automáticamente</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {requests.map((request) => (
+              <div key={request.id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Calendar className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-gray-900">
+                        {request.services?.name}
+                      </h3>
+                      <p className="text-gray-600 flex items-center">
+                        <User className="w-4 h-4 mr-1" />
+                        {request.client_profile?.full_name}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-green-600">
+                      €{request.total_price}
+                    </div>
+                    <div className="text-sm text-orange-600 flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      {getBookingStatus(request.created_at)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="flex items-center text-gray-600">
+                    <Calendar className="w-4 h-4 mr-2" />
+                    {format(parseISO(request.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <Clock className="w-4 h-4 mr-2" />
+                    {formatTimeBlocks(request.booking_blocks || [])} ({request.booking_blocks?.length || 0}h)
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <MapPin className="w-4 h-4 mr-2" />
+                    {request.client_address}
+                  </div>
+                </div>
+
+                {request.notes && (
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600">
+                      <strong>Notas del cliente:</strong> {request.notes}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-500">
+                    Solicitud recibida: {format(parseISO(request.created_at), 'dd/MM/yyyy HH:mm', { locale: es })}
+                  </div>
+                  
+                  {request.status === 'confirmed' ? (
+                    <div className="flex items-center space-x-2">
+                      <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                        ✓ Aceptada
+                      </span>
+                    </div>
+                  ) : request.status === 'rejected' ? (
+                    <div className="flex items-center space-x-2">
+                      <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+                        ✗ Rechazada
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => respondToRequest(request.id, 'reject')}
+                        disabled={responding === request.id}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Rechazar
+                      </button>
+                      <button
+                        onClick={() => respondToRequest(request.id, 'accept')}
+                        disabled={responding === request.id}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Aceptar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default BookingRequestsManager;

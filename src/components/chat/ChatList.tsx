@@ -19,6 +19,24 @@ interface ChatItem {
   unread_count?: number;
 }
 
+interface BookingWithProfiles {
+  id: string;
+  client_id: string;
+  gardener_id: string;
+  date: string;
+  start_time: string;
+  status: string;
+  services?: {
+    name: string;
+  } | null;
+  client_profile?: {
+    full_name: string;
+  } | null;
+  gardener_profile?: {
+    full_name: string;
+  } | null;
+}
+
 const ChatList: React.FC = () => {
   const { user, profile } = useAuth();
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -54,7 +72,7 @@ const ChatList: React.FC = () => {
         `)
         .or(`client_id.eq.${user.id},gardener_id.eq.${user.id}`)
         .in('status', ['confirmed', 'in_progress', 'completed'])
-        .order('date', { ascending: false });
+        .order('date', { ascending: false }) as { data: BookingWithProfiles[] | null; error: any };
 
       if (bookingsError) throw bookingsError;
 
@@ -97,8 +115,8 @@ const ChatList: React.FC = () => {
             date: booking.date,
             start_time: booking.start_time,
             status: booking.status,
-            last_message: lastMessage?.message,
-            last_message_time: lastMessage?.created_at,
+            last_message: lastMessage?.message || undefined,
+            last_message_time: lastMessage?.created_at || undefined,
             unread_count: unreadCount || 0
           };
         })

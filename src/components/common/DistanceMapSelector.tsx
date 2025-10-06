@@ -278,7 +278,7 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
         <p className="text-sm text-red-600">{error}</p>
       )}
 
-      <style jsx>{`
+      <style>{`
         .slider::-webkit-slider-thumb {
           appearance: none;
           height: 20px;

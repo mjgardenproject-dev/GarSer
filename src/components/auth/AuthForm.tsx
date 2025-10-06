@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
+import { Eye, EyeOff, User, Briefcase, Check, Mail, Lock, Leaf } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Leaf, Mail, Lock, User, UserCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
+import EmailConfirmationModal from './EmailConfirmationModal';
 
 const schema = yup.object({
   email: yup.string().email('Email inválido').required('Email requerido'),
@@ -12,19 +13,34 @@ const schema = yup.object({
   role: yup.string().oneOf(['client', 'gardener']).required('Rol requerido')
 });
 
-type FormData = yup.InferType<typeof schema>;
+type FormData = {
+  email: string;
+  password: string;
+  role: 'client' | 'gardener';
+};
 
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<'client' | 'gardener'>('client');
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const { signIn, signUp } = useAuth();
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
     defaultValues: {
+      email: '',
+      password: '',
       role: 'client'
     }
   });
+
+  // Sincronizar el campo del formulario con selectedRole
+  useEffect(() => {
+    setValue('role', selectedRole);
+  }, [selectedRole, setValue]);
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
@@ -33,11 +49,18 @@ const AuthForm = () => {
         await signIn(data.email, data.password);
         toast.success('¡Bienvenido de vuelta!');
       } else {
-        await signUp(data.email, data.password, data.role);
-        toast.success('¡Cuenta creada exitosamente!');
+        // Usar selectedRole en lugar de data.role para asegurar que se use el rol seleccionado
+        const roleToUse = selectedRole;
+        console.log('🔄 Iniciando registro con:', { email: data.email, role: roleToUse, selectedRole });
+        await signUp(data.email, data.password, roleToUse);
+        console.log('✅ Registro exitoso, mostrando modal');
+        setRegisteredEmail(data.email);
+        setShowEmailModal(true);
+        reset(); // Limpiar el formulario después del registro exitoso
       }
     } catch (error: any) {
-      toast.error(error.message || 'Error en la autenticación');
+      console.error('❌ Error en registro:', error);
+      toast.error(error.message || 'Ha ocurrido un error');
     } finally {
       setLoading(false);
     }
@@ -99,38 +122,92 @@ const AuthForm = () => {
 
           {!isLogin && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tipo de cuenta
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                ¿Qué tipo de cuenta necesitas?
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="relative">
-                  <input
-                    {...register('role')}
-                    type="radio"
-                    value="client"
-                    className="sr-only"
-                  />
-                  <div className="flex items-center p-3 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-green-300 peer-checked:border-green-500 peer-checked:bg-green-50">
-                    <User className="w-5 h-5 text-gray-600 mr-2" />
-                    <span className="text-sm font-medium">Cliente</span>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Botón Cliente */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedRole('client')}
+                  className={`relative p-4 border-2 rounded-xl transition-all duration-200 ${
+                    selectedRole === 'client'
+                      ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
+                      : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      selectedRole === 'client' ? 'bg-green-500' : 'bg-gray-200'
+                    }`}>
+                      <User className={`w-6 h-6 ${
+                        selectedRole === 'client' ? 'text-white' : 'text-gray-600'
+                      }`} />
+                    </div>
+                    <div className="text-center">
+                      <h3 className={`font-semibold ${
+                        selectedRole === 'client' ? 'text-green-700' : 'text-gray-700'
+                      }`}>
+                        Cliente
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Busco servicios de jardinería
+                      </p>
+                    </div>
                   </div>
-                </label>
-                <label className="relative">
-                  <input
-                    {...register('role')}
-                    type="radio"
-                    value="gardener"
-                    className="sr-only"
-                  />
-                  <div className="flex items-center p-3 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-green-300 peer-checked:border-green-500 peer-checked:bg-green-50">
-                    <UserCheck className="w-5 h-5 text-gray-600 mr-2" />
-                    <span className="text-sm font-medium">Jardinero</span>
+                  {selectedRole === 'client' && (
+                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                  )}
+                </button>
+
+                {/* Botón Jardinero */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedRole('gardener')}
+                  className={`relative p-4 border-2 rounded-xl transition-all duration-200 ${
+                    selectedRole === 'gardener'
+                      ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
+                      : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex flex-col items-center space-y-2">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      selectedRole === 'gardener' ? 'bg-green-500' : 'bg-gray-200'
+                    }`}>
+                      <Briefcase className={`w-6 h-6 ${
+                        selectedRole === 'gardener' ? 'text-white' : 'text-gray-600'
+                      }`} />
+                    </div>
+                    <div className="text-center">
+                      <h3 className={`font-semibold ${
+                        selectedRole === 'gardener' ? 'text-green-700' : 'text-gray-700'
+                      }`}>
+                        Jardinero
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Ofrezco servicios de jardinería
+                      </p>
+                    </div>
                   </div>
-                </label>
+                  {selectedRole === 'gardener' && (
+                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                  )}
+                </button>
               </div>
-              {errors.role && (
-                <p className="mt-1 text-sm text-red-600">{errors.role.message}</p>
-              )}
+              
+              {/* Indicador visual del rol seleccionado */}
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-700 text-center">
+                  <strong>Rol seleccionado:</strong> {selectedRole === 'client' ? 'Cliente' : 'Jardinero'}
+                  <span className="block text-xs text-green-600 mt-1">
+                    Este rol será permanente y no podrá cambiarse después del registro
+                  </span>
+                </p>
+              </div>
             </div>
           )}
 
@@ -152,6 +229,16 @@ const AuthForm = () => {
           </button>
         </div>
       </div>
+
+      {/* Modal de confirmación de email */}
+      <EmailConfirmationModal
+        isOpen={showEmailModal}
+        onClose={() => {
+          setShowEmailModal(false);
+          setIsLogin(true); // Cambiar a modo login después de cerrar el modal
+        }}
+        email={registeredEmail}
+      />
     </div>
   );
 };

@@ -14,6 +14,7 @@ export interface RoleLogEntry {
 class RoleLogger {
   private static instance: RoleLogger;
   private logs: RoleLogEntry[] = [];
+  private databaseAvailable: boolean | null = null;
 
   private constructor() {}
 
@@ -22,6 +23,27 @@ class RoleLogger {
       RoleLogger.instance = new RoleLogger();
     }
     return RoleLogger.instance;
+  }
+
+  private async checkDatabaseAvailability(): Promise<boolean> {
+    if (this.databaseAvailable !== null) {
+      return this.databaseAvailable;
+    }
+
+    try {
+      // Intentar hacer una consulta simple para verificar si la tabla existe
+      const { error } = await supabase
+        .from('role_logs')
+        .select('id')
+        .limit(1);
+
+      this.databaseAvailable = !error;
+      return this.databaseAvailable;
+    } catch (error) {
+      console.warn('Tabla role_logs no disponible, usando solo logs locales');
+      this.databaseAvailable = false;
+      return false;
+    }
   }
 
   async log(entry: Omit<RoleLogEntry, 'id' | 'created_at'>): Promise<void> {
@@ -51,10 +73,15 @@ class RoleLogger {
     console.groupEnd();
 
     // Intentar guardar en base de datos (opcional, si existe tabla de logs)
-    try {
-      await this.saveToDatabase(logEntry);
-    } catch (error) {
-      console.warn('No se pudo guardar el log en la base de datos:', error);
+    const dbAvailable = await this.checkDatabaseAvailability();
+    if (dbAvailable) {
+      try {
+        await this.saveToDatabase(logEntry);
+      } catch (error) {
+        console.warn('No se pudo guardar el log en la base de datos:', error);
+        // Marcar la base de datos como no disponible si hay errores persistentes
+        this.databaseAvailable = false;
+      }
     }
   }
 
@@ -142,6 +169,13 @@ class RoleLogger {
   }
 
   async getRecentActivity(limit: number = 50): Promise<RoleLogEntry[]> {
+    const dbAvailable = await this.checkDatabaseAvailability();
+    
+    if (!dbAvailable) {
+      console.info('Usando logs locales (base de datos no disponible)');
+      return this.logs.slice(-limit);
+    }
+
     try {
       const { data, error } = await supabase
         .from('role_logs')
@@ -153,6 +187,7 @@ class RoleLogger {
       return data || [];
     } catch (error) {
       console.warn('No se pudieron obtener los logs de la base de datos, usando logs locales');
+      this.databaseAvailable = false;
       return this.logs.slice(-limit);
     }
   }

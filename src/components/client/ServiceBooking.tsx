@@ -6,32 +6,34 @@ import * as yup from 'yup';
 import { format, addDays, startOfDay, addHours, parse, parseISO, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Calendar, Clock, MapPin, DollarSign, Scissors, SprayCan as Spray, TreePine, CheckCircle } from 'lucide-react';
-import { Service, PriceCalculation } from '../../types';
+import { Service, PriceCalculation, TimeBlock } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import AddressAutocomplete from '../common/AddressAutocomplete';
+import TimeBlockSelector from '../booking/TimeBlockSelector';
 
 const schema = yup.object({
   service_id: yup.string().required('Servicio requerido'),
-  date: yup.string().required('Fecha requerida'),
-  start_time: yup.string().required('Hora requerida'),
-  duration_hours: yup.number().min(1, 'Mínimo 1 hora').max(8, 'Máximo 8 horas').required('Duración requerida'),
   client_address: yup.string().required('Dirección requerida'),
-  notes: yup.string()
+  notes: yup.string().optional()
 });
 
-type FormData = yup.InferType<typeof schema>;
+type FormData = {
+  service_id: string;
+  client_address: string;
+  notes?: string;
+};
 
 const ServiceBooking = () => {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [services, setServices] = useState<Service[]>([]);
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [availableDates, setAvailableDates] = useState<{value: string, label: string}[]>([]);
-  const [priceCalculation, setPriceCalculation] = useState<PriceCalculation | null>(null);
+  const [selectedBlocks, setSelectedBlocks] = useState<TimeBlock[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [totalPrice, setTotalPrice] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState('');
   
@@ -42,33 +44,41 @@ const ServiceBooking = () => {
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
     defaultValues: {
-      service_id: preselectedServiceId || ''
+      service_id: preselectedServiceId || '',
+      client_address: '',
+      notes: ''
     }
   });
 
   const watchedValues = watch();
 
+  // Efectos para cargar datos
   useEffect(() => {
     fetchServices();
   }, []);
 
   useEffect(() => {
-    if (watchedValues.service_id && selectedAddress) {
-      fetchAvailableDates();
+    if (preselectedServiceId) {
+      setValue('service_id', preselectedServiceId);
     }
-  }, [watchedValues.service_id, selectedAddress]);
+  }, [preselectedServiceId, setValue]);
 
+  // Calcular precio total cuando cambian los bloques seleccionados
   useEffect(() => {
-    if (watchedValues.service_id && watchedValues.date) {
-      fetchAvailableSlots();
+    if (selectedBlocks.length > 0 && watchedValues.service_id) {
+      const service = services.find(s => s.id === watchedValues.service_id);
+      if (service) {
+        const basePrice = service.base_price;
+        const travelFee = 15; // Precio fijo de desplazamiento
+        const hourlyRate = 25; // Precio por hora
+        const totalHours = selectedBlocks.length;
+        const total = basePrice + travelFee + (hourlyRate * totalHours);
+        setTotalPrice(total);
+      }
+    } else {
+      setTotalPrice(0);
     }
-  }, [watchedValues.service_id, watchedValues.date]);
-
-  useEffect(() => {
-    if (watchedValues.service_id && watchedValues.duration_hours) {
-      calculatePrice();
-    }
-  }, [watchedValues.service_id, watchedValues.duration_hours]);
+  }, [selectedBlocks, watchedValues.service_id, services]);
 
   const fetchServices = async () => {
     try {
@@ -84,374 +94,139 @@ const ServiceBooking = () => {
     }
   };
 
-  const fetchAvailableDates = async () => {
-    try {
-      console.log('Fetching available dates for service:', watchedValues.service_id);
-      console.log('Selected address for filtering:', selectedAddress);
-      
-      // Primero obtener jardineros que ofrecen el servicio seleccionado
-      const { data: gardeners, error: gardenersError } = await supabase
-        .from('gardener_profiles')
-        .select('user_id, address, max_distance')
-        .contains('services', [watchedValues.service_id]);
-
-      if (gardenersError) throw gardenersError;
-      
-      console.log('Gardeners offering service:', gardeners);
-
-      if (!gardeners || gardeners.length === 0) {
-        console.log('No gardeners found for this service');
-        setAvailableDates([]);
-        return;
-      }
-
-      let filteredGardeners = gardeners;
-
-      // Si tenemos dirección del cliente, filtrar por rango de trabajo del jardinero
-      if (selectedAddress) {
-        try {
-          console.log('Filtering gardeners by client within their work range for address:', selectedAddress);
-          // Obtener coordenadas del cliente
-          const clientCoords = await getCoordinatesFromAddress(selectedAddress);
-          
-          if (clientCoords) {
-            console.log('Client location:', clientCoords);
-            
-            // Filtrar jardineros que pueden atender al cliente (cliente dentro del rango del jardinero)
-            const gardenersInRange = [];
-            
-            for (const gardener of gardeners) {
-              if (!gardener.address) {
-                console.log(`Gardener ${gardener.user_id} has no address, excluding from results`);
-                continue; // Excluir si no tiene dirección definida
-              }
-              
-              const gardenerCoords = await getCoordinatesFromAddress(gardener.address);
-              if (!gardenerCoords) {
-                console.log(`Could not get coordinates for gardener ${gardener.user_id}`);
-                continue;
-              }
-              
-              const distance = calculateDistance(
-                clientCoords.lat,
-                clientCoords.lng,
-                gardenerCoords.lat,
-                gardenerCoords.lng
-              );
-              
-              const maxRange = gardener.max_distance || 25; // Default 25km si no está especificado
-              
-              console.log(`Distance from gardener ${gardener.user_id} to client: ${distance}km (gardener's max range: ${maxRange}km)`);
-              
-              if (distance <= maxRange) {
-                gardenersInRange.push(gardener);
-                console.log(`✅ Gardener ${gardener.user_id} can serve client: ${distance.toFixed(2)}km <= ${maxRange}km`);
-              } else {
-                console.log(`❌ Gardener ${gardener.user_id} cannot serve client: ${distance.toFixed(2)}km > ${maxRange}km`);
-              }
-            }
-            
-            filteredGardeners = gardenersInRange;
-            console.log('Gardeners that can serve client:', filteredGardeners);
-          }
-        } catch (geocodeError) {
-          console.warn('Error en geocodificación para fechas, mostrando todos los jardineros:', geocodeError);
-          // Si hay error en geocodificación, mostrar todos los jardineros disponibles
-        }
-      }
-
-      if (filteredGardeners.length === 0) {
-        console.log('No gardeners found that can serve this location');
-        setAvailableDates([]);
-        return;
-      }
-
-      const gardenerIds = filteredGardeners.map(g => g.user_id);
-
-      // Obtener fechas con disponibilidad de estos jardineros filtrados
-      const { data, error } = await supabase
-        .from('availability')
-        .select('date, gardener_id')
-        .eq('is_available', true)
-        .in('gardener_id', gardenerIds)
-        .gte('date', format(addDays(startOfDay(new Date()), 1), 'yyyy-MM-dd'))
-        .lte('date', format(addDays(startOfDay(new Date()), 14), 'yyyy-MM-dd'));
-
-      if (error) throw error;
-
-      console.log('Available dates data:', data);
-
-      // Obtener fechas únicas y ordenarlas
-      const uniqueDates = [...new Set(data?.map(item => item.date) || [])].sort();
-      
-      console.log('Unique dates:', uniqueDates);
-      
-      // Formatear las fechas para el selector
-      const formattedDates = uniqueDates.map(dateStr => ({
-        value: dateStr,
-        label: format(parseISO(dateStr), 'EEEE, d MMMM', { locale: es })
-      }));
-
-      setAvailableDates(formattedDates);
-    } catch (error) {
-      console.error('Error fetching available dates:', error);
-      setAvailableDates([]);
-    }
+  // Función para manejar la selección de bloques horarios
+  const handleBlocksChange = (blocks: TimeBlock[]) => {
+    setSelectedBlocks(blocks);
   };
 
-  const fetchAvailableSlots = async () => {
-    try {
-      console.log('Fetching available slots for date:', watchedValues.date, 'service:', watchedValues.service_id);
-      
-      // Primero obtener jardineros que ofrecen el servicio seleccionado
-      const { data: gardeners, error: gardenersError } = await supabase
-        .from('gardener_profiles')
-        .select('user_id, address, max_distance')
-        .contains('services', [watchedValues.service_id]);
-
-      if (gardenersError) throw gardenersError;
-      
-      console.log('Gardeners for slots:', gardeners);
-
-      if (!gardeners || gardeners.length === 0) {
-        console.log('No gardeners found for this service');
-        setAvailableSlots([]);
-        return;
-      }
-
-      let filteredGardeners = gardeners;
-
-      // Si tenemos dirección del cliente, filtrar por rango de trabajo del jardinero
-      if (selectedAddress) {
-        try {
-          console.log('Filtering slots by client within gardener work range for address:', selectedAddress);
-          // Obtener coordenadas del cliente
-          const clientCoords = await getCoordinatesFromAddress(selectedAddress);
-          
-          if (clientCoords) {
-            console.log('Client location for slots:', clientCoords);
-            
-            // Filtrar jardineros que pueden atender al cliente (cliente dentro del rango del jardinero)
-            const gardenersInRange = [];
-            
-            for (const gardener of gardeners) {
-              if (!gardener.address) {
-                console.log(`Gardener ${gardener.user_id} has no address, excluding from slots`);
-                continue; // Excluir si no tiene dirección definida
-              }
-              
-              const gardenerCoords = await getCoordinatesFromAddress(gardener.address);
-              if (!gardenerCoords) {
-                console.log(`Could not get coordinates for gardener ${gardener.user_id}`);
-                continue;
-              }
-              
-              const distance = calculateDistance(
-                clientCoords.lat,
-                clientCoords.lng,
-                gardenerCoords.lat,
-                gardenerCoords.lng
-              );
-              
-              const maxRange = gardener.max_distance || 25; // Default 25km si no está especificado
-              
-              console.log(`Distance from gardener ${gardener.user_id} to client: ${distance}km (gardener's max range: ${maxRange}km)`);
-              
-              if (distance <= maxRange) {
-                gardenersInRange.push(gardener);
-                console.log(`✅ Gardener ${gardener.user_id} can serve client for slots: ${distance.toFixed(2)}km <= ${maxRange}km`);
-              } else {
-                console.log(`❌ Gardener ${gardener.user_id} cannot serve client for slots: ${distance.toFixed(2)}km > ${maxRange}km`);
-              }
-            }
-            
-            filteredGardeners = gardenersInRange;
-            console.log('Gardeners that can serve client for slots:', filteredGardeners);
-          }
-        } catch (geocodeError) {
-          console.warn('Error en geocodificación para horarios, mostrando todos los horarios:', geocodeError);
-          // Si hay error en geocodificación, mostrar todos los horarios disponibles
-        }
-      }
-
-      if (filteredGardeners.length === 0) {
-        console.log('No gardeners found that can serve this location for slots');
-        setAvailableSlots([]);
-        return;
-      }
-
-      const gardenerIds = filteredGardeners.map(g => g.user_id);
-
-      // Obtener disponibilidad para la fecha seleccionada de jardineros filtrados
-      const { data, error } = await supabase
-        .from('availability')
-        .select('*')
-        .eq('date', watchedValues.date)
-        .eq('is_available', true)
-        .in('gardener_id', gardenerIds);
-
-      if (error) throw error;
-
-      console.log('Available slots data:', data);
-
-      if (!data || data.length === 0) {
-        console.log('No availability found for this date from gardeners in range');
-        setAvailableSlots([]);
-        return;
-      }
-
-      console.log('Filtered availability data:', data);
-
-      // Extraer horarios únicos y ordenarlos
-      const slots = data.map(slot => slot.start_time);
-      const uniqueSlots = [...new Set(slots)].sort();
-      
-      console.log('Available time slots:', uniqueSlots);
-      setAvailableSlots(uniqueSlots);
-    } catch (error) {
-      console.error('Error fetching available slots:', error);
-      setAvailableSlots([]);
-    }
-  };
-
-  const calculatePrice = async () => {
-    try {
-      const service = services.find(s => s.id === watchedValues.service_id);
-      if (!service || !watchedValues.duration_hours) return;
-
-      const basePrice = service.base_price;
-      const travelFee = 15; // Precio fijo de desplazamiento
-      const hourlyRate = 25; // Precio por hora
-      const totalHours = watchedValues.duration_hours;
-      const totalPrice = basePrice + travelFee + (hourlyRate * totalHours);
-
-      setPriceCalculation({
-        basePrice,
-        travelFee,
-        hourlyRate,
-        totalHours,
-        totalPrice
-      });
-    } catch (error) {
-      console.error('Error calculating price:', error);
-    }
+  // Función para manejar el cambio de fecha
+  const handleDateChange = (date: Date) => {
+    setSelectedDate(date);
+    setSelectedBlocks([]); // Limpiar bloques seleccionados al cambiar fecha
   };
 
   const onSubmit = async (data: FormData) => {
-    if (!user || !priceCalculation) return;
+    if (!user || selectedBlocks.length === 0) {
+      toast.error('Debes seleccionar al menos un bloque horario');
+      return;
+    }
 
     setLoading(true);
     try {
-      // Usar la nueva lógica de selección inteligente de jardineros
-      console.log('🚀 Iniciando proceso de reserva con selección inteligente');
+      console.log('🚀 Iniciando proceso de reserva con bloques horarios');
       
-      const assignedGardener = await selectBestGardener(data.service_id, data.client_address);
-      
-      console.log('✅ Jardinero asignado:', assignedGardener.profiles?.full_name);
+      // Obtener jardineros disponibles para el servicio y ubicación
+      const { data: gardeners, error: gardenersError } = await supabase
+        .from('gardener_profiles')
+        .select('user_id, address, max_distance, rating, total_reviews')
+        .contains('services', [data.service_id])
+        .eq('is_available', true);
 
-      // Crear la reserva
-      const { data: bookingData, error: bookingError } = await supabase
-        .from('bookings')
+      if (gardenersError) throw gardenersError;
+
+      if (!gardeners || gardeners.length === 0) {
+        throw new Error('No hay jardineros disponibles para este servicio');
+      }
+
+      // Filtrar jardineros por ubicación si hay dirección
+      let availableGardeners = gardeners;
+      if (selectedAddress) {
+        const clientCoords = await getCoordinatesFromAddress(selectedAddress);
+        if (clientCoords) {
+          const gardenersInRange = [];
+          for (const gardener of gardeners) {
+            if (!gardener.address) continue;
+            
+            const gardenerCoords = await getCoordinatesFromAddress(gardener.address);
+            if (!gardenerCoords) continue;
+            
+            const distance = calculateDistance(
+              clientCoords.lat,
+              clientCoords.lng,
+              gardenerCoords.lat,
+              gardenerCoords.lng
+            );
+            
+            const maxRange = gardener.max_distance || 25;
+            if (distance <= maxRange) {
+              gardenersInRange.push(gardener);
+            }
+          }
+          availableGardeners = gardenersInRange;
+        }
+      }
+
+      if (availableGardeners.length === 0) {
+        throw new Error('No hay jardineros disponibles en tu área');
+      }
+
+      // Crear solicitud de reserva que se enviará a todos los jardineros disponibles
+      const { data: bookingRequest, error: requestError } = await supabase
+        .from('booking_requests')
         .insert([
           {
             client_id: user.id,
-            gardener_id: assignedGardener.user_id,
             service_id: data.service_id,
-            date: data.date,
-            start_time: data.start_time,
-            duration_hours: data.duration_hours,
-            total_price: priceCalculation.totalPrice,
-            travel_fee: priceCalculation.travelFee,
-            hourly_rate: priceCalculation.hourlyRate,
+            date: format(selectedDate, 'yyyy-MM-dd'),
+            total_price: totalPrice,
             client_address: data.client_address,
             notes: data.notes,
-            status: 'pending'
+            status: 'pending',
+            expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 horas
           }
         ])
         .select()
         .single();
 
-      if (bookingError) throw bookingError;
+      if (requestError) throw requestError;
 
-      // Actualizar la disponibilidad del jardinero (marcar como no disponible)
-      const startTime = data.start_time;
-      
-      // Calcular endTime de forma más robusta
-      let endTime: string;
-      try {
-        const baseDate = parseISO('2025-01-01T00:00:00');
-        const startDateTime = parse(startTime, 'HH:mm', baseDate);
-        
-        if (isValid(startDateTime)) {
-          const endDateTime = addHours(startDateTime, data.duration_hours);
-          endTime = format(endDateTime, 'HH:mm');
-        } else {
-          // Fallback: calcular manualmente
-          const [hours, minutes] = startTime.split(':').map(Number);
-          const totalMinutes = hours * 60 + minutes + (data.duration_hours * 60);
-          const endHours = Math.floor(totalMinutes / 60) % 24;
-          const endMins = totalMinutes % 60;
-          endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-        }
-      } catch (error) {
-        console.error('Error calculating end time:', error);
-        // Fallback seguro
-        const [hours, minutes] = startTime.split(':').map(Number);
-        const totalMinutes = hours * 60 + minutes + (data.duration_hours * 60);
-        const endHours = Math.floor(totalMinutes / 60) % 24;
-        const endMins = totalMinutes % 60;
-        endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-      }
+      // Crear bloques de reserva para cada bloque seleccionado
+      const bookingBlocks = selectedBlocks.map(block => ({
+        booking_request_id: bookingRequest.id,
+        start_time: block.start_time,
+        end_time: block.end_time
+      }));
 
-      const { error: availabilityError } = await supabase
-        .from('availability')
-        .update({ is_available: false })
-        .eq('gardener_id', assignedGardener.user_id)
-        .eq('date', data.date)
-        .gte('start_time', startTime)
-        .lte('end_time', endTime);
+      const { error: blocksError } = await supabase
+        .from('booking_blocks')
+        .insert(bookingBlocks);
 
-      if (availabilityError) {
-        console.warn('Error actualizando disponibilidad:', availabilityError);
-      }
+      if (blocksError) throw blocksError;
 
-      // Crear mensaje inicial automático en el chat
-      const welcomeMessage = `¡Hola! He recibido tu solicitud para el servicio de ${services.find(s => s.id === data.service_id)?.name} el ${format(parseISO(data.date), 'dd/MM/yyyy', { locale: es })} a las ${startTime}. Revisaré tu solicitud y te confirmaré la disponibilidad pronto. ¡Gracias por elegirme!`;
+      // Crear respuestas para todos los jardineros disponibles
+      const responses = availableGardeners.map(gardener => ({
+        booking_request_id: bookingRequest.id,
+        gardener_id: gardener.user_id,
+        status: 'pending'
+      }));
 
-      const { error: chatError } = await supabase
-        .from('chat_messages')
-        .insert([
-          {
-            booking_id: bookingData.id,
-            sender_id: assignedGardener.user_id,
-            message: welcomeMessage
-          }
-        ]);
+      const { error: responsesError } = await supabase
+        .from('booking_responses')
+        .insert(responses);
 
-      if (chatError) {
-        console.warn('Error creando mensaje inicial:', chatError);
-      }
+      if (responsesError) throw responsesError;
 
-      // Mostrar información del jardinero asignado
       toast.success(
         <div className="text-left">
-          <div className="font-semibold mb-2">¡Reserva confirmada!</div>
+          <div className="font-semibold mb-2">¡Solicitud enviada!</div>
           <div className="text-sm space-y-1">
-            <div>🌿 <strong>Jardinero:</strong> {assignedGardener.profiles?.full_name}</div>
-            <div>⭐ <strong>Calificación:</strong> {assignedGardener.rating?.toFixed(1)}/5</div>
-            <div>📍 <strong>Distancia:</strong> {assignedGardener.distance?.toFixed(1)} km</div>
-            <div>💬 <strong>Chat disponible</strong> en tu panel de reservas</div>
+            <div>📅 <strong>Fecha:</strong> {format(selectedDate, 'dd/MM/yyyy', { locale: es })}</div>
+            <div>⏰ <strong>Bloques:</strong> {selectedBlocks.length} hora{selectedBlocks.length > 1 ? 's' : ''}</div>
+            <div>💰 <strong>Precio total:</strong> €{totalPrice}</div>
+            <div>👥 <strong>Enviado a:</strong> {availableGardeners.length} jardinero{availableGardeners.length > 1 ? 's' : ''}</div>
+            <div>⏱️ <strong>Respuesta en:</strong> máximo 24 horas</div>
           </div>
         </div>,
         { duration: 6000 }
       );
       
-      // Redirect to bookings page after successful booking
+      // Redirect to bookings page
       setTimeout(() => {
         navigate('/bookings');
       }, 3000);
     } catch (error: any) {
-      toast.error(error.message || 'Error al reservar el servicio');
+      console.error('Error creating booking request:', error);
+      toast.error(error.message || 'Error al enviar la solicitud de reserva');
     } finally {
       setLoading(false);
     }
@@ -778,118 +553,21 @@ const ServiceBooking = () => {
             )}
           </div>
 
-          {/* Selección de Fecha */}
+          {/* Selector de Bloques Horarios */}
           {selectedAddress && watchedValues.service_id ? (
-            availableDates.length > 0 ? (
-              <div>
-                <label className="block text-lg font-semibold text-gray-700 mb-3 sm:mb-4">
-                  <Calendar className="inline w-5 h-5 mr-2" />
-                  Fechas disponibles
-                </label>
-                <select
-                  {...register('date')}
-                  className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm sm:text-base"
-                >
-                  <option value="">Selecciona una fecha disponible</option>
-                  {availableDates.map((date) => (
-                    <option key={date.value} value={date.value}>
-                      {date.label}
-                    </option>
-                  ))}
-                </select>
-                {errors.date && (
-                  <p className="mt-2 text-sm text-red-600">{errors.date.message}</p>
-                )}
-              </div>
-            ) : (
-              <div className="p-3 sm:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-yellow-700 text-center text-sm sm:text-base">
-                  <Calendar className="inline w-5 h-5 mr-2" />
-                  No hay fechas disponibles para este servicio en los próximos 14 días. Intenta con otro servicio o contacta con nosotros.
-                </p>
-              </div>
-            )
+            <TimeBlockSelector
+              serviceId={watchedValues.service_id}
+              clientAddress={selectedAddress}
+              selectedDate={selectedDate}
+              selectedBlocks={selectedBlocks}
+              onDateChange={handleDateChange}
+              onBlocksChange={handleBlocksChange}
+            />
           ) : (
             <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg">
               <p className="text-gray-600 text-center text-sm sm:text-base">
                 <Calendar className="inline w-5 h-5 mr-2" />
-                {!selectedAddress ? 'Primero selecciona una dirección' : 'Selecciona un servicio'} para ver las fechas disponibles
-              </p>
-            </div>
-          )}
-
-          {/* Selección de Hora */}
-          {watchedValues.date ? (
-            availableSlots.length > 0 ? (
-              <div>
-                <label className="block text-lg font-semibold text-gray-700 mb-3 sm:mb-4">
-                  <Clock className="inline w-5 h-5 mr-2" />
-                  Horarios disponibles ({availableSlots.length} opciones)
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
-                  {availableSlots.map((slot) => (
-                    <label key={slot} className="relative cursor-pointer">
-                      <input
-                        {...register('start_time')}
-                        type="radio"
-                        value={slot}
-                        className="sr-only"
-                      />
-                      <div className="p-2 sm:p-3 text-center border-2 border-gray-200 rounded-lg hover:border-green-300 transition-colors peer-checked:border-green-500 peer-checked:bg-green-50 text-sm sm:text-base">
-                        {slot}
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                {errors.start_time && (
-                  <p className="mt-2 text-sm text-red-600">{errors.start_time.message}</p>
-                )}
-                <p className="mt-2 text-xs sm:text-sm text-gray-500">
-                  ✨ Horarios filtrados por jardineros disponibles en tu zona
-                </p>
-              </div>
-            ) : (
-              <div className="p-3 sm:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-yellow-700 text-center text-sm sm:text-base">
-                  <Clock className="inline w-5 h-5 mr-2" />
-                  No hay jardineros disponibles para la fecha seleccionada en tu zona. Prueba con otra fecha.
-                </p>
-              </div>
-            )
-          ) : selectedAddress && watchedValues.service_id && availableDates.length > 0 ? (
-            <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <p className="text-gray-600 text-center text-sm sm:text-base">
-                <Clock className="inline w-5 h-5 mr-2" />
-                Selecciona una fecha para ver los horarios disponibles
-              </p>
-            </div>
-          ) : null}
-
-          {/* Duración */}
-          {watchedValues.start_time ? (
-            <div>
-              <label className="block text-lg font-semibold text-gray-700 mb-3 sm:mb-4">
-                Duración del servicio
-              </label>
-              <select
-                {...register('duration_hours', { valueAsNumber: true })}
-                className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm sm:text-base"
-              >
-                <option value="">Selecciona duración</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((hours) => (
-                  <option key={hours} value={hours}>
-                    {hours} {hours === 1 ? 'hora' : 'horas'}
-                  </option>
-                ))}
-              </select>
-              {errors.duration_hours && (
-                <p className="mt-2 text-sm text-red-600">{errors.duration_hours.message}</p>
-              )}
-            </div>
-          ) : watchedValues.date && (
-            <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <p className="text-gray-600 text-center text-sm sm:text-base">
-                Selecciona un horario para continuar con la duración del servicio
+                {!selectedAddress ? 'Primero selecciona una dirección' : 'Selecciona un servicio'} para ver las fechas y horarios disponibles
               </p>
             </div>
           )}
@@ -912,30 +590,30 @@ const ServiceBooking = () => {
             </div>
           )}
 
-          {/* Cálculo de Precio */}
-          {priceCalculation && (
-            <div className="bg-green-50 border border-green-200 rounded-lg sm:rounded-xl p-4 sm:p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
-                <DollarSign className="w-5 h-5 mr-2" />
-                Resumen de Precios
+          {/* Resumen de Precio */}
+          {totalPrice > 0 && selectedBlocks.length > 0 && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 sm:p-6">
+              <h3 className="text-lg font-semibold text-green-800 mb-3 sm:mb-4">
+                💰 Resumen del Precio
               </h3>
-              <div className="space-y-2 text-xs sm:text-sm">
+              <div className="space-y-2 text-sm sm:text-base">
                 <div className="flex justify-between">
-                  <span>Precio base del servicio:</span>
-                  <span>€{priceCalculation.basePrice}</span>
+                  <span className="text-gray-600">Servicio:</span>
+                  <span className="font-medium">{services.find(s => s.id === watchedValues.service_id)?.name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Tarifa de desplazamiento:</span>
-                  <span>€{priceCalculation.travelFee}</span>
+                  <span className="text-gray-600">Precio por hora:</span>
+                  <span className="font-medium">€{services.find(s => s.id === watchedValues.service_id)?.price_per_hour}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="break-words">Horas de trabajo ({priceCalculation.totalHours}h × €{priceCalculation.hourlyRate}):</span>
-                  <span className="ml-2">€{priceCalculation.hourlyRate * priceCalculation.totalHours}</span>
+                  <span className="text-gray-600">Bloques seleccionados:</span>
+                  <span className="font-medium">{selectedBlocks.length} {selectedBlocks.length === 1 ? 'hora' : 'horas'}</span>
                 </div>
-                <hr className="my-2" />
-                <div className="flex justify-between text-base sm:text-lg font-bold">
-                  <span>Total:</span>
-                  <span>€{priceCalculation.totalPrice}</span>
+                <div className="border-t border-green-300 pt-2 mt-3">
+                  <div className="flex justify-between text-lg font-bold text-green-800">
+                    <span>Total:</span>
+                    <span>€{totalPrice}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -943,7 +621,7 @@ const ServiceBooking = () => {
 
           <button
             type="submit"
-            disabled={loading || !priceCalculation}
+            disabled={loading || selectedBlocks.length === 0 || !watchedValues.service_id || !selectedAddress}
             className="w-full bg-green-600 text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
           >
             {loading ? 'Procesando reserva...' : 'Reservar Servicio'}

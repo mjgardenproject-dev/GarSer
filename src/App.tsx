@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AuthForm from './components/auth/AuthForm';
+import AdminRoute from './components/auth/AdminRoute';
+import DevelopmentRoute from './components/auth/DevelopmentRoute';
 import Navbar from './components/layout/Navbar';
 import ServiceCatalog from './components/client/ServiceCatalog';
 import ServiceDetail from './components/client/ServiceDetail';
@@ -19,8 +21,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-green-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Cargando...</p>
+        </div>
       </div>
     );
   }
@@ -31,10 +36,25 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const AppContent = () => {
   const { user, profile, loading } = useAuth();
 
+  // Log para debugging
+  React.useEffect(() => {
+    if (user && profile) {
+      console.log('🔄 App: Usuario autenticado:', {
+        userId: user.id,
+        email: user.email,
+        role: profile.role,
+        fullName: profile.full_name
+      });
+    }
+  }, [user, profile]);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-green-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Inicializando aplicación...</p>
+        </div>
       </div>
     );
   }
@@ -51,7 +71,11 @@ const AppContent = () => {
           path="/dashboard" 
           element={
             <ProtectedRoute>
-              {profile?.role === 'gardener' ? <GardenerDashboard /> : <ServiceCatalog />}
+              {(() => {
+                const component = profile?.role === 'gardener' ? <GardenerDashboard /> : <ServiceCatalog />;
+                console.log('🏠 Dashboard: Mostrando componente para rol:', profile?.role);
+                return component;
+              })()}
             </ProtectedRoute>
           } 
         />
@@ -90,27 +114,27 @@ const AppContent = () => {
         <Route 
           path="/debug-maps" 
           element={
-            <ProtectedRoute>
+            <DevelopmentRoute>
               <div className="p-8">
                 <GoogleMapsDebug />
               </div>
-            </ProtectedRoute>
+            </DevelopmentRoute>
           } 
         />
         <Route 
           path="/debug-roles" 
           element={
-            <ProtectedRoute>
+            <DevelopmentRoute>
               <RoleDebug />
-            </ProtectedRoute>
+            </DevelopmentRoute>
           } 
         />
         <Route 
           path="/role-monitor" 
           element={
-            <ProtectedRoute>
+            <AdminRoute allowInDevelopment={true}>
               <RoleMonitor />
-            </ProtectedRoute>
+            </AdminRoute>
           } 
         />
         <Route path="/" element={<Navigate to="/dashboard" />} />

@@ -55,7 +55,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     }
   }, []);
 
-  // Función para buscar direcciones usando la nueva API
+  // Función para buscar direcciones usando la API legacy como principal
   const searchAddresses = async (input: string) => {
     if (!isGoogleMapsLoaded || input.length < 3) {
       setSuggestions([]);
@@ -67,38 +67,8 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     setLoading(true);
 
     try {
-      // Usar la nueva API AutocompleteSuggestion si está disponible
-      if (window.google.maps.places.AutocompleteSuggestion) {
-        const request = {
-          input,
-          locationRestriction: { country: 'es' },
-          includedPrimaryTypes: ['address']
-        };
-
-        const { suggestions } = await window.google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
-        
-        setLoading(false);
-        
-        if (suggestions && suggestions.length > 0) {
-          // Convertir el formato de la nueva API al formato esperado
-          const formattedSuggestions = suggestions.map((suggestion: any) => ({
-            place_id: suggestion.placePrediction?.placeId || suggestion.placeId,
-            description: suggestion.placePrediction?.text?.text || suggestion.text,
-            structured_formatting: {
-              main_text: suggestion.placePrediction?.structuredFormat?.mainText?.text || suggestion.mainText || suggestion.text,
-              secondary_text: suggestion.placePrediction?.structuredFormat?.secondaryText?.text || suggestion.secondaryText || ''
-            }
-          }));
-          
-          setSuggestions(formattedSuggestions);
-          setIsOpen(formattedSuggestions.length > 0);
-          console.log('Autocomplete suggestions received:', formattedSuggestions.length);
-        } else {
-          setSuggestions([]);
-          setIsOpen(false);
-        }
-      } else {
-        // Fallback a la API legacy si la nueva no está disponible
+      // Usar la API legacy como principal para mayor estabilidad
+      if (window.google?.maps?.places?.AutocompleteService) {
         const service = new window.google.maps.places.AutocompleteService();
         const request = {
           input,
@@ -112,18 +82,55 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
             setSuggestions(predictions);
             setIsOpen(predictions.length > 0);
-            console.log('Autocomplete predictions received (legacy):', predictions.length);
+            console.log('Autocomplete predictions received:', predictions.length);
           } else {
             setSuggestions([]);
             setIsOpen(false);
-            if (status !== window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-              console.warn('Google Places API error:', status);
-            }
+            console.log('No predictions found or error:', status);
           }
         });
+      } else {
+        // Fallback a la nueva API si la legacy no está disponible
+        if (window.google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
+          const request = {
+            input,
+            locationRestriction: { 
+              country: ['es'] 
+            },
+            includedPrimaryTypes: ['address']
+          };
+
+          const { suggestions } = await window.google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
+          
+          setLoading(false);
+          
+          if (suggestions && suggestions.length > 0) {
+            // Convertir el formato de la nueva API al formato esperado
+            const formattedSuggestions = suggestions.map((suggestion: any) => ({
+              place_id: suggestion.placePrediction?.placeId || suggestion.placeId,
+              description: suggestion.placePrediction?.text?.text || suggestion.text,
+              structured_formatting: {
+                main_text: suggestion.placePrediction?.structuredFormat?.mainText?.text || suggestion.mainText || suggestion.text,
+                secondary_text: suggestion.placePrediction?.structuredFormat?.secondaryText?.text || suggestion.secondaryText || ''
+              }
+            }));
+            
+            setSuggestions(formattedSuggestions);
+            setIsOpen(formattedSuggestions.length > 0);
+            console.log('Autocomplete suggestions received (new API):', formattedSuggestions.length);
+          } else {
+            setSuggestions([]);
+            setIsOpen(false);
+          }
+        } else {
+          console.error('Ninguna API de autocompletado disponible');
+          setLoading(false);
+          setSuggestions([]);
+          setIsOpen(false);
+        }
       }
     } catch (error) {
-      console.error('Error searching addresses:', error);
+      console.error('Error en búsqueda de direcciones:', error);
       setLoading(false);
       setSuggestions([]);
       setIsOpen(false);

@@ -163,7 +163,13 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   };
 
   const handleSuggestionClick = (suggestion: any) => {
-    onChange(suggestion.description);
+    // Construir una dirección más completa combinando main + secondary
+    const main = suggestion?.structured_formatting?.main_text || '';
+    const secondary = suggestion?.structured_formatting?.secondary_text || '';
+    const fullAddress = [main, secondary].filter(Boolean).join(', ');
+    const valueToUse = fullAddress || suggestion.description;
+    console.log('Address selected:', { fullAddress, description: suggestion.description });
+    onChange(valueToUse);
     setIsOpen(false);
     setSuggestions([]);
   };

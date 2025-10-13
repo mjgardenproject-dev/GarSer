@@ -5,6 +5,7 @@ import { es } from 'date-fns/locale';
 import { TimeBlock, AvailabilityBlock } from '../../types';
 import { generateDailyTimeBlocks } from '../../utils/availabilityService';
 import { getAvailableBlocksWithBuffer } from '../../utils/bufferService';
+import { getCoordinatesFromAddress, calculateDistance } from '../../utils/geolocation';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -30,6 +31,9 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
   const [loading, setLoading] = useState(false);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [availableGardeners, setAvailableGardeners] = useState<string[]>([]);
+  const [gardenerDetails, setGardenerDetails] = useState<any[]>([]);
+  const [gardenerAvailability, setGardenerAvailability] = useState<Map<string, AvailabilityBlock[]>>(new Map());
+  const [selectedGardenerId, setSelectedGardenerId] = useState<string | null>(null);
 
   const timeBlocks = generateDailyTimeBlocks();
 
@@ -49,23 +53,79 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
   }, [selectedBlocks]);
 
   const fetchAvailableGardeners = async () => {
-    if (!serviceId || !clientAddress) return;
+    // Permitir cargar jardineros aunque aún no haya dirección, para mostrar opciones básicas
+    if (!serviceId) return;
 
     try {
-      // Get gardeners who offer this service
+      // Get gardeners who offer this service with complete information
       const { data: gardeners, error } = await supabase
         .from('gardener_profiles')
-        .select('user_id')
+        .select(`
+          user_id,
+          full_name,
+          rating,
+          total_reviews,
+          max_distance,
+          address
+        `)
         .contains('services', [serviceId])
-        .eq('is_available', true);
+        .eq('is_available', true)
+        .order('rating', { ascending: false })
+        .limit(5); // Maximum 5 gardeners
 
       if (error) throw error;
 
-      const gardenerIds = gardeners?.map(g => g.user_id) || [];
+      // Filter by distance if client address is provided
+      let filteredGardeners = gardeners || [];
+      
+      if (clientAddress && gardeners) {
+        const clientCoords = await getCoordinatesFromAddress(clientAddress);
+        if (clientCoords) {
+          const gardenersWithDistance = [];
+          
+          for (const gardener of gardeners) {
+            if (gardener.address) {
+              const gardenerCoords = await getCoordinatesFromAddress(gardener.address);
+              if (gardenerCoords) {
+                const distance = calculateDistance(
+                  clientCoords.lat,
+                  clientCoords.lng,
+                  gardenerCoords.lat,
+                  gardenerCoords.lng
+                );
+                
+                const maxRange = gardener.max_distance || 25;
+                if (distance <= maxRange) {
+                  gardenersWithDistance.push({
+                    ...gardener,
+                    distance
+                  });
+                }
+              }
+            }
+          }
+          
+          // Sort by rating first, then by distance
+          gardenersWithDistance.sort((a, b) => {
+            if (b.rating !== a.rating) {
+              return (b.rating || 0) - (a.rating || 0);
+            }
+            return (a.distance || 0) - (b.distance || 0);
+          });
+          
+          filteredGardeners = gardenersWithDistance;
+        }
+      }
+
+      const gardenerIds = filteredGardeners.map(g => g.user_id);
       setAvailableGardeners(gardenerIds);
+      
+      // Store complete gardener information for UI display
+      setGardenerDetails(filteredGardeners);
     } catch (error) {
       console.error('Error fetching available gardeners:', error);
       setAvailableGardeners([]);
+      setGardenerDetails([]);
     }
   };
 
@@ -81,22 +141,39 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
         'client-temp-id' // Temporary client ID
       );
       
-      // Combine blocks from all gardeners
-      const allBlocks: AvailabilityBlock[] = [];
+      // Store individual gardener availability
+      const gardenerAvailabilityMap = new Map<string, AvailabilityBlock[]>();
+      
       blocksMap.forEach((blocks, gardenerId) => {
+        const availabilityBlocks: AvailabilityBlock[] = [];
+        
+        // Convert TimeBlock[] to AvailabilityBlock[] for each gardener
         blocks.forEach(block => {
-          allBlocks.push({
-            id: `${gardenerId}-${block.hour}`,
-            gardener_id: gardenerId,
-            date: dateStr,
-            hour_block: block.hour,
-            is_available: block.available,
-            created_at: new Date().toISOString()
-          });
+          if (block.available) {
+            availabilityBlocks.push({
+              id: `${gardenerId}-${block.hour}`,
+              gardener_id: gardenerId,
+              date: dateStr,
+              hour_block: block.hour,
+              is_available: true,
+              created_at: new Date().toISOString()
+            });
+          }
         });
+        
+        gardenerAvailabilityMap.set(gardenerId, availabilityBlocks);
       });
       
-      setAvailableBlocks(allBlocks);
+      setGardenerAvailability(gardenerAvailabilityMap);
+      
+      // For backward compatibility, create a consolidated view
+      const allAvailableBlocks: AvailabilityBlock[] = [];
+      gardenerAvailabilityMap.forEach((blocks) => {
+        allAvailableBlocks.push(...blocks);
+      });
+      
+      setAvailableBlocks(allAvailableBlocks);
+      console.log(`Loaded availability for ${gardenerAvailabilityMap.size} gardeners on ${dateStr}`);
     } catch (error) {
       console.error('Error fetching available blocks:', error);
       toast.error('Error al cargar los horarios disponibles');
@@ -116,11 +193,76 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
 
   const isBlockAvailable = (blockId: string): boolean => {
     const hour = parseInt(blockId.replace('time-', ''));
-    return availableBlocks.some(block => block.hour === hour && block.is_available);
+    return availableBlocks.some(block => block.hour_block === hour && block.is_available);
   };
 
   const isBlockSelected = (blockId: string): boolean => {
     return selectedBlockIds.includes(blockId);
+  };
+
+  const toggleGardenerBlockSelection = (gardenerId: string, hour: number) => {
+    const blockId = `gardener-${gardenerId}-time-${hour}`;
+    
+    setSelectedBlockIds(prev => {
+      // If selecting a block from a different gardener, clear previous selection
+      if (selectedGardenerId && selectedGardenerId !== gardenerId) {
+        const newSelection = [blockId];
+        setSelectedGardenerId(gardenerId);
+        
+        const selectedTimeBlocks = newSelection.map(id => {
+          const hourFromId = parseInt(id.split('-time-')[1]);
+          const timeBlock = timeBlocks.find(tb => tb.hour === hourFromId);
+          if (timeBlock) {
+            return {
+              ...timeBlock,
+              id: id,
+              gardener_id: gardenerId,
+              start_time: `${hourFromId.toString().padStart(2, '0')}:00`,
+              end_time: `${(hourFromId + 1).toString().padStart(2, '0')}:00`
+            };
+          }
+          return null;
+        }).filter(Boolean);
+        
+        onBlocksChange(selectedTimeBlocks);
+        return newSelection;
+      }
+      
+      // Toggle selection for the same gardener
+      const newSelection = prev.includes(blockId)
+        ? prev.filter(id => id !== blockId)
+        : [...prev, blockId].sort();
+      
+      // Set or clear selected gardener
+      if (newSelection.length === 0) {
+        setSelectedGardenerId(null);
+      } else if (!selectedGardenerId) {
+        setSelectedGardenerId(gardenerId);
+      }
+      
+      // Get selected time blocks with details
+      const selectedTimeBlocks = newSelection.map(id => {
+        const hourFromId = parseInt(id.split('-time-')[1]);
+        const timeBlock = timeBlocks.find(tb => tb.hour === hourFromId);
+        if (timeBlock) {
+          return {
+            ...timeBlock,
+            id: id,
+            gardener_id: gardenerId,
+            start_time: `${hourFromId.toString().padStart(2, '0')}:00`,
+            end_time: `${(hourFromId + 1).toString().padStart(2, '0')}:00`
+          };
+        }
+        return null;
+      }).filter(Boolean);
+      
+      // Get selected gardener details
+      const selectedGardener = gardenerDetails.find(g => g.user_id === gardenerId);
+      
+      // Pass both time blocks and gardener information
+      onBlocksChange(selectedTimeBlocks, selectedGardener);
+      return newSelection;
+    });
   };
 
   const toggleBlockSelection = (blockId: string) => {
@@ -181,6 +323,7 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
 
   const clearSelection = () => {
     setSelectedBlockIds([]);
+    setSelectedGardenerId(null);
     onBlocksChange([]);
   };
 
@@ -247,41 +390,89 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
         </div>
       </div>
 
-      {/* Time Blocks Grid */}
+      {/* Gardeners with Available Time Blocks */}
       <div className="mb-6">
         <h4 className="text-sm font-medium text-gray-700 mb-3">
-          Horarios disponibles para {format(selectedDate, 'd MMMM yyyy', { locale: es })}
+          Jardineros disponibles para {format(selectedDate, 'd MMMM yyyy', { locale: es })}
         </h4>
         
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
-            <span className="ml-2 text-gray-600">Cargando horarios...</span>
+            <span className="ml-2 text-gray-600">Cargando jardineros...</span>
+          </div>
+        ) : gardenerDetails.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <div className="text-lg mb-2">😔</div>
+            <p>No hay jardineros disponibles para esta dirección en la fecha seleccionada.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {timeBlocks.map((timeBlock) => {
-              const blockId = `time-${timeBlock.hour}`;
-              const status = getBlockStatus(blockId);
-              const styles = getBlockStyles(status);
-              
+          <div className="space-y-4">
+            {gardenerDetails.map((gardener) => {
+              const gardenerBlocks = gardenerAvailability.get(gardener.user_id) || [];
+
               return (
-                <button
-                  key={blockId}
-                  onClick={() => toggleBlockSelection(blockId)}
-                  disabled={status === 'unavailable'}
-                  className={`
-                    p-3 rounded-lg border-2 transition-all duration-200 text-center
-                    ${styles}
-                  `}
-                >
-                  <div className="text-sm font-medium">
-                    {timeBlock.start_time}
+                <div key={gardener.user_id} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
+                  {/* Gardener Info */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <span className="text-green-600 font-semibold text-sm">
+                          {gardener.full_name?.charAt(0) || 'J'}
+                        </span>
+                      </div>
+                      <div>
+                        <h5 className="font-medium text-gray-900">{gardener.full_name || 'Jardinero'}</h5>
+                        <div className="flex items-center space-x-2 text-sm text-gray-600">
+                          <div className="flex items-center">
+                            <span className="text-yellow-400">★</span>
+                            <span className="ml-1">{gardener.rating?.toFixed(1) || '5.0'}</span>
+                          </div>
+                          <span>•</span>
+                          <span>{gardener.total_reviews || 0} reseñas</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {gardenerBlocks.length} hora{gardenerBlocks.length !== 1 ? 's' : ''} disponible{gardenerBlocks.length !== 1 ? 's' : ''}
+                    </div>
                   </div>
-                  <div className="text-xs opacity-75">
-                    {timeBlock.end_time}
-                  </div>
-                </button>
+                  
+                  {/* Available Time Blocks for this Gardener */}
+                  {gardenerBlocks.length === 0 ? (
+                    <div className="py-3 text-sm text-gray-500">
+                      No hay bloques disponibles para esta fecha. Prueba con otro día.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                      {gardenerBlocks.map((block) => {
+                      const blockId = `gardener-${gardener.user_id}-time-${block.hour_block}`;
+                      const isSelected = selectedBlockIds.includes(blockId);
+                      
+                      return (
+                        <button
+                          key={blockId}
+                          onClick={() => toggleGardenerBlockSelection(gardener.user_id, block.hour_block)}
+                          className={`
+                            p-2 rounded-md border transition-all duration-200 text-center text-xs
+                            ${isSelected 
+                              ? 'bg-green-500 border-green-600 text-white shadow-md transform scale-105' 
+                              : 'bg-white border-green-300 text-green-700 hover:bg-green-50 hover:border-green-400'
+                            }
+                          `}
+                        >
+                          <div className="font-medium">
+                            {block.hour_block.toString().padStart(2, '0')}:00
+                          </div>
+                          <div className="opacity-75">
+                            {(block.hour_block + 1).toString().padStart(2, '0')}:00
+                          </div>
+                        </button>
+                      );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -289,11 +480,30 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
       </div>
 
       {/* Selection Summary */}
-      {selectedBlocks.length > 0 && (
+      {selectedBlocks.length > 0 && selectedGardenerId && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>
               <h4 className="font-medium text-green-800">Resumen de la reserva</h4>
+              {(() => {
+                const selectedGardener = gardenerDetails.find(g => g.user_id === selectedGardenerId);
+                return selectedGardener ? (
+                  <div className="flex items-center space-x-2 mt-1 mb-2">
+                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                      <span className="text-green-600 font-semibold text-xs">
+                        {selectedGardener.full_name?.charAt(0) || 'J'}
+                      </span>
+                    </div>
+                    <span className="text-sm text-green-700 font-medium">
+                      {selectedGardener.full_name || 'Jardinero'}
+                    </span>
+                    <div className="flex items-center text-xs text-green-600">
+                      <span className="text-yellow-400">★</span>
+                      <span className="ml-1">{selectedGardener.rating?.toFixed(1) || '5.0'}</span>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
               <p className="text-sm text-green-600">
                 {totalHours} hora{totalHours !== 1 ? 's' : ''} seleccionada{totalHours !== 1 ? 's' : ''}
               </p>
@@ -319,8 +529,8 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
 
       {/* Instructions */}
       <div className="mt-4 text-xs text-gray-500 text-center">
-        Selecciona los bloques de tiempo que necesitas. Cada bloque representa 1 hora de servicio.
-        Los bloques en verde están disponibles para reservar.
+        Selecciona un jardinero y los bloques de tiempo que necesitas. Cada bloque representa 1 hora de servicio.
+        Solo puedes seleccionar horarios de un jardinero a la vez. Los jardineros están ordenados por calificación.
       </div>
     </div>
   );

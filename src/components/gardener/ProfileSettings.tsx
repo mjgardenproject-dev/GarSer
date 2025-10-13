@@ -28,7 +28,15 @@ const ProfileSettings = () => {
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
-    resolver: yupResolver(schema)
+    resolver: yupResolver(schema),
+    defaultValues: {
+      full_name: '',
+      phone: '',
+      address: '',
+      description: '',
+      max_distance: 25,
+      services: []
+    }
   });
 
   const watchedServices = watch('services') || [];
@@ -131,7 +139,7 @@ const ProfileSettings = () => {
         .from('gardener_profiles')
         .select('user_id')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       let profileError;
       
@@ -272,7 +280,10 @@ const ProfileSettings = () => {
               <DistanceMapSelector
                 address={watch('address') || ''}
                 distance={watch('max_distance') || 25}
-                onDistanceChange={(distance) => setValue('max_distance', distance)}
+                onDistanceChange={(distance) => {
+                  console.log('max_distance changed:', distance);
+                  setValue('max_distance', distance);
+                }}
               />
               {errors.max_distance && (
                 <p className="mt-1 text-sm text-red-600">{errors.max_distance.message}</p>

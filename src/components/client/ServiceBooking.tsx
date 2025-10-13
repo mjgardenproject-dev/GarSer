@@ -6,13 +6,15 @@ import * as yup from 'yup';
 import { format, addDays, startOfDay, addHours, parse, parseISO, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Calendar, Clock, MapPin, DollarSign, Scissors, SprayCan as Spray, TreePine, CheckCircle } from 'lucide-react';
+import { getCoordinatesFromAddress, calculateDistance } from '../../utils/geolocation';
 import { Service, PriceCalculation, TimeBlock } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import AddressAutocomplete from '../common/AddressAutocomplete';
-import TimeBlockSelector from '../booking/TimeBlockSelector';
+import MergedSlotsSelector from '../booking/MergedSlotsSelector';
+import { MergedSlot, findEligibleGardeners } from '../../utils/mergedAvailabilityService';
 
 const schema = yup.object({
   service_id: yup.string().required('Servicio requerido'),
@@ -31,7 +33,8 @@ const ServiceBooking = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [services, setServices] = useState<Service[]>([]);
-  const [selectedBlocks, setSelectedBlocks] = useState<TimeBlock[]>([]);
+  const [durationHours, setDurationHours] = useState<number>(0);
+  const [selectedSlot, setSelectedSlot] = useState<MergedSlot | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [totalPrice, setTotalPrice] = useState<number>(0);
   const [loading, setLoading] = useState(false);
@@ -63,22 +66,21 @@ const ServiceBooking = () => {
     }
   }, [preselectedServiceId, setValue]);
 
-  // Calcular precio total cuando cambian los bloques seleccionados
+  // Calcular precio total cuando cambian la duración y servicio
   useEffect(() => {
-    if (selectedBlocks.length > 0 && watchedValues.service_id) {
+    if (durationHours > 0 && watchedValues.service_id) {
       const service = services.find(s => s.id === watchedValues.service_id);
       if (service) {
         const basePrice = service.base_price;
         const travelFee = 15; // Precio fijo de desplazamiento
-        const hourlyRate = 25; // Precio por hora
-        const totalHours = selectedBlocks.length;
-        const total = basePrice + travelFee + (hourlyRate * totalHours);
+        const hourlyRate = service.price_per_hour ?? 25; // Precio por hora
+        const total = basePrice + travelFee + (hourlyRate * durationHours);
         setTotalPrice(total);
       }
     } else {
       setTotalPrice(0);
     }
-  }, [selectedBlocks, watchedValues.service_id, services]);
+  }, [durationHours, watchedValues.service_id, services]);
 
   const fetchServices = async () => {
     try {
@@ -94,127 +96,64 @@ const ServiceBooking = () => {
     }
   };
 
-  // Función para manejar la selección de bloques horarios
-  const handleBlocksChange = (blocks: TimeBlock[]) => {
-    setSelectedBlocks(blocks);
-  };
-
   // Función para manejar el cambio de fecha
   const handleDateChange = (date: Date) => {
     setSelectedDate(date);
-    setSelectedBlocks([]); // Limpiar bloques seleccionados al cambiar fecha
+    setSelectedSlot(null); // Limpiar franja seleccionada al cambiar fecha
   };
 
   const onSubmit = async (data: FormData) => {
-    if (!user || selectedBlocks.length === 0) {
-      toast.error('Debes seleccionar al menos un bloque horario');
+    if (!user || !selectedSlot) {
+      toast.error('Debes seleccionar una franja disponible');
       return;
     }
 
     setLoading(true);
     try {
-      console.log('🚀 Iniciando proceso de reserva con bloques horarios');
-      
-      // Obtener jardineros disponibles para el servicio y ubicación
-      const { data: gardeners, error: gardenersError } = await supabase
-        .from('gardener_profiles')
-        .select('user_id, address, max_distance, rating, total_reviews')
-        .contains('services', [data.service_id])
-        .eq('is_available', true);
+      console.log('🚀 Iniciando proceso de solicitud anónima y difusión a jardineros elegibles');
 
-      if (gardenersError) throw gardenersError;
+      // Difundir: crear una reserva pendiente por jardinero elegible
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const startLabel = `${selectedSlot.startHour.toString().padStart(2, '0')}:00:00`;
+      const endLabel = `${selectedSlot.endHour.toString().padStart(2, '0')}:00:00`;
 
-      if (!gardeners || gardeners.length === 0) {
-        throw new Error('No hay jardineros disponibles para este servicio');
+      // Seguridad adicional: difundir solo a jardineros dentro del círculo de rango
+      const gardenerIdsInRange = await filterGardenerIdsByRange(data.client_address, selectedSlot.gardenerIds);
+      if (gardenerIdsInRange.length === 0) {
+        toast.error('No hay jardineros dentro de tu zona para esta franja');
+        return;
       }
 
-      // Filtrar jardineros por ubicación si hay dirección
-      let availableGardeners = gardeners;
-      if (selectedAddress) {
-        const clientCoords = await getCoordinatesFromAddress(selectedAddress);
-        if (clientCoords) {
-          const gardenersInRange = [];
-          for (const gardener of gardeners) {
-            if (!gardener.address) continue;
-            
-            const gardenerCoords = await getCoordinatesFromAddress(gardener.address);
-            if (!gardenerCoords) continue;
-            
-            const distance = calculateDistance(
-              clientCoords.lat,
-              clientCoords.lng,
-              gardenerCoords.lat,
-              gardenerCoords.lng
-            );
-            
-            const maxRange = gardener.max_distance || 25;
-            if (distance <= maxRange) {
-              gardenersInRange.push(gardener);
-            }
-          }
-          availableGardeners = gardenersInRange;
-        }
-      }
-
-      if (availableGardeners.length === 0) {
-        throw new Error('No hay jardineros disponibles en tu área');
-      }
-
-      // Crear solicitud de reserva que se enviará a todos los jardineros disponibles
-      const { data: bookingRequest, error: requestError } = await supabase
-        .from('booking_requests')
-        .insert([
-          {
-            client_id: user.id,
-            service_id: data.service_id,
-            date: format(selectedDate, 'yyyy-MM-dd'),
-            total_price: totalPrice,
-            client_address: data.client_address,
-            notes: data.notes,
-            status: 'pending',
-            expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 horas
-          }
-        ])
-        .select()
-        .single();
-
-      if (requestError) throw requestError;
-
-      // Crear bloques de reserva para cada bloque seleccionado
-      const bookingBlocks = selectedBlocks.map(block => ({
-        booking_request_id: bookingRequest.id,
-        start_time: block.start_time,
-        end_time: block.end_time
+      const inserts = gardenerIdsInRange.map(gardenerId => ({
+        client_id: user.id,
+        gardener_id: gardenerId,
+        service_id: data.service_id,
+        date: dateStr,
+        start_time: startLabel,
+        end_time: endLabel,
+        duration_hours: durationHours,
+        client_address: data.client_address,
+        notes: data.notes,
+        status: 'pending',
+        total_price: totalPrice,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       }));
 
-      const { error: blocksError } = await supabase
-        .from('booking_blocks')
-        .insert(bookingBlocks);
+      const { error: bookingsError } = await supabase
+        .from('bookings')
+        .insert(inserts);
 
-      if (blocksError) throw blocksError;
-
-      // Crear respuestas para todos los jardineros disponibles
-      const responses = availableGardeners.map(gardener => ({
-        booking_request_id: bookingRequest.id,
-        gardener_id: gardener.user_id,
-        status: 'pending'
-      }));
-
-      const { error: responsesError } = await supabase
-        .from('booking_responses')
-        .insert(responses);
-
-      if (responsesError) throw responsesError;
+      if (bookingsError) throw bookingsError;
 
       toast.success(
         <div className="text-left">
           <div className="font-semibold mb-2">¡Solicitud enviada!</div>
           <div className="text-sm space-y-1">
             <div>📅 <strong>Fecha:</strong> {format(selectedDate, 'dd/MM/yyyy', { locale: es })}</div>
-            <div>⏰ <strong>Bloques:</strong> {selectedBlocks.length} hora{selectedBlocks.length > 1 ? 's' : ''}</div>
+            <div>⏰ <strong>Horario:</strong> {`${selectedSlot.startHour.toString().padStart(2, '0')}:00`}–{`${selectedSlot.endHour.toString().padStart(2, '0')}:00`} ({durationHours}h)</div>
             <div>💰 <strong>Precio total:</strong> €{totalPrice}</div>
-            <div>👥 <strong>Enviado a:</strong> {availableGardeners.length} jardinero{availableGardeners.length > 1 ? 's' : ''}</div>
             <div>⏱️ <strong>Respuesta en:</strong> máximo 24 horas</div>
+            <div>👤 <strong>Privacidad:</strong> El jardinero se mostrará tras la confirmación</div>
           </div>
         </div>,
         { duration: 6000 }
@@ -225,7 +164,7 @@ const ServiceBooking = () => {
         navigate('/bookings');
       }, 3000);
     } catch (error: any) {
-      console.error('Error creating booking request:', error);
+      console.error('Error creando solicitudes de reserva:', error);
       toast.error(error.message || 'Error al enviar la solicitud de reserva');
     } finally {
       setLoading(false);
@@ -250,48 +189,9 @@ const ServiceBooking = () => {
     setValue('client_address', address);
   };
 
-  // Función para calcular la distancia entre dos coordenadas usando la fórmula de Haversine
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371; // Radio de la Tierra en kilómetros
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
+  // Distancia provista por utilidad compartida
 
-  // Función para obtener coordenadas de una dirección usando Google Maps Geocoding
-  const getCoordinatesFromAddress = async (address: string): Promise<{lat: number, lng: number} | null> => {
-    try {
-      if (!window.google?.maps?.Geocoder) {
-        console.error('Google Maps Geocoder no está disponible');
-        return null;
-      }
-
-      const geocoder = new window.google.maps.Geocoder();
-      
-      return new Promise((resolve, reject) => {
-        geocoder.geocode({ address: address }, (results, status) => {
-          if (status === 'OK' && results && results[0]) {
-            const location = results[0].geometry.location;
-            resolve({
-              lat: location.lat(),
-              lng: location.lng()
-            });
-          } else {
-            console.error('Geocoding falló:', status);
-            resolve(null);
-          }
-        });
-      });
-    } catch (error) {
-      console.error('Error en geocoding:', error);
-      return null;
-    }
-  };
+  // Coordenadas provistas por utilidad compartida
 
   // Función de selección básica como fallback
   const basicGardenerSelection = async (serviceId: string) => {
@@ -553,21 +453,38 @@ const ServiceBooking = () => {
             )}
           </div>
 
-          {/* Selector de Bloques Horarios */}
-          {selectedAddress && watchedValues.service_id ? (
-            <TimeBlockSelector
+          {/* Duración en horas consecutivas */}
+          {selectedAddress && watchedValues.service_id && (
+            <div>
+              <label className="block text-lg font-semibold text-gray-700 mb-3">Duración requerida</label>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {[1,2,3,4,5,6].map(h => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => { setDurationHours(h); setSelectedSlot(null); }}
+                    className={`px-3 py-2 border-2 rounded-lg text-sm ${durationHours===h ? 'border-green-600 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}
+                  >{h}h</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Selector de Franjas Fusionadas */}
+          {selectedAddress && watchedValues.service_id && durationHours > 0 ? (
+            <MergedSlotsSelector
               serviceId={watchedValues.service_id}
               clientAddress={selectedAddress}
+              durationHours={durationHours}
               selectedDate={selectedDate}
-              selectedBlocks={selectedBlocks}
               onDateChange={handleDateChange}
-              onBlocksChange={handleBlocksChange}
+              onSlotSelect={setSelectedSlot}
             />
           ) : (
             <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg">
               <p className="text-gray-600 text-center text-sm sm:text-base">
                 <Calendar className="inline w-5 h-5 mr-2" />
-                {!selectedAddress ? 'Primero selecciona una dirección' : 'Selecciona un servicio'} para ver las fechas y horarios disponibles
+                {!selectedAddress ? 'Primero selecciona una dirección' : !watchedValues.service_id ? 'Selecciona un servicio' : 'Elige la duración'} para ver las franjas disponibles
               </p>
             </div>
           )}
@@ -591,7 +508,7 @@ const ServiceBooking = () => {
           )}
 
           {/* Resumen de Precio */}
-          {totalPrice > 0 && selectedBlocks.length > 0 && (
+          {totalPrice > 0 && selectedSlot && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 sm:p-6">
               <h3 className="text-lg font-semibold text-green-800 mb-3 sm:mb-4">
                 💰 Resumen del Precio
@@ -606,8 +523,8 @@ const ServiceBooking = () => {
                   <span className="font-medium">€{services.find(s => s.id === watchedValues.service_id)?.price_per_hour}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Bloques seleccionados:</span>
-                  <span className="font-medium">{selectedBlocks.length} {selectedBlocks.length === 1 ? 'hora' : 'horas'}</span>
+                  <span className="text-gray-600">Duración seleccionada:</span>
+                  <span className="font-medium">{durationHours} {durationHours === 1 ? 'hora' : 'horas'}</span>
                 </div>
                 <div className="border-t border-green-300 pt-2 mt-3">
                   <div className="flex justify-between text-lg font-bold text-green-800">
@@ -621,7 +538,7 @@ const ServiceBooking = () => {
 
           <button
             type="submit"
-            disabled={loading || selectedBlocks.length === 0 || !watchedValues.service_id || !selectedAddress}
+            disabled={loading || !selectedSlot || !watchedValues.service_id || !selectedAddress}
             className="w-full bg-green-600 text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg font-semibold hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
           >
             {loading ? 'Procesando reserva...' : 'Reservar Servicio'}

@@ -53,6 +53,17 @@ const BookingRequestsManager = () => {
         return;
       }
 
+      // Expirar automáticamente solicitudes con más de 24h
+      const now = Date.now();
+      const toExpire = (bookings || []).filter(b => {
+        const expiresAt = b.expires_at ? Date.parse(b.expires_at) : (Date.parse(b.created_at) + 24*60*60*1000);
+        return b.status === 'pending' && now > expiresAt;
+      });
+      if (toExpire.length > 0) {
+        const ids = toExpire.map(b => b.id);
+        await supabase.from('bookings').update({ status: 'expired' }).in('id', ids);
+      }
+
       // Obtener datos de clientes y servicios por separado
       const clientIds = [...new Set(bookings.map(b => b.client_id))];
       const serviceIds = [...new Set(bookings.map(b => b.service_id))];
@@ -102,19 +113,48 @@ const BookingRequestsManager = () => {
       setResponding(requestId);
 
       if (responseType === 'accept') {
-        // Si acepta, actualizar el estado de la reserva a confirmada
+        // Obtener la reserva para conocer fecha y duración
+        const { data: booking, error: bookingError } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('id', requestId)
+          .single();
+        if (bookingError || !booking) throw bookingError || new Error('Reserva no encontrada');
+
+        // Confirmar esta reserva
         const { error: updateError } = await supabase
           .from('bookings')
-          .update({
-            status: 'confirmed',
-            updated_at: new Date().toISOString()
-          })
+          .update({ status: 'confirmed', updated_at: new Date().toISOString() })
           .eq('id', requestId)
           .eq('gardener_id', user?.id);
-
         if (updateError) throw updateError;
 
-        toast.success('¡Solicitud aceptada! La reserva ha sido confirmada.');
+        // Cancelar solicitudes pendientes del mismo trabajo (misma ventana y cliente/servicio)
+        const { error: cancelError } = await supabase
+          .from('bookings')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('client_id', booking.client_id)
+          .eq('service_id', booking.service_id)
+          .eq('date', booking.date)
+          .eq('start_time', booking.start_time)
+          .eq('status', 'pending');
+        if (cancelError) console.warn('Error cancelando reservas paralelas:', cancelError);
+
+        // Bloquear horas de la agenda y añadir margen posterior (aproximado a 1h)
+        try {
+          const startHour = parseInt((booking.start_time || '09:00').split(':')[0]);
+          const duration = booking.duration_hours || 1;
+          const hourBlocks = Array.from({ length: duration }, (_, i) => startHour + i);
+          // Bloque principal
+          const availability = await import('../../utils/availabilityService');
+          await availability.blockTimeSlots(user!.id, booking.date, hourBlocks);
+          // Margen posterior: bloquear la siguiente hora
+          await availability.blockTimeSlots(user!.id, booking.date, [startHour + duration]);
+        } catch (e) {
+          console.warn('No se pudo bloquear disponibilidad tras la aceptación:', e);
+        }
+
+        toast.success('¡Solicitud aceptada! La reserva ha sido confirmada y tu agenda actualizada.');
       } else {
         // Si rechaza, actualizar el estado de la reserva a rechazada
         const { error: updateError } = await supabase

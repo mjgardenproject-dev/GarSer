@@ -65,3 +65,45 @@ Ver [DEPLOY_VERCEL.md](./DEPLOY_VERCEL.md) para instrucciones detalladas.
 ## 📄 Licencia
 
 Este proyecto está bajo la Licencia MIT.
+## 🔧 IA de Estimación (Setup rápido)
+
+Para que el botón "Analizar con IA" funcione sin configurar endpoints:
+
+1. Añade tu clave de OpenAI en `.env`:
+
+   ```
+   VITE_OPENAI_API_KEY=sk-xxxx
+   ```
+
+2. Reinicia `npm run dev`.
+
+El sistema primero intentará invocar la función Edge `ai-pricing-estimator` en Supabase (si la despliegas), y si no está disponible, usará tu `VITE_OPENAI_API_KEY` directamente desde el navegador (solo recomendado para desarrollo).
+
+### (Opcional) Desplegar la función segura en Supabase
+
+Si prefieres no exponer la clave en el cliente:
+
+- En Supabase, crea el secreto: `OPENAI_API_KEY`.
+- Despliega la función que ya está en `supabase/functions/ai-pricing-estimator`.
+
+El frontend invocará esta función automáticamente (no necesitas añadir endpoints).
+
+## 🗂️ Bucket de fotos (opcional)
+
+El análisis con fotos sube imágenes al bucket `booking-photos`.
+
+Para crear el bucket automáticamente:
+
+1. Añade tu service role key en `.env`:
+
+   ```
+   VITE_SUPABASE_SERVICE_ROLE_KEY=eyJ... (clave de servicio)
+   ```
+
+2. Ejecuta:
+
+   ```
+   npm run create:bucket
+   ```
+
+Esto creará el bucket `booking-photos` con acceso público y tipos permitidos (`jpeg`, `png`, `webp`). Si no lo creas, el análisis funcionará con texto (las fotos fallarán al subir).

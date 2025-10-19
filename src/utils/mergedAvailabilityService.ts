@@ -70,6 +70,49 @@ export async function findEligibleGardeners(serviceId: string, clientAddress: st
   return eligible;
 }
 
+// Encuentra jardineros elegibles que soporten TODOS los servicios seleccionados
+export async function findEligibleGardenersForServices(serviceIds: string[], clientAddress: string): Promise<GardenerProfile[]> {
+  const clientCoords = await getCoordinatesFromAddress(clientAddress);
+  if (!clientCoords) {
+    console.warn('[eligibility] Geocoding de cliente falló o no disponible', { clientAddress });
+    return [];
+  }
+
+  let list: GardenerProfile[] = [];
+  try {
+    const { data, error } = await supabase
+      .from('gardener_profiles')
+      .select('*')
+      .contains('services', serviceIds)
+      .eq('is_available', true);
+    if (error) throw error;
+    list = (data as GardenerProfile[]) || [];
+  } catch (e) {
+    console.warn('[eligibility] Error consultando jardineros por servicios múltiples, intento fallback:', e);
+    const { data: allAvailable, error: fallbackError } = await supabase
+      .from('gardener_profiles')
+      .select('*')
+      .eq('is_available', true);
+    if (fallbackError) {
+      console.warn('[eligibility] Fallback consulta is_available falló', { fallbackError });
+      return [];
+    }
+    list = ((allAvailable as GardenerProfile[]) || []).filter(g => {
+      const svcs = (g as any).services as string[];
+      return Array.isArray(svcs) && serviceIds.every(id => svcs.includes(id));
+    });
+  }
+
+  const eligible: GardenerProfile[] = [];
+  for (const g of list) {
+    const distKm = g.address ? await calculateDistance(clientCoords, await getCoordinatesFromAddress(g.address)) : null;
+    const within = distKm == null || g.work_radius == null ? true : distKm <= (g.work_radius || 10);
+    if (within) eligible.push(g);
+  }
+
+  return eligible;
+}
+
 // Calcula todas las secuencias continuas de duración solicitada por jardinero y fusiona
 export async function computeMergedSlots(
   gardenerIds: string[],

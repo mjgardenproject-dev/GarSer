@@ -7,6 +7,7 @@ import AdminRoute from './components/auth/AdminRoute';
 import DevelopmentRoute from './components/auth/DevelopmentRoute';
 import Navbar from './components/layout/Navbar';
 import ServiceCatalog from './components/client/ServiceCatalog';
+import ClientHome from './components/client/ClientHome';
 import ServiceDetail from './components/client/ServiceDetail';
 import ServiceBooking from './components/client/ServiceBooking';
 import BookingsList from './components/client/BookingsList';
@@ -72,7 +73,7 @@ const AppContent = () => {
           element={
             <ProtectedRoute>
               {(() => {
-                const component = profile?.role === 'gardener' ? <GardenerDashboard /> : <ServiceCatalog />;
+                const component = profile?.role === 'gardener' ? <GardenerDashboard /> : <ClientHome />;
                 console.log('🏠 Dashboard: Mostrando componente para rol:', profile?.role);
                 return component;
               })()}

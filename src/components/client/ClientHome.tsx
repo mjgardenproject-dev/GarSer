@@ -161,15 +161,17 @@ const ClientHome: React.FC = () => {
         descriptionLen: description.length,
       });
       setAnalyzing(true);
+      const disablePhotoUpload = (import.meta.env.VITE_DISABLE_PHOTO_UPLOAD as string | undefined) === 'true';
       // Subir fotos para obtener URLs accesibles por la IA
       const photoUrls: string[] = [];
-      if (photos.length > 0) {
+      if (photos.length > 0 && !disablePhotoUpload) {
         try {
           const { supabase } = await import('../../lib/supabase');
           const { data: userData } = await supabase.auth.getUser();
           const userId = userData?.user?.id || 'anon';
           const bucket = (import.meta.env.VITE_BOOKING_PHOTOS_BUCKET as string | undefined) || 'booking-photos';
           const now = Date.now();
+          console.log('[AI] photo upload init', { bucket, count: photos.length, userId });
   
           const sanitizeFileName = (name: string) => {
             const base = name.trim().toLowerCase().replace(/\s+/g, '_');
@@ -178,27 +180,36 @@ const ClientHome: React.FC = () => {
   
           for (let i = 0; i < photos.length; i++) {
             const file = photos[i];
+            console.log(`[AI] uploading photo ${i+1}/${photos.length}`, { name: file.name, type: file.type });
             const safeName = sanitizeFileName(file.name || `foto_${i}.jpg`);
             const path = `drafts/${userId}/${now}_${i}_${safeName}`;
             const { error: uploadError } = await supabase.storage
               .from(bucket)
               .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
             if (uploadError) {
-              console.warn('Error subiendo foto para análisis:', uploadError.message);
+              console.warn(`[AI] upload error photo ${i+1}:`, uploadError.message);
               continue;
             }
+            console.log(`[AI] photo ${i+1} uploaded`, { path });
             // Obtener URL pública o firmada
             const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
             if (publicUrlData?.publicUrl) {
               photoUrls.push(publicUrlData.publicUrl);
+              console.log(`[AI] url resolved (public) for photo ${i+1}`, { url: publicUrlData.publicUrl });
             } else {
               const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
-              if (signed?.signedUrl) photoUrls.push(signed.signedUrl);
+              if (signed?.signedUrl) {
+                photoUrls.push(signed.signedUrl);
+                console.log(`[AI] url resolved (signed) for photo ${i+1}`, { url: signed.signedUrl });
+              }
             }
           }
+          console.log('[AI] photo upload done', { photoUrlsLen: photoUrls.length });
         } catch (err) {
           console.warn('No se pudieron preparar URLs de fotos para IA, se seguirá sin imágenes:', err);
         }
+      } else if (photos.length > 0 && disablePhotoUpload) {
+        console.warn('[AI] Photo upload disabled by env; continuing without images');
       }
   
       const result = await estimateWorkWithAI({

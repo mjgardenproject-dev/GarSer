@@ -17,6 +17,9 @@ export default defineConfig({
       overlay: false // Desactivar overlay de errores que puede causar problemas
     }
   },
+  build: {
+    chunkSizeWarningLimit: 1000
+  },
   preview: {
     host: true,
     port: 4173,

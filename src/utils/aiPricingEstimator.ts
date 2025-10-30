@@ -26,6 +26,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
     console.warn('[AI] Falta VITE_OPENAI_API_KEY. No se puede usar OpenAI directo.');
     return { tareas: [] };
   }
+  const model = (import.meta.env.VITE_OPENAI_MODEL as string | undefined) || 'gpt-4o-mini';
   try {
     const messages: any[] = [
       {
@@ -65,6 +66,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
       {
         role: 'user',
         content: [
+          { type: 'text', text: 'Analiza primero las imágenes adjuntas y describe el estado y trabajos necesarios; luego usa mi descripción como complemento.' },
           { type: 'text', text: `Descripción del cliente: ${input.description || ''}` },
           { type: 'text', text: `Servicios seleccionados: ${input.selectedServiceIds.join(', ')}` },
           ...((input.photoUrls || []).slice(0, 4).map((url) => ({
@@ -76,11 +78,15 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
     ];
 
     console.log('[AI] Preparando llamada a OpenAI', {
-      model: 'gpt-4o-mini',
+      model,
       messagesCount: messages.length,
       hasPhotos: (input.photoUrls || []).length > 0,
       selectedServiceIds: input.selectedServiceIds,
     });
+    if ((input.photoUrls || []).length > 0) {
+      const first = (input.photoUrls || [])[0];
+      console.log('[AI] Primer photoUrl tipo', { isDataUrl: first.startsWith('data:'), prefix: first.slice(0, 30) });
+    }
     const resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -88,7 +94,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model,
         messages,
         temperature: 0.2,
         response_format: { type: 'json_object' },
@@ -104,7 +110,20 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
         return { tareas, reasons };
       }
     } else {
-      console.warn('[AI] OpenAI respuesta no OK:', await resp.text());
+      const errorText = await resp.text();
+      console.warn('[AI] OpenAI respuesta no OK:', errorText);
+      
+      // Si es rate limit, mostrar mensaje más claro
+      if (resp.status === 429) {
+        try {
+          const errorData = JSON.parse(errorText);
+          const message = errorData?.error?.message || 'Rate limit exceeded';
+          console.error('[AI] Rate limit alcanzado:', message);
+          throw new Error(`Rate limit de OpenAI alcanzado. ${message.includes('Please try again in') ? message.split('Please try again in')[1].split('.')[0] : 'Intenta de nuevo más tarde.'}`);
+        } catch (parseError) {
+          throw new Error('Rate limit de OpenAI alcanzado. Intenta de nuevo en unos minutos.');
+        }
+      }
     }
   } catch (e) {
     console.warn('[AI] Error en OpenAI:', e);
@@ -112,3 +131,5 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
   // Sin fallback: devolver vacío para que el UI informe y se reintente
   return { tareas: [] };
 }
+
+/* Merged into primary estimateWorkWithAI; duplicate removed to avoid conflicts */

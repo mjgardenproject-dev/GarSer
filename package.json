@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "create:bucket": "node create_booking_photos_bucket.js"
+    "create:bucket": "node create_booking_photos_bucket.js",
+    "seed:services": "node seed_services.js",
+    "enforce:services": "node enforce_canonical_services.js"
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^1.16.10",

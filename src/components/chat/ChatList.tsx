@@ -29,12 +29,6 @@ interface BookingWithProfiles {
   services?: {
     name: string;
   } | null;
-  client_profile?: {
-    full_name: string;
-  } | null;
-  gardener_profile?: {
-    full_name: string;
-  } | null;
 }
 
 const ChatList: React.FC = () => {
@@ -66,9 +60,7 @@ const ChatList: React.FC = () => {
           date,
           start_time,
           status,
-          services(name),
-          client_profile:profiles!bookings_client_id_fkey(full_name),
-          gardener_profile:profiles!bookings_gardener_id_fkey(full_name)
+          services(name)
         `)
         .or(`client_id.eq.${user.id},gardener_id.eq.${user.id}`)
         .in('status', ['confirmed', 'in_progress', 'completed'])
@@ -81,15 +73,28 @@ const ChatList: React.FC = () => {
         return;
       }
 
+      // Construir mapa de nombres de perfiles sin joins (no hay FK en schema)
+      const uniqueUserIds = Array.from(new Set((bookings || []).flatMap(b => [b.client_id, b.gardener_id]).filter(Boolean)))
+      let namesMap: Record<string, string> = {}
+      if (uniqueUserIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, full_name')
+          .in('user_id', uniqueUserIds as string[])
+        if (profilesError) throw profilesError
+        namesMap = (profilesData || []).reduce<Record<string, string>>((acc, p: any) => {
+          if (p?.user_id) acc[p.user_id] = p.full_name || ''
+          return acc
+        }, {})
+      }
+
       // Para cada reserva, obtener el último mensaje
       const chatsWithMessages = await Promise.all(
         bookings.map(async (booking) => {
           // Determinar quién es el otro usuario
           const isClient = booking.client_id === user.id;
           const otherUserId = isClient ? booking.gardener_id : booking.client_id;
-          const otherUserName = isClient 
-            ? booking.gardener_profile?.full_name || 'Jardinero'
-            : booking.client_profile?.full_name || 'Cliente';
+          const otherUserName = namesMap[otherUserId] || (isClient ? 'Jardinero' : 'Cliente');
 
           // Obtener el último mensaje
           const { data: lastMessage } = await supabase

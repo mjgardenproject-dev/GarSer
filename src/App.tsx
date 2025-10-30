@@ -8,6 +8,7 @@ import DevelopmentRoute from './components/auth/DevelopmentRoute';
 import Navbar from './components/layout/Navbar';
 import ServiceCatalog from './components/client/ServiceCatalog';
 import ClientHome from './components/client/ClientHome';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import ServiceDetail from './components/client/ServiceDetail';
 import ServiceBooking from './components/client/ServiceBooking';
 import BookingsList from './components/client/BookingsList';
@@ -73,9 +74,26 @@ const AppContent = () => {
           element={
             <ProtectedRoute>
               {(() => {
-                const component = profile?.role === 'gardener' ? <GardenerDashboard /> : <ClientHome />;
-                console.log('🏠 Dashboard: Mostrando componente para rol:', profile?.role);
-                return component;
+                // Evitar renderizar el panel hasta que el rol del perfil esté disponible
+                if (!profile || !profile.role) {
+                  console.log('⏳ Dashboard: Esperando a que el perfil cargue rol...');
+                  return (
+                    <div className="flex items-center justify-center min-h-[50vh]">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600 mx-auto"></div>
+                        <p className="mt-3 text-gray-600">Cargando perfil...</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const component = profile.role === 'gardener' ? <GardenerDashboard /> : <ClientHome />;
+                console.log('🏠 Dashboard: Mostrando componente para rol:', profile.role);
+                return (
+                  <ErrorBoundary fallbackTitle="Algo ha fallado en el panel" fallbackMessage="Estamos trabajando para solucionarlo. Puedes reintentar o volver atrás.">
+                    {component}
+                  </ErrorBoundary>
+                );
               })()}
             </ProtectedRoute>
           } 
@@ -84,7 +102,9 @@ const AppContent = () => {
           path="/service/:serviceId" 
           element={
             <ProtectedRoute>
-              <ServiceDetail />
+              <ErrorBoundary fallbackTitle="Error al cargar el servicio" fallbackMessage="Intenta reintentar o volver al catálogo.">
+                <ServiceDetail />
+              </ErrorBoundary>
             </ProtectedRoute>
           } 
         />
@@ -92,7 +112,9 @@ const AppContent = () => {
           path="/booking" 
           element={
             <ProtectedRoute>
-              <ServiceBooking />
+              <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
+                <ServiceBooking />
+              </ErrorBoundary>
             </ProtectedRoute>
           } 
         />

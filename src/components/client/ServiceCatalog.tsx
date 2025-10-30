@@ -10,6 +10,29 @@ const ServiceCatalog = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  // Catálogo limitado a los 6 servicios canónicos de la IA
+  const ALLOWED_SERVICE_NAMES = [
+    'Corte de césped',
+    'Poda de plantas',
+    'Corte de setos a máquina',
+    'Corte de arbustos pequeños o ramas finas a tijera',
+    'Labrar y quitar malas hierbas a mano',
+    'Fumigación de plantas'
+  ];
+  const normalizeText = (s: string) => (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const ALLOWED_NORMALIZED = ALLOWED_SERVICE_NAMES.map(normalizeText);
+  const isAllowedServiceName = (name?: string) => {
+    const n = normalizeText(name || '');
+    if (!n) return false;
+    return ALLOWED_NORMALIZED.includes(n);
+  };
+
   useEffect(() => {
     fetchServices();
   }, []);
@@ -22,7 +45,9 @@ const ServiceCatalog = () => {
         .order('name');
 
       if (error) throw error;
-      setServices(data || []);
+      const all = data || [];
+      const filtered = all.filter(s => isAllowedServiceName(s.name));
+      setServices(filtered);
     } catch (error) {
       console.error('Error fetching services:', error);
     } finally {
@@ -40,13 +65,8 @@ const ServiceCatalog = () => {
   };
 
   const handleBookNow = (service: Service, e: React.MouseEvent) => {
-    e.stopPropagation(); // Evitar que se active el click del contenedor
-    navigate('/booking', { 
-      state: { 
-        selectedServiceId: service.id,
-        selectedService: service 
-      } 
-    });
+    e.stopPropagation();
+    navigate('/booking');
   };
 
   if (loading) {

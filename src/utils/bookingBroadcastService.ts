@@ -16,7 +16,6 @@ interface BroadcastParams {
 
 export async function broadcastBookingRequest(params: BroadcastParams): Promise<void> {
   const startTime = `${String(params.startHour).padStart(2,'0')}:00`;
-  const endTime = `${String(params.startHour + params.durationHours).padStart(2,'0')}:00`;
 
   // Subir fotos opcionalmente y añadir URLs a notas (con nombres sanitizados)
   let notesWithPhotos = params.notes || '';
@@ -68,7 +67,6 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
     service_id: params.primaryServiceId,
     date: params.date,
     start_time: startTime,
-    end_time: endTime,
     duration_hours: params.durationHours,
     status: 'pending',
     total_price: params.totalPrice,

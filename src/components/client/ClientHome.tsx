@@ -3,15 +3,17 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import AddressAutocomplete from '../common/AddressAutocomplete';
 import { Service } from '../../types';
-import { Wand2, Calendar, Image as ImageIcon, CheckCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Wand2, Calendar, Image as ImageIcon, CheckCircle, ChevronRight, ChevronLeft, ChevronDown } from 'lucide-react';
 import { estimateWorkWithAI, AITask } from '../../utils/aiPricingEstimator';
 import { findEligibleGardenersForServices, computeNextAvailableDays, MergedSlot } from '../../utils/mergedAvailabilityService';
 import { broadcastBookingRequest } from '../../utils/bookingBroadcastService';
+import { useNavigate } from 'react-router-dom';
 
 type WizardStep = 'welcome' | 'address' | 'details' | 'availability' | 'confirm';
 
 const ClientHome: React.FC = () => {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [step, setStep] = useState<WizardStep>('welcome');
 
   // Datos del formulario
@@ -103,16 +105,71 @@ const ClientHome: React.FC = () => {
 
   // Disponibilidad y jardineros
   const [eligibleGardenerIds, setEligibleGardenerIds] = useState<string[]>([]);
+  const [eligibleGardenerProfiles, setEligibleGardenerProfiles] = useState<{ user_id: string; full_name: string }[]>([]);
   const [dateSuggestions, setDateSuggestions] = useState<{ date: string; slots: MergedSlot[] }[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedSlot, setSelectedSlot] = useState<MergedSlot | null>(null);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [sending, setSending] = useState(false);
+  const [prefetchedAvailability, setPrefetchedAvailability] = useState(false);
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
+  // Cuando llegan sugerencias, expandir por defecto el primer día
+  useEffect(() => {
+    if (dateSuggestions.length > 0 && !expandedDate) {
+      setExpandedDate(dateSuggestions[0].date);
+    }
+  }, [dateSuggestions]);
+
+  // Helpers: normalizar textos y deducir servicios desde tareas IA
+  const normalizeText = (s: string) => (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // quita acentos
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const deriveServiceIdsFromAITasks = (tasks: any[], catalog: Service[]) => {
+    const ids = new Set<string>();
+    const normalizedServices = catalog.map(s => ({ id: s.id, n: normalizeText(s.name) }));
+
+    for (const t of tasks) {
+      const tipo = normalizeText(t?.tipo_servicio || '');
+      if (!tipo) continue;
+      // Coincidencia EXTACTA con nombre de servicio (normalizado)
+      const exact = normalizedServices.find(s => s.n === tipo);
+      if (exact) {
+        ids.add(exact.id);
+      } else {
+        console.warn('[AI] No existe servicio canónico con nombre exacto', { tipo, catalogNames: normalizedServices.map(s => s.n) });
+      }
+    }
+    return Array.from(ids);
+  };
 
   useEffect(() => {
     const fetchServices = async () => {
       const { data, error } = await supabase.from('services').select('*').order('name');
-      if (!error && data) setServices(data);
+      if (!error && data) {
+        setServices(data);
+        // Diagnóstico: comprobar presencia de los 6 servicios canónicos IA
+        const required = [
+          'corte de cesped',
+          'poda de plantas',
+          'corte de setos a maquina',
+          'corte de arbustos pequenos o ramas finas a tijera',
+          'labrar y quitar malas hierbas a mano',
+          'fumigacion de plantas',
+        ];
+        const present = new Set((data || []).map(s => normalizeText(s.name)));
+        const missing = required.filter(r => !present.has(r));
+        if (missing.length > 0) {
+          console.warn('[catalog] Faltan servicios canónicos en tabla services', { missing });
+        } else {
+          console.log('[catalog] Todos los servicios canónicos IA están presentes');
+        }
+      }
     };
     fetchServices();
   }, []);
@@ -165,53 +222,118 @@ const ClientHome: React.FC = () => {
       // Subir fotos para obtener URLs accesibles por la IA
       const photoUrls: string[] = [];
       if (photos.length > 0 && !disablePhotoUpload) {
-        try {
-          const { supabase } = await import('../../lib/supabase');
-          const { data: userData } = await supabase.auth.getUser();
-          const userId = userData?.user?.id || 'anon';
-          const bucket = (import.meta.env.VITE_BOOKING_PHOTOS_BUCKET as string | undefined) || 'booking-photos';
-          const now = Date.now();
-          console.log('[AI] photo upload init', { bucket, count: photos.length, userId });
-  
-          const sanitizeFileName = (name: string) => {
-            const base = name.trim().toLowerCase().replace(/\s+/g, '_');
-            return base.replace(/[^a-z0-9._-]/g, '_');
-          };
-  
-          for (let i = 0; i < photos.length; i++) {
-            const file = photos[i];
-            console.log(`[AI] uploading photo ${i+1}/${photos.length}`, { name: file.name, type: file.type });
-            const safeName = sanitizeFileName(file.name || `foto_${i}.jpg`);
-            const path = `drafts/${userId}/${now}_${i}_${safeName}`;
-            const { error: uploadError } = await supabase.storage
-              .from(bucket)
-              .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
-            if (uploadError) {
-              console.warn(`[AI] upload error photo ${i+1}:`, uploadError.message);
-              continue;
-            }
-            console.log(`[AI] photo ${i+1} uploaded`, { path });
-            // Obtener URL pública o firmada
-            const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
-            if (publicUrlData?.publicUrl) {
-              photoUrls.push(publicUrlData.publicUrl);
-              console.log(`[AI] url resolved (public) for photo ${i+1}`, { url: publicUrlData.publicUrl });
-            } else {
-              const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
-              if (signed?.signedUrl) {
-                photoUrls.push(signed.signedUrl);
-                console.log(`[AI] url resolved (signed) for photo ${i+1}`, { url: signed.signedUrl });
+        console.log('[AI] photo upload config', { disablePhotoUpload, photosLen: photos.length });
+        const uploadTimeoutMs = Number((import.meta.env.VITE_PHOTO_UPLOAD_TIMEOUT_MS as string | undefined) || '12000');
+        let timedOut = false;
+
+        const uploadPromise = (async () => {
+          try {
+            const { data: userData } = await supabase.auth.getUser();
+            const userId = userData?.user?.id || 'anon';
+            const bucket = (import.meta.env.VITE_BOOKING_PHOTOS_BUCKET as string | undefined) || 'booking-photos';
+            const now = Date.now();
+            console.log('[AI] photo upload init', { bucket, count: photos.length, userId });
+    
+            const sanitizeFileName = (name: string) => {
+              const base = name.trim().toLowerCase().replace(/\s+/g, '_');
+              return base.replace(/[^a-z0-9._-]/g, '_');
+            };
+    
+            for (let i = 0; i < photos.length; i++) {
+              const file = photos[i];
+              console.log(`[AI] uploading photo ${i+1}/${photos.length}`, { name: file.name, type: file.type });
+              const safeName = sanitizeFileName(file.name || `foto_${i}.jpg`);
+              const path = `drafts/${userId}/${now}_${i}_${safeName}`;
+              const { error: uploadError } = await supabase.storage
+                .from(bucket)
+                .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
+              if (uploadError) {
+                console.warn(`[AI] upload error photo ${i+1}:`, uploadError.message);
+                continue;
+              }
+              console.log(`[AI] photo ${i+1} uploaded`, { path });
+              // Obtener URL pública o firmada
+              const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(path);
+              if (publicUrlData?.publicUrl) {
+                photoUrls.push(publicUrlData.publicUrl);
+                console.log(`[AI] url resolved (public) for photo ${i+1}`, { url: publicUrlData.publicUrl });
+              } else {
+                const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+                if (signed?.signedUrl) {
+                  photoUrls.push(signed.signedUrl);
+                  console.log(`[AI] url resolved (signed) for photo ${i+1}`, { url: signed.signedUrl });
+                }
               }
             }
+            console.log('[AI] photo upload done', { photoUrlsLen: photoUrls.length });
+          } catch (err) {
+            console.warn('No se pudieron preparar URLs de fotos para IA, se seguirá sin imágenes:', err);
           }
-          console.log('[AI] photo upload done', { photoUrlsLen: photoUrls.length });
-        } catch (err) {
-          console.warn('No se pudieron preparar URLs de fotos para IA, se seguirá sin imágenes:', err);
+        })();
+
+        const timeoutPromise = new Promise<void>((resolve) => {
+          setTimeout(() => {
+            timedOut = true;
+            console.warn('[AI] photo upload timed out; continuing without images', { uploadTimeoutMs });
+            resolve();
+          }, uploadTimeoutMs);
+        });
+
+        await Promise.race([uploadPromise, timeoutPromise]);
+        console.log('[AI] photo upload step finished; proceeding to AI', { photoUrlsLen: photoUrls.length });
+
+        // Fallback: inline data URLs si no hay URLs de Storage
+        if (photos.length > 0 && photoUrls.length === 0) {
+          console.warn('[AI] no storage URLs; preparing inline data URLs fallback');
+          const maxInline = 2;
+          const toResizedDataUrl = (file: File, maxDim = 1280, quality = 0.7) => new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const src = typeof reader.result === 'string' ? reader.result : '';
+              if (!src) return resolve('');
+              const img = new Image();
+              img.onload = () => {
+                let w = img.width, h = img.height;
+                const scale = Math.min(1, maxDim / Math.max(w, h));
+                w = Math.round(w * scale);
+                h = Math.round(h * scale);
+                const canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return resolve(src);
+                ctx.drawImage(img, 0, 0, w, h);
+                try {
+                  const out = canvas.toDataURL('image/jpeg', quality);
+                  resolve(out);
+                } catch {
+                  resolve(src);
+                }
+              };
+              img.onerror = () => resolve('');
+              img.src = src;
+            };
+            reader.onerror = () => resolve('');
+            reader.readAsDataURL(file);
+          });
+          const limit = Math.min(photos.length, maxInline);
+          for (let i = 0; i < limit; i++) {
+            try {
+              const dataUrl = await toResizedDataUrl(photos[i]);
+              if (dataUrl) {
+                photoUrls.push(dataUrl);
+                console.log(`[AI] inline dataUrl ready for photo ${i+1}`, { length: dataUrl.length, startsWithData: dataUrl.startsWith('data:') });
+              }
+            } catch (err) {
+              console.warn(`[AI] failed to prepare dataUrl for photo ${i+1}`, err);
+            }
+          }
+          console.log('[AI] inline images prepared', { photoUrlsLen: photoUrls.length });
         }
       } else if (photos.length > 0 && disablePhotoUpload) {
         console.warn('[AI] Photo upload disabled by env; continuing without images');
       }
   
+      console.log('[AI] calling estimateWorkWithAI', { photoUrlsLen: photoUrls.length, descriptionLen: description.length, selectedServiceIdsLen: selectedServiceIds.length });
       const result = await estimateWorkWithAI({
         description,
         photoCount: photos.length,
@@ -224,24 +346,75 @@ const ClientHome: React.FC = () => {
         hasReasons: Array.isArray(result.reasons),
       });
       setAiTasks(tareas);
+      // Si no hay servicios seleccionados, intentar deducirlos de las tareas IA
+      if (selectedServiceIds.length === 0 && tareas.length > 0 && services.length > 0) {
+        const inferred = deriveServiceIdsFromAITasks(tareas, services);
+        if (inferred.length > 0) {
+          console.log('[AI] servicios deducidos desde tareas IA', { inferred });
+          setSelectedServiceIds(inferred);
+        } else {
+          console.log('[AI] no se pudieron deducir servicios desde tareas IA');
+        }
+      }
     } catch (e) {
       console.warn('AI analysis error, using fallback:', e);
       setAiTasks([]);
+      
+      // Mostrar mensaje específico para rate limit
+      if (e instanceof Error && e.message.includes('Rate limit')) {
+        alert(`⚠️ ${e.message}\n\nPuedes:\n• Esperar unas horas e intentar de nuevo\n• Añadir método de pago en OpenAI para aumentar límites\n• Continuar sin análisis IA seleccionando servicios manualmente`);
+      }
     } finally {
       setAnalyzing(false);
     }
   };
+
+  // Prefetch disponibilidad automáticamente tras tener estimación IA y datos clave
+  useEffect(() => {
+    const ready = !!user && !!selectedAddress && selectedServiceIds.length > 0 && estimatedHours > 0;
+    if (!prefetchedAvailability && ready) {
+      console.log('[avail] auto-prefetch: iniciando búsqueda de jardineros y horas', {
+        selectedServiceIdsLen: selectedServiceIds.length,
+        estimatedHours,
+        addressPresent: !!selectedAddress,
+      });
+      fetchAvailability()
+        .then(() => setPrefetchedAvailability(true))
+        .catch(() => setPrefetchedAvailability(true));
+    }
+  }, [user, selectedAddress, selectedServiceIds, estimatedHours, prefetchedAvailability]);
 
   const fetchAvailability = async () => {
     if (!user) return;
     if (!selectedAddress || selectedServiceIds.length === 0 || estimatedHours <= 0) return;
     setLoadingAvailability(true);
     try {
+      console.log('[avail] buscando jardineros elegibles...', {
+        selectedServiceIds,
+        address: selectedAddress,
+        estimatedHours,
+      });
       const gardeners = await findEligibleGardenersForServices(selectedServiceIds, selectedAddress);
       const ids = gardeners.map(g => (g as any).user_id);
+      console.log('[avail] jardineros encontrados', { count: ids.length, ids });
       setEligibleGardenerIds(ids);
+      // Cargar nombres de perfiles para mostrar jardineros
+      if (ids.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, full_name')
+          .in('user_id', ids);
+        if (!profilesError && profiles) {
+          setEligibleGardenerProfiles(profiles as any);
+        } else {
+          setEligibleGardenerProfiles([]);
+        }
+      } else {
+        setEligibleGardenerProfiles([]);
+      }
       const startDate = new Date().toISOString().slice(0, 10);
       const suggestions = await computeNextAvailableDays(ids, startDate, user.id, estimatedHours, 10, 7);
+      console.log('[avail] sugerencias de días/horas', { days: suggestions.length, first: suggestions[0] });
       setDateSuggestions(suggestions);
       if (suggestions.length > 0) {
         setSelectedDate(suggestions[0].date);
@@ -268,7 +441,7 @@ const ClientHome: React.FC = () => {
         durationHours: estimatedHours,
         clientAddress: selectedAddress,
         notes: description,
-        totalPrice: totalPrice,
+        totalPrice: aiPriceTotal > 0 ? aiPriceTotal : totalPrice,
         hourlyRate: hourlyRateAverage,
         photoFiles: photos,
       });
@@ -338,20 +511,7 @@ const ClientHome: React.FC = () => {
 
           {step === 'details' && (
             <div className="space-y-6">
-              <div>
-                <label className="block text-lg font-semibold text-gray-800 mb-2">¿Qué tipo de servicio necesitas?</label>
-                <div className="flex flex-wrap gap-2">
-                  {services.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => toggleService(s.id)}
-                      className={`px-3 py-2 rounded-full border ${selectedServiceIds.includes(s.id) ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'} text-sm`}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Eliminado el selector manual de servicios; flujo 100% por IA */}
 
               <div>
                 <label className="block text-lg font-semibold text-gray-800 mb-2">Fotos del jardín</label>
@@ -417,13 +577,97 @@ const ClientHome: React.FC = () => {
                 </div>
               )}
 
+              
+
+              {/* Disponibilidad inmediata bajo presupuesto y horas */}
               {aiTimeTotal > 0 && (
-                <div className="mt-4 bg-white rounded-lg border border-green-200 p-3">
-                  <div className="text-sm text-gray-800">
-                    <span className="font-medium">🧮 Resultado final</span>
-                    <span>{' • '}Tiempo total: <span className="font-semibold">{aiTimeTotal} {aiTimeTotal === 1 ? 'hora' : 'horas'}</span></span>
-                    <span>{' • '}Precio total: <span className="font-semibold">€{aiPriceTotal}</span></span>
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-lg font-semibold text-gray-800">Elige día y hora disponibles</h4>
+                    <button
+                      type="button"
+                      onClick={() => setStep('availability')}
+                      className="text-sm text-green-700 hover:underline"
+                    >
+                      Ver más días
+                    </button>
                   </div>
+
+                  {loadingAvailability && (
+                    <div className="flex items-center gap-2 text-gray-600"><ImageIcon className="w-4 h-4" /> Buscando disponibilidad...</div>
+                  )}
+
+                  {!loadingAvailability && dateSuggestions.length > 0 && (
+                    <div className="space-y-2">
+                      {dateSuggestions.slice(0, 4).map(ds => {
+                        const isOpen = expandedDate === ds.date;
+                        const totalSlots = ds.slots.length;
+                        return (
+                          <div key={ds.date} className="border border-gray-200 rounded-xl overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedDate(ds.date);
+                                setSelectedDate(ds.date);
+                                setSelectedSlot(null);
+                              }}
+                              className={`w-full flex items-center justify-between p-3 text-left ${isOpen ? 'bg-green-50' : 'bg-white'}`}
+                            >
+                              <span className="font-medium text-gray-800">{ds.date}</span>
+                              <span className="text-xs text-gray-600">{totalSlots} franjas</span>
+                            </button>
+                            {isOpen && (
+                              <div className="p-3 flex flex-wrap gap-2 border-t border-gray-200">
+                                {ds.slots.map(slot => {
+                                  const names = slot.gardenerIds
+                                    .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
+                                    .filter(Boolean) as string[];
+                                  const shown = names.slice(0, 3);
+                                  const extra = names.length - shown.length;
+                                  const namesLabel = shown.join(', ') + (extra > 0 ? ` +${extra} más` : '');
+                                  return (
+                                    <button
+                                      key={`${ds.date}-${slot.startHour}`}
+                                      onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
+                                      className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
+                                    >
+                                      <div className="text-sm">
+                                        {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
+                                      </div>
+                                      <div className="text-xs opacity-80">
+                                        {namesLabel || '—'}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!loadingAvailability && dateSuggestions.length === 0 && (
+                    <div className="text-sm text-gray-600">No encontramos disponibilidad inmediata. Pulsa "Ver más días" para ampliar la búsqueda.</div>
+                  )}
+
+                  {eligibleGardenerIds.length > 0 && selectedSlot && (
+                    <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3">
+                      <div className="text-green-800 text-sm">
+                        Has seleccionado <span className="font-semibold">{selectedDate}</span> de <span className="font-semibold">{selectedSlot.startHour}:00</span> a <span className="font-semibold">{selectedSlot.endHour}:00</span>.
+                      </div>
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setStep('availability')}
+                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
+                        >
+                          Continuar con la reserva
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -441,28 +685,76 @@ const ClientHome: React.FC = () => {
                 </button>
               </div>
 
+              {eligibleGardenerProfiles.length > 0 && (
+                <div className="bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="text-sm text-gray-800 font-medium mb-2">Jardineros que pueden realizar estos trabajos</div>
+                  <div className="flex flex-wrap gap-2">
+                    {eligibleGardenerProfiles.map(p => (
+                      <span key={p.user_id} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
+                        {p.full_name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {loadingAvailability && (
                 <div className="flex items-center gap-2 text-gray-600"><ImageIcon className="w-4 h-4" /> Buscando disponibilidad...</div>
               )}
 
               {!loadingAvailability && dateSuggestions.length > 0 && (
-                <div className="space-y-4">
-                  {dateSuggestions.map(ds => (
-                    <div key={ds.date} className="border border-gray-200 rounded-xl p-4">
-                      <div className="font-medium text-gray-800 mb-2">{ds.date}</div>
-                      <div className="flex flex-wrap gap-2">
-                        {ds.slots.map(slot => (
-                          <button
-                            key={`${ds.date}-${slot.startHour}`}
-                            onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
-                            className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
-                          >
-                            {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
-                          </button>
-                        ))}
+                <div className="space-y-2">
+                  {dateSuggestions.map(ds => {
+                    const isOpen = expandedDate === ds.date;
+                    const totalSlots = ds.slots.length;
+                    return (
+                      <div key={ds.date} className="border border-gray-200 rounded-xl overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedDate(ds.date);
+                            setSelectedDate(ds.date);
+                            setSelectedSlot(null);
+                          }}
+                          className={`w-full flex items-center justify-between p-3 text-left ${isOpen ? 'bg-green-50' : 'bg-white'}`}
+                        >
+                          <div>
+                            <div className="font-medium text-gray-800">{ds.date}</div>
+                            <div className="text-sm text-gray-600">{totalSlots} franjas disponibles</div>
+                          </div>
+                          <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {isOpen && (
+                          <div className="p-3 bg-gray-50 border-t border-gray-200">
+                            <div className="flex flex-wrap gap-2">
+                              {ds.slots.map(slot => {
+                                const names = slot.gardenerIds
+                                  .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
+                                  .filter(Boolean) as string[];
+                                const shown = names.slice(0, 3);
+                                const extra = names.length - shown.length;
+                                const namesLabel = shown.join(', ') + (extra > 0 ? ` +${extra} más` : '');
+                                return (
+                                  <button
+                                    key={`${ds.date}-${slot.startHour}`}
+                                    onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
+                                    className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
+                                  >
+                                    <div className="text-sm">
+                                      {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
+                                    </div>
+                                    <div className="text-xs opacity-80">
+                                      {namesLabel || '—'}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

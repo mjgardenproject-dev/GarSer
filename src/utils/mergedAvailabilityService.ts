@@ -3,6 +3,9 @@ import { BufferService } from './bufferService';
 import { getCoordinatesFromAddress, calculateDistance } from './geolocation';
 import { addDays, format } from 'date-fns';
 
+// Bypass temporal de filtros para diagnóstico: ignora servicio, distancia y disponibilidad
+const TEMP_DISABLE_FILTERS = false;
+
 interface GardenerProfile {
   user_id: string;
   address?: string;
@@ -19,6 +22,19 @@ export interface MergedSlot {
 
 // Encuentra jardineros elegibles por servicio y cobertura
 export async function findEligibleGardeners(serviceId: string, clientAddress: string): Promise<GardenerProfile[]> {
+  if (TEMP_DISABLE_FILTERS) {
+    const { data, error } = await supabase
+      .from('gardener_profiles')
+      .select('*');
+    if (error) {
+      console.warn('[eligibility] Error obteniendo todos los jardineros (bypass)', { error });
+      return [];
+    }
+    const list = (data as GardenerProfile[]) || [];
+    console.log('[eligibility] BYPASS activo: retornando todos los jardineros', { count: list.length });
+    return list;
+  }
+
   const clientCoords = await getCoordinatesFromAddress(clientAddress);
   if (!clientCoords) {
     console.warn('[eligibility] Geocoding de cliente falló o no disponible', { clientAddress });
@@ -72,6 +88,19 @@ export async function findEligibleGardeners(serviceId: string, clientAddress: st
 
 // Encuentra jardineros elegibles que soporten TODOS los servicios seleccionados
 export async function findEligibleGardenersForServices(serviceIds: string[], clientAddress: string): Promise<GardenerProfile[]> {
+  if (TEMP_DISABLE_FILTERS) {
+    const { data, error } = await supabase
+      .from('gardener_profiles')
+      .select('*');
+    if (error) {
+      console.warn('[eligibility] Error obteniendo todos los jardineros (bypass, multi)', { error });
+      return [];
+    }
+    const list = (data as GardenerProfile[]) || [];
+    console.log('[eligibility] BYPASS activo (multi): retornando todos los jardineros', { count: list.length });
+    return list;
+  }
+
   const clientCoords = await getCoordinatesFromAddress(clientAddress);
   if (!clientCoords) {
     console.warn('[eligibility] Geocoding de cliente falló o no disponible', { clientAddress });
@@ -87,6 +116,7 @@ export async function findEligibleGardenersForServices(serviceIds: string[], cli
       .eq('is_available', true);
     if (error) throw error;
     list = (data as GardenerProfile[]) || [];
+    console.log('[eligibility] Consulta por servicios múltiples', { requested: serviceIds, count: list.length });
   } catch (e) {
     console.warn('[eligibility] Error consultando jardineros por servicios múltiples, intento fallback:', e);
     const { data: allAvailable, error: fallbackError } = await supabase
@@ -101,12 +131,26 @@ export async function findEligibleGardenersForServices(serviceIds: string[], cli
       const svcs = (g as any).services as string[];
       return Array.isArray(svcs) && serviceIds.every(id => svcs.includes(id));
     });
+    console.log('[eligibility] Fallback filtrado en cliente por servicios', { requested: serviceIds, count: list.length });
   }
 
   const eligible: GardenerProfile[] = [];
   for (const g of list) {
-    const distKm = g.address ? await calculateDistance(clientCoords, await getCoordinatesFromAddress(g.address)) : null;
-    const within = distKm == null || g.work_radius == null ? true : distKm <= (g.work_radius || 10);
+    const radiusKm = (g as any).max_distance ?? g.work_radius ?? 20;
+    if (!g.address) {
+      console.log('[eligibility] Jardinero sin dirección, asumiendo elegible (multi)', { user_id: g.user_id, radiusKm });
+      eligible.push(g);
+      continue;
+    }
+    const gardenerCoords = await getCoordinatesFromAddress(g.address);
+    if (!gardenerCoords) {
+      console.log('[eligibility] Geocoding de jardinero falló, asumiendo elegible (multi)', { user_id: g.user_id, address: g.address, radiusKm });
+      eligible.push(g);
+      continue;
+    }
+    const distKm = calculateDistance(clientCoords.lat, clientCoords.lng, gardenerCoords.lat, gardenerCoords.lng);
+    const within = distKm <= radiusKm;
+    console.log('[eligibility] Distancia vs radio (multi)', { user_id: g.user_id, distanceKm: Math.round(distKm * 10) / 10, radiusKm, within });
     if (within) eligible.push(g);
   }
 

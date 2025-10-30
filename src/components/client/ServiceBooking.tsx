@@ -43,6 +43,8 @@ const ServiceBooking = () => {
   // Servicio preseleccionado desde la navegación
   const preselectedService = location.state?.selectedService;
   const preselectedServiceId = location.state?.selectedServiceId;
+  const aiSuggestedPrice: number | undefined = location.state?.aiPrice;
+  const aiSuggestedHours: number | undefined = location.state?.aiHours;
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
@@ -54,6 +56,8 @@ const ServiceBooking = () => {
   });
 
   const watchedValues = watch();
+  // Precio final a mostrar y guardar: si hay IA, usarlo
+  const displayTotalPrice = (aiSuggestedPrice && aiSuggestedPrice > 0) ? aiSuggestedPrice : totalPrice;
 
   // Efectos para cargar datos
   useEffect(() => {
@@ -77,10 +81,13 @@ const ServiceBooking = () => {
         const total = basePrice + travelFee + (hourlyRate * durationHours);
         setTotalPrice(total);
       }
+    } else if (aiSuggestedPrice && aiSuggestedPrice > 0) {
+      // Mostrar el precio estimado por IA cuando aún no hay duración seleccionada
+      setTotalPrice(aiSuggestedPrice);
     } else {
       setTotalPrice(0);
     }
-  }, [durationHours, watchedValues.service_id, services]);
+  }, [durationHours, watchedValues.service_id, services, aiSuggestedPrice]);
 
   const fetchServices = async () => {
     try {
@@ -124,18 +131,19 @@ const ServiceBooking = () => {
         return;
       }
 
+      const finalPrice = (aiSuggestedPrice && aiSuggestedPrice > 0) ? aiSuggestedPrice : totalPrice;
+
       const inserts = gardenerIdsInRange.map(gardenerId => ({
         client_id: user.id,
         gardener_id: gardenerId,
         service_id: data.service_id,
         date: dateStr,
         start_time: startLabel,
-        end_time: endLabel,
         duration_hours: durationHours,
         client_address: data.client_address,
         notes: data.notes,
         status: 'pending',
-        total_price: totalPrice,
+        total_price: finalPrice,
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       }));
 
@@ -151,7 +159,7 @@ const ServiceBooking = () => {
           <div className="text-sm space-y-1">
             <div>📅 <strong>Fecha:</strong> {format(selectedDate, 'dd/MM/yyyy', { locale: es })}</div>
             <div>⏰ <strong>Horario:</strong> {`${selectedSlot.startHour.toString().padStart(2, '0')}:00`}–{`${selectedSlot.endHour.toString().padStart(2, '0')}:00`} ({durationHours}h)</div>
-            <div>💰 <strong>Precio total:</strong> €{totalPrice}</div>
+            <div>💰 <strong>Precio total:</strong> €{finalPrice}</div>
             <div>⏱️ <strong>Respuesta en:</strong> máximo 24 horas</div>
             <div>👤 <strong>Privacidad:</strong> El jardinero se mostrará tras la confirmación</div>
           </div>
@@ -402,6 +410,9 @@ const ServiceBooking = () => {
                       </div>
                       <p className="text-xs sm:text-sm text-gray-600 mb-2 line-clamp-2">{service.description}</p>
                       <p className="text-base sm:text-lg font-bold text-green-600">€{service.base_price}</p>
+                      {aiSuggestedPrice && aiSuggestedPrice > 0 && (
+                        <p className="text-xs sm:text-sm text-green-700 mt-1">Precio sugerido IA: €{aiSuggestedPrice}</p>
+                      )}
                     </div>
                   </label>
                 ))}
@@ -508,7 +519,7 @@ const ServiceBooking = () => {
           )}
 
           {/* Resumen de Precio */}
-          {totalPrice > 0 && selectedSlot && (
+          {(totalPrice > 0 || (aiSuggestedPrice && aiSuggestedPrice > 0)) && selectedSlot && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 sm:p-6">
               <h3 className="text-lg font-semibold text-green-800 mb-3 sm:mb-4">
                 💰 Resumen del Precio
@@ -529,7 +540,7 @@ const ServiceBooking = () => {
                 <div className="border-t border-green-300 pt-2 mt-3">
                   <div className="flex justify-between text-lg font-bold text-green-800">
                     <span>Total:</span>
-                    <span>€{totalPrice}</span>
+                    <span>€{displayTotalPrice}</span>
                   </div>
                 </div>
               </div>

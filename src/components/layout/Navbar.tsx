@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Leaf, LogOut, User, Calendar, MessageCircle } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const Navbar = () => {
   const { user, profile, signOut } = useAuth();
+  const [logoError, setLogoError] = useState(false);
   
   // Log para depuración
   useEffect(() => {
@@ -33,12 +34,26 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
-            <div className="flex-shrink-0 flex items-center">
-              <div className="w-8 h-8 bg-gradient-to-br from-green-600 to-green-700 rounded-lg flex items-center justify-center">
-                <Leaf className="w-5 h-5 text-white" />
-              </div>
-              <span className="ml-2 text-xl font-bold text-gray-900">JardínApp</span>
-            </div>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="flex-shrink-0 flex items-center focus:outline-none"
+              aria-label="Ir al dashboard"
+            >
+              {/* Logo GarSer.es con fallback a texto */}
+              {logoError ? (
+                <span className="ml-2 text-xl font-bold text-gray-900">
+                  GarSer
+                  <span className="text-green-600">.es</span>
+                </span>
+              ) : (
+                <img
+                  src="/garser-logo.svg"
+                  alt="GarSer.es — Garden Service"
+                  className="h-8 w-auto"
+                  onError={() => setLogoError(true)}
+                />
+              )}
+            </button>
           </div>
 
           <div className="hidden md:block">

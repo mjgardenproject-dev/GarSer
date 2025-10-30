@@ -34,12 +34,7 @@ const ServiceDetail = () => {
   };
 
   const handleBookService = () => {
-    navigate('/booking', { 
-      state: { 
-        selectedServiceId: serviceId,
-        selectedService: service 
-      } 
-    });
+    navigate('/booking');
   };
 
   if (loading) {

@@ -10,6 +10,30 @@ import toast from 'react-hot-toast';
 import AddressAutocomplete from '../common/AddressAutocomplete';
 import DistanceMapSelector from '../common/DistanceMapSelector';
 
+// Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
+const ALLOWED_SERVICE_NAMES = [
+  'Corte de césped',
+  'Poda de plantas',
+  'Corte de setos a máquina',
+  'Corte de arbustos pequeños o ramas finas a tijera',
+  'Labrar y quitar malas hierbas a mano',
+  'Fumigación de plantas'
+];
+const normalizeText = (s: string) => (s || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+const ALLOWED_NORMALIZED = ALLOWED_SERVICE_NAMES.map(normalizeText);
+const isAllowedServiceName = (name?: string) => {
+  const n = normalizeText(name || '');
+  if (!n) return false;
+  // Coincidencia estricta por nombre normalizado (evita coincidencias parciales/sinónimos)
+  return ALLOWED_NORMALIZED.includes(n);
+};
+
 const schema = yup.object({
   full_name: yup.string().required('Nombre completo requerido'),
   phone: yup.string().required('Teléfono requerido'),
@@ -54,7 +78,9 @@ const ProfileSettings = () => {
         .order('name');
 
       if (error) throw error;
-      setServices(data || []);
+      const all = data || [];
+      const filtered = all.filter(s => isAllowedServiceName(s.name));
+      setServices(filtered);
     } catch (error) {
       console.error('Error fetching services:', error);
     }

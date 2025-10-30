@@ -68,12 +68,19 @@ const BookingRequestsManager = () => {
       const clientIds = [...new Set(bookings.map(b => b.client_id))];
       const serviceIds = [...new Set(bookings.map(b => b.service_id))];
 
+      const clientIdsFiltered = clientIds.filter(Boolean);
+      const serviceIdsFiltered = serviceIds.filter(Boolean);
+
       const [clientsResult, servicesResult] = await Promise.all([
-        supabase.from('profiles').select('id, full_name, phone').in('id', clientIds),
-        supabase.from('services').select('id, name, price_per_hour').in('id', serviceIds)
+        clientIdsFiltered.length > 0
+          ? supabase.from('profiles').select('user_id, full_name, phone').in('user_id', clientIdsFiltered)
+          : Promise.resolve({ data: [], error: null }),
+        serviceIdsFiltered.length > 0
+          ? supabase.from('services').select('id, name, price_per_hour').in('id', serviceIdsFiltered)
+          : Promise.resolve({ data: [], error: null })
       ]);
 
-      const clientsMap = new Map(clientsResult.data?.map(c => [c.id, c]) || []);
+      const clientsMap = new Map(clientsResult.data?.map(c => [c.user_id, c]) || []);
       const servicesMap = new Map(servicesResult.data?.map(s => [s.id, s]) || []);
 
       // Transformar los datos para que coincidan con la interfaz esperada
@@ -94,7 +101,13 @@ const BookingRequestsManager = () => {
         services: servicesMap.get(booking.service_id) || { name: 'Servicio desconocido', price_per_hour: 0 },
         booking_blocks: [{
           start_time: booking.start_time || '09:00',
-          end_time: booking.end_time || '10:00'
+          end_time: (() => {
+            if (booking.end_time) return booking.end_time;
+            const startH = booking.start_time ? parseInt(booking.start_time.split(':')[0]) : 9;
+            const dur = booking.duration_hours || 1;
+            const endH = startH + dur;
+            return `${String(endH).padStart(2,'0')}:00`;
+          })()
         }],
         existing_response: null // No hay respuestas separadas en este modelo simplificado
       }));
@@ -160,7 +173,7 @@ const BookingRequestsManager = () => {
         const { error: updateError } = await supabase
           .from('bookings')
           .update({
-            status: 'rejected',
+            status: 'cancelled',
             updated_at: new Date().toISOString()
           })
           .eq('id', requestId)
@@ -295,7 +308,7 @@ const BookingRequestsManager = () => {
                         ✓ Aceptada
                       </span>
                     </div>
-                  ) : request.status === 'rejected' ? (
+                  ) : (request.status === 'rejected' || request.status === 'cancelled') ? (
                     <div className="flex items-center space-x-2">
                       <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
                         ✗ Rechazada

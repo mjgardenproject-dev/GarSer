@@ -48,19 +48,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
     try {
       const { data, error } = await supabase
         .from('chat_messages')
-        .select(`
-          *,
-          profiles!chat_messages_sender_id_fkey(full_name)
-        `)
+        .select('*')
         .eq('booking_id', bookingId)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
 
-      const messagesWithNames = data?.map(msg => ({
-        ...msg,
-        sender_name: msg.profiles?.full_name || 'Usuario'
-      })) || [];
+      const msgs = (data || []) as ChatMessage[];
+      const senderIds = Array.from(new Set(msgs.map(m => m.sender_id).filter(Boolean)));
+
+      // Fetch sender names from profiles by user_id
+      let namesMap = new Map<string, string>();
+      if (senderIds.length > 0) {
+        const { data: profiles, error: profError } = await supabase
+          .from('profiles')
+          .select('user_id, full_name')
+          .in('user_id', senderIds);
+        if (!profError && profiles) {
+          profiles.forEach((p: any) => {
+            if (p.user_id) namesMap.set(p.user_id, p.full_name);
+          });
+        }
+      }
+
+      const messagesWithNames = msgs.map(m => ({
+        ...m,
+        sender_name: namesMap.get(m.sender_id) || 'Usuario'
+      }));
 
       setMessages(messagesWithNames);
     } catch (error) {
@@ -79,9 +93,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
           table: 'chat_messages',
           filter: `booking_id=eq.${bookingId}`
         },
-        (payload) => {
+        async (payload) => {
           const newMsg = payload.new as ChatMessage;
-          setMessages(prev => [...prev, newMsg]);
+          let senderName = 'Usuario';
+          if (newMsg?.sender_id) {
+            // Try to resolve sender name on-the-fly if not already known
+            const { data: prof } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('user_id', newMsg.sender_id)
+              .maybeSingle();
+            if (prof && (prof as any).full_name) senderName = (prof as any).full_name;
+          }
+          setMessages(prev => [...prev, { ...newMsg, sender_name: senderName }]);
         }
       )
       .subscribe();

@@ -10,6 +10,7 @@ import {
 } from '../../utils/availabilityService';
 import { AvailabilityBlock, TimeBlock } from '../../types';
 import toast from 'react-hot-toast';
+import { supabase } from '../../lib/supabase';
 
 const AvailabilityManager = () => {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ const AvailabilityManager = () => {
   const [weeklyAvailability, setWeeklyAvailability] = useState<{ [date: string]: { [hour: number]: boolean } }>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [bookedBlocks, setBookedBlocks] = useState<{ [date: string]: Set<number> }>({});
 
   // Generar bloques de tiempo de 1 hora (8:00 AM a 8:00 PM)
   const timeBlocks = generateDailyTimeBlocks();
@@ -42,7 +44,7 @@ const AvailabilityManager = () => {
       console.log('Fetching availability for week:', format(weekStart, 'yyyy-MM-dd'), 'to', format(weekEnd, 'yyyy-MM-dd'));
       
       const weeklyData: { [date: string]: { [hour: number]: boolean } } = {};
-      
+
       for (const day of weekDays) {
         const dateStr = format(day, 'yyyy-MM-dd');
         console.log('Fetching availability for date:', dateStr);
@@ -59,9 +61,42 @@ const AvailabilityManager = () => {
         });
         weeklyData[dateStr] = dayAvailability;
       }
-      
+
       console.log('Final weekly availability data:', weeklyData);
       setWeeklyAvailability(weeklyData);
+
+      // Cargar reservas confirmadas dentro de la semana y marcar bloques
+      try {
+        const startStr = format(weekStart, 'yyyy-MM-dd');
+        const endStr = format(weekEnd, 'yyyy-MM-dd');
+        const { data: bookings, error: bookingsError } = await supabase
+          .from('bookings')
+          .select('date, start_time, duration_hours')
+          .eq('gardener_id', user.id)
+          .eq('status', 'confirmed')
+          .gte('date', startStr)
+          .lte('date', endStr);
+
+        if (bookingsError) {
+          console.warn('Error fetching confirmed bookings for calendar:', bookingsError);
+          setBookedBlocks({});
+        } else {
+          const bookedMap: { [date: string]: Set<number> } = {};
+          (bookings || []).forEach((b: any) => {
+            const startHour = parseInt((b.start_time || '08:00').split(':')[0]);
+            const duration = b.duration_hours || 1;
+            const dateKey = b.date;
+            if (!bookedMap[dateKey]) bookedMap[dateKey] = new Set<number>();
+            for (let i = 0; i < duration; i++) {
+              bookedMap[dateKey].add(startHour + i);
+            }
+          });
+          setBookedBlocks(bookedMap);
+        }
+      } catch (e) {
+        console.warn('Error building booked blocks map:', e);
+        setBookedBlocks({});
+      }
     } catch (error) {
       console.error('Error fetching availability:', error);
       toast.error('Error al cargar la disponibilidad');
@@ -197,6 +232,11 @@ const AvailabilityManager = () => {
     return dayAvailability[hour] || false;
   };
 
+  const isBlockBooked = (date: string, hour: number): boolean => {
+    const set = bookedBlocks[date];
+    return !!set && set.has(hour);
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -289,17 +329,21 @@ const AvailabilityManager = () => {
                 {getWeekDays().map((day) => {
                   const dateStr = format(day, 'yyyy-MM-dd');
                   const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);
+                  const isBooked = isBlockBooked(dateStr, timeBlock.hour);
                   
                   return (
                     <button
                       key={`${dateStr}-${timeBlock.hour}`}
-                      onClick={() => toggleBlockAvailability(dateStr, timeBlock.hour)}
+                      onClick={() => { if (!isBooked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
+                      disabled={isBooked}
                       className={`
                         py-4 px-3 rounded-lg border-2 transition-all duration-200 
                         flex items-center justify-center font-medium text-sm
-                        ${isAvailable 
-                          ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
-                          : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
+                        ${isBooked
+                          ? 'bg-green-600 border-green-700 text-white cursor-default'
+                          : isAvailable 
+                            ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
+                            : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
                         }
                       `}
                     >
@@ -322,6 +366,10 @@ const AvailabilityManager = () => {
             <div className="flex items-center">
               <div className="w-4 h-4 bg-green-100 border-2 border-green-400 rounded mr-2"></div>
               <span className="text-gray-700">Disponible</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-4 h-4 bg-green-600 border-2 border-green-700 rounded mr-2"></div>
+              <span className="text-gray-700">Reservado</span>
             </div>
             <div className="flex items-center">
               <div className="w-4 h-4 bg-gray-50 border-2 border-gray-300 rounded mr-2"></div>

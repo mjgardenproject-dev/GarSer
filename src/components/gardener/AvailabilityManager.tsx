@@ -239,7 +239,7 @@ const AvailabilityManager = () => {
 
   return (
     <div className="max-w-7xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="bg-white rounded-lg shadow-lg p-6 overflow-hidden">
         {/* Header */}
         <div className="flex flex-col md:flex-row items-center md:justify-between gap-4 mb-6">
           <div className="flex items-center">
@@ -297,7 +297,7 @@ const AvailabilityManager = () => {
             <span className="ml-3 text-gray-600">Cargando disponibilidad...</span>
           </div>
         ) : (
-          <div className="space-y-3 overflow-x-auto">
+          <div className="space-y-3 overflow-x-auto w-full">
             {/* Days header */}
             <div className="grid grid-cols-8 gap-2 mb-4 min-w-[720px]">
               <div className="flex items-center justify-center py-3 bg-gray-100 rounded-lg">

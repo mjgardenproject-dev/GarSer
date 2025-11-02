@@ -241,7 +241,7 @@ const AvailabilityManager = () => {
     <div className="max-w-7xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col md:flex-row items-center md:justify-between gap-4 mb-6">
           <div className="flex items-center">
             <Calendar className="w-6 h-6 text-green-600 mr-3" />
             <h2 className="text-2xl font-bold text-gray-900">Gestión de Disponibilidad</h2>
@@ -297,9 +297,9 @@ const AvailabilityManager = () => {
             <span className="ml-3 text-gray-600">Cargando disponibilidad...</span>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-x-auto">
             {/* Days header */}
-            <div className="grid grid-cols-8 gap-2 mb-4">
+            <div className="grid grid-cols-8 gap-2 mb-4 min-w-[720px]">
               <div className="flex items-center justify-center py-3 bg-gray-100 rounded-lg">
                 <Clock className="w-4 h-4 mr-2 text-gray-500" />
                 <span className="text-sm font-medium text-gray-700">Horario</span>
@@ -307,10 +307,10 @@ const AvailabilityManager = () => {
               
               {getWeekDays().map((day) => (
                 <div key={day.toISOString()} className="text-center py-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm font-medium text-gray-900">
+                  <p className="text-xs sm:text-sm font-medium text-gray-900">
                     {format(day, 'EEE', { locale: es })}
                   </p>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-[11px] sm:text-xs text-gray-600">
                     {format(day, 'dd/MM')}
                   </p>
                 </div>
@@ -319,9 +319,9 @@ const AvailabilityManager = () => {
 
             {/* Time blocks grid */}
             {timeBlocks.map((timeBlock) => (
-              <div key={timeBlock.hour} className="grid grid-cols-8 gap-2">
-                <div className="flex items-center justify-center py-4 bg-gray-50 rounded-lg border">
-                  <span className="text-sm font-medium text-gray-700">
+              <div key={timeBlock.hour} className="grid grid-cols-8 gap-2 min-w-[720px]">
+                <div className="flex items-center justify-center py-3 sm:py-4 bg-gray-50 rounded-lg border">
+                  <span className="text-xs sm:text-sm font-medium text-gray-700">
                     {timeBlock.label}
                   </span>
                 </div>
@@ -337,8 +337,8 @@ const AvailabilityManager = () => {
                       onClick={() => { if (!isBooked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
                       disabled={isBooked}
                       className={`
-                        py-4 px-3 rounded-lg border-2 transition-all duration-200 
-                        flex items-center justify-center font-medium text-sm
+                        py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200 
+                        flex items-center justify-center font-medium text-xs sm:text-sm
                         ${isBooked
                           ? 'bg-green-600 border-green-700 text-white cursor-default'
                           : isAvailable 
@@ -347,7 +347,7 @@ const AvailabilityManager = () => {
                         }
                       `}
                     >
-                      <span className="text-xs">
+                      <span className="text-[11px] sm:text-xs">
                         {timeBlock.label}
                       </span>
                     </button>

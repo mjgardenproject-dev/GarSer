@@ -238,7 +238,7 @@ const AvailabilityManager = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+      <div className="max-w-7xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-6 overflow-hidden">
         {/* Header */}
         <div className="flex flex-col md:flex-row items-center md:justify-between gap-4 mb-6">
@@ -298,13 +298,8 @@ const AvailabilityManager = () => {
           </div>
         ) : (
           <div className="space-y-3 overflow-x-auto w-full">
-            {/* Days header */}
-            <div className="grid grid-cols-8 gap-2 mb-4 min-w-[720px]">
-              <div className="flex items-center justify-center py-3 bg-gray-100 rounded-lg">
-                <Clock className="w-4 h-4 mr-2 text-gray-500" />
-                <span className="text-sm font-medium text-gray-700">Horario</span>
-              </div>
-              
+            {/* Days header (sin columna de horarios) */}
+            <div className="grid grid-cols-7 gap-2 mb-4 min-w-[720px]">
               {getWeekDays().map((day) => (
                 <div key={day.toISOString()} className="text-center py-3 bg-gray-50 rounded-lg">
                   <p className="text-xs sm:text-sm font-medium text-gray-900">
@@ -317,15 +312,9 @@ const AvailabilityManager = () => {
               ))}
             </div>
 
-            {/* Time blocks grid */}
+            {/* Time blocks grid (sin columna de horarios, la etiqueta ya va en cada bloque) */}
             {timeBlocks.map((timeBlock) => (
-              <div key={timeBlock.hour} className="grid grid-cols-8 gap-2 min-w-[720px]">
-                <div className="flex items-center justify-center py-3 sm:py-4 bg-gray-50 rounded-lg border">
-                  <span className="text-xs sm:text-sm font-medium text-gray-700">
-                    {timeBlock.label}
-                  </span>
-                </div>
-                
+              <div key={timeBlock.hour} className="grid grid-cols-7 gap-2 min-w-[720px]">
                 {getWeekDays().map((day) => {
                   const dateStr = format(day, 'yyyy-MM-dd');
                   const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);

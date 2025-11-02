@@ -39,7 +39,7 @@ const AppContent = () => {
   const { user, profile, loading } = useAuth();
 
   // Escala global en móvil vertical para que el contenido "quepa" sin overflow
-  const designWidth = 1280; // ancho de referencia del contenido
+  const designWidth = 630; // ancho de referencia para ~175% respecto a 1100
   const [scale, setScale] = React.useState(1);
 
   const updateScale = React.useCallback(() => {
@@ -50,6 +50,7 @@ const AppContent = () => {
         window.innerWidth || 0
       );
       if (vw > 0) {
+        // Escala universal: preserva distribución de desktop reduciendo en móviles
         const s = Math.min(1, vw / designWidth);
         setScale(Math.max(0.01, s));
         console.log('[Scale] vw=', vw, 'designWidth=', designWidth, 'scale=', Math.max(0.01, s));
@@ -116,8 +117,8 @@ const AppContent = () => {
       >
         <div className="min-h-screen bg-gray-50">
           <Navbar />
-          <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6">
-        <Routes>
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Routes>
         <Route 
           path="/dashboard" 
           element={

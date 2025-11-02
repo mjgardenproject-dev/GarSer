@@ -234,7 +234,7 @@ const GardenerDashboard = () => {
       {/* Navigation Tabs */}
       <div className="bg-white rounded-2xl shadow-lg mb-8">
         <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-8">
+          <nav className="flex space-x-4 sm:space-x-6 md:space-x-8 px-4 md:px-8 overflow-x-auto whitespace-nowrap">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (

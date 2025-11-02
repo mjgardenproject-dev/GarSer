@@ -38,6 +38,34 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const AppContent = () => {
   const { user, profile, loading } = useAuth();
 
+  // Escala global en móvil vertical para que el contenido "quepa" sin overflow
+  const designWidth = 1280; // ancho de referencia del contenido
+  const [scale, setScale] = React.useState(1);
+
+  const updateScale = React.useCallback(() => {
+    try {
+      const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+      if (isPortrait) {
+        const s = Math.min(1, window.innerWidth / designWidth);
+        setScale(s);
+      } else {
+        setScale(1);
+      }
+    } catch (e) {
+      setScale(1);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    window.addEventListener('orientationchange', updateScale);
+    return () => {
+      window.removeEventListener('resize', updateScale);
+      window.removeEventListener('orientationchange', updateScale);
+    };
+  }, [updateScale]);
+
   // Log para debugging
   React.useEffect(() => {
     if (user && profile) {
@@ -66,9 +94,19 @@ const AppContent = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6">
+    <div className="scale-viewport">
+      <div
+        className="scaled-root"
+        style={{
+          transform: `scale(${scale})`,
+          transformOrigin: 'top center',
+          width: `${designWidth}px`,
+          margin: '0 auto'
+        }}
+      >
+        <div className="min-h-screen bg-gray-50">
+          <Navbar />
+          <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6">
         <Routes>
         <Route 
           path="/dashboard" 
@@ -164,7 +202,9 @@ const AppContent = () => {
         <Route path="/" element={<Navigate to="/dashboard" />} />
         <Route path="/auth" element={<AuthForm />} />
         </Routes>
-      </main>
+          </main>
+        </div>
+      </div>
     </div>
   );
 };

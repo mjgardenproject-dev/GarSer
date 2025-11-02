@@ -68,7 +68,8 @@ const AppContent = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <Routes>
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6">
+        <Routes>
         <Route 
           path="/dashboard" 
           element={
@@ -162,7 +163,8 @@ const AppContent = () => {
         />
         <Route path="/" element={<Navigate to="/dashboard" />} />
         <Route path="/auth" element={<AuthForm />} />
-      </Routes>
+        </Routes>
+      </main>
     </div>
   );
 };

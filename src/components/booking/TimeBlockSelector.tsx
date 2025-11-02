@@ -352,7 +352,7 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
           <Calendar className="w-4 h-4 inline mr-1" />
           Fecha del servicio
         </label>
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
           {availableDates.slice(0, 14).map((date) => {
             const isSelected = format(date, 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd');
             const isToday = format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');

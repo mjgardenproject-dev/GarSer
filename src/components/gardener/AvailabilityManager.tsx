@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, Save, Check, X, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, Save, Check, X, Copy, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
@@ -12,7 +12,11 @@ import { AvailabilityBlock, TimeBlock } from '../../types';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 
-const AvailabilityManager = () => {
+interface AvailabilityManagerProps {
+  onBack?: () => void;
+}
+
+const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => {
   const { user } = useAuth();
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [weeklyAvailability, setWeeklyAvailability] = useState<{ [date: string]: { [hour: number]: boolean } }>({});
@@ -238,11 +242,21 @@ const AvailabilityManager = () => {
   };
 
   return (
-      <div className="max-w-7xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-lg p-6 overflow-hidden">
+    <div className="max-w-full sm:max-w-7xl mx-auto p-4 sm:p-6">
+      <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 overflow-hidden">
         {/* Header */}
         <div className="flex flex-col md:flex-row items-center md:justify-between gap-4 mb-6">
           <div className="flex items-center">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="mr-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                aria-label="Volver al Panel"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Volver
+              </button>
+            )}
             <Calendar className="w-6 h-6 text-green-600 mr-3" />
             <h2 className="text-2xl font-bold text-gray-900">Gestión de Disponibilidad</h2>
           </div>
@@ -297,78 +311,122 @@ const AvailabilityManager = () => {
             <span className="ml-3 text-gray-600">Cargando disponibilidad...</span>
           </div>
         ) : (
-          <div className="space-y-3 overflow-x-auto w-full">
-            {/* Days header (sin columna de horarios) */}
-            <div className="grid grid-cols-7 gap-2 mb-4 min-w-[720px]">
-              {getWeekDays().map((day) => (
-                <div key={day.toISOString()} className="text-center py-3 bg-gray-50 rounded-lg">
-                  <p className="text-xs sm:text-sm font-medium text-gray-900">
-                    {format(day, 'EEE', { locale: es })}
-                  </p>
-                  <p className="text-[11px] sm:text-xs text-gray-600">
-                    {format(day, 'dd/MM')}
-                  </p>
+          <div className="space-y-4 w-full">
+            {/* Desktop/Tablet: vista semanal en rejilla */}
+            <div className="hidden md:block md:overflow-x-auto">
+              {/* Header de días */}
+              <div className="grid md:grid-cols-7 gap-2 mb-4 md:min-w-[720px]">
+                {getWeekDays().map((day) => (
+                  <div key={day.toISOString()} className="text-center py-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs sm:text-sm font-medium text-gray-900">
+                      {format(day, 'EEE', { locale: es })}
+                    </p>
+                    <p className="text-[11px] sm:text-xs text-gray-600">
+                      {format(day, 'dd/MM')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bloques por hora x día */}
+              {timeBlocks.map((timeBlock) => (
+                <div key={timeBlock.hour} className="grid md:grid-cols-7 gap-2 md:min-w-[720px]">
+                  {getWeekDays().map((day) => {
+                    const dateStr = format(day, 'yyyy-MM-dd');
+                    const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);
+                    const isBooked = isBlockBooked(dateStr, timeBlock.hour);
+                    return (
+                      <button
+                        key={`${dateStr}-${timeBlock.hour}`}
+                        onClick={() => { if (!isBooked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
+                        disabled={isBooked}
+                        className={`
+                          py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200 
+                          flex items-center justify-center font-medium text-xs sm:text-sm
+                          ${isBooked
+                            ? 'bg-green-600 border-green-700 text-white cursor-default'
+                            : isAvailable 
+                              ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
+                              : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
+                          }
+                        `}
+                      >
+                        <span className="text-[11px] sm:text-xs">
+                          {timeBlock.label}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ))}
             </div>
 
-            {/* Time blocks grid (sin columna de horarios, la etiqueta ya va en cada bloque) */}
-            {timeBlocks.map((timeBlock) => (
-              <div key={timeBlock.hour} className="grid grid-cols-7 gap-2 min-w-[720px]">
-                {getWeekDays().map((day) => {
-                  const dateStr = format(day, 'yyyy-MM-dd');
-                  const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);
-                  const isBooked = isBlockBooked(dateStr, timeBlock.hour);
-                  
-                  return (
-                    <button
-                      key={`${dateStr}-${timeBlock.hour}`}
-                      onClick={() => { if (!isBooked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
-                      disabled={isBooked}
-                      className={`
-                        py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200 
-                        flex items-center justify-center font-medium text-xs sm:text-sm
-                        ${isBooked
-                          ? 'bg-green-600 border-green-700 text-white cursor-default'
-                          : isAvailable 
-                            ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
-                            : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
-                        }
-                      `}
-                    >
-                      <span className="text-[11px] sm:text-xs">
-                        {timeBlock.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+            {/* Móvil: vista por día apilada sin desbordes horizontales */}
+            <div className="md:hidden space-y-6">
+              {getWeekDays().map((day) => (
+                <div key={day.toISOString()} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <Calendar className="w-4 h-4 text-green-600 mr-2" />
+                      <p className="text-sm font-semibold text-gray-900">
+                        {format(day, 'EEEE dd/MM', { locale: es })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {timeBlocks.map((timeBlock) => {
+                      const dateStr = format(day, 'yyyy-MM-dd');
+                      const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);
+                      const isBooked = isBlockBooked(dateStr, timeBlock.hour);
+                      return (
+                        <button
+                          key={`${dateStr}-${timeBlock.hour}`}
+                          onClick={() => { if (!isBooked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
+                          disabled={isBooked}
+                          className={`
+                            py-2 px-2 rounded-lg border-2 transition-all duration-200 
+                            flex items-center justify-center font-medium text-xs
+                            ${isBooked
+                              ? 'bg-green-600 border-green-700 text-white cursor-default'
+                              : isAvailable 
+                                ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
+                                : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
+                            }
+                          `}
+                        >
+                          <span className="text-[11px]">{timeBlock.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
       {/* Legend and Instructions */}
       <div className="mt-6 bg-gray-50 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-6 text-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center space-x-4 sm:space-x-6 text-xs sm:text-sm flex-nowrap">
             <div className="flex items-center">
-              <div className="w-4 h-4 bg-green-100 border-2 border-green-400 rounded mr-2"></div>
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-100 border-2 border-green-400 rounded mr-2"></div>
               <span className="text-gray-700">Disponible</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 bg-green-600 border-2 border-green-700 rounded mr-2"></div>
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-600 border-2 border-green-700 rounded mr-2"></div>
               <span className="text-gray-700">Reservado</span>
             </div>
             <div className="flex items-center">
-              <div className="w-4 h-4 bg-gray-50 border-2 border-gray-300 rounded mr-2"></div>
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-gray-50 border-2 border-gray-300 rounded mr-2"></div>
               <span className="text-gray-700">No disponible</span>
             </div>
           </div>
           
-          <div className="text-sm text-gray-600">
-            <p>Haz clic en cada bloque para cambiar tu disponibilidad</p>
-            <p>Horario: 8:00 AM - 8:00 PM (bloques de 1 hora)</p>
+          <div className="text-sm text-gray-600 min-w-0 sm:max-w-[50%]">
+            <p className="break-words whitespace-normal leading-snug">Haz clic en cada bloque para cambiar tu disponibilidad</p>
+            <p className="break-words whitespace-normal leading-snug">Horario: 8:00 AM - 8:00 PM (bloques de 1 hora)</p>
           </div>
         </div>
       </div>

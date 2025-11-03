@@ -103,7 +103,7 @@ const ChatList: React.FC = () => {
             .eq('booking_id', booking.id)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single();
+            .maybeSingle();
 
           // Contar mensajes no leídos (esto es una simplificación, en un sistema real necesitarías una tabla de lecturas)
           const { count: unreadCount } = await supabase
@@ -180,7 +180,7 @@ const ChatList: React.FC = () => {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8 overflow-x-hidden">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Mis Chats</h1>
         
@@ -198,10 +198,10 @@ const ChatList: React.FC = () => {
               <div
                 key={chat.booking_id}
                 onClick={() => openChat(chat)}
-                className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
+                className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 hover:shadow-md transition-shadow cursor-pointer"
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center mb-2">
                       <User className="w-5 h-5 text-gray-400 mr-2" />
                       <h3 className="font-semibold text-gray-900">{chat.other_user_name}</h3>
@@ -222,16 +222,19 @@ const ChatList: React.FC = () => {
                       <span>{chat.start_time}</span>
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-3">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(chat.status)}`}>
                         {getStatusText(chat.status)}
                       </span>
                       
                       {chat.last_message && (
-                        <div className="text-sm text-gray-500 max-w-xs truncate">
-                          <span className="font-medium">Último mensaje:</span> {chat.last_message}
+                        <div className="flex items-center text-sm text-gray-500 min-w-0 gap-2">
+                          <span className="font-medium shrink-0">Último mensaje:</span>
+                          <span className="truncate">
+                            {chat.last_message}
+                          </span>
                           {chat.last_message_time && (
-                            <span className="ml-2">
+                            <span className="shrink-0">
                               {format(parseISO(chat.last_message_time), 'dd/MM HH:mm', { locale: es })}
                             </span>
                           )}

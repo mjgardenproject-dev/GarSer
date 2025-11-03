@@ -68,7 +68,7 @@ const AuthForm = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 sm:p-8">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <div className="w-16 h-16 bg-gradient-to-br from-green-600 to-green-700 rounded-2xl flex items-center justify-center">
@@ -93,12 +93,12 @@ const AuthForm = () => {
               <input
                 {...register('email')}
                 type="email"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="tu@email.com"
               />
             </div>
             {errors.email && (
-              <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+              <p className="mt-1 text-xs sm:text-sm text-red-600">{errors.email.message}</p>
             )}
           </div>
 
@@ -111,12 +111,12 @@ const AuthForm = () => {
               <input
                 {...register('password')}
                 type="password"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="••••••••"
               />
             </div>
             {errors.password && (
-              <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
+              <p className="mt-1 text-xs sm:text-sm text-red-600">{errors.password.message}</p>
             )}
           </div>
 
@@ -130,7 +130,7 @@ const AuthForm = () => {
                 <button
                   type="button"
                   onClick={() => setSelectedRole('client')}
-                  className={`relative p-4 border-2 rounded-xl transition-all duration-200 ${
+                  className={`relative p-3 sm:p-4 border-2 rounded-xl transition-all duration-200 ${
                     selectedRole === 'client'
                       ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
                       : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
@@ -145,12 +145,12 @@ const AuthForm = () => {
                       }`} />
                     </div>
                     <div className="text-center">
-                      <h3 className={`font-semibold ${
+                      <h3 className={`text-sm sm:text-base font-semibold ${
                         selectedRole === 'client' ? 'text-green-700' : 'text-gray-700'
                       }`}>
                         Cliente
                       </h3>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         Busco servicios de jardinería
                       </p>
                     </div>
@@ -166,7 +166,7 @@ const AuthForm = () => {
                 <button
                   type="button"
                   onClick={() => setSelectedRole('gardener')}
-                  className={`relative p-4 border-2 rounded-xl transition-all duration-200 ${
+                  className={`relative p-3 sm:p-4 border-2 rounded-xl transition-all duration-200 ${
                     selectedRole === 'gardener'
                       ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
                       : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
@@ -181,12 +181,12 @@ const AuthForm = () => {
                       }`} />
                     </div>
                     <div className="text-center">
-                      <h3 className={`font-semibold ${
+                      <h3 className={`text-sm sm:text-base font-semibold ${
                         selectedRole === 'gardener' ? 'text-green-700' : 'text-gray-700'
                       }`}>
                         Jardinero
                       </h3>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs sm:text-sm text-gray-500 mt-1">
                         Ofrezco servicios de jardinería
                       </p>
                     </div>
@@ -203,7 +203,7 @@ const AuthForm = () => {
               <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-700 text-center">
                   <strong>Rol seleccionado:</strong> {selectedRole === 'client' ? 'Cliente' : 'Jardinero'}
-                  <span className="block text-xs text-green-600 mt-1">
+                  <span className="block text-xs sm:text-sm text-green-600 mt-1">
                     Este rol será permanente y no podrá cambiarse después del registro
                   </span>
                 </p>
@@ -214,7 +214,7 @@ const AuthForm = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-green-600 text-white py-2.5 px-4 text-sm rounded-lg font-semibold hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Procesando...' : (isLogin ? 'Iniciar Sesión' : 'Crear Cuenta')}
           </button>
@@ -223,7 +223,7 @@ const AuthForm = () => {
         <div className="mt-6 text-center">
           <button
             onClick={() => setIsLogin(!isLogin)}
-            className="text-green-600 hover:text-green-700 font-medium"
+            className="text-green-600 hover:text-green-700 font-medium text-sm"
           >
             {isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
           </button>

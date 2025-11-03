@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, Star, MapPin, Clock, Settings, User, Briefcase, MessageCircle, Bell } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { GardenerProfile, Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
@@ -12,6 +13,7 @@ import BookingRequestsManager from './BookingRequestsManager';
 
 const GardenerDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<GardenerProfile | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,12 +216,7 @@ const GardenerDashboard = () => {
     setSelectedChat({ bookingId, clientName });
   };
 
-  const tabs = [
-    { id: 'dashboard', label: 'Panel Principal', icon: Calendar },
-    { id: 'requests', label: 'Solicitudes', icon: Bell },
-    { id: 'availability', label: 'Disponibilidad', icon: Clock },
-    { id: 'profile', label: 'Mi Perfil', icon: User }
-  ];
+  // Barra de pestañas eliminada: mantenemos la lógica de activeTab y los botones del panel
 
   if (loading) {
     return (
@@ -230,40 +227,17 @@ const GardenerDashboard = () => {
   }
 
   return (
-      <div className="max-w-7xl mx-auto p-6">
-      {/* Navigation Tabs */}
-      <div className="bg-white rounded-2xl shadow-lg mb-8">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-4 sm:space-x-6 md:space-x-8 px-4 md:px-8 overflow-x-auto whitespace-nowrap">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-green-500 text-green-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon className="w-5 h-5 mr-2" />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
+    <div className="max-w-full sm:max-w-7xl mx-auto p-3 sm:p-6">
+      {/* Barra de pestañas superior eliminada. La navegación se realiza con los botones del panel. */}
 
       {/* Tab Content */}
       {activeTab === 'dashboard' && (
         <>
           {/* Header */}
-          <div className="bg-white rounded-2xl shadow-lg p-8 mb-8">
+          <div className="bg-white rounded-2xl shadow-lg p-5 sm:p-8 mb-8">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
                   Panel de Jardinero
                 </h1>
                 <p className="text-gray-600">Gestiona tus servicios y reservas</p>
@@ -271,61 +245,46 @@ const GardenerDashboard = () => {
             </div>
 
             {profile && (
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-5 gap-6">
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="flex items-center">
-                    <Star className="w-8 h-8 text-yellow-500 mr-3" />
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">{profile.rating.toFixed(1)}</p>
-                      <p className="text-sm text-gray-600">Calificación</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex items-center">
-                    <Calendar className="w-8 h-8 text-blue-500 mr-3" />
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">{bookings.length}</p>
-                      <p className="text-sm text-gray-600">Reservas Totales</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-yellow-50 p-4 rounded-lg">
-                  <div className="flex items-center">
-                    <Clock className="w-8 h-8 text-yellow-600 mr-3" />
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">{bookings.filter(b => b.status === 'pending').length}</p>
-                      <p className="text-sm text-gray-600">Pendientes</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-purple-50 p-4 rounded-lg">
-                  <div className="flex items-center">
-                    <MapPin className="w-8 h-8 text-purple-500 mr-3" />
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">{profile.max_distance}km</p>
-                      <p className="text-sm text-gray-600">Radio de Trabajo</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-orange-50 p-4 rounded-lg">
-                  <div className="flex items-center">
-                    <Clock className="w-8 h-8 text-orange-500 mr-3" />
-                    <div>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {profile.is_available ? 'Disponible' : 'No Disponible'}
-                      </p>
-                      <p className="text-sm text-gray-600">Estado</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="mt-6 grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => setActiveTab('requests')}
+                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                  aria-label="Ir a Solicitudes"
+                >
+                  <Bell className="w-6 h-6 text-green-600" />
+                  <span className="text-sm sm:text-base font-semibold text-gray-800">Solicitudes</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('availability')}
+                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                  aria-label="Ir a Disponibilidad"
+                >
+                  <Clock className="w-6 h-6 text-green-600" />
+                  <span className="text-sm sm:text-base font-semibold text-gray-800">Disponibilidad</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('profile')}
+                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                  aria-label="Ir a Mi Perfil"
+                >
+                  <User className="w-6 h-6 text-green-600" />
+                  <span className="text-sm sm:text-base font-semibold text-gray-800">Mi Perfil</span>
+                </button>
+                <button
+                  onClick={() => navigate('/bookings')}
+                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                  aria-label="Ir a Reservas"
+                >
+                  <Calendar className="w-6 h-6 text-green-600" />
+                  <span className="text-sm sm:text-base font-semibold text-gray-800">Reservas</span>
+                </button>
               </div>
             )}
           </div>
 
           {/* Reservas */}
-          <div className="bg-white rounded-2xl shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Mis Reservas</h2>
+          <div className="bg-white rounded-2xl shadow-lg p-5 sm:p-8">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-6">Mis Reservas</h2>
             
             {bookings.length === 0 ? (
               <div className="text-center py-12">
@@ -333,9 +292,9 @@ const GardenerDashboard = () => {
                 <p className="text-gray-600">No tienes reservas aún</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {bookings.map((booking) => (
-                  <div key={booking.id} className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
+                  <div key={booking.id} className="border border-gray-200 rounded-lg p-4 sm:p-6 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center space-x-4">
                         <div>
@@ -433,9 +392,15 @@ const GardenerDashboard = () => {
         </>
       )}
 
-      {activeTab === 'requests' && <BookingRequestsManager />}
-      {activeTab === 'availability' && <AvailabilityManager />}
-      {activeTab === 'profile' && <ProfileSettings />}
+      {activeTab === 'requests' && (
+        <BookingRequestsManager onBack={() => setActiveTab('dashboard')} />
+      )}
+      {activeTab === 'availability' && (
+        <AvailabilityManager onBack={() => setActiveTab('dashboard')} />
+      )}
+      {activeTab === 'profile' && (
+        <ProfileSettings onBack={() => setActiveTab('dashboard')} />
+      )}
       
       {/* Chat Window */}
       {selectedChat && (

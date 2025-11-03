@@ -6,6 +6,8 @@ import AuthForm from './components/auth/AuthForm';
 import AdminRoute from './components/auth/AdminRoute';
 import DevelopmentRoute from './components/auth/DevelopmentRoute';
 import Navbar from './components/layout/Navbar';
+import GardenerBookings from './components/gardener/GardenerBookings';
+import BottomNav from './components/layout/BottomNav';
 import ServiceCatalog from './components/client/ServiceCatalog';
 import ClientHome from './components/client/ClientHome';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -38,45 +40,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const AppContent = () => {
   const { user, profile, loading } = useAuth();
 
-  // Escala global en móvil vertical para que el contenido "quepa" sin overflow
-  const designWidth = 630; // ancho de referencia para ~175% respecto a 1100
-  const [scale, setScale] = React.useState(1);
-
-  const updateScale = React.useCallback(() => {
-    try {
-      const vw = Math.max(
-        (window.visualViewport && window.visualViewport.width) || 0,
-        document.documentElement?.clientWidth || 0,
-        window.innerWidth || 0
-      );
-      if (vw > 0) {
-        // Escala universal: preserva distribución de desktop reduciendo en móviles
-        const s = Math.min(1, vw / designWidth);
-        setScale(Math.max(0.01, s));
-        console.log('[Scale] vw=', vw, 'designWidth=', designWidth, 'scale=', Math.max(0.01, s));
-      } else {
-        setScale(1);
-        console.warn('[Scale] vw=0 fallback to 1');
-      }
-    } catch (e) {
-      setScale(1);
-      console.error('[Scale] error computing scale', e);
-    }
-  }, []);
-
-  React.useLayoutEffect(() => {
-    updateScale();
-    // Recalcular tras primer paint para evitar ancho 0 en móviles
-    const t = setTimeout(updateScale, 120);
-    window.addEventListener('resize', updateScale);
-    window.addEventListener('orientationchange', updateScale);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener('resize', updateScale);
-      window.removeEventListener('orientationchange', updateScale);
-    };
-  }, [updateScale]);
-
   // Log para debugging
   React.useEffect(() => {
     if (user && profile) {
@@ -105,20 +68,10 @@ const AppContent = () => {
   }
 
   return (
-    <div className="scale-viewport">
-      <div
-        className="scaled-root"
-        style={{
-          transform: scale < 1 ? `scale(${scale}) translateZ(0)` : 'none',
-          transformOrigin: 'top center',
-          width: scale < 1 ? `${designWidth}px` : '100%',
-          margin: 0
-        }}
-      >
-        <div className="min-h-screen bg-gray-50">
-          <Navbar />
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <Routes>
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <main className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-16 sm:pb-0">
+        <Routes>
         <Route 
           path="/dashboard" 
           element={
@@ -172,7 +125,8 @@ const AppContent = () => {
           path="/bookings" 
           element={
             <ProtectedRoute>
-              <BookingsList />
+              {/* Mostrar lista distinta según el rol (hook ya usado arriba en AppContent) */}
+              {profile?.role === 'gardener' ? <GardenerBookings /> : <BookingsList />}
             </ProtectedRoute>
           } 
         />
@@ -213,9 +167,8 @@ const AppContent = () => {
         <Route path="/" element={<Navigate to="/dashboard" />} />
         <Route path="/auth" element={<AuthForm />} />
         </Routes>
-          </main>
-        </div>
-      </div>
+      </main>
+      <BottomNav />
     </div>
   );
 };

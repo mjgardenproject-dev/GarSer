@@ -7,21 +7,3 @@
 html, body, #root { height: 100%; }
 body { overflow-x: hidden; }
 img, video, canvas { max-width: 100%; height: auto; }
-
-/* Escalado global en móvil vertical */
-.scale-viewport {
-  width: 100vw;
-  min-height: 100vh;
-  overflow-x: hidden;
-  overflow-y: auto;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-}
-
-.scaled-root {
-  /* Por defecto sin escala; se aplica en App por inline style */
-  transform-origin: top center;
-  will-change: transform;
-  display: inline-block;
-}

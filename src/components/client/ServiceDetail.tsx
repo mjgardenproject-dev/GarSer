@@ -60,7 +60,7 @@ const ServiceDetail = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-4xl mx-auto p-4 sm:p-6">
       {/* Back Button */}
       <button
         onClick={() => navigate('/dashboard')}
@@ -159,7 +159,7 @@ const ServiceDetail = () => {
 
             {/* Booking Card */}
             <div className="lg:col-span-1">
-              <div className="bg-gray-50 rounded-xl p-6 sticky top-6">
+              <div className="bg-gray-50 rounded-xl p-6 lg:sticky lg:top-6">
                 <div className="text-center mb-6">
                   <div className="text-3xl font-bold text-gray-900 mb-2">
                     €{service.base_price}

@@ -454,27 +454,27 @@ const ClientHome: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-4xl mx-auto p-4 sm:p-6">
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-green-600 to-green-500 p-8 text-white">
-          <h1 className="text-3xl font-bold">Bienvenido{profile?.full_name ? `, ${profile.full_name}` : ''}</h1>
-          <p className="mt-2 opacity-90">Solicita un presupuesto y reserva el trabajo de jardinería que necesites al instante.</p>
+        <div className="bg-gradient-to-r from-green-600 to-green-500 p-5 sm:p-8 text-white">
+          <h1 className="text-2xl sm:text-3xl font-bold">Bienvenido{profile?.full_name ? `, ${profile.full_name}` : ''}</h1>
+          <p className="mt-2 opacity-90 text-sm sm:text-base">Solicita un presupuesto y reserva el trabajo de jardinería que necesites al instante.</p>
         </div>
 
         {/* Wizard content */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* Controls */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4 sm:mb-6">
             <div className="text-sm text-gray-600">Paso: {['Inicio','Dirección','Detalles','Disponibilidad','Confirmación'][['welcome','address','details','availability','confirm'].indexOf(step)]}</div>
             <div className="space-x-2">
               {step !== 'welcome' && (
-                <button onClick={goBack} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center">
+                <button onClick={goBack} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
                   <ChevronLeft className="w-4 h-4 mr-1" /> Atrás
                 </button>
               )}
               {step !== 'confirm' && (
-                <button onClick={goNext} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center">
+                <button onClick={goNext} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
                   Siguiente <ChevronRight className="w-4 h-4 ml-1" />
                 </button>
               )}
@@ -482,17 +482,17 @@ const ClientHome: React.FC = () => {
           </div>
 
           {step === 'welcome' && (
-            <div className="text-center py-16">
-              <p className="text-gray-600 mb-8">Tu nueva experiencia de reserva de jardinería, simple y directa.</p>
-              <button onClick={handleStart} className="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl text-lg font-semibold shadow-lg transform hover:scale-[1.02] transition">
+            <div className="text-center py-10 sm:py-16">
+              <p className="text-gray-600 mb-8 text-sm sm:text-base">Tu nueva experiencia de reserva de jardinería, simple y directa.</p>
+              <button onClick={handleStart} className="px-6 sm:px-8 py-3 sm:py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base sm:text-lg font-semibold shadow-lg transform hover:scale-[1.02] transition">
                 Empezar
               </button>
             </div>
           )}
 
           {step === 'address' && (
-            <div className="space-y-4">
-              <label className="block text-lg font-semibold text-gray-800">Dirección</label>
+            <div className="space-y-3 sm:space-y-4">
+              <label className="block text-base sm:text-lg font-semibold text-gray-800">Dirección</label>
               <AddressAutocomplete value={selectedAddress} onChange={handleAddressSelected} error={addressError} />
               {selectedAddress && (
                 <div className="text-sm text-gray-600">Dirección seleccionada: <span className="font-medium">{selectedAddress}</span></div>
@@ -501,7 +501,7 @@ const ClientHome: React.FC = () => {
               <div className="pt-2">
                 <button
                   onClick={() => validateAddressHasNumber(selectedAddress) && setStep('details')}
-                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg"
+                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm sm:text-base"
                 >
                   Continuar
                 </button>
@@ -510,12 +510,12 @@ const ClientHome: React.FC = () => {
           )}
 
           {step === 'details' && (
-            <div className="space-y-6">
+            <div className="space-y-5 sm:space-y-6">
               {/* Eliminado el selector manual de servicios; flujo 100% por IA */}
 
               <div>
-                <label className="block text-lg font-semibold text-gray-800 mb-2">Fotos del jardín</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center">
+                <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Fotos del jardín</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 sm:p-6 text-center">
                   <input type="file" accept="image/*" multiple onChange={onPhotosSelected} />
                   <div className="mt-4 flex flex-wrap gap-3">
                     {photos.map((file, idx) => (
@@ -528,12 +528,12 @@ const ClientHome: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-lg font-semibold text-gray-800 mb-2">Describe el trabajo</label>
+                <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Describe el trabajo</label>
                 <textarea
                   rows={4}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full p-3 sm:p-4 text-sm sm:text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="Ej: Quiero un corte de césped y que poden los setos de la imagen"
                 />
               </div>
@@ -542,7 +542,7 @@ const ClientHome: React.FC = () => {
                 <button
                   onClick={runAIAnalysis}
                   disabled={analyzing}
-                  className="px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center disabled:opacity-50"
+                  className="px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center disabled:opacity-50 text-sm sm:text-base"
                 >
                   <Wand2 className="w-4 h-4 mr-2" /> Analizar con IA
                 </button>
@@ -583,7 +583,7 @@ const ClientHome: React.FC = () => {
               {aiTimeTotal > 0 && (
                 <div className="mt-6">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-lg font-semibold text-gray-800">Elige día y hora disponibles</h4>
+                    <h4 className="text-base sm:text-lg font-semibold text-gray-800">Elige día y hora disponibles</h4>
                     <button
                       type="button"
                       onClick={() => setStep('availability')}

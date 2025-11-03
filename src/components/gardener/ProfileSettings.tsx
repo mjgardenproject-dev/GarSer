@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Save, User, MapPin, Phone, Briefcase, Star } from 'lucide-react';
+import { Save, User, MapPin, Phone, Briefcase, Star, ArrowLeft } from 'lucide-react';
 import { Service, GardenerProfile } from '../../types';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
@@ -45,7 +45,11 @@ const schema = yup.object({
 
 type FormData = yup.InferType<typeof schema>;
 
-const ProfileSettings = () => {
+interface ProfileSettingsProps {
+  onBack?: () => void;
+}
+
+const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const { user, profile } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
@@ -237,6 +241,16 @@ const ProfileSettings = () => {
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-8">
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+          aria-label="Volver al Panel"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Volver al Panel
+        </button>
+      )}
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-2xl font-bold text-gray-900 flex items-center">
           <User className="w-6 h-6 mr-3" />

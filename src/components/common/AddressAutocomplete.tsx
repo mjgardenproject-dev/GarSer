@@ -209,7 +209,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           value={value}
           onChange={handleInputChange}
           placeholder={placeholder}
-          className={`w-full px-4 py-3 pl-12 pr-12 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+          className={`w-full px-3.5 py-2.5 pl-12 pr-12 text-sm border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
             error ? 'border-red-500' : 'border-gray-300'
           }`}
         />
@@ -223,11 +223,11 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       </div>
 
       {error && (
-        <p className="mt-1 text-sm text-red-600">{error}</p>
+        <p className="mt-1 text-xs sm:text-sm text-red-600">{error}</p>
       )}
 
       {!isGoogleMapsLoaded && (
-        <p className="mt-1 text-sm text-yellow-600">Cargando servicio de direcciones...</p>
+        <p className="mt-1 text-xs sm:text-sm text-yellow-600">Cargando servicio de direcciones...</p>
       )}
 
       {isOpen && suggestions.length > 0 && (
@@ -239,7 +239,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             <div
               key={suggestion.place_id}
               onClick={() => handleSuggestionClick(suggestion)}
-              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 flex items-center"
+              className="px-3.5 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 flex items-center"
             >
               <MapPin className="h-4 w-4 text-gray-400 mr-3 flex-shrink-0" />
               <div className="flex-1">

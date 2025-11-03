@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, MapPin, User, MessageSquare, Check, X, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, MapPin, User, MessageSquare, Check, X, AlertCircle, ArrowLeft } from 'lucide-react';
 import { BookingRequest, BookingResponse, TimeBlock } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO, isAfter } from 'date-fns';
@@ -23,7 +23,11 @@ interface BookingRequestWithDetails extends BookingRequest {
   existing_response?: BookingResponse;
 }
 
-const BookingRequestsManager = () => {
+interface BookingRequestsManagerProps {
+  onBack?: () => void;
+}
+
+const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack }) => {
   const { user } = useAuth();
   const [requests, setRequests] = useState<BookingRequestWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,6 +208,15 @@ const BookingRequestsManager = () => {
     return `${startTime} - ${endTime}`;
   };
 
+  const formatPrice = (amount?: number) => {
+    try {
+      const value = typeof amount === 'number' ? amount : 0;
+      return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(value);
+    } catch {
+      return `€${amount ?? 0}`;
+    }
+  };
+
   const getBookingStatus = (createdAt: string) => {
     const created = parseISO(createdAt);
     const now = new Date();
@@ -226,8 +239,18 @@ const BookingRequestsManager = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto p-4 sm:p-6">
       <div className="bg-white rounded-2xl shadow-xl p-8">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+            aria-label="Volver al Panel"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Volver al Panel
+          </button>
+        )}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Solicitudes de Reserva</h1>
@@ -247,14 +270,14 @@ const BookingRequestsManager = () => {
         ) : (
           <div className="space-y-6">
             {requests.map((request) => (
-              <div key={request.id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-4">
+              <div key={request.id} className="border border-gray-200 rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                  <div className="flex items-center space-x-4 min-w-0">
                     <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                       <Calendar className="w-6 h-6 text-blue-600" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-semibold text-gray-900">
+                      <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
                         {request.services?.name}
                       </h3>
                       <p className="text-gray-600 flex items-center">
@@ -263,9 +286,9 @@ const BookingRequestsManager = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-green-600">
-                      €{request.total_price}
+                  <div className="sm:text-right sm:shrink-0">
+                    <div className="text-xl sm:text-2xl font-bold text-green-600 whitespace-nowrap">
+                      {formatPrice(request.total_price)}
                     </div>
                     <div className="text-sm text-orange-600 flex items-center">
                       <AlertCircle className="w-4 h-4 mr-1" />
@@ -297,8 +320,8 @@ const BookingRequestsManager = () => {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-500">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="text-xs sm:text-sm text-gray-500 min-w-0 whitespace-normal break-words">
                     Solicitud recibida: {format(parseISO(request.created_at), 'dd/MM/yyyy HH:mm', { locale: es })}
                   </div>
                   
@@ -315,11 +338,11 @@ const BookingRequestsManager = () => {
                       </span>
                     </div>
                   ) : (
-                    <div className="flex items-center space-x-3">
+                    <div className="flex w-full sm:w-auto items-center gap-2 sm:justify-end">
                       <button
                         onClick={() => respondToRequest(request.id, 'reject')}
                         disabled={responding === request.id}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center"
+                        className="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center flex-1 sm:flex-none h-10"
                       >
                         <X className="w-4 h-4 mr-2" />
                         Rechazar
@@ -327,7 +350,7 @@ const BookingRequestsManager = () => {
                       <button
                         onClick={() => respondToRequest(request.id, 'accept')}
                         disabled={responding === request.id}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center"
+                        className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center flex-1 sm:flex-none h-10"
                       >
                         <Check className="w-4 h-4 mr-2" />
                         Aceptar

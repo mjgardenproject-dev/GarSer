@@ -78,19 +78,19 @@ const ServiceCatalog = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6">
       {/* Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">
+      <div className="text-center mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
           Servicios de Jardinería Profesional
         </h1>
-        <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+        <p className="text-base sm:text-xl text-gray-600 max-w-2xl sm:max-w-3xl mx-auto">
           Encuentra el servicio perfecto para tu jardín. Profesionales cualificados a tu disposición.
         </p>
       </div>
 
       {/* Search Bar */}
-      <div className="mb-8">
+      <div className="mb-6 sm:mb-8">
         <div className="relative max-w-md mx-auto">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -98,21 +98,21 @@ const ServiceCatalog = () => {
             placeholder="Buscar servicios..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm sm:text-base"
           />
         </div>
       </div>
 
       {/* Services Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {filteredServices.map((service) => (
           <div
             key={service.id}
             onClick={() => handleServiceClick(service.id)}
-            className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer transform hover:-translate-y-1 overflow-hidden"
+            className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer sm:hover:-translate-y-1 overflow-hidden"
           >
             {/* Service Image */}
-            <div className="h-48 bg-gradient-to-br from-green-400 to-green-600 relative overflow-hidden">
+            <div className="h-40 sm:h-48 bg-gradient-to-br from-green-400 to-green-600 relative overflow-hidden">
               <img
                 src={`https://images.pexels.com/photos/${service.image_id || '416978'}/pexels-photo-${service.image_id || '416978'}.jpeg?auto=compress&cs=tinysrgb&w=800`}
                 alt={service.name}
@@ -127,25 +127,25 @@ const ServiceCatalog = () => {
             </div>
 
             {/* Service Content */}
-            <div className="p-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-2">{service.name}</h3>
-              <p className="text-gray-600 mb-4 line-clamp-2">{service.description}</p>
+            <div className="p-4 sm:p-6">
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">{service.name}</h3>
+              <p className="text-gray-600 mb-4 text-sm sm:text-base line-clamp-2">{service.description}</p>
               
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center text-sm text-gray-500">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="flex items-center text-xs sm:text-sm text-gray-500">
                   <Clock className="w-4 h-4 mr-1" />
                   Desde 1 hora
                 </div>
-                <div className="flex items-center text-sm text-gray-500">
+                <div className="flex items-center text-xs sm:text-sm text-gray-500">
                   <MapPin className="w-4 h-4 mr-1" />
                   A domicilio
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <div className="flex items-center">
                   <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                  <span className="text-sm text-gray-600 ml-1">4.8 (127 reseñas)</span>
+                  <span className="text-xs sm:text-sm text-gray-600 ml-1">4.8 (127 reseñas)</span>
                 </div>
               </div>
               
@@ -155,13 +155,13 @@ const ServiceCatalog = () => {
                     e.stopPropagation();
                     handleServiceClick(service.id);
                   }}
-                  className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                  className="flex-1 bg-gray-100 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm sm:text-base"
                 >
                   Ver detalles
                 </button>
                 <button 
                   onClick={(e) => handleBookNow(service, e)}
-                  className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm sm:text-base"
                 >
                   Reservar
                 </button>
@@ -172,11 +172,11 @@ const ServiceCatalog = () => {
       </div>
 
       {filteredServices.length === 0 && (
-        <div className="text-center py-12">
+        <div className="text-center py-10 sm:py-12">
           <div className="text-gray-400 mb-4">
             <Search className="w-16 h-16 mx-auto" />
           </div>
-          <p className="text-gray-600">No se encontraron servicios que coincidan con tu búsqueda.</p>
+          <p className="text-gray-600 text-sm sm:text-base">No se encontraron servicios que coincidan con tu búsqueda.</p>
         </div>
       )}
     </div>

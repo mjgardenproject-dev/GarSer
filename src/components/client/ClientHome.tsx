@@ -371,7 +371,7 @@ const ClientHome: React.FC = () => {
 
   // Prefetch disponibilidad automáticamente tras tener estimación IA y datos clave
   useEffect(() => {
-    const ready = !!user && !!selectedAddress && selectedServiceIds.length > 0 && estimatedHours > 0;
+    const ready = !!user?.id && !!selectedAddress && selectedServiceIds.length > 0 && estimatedHours > 0;
     if (!prefetchedAvailability && ready) {
       console.log('[avail] auto-prefetch: iniciando búsqueda de jardineros y horas', {
         selectedServiceIdsLen: selectedServiceIds.length,
@@ -382,10 +382,10 @@ const ClientHome: React.FC = () => {
         .then(() => setPrefetchedAvailability(true))
         .catch(() => setPrefetchedAvailability(true));
     }
-  }, [user, selectedAddress, selectedServiceIds, estimatedHours, prefetchedAvailability]);
+  }, [user?.id, selectedAddress, selectedServiceIds, estimatedHours, prefetchedAvailability]);
 
   const fetchAvailability = async () => {
-    if (!user) return;
+    if (!user?.id) return;
     if (!selectedAddress || selectedServiceIds.length === 0 || estimatedHours <= 0) return;
     setLoadingAvailability(true);
     try {

@@ -8,17 +8,17 @@ const Navbar = () => {
   const [logoError, setLogoError] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // Log para depuración
-  useEffect(() => {
-    console.log('Navbar - Profile updated:', profile);
-  }, [profile]);
+  // Calcular rol efectivo sin depender del perfil para no bloquear la UI
+  const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
+  const effectiveRole = profile?.role || fallbackRole;
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleSignOut = async () => {
     try {
       await signOut();
-      navigate('/');
+      // Redirigir explícitamente a /auth para evitar que / redirija a /dashboard
+      navigate('/auth');
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -86,7 +86,7 @@ const Navbar = () => {
             <div className="hidden sm:block text-sm text-gray-600">
               <span className="font-medium">{profile?.full_name || user?.email}</span>
               <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                {profile?.role === 'gardener' ? 'Jardinero' : 'Cliente'}
+                {effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}
               </span>
             </div>
             <button
@@ -129,7 +129,7 @@ const Navbar = () => {
               })}
               <div className="mt-2 text-xs text-gray-500">
                 <span className="font-medium">{profile?.full_name || user?.email}</span>
-                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">{profile?.role === 'gardener' ? 'Jardinero' : 'Cliente'}</span>
+                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">{effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}</span>
               </div>
             </div>
           </div>

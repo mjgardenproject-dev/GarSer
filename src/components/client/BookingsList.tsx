@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, MapPin, MessageCircle, Star, Euro } from 'lucide-react';
+import { Calendar, Clock, MapPin, MessageCircle, Star, Euro, Play } from 'lucide-react';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
@@ -20,7 +20,7 @@ interface BookingWithDetails extends Booking {
 }
 
 const BookingsList = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<BookingWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<{
@@ -29,10 +29,10 @@ const BookingsList = () => {
   } | null>(null);
 
   useEffect(() => {
-    if (user) {
-      fetchBookings();
-    }
-  }, [user]);
+    if (authLoading) return;
+    if (!user?.id) return;
+    fetchBookings();
+  }, [user?.id, authLoading]);
 
   const fetchBookings = async () => {
     try {
@@ -114,6 +114,20 @@ const BookingsList = () => {
     setSelectedChat({ bookingId, gardenerName });
   };
 
+  const startWork = async (bookingId: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+        .eq('id', bookingId)
+        .or(`client_id.eq.${user?.id},gardener_id.eq.${user?.id}`);
+      if (error) throw error;
+      await fetchBookings();
+    } catch (e) {
+      console.error('Error al iniciar el trabajo:', e);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
@@ -192,6 +206,15 @@ const BookingsList = () => {
                   </div>
                   
                   <div className="flex space-x-2">
+                    {booking.status === 'confirmed' && (
+                      <button
+                        onClick={() => startWork(booking.id)}
+                        className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Iniciar Trabajo
+                      </button>
+                    )}
                     {(booking.status === 'confirmed' || booking.status === 'in_progress') && (
                       <button
                         onClick={() => openChat(booking.id, booking.gardener_profile?.full_name || 'Jardinero')}

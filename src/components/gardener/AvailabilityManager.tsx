@@ -17,7 +17,7 @@ interface AvailabilityManagerProps {
 }
 
 const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [weeklyAvailability, setWeeklyAvailability] = useState<{ [date: string]: { [hour: number]: boolean } }>({});
   const [loading, setLoading] = useState(false);
@@ -28,11 +28,13 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
   const timeBlocks = generateDailyTimeBlocks();
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user?.id) return;
     fetchWeeklyAvailability();
-  }, [selectedWeek, user]);
+  }, [selectedWeek, user?.id, authLoading]);
 
   const fetchWeeklyAvailability = async () => {
-    if (!user) {
+    if (!user?.id) {
       console.error('No user found when trying to fetch availability');
       return;
     }

@@ -1,6 +1,284 @@
 import React, { useState } from 'react';
 import { fixDatabaseIssues, fixDatabaseIssuesAlternative } from '../../utils/databaseFix';
 
+// Script SQL completo para políticas RLS y storage (incluye services público y bucket booking-photos público)
+const FULL_RLS_SCRIPT = `
+-- ===========================================
+-- HABILITAR RLS
+-- ===========================================
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gardener_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE availability ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE services ENABLE ROW LEVEL SECURITY;
+ALTER TABLE role_logs ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF to_regclass('public.availability_blocks') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE availability_blocks ENABLE ROW LEVEL SECURITY';
+  END IF;
+END $$;
+
+-- ===========================================
+-- PROFILES
+-- ===========================================
+DROP POLICY IF EXISTS "profiles_select_own_or_counterpart" ON profiles;
+DROP POLICY IF EXISTS "profiles_insert_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_delete_own" ON profiles;
+
+CREATE POLICY "profiles_select_own_or_counterpart" ON profiles
+  FOR SELECT USING (
+    user_id = auth.uid()
+    OR EXISTS (
+      SELECT 1
+      FROM bookings b
+      WHERE (b.client_id = profiles.user_id AND b.gardener_id = auth.uid())
+         OR (b.gardener_id = profiles.user_id AND b.client_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "profiles_insert_own" ON profiles
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "profiles_update_own" ON profiles
+  FOR UPDATE USING (user_id = auth.uid());
+
+CREATE POLICY "profiles_delete_own" ON profiles
+  FOR DELETE USING (user_id = auth.uid());
+
+-- ===========================================
+-- GARDENER_PROFILES
+-- ===========================================
+DROP POLICY IF EXISTS "gardener_profiles_select_public_or_own" ON gardener_profiles;
+DROP POLICY IF EXISTS "gardener_profiles_insert_own" ON gardener_profiles;
+DROP POLICY IF EXISTS "gardener_profiles_update_own" ON gardener_profiles;
+DROP POLICY IF EXISTS "gardener_profiles_delete_own" ON gardener_profiles;
+
+CREATE POLICY "gardener_profiles_select_public_or_own" ON gardener_profiles
+  FOR SELECT USING (
+    (auth.uid() IS NOT NULL AND is_available = true)
+    OR user_id = auth.uid()
+  );
+
+CREATE POLICY "gardener_profiles_insert_own" ON gardener_profiles
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "gardener_profiles_update_own" ON gardener_profiles
+  FOR UPDATE USING (user_id = auth.uid());
+
+CREATE POLICY "gardener_profiles_delete_own" ON gardener_profiles
+  FOR DELETE USING (user_id = auth.uid());
+
+-- ===========================================
+-- SERVICES (lectura pública)
+-- ===========================================
+DROP POLICY IF EXISTS "services_select_authenticated" ON services;
+DROP POLICY IF EXISTS "services_select_public" ON services;
+
+CREATE POLICY "services_select_public" ON services
+  FOR SELECT USING (true);
+
+-- ===========================================
+-- BOOKINGS
+-- ===========================================
+DROP POLICY IF EXISTS "bookings_select_participants" ON bookings;
+DROP POLICY IF EXISTS "bookings_insert_client_only" ON bookings;
+DROP POLICY IF EXISTS "bookings_update_participants" ON bookings;
+DROP POLICY IF EXISTS "bookings_delete_participants" ON bookings;
+
+CREATE POLICY "bookings_select_participants" ON bookings
+  FOR SELECT USING (
+    client_id = auth.uid() OR gardener_id = auth.uid()
+  );
+
+CREATE POLICY "bookings_insert_client_only" ON bookings
+  FOR INSERT WITH CHECK (
+    client_id = auth.uid()
+  );
+
+CREATE POLICY "bookings_update_participants" ON bookings
+  FOR UPDATE USING (
+    client_id = auth.uid() OR gardener_id = auth.uid()
+  );
+
+CREATE POLICY "bookings_delete_participants" ON bookings
+  FOR DELETE USING (
+    client_id = auth.uid() OR gardener_id = auth.uid()
+  );
+
+-- ===========================================
+-- AVAILABILITY
+-- ===========================================
+DROP POLICY IF EXISTS "availability_select_public_or_owner" ON availability;
+DROP POLICY IF EXISTS "availability_insert_owner" ON availability;
+DROP POLICY IF EXISTS "availability_update_owner" ON availability;
+DROP POLICY IF EXISTS "availability_delete_owner" ON availability;
+
+CREATE POLICY "availability_select_public_or_owner" ON availability
+  FOR SELECT USING (
+    (auth.uid() IS NOT NULL AND is_available = true)
+    OR gardener_id = auth.uid()
+  );
+
+CREATE POLICY "availability_insert_owner" ON availability
+  FOR INSERT WITH CHECK (gardener_id = auth.uid());
+
+CREATE POLICY "availability_update_owner" ON availability
+  FOR UPDATE USING (gardener_id = auth.uid());
+
+CREATE POLICY "availability_delete_owner" ON availability
+  FOR DELETE USING (gardener_id = auth.uid());
+
+DO $$
+BEGIN
+  IF to_regclass('public.availability_blocks') IS NOT NULL THEN
+    EXECUTE $pol$
+      DROP POLICY IF EXISTS "availability_blocks_select_public_or_owner" ON availability_blocks;
+      DROP POLICY IF EXISTS "availability_blocks_insert_owner" ON availability_blocks;
+      DROP POLICY IF EXISTS "availability_blocks_update_owner" ON availability_blocks;
+      DROP POLICY IF EXISTS "availability_blocks_delete_owner" ON availability_blocks;
+
+      CREATE POLICY "availability_blocks_select_public_or_owner" ON availability_blocks
+        FOR SELECT USING (
+          (auth.uid() IS NOT NULL AND is_available = true)
+          OR gardener_id = auth.uid()
+        );
+
+      CREATE POLICY "availability_blocks_insert_owner" ON availability_blocks
+        FOR INSERT WITH CHECK (gardener_id = auth.uid());
+
+      CREATE POLICY "availability_blocks_update_owner" ON availability_blocks
+        FOR UPDATE USING (gardener_id = auth.uid());
+
+      CREATE POLICY "availability_blocks_delete_owner" ON availability_blocks
+        FOR DELETE USING (gardener_id = auth.uid());
+    $pol$;
+  END IF;
+END $$;
+
+-- ===========================================
+-- CHAT_MESSAGES
+-- ===========================================
+DROP POLICY IF EXISTS "chat_messages_select_booking_participants" ON chat_messages;
+DROP POLICY IF EXISTS "chat_messages_insert_booking_participants" ON chat_messages;
+DROP POLICY IF EXISTS "chat_messages_update_booking_participants" ON chat_messages;
+DROP POLICY IF EXISTS "chat_messages_delete_booking_participants" ON chat_messages;
+
+CREATE POLICY "chat_messages_select_booking_participants" ON chat_messages
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1
+      FROM bookings b
+      WHERE b.id = chat_messages.booking_id
+        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "chat_messages_insert_booking_participants" ON chat_messages
+  FOR INSERT WITH CHECK (
+    sender_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM bookings b
+      WHERE b.id = chat_messages.booking_id
+        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "chat_messages_update_booking_participants" ON chat_messages
+  FOR UPDATE USING (
+    EXISTS (
+      SELECT 1
+      FROM bookings b
+      WHERE b.id = chat_messages.booking_id
+        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "chat_messages_delete_booking_participants" ON chat_messages
+  FOR DELETE USING (
+    EXISTS (
+      SELECT 1
+      FROM bookings b
+      WHERE b.id = chat_messages.booking_id
+        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
+    )
+  );
+
+-- ===========================================
+-- ROLE_LOGS
+-- ===========================================
+DROP POLICY IF EXISTS "role_logs_select_own" ON role_logs;
+DROP POLICY IF EXISTS "role_logs_insert_own" ON role_logs;
+DROP POLICY IF EXISTS "role_logs_update_own" ON role_logs;
+DROP POLICY IF EXISTS "role_logs_delete_own" ON role_logs;
+
+CREATE POLICY "role_logs_select_own" ON role_logs
+  FOR SELECT USING (user_id = auth.uid());
+
+CREATE POLICY "role_logs_insert_own" ON role_logs
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "role_logs_update_own" ON role_logs
+  FOR UPDATE USING (user_id = auth.uid());
+
+CREATE POLICY "role_logs_delete_own" ON role_logs
+  FOR DELETE USING (user_id = auth.uid());
+
+-- ===========================================
+-- STORAGE: BUCKET booking-photos PÚBLICO + POLÍTICAS
+-- ===========================================
+INSERT INTO storage.buckets (id, name, public)
+SELECT 'booking-photos', 'booking-photos', true
+WHERE NOT EXISTS (
+  SELECT 1 FROM storage.buckets WHERE id = 'booking-photos'
+);
+
+UPDATE storage.buckets SET public = true WHERE id = 'booking-photos';
+
+-- Lectura simplificada: cualquiera puede leer objetos del bucket público
+DROP POLICY IF EXISTS "storage_objects_select_own_photos" ON storage.objects;
+DROP POLICY IF EXISTS "storage_objects_select_public_bucket" ON storage.objects;
+
+CREATE POLICY "storage_objects_select_public_bucket" ON storage.objects
+  FOR SELECT USING (bucket_id = 'booking-photos');
+
+-- Escritura/actualización/borrado restringidos al dueño por ruta
+DROP POLICY IF EXISTS "storage_objects_insert_own_photos" ON storage.objects;
+DROP POLICY IF EXISTS "storage_objects_update_own_photos" ON storage.objects;
+DROP POLICY IF EXISTS "storage_objects_delete_own_photos" ON storage.objects;
+
+CREATE POLICY "storage_objects_insert_own_photos" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'booking-photos'
+    AND (
+      name LIKE ('drafts/' || auth.uid() || '/%')
+      OR name LIKE ('bookings/' || auth.uid() || '/%')
+    )
+  );
+
+CREATE POLICY "storage_objects_update_own_photos" ON storage.objects
+  FOR UPDATE USING (
+    bucket_id = 'booking-photos'
+    AND (
+      name LIKE ('drafts/' || auth.uid() || '/%')
+      OR name LIKE ('bookings/' || auth.uid() || '/%')
+    )
+  );
+
+CREATE POLICY "storage_objects_delete_own_photos" ON storage.objects
+  FOR DELETE USING (
+    bucket_id = 'booking-photos'
+    AND (
+      name LIKE ('drafts/' || auth.uid() || '/%')
+      OR name LIKE ('bookings/' || auth.uid() || '/%')
+    )
+  );
+`;
+
 const DatabaseFix: React.FC = () => {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -88,83 +366,18 @@ const DatabaseFix: React.FC = () => {
         </div>
       )}
 
-      {/* Mostrar script de corrección RLS si hay errores 406 */}
+      {/* Mostrar script de corrección RLS completo (incluye services y storage) */}
       <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
         <h3 className="font-semibold text-red-800 mb-2">🔧 Script de Corrección RLS</h3>
         <p className="text-sm text-red-700 mb-3">
-          Si ves errores 406 en la consola, ejecuta este script en Supabase SQL Editor:
+          Si ves errores 406/404 o necesitas exponer services y fotos, ejecuta este script en Supabase SQL Editor:
         </p>
         <div className="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto">
           <div className="mb-2 text-gray-400">-- Ejecutar en Supabase Dashboard → SQL Editor</div>
-          <div>
-            {`-- Script completo para corregir todas las políticas RLS
--- Ejecutar en Supabase SQL Editor paso a paso
-
--- 1. ELIMINAR TODAS LAS POLÍTICAS EXISTENTES
-DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can delete own profile" ON profiles;
-
-DROP POLICY IF EXISTS "Users can view own gardener profile" ON gardener_profiles;
-DROP POLICY IF EXISTS "Users can update own gardener profile" ON gardener_profiles;
-DROP POLICY IF EXISTS "Users can insert own gardener profile" ON gardener_profiles;
-DROP POLICY IF EXISTS "Users can delete own gardener profile" ON gardener_profiles;
-
-DROP POLICY IF EXISTS "Users can view own role logs" ON role_logs;
-DROP POLICY IF EXISTS "Users can insert own role logs" ON role_logs;
-
--- 2. CREAR POLÍTICAS COMPLETAS PARA PROFILES
-CREATE POLICY "Enable read access for own profile" ON profiles
-    FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Enable insert access for own profile" ON profiles
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Enable update access for own profile" ON profiles
-    FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Enable delete access for own profile" ON profiles
-    FOR DELETE USING (auth.uid() = user_id);
-
--- 3. CREAR POLÍTICAS COMPLETAS PARA GARDENER_PROFILES
-CREATE POLICY "Enable read access for own gardener profile" ON gardener_profiles
-    FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Enable insert access for own gardener profile" ON gardener_profiles
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Enable update access for own gardener profile" ON gardener_profiles
-    FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Enable delete access for own gardener profile" ON gardener_profiles
-    FOR DELETE USING (auth.uid() = user_id);
-
--- 4. CREAR POLÍTICAS COMPLETAS PARA ROLE_LOGS
-CREATE POLICY "Enable read access for own role logs" ON role_logs
-    FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Enable insert access for own role logs" ON role_logs
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
-
--- 5. ASEGURAR QUE RLS ESTÁ HABILITADO
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE gardener_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE role_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE availability ENABLE ROW LEVEL SECURITY;
-
--- 6. VERIFICAR QUE LAS TABLAS EXISTEN
-SELECT 'profiles' as tabla, count(*) as registros FROM profiles
-UNION ALL
-SELECT 'gardener_profiles' as tabla, count(*) as registros FROM gardener_profiles
-UNION ALL
-SELECT 'role_logs' as tabla, count(*) as registros FROM role_logs
-UNION ALL
-SELECT 'availability' as tabla, count(*) as registros FROM availability;`}
-          </div>
+          <pre>{FULL_RLS_SCRIPT}</pre>
         </div>
         <button 
-          onClick={() => navigator.clipboard.writeText(`-- Script completo disponible en fix_rls_policies.sql`)}
+          onClick={() => navigator.clipboard.writeText(FULL_RLS_SCRIPT)}
           className="mt-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
         >
           📋 Copiar Script

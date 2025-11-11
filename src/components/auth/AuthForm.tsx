@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -27,6 +28,7 @@ const AuthForm = () => {
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const { signIn, signUp } = useAuth();
+  const navigate = useNavigate();
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
@@ -48,6 +50,8 @@ const AuthForm = () => {
       if (isLogin) {
         await signIn(data.email, data.password);
         toast.success('¡Bienvenido de vuelta!');
+        // Redirigir al dashboard tras login exitoso
+        navigate('/dashboard');
       } else {
         // Usar selectedRole en lugar de data.role para asegurar que se use el rol seleccionado
         const roleToUse = selectedRole;
@@ -65,6 +69,13 @@ const AuthForm = () => {
       setLoading(false);
     }
   };
+
+  // Si ya hay usuario autenticado y estamos en /auth, redirigir automáticamente al dashboard
+  // Evita que la pantalla de login permanezca visible tras un inicio de sesión correcto
+  useEffect(() => {
+    // No tenemos acceso directo a `user` aquí, pero este componente solo se muestra
+    // cuando no hay usuario según AppContent; como refuerzo, redirigimos tras login via navigate arriba.
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">

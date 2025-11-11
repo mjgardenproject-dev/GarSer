@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, MapPin, ArrowLeft } from 'lucide-react';
+import { Calendar, Clock, MapPin, ArrowLeft, MessageCircle, Play, Check } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Booking } from '../../types';
 import { useNavigate } from 'react-router-dom';
+import ChatWindow from '../chat/ChatWindow';
 
 const GardenerBookings: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedChat, setSelectedChat] = useState<{ bookingId: string; clientName: string } | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -55,6 +57,24 @@ const GardenerBookings: React.FC = () => {
     }
   };
 
+  const updateBookingStatus = async (bookingId: string, status: 'in_progress' | 'completed') => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', bookingId)
+        .eq('gardener_id', user?.id);
+      if (error) throw error;
+      await fetchBookings();
+    } catch (e) {
+      console.error('Error actualizando estado de la reserva:', e);
+    }
+  };
+
+  const openChat = (bookingId: string, clientName: string) => {
+    setSelectedChat({ bookingId, clientName });
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed':
@@ -82,8 +102,9 @@ const GardenerBookings: React.FC = () => {
   };
 
   return (
-    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto p-4 sm:p-6">
-      <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
+    <>
+      <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto p-4 sm:p-6">
+        <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
         <button
           onClick={() => navigate('/dashboard')}
           className="mb-4 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
@@ -119,7 +140,7 @@ const GardenerBookings: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
                     {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
@@ -132,17 +153,57 @@ const GardenerBookings: React.FC = () => {
                     <MapPin className="w-4 h-4 mr-2" />
                     {booking.client_address}
                   </div>
+                  <div className="flex items-center justify-end md:justify-start text-gray-600">
+                    <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-50 text-green-700 font-semibold">
+                      €{booking.total_price}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="text-lg font-bold text-green-600">€{booking.total_price}</div>
+                <div className="flex items-center justify-end gap-2 flex-wrap">
+                  {booking.status === 'confirmed' && (
+                    <button
+                      onClick={() => updateBookingStatus(booking.id, 'in_progress')}
+                      className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Iniciar Trabajo
+                    </button>
+                  )}
+                  {booking.status === 'in_progress' && (
+                    <button
+                      onClick={() => updateBookingStatus(booking.id, 'completed')}
+                      className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    >
+                      <Check className="w-4 h-4 mr-2" />
+                      Completar
+                    </button>
+                  )}
+                  {(booking.status === 'confirmed' || booking.status === 'in_progress') && (
+                    <button
+                      onClick={() => openChat(booking.id, booking.client_profile?.full_name || 'Cliente')}
+                      className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <MessageCircle className="w-4 h-4 mr-2" />
+                      Chat
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
+        </div>
       </div>
-    </div>
+      {selectedChat && (
+        <ChatWindow
+          bookingId={selectedChat.bookingId}
+          isOpen={!!selectedChat}
+          onClose={() => setSelectedChat(null)}
+          otherUserName={selectedChat.clientName}
+        />
+      )}
+    </>
   );
 };
 

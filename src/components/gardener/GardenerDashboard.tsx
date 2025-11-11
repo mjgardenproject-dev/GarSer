@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, Star, MapPin, Clock, Settings, User, Briefcase, MessageCircle, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -12,11 +12,12 @@ import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
 
 const GardenerDashboard = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [profile, setProfile] = useState<GardenerProfile | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Evitar bloquear toda la UI: estado de carga sólo para reservas
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const isFetchingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile'>('dashboard');
   const [selectedChat, setSelectedChat] = useState<{
     bookingId: string;
@@ -24,102 +25,87 @@ const GardenerDashboard = () => {
   } | null>(null);
 
   useEffect(() => {
-    if (user) {
-      fetchGardenerProfile();
-      fetchBookings();
-    }
-  }, [user]);
+    if (authLoading) return;
+    if (!user?.id) return;
+    console.log('📥 GardenerDashboard: fetching bookings for gardener_id=', user.id);
+    fetchBookings();
+  }, [user?.id, authLoading]);
 
-  const fetchGardenerProfile = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('gardener_profiles')
-        .select('*')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      if (error) throw error;
-      
-      if (!data) {
-        // No existe perfil de jardinero, crear uno automáticamente
-        console.log('No gardener profile found, creating one...');
-        await createGardenerProfile();
-        return;
-      }
-
-      setProfile(data);
-    } catch (error) {
-      console.error('Error fetching gardener profile:', error);
-    }
-  };
-
-  const createGardenerProfile = async () => {
-    try {
-      // Obtener información del perfil básico
-      const { data: basicProfile, error: profileError } = await supabase
-        .from('profiles')
-        .select('full_name, phone, address')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error('Error fetching basic profile:', profileError);
-        return;
-      }
-
-      // Crear perfil de jardinero con valores por defecto
-      const { data, error } = await supabase
-        .from('gardener_profiles')
-        .insert([
-          {
-            user_id: user?.id,
-            full_name: basicProfile?.full_name || '',
-            phone: basicProfile?.phone || '',
-            address: basicProfile?.address || '',
-            description: '',
-            services: [],
-            max_distance: 25,
-            rating: 5.0,
-            total_reviews: 0,
-            is_available: true
-          }
-        ])
-        .select()
-        .single();
-
-      if (error) throw error;
-      
-      console.log('Gardener profile created successfully:', data);
-      setProfile(data);
-    } catch (error) {
-      console.error('Error creating gardener profile:', error);
-    }
-  };
+  // El perfil de jardinero se gestiona dentro de ProfileSettings de forma perezosa.
 
   const fetchBookings = async () => {
+    if (isFetchingRef.current) {
+      console.log('⏳ fetchBookings: ya en curso, evitando paralelo');
+      return;
+    }
+    isFetchingRef.current = true;
+    setBookingsLoading(true);
+    console.log('🔎 fetchBookings: start');
     try {
+      // Verificar sesión antes de consultar
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('❌ fetchBookings: error obteniendo sesión', sessionError);
+      }
+      // En ocasiones tras F5 el token tarda unos milisegundos en estar disponible.
+      // Esperar brevemente y reintentar obtenerlo, pero NO abortar la carga.
+      let accessToken = sessionData?.session?.access_token;
+      if (!accessToken) {
+        console.warn('⚠️ fetchBookings: token de sesión no listo aún, esperando...');
+        for (let i = 0; i < 5; i++) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          const { data: retry } = await supabase.auth.getSession();
+          accessToken = retry?.session?.access_token;
+          if (accessToken) {
+            console.log('✅ fetchBookings: token disponible tras espera breve');
+            break;
+          }
+        }
+        if (!accessToken) {
+          console.warn('⚠️ fetchBookings: token aún no disponible, continuando igualmente');
+        }
+      }
+
+      // Helper para timeout de seguridad
+      const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+        return Promise.race([
+          promise,
+          new Promise<T>((_, reject) => setTimeout(() => reject(new Error('Timeout en petición de reservas')), ms))
+        ]) as Promise<T>;
+      };
+
       // Primero obtenemos las reservas básicas
-      const { data: bookingsData, error: bookingsError } = await supabase
+      const { data: bookingsData, error: bookingsError } = await withTimeout(
+        supabase
         .from('bookings')
         .select(`
           *,
           services(name)
         `)
         .eq('gardener_id', user?.id)
-        .order('date', { ascending: true });
+        .order('date', { ascending: true })
+        , 10000);
 
-      if (bookingsError) throw bookingsError;
+      if (bookingsError) {
+        console.error('❌ fetchBookings error:', bookingsError);
+        throw bookingsError;
+      }
 
       // Luego obtenemos los perfiles de los clientes
       if (bookingsData && bookingsData.length > 0) {
         const clientIds = [...new Set(bookingsData.map(booking => booking.client_id))];
         
-        const { data: profilesData, error: profilesError } = await supabase
+        const { data: profilesData, error: profilesError } = await withTimeout(
+          supabase
           .from('profiles')
           .select('user_id, full_name')
-          .in('user_id', clientIds);
+          .in('user_id', clientIds)
+          , 10000);
 
-        if (profilesError) throw profilesError;
+        if (profilesError) {
+          console.error('❌ fetchBookings profiles error:', profilesError);
+          throw profilesError;
+        }
 
         // Combinar los datos
         const bookingsWithProfiles = bookingsData.map(booking => ({
@@ -127,14 +113,18 @@ const GardenerDashboard = () => {
           client_profile: profilesData?.find(profile => profile.user_id === booking.client_id) || null
         }));
 
+        console.log('✅ fetchBookings: bookings count', bookingsWithProfiles.length);
         setBookings(bookingsWithProfiles);
       } else {
+        console.log('ℹ️ fetchBookings: no bookings');
         setBookings([]);
       }
     } catch (error) {
       console.error('Error fetching bookings:', error);
     } finally {
-      setLoading(false);
+      console.log('🔚 fetchBookings: end');
+      setBookingsLoading(false);
+      isFetchingRef.current = false;
     }
   };
 
@@ -218,14 +208,6 @@ const GardenerDashboard = () => {
 
   // Barra de pestañas eliminada: mantenemos la lógica de activeTab y los botones del panel
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-green-600"></div>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-full sm:max-w-7xl mx-auto p-3 sm:p-6">
       {/* Barra de pestañas superior eliminada. La navegación se realiza con los botones del panel. */}
@@ -244,49 +226,52 @@ const GardenerDashboard = () => {
               </div>
             </div>
 
-            {profile && (
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => setActiveTab('requests')}
-                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
-                  aria-label="Ir a Solicitudes"
-                >
-                  <Bell className="w-6 h-6 text-green-600" />
-                  <span className="text-sm sm:text-base font-semibold text-gray-800">Solicitudes</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('availability')}
-                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
-                  aria-label="Ir a Disponibilidad"
-                >
-                  <Clock className="w-6 h-6 text-green-600" />
-                  <span className="text-sm sm:text-base font-semibold text-gray-800">Disponibilidad</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('profile')}
-                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
-                  aria-label="Ir a Mi Perfil"
-                >
-                  <User className="w-6 h-6 text-green-600" />
-                  <span className="text-sm sm:text-base font-semibold text-gray-800">Mi Perfil</span>
-                </button>
-                <button
-                  onClick={() => navigate('/bookings')}
-                  className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
-                  aria-label="Ir a Reservas"
-                >
-                  <Calendar className="w-6 h-6 text-green-600" />
-                  <span className="text-sm sm:text-base font-semibold text-gray-800">Reservas</span>
-                </button>
-              </div>
-            )}
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              <button
+                onClick={() => setActiveTab('requests')}
+                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                aria-label="Ir a Solicitudes"
+              >
+                <Bell className="w-6 h-6 text-green-600" />
+                <span className="text-sm sm:text-base font-semibold text-gray-800">Solicitudes</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('availability')}
+                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                aria-label="Ir a Disponibilidad"
+              >
+                <Clock className="w-6 h-6 text-green-600" />
+                <span className="text-sm sm:text-base font-semibold text-gray-800">Disponibilidad</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('profile')}
+                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                aria-label="Ir a Mi Perfil"
+              >
+                <User className="w-6 h-6 text-green-600" />
+                <span className="text-sm sm:text-base font-semibold text-gray-800">Mi Perfil</span>
+              </button>
+              <button
+                onClick={() => navigate('/bookings')}
+                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                aria-label="Ir a Reservas"
+              >
+                <Calendar className="w-6 h-6 text-green-600" />
+                <span className="text-sm sm:text-base font-semibold text-gray-800">Reservas</span>
+              </button>
+            </div>
           </div>
 
           {/* Reservas */}
           <div className="bg-white rounded-2xl shadow-lg p-5 sm:p-8">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-6">Mis Reservas</h2>
+            {bookingsLoading && (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600" aria-label="Cargando reservas"></div>
+              </div>
+            )}
             
-            {bookings.length === 0 ? (
+            {!bookingsLoading && bookings.length === 0 ? (
               <div className="text-center py-12">
                 <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600">No tienes reservas aún</p>
@@ -311,7 +296,7 @@ const GardenerDashboard = () => {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                       <div className="flex items-center text-gray-600">
                         <Calendar className="w-4 h-4 mr-2" />
                         {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
@@ -324,13 +309,14 @@ const GardenerDashboard = () => {
                         <MapPin className="w-4 h-4 mr-2" />
                         {booking.client_address}
                       </div>
+                      <div className="flex items-center justify-end md:justify-start text-gray-600">
+                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-50 text-green-700 font-semibold">
+                          €{booking.total_price}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <div className="text-lg font-bold text-green-600">
-                        €{booking.total_price}
-                      </div>
-                      
+                    <div className="flex items-center justify-end gap-2 flex-wrap">
                       {booking.status === 'pending' && (
                         <div className="space-x-2">
                           <button

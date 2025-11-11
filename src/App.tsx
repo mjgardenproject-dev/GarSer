@@ -1,7 +1,8 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
+import ProtectedRoute from './components/auth/ProtectedRoute';
 import AuthForm from './components/auth/AuthForm';
 import AdminRoute from './components/auth/AdminRoute';
 import DevelopmentRoute from './components/auth/DevelopmentRoute';
@@ -20,52 +21,8 @@ import ChatList from './components/chat/ChatList';
 import RoleDebug from './components/debug/RoleDebug';
 import RoleMonitor from './components/admin/RoleMonitor';
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return user ? <>{children}</> : <Navigate to="/auth" />;
-};
-
 const AppContent = () => {
-  const { user, profile, loading } = useAuth();
-
-  // Log para debugging
-  React.useEffect(() => {
-    if (user && profile) {
-      console.log('🔄 App: Usuario autenticado:', {
-        userId: user.id,
-        email: user.email,
-        role: profile.role,
-        fullName: profile.full_name
-      });
-    }
-  }, [user, profile]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Inicializando aplicación...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <AuthForm />;
-  }
+  const { user, profile } = useAuth();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -77,21 +34,11 @@ const AppContent = () => {
           element={
             <ProtectedRoute>
               {(() => {
-                // Evitar renderizar el panel hasta que el rol del perfil esté disponible
-                if (!profile || !profile.role) {
-                  console.log('⏳ Dashboard: Esperando a que el perfil cargue rol...');
-                  return (
-                    <div className="flex items-center justify-center min-h-[50vh]">
-                      <div className="text-center">
-                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600 mx-auto"></div>
-                        <p className="mt-3 text-gray-600">Cargando perfil...</p>
-                      </div>
-                    </div>
-                  );
-                }
-
-                const component = profile.role === 'gardener' ? <GardenerDashboard /> : <ClientHome />;
-                console.log('🏠 Dashboard: Mostrando componente para rol:', profile.role);
+                // Usar rol de metadatos del usuario como fallback para no bloquear UI
+                const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
+                const effectiveRole = profile?.role || fallbackRole;
+                const component = effectiveRole === 'gardener' ? <GardenerDashboard /> : <ClientHome />;
+                console.log('🏠 Dashboard: Mostrando componente para rol:', effectiveRole);
                 return (
                   <ErrorBoundary fallbackTitle="Algo ha fallado en el panel" fallbackMessage="Estamos trabajando para solucionarlo. Puedes reintentar o volver atrás.">
                     {component}
@@ -125,8 +72,12 @@ const AppContent = () => {
           path="/bookings" 
           element={
             <ProtectedRoute>
-              {/* Mostrar lista distinta según el rol (hook ya usado arriba en AppContent) */}
-              {profile?.role === 'gardener' ? <GardenerBookings /> : <BookingsList />}
+              {/* Mostrar lista distinta según el rol sin depender del perfil */}
+              {(() => {
+                const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
+                const effectiveRole = profile?.role || fallbackRole;
+                return effectiveRole === 'gardener' ? <GardenerBookings /> : <BookingsList />;
+              })()}
             </ProtectedRoute>
           } 
         />
@@ -175,12 +126,10 @@ const AppContent = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <AppContent />
-        <Toaster position="top-right" />
-      </Router>
-    </AuthProvider>
+    <>
+      <AppContent />
+      <Toaster position="top-right" />
+    </>
   );
 }
 

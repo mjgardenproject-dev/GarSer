@@ -34,10 +34,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [responding, setResponding] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) {
-      fetchBookingRequests();
-    }
-  }, [user]);
+    if (!user?.id) return;
+    fetchBookingRequests();
+  }, [user?.id]);
 
   const fetchBookingRequests = async () => {
     try {
@@ -54,6 +53,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
 
       if (!bookings || bookings.length === 0) {
         setRequests([]);
+        // Importante: cerrar el estado de carga para evitar spinner infinito
+        setLoading(false);
         return;
       }
 
@@ -64,8 +65,24 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         return b.status === 'pending' && now > expiresAt;
       });
       if (toExpire.length > 0) {
-        const ids = toExpire.map(b => b.id);
-        await supabase.from('bookings').update({ status: 'expired' }).in('id', ids);
+        const ids = toExpire.map(b => b.id).filter((id: any) => typeof id === 'string' && id.length > 0);
+        try {
+          if (ids.length === 1) {
+            await supabase
+              .from('bookings')
+              .update({ status: 'expired', updated_at: new Date().toISOString() })
+              .eq('id', ids[0])
+              .eq('gardener_id', user?.id);
+          } else if (ids.length > 1) {
+            await supabase
+              .from('bookings')
+              .update({ status: 'expired', updated_at: new Date().toISOString() })
+              .in('id', ids as string[])
+              .eq('gardener_id', user?.id);
+          }
+        } catch (e: any) {
+          console.warn('Error expiring old pending bookings:', e?.message || e);
+        }
       }
 
       // Obtener datos de clientes y servicios por separado
@@ -75,17 +92,49 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       const clientIdsFiltered = clientIds.filter(Boolean);
       const serviceIdsFiltered = serviceIds.filter(Boolean);
 
-      const [clientsResult, servicesResult] = await Promise.all([
-        clientIdsFiltered.length > 0
-          ? supabase.from('profiles').select('user_id, full_name, phone').in('user_id', clientIdsFiltered)
-          : Promise.resolve({ data: [], error: null }),
-        serviceIdsFiltered.length > 0
-          ? supabase.from('services').select('id, name, price_per_hour').in('id', serviceIdsFiltered)
-          : Promise.resolve({ data: [], error: null })
-      ]);
+      // Fetch clients data
+      let clientsResult: { data: any[] | null; error: any } = { data: [], error: null };
+      if (clientIdsFiltered.length === 1) {
+        const singleId = clientIdsFiltered[0] as string;
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, phone')
+          .eq('user_id', singleId);
+        clientsResult = { data, error } as any;
+      } else if (clientIdsFiltered.length > 1) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('user_id, full_name, phone')
+          .in('user_id', clientIdsFiltered as string[]);
+        clientsResult = { data, error } as any;
+      }
+
+      // Fetch services data
+      let servicesResult: { data: any[] | null; error: any } = { data: [], error: null };
+      if (serviceIdsFiltered.length === 1) {
+        const singleServiceId = serviceIdsFiltered[0] as string;
+        const { data, error } = await supabase
+          .from('services')
+          .select('id, name')
+          .eq('id', singleServiceId);
+        servicesResult = { data, error } as any;
+      } else if (serviceIdsFiltered.length > 1) {
+        const { data, error } = await supabase
+          .from('services')
+          .select('id, name')
+          .in('id', serviceIdsFiltered as string[]);
+        servicesResult = { data, error } as any;
+      }
+
+      if (clientsResult.error) {
+        console.warn('Error fetching client profiles for requests:', clientsResult.error);
+      }
+      if (servicesResult.error) {
+        console.warn('Error fetching services for requests:', servicesResult.error);
+      }
 
       const clientsMap = new Map(clientsResult.data?.map(c => [c.user_id, c]) || []);
-      const servicesMap = new Map(servicesResult.data?.map(s => [s.id, s]) || []);
+      const servicesMap = new Map((servicesResult.data || []).map(s => [s.id, { ...s, price_per_hour: 0 }]) || []);
 
       // Transformar los datos para que coincidan con la interfaz esperada
       const transformedRequests = bookings.map((booking) => ({

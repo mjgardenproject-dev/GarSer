@@ -11,7 +11,11 @@ import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
 
-const GardenerDashboard = () => {
+interface GardenerDashboardProps {
+  pending?: boolean;
+}
+
+const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }) => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -224,35 +228,51 @@ const GardenerDashboard = () => {
               </div>
             </div>
 
+            {pending && (
+              <div className="mt-4 p-4 border border-yellow-200 bg-yellow-50 rounded-xl text-yellow-800">
+                <div className="flex items-center gap-3">
+                  <Clock className="w-6 h-6" />
+                  <div>
+                    <div className="font-semibold">Tu solicitud de jardinero está en revisión</div>
+                    <div className="text-sm">Has solicitado ser jardinero. Revisaremos tus datos y activaremos tu cuenta profesional en breve. Mientras tanto, este panel está bloqueado.</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mt-6 grid grid-cols-2 gap-4">
               <button
-                onClick={() => setActiveTab('requests')}
-                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                onClick={pending ? undefined : () => setActiveTab('requests')}
+                className={`flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white ${pending ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 hover:shadow'} transition-colors`}
                 aria-label="Ir a Solicitudes"
+                disabled={pending}
               >
                 <Bell className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
                 <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Solicitudes</span>
               </button>
               <button
-                onClick={() => setActiveTab('availability')}
-                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                onClick={pending ? undefined : () => setActiveTab('availability')}
+                className={`flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white ${pending ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 hover:shadow'} transition-colors`}
                 aria-label="Ir a Disponibilidad"
+                disabled={pending}
               >
                 <Clock className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
                 <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Disponibilidad</span>
               </button>
               <button
-                onClick={() => setActiveTab('profile')}
-                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                onClick={pending ? undefined : () => setActiveTab('profile')}
+                className={`flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white ${pending ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 hover:shadow'} transition-colors`}
                 aria-label="Ir a Mi Perfil"
+                disabled={pending}
               >
                 <User className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
                 <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Mi Perfil</span>
               </button>
               <button
-                onClick={() => navigate('/bookings')}
-                className="flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white hover:bg-gray-50 hover:shadow transition-colors"
+                onClick={pending ? undefined : () => navigate('/bookings')}
+                className={`flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white ${pending ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 hover:shadow'} transition-colors`}
                 aria-label="Ir a Reservas"
+                disabled={pending}
               >
                 <Calendar className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
                 <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Reservas</span>
@@ -367,13 +387,13 @@ const GardenerDashboard = () => {
         </>
       )}
 
-      {activeTab === 'requests' && (
+      {!pending && activeTab === 'requests' && (
         <BookingRequestsManager onBack={() => setActiveTab('dashboard')} />
       )}
-      {activeTab === 'availability' && (
+      {!pending && activeTab === 'availability' && (
         <AvailabilityManager onBack={() => setActiveTab('dashboard')} />
       )}
-      {activeTab === 'profile' && (
+      {!pending && activeTab === 'profile' && (
         <ProfileSettings onBack={() => setActiveTab('dashboard')} />
       )}
       

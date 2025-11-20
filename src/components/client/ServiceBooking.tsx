@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import AddressAutocomplete from '../common/AddressAutocomplete';
 import MergedSlotsSelector from '../booking/MergedSlotsSelector';
 import { MergedSlot, findEligibleGardeners } from '../../utils/mergedAvailabilityService';
+ 
 
 const schema = yup.object({
   service_id: yup.string().required('Servicio requerido'),
@@ -31,6 +32,7 @@ type FormData = {
 const ServiceBooking = () => {
   const { user } = useAuth();
   const location = useLocation();
+  const preselectedServiceId = (location.state as any)?.selectedServiceId || location.state?.selectedServiceId;
   const navigate = useNavigate();
   const [services, setServices] = useState<Service[]>([]);
   const [durationHours, setDurationHours] = useState<number>(0);
@@ -41,8 +43,7 @@ const ServiceBooking = () => {
   const [selectedAddress, setSelectedAddress] = useState('');
   
   // Servicio preseleccionado desde la navegación
-  const preselectedService = location.state?.selectedService;
-  const preselectedServiceId = location.state?.selectedServiceId;
+  const preselectedService = (location.state as any)?.selectedService;
   const aiSuggestedPrice: number | undefined = location.state?.aiPrice;
   const aiSuggestedHours: number | undefined = location.state?.aiHours;
 
@@ -70,6 +71,8 @@ const ServiceBooking = () => {
     }
   }, [preselectedServiceId, setValue]);
 
+
+
   // Calcular precio total cuando cambian la duración y servicio
   useEffect(() => {
     if (durationHours > 0 && watchedValues.service_id) {
@@ -88,6 +91,8 @@ const ServiceBooking = () => {
       setTotalPrice(0);
     }
   }, [durationHours, watchedValues.service_id, services, aiSuggestedPrice]);
+
+
 
   const fetchServices = async () => {
     try {
@@ -499,6 +504,7 @@ const ServiceBooking = () => {
               </p>
             </div>
           )}
+
 
           {/* Notas adicionales */}
           {watchedValues.duration_hours && (

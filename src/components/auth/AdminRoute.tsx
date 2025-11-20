@@ -36,7 +36,8 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
   // En producción, verificar roles específicos
   const adminEmails = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [
     'admin@jardineria.com',
-    'developer@jardineria.com'
+    'developer@jardineria.com',
+    'mjgardenproject@gmail.com'
   ];
   
   const isAdmin = profile?.role === 'admin' || 

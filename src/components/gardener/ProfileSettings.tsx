@@ -17,7 +17,8 @@ const ALLOWED_SERVICE_NAMES = [
   'Corte de setos a máquina',
   'Corte de arbustos pequeños o ramas finas a tijera',
   'Labrar y quitar malas hierbas a mano',
-  'Fumigación de plantas'
+  'Fumigación de plantas',
+  'Poda de palmeras'
 ];
 const normalizeText = (s: string) => (s || '')
   .toLowerCase()
@@ -162,7 +163,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         total_reviews: gardenerProfile?.total_reviews || 0
       };
 
-      console.log('Saving to gardener_profiles table:', profileData);
+      const payload = { ...profileData, tools_available: toolsAvailable } as any;
+
+      console.log('Saving to gardener_profiles table:', payload);
 
       // Check if gardener profile already exists
       const { data: existingProfile } = await supabase
@@ -178,7 +181,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         console.log('Profile exists, updating...');
         const { error } = await supabase
           .from('gardener_profiles')
-          .update(profileData)
+          .update(payload)
           .eq('user_id', user.id);
         profileError = error;
       } else {
@@ -186,7 +189,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         console.log('Profile does not exist, creating...');
         const { error } = await supabase
           .from('gardener_profiles')
-          .insert(profileData);
+          .insert(payload);
         profileError = error;
       }
 

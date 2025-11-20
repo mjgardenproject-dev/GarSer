@@ -277,6 +277,51 @@ CREATE POLICY "storage_objects_delete_own_photos" ON storage.objects
       OR name LIKE ('bookings/' || auth.uid() || '/%')
     )
   );
+-- ===========================================
+-- STORAGE: BUCKET applications PÚBLICO + POLÍTICAS
+-- ===========================================
+INSERT INTO storage.buckets (id, name, public)
+SELECT 'applications', 'applications', true
+WHERE NOT EXISTS (
+  SELECT 1 FROM storage.buckets WHERE id = 'applications'
+);
+
+UPDATE storage.buckets SET public = true WHERE id = 'applications';
+
+DROP POLICY IF EXISTS "storage_objects_select_public_applications" ON storage.objects;
+CREATE POLICY "storage_objects_select_public_applications" ON storage.objects
+  FOR SELECT USING (bucket_id = 'applications');
+
+DROP POLICY IF EXISTS "storage_objects_insert_applications" ON storage.objects;
+DROP POLICY IF EXISTS "storage_objects_update_applications" ON storage.objects;
+DROP POLICY IF EXISTS "storage_objects_delete_applications" ON storage.objects;
+
+CREATE POLICY "storage_objects_insert_applications" ON storage.objects
+  FOR INSERT WITH CHECK (
+    bucket_id = 'applications'
+    AND (
+      name LIKE (auth.uid() || '/avatar/%')
+      OR name LIKE (auth.uid() || '/proof/%')
+    )
+  );
+
+CREATE POLICY "storage_objects_update_applications" ON storage.objects
+  FOR UPDATE USING (
+    bucket_id = 'applications'
+    AND (
+      name LIKE (auth.uid() || '/avatar/%')
+      OR name LIKE (auth.uid() || '/proof/%')
+    )
+  );
+
+CREATE POLICY "storage_objects_delete_applications" ON storage.objects
+  FOR DELETE USING (
+    bucket_id = 'applications'
+    AND (
+      name LIKE (auth.uid() || '/avatar/%')
+      OR name LIKE (auth.uid() || '/proof/%')
+    )
+  );
 `;
 
 const DatabaseFix: React.FC = () => {

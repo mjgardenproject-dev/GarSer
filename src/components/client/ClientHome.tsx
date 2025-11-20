@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import AddressAutocomplete from '../common/AddressAutocomplete';
@@ -8,6 +8,7 @@ import { estimateWorkWithAI, AITask } from '../../utils/aiPricingEstimator';
 import { findEligibleGardenersForServices, computeNextAvailableDays, MergedSlot } from '../../utils/mergedAvailabilityService';
 import { broadcastBookingRequest } from '../../utils/bookingBroadcastService';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 type WizardStep = 'welcome' | 'address' | 'details' | 'availability' | 'confirm';
 
@@ -15,6 +16,7 @@ const ClientHome: React.FC = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<WizardStep>('welcome');
+  const [applicationStatus, setApplicationStatus] = useState<null | 'submitted' | 'approved' | 'rejected'>(null);
 
   // Datos del formulario
   const [selectedAddress, setSelectedAddress] = useState<string>('');
@@ -276,9 +278,8 @@ const ClientHome: React.FC = () => {
         }
         console.log('[AI] photo upload step finished; proceeding to AI', { photoUrlsLen: photoUrls.length });
 
-        // Fallback: inline data URLs si no hay URLs de Storage
-        if (photos.length > 0 && photoUrls.length === 0) {
-          console.warn('[AI] no storage URLs; preparing inline data URLs fallback');
+        // Incluir siempre al menos 1–2 imágenes inline como dataURL para máxima compatibilidad
+        if (photos.length > 0) {
           const maxInline = 2;
           const toResizedDataUrl = (file: File, maxDim = 1280, quality = 0.7) => new Promise<string>((resolve) => {
             const reader = new FileReader();
@@ -313,8 +314,8 @@ const ClientHome: React.FC = () => {
           for (let i = 0; i < limit; i++) {
             try {
               const dataUrl = await toResizedDataUrl(photos[i]);
-              if (dataUrl) {
-                photoUrls.push(dataUrl);
+              if (dataUrl && !photoUrls.some(u => u.startsWith('data:'))) {
+                photoUrls.unshift(dataUrl);
                 console.log(`[AI] inline dataUrl ready for photo ${i+1}`, { length: dataUrl.length, startsWithData: dataUrl.startsWith('data:') });
               }
             } catch (err) {
@@ -449,159 +450,388 @@ const ClientHome: React.FC = () => {
     }
   };
 
+  const hasProcessedRef = useRef(false);
+
+  useEffect(() => {
+    const processPending = async () => {
+      if (!user?.id) return;
+      if (hasProcessedRef.current) return;
+      hasProcessedRef.current = true;
+      try {
+        const raw = localStorage.getItem('pendingGardenerApplication');
+        if (raw) {
+          const payload = JSON.parse(raw);
+          payload.user_id = user.id;
+          payload.submitted_at = new Date().toISOString();
+          try {
+            if (payload.photo_data) {
+              const res = await fetch(payload.photo_data);
+              const blob = await res.blob();
+              const type = blob.type || 'image/jpeg';
+              const ext = type.split('/').pop() || 'jpg';
+              const avatarPath = `${user.id}/avatar/${Date.now()}.${ext}`;
+              const { error: upErr } = await supabase.storage.from('applications').upload(avatarPath, blob, { upsert: true, contentType: type });
+              if (!upErr) {
+                const { data } = supabase.storage.from('applications').getPublicUrl(avatarPath);
+                if (data?.publicUrl) payload.professional_photo_url = data.publicUrl;
+              }
+            }
+            if (Array.isArray(payload.proof_photos_data) && payload.proof_photos_data.length > 0) {
+              const urls: string[] = [];
+              for (let i = 0; i < payload.proof_photos_data.length; i++) {
+                const d = payload.proof_photos_data[i];
+                const res = await fetch(d);
+                const blob = await res.blob();
+                const type = blob.type || 'image/jpeg';
+                const ext = type.split('/').pop() || 'jpg';
+                const proofPath = `${user.id}/proof/${Date.now()}_${i}.${ext}`;
+                const { error: upErr } = await supabase.storage.from('applications').upload(proofPath, blob, { upsert: true, contentType: type });
+                if (!upErr) {
+                  const { data } = supabase.storage.from('applications').getPublicUrl(proofPath);
+                  if (data?.publicUrl) urls.push(data.publicUrl);
+                }
+              }
+              if (urls.length > 0) payload.proof_photos = urls;
+            }
+          } catch {}
+          delete payload.photo_data;
+          delete payload.proof_photos_data;
+          const { data: existing } = await supabase
+            .from('gardener_applications')
+            .select('id,status')
+            .eq('user_id', user.id)
+            .in('status', ['draft','submitted'])
+            .order('submitted_at', { ascending: false })
+            .limit(1);
+          if (existing && existing.length > 0) {
+            const id = existing[0].id;
+            await supabase
+              .from('gardener_applications')
+              .update({ ...payload, status: 'submitted' })
+              .eq('id', id);
+            localStorage.removeItem('pendingGardenerApplication');
+            toast.success('Solicitud enviada. Está en revisión.');
+          } else {
+            const { error } = await supabase
+              .from('gardener_applications')
+              .insert(payload);
+            if (error) {
+              const msg = (error as any)?.message || '';
+              if (msg.includes('duplicate') || msg.includes('conflict') || (error as any)?.code === '409') {
+                const { data: ex2 } = await supabase
+                  .from('gardener_applications')
+                  .select('id')
+                  .eq('user_id', user.id)
+                  .order('submitted_at', { ascending: false })
+                  .limit(1);
+                const id2 = ex2?.[0]?.id;
+                if (id2) {
+                  await supabase
+                    .from('gardener_applications')
+                    .update({ ...payload, status: 'submitted' })
+                    .eq('id', id2);
+                  localStorage.removeItem('pendingGardenerApplication');
+                  toast.success('Solicitud enviada. Está en revisión.');
+                }
+              }
+            } else {
+              localStorage.removeItem('pendingGardenerApplication');
+              toast.success('Solicitud enviada. Está en revisión.');
+            }
+          }
+        }
+      } catch {}
+      try {
+        const { data } = await supabase
+          .from('gardener_applications')
+          .select('status')
+          .eq('user_id', user.id)
+          .order('submitted_at', { ascending: false })
+          .limit(1);
+        if (data && data.length > 0) setApplicationStatus(data[0].status as any);
+      } catch {}
+    };
+    processPending();
+  }, [user?.id]);
+
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6">
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-green-600 to-green-500 p-5 sm:p-8 text-white">
-          <h1 className="text-2xl sm:text-3xl font-bold">Bienvenido{profile?.full_name ? `, ${profile.full_name}` : ''}</h1>
-          <p className="mt-2 opacity-90 text-sm sm:text-base">Solicita un presupuesto y reserva el trabajo de jardinería que necesites al instante.</p>
+          {applicationStatus === 'submitted' ? (
+            <>
+              <h1 className="text-2xl sm:text-3xl font-bold">Solicitud de jardinero en revisión</h1>
+              <p className="mt-2 opacity-90 text-sm sm:text-base">Has solicitado ser jardinero en GarSer.es. Estamos validando tus datos y tu perfil profesional. Te avisaremos por email muy pronto.</p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl sm:text-3xl font-bold">Bienvenido{profile?.full_name ? `, ${profile.full_name}` : ''}</h1>
+              <p className="mt-2 opacity-90 text-sm sm:text-base">Solicita un presupuesto y reserva el trabajo de jardinería que necesites al instante.</p>
+            </>
+          )}
         </div>
 
-        {/* Wizard content */}
+        {/* Content */}
         <div className="p-4 sm:p-6">
-          {/* Controls */}
-          <div className="flex items-center justify-between mb-4 sm:mb-6">
-            <div className="text-sm text-gray-600">Paso: {['Inicio','Dirección','Detalles','Disponibilidad','Confirmación'][['welcome','address','details','availability','confirm'].indexOf(step)]}</div>
-            <div className="space-x-2">
-              {step !== 'welcome' && (
-                <button onClick={goBack} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
-                  <ChevronLeft className="w-4 h-4 mr-1" /> Atrás
-                </button>
-              )}
-              {step !== 'confirm' && (
-                <button onClick={goNext} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
-                  Siguiente <ChevronRight className="w-4 h-4 ml-1" />
-                </button>
-              )}
+          {applicationStatus === 'submitted' ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="w-16 h-16 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center mb-4">
+                <Clock className="w-8 h-8" />
+              </div>
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">Tu solicitud está en revisión</h2>
+              <p className="text-gray-600 text-center max-w-md">Has solicitado ser jardinero. Estamos revisando tu información para activar tu cuenta profesional. Te avisaremos por email en cuanto terminemos. Mientras tanto, no verás el panel de cliente y no necesitas hacer nada más.</p>
             </div>
-          </div>
-
-          {step === 'welcome' && (
-            <div className="text-center py-10 sm:py-16">
-              <p className="text-gray-600 mb-8 text-sm sm:text-base">Tu nueva experiencia de reserva de jardinería, simple y directa.</p>
-              <button onClick={handleStart} className="px-6 sm:px-8 py-3 sm:py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base sm:text-lg font-semibold shadow-lg transform hover:scale-[1.02] transition">
-                Empezar
-              </button>
-            </div>
-          )}
-
-          {step === 'address' && (
-            <div className="space-y-3 sm:space-y-4">
-              <label className="block text-base sm:text-lg font-semibold text-gray-800">Dirección</label>
-              <AddressAutocomplete value={selectedAddress} onChange={handleAddressSelected} error={addressError} />
-              {selectedAddress && (
-                <div className="text-sm text-gray-600">Dirección seleccionada: <span className="font-medium">{selectedAddress}</span></div>
-              )}
-              {addressError && <div className="text-sm text-red-600">{addressError}</div>}
-              <div className="pt-2">
-                <button
-                  onClick={() => validateAddressHasNumber(selectedAddress) && setStep('details')}
-                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm sm:text-base"
-                >
-                  Continuar
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 'details' && (
-            <div className="space-y-5 sm:space-y-6">
-              {/* Eliminado el selector manual de servicios; flujo 100% por IA */}
-
-              <div>
-                <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Fotos del jardín</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 sm:p-6 text-center">
-                  <input type="file" accept="image/*" multiple onChange={onPhotosSelected} />
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {photos.map((file, idx) => (
-                      <div key={idx} className="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden">
-                        <img src={URL.createObjectURL(file)} alt={`foto-${idx}`} className="w-full h-full object-cover" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Describe el trabajo</label>
-                <textarea
-                  rows={4}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full p-3 sm:p-4 text-sm sm:text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Ej: Quiero un corte de césped y que poden los setos de la imagen"
-                />
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={runAIAnalysis}
-                  disabled={analyzing}
-                  className="px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center disabled:opacity-50 text-sm sm:text-base"
-                >
-                  <Wand2 className="w-4 h-4 mr-2" /> Analizar con IA
-                </button>
-                {aiTasks.length > 0 && (
-                  <div className="text-gray-700">
-                    IA detectó {aiTasks.length} {aiTasks.length === 1 ? 'tarea' : 'tareas'}.
-                  </div>
-                )}
-              </div>
-
-
-              {aiTasks.length > 0 && (
-                <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="text-green-800 font-semibold mb-2">Tareas sugeridas</h4>
-                  <ul className="space-y-2">
-                    {aiTasks.map((t, idx) => (
-                      <li key={idx} className="text-sm text-gray-800">
-                        <span className="font-medium">{t.tipo_servicio}</span>
-                        {' — '}<span className="italic">{t.estado_jardin}</span>
-                        {t.superficie_m2 != null && (
-                          <span>{' • '}superficie: {t.superficie_m2} m²</span>
-                        )}
-                        {t.numero_plantas != null && (
-                          <span>{' • '}plantas: {t.numero_plantas}</span>
-                        )}
-                        {t.tamaño_plantas && (
-                          <span>{' • '}tamaño: {t.tamaño_plantas}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+          ) : (
+            <>
+              {applicationStatus === 'rejected' && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800">
+                  Tu solicitud fue rechazada. Si crees que es un error, contáctanos.
                 </div>
               )}
 
-              {(aiTimeTotal > 0 || aiPriceTotal > 0 || (estimatedHours > 0 && totalPrice > 0)) && (
-                <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4">
-                  <h4 className="text-gray-900 font-semibold mb-2">Estimación</h4>
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center text-gray-700">
-                      <Clock className="w-4 h-4 mr-2" />
-                      {Math.ceil(aiTimeTotal > 0 ? aiTimeTotal : estimatedHours)} h
-                    </div>
-                    <div className="flex items-center text-gray-700">
-                      <Euro className="w-4 h-4 mr-2" />
-                      €{Math.ceil(aiPriceTotal > 0 ? aiPriceTotal : totalPrice)}
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <div className="text-sm text-gray-600">Paso: {['Inicio','Dirección','Detalles','Disponibilidad','Confirmación'][['welcome','address','details','availability','confirm'].indexOf(step)]}</div>
+                <div className="space-x-2">
+                  {step !== 'welcome' && (
+                    <button onClick={goBack} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
+                      <ChevronLeft className="w-4 h-4 mr-1" /> Atrás
+                    </button>
+                  )}
+                  {step !== 'confirm' && (
+                    <button onClick={goNext} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
+                      Siguiente <ChevronRight className="w-4 h-4 ml-1" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {step === 'welcome' && (
+                <div className="text-center py-10 sm:py-16">
+                  <p className="text-gray-600 mb-8 text-sm sm:text-base">Tu nueva experiencia de reserva de jardinería, simple y directa.</p>
+                  <button onClick={handleStart} className="px-6 sm:px-8 py-3 sm:py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base sm:text-lg font-semibold shadow-lg transform hover:scale-[1.02] transition">
+                    Empezar
+                  </button>
                 </div>
               )}
 
-              {/* Disponibilidad inmediata bajo presupuesto y horas */}
-              {aiTimeTotal > 0 && (
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-base sm:text-lg font-semibold text-gray-800">Elige día y hora disponibles</h4>
+              {step === 'address' && (
+                <div className="space-y-3 sm:space-y-4">
+                  <label className="block text-base sm:text-lg font-semibold text-gray-800">Dirección</label>
+                  <AddressAutocomplete value={selectedAddress} onChange={handleAddressSelected} error={addressError} />
+                  {selectedAddress && (
+                    <div className="text-sm text-gray-600">Dirección seleccionada: <span className="font-medium">{selectedAddress}</span></div>
+                  )}
+                  {addressError && <div className="text-sm text-red-600">{addressError}</div>}
+                  <div className="pt-2">
                     <button
-                      type="button"
-                      onClick={() => setStep('availability')}
-                      className="text-sm text-green-700 hover:underline"
+                      onClick={() => validateAddressHasNumber(selectedAddress) && setStep('details')}
+                      className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm sm:text-base"
                     >
-                      Ver más días
+                      Continuar
                     </button>
                   </div>
+                </div>
+              )}
+
+              {step === 'details' && (
+                <div className="space-y-5 sm:space-y-6">
+                  <div>
+                    <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Fotos del jardín</label>
+                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 sm:p-6 text-center">
+                      <input type="file" accept="image/*" multiple onChange={onPhotosSelected} />
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        {photos.map((file, idx) => (
+                          <div key={idx} className="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden">
+                            <img src={URL.createObjectURL(file)} alt={`foto-${idx}`} className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Describe el trabajo</label>
+                    <textarea
+                      rows={4}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="w-full p-3 sm:p-4 text-sm sm:text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="Ej: Quiero un corte de césped y que poden los setos de la imagen"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={runAIAnalysis}
+                      disabled={analyzing}
+                      className="px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center disabled:opacity-50 text-sm sm:text-base"
+                    >
+                      <Wand2 className="w-4 h-4 mr-2" /> Analizar con IA
+                    </button>
+                    {aiTasks.length > 0 && (
+                      <div className="text-gray-700">
+                        IA detectó {aiTasks.length} {aiTasks.length === 1 ? 'tarea' : 'tareas'}.
+                      </div>
+                    )}
+                  </div>
+
+                  {aiTasks.length > 0 && (
+                    <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+                      <h4 className="text-green-800 font-semibold mb-2">Tareas sugeridas</h4>
+                      <ul className="space-y-2">
+                        {aiTasks.map((t, idx) => (
+                          <li key={idx} className="text-sm text-gray-800">
+                            <span className="font-medium">{t.tipo_servicio}</span>
+                            {' — '}<span className="italic">{t.estado_jardin}</span>
+                            {t.superficie_m2 != null && (
+                              <span>{' • '}superficie: {t.superficie_m2} m²</span>
+                            )}
+                            {t.numero_plantas != null && (
+                              <span>{' • '}plantas: {t.numero_plantas}</span>
+                            )}
+                            {t.tamaño_plantas && (
+                              <span>{' • '}tamaño: {t.tamaño_plantas}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {(aiTimeTotal > 0 || aiPriceTotal > 0 || (estimatedHours > 0 && totalPrice > 0)) && (
+                    <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4">
+                      <h4 className="text-gray-900 font-semibold mb-2">Estimación</h4>
+                      <div className="flex items-center gap-6">
+                        <div className="flex items-center text-gray-700">
+                          <Clock className="w-4 h-4 mr-2" />
+                          {Math.ceil(aiTimeTotal > 0 ? aiTimeTotal : estimatedHours)} h
+                        </div>
+                        <div className="flex items-center text-gray-700">
+                          <Euro className="w-4 h-4 mr-2" />
+                          €{Math.ceil(aiPriceTotal > 0 ? aiPriceTotal : totalPrice)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {aiTimeTotal > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-base sm:text-lg font-semibold text-gray-800">Elige día y hora disponibles</h4>
+                        <button
+                          type="button"
+                          onClick={() => setStep('availability')}
+                          className="text-sm text-green-700 hover:underline"
+                        >
+                          Ver más días
+                        </button>
+                      </div>
+
+                      {loadingAvailability && (
+                        <div className="flex items-center gap-2 text-gray-600"><ImageIcon className="w-4 h-4" /> Buscando disponibilidad...</div>
+                      )}
+
+                      {!loadingAvailability && dateSuggestions.length > 0 && (
+                        <div className="space-y-2">
+                          {dateSuggestions.slice(0, 4).map(ds => {
+                            const isOpen = expandedDate === ds.date;
+                            const totalSlots = ds.slots.length;
+                            return (
+                              <div key={ds.date} className="border border-gray-200 rounded-xl overflow-hidden">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExpandedDate(ds.date);
+                                    setSelectedDate(ds.date);
+                                    setSelectedSlot(null);
+                                  }}
+                                  className={`w-full flex items-center justify-between p-3 text-left ${isOpen ? 'bg-green-50' : 'bg-white'}`}
+                                >
+                                  <span className="font-medium text-gray-800">{ds.date}</span>
+                                  <span className="text-xs text-gray-600">{totalSlots} franjas</span>
+                                </button>
+                                {isOpen && (
+                                  <div className="p-3 flex flex-wrap gap-2 border-t border-gray-200">
+                                    {ds.slots.map(slot => {
+                                      const names = slot.gardenerIds
+                                        .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
+                                        .filter(Boolean) as string[];
+                                      const shown = names.slice(0, 3);
+                                      const extra = names.length - shown.length;
+                                      const namesLabel = shown.join(', ') + (extra > 0 ? ` +${extra} más` : '');
+                                      return (
+                                        <button
+                                          key={`${ds.date}-${slot.startHour}`}
+                                          onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
+                                          className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
+                                        >
+                                          <div className="text-sm">
+                                            {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
+                                          </div>
+                                          <div className="text-xs opacity-80">
+                                            {namesLabel || '—'}
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {!loadingAvailability && dateSuggestions.length === 0 && (
+                        <div className="text-sm text-gray-600">No encontramos disponibilidad inmediata. Pulsa "Ver más días" para ampliar la búsqueda.</div>
+                      )}
+
+                      {eligibleGardenerIds.length > 0 && selectedSlot && (
+                        <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3">
+                          <div className="text-green-800 text-sm">
+                            Has seleccionado <span className="font-semibold">{selectedDate}</span> de <span className="font-semibold">{selectedSlot.startHour}:00</span> a <span className="font-semibold">{selectedSlot.endHour}:00</span>.
+                          </div>
+                          <div className="mt-2">
+                            <button
+                              type="button"
+                              onClick={() => setStep('availability')}
+                              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
+                            >
+                              Continuar con la reserva
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step === 'availability' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-semibold text-gray-800">Fechas disponibles</h3>
+                    <button
+                      onClick={fetchAvailability}
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700"
+                    >
+                      Buscar disponibilidad
+                    </button>
+                  </div>
+
+                  {eligibleGardenerProfiles.length > 0 && (
+                    <div className="bg-white border border-gray-200 rounded-xl p-4">
+                      <div className="text-sm text-gray-800 font-medium mb-2">Jardineros que pueden realizar estos trabajos</div>
+                      <div className="flex flex-wrap gap-2">
+                        {eligibleGardenerProfiles.map(p => (
+                          <span key={p.user_id} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
+                            {p.full_name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {loadingAvailability && (
                     <div className="flex items-center gap-2 text-gray-600"><ImageIcon className="w-4 h-4" /> Buscando disponibilidad...</div>
@@ -609,7 +839,7 @@ const ClientHome: React.FC = () => {
 
                   {!loadingAvailability && dateSuggestions.length > 0 && (
                     <div className="space-y-2">
-                      {dateSuggestions.slice(0, 4).map(ds => {
+                      {dateSuggestions.map(ds => {
                         const isOpen = expandedDate === ds.date;
                         const totalSlots = ds.slots.length;
                         return (
@@ -623,33 +853,38 @@ const ClientHome: React.FC = () => {
                               }}
                               className={`w-full flex items-center justify-between p-3 text-left ${isOpen ? 'bg-green-50' : 'bg-white'}`}
                             >
-                              <span className="font-medium text-gray-800">{ds.date}</span>
-                              <span className="text-xs text-gray-600">{totalSlots} franjas</span>
+                              <div>
+                                <div className="font-medium text-gray-800">{ds.date}</div>
+                                <div className="text-sm text-gray-600">{totalSlots} franjas disponibles</div>
+                              </div>
+                              <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                             </button>
                             {isOpen && (
-                              <div className="p-3 flex flex-wrap gap-2 border-t border-gray-200">
-                                {ds.slots.map(slot => {
-                                  const names = slot.gardenerIds
-                                    .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
-                                    .filter(Boolean) as string[];
-                                  const shown = names.slice(0, 3);
-                                  const extra = names.length - shown.length;
-                                  const namesLabel = shown.join(', ') + (extra > 0 ? ` +${extra} más` : '');
-                                  return (
-                                    <button
-                                      key={`${ds.date}-${slot.startHour}`}
-                                      onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
-                                      className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
-                                    >
-                                      <div className="text-sm">
-                                        {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
-                                      </div>
-                                      <div className="text-xs opacity-80">
-                                        {namesLabel || '—'}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
+                              <div className="p-3 bg-gray-50 border-t border-gray-200">
+                                <div className="flex flex-wrap gap-2">
+                                  {ds.slots.map(slot => {
+                                    const names = slot.gardenerIds
+                                      .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
+                                      .filter(Boolean) as string[];
+                                    const shown = names.slice(0, 3);
+                                    const extra = names.length - shown.length;
+                                    const namesLabel = shown.join(', ') + (extra > 0 ? ` +${extra} más` : '');
+                                    return (
+                                      <button
+                                        key={`${ds.date}-${slot.startHour}`}
+                                        onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
+                                        className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
+                                      >
+                                        <div className="text-sm">
+                                          {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
+                                        </div>
+                                        <div className="text-xs opacity-80">
+                                          {namesLabel || '—'}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
                           </div>
@@ -658,142 +893,34 @@ const ClientHome: React.FC = () => {
                     </div>
                   )}
 
-                  {!loadingAvailability && dateSuggestions.length === 0 && (
-                    <div className="text-sm text-gray-600">No encontramos disponibilidad inmediata. Pulsa "Ver más días" para ampliar la búsqueda.</div>
-                  )}
-
                   {eligibleGardenerIds.length > 0 && selectedSlot && (
-                    <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3">
-                      <div className="text-green-800 text-sm">
-                        Has seleccionado <span className="font-semibold">{selectedDate}</span> de <span className="font-semibold">{selectedSlot.startHour}:00</span> a <span className="font-semibold">{selectedSlot.endHour}:00</span>.
-                      </div>
-                      <div className="mt-2">
-                        <button
-                          type="button"
-                          onClick={() => setStep('availability')}
-                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
-                        >
-                          Continuar con la reserva
-                        </button>
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                      <div className="text-green-800 font-medium">
+                        Se notificará automáticamente a {eligibleGardenerIds.length} jardineros disponibles.
                       </div>
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-          )}
 
-          {step === 'availability' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold text-gray-800">Fechas disponibles</h3>
-                <button
-                  onClick={fetchAvailability}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700"
-                >
-                  Buscar disponibilidad
-                </button>
-              </div>
-
-              {eligibleGardenerProfiles.length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-xl p-4">
-                  <div className="text-sm text-gray-800 font-medium mb-2">Jardineros que pueden realizar estos trabajos</div>
-                  <div className="flex flex-wrap gap-2">
-                    {eligibleGardenerProfiles.map(p => (
-                      <span key={p.user_id} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
-                        {p.full_name}
-                      </span>
-                    ))}
+                  <div>
+                    <button
+                      onClick={confirmAndSend}
+                      disabled={!selectedSlot || eligibleGardenerIds.length === 0 || sending}
+                      className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
+                    >
+                      Confirmar y enviar solicitudes
+                    </button>
                   </div>
                 </div>
               )}
 
-              {loadingAvailability && (
-                <div className="flex items-center gap-2 text-gray-600"><ImageIcon className="w-4 h-4" /> Buscando disponibilidad...</div>
-              )}
-
-              {!loadingAvailability && dateSuggestions.length > 0 && (
-                <div className="space-y-2">
-                  {dateSuggestions.map(ds => {
-                    const isOpen = expandedDate === ds.date;
-                    const totalSlots = ds.slots.length;
-                    return (
-                      <div key={ds.date} className="border border-gray-200 rounded-xl overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setExpandedDate(ds.date);
-                            setSelectedDate(ds.date);
-                            setSelectedSlot(null);
-                          }}
-                          className={`w-full flex items-center justify-between p-3 text-left ${isOpen ? 'bg-green-50' : 'bg-white'}`}
-                        >
-                          <div>
-                            <div className="font-medium text-gray-800">{ds.date}</div>
-                            <div className="text-sm text-gray-600">{totalSlots} franjas disponibles</div>
-                          </div>
-                          <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                        </button>
-                        {isOpen && (
-                          <div className="p-3 bg-gray-50 border-t border-gray-200">
-                            <div className="flex flex-wrap gap-2">
-                              {ds.slots.map(slot => {
-                                const names = slot.gardenerIds
-                                  .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
-                                  .filter(Boolean) as string[];
-                                const shown = names.slice(0, 3);
-                                const extra = names.length - shown.length;
-                                const namesLabel = shown.join(', ') + (extra > 0 ? ` +${extra} más` : '');
-                                return (
-                                  <button
-                                    key={`${ds.date}-${slot.startHour}`}
-                                    onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
-                                    className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
-                                  >
-                                    <div className="text-sm">
-                                      {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
-                                    </div>
-                                    <div className="text-xs opacity-80">
-                                      {namesLabel || '—'}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+              {step === 'confirm' && (
+                <div className="text-center py-16">
+                  <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
+                  <h3 className="text-2xl font-semibold text-gray-900 mb-2">¡Solicitud enviada!</h3>
+                  <p className="text-gray-600">Hemos enviado tu solicitud a los jardineros disponibles. El primero en aceptar se quedará con el trabajo.</p>
                 </div>
               )}
-
-              {eligibleGardenerIds.length > 0 && selectedSlot && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                  <div className="text-green-800 font-medium">
-                    Se notificará automáticamente a {eligibleGardenerIds.length} jardineros disponibles.
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <button
-                  onClick={confirmAndSend}
-                  disabled={!selectedSlot || eligibleGardenerIds.length === 0 || sending}
-                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
-                >
-                  Confirmar y enviar solicitudes
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 'confirm' && (
-            <div className="text-center py-16">
-              <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-              <h3 className="text-2xl font-semibold text-gray-900 mb-2">¡Solicitud enviada!</h3>
-              <p className="text-gray-600">Hemos enviado tu solicitud a los jardineros disponibles. El primero en aceptar se quedará con el trabajo.</p>
-            </div>
+            </>
           )}
         </div>
       </div>

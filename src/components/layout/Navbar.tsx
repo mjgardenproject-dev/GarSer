@@ -1,16 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Leaf, LogOut, User, Calendar, MessageCircle, Menu } from 'lucide-react';
+import { Leaf, LogOut, User, Calendar, MessageCircle, Menu, Shield } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
 
 const Navbar = () => {
   const { user, profile, signOut } = useAuth();
   const [logoError, setLogoError] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // Calcular rol efectivo sin depender del perfil para no bloquear la UI
+  // Calcular rol efectivo sin depender del perfil para no bloquear la UI y considerar estado de solicitud
   const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
   const effectiveRole = profile?.role || fallbackRole;
+  const [applicationStatus, setApplicationStatus] = useState<null | 'draft' | 'submitted' | 'approved' | 'rejected'>(null);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        if (!user?.id) return;
+        const { data } = await supabase
+          .from('gardener_applications')
+          .select('status')
+          .eq('user_id', user.id)
+          .order('submitted_at', { ascending: false })
+          .limit(1);
+        const st = data && data.length > 0 ? (data[0].status as any) : null;
+        setApplicationStatus(st);
+      } catch {}
+    };
+    fetchStatus();
+  }, [user?.id]);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -24,10 +43,18 @@ const Navbar = () => {
     }
   };
 
+  const adminEmails = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [
+    'admin@jardineria.com',
+    'developer@jardineria.com',
+    'mjgardenproject@gmail.com'
+  ];
+  const isAdmin = (profile?.role === 'admin') || adminEmails.includes(user?.email || '');
+
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: User },
     { path: '/bookings', label: 'Reservas', icon: Calendar },
     { path: '/chat', label: 'Chat', icon: MessageCircle },
+    ...(isAdmin ? [{ path: '/admin/applications', label: 'Solicitudes', icon: Shield }] as any[] : [])
   ];
 
   return (
@@ -86,7 +113,11 @@ const Navbar = () => {
             <div className="hidden sm:block text-sm text-gray-600">
               <span className="font-medium">{profile?.full_name || user?.email}</span>
               <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                {effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}
+                {isAdmin ? 'Admin' : (
+                  applicationStatus === 'submitted' ? 'Jardinero (pendiente)' : (
+                    (effectiveRole === 'gardener' || applicationStatus === 'approved') ? 'Jardinero' : 'Cliente'
+                  )
+                )}
               </span>
             </div>
             <button
@@ -129,7 +160,7 @@ const Navbar = () => {
               })}
               <div className="mt-2 text-xs text-gray-500">
                 <span className="font-medium">{profile?.full_name || user?.email}</span>
-                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">{effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}</span>
+                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">{isAdmin ? 'Admin' : (applicationStatus === 'submitted' ? 'Jardinero (pendiente)' : ((effectiveRole === 'gardener' || applicationStatus === 'approved') ? 'Jardinero' : 'Cliente'))}</span>
               </div>
             </div>
           </div>

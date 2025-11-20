@@ -10,14 +10,15 @@ const ServiceCatalog = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Catálogo limitado a los 6 servicios canónicos de la IA
+  // Catálogo limitado a servicios canónicos de la IA
   const ALLOWED_SERVICE_NAMES = [
     'Corte de césped',
     'Poda de plantas',
     'Corte de setos a máquina',
     'Corte de arbustos pequeños o ramas finas a tijera',
     'Labrar y quitar malas hierbas a mano',
-    'Fumigación de plantas'
+    'Fumigación de plantas',
+    'Poda de palmeras'
   ];
   const normalizeText = (s: string) => (s || '')
     .toLowerCase()

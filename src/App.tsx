@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
@@ -20,11 +20,32 @@ import GoogleMapsDebug from './components/common/GoogleMapsDebug';
 import ChatList from './components/chat/ChatList';
 import RoleDebug from './components/debug/RoleDebug';
 import RoleMonitor from './components/admin/RoleMonitor';
+import GardenerApplicationWizard from './components/gardener/GardenerApplicationWizard';
+import ApplicationsAdmin from './components/admin/ApplicationsAdmin';
+import { supabase } from './lib/supabase';
 
 const AppContent = () => {
   const { user, profile } = useAuth();
   const location = useLocation();
   const isAuthPage = location.pathname === '/auth';
+  const [applicationStatus, setApplicationStatus] = useState<null | 'draft' | 'submitted' | 'approved' | 'rejected'>(null);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        if (!user?.id) return;
+        const { data } = await supabase
+          .from('gardener_applications')
+          .select('status')
+          .eq('user_id', user.id)
+          .order('submitted_at', { ascending: false })
+          .limit(1);
+        const st = data && data.length > 0 ? (data[0].status as any) : null;
+        setApplicationStatus(st);
+      } catch {}
+    };
+    fetchStatus();
+  }, [user?.id]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -39,7 +60,11 @@ const AppContent = () => {
                 // Usar rol de metadatos del usuario como fallback para no bloquear UI
                 const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
                 const effectiveRole = profile?.role || fallbackRole;
-                const component = effectiveRole === 'gardener' ? <GardenerDashboard /> : <ClientHome />;
+                const component = (applicationStatus === 'submitted')
+                  ? <GardenerDashboard pending />
+                  : (applicationStatus === 'approved' || effectiveRole === 'gardener')
+                    ? <GardenerDashboard />
+                    : <ClientHome />;
                 console.log('🏠 Dashboard: Mostrando componente para rol:', effectiveRole);
                 return (
                   <ErrorBoundary fallbackTitle="Algo ha fallado en el panel" fallbackMessage="Estamos trabajando para solucionarlo. Puedes reintentar o volver atrás.">
@@ -114,6 +139,22 @@ const AppContent = () => {
           element={
             <AdminRoute allowInDevelopment={true}>
               <RoleMonitor />
+            </AdminRoute>
+          } 
+        />
+        <Route 
+          path="/apply" 
+          element={
+            <ProtectedRoute>
+              <GardenerApplicationWizard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin/applications" 
+          element={
+            <AdminRoute allowInDevelopment={true}>
+              <ApplicationsAdmin />
             </AdminRoute>
           } 
         />

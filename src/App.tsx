@@ -13,6 +13,7 @@ import ServiceCatalog from './components/client/ServiceCatalog';
 import ClientHome from './components/client/ClientHome';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ServiceDetail from './components/client/ServiceDetail';
+import MyAccount from './components/account/MyAccount';
 import ServiceBooking from './components/client/ServiceBooking';
 import BookingsList from './components/client/BookingsList';
 import GardenerDashboard from './components/gardener/GardenerDashboard';
@@ -156,6 +157,16 @@ const AppContent = () => {
             <AdminRoute allowInDevelopment={true}>
               <ApplicationsAdmin />
             </AdminRoute>
+          } 
+        />
+        <Route 
+          path="/account" 
+          element={
+            <ProtectedRoute>
+              <ErrorBoundary fallbackTitle="Error en Mi Cuenta" fallbackMessage="Intenta reintentar más tarde.">
+                <MyAccount />
+              </ErrorBoundary>
+            </ProtectedRoute>
           } 
         />
         <Route path="/" element={<Navigate to="/dashboard" />} />

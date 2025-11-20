@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Leaf, LogOut, User, Calendar, MessageCircle, Menu, Shield } from 'lucide-react';
+import { Leaf, LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
@@ -54,6 +54,7 @@ const Navbar = () => {
     { path: '/dashboard', label: 'Dashboard', icon: User },
     { path: '/bookings', label: 'Reservas', icon: Calendar },
     { path: '/chat', label: 'Chat', icon: MessageCircle },
+    { path: '/account', label: 'Mi Cuenta', icon: Settings },
     ...(isAdmin ? [{ path: '/admin/applications', label: 'Solicitudes', icon: Shield }] as any[] : [])
   ];
 

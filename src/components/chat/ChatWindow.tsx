@@ -62,11 +62,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       if (senderIds.length > 0) {
         const { data: profiles, error: profError } = await supabase
           .from('profiles')
-          .select('user_id, full_name')
-          .in('user_id', senderIds);
+          .select('id, full_name')
+          .in('id', senderIds);
         if (!profError && profiles) {
           profiles.forEach((p: any) => {
-            if (p.user_id) namesMap.set(p.user_id, p.full_name);
+            if (p.id) namesMap.set(p.id, p.full_name);
           });
         }
       }
@@ -101,7 +101,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
             const { data: prof } = await supabase
               .from('profiles')
               .select('full_name')
-              .eq('user_id', newMsg.sender_id)
+              .eq('id', newMsg.sender_id)
               .maybeSingle();
             if (prof && (prof as any).full_name) senderName = (prof as any).full_name;
           }

@@ -10,6 +10,7 @@ import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
+// Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
   pending?: boolean;
@@ -102,8 +103,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         const { data: profilesData, error: profilesError } = await withTimeout(
           supabase
           .from('profiles')
-          .select('user_id, full_name')
-          .in('user_id', clientIds)
+          .select('id, full_name')
+          .in('id', clientIds)
           , 10000);
 
         if (profilesError) {
@@ -114,7 +115,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         // Combinar los datos
         const bookingsWithProfiles = bookingsData.map(booking => ({
           ...booking,
-          client_profile: profilesData?.find(profile => profile.user_id === booking.client_id) || null
+          client_profile: profilesData?.find(profile => profile.id === booking.client_id) || null
         }));
 
         console.log('✅ fetchBookings: bookings count', bookingsWithProfiles.length);
@@ -253,11 +254,11 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
               <button
                 onClick={pending ? undefined : () => setActiveTab('availability')}
                 className={`flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white ${pending ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 hover:shadow'} transition-colors`}
-                aria-label="Ir a Disponibilidad"
+                aria-label="Ir a Horario"
                 disabled={pending}
               >
                 <Clock className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
-                <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Disponibilidad</span>
+                <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Horario</span>
               </button>
               <button
                 onClick={pending ? undefined : () => setActiveTab('profile')}
@@ -277,7 +278,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                 <Calendar className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
                 <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Reservas</span>
               </button>
-            </div>
+              {/* Botón de flyer eliminado */}
+              </div>
           </div>
 
           {/* Reservas */}
@@ -396,6 +398,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       {!pending && activeTab === 'profile' && (
         <ProfileSettings onBack={() => setActiveTab('dashboard')} />
       )}
+      {/* Tab de flyer eliminado */}
       
       {/* Chat Window */}
       {selectedChat && (

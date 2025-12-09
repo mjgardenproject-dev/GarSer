@@ -5,7 +5,7 @@ import { CheckCircle, XCircle, Search } from 'lucide-react';
 interface Application {
   id: string;
   user_id: string;
-  status: 'draft'|'submitted'|'approved'|'rejected';
+  status: 'submitted'|'approved'|'rejected';
   full_name?: string;
   phone?: string;
   email?: string;
@@ -88,16 +88,18 @@ const ApplicationsAdmin: React.FC = () => {
     }
     if (gpErr) { setErrorMsg(gpErr.message || 'Error creando perfil de jardinero'); return; }
 
-    const { error: roleErr } = await supabase.from('profiles').update({ role: 'gardener' }).eq('user_id', app.user_id);
+    const { error: roleErr } = await supabase.from('profiles').update({ role: 'gardener' }).eq('id', app.user_id);
     if (roleErr) { setErrorMsg(roleErr.message || 'Error actualizando rol'); return; }
 
     const { error: appErr } = await supabase.from('gardener_applications').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', app.id);
     if (appErr) { setErrorMsg(appErr.message || 'Error actualizando solicitud'); return; }
+
     fetchSubmitted();
   };
 
   const reject = async (app: Application) => {
-    await supabase.from('gardener_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', app.id);
+    const reason = window.prompt('Motivo del rechazo (opcional):') || null;
+    await supabase.from('gardener_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), review_comment: reason }).eq('id', app.id);
     fetchSubmitted();
   };
 

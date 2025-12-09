@@ -62,15 +62,15 @@ const BookingsList = () => {
         
         const { data: profilesData, error: profilesError } = await supabase
           .from('profiles')
-          .select('user_id, full_name, phone')
-          .in('user_id', gardenerIds);
+          .select('id, full_name, phone')
+          .in('id', gardenerIds);
 
         if (profilesError) throw profilesError;
 
         // Combinar los datos
         const bookingsWithProfiles = bookingsData.map(booking => ({
           ...booking,
-          gardener_profile: profilesData?.find(profile => profile.user_id === booking.gardener_id) || null
+          gardener_profile: profilesData?.find(profile => profile.id === booking.gardener_id) || null
         }));
 
         setBookings(bookingsWithProfiles);

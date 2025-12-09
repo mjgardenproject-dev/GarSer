@@ -37,14 +37,14 @@ const GardenerBookings: React.FC = () => {
         const clientIds = [...new Set(bookingsData.map(b => b.client_id))];
         const { data: profilesData, error: profilesError } = await supabase
           .from('profiles')
-          .select('user_id, full_name')
-          .in('user_id', clientIds);
+          .select('id, full_name')
+          .in('id', clientIds);
 
         if (profilesError) throw profilesError;
 
         const bookingsWithProfiles = bookingsData.map(b => ({
           ...b,
-          client_profile: profilesData?.find(p => p.user_id === b.client_id) || null
+          client_profile: profilesData?.find(p => p.id === b.client_id) || null
         }));
 
         setBookings(bookingsWithProfiles as any);

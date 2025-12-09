@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, role: 'client' | 'gardener') => Promise<void>;
+  signUp: (email: string, password: string, role: 'client' | 'gardener', applicationPayload?: any) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -96,48 +96,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!mounted) return;
       const u = session?.user ?? null;
       switch (event) {
-        case 'INITIAL_SESSION': {
-          console.log('🕒', ts(), 'INITIAL_SESSION');
-          setUser(u);
-          setLoading(false);
-          break;
-        }
-        case 'SIGNED_IN': {
-          console.log('🕒', ts(), 'Signed in');
-          setUser(u);
-          setLoading(false);
-          break;
-        }
+        case 'INITIAL_SESSION':
+        case 'SIGNED_IN':
         case 'TOKEN_REFRESHED': {
-          console.log('🕒', ts(), 'Token refreshed');
+          console.log('🕒', ts(), event);
           setUser(u);
-          break;
-        }
-        case 'TOKEN_REFRESH_FAILED': {
-          console.warn('🕒', ts(), 'Token refresh failed → signOut');
-          clearAuthStorage();
-          try { await supabase.auth.signOut(); } catch {}
-          setUser(null);
           setLoading(false);
-          if (window.location.pathname !== '/auth') {
-            window.location.assign('/auth');
-          }
           break;
         }
         case 'SIGNED_OUT': {
           console.log('🕒', ts(), 'Signed out');
-          clearAuthStorage();
           setUser(null);
           setLoading(false);
-          if (window.location.pathname !== '/auth') {
-            window.location.assign('/auth');
-          }
           break;
         }
-        default: {
-          // Otros eventos: USER_UPDATED, PASSWORD_RECOVERY, etc.
+        case 'TOKEN_REFRESH_FAILED': {
+          console.warn('🕒', ts(), 'Token refresh failed');
+          setLoading(false);
           break;
         }
+        default:
+          break;
       }
     });
 
@@ -147,13 +126,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+
   const signIn = async (email: string, password: string) => {
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       if (data?.user) {
-        setUser(data.user);
+        const { data: userInfo } = await supabase.auth.getUser();
+        const fresh = userInfo?.user || data.user;
+        const verified = !!(fresh as any)?.email_confirmed_at;
+        if (!verified) {
+          await supabase.auth.signOut();
+          throw new Error('Verifica tu correo para continuar.');
+        }
+        try {
+          const isGardenerIntent = (fresh as any)?.user_metadata?.role === 'gardener' || (fresh as any)?.user_metadata?.requested_role === 'gardener';
+          if (isGardenerIntent) {
+            await supabase
+              .from('profiles')
+              .upsert({ id: fresh.id, role: 'gardener' }, { onConflict: 'id' });
+            const { data: app } = await supabase
+              .from('gardener_applications')
+              .select('id,status')
+              .eq('user_id', fresh.id)
+              .maybeSingle();
+            const st = (app?.status as any) || null;
+            if (!st || st === 'draft') {
+              await supabase
+                .from('gardener_applications')
+                .upsert({ user_id: fresh.id, status: 'draft', submitted_at: new Date().toISOString() }, { onConflict: 'user_id' });
+            }
+          }
+        } catch {}
+        setUser(fresh);
         console.log('✅ Signed in');
         window.location.assign('/dashboard');
       } else {
@@ -167,23 +173,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string, role: 'client' | 'gardener') => {
+  const signUp = async (email: string, password: string, role: 'client' | 'gardener', applicationPayload?: any) => {
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { role } },
+        options: { data: { requested_role: role, role: role } },
       });
       if (error) throw error;
-      const user = data?.user ?? data?.session?.user ?? null;
-      if (user) {
-        setUser(user);
-        console.log('✅ Signed up');
-        window.location.assign('/dashboard');
-      } else {
-        console.log('ℹ️ Sign up requires email confirmation');
-      }
+      // No hacemos escrituras en tablas protegidas aquí: aún no hay sesión confirmada.
+      // Se bootstrappea en el primer signIn tras verificar el email.
+      await supabase.auth.signOut();
+      console.log('ℹ️ Registro completado. Verifica tu correo para continuar.');
     } catch (e: any) {
       console.error('Error on signUp:', e?.message || e);
       throw e;
@@ -197,6 +199,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await supabase.auth.signOut();
       clearAuthStorage();
+      try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
       setUser(null);
       console.log('✅ Signed out');
       window.location.assign('/auth');

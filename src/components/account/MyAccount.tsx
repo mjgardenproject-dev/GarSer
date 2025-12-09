@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { User as UserIcon, Mail, Lock, Trash2, UploadCloud, CheckCircle } from 'lucide-react';
+import { User as UserIcon, Mail, Lock, Trash2, UploadCloud, CheckCircle, Link as LinkIcon, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MyAccount: React.FC = () => {
@@ -11,10 +11,26 @@ const MyAccount: React.FC = () => {
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [myProfile, setMyProfile] = useState<any | null>(null);
 
   useEffect(() => {
     setAvatarPreview(profile?.avatar_url || null);
   }, [profile?.avatar_url]);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user?.id) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .limit(1);
+      const p = data?.[0] || null;
+      setMyProfile(p);
+      setAvatarPreview(p?.avatar_url || profile?.avatar_url || null);
+    };
+    fetchProfile();
+  }, [user?.id]);
 
   const onAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
@@ -37,8 +53,10 @@ const MyAccount: React.FC = () => {
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
-        .eq('user_id', user.id);
+        .eq('id', user.id);
       if (updateError) throw updateError;
+      setAvatarPreview(publicUrl);
+      setMyProfile((prev: any) => ({ ...(prev || {}), avatar_url: publicUrl }));
       toast.success('Foto de perfil actualizada');
     } catch (e: any) {
       toast.error(e?.message || 'Error al actualizar la foto');
@@ -54,7 +72,7 @@ const MyAccount: React.FC = () => {
     }
     setSendingReset(true);
     try {
-      const redirectTo = `${window.location.origin}/auth`;
+      const redirectTo = `${window.location.origin}/reset-password`;
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo });
       if (error) throw error;
       toast.success('Email de recuperación enviado');
@@ -74,7 +92,7 @@ const MyAccount: React.FC = () => {
       const { error } = await supabase
         .from('profiles')
         .update({ full_name: '', phone: '', address: '', avatar_url: null })
-        .eq('user_id', user.id);
+        .eq('id', user.id);
       if (error) throw error;
       await signOut();
       toast.success('Cuenta cerrada');
@@ -85,11 +103,11 @@ const MyAccount: React.FC = () => {
     }
   };
 
-  const effectiveRole = profile?.role || ((user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client');
+  const effectiveRole = myProfile?.role || profile?.role || ((user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client');
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
-      <div className="bg-white rounded-2xl shadow-xl p-6">
+    <div className="max-w-3xl mx-auto p-4 sm:p-6">
+      <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6">
         <div className="flex items-center mb-6">
           <UserIcon className="w-6 h-6 text-green-600 mr-2" />
           <h1 className="text-2xl font-bold text-gray-900">Mi Cuenta</h1>
@@ -97,16 +115,18 @@ const MyAccount: React.FC = () => {
 
         <div className="grid grid-cols-1 gap-6">
           <div className="border rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
+            <div className="flex items-center gap-4 justify-start sm:justify-between mb-3">
+              <div className="min-w-0">
                 <div className="text-lg font-semibold text-gray-900">Perfil</div>
-                <div className="text-sm text-gray-600">{profile?.full_name || user?.email} · {effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}</div>
+                <div className="text-sm text-gray-600 truncate">{(myProfile?.full_name || profile?.full_name || user?.email) || ''} · {effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}</div>
               </div>
-              {avatarPreview ? (
-                <img src={avatarPreview} className="w-14 h-14 rounded-full object-cover" />
-              ) : (
-                <div className="w-14 h-14 rounded-full bg-gray-200" />
-              )}
+              <div className="shrink-0">
+                {avatarPreview ? (
+                  <img src={avatarPreview} className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-cover ring-2 ring-white" />
+                ) : (
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gray-200" />
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <label className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer inline-flex items-center">
@@ -123,6 +143,42 @@ const MyAccount: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {effectiveRole === 'gardener' && (
+            <div className="border rounded-xl p-4">
+              <div className="flex items-center mb-3">
+                <LinkIcon className="w-5 h-5 text-green-600 mr-2" />
+                <div className="text-lg font-semibold text-gray-900">Enlace de reserva directo</div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                <div className="md:col-span-5">
+                  <input
+                    value={`${window.location.origin}/reservar/${user?.id || ''}`}
+                    readOnly
+                    className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-800"
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const url = `${window.location.origin}/reservar/${user?.id || ''}`;
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        toast.success('Enlace copiado');
+                      } catch {
+                        toast.error('No se pudo copiar');
+                      }
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copiar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="border rounded-xl p-4">
             <div className="flex items-center mb-3">

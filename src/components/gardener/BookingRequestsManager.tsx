@@ -98,14 +98,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         const singleId = clientIdsFiltered[0] as string;
         const { data, error } = await supabase
           .from('profiles')
-          .select('user_id, full_name, phone')
-          .eq('user_id', singleId);
+          .select('id, full_name, phone')
+          .eq('id', singleId);
         clientsResult = { data, error } as any;
       } else if (clientIdsFiltered.length > 1) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('user_id, full_name, phone')
-          .in('user_id', clientIdsFiltered as string[]);
+          .select('id, full_name, phone')
+          .in('id', clientIdsFiltered as string[]);
         clientsResult = { data, error } as any;
       }
 
@@ -133,7 +133,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         console.warn('Error fetching services for requests:', servicesResult.error);
       }
 
-      const clientsMap = new Map(clientsResult.data?.map(c => [c.user_id, c]) || []);
+      const clientsMap = new Map(clientsResult.data?.map(c => [c.id, c]) || []);
       const servicesMap = new Map((servicesResult.data || []).map(s => [s.id, { ...s, price_per_hour: 0 }]) || []);
 
       // Transformar los datos para que coincidan con la interfaz esperada

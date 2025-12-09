@@ -5,14 +5,14 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 
 const Navbar = () => {
-  const { user, profile, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const [logoError, setLogoError] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Calcular rol efectivo sin depender del perfil para no bloquear la UI y considerar estado de solicitud
   const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
-  const effectiveRole = profile?.role || fallbackRole;
-  const [applicationStatus, setApplicationStatus] = useState<null | 'draft' | 'submitted' | 'approved' | 'rejected'>(null);
+  const effectiveRole = fallbackRole;
+  const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -22,10 +22,10 @@ const Navbar = () => {
           .from('gardener_applications')
           .select('status')
           .eq('user_id', user.id)
-          .order('submitted_at', { ascending: false })
-          .limit(1);
-        const st = data && data.length > 0 ? (data[0].status as any) : null;
-        setApplicationStatus(st);
+          .maybeSingle();
+        const st = (data?.status as any) || null;
+        const ui = st === 'approved' ? 'active' : st === 'rejected' ? 'denied' : (st === 'submitted' || st === 'draft') ? 'pending' : null;
+        setApplicationStatus(ui as any);
       } catch {}
     };
     fetchStatus();
@@ -43,12 +43,37 @@ const Navbar = () => {
     }
   };
 
-  const adminEmails = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [
+  const defaultAdminEmails = [
     'admin@jardineria.com',
     'developer@jardineria.com',
-    'mjgardenproject@gmail.com'
+    'mjgardenproject@gmail.com',
+    'migardenproject@gmail.com'
   ];
-  const isAdmin = (profile?.role === 'admin') || adminEmails.includes(user?.email || '');
+  const envAdminEmailsRaw = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [];
+  const adminEmails = Array.from(new Set([
+    ...defaultAdminEmails,
+    ...envAdminEmailsRaw
+  ].map(e => (e || '').trim().toLowerCase())));
+  const isAdmin = adminEmails.includes((user?.email || '').trim().toLowerCase());
+  useEffect(() => {
+    const checkAdmin = async () => {
+      try {
+        if (!user?.id) return;
+        const { data } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+        console.log('🔎 Navbar admin check', {
+          email: (user?.email || '').trim().toLowerCase(),
+          isAdmin,
+          role: data?.role,
+          adminEmails
+        });
+      } catch {}
+    };
+    checkAdmin();
+  }, [user?.id]);
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: User },
@@ -112,13 +137,9 @@ const Navbar = () => {
           {/* Acciones derecha */}
           <div className="flex items-center space-x-3">
             <div className="hidden sm:block text-sm text-gray-600">
-              <span className="font-medium">{profile?.full_name || user?.email}</span>
+              <span className="font-medium">{user?.email}</span>
               <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                {isAdmin ? 'Admin' : (
-                  applicationStatus === 'submitted' ? 'Jardinero (pendiente)' : (
-                    (effectiveRole === 'gardener' || applicationStatus === 'approved') ? 'Jardinero' : 'Cliente'
-                  )
-                )}
+                {isAdmin ? 'Admin' : (applicationStatus === 'pending' ? 'Jardinero (pendiente)' : (applicationStatus === 'active' || effectiveRole === 'gardener' ? 'Jardinero' : 'Jardinero'))}
               </span>
             </div>
             <button
@@ -160,8 +181,8 @@ const Navbar = () => {
                 );
               })}
               <div className="mt-2 text-xs text-gray-500">
-                <span className="font-medium">{profile?.full_name || user?.email}</span>
-                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">{isAdmin ? 'Admin' : (applicationStatus === 'submitted' ? 'Jardinero (pendiente)' : ((effectiveRole === 'gardener' || applicationStatus === 'approved') ? 'Jardinero' : 'Cliente'))}</span>
+                <span className="font-medium">{user?.email}</span>
+                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">{isAdmin ? 'Admin' : (applicationStatus === 'pending' ? 'Jardinero (pendiente)' : ((effectiveRole === 'gardener' || applicationStatus === 'active') ? 'Jardinero' : 'Jardinero'))}</span>
               </div>
             </div>
           </div>

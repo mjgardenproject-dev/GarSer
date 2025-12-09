@@ -34,14 +34,20 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
   }
 
   // En producción, verificar roles específicos
-  const adminEmails = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [
+  const defaultAdminEmails = [
     'admin@jardineria.com',
     'developer@jardineria.com',
-    'mjgardenproject@gmail.com'
+    'mjgardenproject@gmail.com',
+    'migardenproject@gmail.com'
   ];
+  const envAdminEmailsRaw = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [];
+  const adminEmails = Array.from(new Set([
+    ...defaultAdminEmails,
+    ...envAdminEmailsRaw
+  ].map(e => (e || '').trim().toLowerCase())));
   
   const isAdmin = profile?.role === 'admin' || 
-                  adminEmails.includes(user?.email || '');
+                  adminEmails.includes((user?.email || '').trim().toLowerCase());
 
   if (!isAdmin) {
     console.warn('🚫 AdminRoute: Acceso denegado. Usuario no es administrador:', {

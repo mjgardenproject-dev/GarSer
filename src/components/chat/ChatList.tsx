@@ -79,11 +79,11 @@ const ChatList: React.FC = () => {
       if (uniqueUserIds.length > 0) {
         const { data: profilesData, error: profilesError } = await supabase
           .from('profiles')
-          .select('user_id, full_name')
-          .in('user_id', uniqueUserIds as string[])
+          .select('id, full_name')
+          .in('id', uniqueUserIds as string[])
         if (profilesError) throw profilesError
         namesMap = (profilesData || []).reduce<Record<string, string>>((acc, p: any) => {
-          if (p?.user_id) acc[p.user_id] = p.full_name || ''
+          if (p?.id) acc[p.id] = p.full_name || ''
           return acc
         }, {})
       }

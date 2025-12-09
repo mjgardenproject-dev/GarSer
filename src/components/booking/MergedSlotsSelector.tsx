@@ -12,6 +12,7 @@ interface Props {
   selectedDate: Date;
   onDateChange: (date: Date) => void;
   onSlotSelect: (slot: MergedSlot) => void;
+  restrictedGardenerId?: string;
 }
 
 const MergedSlotsSelector: React.FC<Props> = ({
@@ -20,7 +21,8 @@ const MergedSlotsSelector: React.FC<Props> = ({
   durationHours,
   selectedDate,
   onDateChange,
-  onSlotSelect
+  onSlotSelect,
+  restrictedGardenerId
 }) => {
   const { user } = useAuth();
   const [eligibleGardenerIds, setEligibleGardenerIds] = useState<string[]>([]);
@@ -35,11 +37,14 @@ const MergedSlotsSelector: React.FC<Props> = ({
     async function loadGardeners() {
       const gardeners = await findEligibleGardeners(serviceId, clientAddress);
       if (!mounted) return;
-      setEligibleGardenerIds(gardeners.map(g => g.user_id));
+      const ids = gardeners.map(g => g.user_id);
+      setEligibleGardenerIds(
+        restrictedGardenerId ? ids.filter(id => id === restrictedGardenerId) : ids
+      );
     }
     loadGardeners();
     return () => { mounted = false; };
-  }, [serviceId, clientAddress]);
+  }, [serviceId, clientAddress, restrictedGardenerId]);
 
   useEffect(() => {
     let mounted = true;
@@ -48,7 +53,7 @@ const MergedSlotsSelector: React.FC<Props> = ({
       setLoading(true);
       try {
         const dateStr = format(selectedDate, 'yyyy-MM-dd');
-        const merged = await computeMergedSlots(eligibleGardenerIds, dateStr, user.id, durationHours);
+        const merged = await computeMergedSlots(eligibleGardenerIds, dateStr, user?.id || 'anonymous', durationHours);
         if (!mounted) return;
         setSlots(merged);
       } finally {
@@ -70,7 +75,7 @@ const MergedSlotsSelector: React.FC<Props> = ({
         const suggestions = await computeNextAvailableDays(
           eligibleGardenerIds,
           startDateStr,
-          user.id,
+          user?.id || 'anonymous',
           durationHours,
           14,
           7

@@ -34,7 +34,7 @@ const RoleMonitor = () => {
       // Obtener todos los perfiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('user_id, full_name, role');
+        .select('id, full_name, role');
 
       if (profilesError) throw profilesError;
 
@@ -49,7 +49,7 @@ const RoleMonitor = () => {
       const foundInconsistencies: RoleInconsistency[] = [];
 
       profiles?.forEach(profile => {
-        const hasGardenerProfile = gardenerUserIds.has(profile.user_id);
+        const hasGardenerProfile = gardenerUserIds.has(profile.id);
         const currentRole = profile.role;
         let expectedRole: 'client' | 'gardener' = 'client';
 
@@ -59,7 +59,7 @@ const RoleMonitor = () => {
 
         if (currentRole !== expectedRole) {
           foundInconsistencies.push({
-            user_id: profile.user_id,
+            user_id: profile.id,
             profile_role: currentRole,
             has_gardener_profile: hasGardenerProfile,
             expected_role: expectedRole,
@@ -98,7 +98,7 @@ const RoleMonitor = () => {
       const { error } = await supabase
         .from('profiles')
         .update({ role: inconsistency.expected_role })
-        .eq('user_id', inconsistency.user_id);
+        .eq('id', inconsistency.user_id);
 
       if (error) throw error;
 

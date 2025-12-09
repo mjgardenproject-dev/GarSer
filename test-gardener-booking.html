@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Gardener Booking</title>
+</head>
+<body>
+    <h1>Test Gardener Booking Flow</h1>
+    <p>Click the link below to test booking with a gardener:</p>
+    <a href="http://localhost:5173/reserva?gardenerId=test-gardener-123" target="_blank">
+        Test Booking with Gardener ID
+    </a>
+    
+    <br><br>
+    
+    <p>Or test with a gardener public profile:</p>
+    <a href="http://localhost:5173/jardinero/test-gardener-123" target="_blank">
+        Test Gardener Public Profile
+    </a>
+    
+    <script>
+        // Add some debug logging
+        console.log('Test page loaded');
+        
+        // Test the booking flow directly
+        function testBookingFlow() {
+            console.log('Testing booking flow...');
+            window.open('http://localhost:5173/reserva?gardenerId=test-gardener-123', '_blank');
+        }
+    </script>
+</body>
+</html>

@@ -54,12 +54,15 @@ if (typeof window !== 'undefined') {
       try {
         const res = await originalFetch(input, init);
         let authorization: string | null = null;
+        let apikey: string | null = null;
         try {
           if (typeof input !== 'string' && input.headers) {
             authorization = (input.headers as any).get?.('Authorization') ?? null;
+            apikey = (input.headers as any).get?.('apikey') ?? null;
           } else if (init?.headers) {
             const h = init.headers as any;
             authorization = h.get?.('Authorization') ?? h['Authorization'] ?? h['authorization'] ?? null;
+            apikey = h.get?.('apikey') ?? h['apikey'] ?? h['Apikey'] ?? null;
           }
         } catch {}
         console.log('🛰️ Supabase HTTP', {
@@ -67,6 +70,7 @@ if (typeof window !== 'undefined') {
           url,
           status: res.status,
           authorization,
+          apikey,
         });
         if (res.status >= 400) {
           const bodyText = await res.clone().text();

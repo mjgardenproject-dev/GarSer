@@ -89,7 +89,7 @@ const RoleDebug = () => {
         const { error } = await supabase
           .from('profiles')
           .update({ role: 'gardener' })
-          .eq('user_id', user.id);
+          .eq('id', user.id);
 
         if (error) throw error;
         
@@ -104,7 +104,7 @@ const RoleDebug = () => {
         const { error } = await supabase
           .from('profiles')
           .update({ role: 'client' })
-          .eq('user_id', user.id);
+          .eq('id', user.id);
 
         if (error) throw error;
         
@@ -134,7 +134,7 @@ const RoleDebug = () => {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('user_id', user.id);
+        .eq('id', user.id);
 
       console.log('Profile check result:', { data, error });
       
@@ -168,7 +168,7 @@ const RoleDebug = () => {
         .from('profiles')
         .insert([
           {
-            user_id: user.id,
+            id: user.id,
             full_name: user.email?.split('@')[0] || '',
             role: 'client',
             phone: '',
@@ -206,7 +206,7 @@ const RoleDebug = () => {
       const { error } = await supabase
         .from('profiles')
         .update({ role: 'gardener' })
-        .eq('user_id', user.id);
+        .eq('id', user.id);
 
       if (error) throw error;
 
@@ -250,7 +250,7 @@ const RoleDebug = () => {
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ role: 'gardener' })
-        .eq('user_id', user.id);
+        .eq('id', user.id);
 
       if (profileError) throw profileError;
 

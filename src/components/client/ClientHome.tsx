@@ -7,14 +7,67 @@ import { Wand2, Calendar, Image as ImageIcon, CheckCircle, ChevronRight, Chevron
 import { estimateWorkWithAI, AITask } from '../../utils/aiPricingEstimator';
 import { findEligibleGardenersForServices, computeNextAvailableDays, MergedSlot } from '../../utils/mergedAvailabilityService';
 import { broadcastBookingRequest } from '../../utils/bookingBroadcastService';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 type WizardStep = 'welcome' | 'address' | 'details' | 'availability' | 'confirm';
 
 const ClientHome: React.FC = () => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [userProfile, setUserProfile] = useState<any>(null);
+  
+  // Fetch user profile when authenticated
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!user?.id) {
+        setUserProfile(null);
+        return;
+      }
+      
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+        
+        if (!error && data) {
+          setUserProfile(data);
+        } else {
+          setUserProfile(null);
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+        setUserProfile(null);
+      }
+    };
+    
+    fetchUserProfile();
+  }, [user?.id]);
+  
+  // Try multiple ways to get the restricted gardener ID
+  const restrictedGardenerId = location.state?.restrictedGardenerId || 
+                              (location.state as any)?.restrictedGardenerId ||
+                              new URLSearchParams(location.search).get('gardenerId') ||
+                              sessionStorage.getItem('restrictedGardenerId') ||
+                              undefined;
+  
+  // Store in sessionStorage for persistence
+  useEffect(() => {
+    if (restrictedGardenerId) {
+      sessionStorage.setItem('restrictedGardenerId', restrictedGardenerId);
+    }
+  }, [restrictedGardenerId]);
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('[Debug] Full location object:', location);
+    console.log('[Debug] Location state:', location.state);
+    console.log('[Debug] Location search:', location.search);
+    console.log('[Debug] Restricted gardener ID:', restrictedGardenerId);
+  }, [location, restrictedGardenerId]);
   const [step, setStep] = useState<WizardStep>('welcome');
   const [applicationStatus, setApplicationStatus] = useState<null | 'submitted' | 'approved' | 'rejected'>(null);
 
@@ -107,7 +160,7 @@ const ClientHome: React.FC = () => {
 
   // Disponibilidad y jardineros
   const [eligibleGardenerIds, setEligibleGardenerIds] = useState<string[]>([]);
-  const [eligibleGardenerProfiles, setEligibleGardenerProfiles] = useState<{ user_id: string; full_name: string }[]>([]);
+  const [eligibleGardenerProfiles, setEligibleGardenerProfiles] = useState<{ id: string; full_name: string }[]>([]);
   const [dateSuggestions, setDateSuggestions] = useState<{ date: string; slots: MergedSlot[] }[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedSlot, setSelectedSlot] = useState<MergedSlot | null>(null);
@@ -115,8 +168,35 @@ const ClientHome: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [prefetchedAvailability, setPrefetchedAvailability] = useState(false);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [restrictedGardenerProfile, setRestrictedGardenerProfile] = useState<{ user_id: string; full_name: string; avatar_url?: string } | null>(null);
 
-  // Cuando llegan sugerencias, expandir por defecto el primer día
+  // Fetch restricted gardener profile when coming from gardener link
+  useEffect(() => {
+    const fetchRestrictedGardenerProfile = async () => {
+      console.log('[Debug] Fetching restricted gardener profile for ID:', restrictedGardenerId);
+      if (!restrictedGardenerId) return;
+      
+      try {
+        const { data: profile, error } = await supabase
+          .from('gardener_profiles')
+          .select('user_id, full_name, avatar_url')
+          .eq('user_id', restrictedGardenerId)
+          .single();
+        
+        console.log('[Debug] Profile fetch result:', { profile, error });
+        
+        if (!error && profile) {
+          setRestrictedGardenerProfile(profile);
+        } else {
+          console.log('[Debug] No profile found or error occurred');
+        }
+      } catch (error) {
+        console.error('Error fetching restricted gardener profile:', error);
+      }
+    };
+    
+    fetchRestrictedGardenerProfile();
+  }, [restrictedGardenerId]);
   useEffect(() => {
     if (dateSuggestions.length > 0 && !expandedDate) {
       setExpandedDate(dateSuggestions[0].date);
@@ -380,7 +460,6 @@ const ClientHome: React.FC = () => {
   }, [user?.id, selectedAddress, selectedServiceIds, estimatedHours, prefetchedAvailability]);
 
   const fetchAvailability = async () => {
-    if (!user?.id) return;
     if (!selectedAddress || selectedServiceIds.length === 0 || estimatedHours <= 0) return;
     setLoadingAvailability(true);
     try {
@@ -390,15 +469,18 @@ const ClientHome: React.FC = () => {
         estimatedHours,
       });
       const gardeners = await findEligibleGardenersForServices(selectedServiceIds, selectedAddress);
-      const ids = gardeners.map(g => (g as any).user_id);
+      let ids = gardeners.map(g => (g as any).user_id);
+      if (restrictedGardenerId) {
+        ids = ids.filter(id => id === restrictedGardenerId);
+      }
       console.log('[avail] jardineros encontrados', { count: ids.length, ids });
       setEligibleGardenerIds(ids);
       // Cargar nombres de perfiles para mostrar jardineros
       if (ids.length > 0) {
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select('user_id, full_name')
-          .in('user_id', ids);
+          .select('id, full_name')
+          .in('id', ids);
         if (!profilesError && profiles) {
           setEligibleGardenerProfiles(profiles as any);
         } else {
@@ -408,7 +490,7 @@ const ClientHome: React.FC = () => {
         setEligibleGardenerProfiles([]);
       }
       const startDate = new Date().toISOString().slice(0, 10);
-      const suggestions = await computeNextAvailableDays(ids, startDate, user.id, estimatedHours, 10, 7);
+      const suggestions = await computeNextAvailableDays(ids, startDate, user?.id || 'anonymous', estimatedHours, 10, 7);
       console.log('[avail] sugerencias de días/horas', { days: suggestions.length, first: suggestions[0] });
       setDateSuggestions(suggestions);
       if (suggestions.length > 0) {
@@ -422,9 +504,29 @@ const ClientHome: React.FC = () => {
     }
   };
 
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [receiveNotifications, setReceiveNotifications] = useState(true);
+
   const confirmAndSend = async () => {
-    if (!user || !profile) return;
     if (!selectedSlot || !selectedDate || eligibleGardenerIds.length === 0) return;
+    if (!user) {
+      setShowAuthPrompt(true);
+      try {
+        const redirectState = {
+          restrictedGardenerId,
+          preserved: {
+            selectedAddress,
+            selectedServiceIds,
+            description,
+            estimatedHours,
+            selectedDate,
+            selectedSlot
+          }
+        } as any;
+        sessionStorage.setItem('post_auth_redirect', JSON.stringify({ path: '/reserva', state: redirectState }));
+      } catch {}
+      return;
+    }
     setSending(true);
     try {
       const effectivePrice = aiPriceTotal > 0 ? aiPriceTotal : totalPrice;
@@ -554,6 +656,29 @@ const ClientHome: React.FC = () => {
     processPending();
   }, [user?.id]);
 
+  const GardenerInfoBanner = () => {
+    console.log('[Debug] GardenerInfoBanner rendering with profile:', restrictedGardenerProfile);
+    if (!restrictedGardenerProfile) return null;
+    
+    return (
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+        <div className="flex items-center gap-4">
+          {restrictedGardenerProfile.avatar_url && (
+            <img 
+              src={restrictedGardenerProfile.avatar_url} 
+              alt={restrictedGardenerProfile.full_name}
+              className="w-12 h-12 rounded-full object-cover"
+            />
+          )}
+          <div>
+            <div className="text-sm text-blue-600 font-medium">Estás reservando con este jardinero</div>
+            <div className="text-lg font-semibold text-blue-900">{restrictedGardenerProfile.full_name}</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6">
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
@@ -566,7 +691,7 @@ const ClientHome: React.FC = () => {
             </>
           ) : (
             <>
-              <h1 className="text-2xl sm:text-3xl font-bold">Bienvenido{profile?.full_name ? `, ${profile.full_name}` : ''}</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">Bienvenido{userProfile?.full_name ? `, ${userProfile.full_name}` : ''}</h1>
               <p className="mt-2 opacity-90 text-sm sm:text-base">Solicita un presupuesto y reserva el trabajo de jardinería que necesites al instante.</p>
             </>
           )}
@@ -592,6 +717,11 @@ const ClientHome: React.FC = () => {
 
               <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <div className="text-sm text-gray-600">Paso: {['Inicio','Dirección','Detalles','Disponibilidad','Confirmación'][['welcome','address','details','availability','confirm'].indexOf(step)]}</div>
+                {restrictedGardenerProfile && (
+                  <div className="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
+                    Reserva con: {restrictedGardenerProfile.full_name}
+                  </div>
+                )}
                 <div className="space-x-2">
                   {step !== 'welcome' && (
                     <button onClick={goBack} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
@@ -608,6 +738,7 @@ const ClientHome: React.FC = () => {
 
               {step === 'welcome' && (
                 <div className="text-center py-10 sm:py-16">
+                  {restrictedGardenerProfile && <GardenerInfoBanner />}
                   <p className="text-gray-600 mb-8 text-sm sm:text-base">Tu nueva experiencia de reserva de jardinería, simple y directa.</p>
                   <button onClick={handleStart} className="px-6 sm:px-8 py-3 sm:py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base sm:text-lg font-semibold shadow-lg transform hover:scale-[1.02] transition">
                     Empezar
@@ -617,6 +748,7 @@ const ClientHome: React.FC = () => {
 
               {step === 'address' && (
                 <div className="space-y-3 sm:space-y-4">
+                  {restrictedGardenerProfile && <GardenerInfoBanner />}
                   <label className="block text-base sm:text-lg font-semibold text-gray-800">Dirección</label>
                   <AddressAutocomplete value={selectedAddress} onChange={handleAddressSelected} error={addressError} />
                   {selectedAddress && (
@@ -636,6 +768,7 @@ const ClientHome: React.FC = () => {
 
               {step === 'details' && (
                 <div className="space-y-5 sm:space-y-6">
+                  {restrictedGardenerProfile && <GardenerInfoBanner />}
                   <div>
                     <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Fotos del jardín</label>
                     <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 sm:p-6 text-center">
@@ -784,8 +917,27 @@ const ClientHome: React.FC = () => {
                       )}
 
                       {!loadingAvailability && dateSuggestions.length === 0 && (
+                    <div className="text-center py-8">
+                      {restrictedGardenerProfile ? (
+                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-6">
+                          <div className="text-orange-800 font-medium mb-2">Este jardinero no tiene disponibilidad para tus requisitos</div>
+                          <div className="text-orange-700 text-sm mb-4">Puede que el jardinero no esté disponible para este tipo de servicio, fecha o ubicación.</div>
+                          <button
+                            onClick={() => {
+                              // Clear the restriction and navigate to normal booking flow
+                              sessionStorage.removeItem('restrictedGardenerId');
+                              navigate('/dashboard');
+                            }}
+                            className="px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg border border-orange-200"
+                          >
+                            Buscar otros jardineros
+                          </button>
+                        </div>
+                      ) : (
                         <div className="text-sm text-gray-600">No encontramos disponibilidad inmediata. Pulsa "Ver más días" para ampliar la búsqueda.</div>
                       )}
+                    </div>
+                  )}
 
                       {eligibleGardenerIds.length > 0 && selectedSlot && (
                         <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3">
@@ -810,14 +962,29 @@ const ClientHome: React.FC = () => {
 
               {step === 'availability' && (
                 <div className="space-y-6">
+                  {restrictedGardenerProfile && <GardenerInfoBanner />}
                   <div className="flex items-center justify-between">
                     <h3 className="text-xl font-semibold text-gray-800">Fechas disponibles</h3>
-                    <button
-                      onClick={fetchAvailability}
-                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700"
-                    >
-                      Buscar disponibilidad
-                    </button>
+                    <div className="flex gap-2">
+                      {restrictedGardenerProfile && (
+                        <button
+                          onClick={() => {
+                            // Clear the restriction and navigate to normal booking flow
+                            sessionStorage.removeItem('restrictedGardenerId');
+                            navigate('/dashboard');
+                          }}
+                          className="px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg border border-orange-200"
+                        >
+                          Buscar otros jardineros disponibles
+                        </button>
+                      )}
+                      <button
+                        onClick={fetchAvailability}
+                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700"
+                      >
+                        Buscar disponibilidad
+                      </button>
+                    </div>
                   </div>
 
                   {eligibleGardenerProfiles.length > 0 && (
@@ -915,15 +1082,106 @@ const ClientHome: React.FC = () => {
 
               {step === 'confirm' && (
                 <div className="text-center py-16">
+                  {restrictedGardenerProfile && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-8 max-w-md mx-auto">
+                      <div className="text-blue-800 font-semibold mb-4">Resumen de tu reserva</div>
+                      <div className="space-y-3 text-left">
+                        <div className="flex items-center gap-3">
+                          {restrictedGardenerProfile.avatar_url && (
+                            <img 
+                              src={restrictedGardenerProfile.avatar_url} 
+                              alt={restrictedGardenerProfile.full_name}
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          )}
+                          <div>
+                            <div className="text-sm text-blue-600">Jardinero seleccionado</div>
+                            <div className="font-semibold text-blue-900">{restrictedGardenerProfile.full_name}</div>
+                          </div>
+                        </div>
+                        {selectedServiceIds.length > 0 && (
+                          <div>
+                            <div className="text-sm text-blue-600">Servicio</div>
+                            <div className="text-blue-900">{services.find(s => s.id === selectedServiceIds[0])?.name}</div>
+                          </div>
+                        )}
+                        {selectedDate && (
+                          <div>
+                            <div className="text-sm text-blue-600">Fecha</div>
+                            <div className="text-blue-900">{selectedDate}</div>
+                          </div>
+                        )}
+                        {selectedSlot && (
+                          <div>
+                            <div className="text-sm text-blue-600">Hora</div>
+                            <div className="text-blue-900">{selectedSlot.startHour}:00 - {selectedSlot.endHour}:00</div>
+                          </div>
+                        )}
+                        {(aiPriceTotal > 0 || totalPrice > 0) && (
+                          <div>
+                            <div className="text-sm text-blue-600">Precio estimado</div>
+                            <div className="text-blue-900 font-semibold">€{Math.ceil(aiPriceTotal > 0 ? aiPriceTotal : totalPrice)}</div>
+                          </div>
+                        )}
+                        <div className="pt-3 border-t border-blue-200">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={receiveNotifications}
+                              onChange={(e) => setReceiveNotifications(e.target.checked)}
+                              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-blue-800">Recibir notificaciones sobre esta reserva</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
                   <h3 className="text-2xl font-semibold text-gray-900 mb-2">¡Solicitud enviada!</h3>
-                  <p className="text-gray-600">Hemos enviado tu solicitud a los jardineros disponibles. El primero en aceptar se quedará con el trabajo.</p>
+                  <p className="text-gray-600">
+                    {restrictedGardenerProfile 
+                      ? `Hemos enviado tu solicitud a ${restrictedGardenerProfile.full_name}. Si acepta, se quedará con el trabajo.`
+                      : "Hemos enviado tu solicitud a los jardineros disponibles. El primero en aceptar se quedará con el trabajo."
+                    }
+                  </p>
                 </div>
               )}
             </>
           )}
         </div>
       </div>
+      {showAuthPrompt && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Necesitamos identificarte</h3>
+            <p className="text-sm text-gray-600 mb-4">Para enviar tu solicitud, inicia sesión o regístrate como cliente.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => { sessionStorage.setItem('post_auth_force_client', 'true'); navigate('/auth', { state: { forceClientOnly: true } }); }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Iniciar sesión
+              </button>
+              <button
+                type="button"
+                onClick={() => { sessionStorage.setItem('post_auth_force_client', 'true'); navigate('/auth', { state: { forceClientOnly: true } }); }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                Registrarse (Cliente)
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAuthPrompt(false)}
+              className="mt-4 text-sm text-gray-600 hover:text-gray-800"
+            >
+              Seguir editando datos
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

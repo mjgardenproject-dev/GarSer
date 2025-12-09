@@ -33,6 +33,7 @@ const ServiceBooking = () => {
   const { user } = useAuth();
   const location = useLocation();
   const preselectedServiceId = (location.state as any)?.selectedServiceId || location.state?.selectedServiceId;
+  const restrictedGardenerId: string | undefined = (location.state as any)?.restrictedGardenerId || location.state?.restrictedGardenerId;
   const navigate = useNavigate();
   const [services, setServices] = useState<Service[]>([]);
   const [durationHours, setDurationHours] = useState<number>(0);
@@ -41,6 +42,9 @@ const ServiceBooking = () => {
   const [totalPrice, setTotalPrice] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState('');
+  const [eligibilityMessage, setEligibilityMessage] = useState<string|undefined>(undefined);
+  const [restrictedGardenerName, setRestrictedGardenerName] = useState<string>('');
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   
   // Servicio preseleccionado desde la navegación
   const preselectedService = (location.state as any)?.selectedService;
@@ -70,6 +74,66 @@ const ServiceBooking = () => {
       setValue('service_id', preselectedServiceId);
     }
   }, [preselectedServiceId, setValue]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('post_auth_redirect');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const st = parsed?.state;
+      if (st?.selectedServiceId) {
+        setValue('service_id', st.selectedServiceId);
+      }
+      const preserved = st?.preserved;
+      if (preserved) {
+        if (preserved.client_address) {
+          setSelectedAddress(preserved.client_address);
+          setValue('client_address', preserved.client_address);
+        }
+        if (preserved.durationHours) setDurationHours(preserved.durationHours);
+        if (preserved.selectedDate) setSelectedDate(new Date(preserved.selectedDate));
+        if (preserved.selectedSlot) setSelectedSlot(preserved.selectedSlot);
+      }
+      sessionStorage.removeItem('post_auth_redirect');
+    } catch {}
+  }, [setValue]);
+
+  useEffect(() => {
+    const checkRestrictedEligibility = async () => {
+      try {
+        if (!restrictedGardenerId) { setEligibilityMessage(undefined); return; }
+        if (!watchedValues.service_id || !selectedAddress) { setEligibilityMessage(undefined); return; }
+        // Cargar perfil del jardinero
+        const { data: gp } = await supabase
+          .from('gardener_profiles')
+          .select('full_name, services, is_available, address, max_distance')
+          .eq('user_id', restrictedGardenerId)
+          .maybeSingle();
+        const name = gp?.full_name || 'este jardinero';
+        setRestrictedGardenerName(name);
+        if (!gp) { setEligibilityMessage(`${name} no puede realizar este servicio.`); return; }
+        // Servicio
+        const offers = Array.isArray(gp.services) && gp.services.includes(watchedValues.service_id);
+        if (!offers) { setEligibilityMessage(`${name} no puede realizar este servicio.`); return; }
+        // Disponibilidad
+        if (gp.is_available === false) { setEligibilityMessage(`${name} no está disponible actualmente.`); return; }
+        // Distancia
+        if (gp.address) {
+          const clientCoords = await getCoordinatesFromAddress(selectedAddress);
+          const gardenerCoords = await getCoordinatesFromAddress(gp.address);
+          if (clientCoords && gardenerCoords) {
+            const dist = calculateDistance(clientCoords.lat, clientCoords.lng, gardenerCoords.lat, gardenerCoords.lng);
+            const radius = (gp as any).max_distance ?? 20;
+            if (dist > radius) { setEligibilityMessage(`${name} está fuera de tu área de servicio.`); return; }
+          }
+        }
+        setEligibilityMessage(undefined);
+      } catch {
+        setEligibilityMessage(undefined);
+      }
+    };
+    checkRestrictedEligibility();
+  }, [restrictedGardenerId, watchedValues.service_id, selectedAddress]);
 
 
 
@@ -115,8 +179,27 @@ const ServiceBooking = () => {
   };
 
   const onSubmit = async (data: FormData) => {
-    if (!user || !selectedSlot) {
+    if (!selectedSlot) {
       toast.error('Debes seleccionar una franja disponible');
+      return;
+    }
+
+    if (!user) {
+      setShowAuthPrompt(true);
+      const redirectState = {
+        restrictedGardenerId,
+        selectedServiceId: data.service_id,
+        selectedService: services.find(s => s.id === data.service_id),
+        aiPrice: (aiSuggestedPrice && aiSuggestedPrice > 0) ? aiSuggestedPrice : totalPrice,
+        aiHours: aiSuggestedHours,
+        preserved: {
+          client_address: data.client_address,
+          durationHours,
+          selectedDate: selectedDate.toISOString(),
+          selectedSlot
+        }
+      } as any;
+      sessionStorage.setItem('post_auth_redirect', JSON.stringify({ path: '/booking', state: redirectState }));
       return;
     }
 
@@ -130,7 +213,14 @@ const ServiceBooking = () => {
       const endLabel = `${selectedSlot.endHour.toString().padStart(2, '0')}:00:00`;
 
       // Seguridad adicional: difundir solo a jardineros dentro del círculo de rango
-      const gardenerIdsInRange = await filterGardenerIdsByRange(data.client_address, selectedSlot.gardenerIds);
+      let gardenerIdsInRange = await filterGardenerIdsByRange(data.client_address, selectedSlot.gardenerIds);
+      if (restrictedGardenerId) {
+        gardenerIdsInRange = gardenerIdsInRange.filter(id => id === restrictedGardenerId);
+        if (gardenerIdsInRange.length === 0) {
+          toast.error(`${restrictedGardenerName || 'El jardinero'} no puede realizar este servicio en esa franja.`);
+          return;
+        }
+      }
       if (gardenerIdsInRange.length === 0) {
         toast.error('No hay jardineros dentro de tu zona para esta franja');
         return;
@@ -226,7 +316,7 @@ const ServiceBooking = () => {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('full_name')
-      .eq('user_id', gardeners[0].user_id)
+      .eq('id', gardeners[0].user_id)
       .single();
 
     if (profileError) {
@@ -272,8 +362,8 @@ const ServiceBooking = () => {
       const gardenerIds = gardeners.map(g => g.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('user_id, full_name')
-        .in('user_id', gardenerIds);
+        .select('id, full_name')
+        .in('id', gardenerIds);
 
       if (profilesError) {
         console.warn('Error obteniendo perfiles:', profilesError);
@@ -283,7 +373,7 @@ const ServiceBooking = () => {
       const gardenersWithDistance = [];
       
       for (const gardener of gardeners) {
-        const profile = profiles?.find(p => p.user_id === gardener.user_id);
+        const profile = profiles?.find(p => p.id === gardener.user_id);
         const gardenerWithProfile = {
           ...gardener,
           profiles: profile
@@ -495,6 +585,7 @@ const ServiceBooking = () => {
               selectedDate={selectedDate}
               onDateChange={handleDateChange}
               onSlotSelect={setSelectedSlot}
+              restrictedGardenerId={restrictedGardenerId}
             />
           ) : (
             <div className="p-3 sm:p-4 bg-gray-50 border border-gray-200 rounded-lg">
@@ -502,6 +593,19 @@ const ServiceBooking = () => {
                 <Calendar className="inline w-5 h-5 mr-2" />
                 {!selectedAddress ? 'Primero selecciona una dirección' : !watchedValues.service_id ? 'Selecciona un servicio' : 'Elige la duración'} para ver las franjas disponibles
               </p>
+            </div>
+          )}
+
+          {restrictedGardenerId && eligibilityMessage && (
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-amber-800 text-sm mb-3">{eligibilityMessage}</p>
+              <button
+                type="button"
+                onClick={() => navigate('/booking')}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Enviar solicitud a otros jardineros
+              </button>
             </div>
           )}
 
@@ -561,6 +665,43 @@ const ServiceBooking = () => {
             {loading ? 'Procesando reserva...' : 'Reservar Servicio'}
           </button>
         </form>
+        {showAuthPrompt && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Necesitamos identificarte</h3>
+              <p className="text-sm text-gray-600 mb-4">Para enviar tu solicitud, inicia sesión o regístrate como cliente.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sessionStorage.setItem('post_auth_force_client', 'true');
+                    navigate('/auth', { state: { forceClientOnly: true } });
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Iniciar sesión
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sessionStorage.setItem('post_auth_force_client', 'true');
+                    navigate('/auth', { state: { forceClientOnly: true } });
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  Registrarse (Cliente)
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAuthPrompt(false)}
+                className="mt-4 text-sm text-gray-600 hover:text-gray-800"
+              >
+                Seguir editando datos
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

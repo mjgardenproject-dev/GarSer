@@ -163,7 +163,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         total_reviews: gardenerProfile?.total_reviews || 0
       };
 
-      const payload = { ...profileData, tools_available: toolsAvailable } as any;
+      const payload = { ...profileData } as any;
 
       console.log('Saving to gardener_profiles table:', payload);
 

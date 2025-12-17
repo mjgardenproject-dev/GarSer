@@ -22,136 +22,86 @@ interface EstimationResult {
 import { supabase } from '../lib/supabase';
 
 export async function estimateWorkWithAI(input: EstimationInput): Promise<EstimationResult> {
-  const openaiKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-  const preferEdge = import.meta.env.PROD || !openaiKey;
-  console.log('[AI] VITE_OPENAI_API_KEY presente:', !!openaiKey, 'preferEdge:', preferEdge);
-
-  if (preferEdge) {
-    try {
-      const { data, error } = await supabase.functions.invoke('ai-pricing-estimator', {
-        body: {
-          description: input.description,
-          service_ids: input.selectedServiceIds,
-          photo_urls: input.photoUrls,
-          photo_count: input.photoCount,
-        },
-      });
-      if (error) {
-        console.warn('[AI] Edge Function error:', error);
-        return { tareas: [] };
-      }
-      const tareas = Array.isArray((data as any)?.tareas) ? (data as any).tareas : [];
-      const reasons = Array.isArray((data as any)?.reasons) ? (data as any).reasons : undefined;
-      return { tareas, reasons };
-    } catch (e) {
-      console.warn('[AI] Fallo invocando Edge Function:', e);
+  try {
+    const { data, error } = await supabase.functions.invoke('ai-pricing-estimator', {
+      body: {
+        description: '',
+        service_ids: input.selectedServiceIds,
+        photo_urls: input.photoUrls,
+        photo_count: input.photoCount,
+      },
+    });
+    if (error) {
+      console.warn('[AI] Edge Function error:', error);
       return { tareas: [] };
     }
-  }
-  const model = (import.meta.env.VITE_OPENAI_MODEL as string | undefined) || 'gpt-4o-mini';
-  try {
-    const messages: any[] = [
-      {
-        role: 'system',
-        content: [
-          'Eres un asistente experto en jardinería. PRIORIDAD: analiza primero las IMÁGENES y usa el TEXTO solo para complementar o desambiguar.',
-          'Devuelve SIEMPRE un JSON válido, sin texto extra, con las tareas detectadas y los campos necesarios para estimación automática.',
-          '',
-          'SERVICIOS PERMITIDOS (nombre EXACTO en español):',
-          '- Corte de césped',
-          '- Poda de plantas',
-          '- Corte de setos a máquina',
-          '- Corte de arbustos pequeños o ramas finas a tijera',
-          '- Labrar y quitar malas hierbas a mano',
-          '- Fumigación de plantas',
-          '- Poda de palmeras',
-          '',
-          'CAMPOS OBLIGATORIOS POR TAREA:',
-          '- tipo_servicio: uno de la lista anterior (nombre exacto, en español).',
-          '- estado_jardin: "normal" | "descuidado" | "muy descuidado".',
-          '- superficie_m2: número estimado SOLO para césped, setos a máquina, labrado/malas hierbas; en otros servicios usa null.',
-          '- numero_plantas: número SOLO para fumigación y corte a tijera; en otros servicios usa null.',
-          '- tamaño_plantas: "pequeñas" | "medianas" | "grandes" | "muy grandes" SOLO cuando aplica (fumigación/tijera); en otros servicios usa null.',
-          '',
-          'REGLAS DE INCERTIDUMBRE:',
-          '- Si no estás seguro, NO inventes. Usa null.',
-          '- Si el TEXTO pide un servicio que NO se ve en la IMAGEN, puedes incluirlo con métricas en null y explica en reasons que proviene del texto.',
-          '',
-          'UNIDADES (NO mezclar dentro de la misma tarea):',
-          '- Césped, setos a máquina, labrado/malas hierbas → superficie_m2.',
-          '- Tijera y fumigación → numero_plantas + tamaño_plantas.',
-          '',
-          'FORMA DE RESPUESTA: SOLO JSON con la siguiente estructura y una lista opcional "reasons" para explicar decisiones importantes:',
-          '{"tareas":[{"tipo_servicio":"","estado_jardin":"","superficie_m2":null,"numero_plantas":null,"tamaño_plantas":null}],"reasons":["..."]}'
-        ].join('\n'),
-      },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Analiza principalmente las imágenes adjuntas (1–4). Usa el texto solo como complemento.' },
-          { type: 'text', text: `Descripción del cliente: ${input.description || ''}` },
-          { type: 'text', text: `Servicios seleccionados: ${input.selectedServiceIds.join(', ')}` },
-          ...((input.photoUrls || []).slice(0, 4).map((url) => ({
-            type: 'image_url',
-            image_url: { url },
-          })))
-        ],
-      }
-    ];
-
-    console.log('[AI] Preparando llamada a OpenAI', {
-      model,
-      messagesCount: messages.length,
-      hasPhotos: (input.photoUrls || []).length > 0,
-      selectedServiceIds: input.selectedServiceIds,
-    });
-    if ((input.photoUrls || []).length > 0) {
-      const first = (input.photoUrls || [])[0];
-      console.log('[AI] Primer photoUrl tipo', { isDataUrl: first.startsWith('data:'), prefix: first.slice(0, 30) });
-    }
-    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openaiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      }),
-    });
-    if (resp.ok) {
-      const json = await resp.json();
-      const content = json?.choices?.[0]?.message?.content || '{}';
-      const parsed = JSON.parse(content);
-      const tareas = parsed?.tareas as AITask[] | undefined;
-      const reasons = parsed?.reasons as string[] | undefined;
-      if (Array.isArray(tareas)) {
-        return { tareas, reasons };
-      }
-    } else {
-      const errorText = await resp.text();
-      console.warn('[AI] OpenAI respuesta no OK:', errorText);
-      
-      // Si es rate limit, mostrar mensaje más claro
-      if (resp.status === 429) {
-        try {
-          const errorData = JSON.parse(errorText);
-          const message = errorData?.error?.message || 'Rate limit exceeded';
-          console.error('[AI] Rate limit alcanzado:', message);
-          throw new Error(`Rate limit de OpenAI alcanzado. ${message.includes('Please try again in') ? message.split('Please try again in')[1].split('.')[0] : 'Intenta de nuevo más tarde.'}`);
-        } catch (parseError) {
-          throw new Error('Rate limit de OpenAI alcanzado. Intenta de nuevo en unos minutos.');
-        }
-      }
-    }
+    const tareas = Array.isArray((data as any)?.tareas) ? (data as any).tareas : [];
+    const reasons = Array.isArray((data as any)?.reasons) ? (data as any).reasons : undefined;
+    return { tareas, reasons };
   } catch (e) {
-    console.warn('[AI] Error en OpenAI:', e);
+    console.warn('[AI] Fallo invocando Edge Function:', e);
+    return { tareas: [] };
   }
-  // Sin fallback: devolver vacío para que el UI informe y se reintente
-  return { tareas: [] };
 }
 
 /* Merged into primary estimateWorkWithAI; duplicate removed to avoid conflicts */
+
+export interface AutoQuoteAnalysis {
+  servicio: string;
+  cantidad: number;
+  unidad: string;
+  dificultad: 1 | 2 | 3;
+}
+
+export interface AutoQuoteResponse {
+  analysis: AutoQuoteAnalysis;
+  result: { tiempo_estimado_horas: number; precio_estimado: number };
+  version?: string;
+}
+
+export async function estimateServiceAutoQuote(params: { service: string; imageUrl: string; description?: string }): Promise<AutoQuoteResponse | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('ai-pricing-estimator', {
+      body: {
+        mode: 'auto_quote',
+        service: params.service,
+        image_url: params.imageUrl,
+        description: '',
+      },
+    });
+    if (error) {
+      console.warn('[AI] auto_quote error:', error);
+      return null;
+    }
+    const analysis = (data as any)?.analysis;
+    const result = (data as any)?.result;
+    if (analysis && result) {
+      return { analysis, result, version: (data as any)?.version } as AutoQuoteResponse;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[AI] auto_quote invoke failed:', e);
+    return null;
+  }
+}
+
+const LOCAL_DIFFICULTY: Record<1 | 2 | 3, number> = { 1: 1.0, 2: 1.3, 3: 1.7 };
+const LOCAL_PERF: Record<string, { performance: number; pricePerUnit: number }> = {
+  'Corte de césped': { performance: 100, pricePerUnit: 0.30 },
+  'Corte de setos': { performance: 25, pricePerUnit: 3.50 },
+  'Fumigación': { performance: 40, pricePerUnit: 2.50 },
+  'Poda de plantas': { performance: 8, pricePerUnit: 6.00 },
+  'Poda de árboles': { performance: 0.8, pricePerUnit: 45.00 },
+  'Labrar y quitar malas hierbas': { performance: 15, pricePerUnit: 10.00 },
+};
+
+const PROMPTS_MAP: Record<string, string> = {
+  'Corte de césped': "Eres una IA especializada en análisis de jardines llamada 'GrassScan'. Tu objetivo es analizar imágenes para presupuestar un servicio de corte de césped.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta la superficie total de césped en m², ignorando tierra, grava, mobiliario u otras áreas que no sean césped.\n2. Evalúa la altura del césped mediante textura y color, densidad, irregularidades y obstáculos.\n3. Analiza sombra y orientación para corregir áreas parcialmente visibles.\n4. Evalúa la accesibilidad: bordes, objetos, pendientes y obstáculos.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Césped <3 cm, terreno llano, sin obstáculos.\n- Nivel 2: Césped 3–10 cm, algunos obstáculos, terreno ligeramente irregular, densidad media.\n- Nivel 3: Césped >10 cm, muchos obstáculos, terreno irregular, césped tupido o con malas hierbas.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Corte de césped\",\n  \"cantidad\": [número estimado de m2],\n  \"unidad\": \"m2\",\n  \"dificultad\": [1, 2 o 3]\n}",
+  'Corte de setos': "Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta la superficie total de setos (largo × altura) en m².\n2. Analiza densidad, grosor de ramas y uniformidad.\n3. Evalúa accesibilidad frontal y trasera, necesidad de escalera o pértiga.\n4. Detecta obstáculos cercanos (macetas, vallas) y terreno irregular.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Altura ≤1,5 m, ramas finas, accesible desde el suelo.\n- Nivel 2: Altura 1,5–2,5 m, ramas medianas, obstáculos moderados.\n- Nivel 3: Altura >2,5 m, ramas gruesas o densas, acceso limitado, requiere poda fuerte.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Corte de setos\",\n  \"cantidad\": [número estimado de m2],\n  \"unidad\": \"m2\",\n  \"dificultad\": [1, 2 o 3]\n}",
+  'Fumigación': "Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar fumigación.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta plantas afectadas por plagas o áreas continuas.\n2. IMPORTANTE: Para calcular la cantidad, convierte las plantas reales a \"plantas equivalentes\" usando esta fórmula mental:\n   Plantas_equivalentes = (altura_real_cm / 40) × (diametro_real_cm / 35)\n3. Detecta densidad de plaga y gravedad de daños.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Plaga leve, <20% afectación, plantas ≤2 equivalentes.\n- Nivel 2: Afectación 20–60%, plantas 2–5 equivalentes, acceso parcial.\n- Nivel 3: >60% afectación, plantas >5 equivalentes, acceso difícil, plaga severa.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Fumigación\",\n  \"cantidad\": [número de plantas equivalentes],\n  \"unidad\": \"plantas\",\n  \"dificultad\": [1, 2 o 3]\n}",
+  'Poda de plantas': "Eres una IA especializada en análisis de jardines llamada 'PlantShapeAI'. Tu objetivo es analizar arbustos, rosales u ornamentales (excluye árboles grandes).\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta plantas que requieren poda.\n2. IMPORTANTE: Convierte cada planta a \"plantas equivalentes\" usando esta fórmula:\n   Plantas_equivalentes = (altura_real_cm / 40) × (diametro_real_cm / 35)\n3. Evalúa densidad de ramas y dureza aparente.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Plantas ≤1 m (≤2,5 equivalentes), ramas finas, accesibles, poda ligera.\n- Nivel 2: Plantas 1–1,8 m (2,5–4,5 equivalentes), ramas medianas, acceso parcial.\n- Nivel 3: Plantas >1,8 m (>4,5 equivalentes), ramas gruesas, densas, espacios reducidos, poda fuerte.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Poda de plantas\",\n  \"cantidad\": [número de plantas equivalentes],\n  \"unidad\": \"plantas\",\n  \"dificultad\": [1, 2 o 3]\n}",
+  'Poda de árboles': "Eres una IA especializada en análisis de jardines llamada 'TreeScale'. Tu objetivo es analizar árboles para poda.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta árboles que requieren poda.\n2. IMPORTANTE: Convierte a \"árboles equivalentes\" usando esta fórmula:\n   Árbol_equivalente = (altura_real_m / 3) × (diametro_copa_real_m / 2)\n3. Determina si se necesita escalera, pértiga o trabajo en altura.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Árboles <3 m (≤1 equivalente), ramas finas, acceso fácil.\n- Nivel 2: Árboles 3–5 m (1–3 equivalentes), escalera o pértiga, obstáculos moderados.\n- Nivel 3: Árboles >5 m (>3 equivalentes), ramas gruesas, acceso difícil, trabajo en altura.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Poda de árboles\",\n  \"cantidad\": [número de árboles equivalentes],\n  \"unidad\": \"árboles\",\n  \"dificultad\": [1, 2 o 3]\n}",
+  'Labrar y quitar malas hierbas': "Eres una IA especializada en análisis de jardines llamada 'SoilSense'. Tu objetivo es analizar terreno para deshierbe manual y labrado.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta zonas con malas hierbas y calcula superficie en m².\n2. Evalúa densidad, tamaño de hierbas, dureza del suelo y piedras/raíces.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Hierbas pequeñas, poco densas, terreno suelto y llano.\n- Nivel 2: Hierbas medianas, densidad moderada, tierra parcialmente compacta.\n- Nivel 3: Hierbas grandes, densas, raíces profundas, terreno duro, acceso difícil.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Labrar y quitar malas hierbas\",\n  \"cantidad\": [número estimado de m2],\n  \"unidad\": \"m2\",\n  \"dificultad\": [1, 2 o 3]\n}",
+};
+
+async function estimateServiceAutoQuoteLocal(): Promise<AutoQuoteResponse | null> { return null; }

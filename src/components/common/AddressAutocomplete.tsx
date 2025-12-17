@@ -21,9 +21,24 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
+  const [apiHint, setApiHint] = useState<string>('');
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
+  const [sessionActive, setSessionActive] = useState(false);
+  const [sessionTokenObj, setSessionTokenObj] = useState<any | null>(null);
+  const [sessionTokenId, setSessionTokenId] = useState<string | null>(null);
+
+  const generateUUIDv4 = () => {
+    const cryptoObj = window.crypto || (window as any).msCrypto;
+    const arr = new Uint8Array(16);
+    cryptoObj.getRandomValues(arr);
+    arr[6] = (arr[6] & 0x0f) | 0x40;
+    arr[8] = (arr[8] & 0x3f) | 0x80;
+    const toHex = (n: number) => n.toString(16).padStart(2, '0');
+    const hex = Array.from(arr, toHex).join('');
+    return `${hex.substr(0,8)}-${hex.substr(8,4)}-${hex.substr(12,4)}-${hex.substr(16,4)}-${hex.substr(20)}`;
+  };
 
   // Cargar Google Maps JavaScript API usando el loader centralizado
   useEffect(() => {
@@ -57,7 +72,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
 
   // Función para buscar direcciones usando la API legacy como principal
   const searchAddresses = async (input: string) => {
-    if (!isGoogleMapsLoaded || input.length < 3) {
+    if (!isGoogleMapsLoaded || input.length < 5) {
       setSuggestions([]);
       setIsOpen(false);
       setLoading(false);
@@ -73,7 +88,8 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         const request = {
           input,
           componentRestrictions: { country: 'es' },
-          types: ['address']
+          types: ['address'],
+          sessionToken: sessionTokenObj || undefined,
         };
 
         service.getPlacePredictions(request, (predictions: any[], status: any) => {
@@ -82,11 +98,20 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
             setSuggestions(predictions);
             setIsOpen(predictions.length > 0);
+            setApiHint('');
             console.log('Autocomplete predictions received:', predictions.length);
           } else {
             setSuggestions([]);
             setIsOpen(false);
-            console.log('No predictions found or error:', status);
+            const s = String(status || '');
+            console.log('No predictions found or error:', s);
+            if (s === 'REQUEST_DENIED') {
+              setApiHint('La API de Google Places rechazó la solicitud. Activa la facturación y habilita las APIs requeridas en tu proyecto de Google Cloud.');
+            } else if (s === 'OVER_QUERY_LIMIT') {
+              setApiHint('Has excedido el límite de solicitudes de la API de Google Places. Inténtalo de nuevo más tarde.');
+            } else {
+              setApiHint('No se pudieron obtener sugerencias de direcciones en este momento.');
+            }
           }
         });
       } else {
@@ -97,7 +122,8 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             locationRestriction: { 
               country: ['es'] 
             },
-            includedPrimaryTypes: ['address']
+            includedPrimaryTypes: ['address'],
+            sessionToken: sessionTokenId || undefined,
           };
 
           const { suggestions } = await window.google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
@@ -127,6 +153,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           setLoading(false);
           setSuggestions([]);
           setIsOpen(false);
+          setApiHint('El Autocompletado de Google Maps no está disponible. Verifica tu clave y permisos.');
         }
       }
     } catch (error) {
@@ -134,6 +161,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       setLoading(false);
       setSuggestions([]);
       setIsOpen(false);
+      setApiHint('Error al buscar direcciones. Revisa la configuración de Google Maps.');
     }
   };
 
@@ -146,7 +174,19 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       clearTimeout(timeoutRef.current);
     }
 
-    if (inputValue.length > 2) {
+    // Iniciar sesión de autocomplete al comenzar a escribir
+    if (inputValue.length >= 1 && !sessionActive && window.google?.maps?.places?.AutocompleteSessionToken) {
+      try {
+        const tokenObj = new window.google.maps.places.AutocompleteSessionToken();
+        const tokenId = generateUUIDv4();
+        setSessionTokenObj(tokenObj);
+        setSessionTokenId(tokenId);
+        setSessionActive(true);
+        console.log('Nueva sesión de autocomplete', { tokenId });
+      } catch {}
+    }
+
+    if (inputValue.length >= 5) {
       console.log('Starting autocomplete search for:', inputValue);
       console.log('Google Maps loaded:', isGoogleMapsLoaded);
       console.log('New AutocompleteSuggestion API available:', !!window.google?.maps?.places?.AutocompleteSuggestion);
@@ -154,24 +194,71 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       // Debounce la búsqueda
       timeoutRef.current = setTimeout(() => {
         searchAddresses(inputValue);
-      }, 300);
+      }, 400);
     } else {
       setSuggestions([]);
       setIsOpen(false);
       setLoading(false);
+      // Cerrar sesión si el input se queda por debajo del mínimo
+      if (sessionActive) {
+        setSessionActive(false);
+        setSessionTokenObj(null);
+        setSessionTokenId(null);
+        console.log('Sesión de autocomplete cerrada (input corto)');
+      }
     }
   };
 
   const handleSuggestionClick = (suggestion: any) => {
-    // Construir una dirección más completa combinando main + secondary
+    // Intentar obtener detalles usando PlacesService.getDetails con el mismo sessionToken
+    try {
+      if (window.google?.maps?.places?.PlacesService) {
+        const dummy = document.createElement('div');
+        const service = new window.google.maps.places.PlacesService(dummy);
+        const req: any = {
+          placeId: suggestion.place_id,
+          fields: ['formatted_address'],
+          sessionToken: sessionTokenObj || undefined,
+        };
+        service.getDetails(req, (place: any, status: any) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && place?.formatted_address) {
+            onChange(place.formatted_address);
+          } else {
+            // Fallback: construir una dirección combinando main + secondary
+            const main = suggestion?.structured_formatting?.main_text || '';
+            const secondary = suggestion?.structured_formatting?.secondary_text || '';
+            const fullAddress = [main, secondary].filter(Boolean).join(', ');
+            const valueToUse = fullAddress || suggestion.description;
+            onChange(valueToUse);
+          }
+          setIsOpen(false);
+          setSuggestions([]);
+          // Cerrar sesión tras la selección final
+          if (sessionActive) {
+            setSessionActive(false);
+            setSessionTokenObj(null);
+            setSessionTokenId(null);
+            console.log('Sesión de autocomplete cerrada (selección)');
+          }
+        });
+        return;
+      }
+    } catch {}
+
+    // Si no se pudo llamar a getDetails, fallback inmediato
     const main = suggestion?.structured_formatting?.main_text || '';
     const secondary = suggestion?.structured_formatting?.secondary_text || '';
     const fullAddress = [main, secondary].filter(Boolean).join(', ');
     const valueToUse = fullAddress || suggestion.description;
-    console.log('Address selected:', { fullAddress, description: suggestion.description });
     onChange(valueToUse);
     setIsOpen(false);
     setSuggestions([]);
+    if (sessionActive) {
+      setSessionActive(false);
+      setSessionTokenObj(null);
+      setSessionTokenId(null);
+      console.log('Sesión de autocomplete cerrada (fallback)');
+    }
   };
 
   const handleClickOutside = (event: MouseEvent) => {
@@ -228,6 +315,29 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
 
       {!isGoogleMapsLoaded && (
         <p className="mt-1 text-xs sm:text-sm text-yellow-600">Cargando servicio de direcciones...</p>
+      )}
+
+      {apiHint && (
+        <p className="mt-1 text-xs sm:text-sm text-yellow-700">
+          {apiHint} {" "}
+          <a
+            href="https://console.cloud.google.com/project/_/billing/enable"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            Activar facturación
+          </a>
+          {" • "}
+          <a
+            href="https://developers.google.com/maps/gmp-get-started"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            Guía de Google Maps
+          </a>
+        </p>
       )}
 
       {isOpen && suggestions.length > 0 && (

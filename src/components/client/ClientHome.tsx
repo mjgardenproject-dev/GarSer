@@ -3,8 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import AddressAutocomplete from '../common/AddressAutocomplete';
 import { Service } from '../../types';
-import { Wand2, Calendar, Image as ImageIcon, CheckCircle, ChevronRight, ChevronLeft, ChevronDown, Clock, Euro } from 'lucide-react';
-import { estimateWorkWithAI, AITask } from '../../utils/aiPricingEstimator';
+import { Wand2, Image as ImageIcon, CheckCircle, ChevronRight, ChevronLeft, ChevronDown, Clock, Euro } from 'lucide-react';
+import { estimateWorkWithAI, AITask, estimateServiceAutoQuote, AutoQuoteAnalysis } from '../../utils/aiPricingEstimator';
 import { findEligibleGardenersForServices, computeNextAvailableDays, MergedSlot } from '../../utils/mergedAvailabilityService';
 import { broadcastBookingRequest } from '../../utils/bookingBroadcastService';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -83,6 +83,9 @@ const ClientHome: React.FC = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [estimatedHours, setEstimatedHours] = useState<number>(0);
   const [aiTasks, setAiTasks] = useState<AITask[]>([]);
+  const [aiAutoAnalysis, setAiAutoAnalysis] = useState<AutoQuoteAnalysis | null>(null);
+  const [aiAutoHours, setAiAutoHours] = useState<number>(0);
+  const [aiAutoPrice, setAiAutoPrice] = useState<number>(0);
   // Totales calculados desde las tareas IA
   const { aiTimeTotal, aiPriceTotal } = useMemo(() => {
     const factorFromEstado = (estado?: string) => {
@@ -151,12 +154,10 @@ const ClientHome: React.FC = () => {
 
   // Ajustar horas estimadas tras análisis IA para habilitar disponibilidad (solo IA)
   useEffect(() => {
-    if (aiTimeTotal > 0) {
-      setEstimatedHours(Math.ceil(aiTimeTotal));
-    } else {
-      setEstimatedHours(0);
-    }
-  }, [aiTimeTotal]);
+    const preferred = aiAutoHours > 0 ? aiAutoHours : aiTimeTotal;
+    if (preferred > 0) setEstimatedHours(Math.ceil(preferred));
+    else setEstimatedHours(0);
+  }, [aiTimeTotal, aiAutoHours]);
 
   // Disponibilidad y jardineros
   const [eligibleGardenerIds, setEligibleGardenerIds] = useState<string[]>([]);
@@ -244,7 +245,7 @@ const ClientHome: React.FC = () => {
           'labrar y quitar malas hierbas a mano',
           'fumigacion de plantas',
         ];
-        const present = new Set((data || []).map(s => normalizeText(s.name)));
+        const present = new Set((data || []).map((s: Service) => normalizeText(s.name)));
         const missing = required.filter(r => !present.has(r));
         if (missing.length > 0) {
           console.warn('[catalog] Faltan servicios canónicos en tabla services', { missing });
@@ -300,6 +301,7 @@ const ClientHome: React.FC = () => {
         descriptionLen: description.length,
       });
       setAnalyzing(true);
+      let tareasLocal: AITask[] = [];
       const disablePhotoUpload = (import.meta.env.VITE_DISABLE_PHOTO_UPLOAD as string | undefined) === 'true';
       // Subir fotos para obtener URLs accesibles por la IA
       const photoUrls: string[] = [];
@@ -322,8 +324,8 @@ const ClientHome: React.FC = () => {
               return base.replace(/[^a-z0-9._-]/g, '_');
             };
 
-            for (let i = 0; i < photos.length; i++) {
-              const file = photos[i];
+            const start = Date.now();
+            await Promise.allSettled(photos.map(async (file, i) => {
               console.log(`[AI] uploading photo ${i+1}/${photos.length}`, { name: file.name, type: file.type });
               const safeName = sanitizeFileName(file.name || `foto_${i}.jpg`);
               const path = `drafts/${userId}/${now}_${i}_${safeName}`;
@@ -332,7 +334,7 @@ const ClientHome: React.FC = () => {
                 .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
               if (uploadError) {
                 console.warn(`[AI] upload error photo ${i+1}:`, uploadError.message);
-                continue;
+                return;
               }
               console.log(`[AI] photo ${i+1} uploaded`, { path });
               const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
@@ -340,7 +342,8 @@ const ClientHome: React.FC = () => {
                 photoUrls.push(signed.signedUrl);
                 console.log(`[AI] url resolved (signed) for photo ${i+1}`, { url: signed.signedUrl });
               }
-            }
+            }));
+            console.log('[AI] parallel photo upload duration ms', Date.now() - start);
             console.log('[AI] photo upload done', { photoUrlsLen: photoUrls.length });
           } catch (err) {
             console.warn('No se pudieron preparar URLs de fotos para IA, se seguirá sin imágenes:', err);
@@ -408,22 +411,33 @@ const ClientHome: React.FC = () => {
         console.warn('[AI] Photo upload disabled by env; continuing without images');
       }
   
-      console.log('[AI] calling estimateWorkWithAI', { photoUrlsLen: photoUrls.length, descriptionLen: description.length, selectedServiceIdsLen: selectedServiceIds.length });
-      const result = await estimateWorkWithAI({
-        description,
-        photoCount: photos.length,
-        selectedServiceIds,
-        photoUrls,
-      });
-      const tareas = Array.isArray(result.tareas) ? result.tareas : [];
-      console.log('[AI] estimateWorkWithAI returned', {
-        tareasCount: tareas.length,
-        hasReasons: Array.isArray(result.reasons),
-      });
-      setAiTasks(tareas);
+      const primaryService = selectedServiceIds.length === 1 ? services.find(s => s.id === selectedServiceIds[0])?.name : undefined;
+      const firstImageUrl = photoUrls[0];
+      if (primaryService && firstImageUrl) {
+        console.log('[AI] calling estimateServiceAutoQuote', { service: primaryService, hasImage: !!firstImageUrl });
+        const auto = await estimateServiceAutoQuote({ service: primaryService, imageUrl: firstImageUrl, description: '' });
+        if (auto?.analysis && auto?.result) {
+          console.log('[AI] auto_quote returned', auto);
+          setAiAutoAnalysis(auto.analysis);
+          setAiAutoHours(Math.max(0, Number(auto.result.tiempo_estimado_horas || 0)));
+          setAiAutoPrice(Math.max(0, Number(auto.result.precio_estimado || 0)));
+        } else {
+          console.log('[AI] auto_quote not available, falling back to multi-task analysis');
+          const result = await estimateWorkWithAI({ description, photoCount: photos.length, selectedServiceIds, photoUrls });
+          const tareas = Array.isArray(result.tareas) ? result.tareas : [];
+          setAiTasks(tareas);
+        }
+      } else {
+        console.log('[AI] calling estimateWorkWithAI', { photoUrlsLen: photoUrls.length, descriptionLen: description.length, selectedServiceIdsLen: selectedServiceIds.length });
+        const result = await estimateWorkWithAI({ description, photoCount: photos.length, selectedServiceIds, photoUrls });
+        const tareas = Array.isArray(result.tareas) ? result.tareas : [];
+        setAiTasks(tareas);
+        tareasLocal = tareas;
+        tareasLocal = tareas;
+      }
       // Si no hay servicios seleccionados, intentar deducirlos de las tareas IA
-      if (selectedServiceIds.length === 0 && tareas.length > 0 && services.length > 0) {
-        const inferred = deriveServiceIdsFromAITasks(tareas, services);
+      if (selectedServiceIds.length === 0 && tareasLocal.length > 0 && services.length > 0) {
+        const inferred = deriveServiceIdsFromAITasks(tareasLocal, services);
         if (inferred.length > 0) {
           console.log('[AI] servicios deducidos desde tareas IA', { inferred });
           setSelectedServiceIds(inferred);
@@ -438,6 +452,8 @@ const ClientHome: React.FC = () => {
       // Mostrar mensaje específico para rate limit
       if (e instanceof Error && e.message.includes('Rate limit')) {
         alert(`⚠️ ${e.message}\n\nPuedes:\n• Esperar unas horas e intentar de nuevo\n• Añadir método de pago en OpenAI para aumentar límites\n• Continuar sin análisis IA seleccionando servicios manualmente`);
+      } else {
+        toast.error('No se pudo analizar con IA. Revisa permisos de Storage y despliegue de Edge Function.');
       }
     } finally {
       setAnalyzing(false);
@@ -529,7 +545,7 @@ const ClientHome: React.FC = () => {
     }
     setSending(true);
     try {
-      const effectivePrice = aiPriceTotal > 0 ? aiPriceTotal : totalPrice;
+      const effectivePrice = (aiAutoPrice > 0 ? aiAutoPrice : (aiPriceTotal > 0 ? aiPriceTotal : totalPrice));
       const roundedPrice = Math.ceil(effectivePrice);
       await broadcastBookingRequest({
         clientId: user.id,
@@ -770,6 +786,33 @@ const ClientHome: React.FC = () => {
                 <div className="space-y-5 sm:space-y-6">
                   {restrictedGardenerProfile && <GardenerInfoBanner />}
                   <div>
+                    <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Selecciona el servicio</label>
+                    <div className="flex flex-wrap gap-2">
+                      {services.map(svc => {
+                        const selected = selectedServiceIds.includes(svc.id);
+                        return (
+                          <button
+                            key={svc.id}
+                            type="button"
+                            onClick={() => toggleService(svc.id)}
+                            className={`px-3 py-2 rounded-lg border text-sm ${selected ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
+                          >
+                            <div className="font-medium">{svc.name}</div>
+                            {typeof svc.price_per_hour === 'number' && svc.price_per_hour > 0 && (
+                              <div className="text-xs opacity-80">{`€${svc.price_per_hour}/h`}</div>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {services.length === 0 && (
+                        <div className="text-sm text-gray-600">No hay servicios configurados todavía.</div>
+                      )}
+                    </div>
+                    {selectedServiceIds.length > 0 && (
+                      <div className="text-xs text-gray-600 mt-2">Seleccionados: {selectedServiceIds.length}</div>
+                    )}
+                  </div>
+                  <div>
                     <label className="block text-base sm:text-lg font-semibold text-gray-800 mb-2">Fotos del jardín</label>
                     <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 sm:p-6 text-center">
                       <input type="file" accept="image/*" multiple onChange={onPhotosSelected} />
@@ -832,18 +875,39 @@ const ClientHome: React.FC = () => {
                     </div>
                   )}
 
-                  {(aiTimeTotal > 0 || aiPriceTotal > 0 || (estimatedHours > 0 && totalPrice > 0)) && (
+                  {aiAutoAnalysis && (
+                    <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+                      <h4 className="text-green-800 font-semibold mb-2">Detección IA</h4>
+                      <div className="text-sm text-gray-800">
+                        <div><span className="font-medium">Servicio:</span> {aiAutoAnalysis.servicio}</div>
+                        <div><span className="font-medium">Cantidad detectada:</span> {aiAutoAnalysis.cantidad} {aiAutoAnalysis.unidad}</div>
+                        <div><span className="font-medium">Nivel de dificultad:</span> {aiAutoAnalysis.dificultad}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {(aiAutoHours > 0 || aiAutoPrice > 0 || aiTimeTotal > 0 || aiPriceTotal > 0 || (estimatedHours > 0 && totalPrice > 0)) && (
                     <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4">
                       <h4 className="text-gray-900 font-semibold mb-2">Estimación</h4>
                       <div className="flex items-center gap-6">
                         <div className="flex items-center text-gray-700">
                           <Clock className="w-4 h-4 mr-2" />
-                          {Math.ceil(aiTimeTotal > 0 ? aiTimeTotal : estimatedHours)} h
+                          {Math.ceil((aiAutoHours > 0 ? aiAutoHours : (aiTimeTotal > 0 ? aiTimeTotal : estimatedHours)))} h
                         </div>
                         <div className="flex items-center text-gray-700">
                           <Euro className="w-4 h-4 mr-2" />
-                          €{Math.ceil(aiPriceTotal > 0 ? aiPriceTotal : totalPrice)}
+                          €{Math.ceil((aiAutoPrice > 0 ? aiAutoPrice : (aiPriceTotal > 0 ? aiPriceTotal : totalPrice)))}
                         </div>
+                      </div>
+                      <div className="mt-4">
+                        <button
+                          type="button"
+                          onClick={goNext}
+                          disabled={estimatedHours <= 0 || selectedServiceIds.length === 0}
+                          className="px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center disabled:opacity-50 text-sm sm:text-base"
+                        >
+                          Continuar con la reserva <ChevronRight className="w-4 h-4 ml-2" />
+                        </button>
                       </div>
                     </div>
                   )}
@@ -888,7 +952,7 @@ const ClientHome: React.FC = () => {
                                   <div className="p-3 flex flex-wrap gap-2 border-t border-gray-200">
                                     {ds.slots.map(slot => {
                                       const names = slot.gardenerIds
-                                        .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
+                                      .map(id => eligibleGardenerProfiles.find(p => (p as any).id === id)?.full_name)
                                         .filter(Boolean) as string[];
                                       const shown = names.slice(0, 3);
                                       const extra = names.length - shown.length;
@@ -992,7 +1056,7 @@ const ClientHome: React.FC = () => {
                       <div className="text-sm text-gray-800 font-medium mb-2">Jardineros que pueden realizar estos trabajos</div>
                       <div className="flex flex-wrap gap-2">
                         {eligibleGardenerProfiles.map(p => (
-                          <span key={p.user_id} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
+                          <span key={(p as any).id} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
                             {p.full_name}
                           </span>
                         ))}
@@ -1031,7 +1095,7 @@ const ClientHome: React.FC = () => {
                                 <div className="flex flex-wrap gap-2">
                                   {ds.slots.map(slot => {
                                     const names = slot.gardenerIds
-                                      .map(id => eligibleGardenerProfiles.find(p => p.user_id === id)?.full_name)
+                                      .map(id => eligibleGardenerProfiles.find(p => (p as any).id === id)?.full_name)
                                       .filter(Boolean) as string[];
                                     const shown = names.slice(0, 3);
                                     const extra = names.length - shown.length;

@@ -15,7 +15,7 @@ const ALLOWED_SERVICE_NAMES = [
   'Corte de césped',
   'Poda de plantas',
   'Corte de setos a máquina',
-  'Corte de arbustos pequeños o ramas finas a tijera',
+  'Poda de árboles',
   'Labrar y quitar malas hierbas a mano',
   'Fumigación de plantas',
   'Poda de palmeras'
@@ -51,7 +51,7 @@ interface ProfileSettingsProps {
 }
 
 const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
@@ -84,7 +84,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
       if (error) throw error;
       const all = data || [];
-      const filtered = all.filter(s => isAllowedServiceName(s.name));
+      const filtered = all.filter((s: Service) => isAllowedServiceName(s.name));
       setServices(filtered);
     } catch (error) {
       console.error('Error fetching services:', error);
@@ -123,11 +123,6 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         setValue('max_distance', data.max_distance);
         setValue('services', data.services);
         console.log('Form values set successfully');
-      } else if (profile) {
-        console.log('No existing profile found, using main profile data');
-        setValue('full_name', profile.full_name);
-        setValue('phone', profile.phone);
-        setValue('address', profile.address);
       } else {
         console.log('No profile data found');
       }

@@ -12,6 +12,7 @@ import GardenerBookings from './components/gardener/GardenerBookings';
 import BottomNav from './components/layout/BottomNav';
 import ServiceCatalog from './components/client/ServiceCatalog';
 import ClientHome from './components/client/ClientHome';
+import BookingCheckout from './components/client/BookingCheckout';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ServiceDetail from './components/client/ServiceDetail';
 import MyAccount from './components/account/MyAccount';
@@ -189,6 +190,14 @@ const AppContent = () => {
           element={
             <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
               <ClientHome />
+            </ErrorBoundary>
+          } 
+        />
+        <Route 
+          path="/reserva/checkout" 
+          element={
+            <ErrorBoundary fallbackTitle="Error en el checkout" fallbackMessage="Si el problema persiste, vuelve a la reserva y reintenta.">
+              <BookingCheckout />
             </ErrorBoundary>
           } 
         />

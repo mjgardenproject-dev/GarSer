@@ -15,7 +15,7 @@ const ServiceCatalog = () => {
     'Corte de césped',
     'Poda de plantas',
     'Corte de setos a máquina',
-    'Corte de arbustos pequeños o ramas finas a tijera',
+    'Poda de árboles',
     'Labrar y quitar malas hierbas a mano',
     'Fumigación de plantas',
     'Poda de palmeras'
@@ -47,7 +47,7 @@ const ServiceCatalog = () => {
 
       if (error) throw error;
       const all = data || [];
-      const filtered = all.filter(s => isAllowedServiceName(s.name));
+      const filtered = all.filter((s: Service) => isAllowedServiceName(s.name));
       setServices(filtered);
     } catch (error) {
       console.error('Error fetching services:', error);

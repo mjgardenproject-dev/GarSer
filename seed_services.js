@@ -59,10 +59,10 @@ const canonical = [
     price_per_hour: 27,
   },
   {
-    name: 'Corte de arbustos pequeños o ramas finas a tijera',
-    description: 'Corte a tijera de arbustos pequeños y ramas finas para un acabado detallado.',
-    base_price: 35,
-    price_per_hour: 27,
+    name: 'Poda de árboles',
+    description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
+    base_price: 55,
+    price_per_hour: 35,
   },
   {
     name: 'Labrar y quitar malas hierbas a mano',
@@ -89,6 +89,32 @@ async function ensureServices() {
   }
   const namesNorm = new Map();
   (existing || []).forEach(s => namesNorm.set(normalize(s.name), s));
+
+  const oldName = 'Corte de arbustos pequeños o ramas finas a tijera';
+  const newName = 'Poda de árboles';
+  const oldNorm = normalize(oldName);
+  const newNorm = normalize(newName);
+  const oldExisting = namesNorm.get(oldNorm);
+  const newExisting = namesNorm.get(newNorm);
+
+  if (oldExisting && !newExisting) {
+    console.log(`✏️ Renombrando servicio "${oldName}" → "${newName}"...`);
+    const { error: updError } = await supabase
+      .from('services')
+      .update({
+        name: newName,
+        description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
+        base_price: 55,
+        price_per_hour: 35,
+      })
+      .eq('id', oldExisting.id);
+    if (updError) {
+      console.error('❌ Error renombrando servicio:', updError);
+      process.exit(1);
+    }
+    namesNorm.delete(oldNorm);
+    namesNorm.set(newNorm, { id: oldExisting.id, name: newName });
+  }
 
   const toInsert = canonical.filter(c => {
     const n = normalize(c.name);

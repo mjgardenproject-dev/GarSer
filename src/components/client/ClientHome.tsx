@@ -6,7 +6,6 @@ import { Service } from '../../types';
 import { Wand2, Image as ImageIcon, CheckCircle, ChevronRight, ChevronLeft, ChevronDown, Clock, Euro } from 'lucide-react';
 import { estimateWorkWithAI, AITask, estimateServiceAutoQuote, AutoQuoteAnalysis } from '../../utils/aiPricingEstimator';
 import { findEligibleGardenersForServices, computeNextAvailableDays, MergedSlot } from '../../utils/mergedAvailabilityService';
-import { broadcastBookingRequest } from '../../utils/bookingBroadcastService';
 import { useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -16,6 +15,17 @@ const ClientHome: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const normalizeForPricing = (s: string) => (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const debugPricingEnabled = useMemo(() => {
+    const v = new URLSearchParams(location.search).get('debugPricing');
+    return v === '1' || v === 'true';
+  }, [location.search]);
   const [userProfile, setUserProfile] = useState<any>(null);
   
   // Fetch user profile when authenticated
@@ -68,7 +78,7 @@ const ClientHome: React.FC = () => {
     console.log('[Debug] Location search:', location.search);
     console.log('[Debug] Restricted gardener ID:', restrictedGardenerId);
   }, [location, restrictedGardenerId]);
-  const [step, setStep] = useState<WizardStep>('welcome');
+  const [step, setStep] = useState<WizardStep>(() => (debugPricingEnabled ? 'details' : 'welcome'));
   const [applicationStatus, setApplicationStatus] = useState<null | 'submitted' | 'approved' | 'rejected'>(null);
 
   // Datos del formulario
@@ -86,6 +96,19 @@ const ClientHome: React.FC = () => {
   const [aiAutoAnalysis, setAiAutoAnalysis] = useState<AutoQuoteAnalysis | null>(null);
   const [aiAutoHours, setAiAutoHours] = useState<number>(0);
   const [aiAutoPrice, setAiAutoPrice] = useState<number>(0);
+  const [debugTaskDraft, setDebugTaskDraft] = useState<AITask>({
+    tipo_servicio: '',
+    estado_jardin: 'normal',
+    superficie_m2: null,
+    numero_plantas: null,
+    tamaño_plantas: null,
+  });
+  const [debugQuantity, setDebugQuantity] = useState<number | null>(null);
+  const debugQuantityUnit = useMemo(() => {
+    const n = normalizeForPricing(debugTaskDraft.tipo_servicio);
+    if (n.includes('cesped') || n.includes('setos') || n.includes('malas hierbas') || n.includes('labrar')) return 'm2' as const;
+    return 'plantas' as const;
+  }, [debugTaskDraft.tipo_servicio]);
   // Totales calculados desde las tareas IA
   const { aiTimeTotal, aiPriceTotal } = useMemo(() => {
     const factorFromEstado = (estado?: string) => {
@@ -112,15 +135,15 @@ const ClientHome: React.FC = () => {
           h = (t.superficie_m2 / 8.4) * factor; // 8.4 m²/h
           p = h * 25;
         }
-      } else if (tipo.includes('arbustos') || tipo.includes('tijera') || tipo.includes('ramas')) {
+      } else if (tipo.includes('poda de plantas') || (tipo.includes('poda') && tipo.includes('planta'))) {
         if (t.numero_plantas != null) {
-          const sz = (t.tamaño_plantas || '').toLowerCase();
-          const perPlant = sz.includes('muy grandes') || sz.includes('grandisimas') ? 0.35
-            : sz.includes('grandes') ? 0.25
-            : sz.includes('medianas') ? 0.15
-            : 0.1; // pequeñas por defecto
-          h = (t.numero_plantas * perPlant) * factor;
-          p = h * 20;
+          h = (t.numero_plantas * 0.15) * factor;
+          p = h * 25;
+        }
+      } else if (tipo.includes('poda de árboles') || tipo.includes('poda de arboles') || (tipo.includes('poda') && (tipo.includes('árbol') || tipo.includes('arbol')))) {
+        if (t.numero_plantas != null) {
+          h = (t.numero_plantas * 1.0) * factor;
+          p = h * 30;
         }
       } else if (tipo.includes('malas hierbas') || tipo.includes('hierbas') || tipo.includes('maleza') || tipo.includes('labrado')) {
         if (t.superficie_m2 != null) {
@@ -241,7 +264,7 @@ const ClientHome: React.FC = () => {
           'corte de cesped',
           'poda de plantas',
           'corte de setos a maquina',
-          'corte de arbustos pequenos o ramas finas a tijera',
+          'poda de arboles',
           'labrar y quitar malas hierbas a mano',
           'fumigacion de plantas',
         ];
@@ -256,6 +279,21 @@ const ClientHome: React.FC = () => {
     };
     fetchServices();
   }, []);
+
+  useEffect(() => {
+    if (!debugPricingEnabled) return;
+    if (debugTaskDraft.tipo_servicio) return;
+    if (services.length === 0) return;
+    setDebugTaskDraft(prev => ({ ...prev, tipo_servicio: services[0].name }));
+  }, [debugPricingEnabled, debugTaskDraft.tipo_servicio, services]);
+
+  useEffect(() => {
+    if (!debugPricingEnabled) return;
+    if (!debugTaskDraft.tipo_servicio) return;
+    const unit = debugQuantityUnit;
+    const v = unit === 'm2' ? debugTaskDraft.superficie_m2 : debugTaskDraft.numero_plantas;
+    setDebugQuantity(v ?? null);
+  }, [debugPricingEnabled, debugQuantityUnit, debugTaskDraft.tipo_servicio, debugTaskDraft.superficie_m2, debugTaskDraft.numero_plantas]);
 
   const goNext = () => {
     if (step === 'welcome') setStep('address');
@@ -543,29 +581,29 @@ const ClientHome: React.FC = () => {
       } catch {}
       return;
     }
-    setSending(true);
-    try {
-      const effectivePrice = (aiAutoPrice > 0 ? aiAutoPrice : (aiPriceTotal > 0 ? aiPriceTotal : totalPrice));
-      const roundedPrice = Math.ceil(effectivePrice);
-      await broadcastBookingRequest({
-        clientId: user.id,
-        gardenerIds: eligibleGardenerIds,
-        primaryServiceId: selectedServiceIds[0],
-        date: selectedDate,
-        startHour: selectedSlot.startHour,
-        durationHours: estimatedHours,
-        clientAddress: selectedAddress,
-        notes: description,
-        totalPrice: roundedPrice,
-        hourlyRate: hourlyRateAverage,
-        photoFiles: photos,
-      });
-      setStep('confirm');
-    } catch (e) {
-      console.error('Error enviando solicitudes de reserva:', e);
-    } finally {
-      setSending(false);
-    }
+    const effectivePrice = (aiAutoPrice > 0 ? aiAutoPrice : (aiPriceTotal > 0 ? aiPriceTotal : totalPrice));
+    const roundedPrice = Math.ceil(effectivePrice);
+    navigate('/reserva/checkout', {
+      state: {
+        payload: {
+          restrictedGardenerId,
+          selectedAddress,
+          selectedServiceIds,
+          description,
+          estimatedHours,
+          selectedDate,
+          startHour: selectedSlot.startHour,
+          endHour: selectedSlot.endHour,
+          eligibleGardenerIds,
+          hourlyRateAverage,
+          totalPrice: roundedPrice,
+          aiTasks,
+          aiAutoPrice,
+          aiPriceTotal,
+          photoFiles: photos,
+        }
+      }
+    });
   };
 
   const hasProcessedRef = useRef(false);
@@ -851,6 +889,97 @@ const ClientHome: React.FC = () => {
                       </div>
                     )}
                   </div>
+
+                  {debugPricingEnabled && (
+                    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                      <h4 className="text-amber-900 font-semibold mb-3">Debug IA (manual)</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-800 mb-1">Tipo de servicio</label>
+                          <select
+                            value={debugTaskDraft.tipo_servicio}
+                            onChange={(e) => setDebugTaskDraft(prev => ({ ...prev, tipo_servicio: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                          >
+                            <option value="" disabled>Selecciona…</option>
+                            {services.map(s => (
+                              <option key={s.id} value={s.name}>{s.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-800 mb-1">Estado del jardín</label>
+                          <select
+                            value={debugTaskDraft.estado_jardin}
+                            onChange={(e) => setDebugTaskDraft(prev => ({ ...prev, estado_jardin: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                          >
+                            <option value="normal">normal</option>
+                            <option value="descuidado">descuidado</option>
+                            <option value="muy descuidado">muy descuidado</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-800 mb-1">Cantidad</label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={debugQuantity ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value === '' ? null : Number(e.target.value);
+                              setDebugQuantity(v);
+                              setDebugTaskDraft(prev => ({
+                                ...prev,
+                                superficie_m2: debugQuantityUnit === 'm2' ? v : null,
+                                numero_plantas: debugQuantityUnit === 'plantas' ? v : null,
+                                tamaño_plantas: null,
+                              }));
+                            }}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                            placeholder={debugQuantityUnit === 'm2' ? 'Ej: 120' : 'Ej: 8'}
+                          />
+                          <div className="text-xs text-gray-600 mt-1">Unidad: {debugQuantityUnit === 'm2' ? 'm²' : 'plantas'}</div>
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!debugTaskDraft.tipo_servicio) return;
+                              setAiAutoAnalysis(null);
+                              setAiAutoHours(0);
+                              setAiAutoPrice(0);
+                              const task: AITask = {
+                                tipo_servicio: debugTaskDraft.tipo_servicio,
+                                estado_jardin: debugTaskDraft.estado_jardin,
+                                superficie_m2: debugQuantityUnit === 'm2' ? debugQuantity : null,
+                                numero_plantas: debugQuantityUnit === 'plantas' ? debugQuantity : null,
+                                tamaño_plantas: null,
+                              };
+                              setAiTasks([task]);
+                              toast.success('Parámetros IA aplicados manualmente');
+                            }}
+                            className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm"
+                          >
+                            Aplicar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAiAutoAnalysis(null);
+                              setAiAutoHours(0);
+                              setAiAutoPrice(0);
+                              setAiTasks([]);
+                              toast('Tareas IA limpiadas');
+                            }}
+                            className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 rounded-lg border border-gray-300 text-sm"
+                          >
+                            Limpiar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {aiTasks.length > 0 && (
                     <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
@@ -1138,7 +1267,7 @@ const ClientHome: React.FC = () => {
                       disabled={!selectedSlot || eligibleGardenerIds.length === 0 || sending}
                       className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
                     >
-                      Confirmar y enviar solicitudes
+                      Continuar con la reserva
                     </button>
                   </div>
                 </div>

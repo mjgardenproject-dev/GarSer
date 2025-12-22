@@ -59,10 +59,10 @@ const canonical = [
     price_per_hour: 27,
   },
   {
-    name: 'Corte de arbustos pequeños o ramas finas a tijera',
-    description: 'Corte a tijera de arbustos pequeños y ramas finas para un acabado detallado.',
-    base_price: 35,
-    price_per_hour: 27,
+    name: 'Poda de árboles',
+    description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
+    base_price: 55,
+    price_per_hour: 35,
   },
   {
     name: 'Labrar y quitar malas hierbas a mano',
@@ -88,28 +88,34 @@ async function enforceCanonicalServices() {
     process.exit(1);
   }
 
-  const allowedSet = new Set(canonical.map(c => normalize(c.name)));
-
-  // Eliminar todos los servicios que no sean de la lista canónica (por nombre normalizado)
-  const toDelete = (existing || []).filter(s => !allowedSet.has(normalize(s.name)));
-  if (toDelete.length > 0) {
-    console.log(`🗑️ Eliminando ${toDelete.length} servicio(s) no canónicos...`);
-    const { error: delError } = await supabase
+  const existingByNorm = new Map((existing || []).map(s => [normalize(s.name), s]));
+  const oldName = 'Corte de arbustos pequeños o ramas finas a tijera';
+  const newName = 'Poda de árboles';
+  const oldNorm = normalize(oldName);
+  const newNorm = normalize(newName);
+  const oldExisting = existingByNorm.get(oldNorm);
+  const newExisting = existingByNorm.get(newNorm);
+  if (oldExisting && !newExisting) {
+    console.log(`✏️ Renombrando servicio "${oldName}" → "${newName}"...`);
+    const { error: updError } = await supabase
       .from('services')
-      .delete()
-      .in('id', toDelete.map(s => s.id));
-    if (delError) {
-      console.error('❌ Error eliminando servicios:', delError);
+      .update({
+        name: newName,
+        description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
+        base_price: 55,
+        price_per_hour: 35,
+      })
+      .eq('id', oldExisting.id);
+    if (updError) {
+      console.error('❌ Error renombrando servicio:', updError);
       process.exit(1);
     }
-    console.log('✅ Servicios no canónicos eliminados.');
-  } else {
-    console.log('✅ No hay servicios extra; el catálogo ya es canónico.');
+    existingByNorm.delete(oldNorm);
+    existingByNorm.set(newNorm, { ...oldExisting, name: newName });
   }
 
   // Asegurar que los 6 canónicos existan; si falta alguno, insertarlo
-  const existingMap = new Map((existing || []).map(s => [normalize(s.name), s]));
-  const toInsert = canonical.filter(c => !existingMap.has(normalize(c.name)));
+  const toInsert = canonical.filter(c => !existingByNorm.has(normalize(c.name)));
   if (toInsert.length > 0) {
     console.log(`➕ Insertando ${toInsert.length} servicio(s) canónicos faltantes...`);
     const { error: insertError } = await supabase
@@ -122,7 +128,7 @@ async function enforceCanonicalServices() {
     console.log('✅ Servicios canónicos insertados.');
   }
 
-  console.log('🏁 Catálogo de servicios ahora contiene únicamente los 6 servicios canónicos.');
+  console.log('🏁 Servicios actualizados.');
 }
 
 enforceCanonicalServices().then(() => process.exit(0));

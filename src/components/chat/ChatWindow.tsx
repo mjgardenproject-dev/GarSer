@@ -58,7 +58,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       const senderIds = Array.from(new Set(msgs.map(m => m.sender_id).filter(Boolean)));
 
       // Fetch sender names from profiles by user_id
-      let namesMap = new Map<string, string>();
+      const namesMap = new Map<string, string>();
       if (senderIds.length > 0) {
         const { data: profiles, error: profError } = await supabase
           .from('profiles')
@@ -93,8 +93,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
           table: 'chat_messages',
           filter: `booking_id=eq.${bookingId}`
         },
-        async (payload) => {
-          const newMsg = payload.new as ChatMessage;
+        async (payload: { new: ChatMessage }) => {
+          const newMsg = payload.new;
           let senderName = 'Usuario';
           if (newMsg?.sender_id) {
             // Try to resolve sender name on-the-fly if not already known

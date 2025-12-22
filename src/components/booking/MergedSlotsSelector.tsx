@@ -47,14 +47,12 @@ const MergedSlotsSelector: React.FC<Props> = ({
   }, [serviceId, clientAddress, restrictedGardenerId]);
 
   useEffect(() => {
-    let mounted = true;
     async function loadSlots() {
       if (!user || eligibleGardenerIds.length === 0) { setSlots([]); return; }
       setLoading(true);
       try {
         const dateStr = format(selectedDate, 'yyyy-MM-dd');
         const merged = await computeMergedSlots(eligibleGardenerIds, dateStr, user?.id || 'anonymous', durationHours);
-        if (!mounted) return;
         setSlots(merged);
       } finally {
         setLoading(false);
@@ -66,7 +64,6 @@ const MergedSlotsSelector: React.FC<Props> = ({
 
   // Buscar próximos días con disponibilidad para evitar prueba manual
   useEffect(() => {
-    let mounted = true;
     async function loadSuggestions() {
       if (!user || eligibleGardenerIds.length === 0) { setDaySuggestions([]); return; }
       setSuggestionsLoading(true);
@@ -80,7 +77,6 @@ const MergedSlotsSelector: React.FC<Props> = ({
           14,
           7
         );
-        if (!mounted) return;
         setDaySuggestions(suggestions);
         // Inicializar día expandido
         if (suggestions.length > 0) {

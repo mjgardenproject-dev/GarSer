@@ -14,14 +14,14 @@ const schema = yup.object({
   email: yup.string().email('Email inválido').required('Email requerido'),
   password: yup.string().min(6, 'Mínimo 6 caracteres').required('Contraseña requerida'),
   role: yup.string().oneOf(['client', 'gardener']).required('Rol requerido'),
-  confirmPassword: yup.string().optional()
+  confirmPassword: yup.string().default('').defined()
 });
 
 type FormData = {
   email: string;
   password: string;
   role: 'client' | 'gardener';
-  confirmPassword?: string;
+  confirmPassword: string;
 };
 
 const AuthForm = () => {
@@ -30,6 +30,7 @@ const AuthForm = () => {
   const [selectedRole, setSelectedRole] = useState<'client' | 'gardener'>('client');
   const location = useLocation();
   const forceClientOnly: boolean = !!((location.state as any)?.forceClientOnly);
+  const redirectTo: string | null = typeof (location.state as any)?.redirectTo === 'string' ? (location.state as any)?.redirectTo : null;
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,7 +44,7 @@ const AuthForm = () => {
   const [phoneLocal, setPhoneLocal] = useState('');
   const [cityZone, setCityZone] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('');
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [certFiles, setCertFiles] = useState<File[]>([]);
   const [cropScale, setCropScale] = useState<number>(1.0);
@@ -195,8 +196,7 @@ const AuthForm = () => {
       if (isLogin) {
         await signIn(data.email, data.password);
         toast.success('¡Bienvenido de vuelta!');
-        // Redirigir al dashboard tras login exitoso
-        navigate('/dashboard');
+        navigate(redirectTo || '/dashboard');
       } else {
         const roleToUse = selectedRole;
         const confirm = watch('confirmPassword');
@@ -433,148 +433,6 @@ const AuthForm = () => {
               </div>
             )}
           </div>
-
-          {false && (
-            <div className="mt-4 space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">ENCUESTA DE SOLICITUD PARA JARDINEROS</h2>
-                <div className="flex items-center gap-2 text-sm text-gray-600"><span>{progress}%</span><div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden"><div className="h-2 bg-green-600" style={{ width: `${progress}%` }} /></div></div>
-              </div>
-
-              {step === 1 && (
-                <div className="space-y-3">
-                  <h3 className="text-base sm:text-lg font-semibold">Datos personales y zona de trabajo</h3>
-                  <label className="block text-sm font-medium text-gray-700">Nombre completo</label>
-                  <input value={fullName} onChange={e=>setFullName(e.target.value)} className="w-full p-3 border rounded" />
-                  <label className="block text-sm font-medium text-gray-700">Teléfono</label>
-                  <input value={phoneLocal} onChange={e=>setPhoneLocal(e.target.value)} className="w-full p-3 border rounded" />
-                  
-                  <label className="block text-sm font-medium text-gray-700">Ciudad / zona de trabajo</label>
-                  <input value={cityZone} onChange={e=>setCityZone(e.target.value)} className="w-full p-3 border rounded" />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Foto de perfil profesional</label>
-                    <div className="space-y-3">
-                      <div
-                        className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-full border-2 border-dashed border-gray-300 bg-gray-50 overflow-hidden mx-auto"
-                        onMouseDown={handleCropMouseDown}
-                        onMouseMove={handleCropMouseMove}
-                        onMouseUp={handleCropMouseUp}
-                        onMouseLeave={handleCropMouseUp}
-                      >
-                        {!photoPreviewUrl ? (
-                          <button type="button" onClick={()=>photoInputRef.current?.click()} className="w-full h-full flex flex-col items-center justify-center text-gray-500">
-                            <Plus className="w-7 h-7" />
-                            <span className="text-xs mt-1">Añadir</span>
-                          </button>
-                        ) : (
-                          <img
-                            src={photoPreviewUrl}
-                            alt="Foto"
-                            draggable={false}
-                            className="absolute top-1/2 left-1/2 select-none"
-                            style={{ transform: `translate(${offsetX}px, ${offsetY}px) translate(-50%, -50%) scale(${cropScale})` }}
-                          />
-                        )}
-                        <input id="auth-avatar-upload" ref={photoInputRef} type="file" accept="image/*" className="sr-only" onChange={e=>{ const f=e.target.files?.[0]||null; setPhotoFile(f); if (f){ const url=URL.createObjectURL(f); setPhotoPreviewUrl(url); setOffsetX(0); setOffsetY(0); setCropScale(1); } }} />
-                      </div>
-                      <div className="flex items-center justify-center gap-3">
-                        <input type="range" min={0.8} max={3} step={0.01} value={cropScale} onChange={e=>setCropScale(parseFloat(e.target.value))} className="w-40" />
-                        {photoPreviewUrl && (
-                          <button type="button" onClick={()=>{ setOffsetX(0); setOffsetY(0); setCropScale(1); }} className="px-3 py-1.5 bg-gray-100 rounded hover:bg-gray-200 text-sm">Reset</button>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-center gap-2">
-                        <button type="button" onClick={()=>photoInputRef.current?.click()} className="px-3 py-2 bg-gray-100 rounded hover:bg-gray-200 inline-flex items-center gap-2">
-                          <UploadCloud className="w-4 h-4" />
-                          <span>Cambiar foto</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {step === 2 && (
-                <div className="space-y-3">
-                  <h3 className="text-base sm:text-lg font-semibold">¿Qué servicios puedes ofrecer?</h3>
-                  <div className="text-sm text-gray-600">Marca todos los que domines y para los que dispongas de herramientas</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {SERVICES.map(s => (
-                      <label key={s} className="flex items-center gap-2 p-3 border rounded">
-                        <input type="checkbox" checked={servicesSel.includes(s)} onChange={()=>toggleService(s)} />
-                        <span>{s}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <label className="block text-sm font-medium text-gray-700">Otros</label>
-                  <textarea value={otherServices} onChange={e=>setOtherServices(e.target.value)} rows={3} className="w-full p-3 border rounded" />
-                </div>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-3">
-                  <h3 className="text-base sm:text-lg font-semibold">¿De qué herramientas dispones?</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {TOOLS.map(t => (
-                      <label key={t} className="flex items-center gap-2 p-3 border rounded">
-                        <input type="checkbox" checked={toolsSel.includes(t)} onChange={()=>toggleTool(t)} />
-                        <span>{t}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {step === 4 && (
-                  <div className="space-y-3">
-                    <h3 className="text-base sm:text-lg font-semibold">Experiencia y demostraciones</h3>
-                    <div className="flex items-center gap-3">
-                    <input type="number" min={0} value={expYearsInput} onFocus={()=>{ if (expYearsInput === '0') setExpYearsInput(''); }} onBlur={()=>{ if (expYearsInput.trim() === '') { setExpYearsInput('0'); setExpYears(0); } }} onChange={e=>{ const v=e.target.value; setExpYearsInput(v); const n=parseInt(v||'0',10); setExpYears(isNaN(n)?0:n); }} className="w-24 p-2 border rounded" />
-                      <span className="text-sm text-gray-700">años de experiencia</span>
-                    </div>
-                    <label className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
-                    <textarea value={proofNotes} onChange={e=>setProofNotes(e.target.value)} rows={4} className="w-full p-3 border rounded" />
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Adjunta fotos o documentos (opcional). Si lo tienes, añade tu CV</label>
-                      <input type="file" multiple onChange={e=>addProofFiles(e.target.files)} />
-                    </div>
-                  </div>
-                )}
-
-              
-
-              {step === 6 && (
-                <div className="space-y-3">
-                  <h3 className="text-base sm:text-lg font-semibold">Formación y certificaciones</h3>
-                  <label className="block text-sm font-medium text-gray-700">¿Tienes algún curso o formación en jardinería?</label>
-                  <textarea value={certText} onChange={e=>setCertText(e.target.value)} rows={4} className="w-full p-3 border rounded" />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Adjunta fotos o documentos de tu titulación (opcional)</label>
-                    <input type="file" multiple onChange={e=>addCertFiles(e.target.files)} />
-                  </div>
-                </div>
-              )}
-
-              {step === 7 && (
-                <div className="space-y-3">
-                  <h3 className="text-base sm:text-lg font-semibold">Declaraciones y consentimiento</h3>
-                  <label className="flex items-center gap-2"><input type="checkbox" checked={declTruth} onChange={()=>setDeclTruth(v=>!v)} /><span>Declaro que toda la información proporcionada es veraz y acepto ser verificado por el equipo de GarserHelp.</span></label>
-                  <label className="flex items-center gap-2"><input type="checkbox" checked={acceptTerms} onChange={()=>setAcceptTerms(v=>!v)} /><span>Acepto que mis datos sean utilizados para gestionar mi perfil y solicitudes en la app de jardinería.</span></label>
-                </div>
-              )}
-
-              <div className="sticky bottom-0 bg-white pt-2" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-                <div className="flex items-center justify-between">
-                  <button type="button" onClick={()=>setStep(s=> { if (s>1) { const prev = s===6 ? 4 : (s-1); return prev as Step; } return s; })} className="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200">Anterior</button>
-                  {step < 7 ? (
-                    <button type="button" disabled={!isStepValid(step)} onClick={()=>setStep(s=> { if (s<7) { const next = s===4 ? 6 : (s+1); return next as Step; } return s; })} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">Siguiente</button>
-                  ) : (
-                    <button type="submit" disabled={!declTruth || !acceptTerms} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">Crear cuenta y enviar solicitud</button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           <button
             type="submit"

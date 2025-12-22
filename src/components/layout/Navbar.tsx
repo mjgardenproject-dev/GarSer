@@ -55,6 +55,8 @@ const Navbar = () => {
     ...envAdminEmailsRaw
   ].map(e => (e || '').trim().toLowerCase())));
   const isAdmin = adminEmails.includes((user?.email || '').trim().toLowerCase());
+  const showRoleBadge = isAdmin || effectiveRole === 'gardener' || applicationStatus === 'pending' || applicationStatus === 'active';
+  const roleBadgeLabel = isAdmin ? 'Admin' : (applicationStatus === 'pending' ? 'Jardinero (pendiente)' : 'Jardinero');
   useEffect(() => {
     const checkAdmin = async () => {
       try {
@@ -138,9 +140,11 @@ const Navbar = () => {
           <div className="flex items-center space-x-3">
             <div className="hidden sm:block text-sm text-gray-600">
               <span className="font-medium">{user?.email}</span>
-              <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                {isAdmin ? 'Admin' : (applicationStatus === 'pending' ? 'Jardinero (pendiente)' : (applicationStatus === 'active' || effectiveRole === 'gardener' ? 'Jardinero' : 'Jardinero'))}
-              </span>
+              {showRoleBadge && (
+                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                  {roleBadgeLabel}
+                </span>
+              )}
             </div>
             <button
               onClick={handleSignOut}
@@ -182,7 +186,11 @@ const Navbar = () => {
               })}
               <div className="mt-2 text-xs text-gray-500">
                 <span className="font-medium">{user?.email}</span>
-                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">{isAdmin ? 'Admin' : (applicationStatus === 'pending' ? 'Jardinero (pendiente)' : ((effectiveRole === 'gardener' || applicationStatus === 'active') ? 'Jardinero' : 'Jardinero'))}</span>
+                {showRoleBadge && (
+                  <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">
+                    {roleBadgeLabel}
+                  </span>
+                )}
               </div>
             </div>
           </div>

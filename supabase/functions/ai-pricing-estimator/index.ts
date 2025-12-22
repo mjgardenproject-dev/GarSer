@@ -177,7 +177,7 @@ function buildMessages(payload: Payload) {
     'Corte de césped',
     'Poda de plantas',
     'Corte de setos a máquina',
-    'Corte de arbustos pequeños o ramas finas a tijera',
+    'Poda de árboles',
     'Labrar y quitar malas hierbas a mano',
     'Fumigación de plantas',
     '',
@@ -191,7 +191,8 @@ function buildMessages(payload: Payload) {
     ' - Labrar y quitar malas hierbas',
     'numero_plantas: número aproximado solo para:',
     ' - Fumigación',
-    ' - Corte a tijera',
+    ' - Poda de plantas',
+    ' - Poda de árboles',
     'tamaño_plantas: “pequeñas” (<0,5 m), “medianas” (0,5–1 m), “grandes” (1–1,5 m), “muy grandes” (1,5–2 m).',
     '',
     '3️⃣ CONTROL DE INCERTIDUMBRE',
@@ -204,7 +205,7 @@ function buildMessages(payload: Payload) {
     '5️⃣ NORMALIZACIÓN DE UNIDADES',
     'Devuelve siempre solo una unidad válida según el tipo de servicio:',
     'Césped, setos, labrado o malas hierbas → superficie_m2',
-    'Arbustos o fumigación → numero_plantas + tamaño_plantas',
+    'Poda o fumigación → numero_plantas + tamaño_plantas',
     'No mezcles unidades dentro de una misma tarea.',
     '',
     '6️⃣ ESTRUCTURA DE RESPUESTA',
@@ -294,9 +295,17 @@ function heuristicTasks(payload: Payload) {
       tamaño_plantas: null,
     });
   }
-  if (text.includes('poda') || text.includes('arbusto') || text.includes('ramas')) {
+  if (text.includes('arbol') || text.includes('árbol')) {
     tasks.push({
-      tipo_servicio: 'corte de arbustos pequeños o ramas finas a tijera',
+      tipo_servicio: 'poda de árboles',
+      estado_jardin: estado,
+      superficie_m2: null,
+      numero_plantas: null,
+      tamaño_plantas: null,
+    });
+  } else if (text.includes('poda')) {
+    tasks.push({
+      tipo_servicio: 'poda de plantas',
       estado_jardin: estado,
       superficie_m2: null,
       numero_plantas: null,

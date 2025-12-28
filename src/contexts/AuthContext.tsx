@@ -92,7 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     restoreSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: string, session: { user: User | null } | null) => {
       if (!mounted) return;
       const u = session?.user ?? null;
       switch (event) {
@@ -102,6 +102,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('🕒', ts(), event);
           setUser(u);
           setLoading(false);
+          try {
+            const src = localStorage.getItem('signup_source');
+            if (src === 'checkout' && u?.id) {
+              await supabase.auth.updateUser({ data: { role: 'client', requested_role: 'client' } });
+              await supabase.from('profiles').upsert({ id: u.id, role: 'client' }, { onConflict: 'id' });
+              try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
+              localStorage.removeItem('signup_source');
+              console.log('✅ Rol forzado a client tras verificación desde checkout');
+            }
+          } catch {}
           break;
         }
         case 'SIGNED_OUT': {
@@ -141,8 +151,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Verifica tu correo para continuar.');
         }
         try {
+          const src = (()=>{ try { return localStorage.getItem('signup_source'); } catch { return null; } })();
           const isGardenerIntent = (fresh as any)?.user_metadata?.role === 'gardener' || (fresh as any)?.user_metadata?.requested_role === 'gardener';
-          if (isGardenerIntent) {
+          if (src !== 'checkout' && isGardenerIntent) {
             await supabase
               .from('profiles')
               .upsert({ id: fresh.id, role: 'gardener' }, { onConflict: 'id' });

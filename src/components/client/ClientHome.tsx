@@ -22,10 +22,7 @@ const ClientHome: React.FC = () => {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const debugPricingEnabled = useMemo(() => {
-    const v = new URLSearchParams(location.search).get('debugPricing');
-    return v === '1' || v === 'true';
-  }, [location.search]);
+  const manualPricingEnabled = import.meta.env.DEV;
   const [userProfile, setUserProfile] = useState<any>(null);
   
   // Fetch user profile when authenticated
@@ -78,7 +75,7 @@ const ClientHome: React.FC = () => {
     console.log('[Debug] Location search:', location.search);
     console.log('[Debug] Restricted gardener ID:', restrictedGardenerId);
   }, [location, restrictedGardenerId]);
-  const [step, setStep] = useState<WizardStep>(() => (debugPricingEnabled ? 'details' : 'welcome'));
+  const [step, setStep] = useState<WizardStep>('welcome');
   const [applicationStatus, setApplicationStatus] = useState<null | 'submitted' | 'approved' | 'rejected'>(null);
 
   // Datos del formulario
@@ -281,19 +278,19 @@ const ClientHome: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!debugPricingEnabled) return;
+    if (!manualPricingEnabled) return;
     if (debugTaskDraft.tipo_servicio) return;
     if (services.length === 0) return;
     setDebugTaskDraft(prev => ({ ...prev, tipo_servicio: services[0].name }));
-  }, [debugPricingEnabled, debugTaskDraft.tipo_servicio, services]);
+  }, [manualPricingEnabled, debugTaskDraft.tipo_servicio, services]);
 
   useEffect(() => {
-    if (!debugPricingEnabled) return;
+    if (!manualPricingEnabled) return;
     if (!debugTaskDraft.tipo_servicio) return;
     const unit = debugQuantityUnit;
     const v = unit === 'm2' ? debugTaskDraft.superficie_m2 : debugTaskDraft.numero_plantas;
     setDebugQuantity(v ?? null);
-  }, [debugPricingEnabled, debugQuantityUnit, debugTaskDraft.tipo_servicio, debugTaskDraft.superficie_m2, debugTaskDraft.numero_plantas]);
+  }, [manualPricingEnabled, debugQuantityUnit, debugTaskDraft.tipo_servicio, debugTaskDraft.superficie_m2, debugTaskDraft.numero_plantas]);
 
   const goNext = () => {
     if (step === 'welcome') setStep('address');
@@ -563,24 +560,6 @@ const ClientHome: React.FC = () => {
 
   const confirmAndSend = async () => {
     if (!selectedSlot || !selectedDate || eligibleGardenerIds.length === 0) return;
-    if (!user) {
-      setShowAuthPrompt(true);
-      try {
-        const redirectState = {
-          restrictedGardenerId,
-          preserved: {
-            selectedAddress,
-            selectedServiceIds,
-            description,
-            estimatedHours,
-            selectedDate,
-            selectedSlot
-          }
-        } as any;
-        sessionStorage.setItem('post_auth_redirect', JSON.stringify({ path: '/reserva', state: redirectState }));
-      } catch {}
-      return;
-    }
     const effectivePrice = (aiAutoPrice > 0 ? aiAutoPrice : (aiPriceTotal > 0 ? aiPriceTotal : totalPrice));
     const roundedPrice = Math.ceil(effectivePrice);
     navigate('/reserva/checkout', {
@@ -614,6 +593,14 @@ const ClientHome: React.FC = () => {
       if (hasProcessedRef.current) return;
       hasProcessedRef.current = true;
       try {
+        const src = (() => { try { return localStorage.getItem('signup_source'); } catch { return null; } })();
+        const metaRole = (user as any)?.user_metadata?.role;
+        const metaReq = (user as any)?.user_metadata?.requested_role;
+        const gardenerIntent = metaRole === 'gardener' || metaReq === 'gardener';
+        if (src === 'checkout' || !gardenerIntent) {
+          try { localStorage.removeItem('pendingGardenerApplication'); } catch {}
+          return;
+        }
         const raw = localStorage.getItem('pendingGardenerApplication');
         if (raw) {
           const payload = JSON.parse(raw);
@@ -890,7 +877,7 @@ const ClientHome: React.FC = () => {
                     )}
                   </div>
 
-                  {debugPricingEnabled && (
+                  {manualPricingEnabled && (
                     <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
                       <h4 className="text-amber-900 font-semibold mb-3">Debug IA (manual)</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1344,37 +1331,33 @@ const ClientHome: React.FC = () => {
           )}
         </div>
       </div>
-      {showAuthPrompt && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">Necesitamos identificarte</h3>
-            <p className="text-sm text-gray-600 mb-4">Para enviar tu solicitud, inicia sesión o regístrate como cliente.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => { sessionStorage.setItem('post_auth_force_client', 'true'); navigate('/auth', { state: { forceClientOnly: true } }); }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Iniciar sesión
-              </button>
-              <button
-                type="button"
-                onClick={() => { sessionStorage.setItem('post_auth_force_client', 'true'); navigate('/auth', { state: { forceClientOnly: true } }); }}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                Registrarse (Cliente)
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowAuthPrompt(false)}
-              className="mt-4 text-sm text-gray-600 hover:text-gray-800"
-            >
-              Seguir editando datos
-            </button>
-          </div>
+      <div className="mt-8 space-y-6">
+        <div className="bg-white border border-gray-200 rounded-2xl p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Qué es Garser</h2>
+          <p className="text-gray-700 text-sm">
+            GarSer es tu servicio de jardinería de confianza. Te ayudamos a reservar trabajos de forma rápida, clara y sin complicaciones.
+          </p>
         </div>
-      )}
+        <div className="bg-white border border-gray-200 rounded-2xl p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">A qué nos dedicamos</h2>
+          <p className="text-gray-700 text-sm">
+            Corte de césped, poda de setos y árboles, limpieza de malas hierbas, fumigación de plantas y mantenimiento general del jardín.
+          </p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-2xl p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Qué servicios ofrecemos</h2>
+          <p className="text-gray-700 text-sm">
+            Trabajos puntuales y planes de mantenimiento. Presupuestos claros con estimación de horas y precio total.
+          </p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-2xl p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Por qué confiar en nosotros</h2>
+          <p className="text-gray-700 text-sm">
+            Profesionales verificados, comunicación transparente y soporte en cada paso. No necesitas registrarte para empezar tu reserva.
+          </p>
+        </div>
+      </div>
+      {showAuthPrompt && null}
     </div>
   );
 };

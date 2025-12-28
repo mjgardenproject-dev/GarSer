@@ -26,7 +26,6 @@ if (typeof window !== 'undefined') {
   (window as any).supabaseClient = supabase;
   // Exponer configuración para pruebas manuales
   (window as any).__SUPABASE_URL = SUPABASE_URL;
-  (window as any).__SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
   try {
     const host = new URL(SUPABASE_URL).host;
     console.log('🔧 Supabase listo', { host, anonKeyPresent: !!SUPABASE_ANON_KEY });
@@ -38,9 +37,14 @@ if (typeof window !== 'undefined') {
   })();
 
   if (!globalForSupabase.__supabaseFetchPatched && SUPABASE_HOST) {
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = async (input: RequestInfo, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.url;
+    const originalFetch = window.fetch.bind(window) as typeof window.fetch;
+    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
       // Interceptar SOLO llamadas a Supabase REST o Edge Functions
       const isSupabase =
         typeof url === 'string' &&
@@ -53,24 +57,10 @@ if (typeof window !== 'undefined') {
       const start = Date.now();
       try {
         const res = await originalFetch(input, init);
-        let authorization: string | null = null;
-        let apikey: string | null = null;
-        try {
-          if (typeof input !== 'string' && input.headers) {
-            authorization = (input.headers as any).get?.('Authorization') ?? null;
-            apikey = (input.headers as any).get?.('apikey') ?? null;
-          } else if (init?.headers) {
-            const h = init.headers as any;
-            authorization = h.get?.('Authorization') ?? h['Authorization'] ?? h['authorization'] ?? null;
-            apikey = h.get?.('apikey') ?? h['apikey'] ?? h['Apikey'] ?? null;
-          }
-        } catch {}
         console.log('🛰️ Supabase HTTP', {
           method: (init?.method || 'GET'),
           url,
           status: res.status,
-          authorization,
-          apikey,
         });
         if (res.status >= 400) {
           const bodyText = await res.clone().text();
@@ -82,7 +72,7 @@ if (typeof window !== 'undefined') {
         console.error('🌩️ Supabase fetch failed', err);
         throw err;
       }
-    };
+    }) as typeof window.fetch;
     globalForSupabase.__supabaseFetchPatched = true;
   }
 }

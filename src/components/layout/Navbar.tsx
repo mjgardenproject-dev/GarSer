@@ -91,7 +91,7 @@ const Navbar = () => {
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate(user ? '/dashboard' : '/')}
               className="flex-shrink-0 flex items-center focus:outline-none"
               aria-label="Ir al dashboard"
             >
@@ -146,13 +146,25 @@ const Navbar = () => {
                 </span>
               )}
             </div>
-            <button
-              onClick={handleSignOut}
-              className="flex items-center px-2 md:px-3 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              <span className="hidden md:inline">Salir</span>
-            </button>
+            {user ? (
+              <button
+                onClick={handleSignOut}
+                className="flex items-center px-2 md:px-3 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                <span className="hidden md:inline">Salir</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-semibold"
+                aria-label="Iniciar sesión o reservar"
+                onMouseDown={(e) => e.preventDefault()}
+                onClickCapture={() => navigate('/reserva')}
+              >
+                Iniciar sesión / Reservar
+              </button>
+            )}
             {/* Botón menú móvil */}
             <button
               className="md:hidden p-2 rounded-md text-gray-700 hover:bg-gray-100"

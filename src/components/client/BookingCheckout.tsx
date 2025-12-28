@@ -33,7 +33,7 @@ type InvoiceLineItem = {
 
 const readPayloadFromStorage = (): CheckoutPayload | null => {
   try {
-    const raw = sessionStorage.getItem('pending_checkout');
+    const raw = localStorage.getItem('pending_checkout') || sessionStorage.getItem('pending_checkout');
     if (!raw) return null;
     return JSON.parse(raw) as CheckoutPayload;
   } catch {
@@ -44,12 +44,13 @@ const readPayloadFromStorage = (): CheckoutPayload | null => {
 const writePayloadToStorage = (payload: CheckoutPayload) => {
   try {
     const { photoFiles: _photoFiles, ...serializable } = payload;
-    sessionStorage.setItem('pending_checkout', JSON.stringify(serializable));
+    localStorage.setItem('pending_checkout', JSON.stringify(serializable));
   } catch {}
 };
 
 const clearPayloadFromStorage = () => {
   try {
+    localStorage.removeItem('pending_checkout');
     sessionStorage.removeItem('pending_checkout');
   } catch {}
 };
@@ -118,6 +119,9 @@ const BookingCheckout: React.FC = () => {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const allowWithoutPayment =
+    (import.meta.env.VITE_ALLOW_BOOKING_WITHOUT_PAYMENT as string | undefined) === 'true' ||
+    import.meta.env.DEV;
   const [services, setServices] = useState<Service[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [paying, setPaying] = useState(false);
@@ -125,6 +129,9 @@ const BookingCheckout: React.FC = () => {
   const [paymentRef, setPaymentRef] = useState<string>('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupLoading, setSignupLoading] = useState(false);
 
   const payload: CheckoutPayload | null = useMemo(() => {
     const st = (location.state as any)?.payload as CheckoutPayload | undefined;
@@ -222,6 +229,8 @@ const BookingCheckout: React.FC = () => {
   useEffect(() => {
     const mount = async () => {
       if (!payload) return;
+      if (allowWithoutPayment) return;
+      if (!user) return;
       if (!paypalClientId) return;
       if (!deposit || deposit <= 0) return;
       if (!user?.id) return;
@@ -272,16 +281,18 @@ const BookingCheckout: React.FC = () => {
       }
     };
     mount();
-  }, [payload, paypalClientId, deposit, user?.id, paid]);
+  }, [payload, allowWithoutPayment, paypalClientId, deposit, user?.id, paid]);
 
   const sendRequests = async () => {
     if (!payload) return;
     if (!user?.id) return;
-    if (!paid) return;
+    if (!paid && !allowWithoutPayment) return;
     if (sent) return;
     setSending(true);
     try {
-      const notes = `${payload.description || ''}${paymentRef ? `\nPago 10%: ${paymentRef}` : ''}`.trim();
+      const paymentLine = paymentRef ? `\nPago 10%: ${paymentRef}` : '';
+      const bypassLine = allowWithoutPayment ? '\nModo pruebas: reserva confirmada sin pago' : '';
+      const notes = `${payload.description || ''}${paymentLine}${bypassLine}`.trim();
       await broadcastBookingRequest({
         clientId: user.id,
         gardenerIds: payload.eligibleGardenerIds,
@@ -329,15 +340,59 @@ const BookingCheckout: React.FC = () => {
   if (!user?.id) {
     return (
       <div className="max-w-xl mx-auto p-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-6 text-center">
-          <div className="text-gray-900 font-semibold mb-2">Inicia sesión para pagar</div>
-          <div className="text-gray-700 text-sm mb-4">Para confirmar la reserva necesitas iniciar sesión.</div>
-          <button
-            onClick={() => navigate('/auth', { state: { redirectTo: '/reserva/checkout' } })}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg"
-          >
-            Ir a iniciar sesión
-          </button>
+        <div className="bg-white border border-gray-200 rounded-xl p-6">
+          <div className="text-xl font-semibold text-gray-900 mb-3">Crea tu cuenta para continuar</div>
+          <div className="text-gray-700 text-sm mb-4">
+            Regístrate con tu correo y contraseña. Te enviaremos un enlace de verificación; al confirmarlo volverás aquí para {allowWithoutPayment ? 'completar la reserva sin pagar' : 'realizar el pago'}.
+          </div>
+          <div className="space-y-3">
+            <label className="block text-sm text-gray-700">Correo electrónico</label>
+            <input
+              type="email"
+              value={signupEmail}
+              onChange={(e) => setSignupEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-2"
+              placeholder="tu@email.com"
+            />
+            <label className="block text-sm text-gray-700">Contraseña</label>
+            <input
+              type="password"
+              value={signupPassword}
+              onChange={(e) => setSignupPassword(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg p-2"
+              placeholder="••••••••"
+            />
+            <button
+              onClick={async () => {
+                if (signupLoading) return;
+                setSignupLoading(true);
+                try {
+                  if (payload) writePayloadToStorage(payload);
+                  try { localStorage.setItem('signup_source', 'checkout'); } catch {}
+                  const origin = window.location.origin;
+                  const redirectTo = `${origin}/reserva/checkout?continue=pay`;
+                  const { error } = await supabase.auth.signUp({
+                    email: signupEmail,
+                    password: signupPassword,
+                    options: {
+                      emailRedirectTo: redirectTo,
+                      data: { role: 'client', requested_role: 'client' },
+                    },
+                  });
+                  if (error) throw error;
+                  toast.success('Registro creado. Revisa tu email para verificar y continuar.');
+                } catch (e: any) {
+                  toast.error(e?.message || 'No se pudo registrar');
+                } finally {
+                  setSignupLoading(false);
+                }
+              }}
+              className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
+              disabled={signupLoading || !signupEmail || !signupPassword}
+            >
+              Crear cuenta y enviar verificación
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -396,24 +451,49 @@ const BookingCheckout: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <div className="text-blue-900 font-semibold mb-1">Pago por adelantado</div>
-          <div className="text-blue-800 text-sm">
-            Para confirmar la reserva debes abonar el 10% del precio final por adelantado ({`€${deposit.toFixed(2)}`}).
-            El resto ({`€${remaining.toFixed(2)}`}) se lo pagarás al jardinero cuando te complete el servicio.
+        {allowWithoutPayment ? (
+          <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div className="text-amber-900 font-semibold mb-1">Modo pruebas</div>
+            <div className="text-amber-800 text-sm">
+              El pago por adelantado está desactivado temporalmente. Puedes confirmar la reserva sin pagar.
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="text-blue-900 font-semibold mb-1">Pago por adelantado</div>
+            <div className="text-blue-800 text-sm">
+              Para confirmar la reserva debes abonar el 10% del precio final por adelantado ({`€${deposit.toFixed(2)}`}).
+              El resto ({`€${remaining.toFixed(2)}`}) se lo pagarás al jardinero cuando te complete el servicio.
+            </div>
+          </div>
+        )}
 
         <div className="mt-6">
-          <div className="text-gray-900 font-semibold mb-2">Pagar 10% con PayPal o tarjeta</div>
-          {paypalClientId ? (
-            <div className={`border border-gray-200 rounded-xl p-4 ${paying ? 'opacity-60 pointer-events-none' : ''}`}>
-              <div id="paypal-buttons" />
-            </div>
+          {allowWithoutPayment ? (
+            <button
+              onClick={() => {
+                if (sending || sent) return;
+                setPaid(true);
+                toast.success('Reserva confirmada (sin pago)');
+              }}
+              className={`w-full px-4 py-3 rounded-xl font-semibold text-white ${sending ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+              disabled={sending || sent}
+            >
+              Confirmar reserva sin pagar
+            </button>
           ) : (
-            <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 text-sm text-amber-900">
-              Falta configurar `VITE_PAYPAL_CLIENT_ID` para mostrar el pago con PayPal/tarjeta.
-            </div>
+            <>
+              <div className="text-gray-900 font-semibold mb-2">Pagar 10% con PayPal o tarjeta</div>
+              {paypalClientId ? (
+                <div className={`border border-gray-200 rounded-xl p-4 ${paying ? 'opacity-60 pointer-events-none' : ''}`}>
+                  <div id="paypal-buttons" />
+                </div>
+              ) : (
+                <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 text-sm text-amber-900">
+                  Falta configurar `VITE_PAYPAL_CLIENT_ID` para mostrar el pago con PayPal/tarjeta.
+                </div>
+              )}
+            </>
           )}
         </div>
 

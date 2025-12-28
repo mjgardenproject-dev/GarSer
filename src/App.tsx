@@ -124,13 +124,22 @@ const AppContent = () => {
       {!isAuthPage && <Navbar />}
       <main className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-16 sm:pb-0">
         <Routes>
+        <Route
+          path="/"
+          element={
+            <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
+              <ClientHome />
+            </ErrorBoundary>
+          }
+        />
         <Route 
           path="/dashboard" 
           element={
             <ProtectedRoute>
               {(() => {
+                const src = (()=>{ try { return localStorage.getItem('signup_source'); } catch { return null; } })();
                 const metaIntent = (user as any)?.user_metadata?.role === 'gardener' || (user as any)?.user_metadata?.requested_role === 'gardener';
-                const gardenerIntent = metaIntent || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
+                const gardenerIntent = (src === 'checkout') ? false : (metaIntent || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied'));
                 if (gardenerIntent && applicationStatus === null) {
                   return (
                     <ErrorBoundary fallbackTitle="Cargando panel" fallbackMessage="Cargando información del perfil...">
@@ -233,7 +242,8 @@ const AppContent = () => {
             <ProtectedRoute>
               {/* Mostrar lista distinta según el rol sin depender del perfil */}
               {(() => {
-                const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
+                const src = (()=>{ try { return localStorage.getItem('signup_source'); } catch { return null; } })();
+                const fallbackRole = (src === 'checkout') ? 'client' : ((user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client');
                 const effectiveRole = fallbackRole;
                 if (effectiveRole === 'gardener') {
                   if (applicationStatus !== 'active') {

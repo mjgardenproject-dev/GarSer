@@ -55,6 +55,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
+  const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
@@ -73,7 +74,26 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   useEffect(() => {
     fetchServices();
     fetchGardenerProfile();
+    fetchServicePrices();
   }, [user]);
+
+  const fetchServicePrices = async () => {
+    if (!user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('gardener_service_prices')
+        .select('service_id, price_per_unit')
+        .eq('gardener_id', user.id);
+      if (error) throw error;
+      const prices: Record<string, number> = {};
+      data?.forEach((row: any) => {
+        prices[row.service_id] = row.price_per_unit;
+      });
+      setServicePrices(prices);
+    } catch (e) {
+      console.error('Error fetching service prices:', e);
+    }
+  };
 
   const fetchServices = async () => {
     try {
@@ -194,6 +214,30 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       }
 
       console.log('Successfully saved to gardener_profiles');
+
+      // Update gardener service prices
+      const servicePriceUpdates = watchedServices.map(serviceId => {
+        const service = services.find(s => s.id === serviceId);
+        const price = servicePrices[serviceId];
+        if (service && price !== undefined) {
+          return {
+            gardener_id: user.id,
+            service_id: serviceId,
+            unit_type: (service as any).measurement || 'area',
+            price_per_unit: price,
+            currency: 'EUR',
+            active: true
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      if (servicePriceUpdates.length > 0) {
+        const { error: priceError } = await supabase
+          .from('gardener_service_prices')
+          .upsert(servicePriceUpdates);
+        if (priceError) console.error('Error updating prices:', priceError);
+      }
 
       // Also update the main profiles table
       const mainProfileData = {
@@ -352,28 +396,54 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             <Briefcase className="w-5 h-5 mr-2" />
             Servicios que ofreces
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {services.map((service) => (
-              <label key={service.id} className="relative cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={watchedServices.includes(service.id)}
-                  onChange={() => handleServiceToggle(service.id)}
-                  className="sr-only"
-                />
-                <div className={`p-4 border-2 rounded-lg transition-colors ${
-                  watchedServices.includes(service.id)
-                    ? 'border-green-500 bg-green-50'
-                    : 'border-gray-200 hover:border-green-300'
+          <div className="grid grid-cols-1 gap-4">
+            {services.map((service) => {
+              const isSelected = watchedServices.includes(service.id);
+              const measurement = (service as any).measurement === 'count' ? 'unidad' : 'm²';
+              return (
+                <div key={service.id} className={`p-4 border-2 rounded-lg transition-colors ${
+                  isSelected ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'
                 }`}>
-                  <h4 className="font-semibold text-gray-900 mb-1">{service.name}</h4>
-                  <p className="text-sm text-gray-600">{service.description}</p>
-                  <p className="text-sm font-medium text-green-600 mt-2">
-                    Precio base: €{service.base_price}
-                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleServiceToggle(service.id)}
+                      className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                    />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-900">{service.name}</h4>
+                      <p className="text-sm text-gray-600 mb-2">{service.description}</p>
+                      
+                      {isSelected && (
+                        <div className="mt-3 flex items-center gap-2">
+                          <label className="text-sm font-medium text-gray-700">Precio por {measurement}:</label>
+                          <div className="relative w-32">
+                            <span className="absolute left-3 top-2 text-gray-500">€</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={servicePrices[service.id] || ''}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setServicePrices(prev => ({
+                                  ...prev,
+                                  [service.id]: isNaN(val) ? 0 : val
+                                }));
+                              }}
+                              className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                              placeholder="0.00"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </label>
                 </div>
-              </label>
-            ))}
+              );
+            })}
           </div>
           {errors.services && (
             <p className="mt-2 text-sm text-red-600">{errors.services.message}</p>

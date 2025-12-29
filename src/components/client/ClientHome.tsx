@@ -5,7 +5,7 @@ import AddressAutocomplete from '../common/AddressAutocomplete';
 import { Service } from '../../types';
 import { Wand2, Image as ImageIcon, CheckCircle, ChevronRight, ChevronLeft, ChevronDown, Clock, Euro } from 'lucide-react';
 import { estimateWorkWithAI, AITask, estimateServiceAutoQuote, AutoQuoteAnalysis } from '../../utils/aiPricingEstimator';
-import { findEligibleGardenersForServices, computeNextAvailableDays, MergedSlot } from '../../utils/mergedAvailabilityService';
+import { findEligibleGardenersForServices, computeNextAvailableDays, MergedSlot, computeEarliestSlotForGardener, getWeekBlocksForGardener } from '../../utils/mergedAvailabilityService';
 import { useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -497,7 +497,7 @@ const ClientHome: React.FC = () => {
 
   // Prefetch disponibilidad automáticamente tras tener estimación IA y datos clave
   useEffect(() => {
-    const ready = !!user?.id && !!selectedAddress && selectedServiceIds.length > 0 && estimatedHours > 0;
+    const ready = !!selectedAddress && selectedServiceIds.length > 0 && estimatedHours > 0;
     if (!prefetchedAvailability && ready) {
       console.log('[avail] auto-prefetch: iniciando búsqueda de jardineros y horas', {
         selectedServiceIdsLen: selectedServiceIds.length,
@@ -508,7 +508,13 @@ const ClientHome: React.FC = () => {
         .then(() => setPrefetchedAvailability(true))
         .catch(() => setPrefetchedAvailability(true));
     }
-  }, [user?.id, selectedAddress, selectedServiceIds, estimatedHours, prefetchedAvailability]);
+  }, [selectedAddress, selectedServiceIds, estimatedHours, prefetchedAvailability]);
+
+  const [timeFilter, setTimeFilter] = useState<'morning' | 'afternoon' | 'all'>('all');
+  const [gardenerList, setGardenerList] = useState<any[]>([]);
+  const [selectedGardener, setSelectedGardener] = useState<any | null>(null);
+  const [gardenerWeekBlocks, setGardenerWeekBlocks] = useState<Map<string, { hour: number; available: boolean }[]>>(new Map());
+  const [weekStartDate, setWeekStartDate] = useState<string>('');
 
   const fetchAvailability = async () => {
     if (!selectedAddress || selectedServiceIds.length === 0 || estimatedHours <= 0) return;
@@ -526,27 +532,87 @@ const ClientHome: React.FC = () => {
       }
       console.log('[avail] jardineros encontrados', { count: ids.length, ids });
       setEligibleGardenerIds(ids);
-      // Cargar nombres de perfiles para mostrar jardineros
+
+      // Cargar perfiles completos y PRECIOS
       if (ids.length > 0) {
+        // Corrección: el endpoint falla al pedir rating_average/rating_count si no están expuestos o el tipo es incorrecto.
+        // Pedimos user_id, full_name, avatar_url y (si existen) rating_average.
+        // Si falla 400 es probable que algún campo no exista en la vista/tabla o permiso.
+        // Probamos con select básico primero.
         const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', ids);
-        if (!profilesError && profiles) {
-          setEligibleGardenerProfiles(profiles as any);
-        } else {
-          setEligibleGardenerProfiles([]);
+          .from('gardener_profiles')
+          .select('user_id, full_name, avatar_url, rating_average, rating_count')
+          .in('user_id', ids);
+
+        if (profilesError) {
+             console.error('Error fetching profiles:', profilesError);
         }
-      } else {
-        setEligibleGardenerProfiles([]);
-      }
-      const startDate = new Date().toISOString().slice(0, 10);
-      const suggestions = await computeNextAvailableDays(ids, startDate, user?.id || 'anonymous', estimatedHours, 10, 7);
-      console.log('[avail] sugerencias de días/horas', { days: suggestions.length, first: suggestions[0] });
-      setDateSuggestions(suggestions);
-      if (suggestions.length > 0) {
-        setSelectedDate(suggestions[0].date);
-        setSelectedSlot(suggestions[0].slots[0] || null);
+          
+        const { data: pricesData } = await supabase
+          .from('gardener_service_prices')
+          .select('gardener_id, service_id, price_per_unit, unit_type')
+          .in('gardener_id', ids)
+          .eq('active', true);
+          
+        const pricesMap = new Map<string, Record<string, number>>(); // gardener_id -> { service_id: price }
+        pricesData?.forEach((p: any) => {
+          if (!pricesMap.has(p.gardener_id)) pricesMap.set(p.gardener_id, {});
+          pricesMap.get(p.gardener_id)![p.service_id] = p.price_per_unit;
+        });
+
+        if (!profilesError && profiles) {
+          // Calcular datos para cada jardinero
+          const list = await Promise.all(profiles.map(async (p: any) => {
+            // Calcular precio final
+            let finalPrice = 0;
+            let breakdown = '';
+            
+            // Usar análisis IA
+            const quantity = aiAutoAnalysis ? parseFloat(String(aiAutoAnalysis.cantidad)) : (debugQuantity || 0);
+            const difficulty = aiAutoAnalysis ? 
+              (String(aiAutoAnalysis.dificultad).includes('muy') ? 1.6 : String(aiAutoAnalysis.dificultad).includes('descuidado') ? 1.3 : 1.0) 
+              : 1.0;
+
+            if (selectedServiceIds.length > 0) {
+              const svcId = selectedServiceIds[0];
+              const price = pricesMap.get(p.user_id)?.[svcId] || 0; // Default a 0 si no tiene precio configurado
+              if (price > 0 && quantity > 0) {
+                finalPrice = quantity * price * difficulty;
+                breakdown = `${quantity} ${aiAutoAnalysis?.unidad || 'ud'} × €${price} × ${difficulty}`;
+              } else {
+                // Fallback si no hay precio configurado: usar estimación global
+                finalPrice = totalPrice; 
+              }
+            }
+
+            // Calcular primer hueco disponible
+            const today = new Date().toISOString().slice(0, 10);
+            const earliest = await computeEarliestSlotForGardener(
+              p.user_id,
+              estimatedHours,
+              today,
+              user?.id || 'anonymous',
+              timeFilter
+            );
+
+            return {
+              ...p,
+              finalPrice: Math.ceil(finalPrice),
+              earliestSlot: earliest,
+              priceBreakdown: breakdown
+            };
+          }));
+
+          // Ordenar por disponibilidad (earliest timestamp)
+          list.sort((a, b) => {
+            if (!a.earliestSlot && !b.earliestSlot) return 0;
+            if (!a.earliestSlot) return 1;
+            if (!b.earliestSlot) return -1;
+            return a.earliestSlot.timestamp - b.earliestSlot.timestamp;
+          });
+
+          setGardenerList(list);
+        }
       }
     } catch (e) {
       console.error('Error obteniendo disponibilidad:', e);
@@ -555,17 +621,52 @@ const ClientHome: React.FC = () => {
     }
   };
 
+  // Re-ordenar cuando cambia el filtro
+  useEffect(() => {
+    if (gardenerList.length > 0) {
+      const reorder = async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const updated = await Promise.all(gardenerList.map(async (g) => {
+          const earliest = await computeEarliestSlotForGardener(
+            g.user_id,
+            estimatedHours,
+            today,
+            user?.id || 'anonymous',
+            timeFilter
+          );
+          return { ...g, earliestSlot: earliest };
+        }));
+        
+        updated.sort((a, b) => {
+          if (!a.earliestSlot && !b.earliestSlot) return 0;
+          if (!a.earliestSlot) return 1;
+          if (!b.earliestSlot) return -1;
+          return a.earliestSlot.timestamp - b.earliestSlot.timestamp;
+        });
+        setGardenerList(updated);
+      };
+      reorder();
+    }
+  }, [timeFilter]);
+
+  const loadGardenerWeek = async (gardenerId: string, start: string) => {
+    const blocks = await getWeekBlocksForGardener(gardenerId, start, user?.id || 'anonymous');
+    setGardenerWeekBlocks(blocks);
+  };
+
+
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [receiveNotifications, setReceiveNotifications] = useState(true);
 
   const confirmAndSend = async () => {
-    if (!selectedSlot || !selectedDate || eligibleGardenerIds.length === 0) return;
-    const effectivePrice = (aiAutoPrice > 0 ? aiAutoPrice : (aiPriceTotal > 0 ? aiPriceTotal : totalPrice));
+    if (!selectedSlot || !selectedDate || !selectedGardener) return;
+    const effectivePrice = selectedGardener.finalPrice;
     const roundedPrice = Math.ceil(effectivePrice);
+    
     navigate('/reserva/checkout', {
       state: {
         payload: {
-          restrictedGardenerId,
+          restrictedGardenerId: selectedGardener.user_id,
           selectedAddress,
           selectedServiceIds,
           description,
@@ -573,12 +674,12 @@ const ClientHome: React.FC = () => {
           selectedDate,
           startHour: selectedSlot.startHour,
           endHour: selectedSlot.endHour,
-          eligibleGardenerIds,
+          eligibleGardenerIds: [selectedGardener.user_id],
           hourlyRateAverage,
           totalPrice: roundedPrice,
           aiTasks,
-          aiAutoPrice,
-          aiPriceTotal,
+          aiAutoPrice: roundedPrice,
+          aiPriceTotal: roundedPrice,
           photoFiles: photos,
         }
       }
@@ -1010,9 +1111,9 @@ const ClientHome: React.FC = () => {
                           <Clock className="w-4 h-4 mr-2" />
                           {Math.ceil((aiAutoHours > 0 ? aiAutoHours : (aiTimeTotal > 0 ? aiTimeTotal : estimatedHours)))} h
                         </div>
-                        <div className="flex items-center text-gray-700">
-                          <Euro className="w-4 h-4 mr-2" />
-                          €{Math.ceil((aiAutoPrice > 0 ? aiAutoPrice : (aiPriceTotal > 0 ? aiPriceTotal : totalPrice)))}
+                        {/* Eliminamos el precio estimado aquí para no confundir, ya que cada jardinero tiene su precio */}
+                        <div className="flex items-center text-gray-500 text-sm">
+                          (El precio final dependerá del jardinero que elijas)
                         </div>
                       </div>
                       <div className="mt-4">
@@ -1022,7 +1123,7 @@ const ClientHome: React.FC = () => {
                           disabled={estimatedHours <= 0 || selectedServiceIds.length === 0}
                           className="px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center disabled:opacity-50 text-sm sm:text-base"
                         >
-                          Continuar con la reserva <ChevronRight className="w-4 h-4 ml-2" />
+                          Ver jardineros disponibles <ChevronRight className="w-4 h-4 ml-2" />
                         </button>
                       </div>
                     </div>
@@ -1143,94 +1244,226 @@ const ClientHome: React.FC = () => {
               {step === 'availability' && (
                 <div className="space-y-6">
                   {restrictedGardenerProfile && <GardenerInfoBanner />}
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-semibold text-gray-800">Fechas disponibles</h3>
-                    <div className="flex gap-2">
-                      {restrictedGardenerProfile && (
-                        <button
-                          onClick={() => {
-                            // Clear the restriction and navigate to normal booking flow
-                            sessionStorage.removeItem('restrictedGardenerId');
-                            navigate('/dashboard');
-                          }}
-                          className="px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg border border-orange-200"
-                        >
-                          Buscar otros jardineros disponibles
-                        </button>
-                      )}
+                  
+                  {/* Header: Filtro y Título */}
+                  <div className="bg-white sticky top-0 z-10 py-2 border-b border-gray-100">
+                    <h3 className="text-lg font-bold text-gray-900 mb-3 px-1">Jardineros disponibles</h3>
+                    <div className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-hide">
                       <button
-                        onClick={fetchAvailability}
-                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700"
+                        onClick={() => setTimeFilter('all')}
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                          timeFilter === 'all' 
+                            ? 'bg-green-600 text-white shadow-md' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
                       >
-                        Buscar disponibilidad
+                        Todas las horas
+                      </button>
+                      <button
+                        onClick={() => setTimeFilter('morning')}
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                          timeFilter === 'morning' 
+                            ? 'bg-green-600 text-white shadow-md' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        Mañana (hasta 14:00)
+                      </button>
+                      <button
+                        onClick={() => setTimeFilter('afternoon')}
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                          timeFilter === 'afternoon' 
+                            ? 'bg-green-600 text-white shadow-md' 
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        Tarde (desde 14:00)
                       </button>
                     </div>
                   </div>
 
-                  {eligibleGardenerProfiles.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-xl p-4">
-                      <div className="text-sm text-gray-800 font-medium mb-2">Jardineros que pueden realizar estos trabajos</div>
-                      <div className="flex flex-wrap gap-2">
-                        {eligibleGardenerProfiles.map(p => (
-                          <span key={(p as any).id} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg border border-gray-200">
-                            {p.full_name}
-                          </span>
-                        ))}
-                      </div>
+                  {loadingAvailability ? (
+                    <div className="space-y-4 py-8">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="animate-pulse bg-white border border-gray-200 rounded-2xl p-4 flex gap-4">
+                          <div className="w-16 h-16 bg-gray-200 rounded-full flex-shrink-0" />
+                          <div className="flex-1 space-y-3">
+                            <div className="h-4 bg-gray-200 rounded w-3/4" />
+                            <div className="h-4 bg-gray-200 rounded w-1/2" />
+                            <div className="h-8 bg-gray-200 rounded w-full" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  )}
-
-                  {loadingAvailability && (
-                    <div className="flex items-center gap-2 text-gray-600"><ImageIcon className="w-4 h-4" /> Buscando disponibilidad...</div>
-                  )}
-
-                  {!loadingAvailability && dateSuggestions.length > 0 && (
-                    <div className="space-y-2">
-                      {dateSuggestions.map(ds => {
-                        const isOpen = expandedDate === ds.date;
-                        const totalSlots = ds.slots.length;
+                  ) : gardenerList.length > 0 ? (
+                    <div className="space-y-4">
+                      {gardenerList.map(gardener => {
+                        const isSelected = selectedGardener?.user_id === gardener.user_id;
+                        const earliest = gardener.earliestSlot;
+                        
                         return (
-                          <div key={ds.date} className="border border-gray-200 rounded-xl overflow-hidden">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setExpandedDate(ds.date);
-                                setSelectedDate(ds.date);
-                                setSelectedSlot(null);
-                              }}
-                              className={`w-full flex items-center justify-between p-3 text-left ${isOpen ? 'bg-green-50' : 'bg-white'}`}
-                            >
-                              <div>
-                                <div className="font-medium text-gray-800">{ds.date}</div>
-                                <div className="text-sm text-gray-600">{totalSlots} franjas disponibles</div>
+                          <div 
+                            key={gardener.user_id} 
+                            className={`bg-white border-2 rounded-2xl overflow-hidden transition-all duration-300 ${
+                              isSelected ? 'border-green-500 shadow-lg ring-1 ring-green-500' : 'border-gray-100 shadow-sm hover:border-green-200'
+                            }`}
+                          >
+                            {/* Card Content */}
+                            <div className="p-4 sm:p-5" onClick={() => {
+                                if (isSelected) {
+                                  setSelectedGardener(null);
+                                  setGardenerWeekBlocks(new Map());
+                                } else {
+                                  setSelectedGardener(gardener);
+                                  const start = earliest ? earliest.date : new Date().toISOString().slice(0, 10);
+                                  setWeekStartDate(start);
+                                  loadGardenerWeek(gardener.user_id, start);
+                                }
+                              }}>
+                              <div className="flex gap-4 items-start">
+                                {/* Avatar */}
+                                <div className="flex-shrink-0">
+                                  {gardener.avatar_url ? (
+                                    <img 
+                                      src={gardener.avatar_url} 
+                                      alt={gardener.full_name} 
+                                      className="w-16 h-16 rounded-full object-cover border border-gray-100 shadow-sm"
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center text-green-600 font-bold text-xl border border-green-200">
+                                      {gardener.full_name.charAt(0)}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Info */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex justify-between items-start">
+                                    <h4 className="text-lg font-bold text-gray-900 truncate pr-2">
+                                      {gardener.full_name}
+                                    </h4>
+                                    <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100">
+                                      <span className="text-yellow-500 text-sm">★</span>
+                                      <span className="text-xs font-bold text-yellow-700 ml-1">
+                                        {gardener.rating_average ? Number(gardener.rating_average).toFixed(1) : 'Nuevo'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="mt-2">
+                                    <div className="text-2xl font-bold text-gray-900">
+                                      €{gardener.finalPrice}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5">
+                                      {gardener.priceBreakdown || 'Precio estimado'}
+                                    </div>
+                                  </div>
+
+                                  {earliest ? (
+                                    <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-medium border border-green-100">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      Primer hueco: {earliest.date} a las {earliest.startHour}:00
+                                    </div>
+                                  ) : (
+                                    <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 text-gray-500 rounded-lg text-xs font-medium border border-gray-100">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      Sin disponibilidad cercana
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                            </button>
-                            {isOpen && (
-                              <div className="p-3 bg-gray-50 border-t border-gray-200">
-                                <div className="flex flex-wrap gap-2">
-                                  {ds.slots.map(slot => {
-                                    const names = slot.gardenerIds
-                                      .map(id => eligibleGardenerProfiles.find(p => (p as any).id === id)?.full_name)
-                                      .filter(Boolean) as string[];
-                                    const shown = names.slice(0, 3);
-                                    const extra = names.length - shown.length;
-                                    const namesLabel = shown.join(', ') + (extra > 0 ? ` +${extra} más` : '');
+                              
+                              <button 
+                                className={`w-full mt-4 py-3 rounded-xl font-semibold text-sm transition-colors ${
+                                  isSelected 
+                                    ? 'bg-green-600 text-white shadow-md' 
+                                    : 'bg-white border border-green-600 text-green-600 hover:bg-green-50'
+                                }`}
+                              >
+                                {isSelected ? 'Ocultar disponibilidad' : 'Ver disponibilidad'}
+                              </button>
+                            </div>
+
+                            {/* Calendario Expandible */}
+                            {isSelected && (
+                              <div className="border-t border-gray-100 bg-gray-50 p-4 animate-in slide-in-from-top-2 duration-200">
+                                <div className="flex items-center justify-between mb-4">
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const d = new Date(weekStartDate);
+                                      d.setDate(d.getDate() - 7);
+                                      const newStart = d.toISOString().slice(0, 10);
+                                      setWeekStartDate(newStart);
+                                      loadGardenerWeek(gardener.user_id, newStart);
+                                    }}
+                                    className="p-2 hover:bg-white rounded-full border border-transparent hover:border-gray-200 hover:shadow-sm transition-all"
+                                  >
+                                    <ChevronLeft className="w-5 h-5 text-gray-600" />
+                                  </button>
+                                  <span className="font-semibold text-gray-900 text-sm">
+                                    Semana del {new Date(weekStartDate).toLocaleDateString()}
+                                  </span>
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const d = new Date(weekStartDate);
+                                      d.setDate(d.getDate() + 7);
+                                      const newStart = d.toISOString().slice(0, 10);
+                                      setWeekStartDate(newStart);
+                                      loadGardenerWeek(gardener.user_id, newStart);
+                                    }}
+                                    className="p-2 hover:bg-white rounded-full border border-transparent hover:border-gray-200 hover:shadow-sm transition-all"
+                                  >
+                                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                                  </button>
+                                </div>
+
+                                <div className="space-y-3">
+                                  {Array.from(gardenerWeekBlocks.entries()).map(([date, blocks]) => {
+                                    const visibleBlocks = blocks.filter(b => b.available);
+                                    if (visibleBlocks.length === 0) return null;
+                                    
                                     return (
-                                      <button
-                                        key={`${ds.date}-${slot.startHour}`}
-                                        onClick={() => { setSelectedDate(ds.date); setSelectedSlot(slot); }}
-                                        className={`px-3 py-2 rounded-lg border ${selectedDate === ds.date && selectedSlot?.startHour === slot.startHour ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
-                                      >
-                                        <div className="text-sm">
-                                          {slot.startHour}:00 - {slot.endHour}:00 ({slot.gardenerIds.length} jard.)
+                                      <div key={date} className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                                        <div className="text-xs font-bold text-gray-500 uppercase mb-2">
+                                          {new Date(date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric' })}
                                         </div>
-                                        <div className="text-xs opacity-80">
-                                          {namesLabel || '—'}
+                                        <div className="flex flex-wrap gap-2">
+                                          {visibleBlocks.map(block => {
+                                            const isSlotSelected = selectedDate === date && selectedSlot?.startHour === block.hour;
+                                            return (
+                                              <button
+                                                key={`${date}-${block.hour}`}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedDate(date);
+                                                  setSelectedSlot({
+                                                    startHour: block.hour,
+                                                    endHour: block.hour + estimatedHours,
+                                                    gardenerIds: [gardener.user_id]
+                                                  });
+                                                }}
+                                                className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${
+                                                  isSlotSelected 
+                                                    ? 'bg-green-600 text-white border-green-600 shadow-md transform scale-105' 
+                                                    : 'bg-white text-gray-700 border-gray-200 hover:border-green-400 hover:bg-green-50'
+                                                }`}
+                                              >
+                                                {block.hour}:00
+                                              </button>
+                                            );
+                                          })}
                                         </div>
-                                      </button>
+                                      </div>
                                     );
                                   })}
+                                  {Array.from(gardenerWeekBlocks.values()).every(b => !b.some(x => x.available)) && (
+                                    <div className="text-center py-6 text-gray-500 text-sm bg-white rounded-xl border border-dashed border-gray-300">
+                                      No hay huecos libres esta semana
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}
@@ -1238,25 +1471,31 @@ const ClientHome: React.FC = () => {
                         );
                       })}
                     </div>
-                  )}
-
-                  {eligibleGardenerIds.length > 0 && selectedSlot && (
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                      <div className="text-green-800 font-medium">
-                        Se notificará automáticamente a {eligibleGardenerIds.length} jardineros disponibles.
+                  ) : (
+                    <div className="text-center py-12 px-4">
+                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Clock className="w-8 h-8 text-gray-400" />
                       </div>
+                      <h3 className="text-lg font-semibold text-gray-900">No encontramos jardineros</h3>
+                      <p className="text-gray-500 mt-1 max-w-xs mx-auto">
+                        Intenta cambiar el filtro de horario o espera unos momentos.
+                      </p>
                     </div>
                   )}
 
-                  <div>
+                  <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg sm:static sm:bg-transparent sm:border-0 sm:shadow-none sm:p-0">
                     <button
                       onClick={confirmAndSend}
-                      disabled={!selectedSlot || eligibleGardenerIds.length === 0 || sending}
-                      className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
+                      disabled={!selectedSlot || !selectedGardener || sending}
+                      className="w-full sm:w-auto px-6 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98] transition-all"
                     >
-                      Continuar con la reserva
+                      {selectedSlot 
+                        ? `Reservar para el ${new Date(selectedDate).toLocaleDateString()} a las ${selectedSlot.startHour}:00` 
+                        : 'Selecciona un hueco para continuar'}
                     </button>
                   </div>
+                  {/* Spacer for fixed bottom button on mobile */}
+                  <div className="h-24 sm:h-0" />
                 </div>
               )}
 

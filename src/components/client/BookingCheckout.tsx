@@ -293,9 +293,15 @@ const BookingCheckout: React.FC = () => {
       const paymentLine = paymentRef ? `\nPago 10%: ${paymentRef}` : '';
       const bypassLine = allowWithoutPayment ? '\nModo pruebas: reserva confirmada sin pago' : '';
       const notes = `${payload.description || ''}${paymentLine}${bypassLine}`.trim();
+      
+      // Asegurarse de que eligibleGardenerIds solo contiene al jardinero seleccionado si hay restrictedGardenerId
+      const gardenerIds = payload.restrictedGardenerId 
+        ? [payload.restrictedGardenerId] 
+        : payload.eligibleGardenerIds;
+
       await broadcastBookingRequest({
         clientId: user.id,
-        gardenerIds: payload.eligibleGardenerIds,
+        gardenerIds,
         primaryServiceId: payload.selectedServiceIds[0],
         date: payload.selectedDate,
         startHour: payload.startHour,

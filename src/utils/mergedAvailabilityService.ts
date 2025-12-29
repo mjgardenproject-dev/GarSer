@@ -237,3 +237,55 @@ export async function computeNextAvailableDays(
 
   return suggestions;
 }
+
+export async function computeEarliestSlotForGardener(
+  gardenerId: string,
+  durationHours: number,
+  startDate: string,
+  clientId: string,
+  filter: 'morning' | 'afternoon' | 'all' = 'all'
+): Promise<{ date: string; startHour: number; timestamp: number } | null> {
+  const baseDate = new Date(startDate);
+  for (let i = 0; i < 14; i++) {
+    const d = addDays(baseDate, i);
+    const dateStr = format(d, 'yyyy-MM-dd');
+    const slots = await computeMergedSlots([gardenerId], dateStr, clientId, durationHours);
+    
+    const filtered = slots.filter(s => {
+      if (filter === 'morning') return s.startHour < 14;
+      if (filter === 'afternoon') return s.startHour >= 14;
+      return true;
+    });
+
+    if (filtered.length > 0) {
+      const first = filtered[0];
+      // Create timestamp for sorting
+      const ts = new Date(`${dateStr}T${first.startHour.toString().padStart(2, '0')}:00:00`).getTime();
+      return { date: dateStr, startHour: first.startHour, timestamp: ts };
+    }
+  }
+  return null;
+}
+
+export async function getWeekBlocksForGardener(
+  gardenerId: string,
+  weekStartDate: string,
+  clientId: string
+): Promise<Map<string, { hour: number; available: boolean }[]>> {
+  const result = new Map<string, { hour: number; available: boolean }[]>();
+  const base = new Date(weekStartDate);
+  
+  // Fetch 7 days in parallel
+  const promises = Array.from({ length: 7 }, async (_, i) => {
+    const d = addDays(base, i);
+    const dateStr = format(d, 'yyyy-MM-dd');
+    const blocksMap = await BufferService.getAvailableBlocksWithBuffer([gardenerId], dateStr, clientId);
+    const blocks = blocksMap.get(gardenerId) || [];
+    return { date: dateStr, blocks };
+  });
+
+  const days = await Promise.all(promises);
+  days.forEach(d => result.set(d.date, d.blocks));
+  
+  return result;
+}

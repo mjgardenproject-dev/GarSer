@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
+import { BookingProvider } from './contexts/BookingContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import AuthForm from './components/auth/AuthForm';
 import ResetPassword from './components/auth/ResetPassword';
@@ -27,6 +28,8 @@ import RoleDebug from './components/debug/RoleDebug';
 import RoleMonitor from './components/admin/RoleMonitor';
 import GardenerApplicationWizard from './components/gardener/GardenerApplicationWizard';
 import ApplicationsAdmin from './components/admin/ApplicationsAdmin';
+import BookingFlow from './pages/reserva/BookingFlow';
+import ConfirmationPage from './pages/reserva/ConfirmationPage';
 import { supabase } from './lib/supabase';
 
 const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
@@ -37,11 +40,12 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   return null;
 };
 
-const AppContent = () => {
-  const { user } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const isAuthPage = location.pathname === '/auth';
+  const AppContent = () => {
+    const { user } = useAuth();
+    const location = useLocation();
+    const navigate = useNavigate();
+    const isAuthPage = location.pathname === '/auth';
+    const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
   
   // Debug logging
   useEffect(() => {
@@ -184,6 +188,15 @@ const AppContent = () => {
                     </ErrorBoundary>
                   );
                 } else {
+                  try {
+                    const raw = localStorage.getItem('bookingDraft');
+                    if (raw) {
+                      const draft = JSON.parse(raw);
+                      if (draft?.step && draft.step !== 'welcome') {
+                        return <Navigate to="/reservar" replace />;
+                      }
+                    }
+                  } catch {}
                   return (
                     <ErrorBoundary fallbackTitle="Algo ha fallado en el panel" fallbackMessage="Estamos trabajando para solucionarlo. Puedes reintentar o volver atrás.">
                       <ClientHome />
@@ -197,13 +210,43 @@ const AppContent = () => {
         <Route 
           path="/reserva" 
           element={
-            <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
-              <ClientHome />
-            </ErrorBoundary>
+            <BookingProvider>
+              <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
+                <BookingFlow />
+              </ErrorBoundary>
+            </BookingProvider>
+          } 
+        />
+        <Route 
+          path="/reserva/confirmacion" 
+          element={
+            <BookingProvider>
+              <ErrorBoundary fallbackTitle="Error en la confirmación" fallbackMessage="Si el problema persiste, vuelve a la reserva y reintenta.">
+                <ConfirmationPage />
+              </ErrorBoundary>
+            </BookingProvider>
+          } 
+        />
+        <Route 
+          path="/reservar" 
+          element={
+            <BookingProvider>
+              <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
+                <BookingFlow />
+              </ErrorBoundary>
+            </BookingProvider>
           } 
         />
         <Route 
           path="/reserva/checkout" 
+          element={
+            <ErrorBoundary fallbackTitle="Error en el checkout" fallbackMessage="Si el problema persiste, vuelve a la reserva y reintenta.">
+              <BookingCheckout />
+            </ErrorBoundary>
+          } 
+        />
+        <Route 
+          path="/reservar/checkout" 
           element={
             <ErrorBoundary fallbackTitle="Error en el checkout" fallbackMessage="Si el problema persiste, vuelve a la reserva y reintenta.">
               <BookingCheckout />
@@ -326,7 +369,7 @@ const AppContent = () => {
         <Route path="/reset-password" element={<ResetPassword />} />
         </Routes>
       </main>
-      {!isAuthPage && <BottomNav />}
+      {!isAuthPage && !isBookingPage && user && <BottomNav />}
     </div>
   );
 };

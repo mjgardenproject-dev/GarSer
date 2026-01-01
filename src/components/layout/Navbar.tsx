@@ -77,13 +77,13 @@ const Navbar = () => {
     checkAdmin();
   }, [user?.id]);
 
-  const navItems = [
+  const navItems = user ? [
     { path: '/dashboard', label: 'Dashboard', icon: User },
     { path: '/bookings', label: 'Reservas', icon: Calendar },
     { path: '/chat', label: 'Chat', icon: MessageCircle },
     { path: '/account', label: 'Mi Cuenta', icon: Settings },
     ...(isAdmin ? [{ path: '/admin/applications', label: 'Solicitudes', icon: Shield }] as any[] : [])
-  ];
+  ] : [];
 
   return (
     <nav className="bg-white shadow-lg border-b border-gray-200 relative">

@@ -312,7 +312,9 @@ const ClientHome: React.FC = () => {
     return hasNumber;
   };
 
-  const handleStart = () => setStep('address');
+  const handleStart = () => {
+    navigate('/reservar?start=1');
+  };
 
   const handleAddressSelected = (addr: string) => {
     setSelectedAddress(addr);
@@ -657,13 +659,146 @@ const ClientHome: React.FC = () => {
 
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [receiveNotifications, setReceiveNotifications] = useState(true);
+  const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
+  const draftKey = 'bookingDraft';
+  const saveTimer = useRef<number | null>(null);
+  const restoredRef = useRef(false);
+
+  // Restaurar SOLO el paso lo antes posible para no saltar a "Dirección" tras recarga
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (typeof draft.step === 'string' && draft.step !== 'welcome') {
+        setStep(draft.step as WizardStep);
+      }
+    } catch {}
+  }, []);
+
+  // Restaurar borrador al montar (tras cargar servicios)
+  useEffect(() => {
+    if (restoredRef.current) return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (Array.isArray(draft.selectedServiceIds)) {
+        setSelectedServiceIds(draft.selectedServiceIds);
+      }
+      if (typeof draft.selectedAddress === 'string') {
+        setSelectedAddress(draft.selectedAddress);
+      }
+      if (typeof draft.description === 'string') {
+        setDescription(draft.description);
+      }
+      if (typeof draft.estimatedHours === 'number') {
+        setEstimatedHours(draft.estimatedHours);
+      }
+      if (Array.isArray(draft.aiTasks)) {
+        setAiTasks(draft.aiTasks);
+      }
+      if (draft.aiAutoAnalysis) {
+        setAiAutoAnalysis(draft.aiAutoAnalysis);
+      }
+      if (typeof draft.aiAutoHours === 'number') {
+        setAiAutoHours(draft.aiAutoHours);
+      }
+      if (typeof draft.aiAutoPrice === 'number') {
+        setAiAutoPrice(draft.aiAutoPrice);
+      }
+      if (draft.debugTaskDraft && typeof draft.debugTaskDraft === 'object') {
+        setDebugTaskDraft(draft.debugTaskDraft);
+      }
+      if (draft.debugQuantity !== undefined) {
+        setDebugQuantity(draft.debugQuantity);
+      }
+      if (typeof draft.timeFilter === 'string') {
+        setTimeFilter(draft.timeFilter);
+      }
+      if (typeof draft.selectedDate === 'string') {
+        setSelectedDate(draft.selectedDate);
+      }
+      if (draft.selectedSlot) {
+        setSelectedSlot(draft.selectedSlot);
+      }
+      if (typeof draft.step === 'string') {
+        setStep(draft.step as WizardStep);
+      }
+      restoredRef.current = true;
+    } catch {}
+  }, [services]);
+
+  // Avanzar automáticamente al entrar en /reserva con start=1
+  useEffect(() => {
+    const qs = new URLSearchParams(location.search);
+    if (isBookingPage && qs.get('start') === '1') {
+      let draftStep: string | null = null;
+      try {
+        const raw = localStorage.getItem(draftKey);
+        if (raw) draftStep = JSON.parse(raw)?.step || null;
+      } catch {}
+      if (step === 'welcome' && (!draftStep || draftStep === 'welcome')) {
+        setStep('address');
+      }
+      navigate('/reservar', { replace: true });
+    }
+  }, [isBookingPage, location.search, step]);
+
+  // Persistir borrador con pequeño debounce
+  useEffect(() => {
+    const payload = {
+      step,
+      selectedAddress,
+      selectedServiceIds,
+      description,
+      aiTasks,
+      aiAutoAnalysis,
+      aiAutoHours,
+      aiAutoPrice,
+      estimatedHours,
+      selectedDate,
+      selectedSlot,
+      timeFilter,
+      restrictedGardenerId,
+      debugTaskDraft,
+      debugQuantity,
+    };
+    if (saveTimer.current) {
+      window.clearTimeout(saveTimer.current);
+    }
+    saveTimer.current = window.setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(payload));
+      } catch {}
+    }, 300);
+    return () => {
+      if (saveTimer.current) {
+        window.clearTimeout(saveTimer.current);
+      }
+    };
+  }, [
+    step,
+    selectedAddress,
+    selectedServiceIds,
+    description,
+    aiTasks,
+    aiAutoAnalysis,
+    estimatedHours,
+    selectedDate,
+    selectedSlot,
+    timeFilter,
+    restrictedGardenerId,
+  ]);
 
   const confirmAndSend = async () => {
     if (!selectedSlot || !selectedDate || !selectedGardener) return;
     const effectivePrice = selectedGardener.finalPrice;
     const roundedPrice = Math.ceil(effectivePrice);
     
-    navigate('/reserva/checkout', {
+    try { localStorage.removeItem(draftKey); } catch {}
+
+    navigate('/reservar/checkout', {
       state: {
         payload: {
           restrictedGardenerId: selectedGardener.user_id,
@@ -864,18 +999,26 @@ const ClientHome: React.FC = () => {
                     Reserva con: {restrictedGardenerProfile.full_name}
                   </div>
                 )}
-                <div className="space-x-2">
-                  {step !== 'welcome' && (
-                    <button onClick={goBack} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
-                      <ChevronLeft className="w-4 h-4 mr-1" /> Atrás
-                    </button>
-                  )}
-                  {step !== 'confirm' && (
-                    <button onClick={goNext} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
-                      Siguiente <ChevronRight className="w-4 h-4 ml-1" />
-                    </button>
-                  )}
-                </div>
+              <div className="space-x-2">
+                {step !== 'welcome' && (
+                  <button onClick={goBack} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Atrás
+                  </button>
+                )}
+                {step !== 'confirm' && (
+                  <button onClick={goNext} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
+                    Siguiente <ChevronRight className="w-4 h-4 ml-1" />
+                  </button>
+                )}
+                {step !== 'welcome' && (
+                  <button
+                    onClick={() => { try { localStorage.removeItem(draftKey); } catch {}; navigate('/dashboard'); }}
+                    className="px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base"
+                  >
+                    Cancelar reserva
+                  </button>
+                )}
+              </div>
               </div>
 
               {step === 'welcome' && (
@@ -1570,32 +1713,34 @@ const ClientHome: React.FC = () => {
           )}
         </div>
       </div>
-      <div className="mt-8 space-y-6">
-        <div className="bg-white border border-gray-200 rounded-2xl p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Qué es Garser</h2>
-          <p className="text-gray-700 text-sm">
-            GarSer es tu servicio de jardinería de confianza. Te ayudamos a reservar trabajos de forma rápida, clara y sin complicaciones.
-          </p>
+      {(!(location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar'))) && (
+        <div className="mt-8 space-y-6">
+          <div className="bg-white border border-gray-200 rounded-2xl p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Qué es Garser</h2>
+            <p className="text-gray-700 text-sm">
+              GarSer es tu servicio de jardinería de confianza. Te ayudamos a reservar trabajos de forma rápida, clara y sin complicaciones.
+            </p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">A qué nos dedicamos</h2>
+            <p className="text-gray-700 text-sm">
+              Corte de césped, poda de setos y árboles, limpieza de malas hierbas, fumigación de plantas y mantenimiento general del jardín.
+            </p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Qué servicios ofrecemos</h2>
+            <p className="text-gray-700 text-sm">
+              Trabajos puntuales y planes de mantenimiento. Presupuestos claros con estimación de horas y precio total.
+            </p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-2xl p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Por qué confiar en nosotros</h2>
+            <p className="text-gray-700 text-sm">
+              Profesionales verificados, comunicación transparente y soporte en cada paso. No necesitas registrarte para empezar tu reserva.
+            </p>
+          </div>
         </div>
-        <div className="bg-white border border-gray-200 rounded-2xl p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">A qué nos dedicamos</h2>
-          <p className="text-gray-700 text-sm">
-            Corte de césped, poda de setos y árboles, limpieza de malas hierbas, fumigación de plantas y mantenimiento general del jardín.
-          </p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-2xl p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Qué servicios ofrecemos</h2>
-          <p className="text-gray-700 text-sm">
-            Trabajos puntuales y planes de mantenimiento. Presupuestos claros con estimación de horas y precio total.
-          </p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-2xl p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Por qué confiar en nosotros</h2>
-          <p className="text-gray-700 text-sm">
-            Profesionales verificados, comunicación transparente y soporte en cada paso. No necesitas registrarte para empezar tu reserva.
-          </p>
-        </div>
-      </div>
+      )}
       {showAuthPrompt && null}
     </div>
   );

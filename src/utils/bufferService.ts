@@ -54,7 +54,7 @@ export class BufferService {
     availableBlocks: TimeBlock[]
   ): Promise<TimeBlock[]> {
     try {
-      const existingBookings = await this.getGardenerBookingsForDate(gardenerId, date);
+      const existingBookings = await BufferService.getGardenerBookingsForDate(gardenerId, date);
       
       if (existingBookings.length === 0) {
         return availableBlocks;
@@ -65,7 +65,7 @@ export class BufferService {
 
         // Verificar si este bloque necesita buffer
         for (const booking of existingBookings) {
-          if (this.needsBuffer(booking, block.hour, clientId, date)) {
+          if (BufferService.needsBuffer(booking, block.hour, clientId, date)) {
             hasBuffer = true;
             break;
           }
@@ -94,7 +94,17 @@ export class BufferService {
     clientId: string
   ): Promise<{ canBook: boolean; reason?: string }> {
     try {
-      const existingBookings = await this.getGardenerBookingsForDate(gardenerId, date);
+      const [existingBookings, availabilityData] = await Promise.all([
+        BufferService.getGardenerBookingsForDate(gardenerId, date),
+        import('./availabilityServiceCompat').then(service => service.getGardenerAvailability(gardenerId, date))
+      ]);
+      const availSet = new Set<number>(((availabilityData || []) as any[]).filter((b: any) => b.is_available).map((b: any) => b.hour_block));
+      for (let i = 0; i < durationHours; i++) {
+        const h = startHour + i;
+        if (!availSet.has(h)) {
+          return { canBook: false, reason: 'La hora seleccionada excede la disponibilidad del jardinero' };
+        }
+      }
       
       // Verificar cada hora en la secuencia
       for (let i = 0; i < durationHours; i++) {
@@ -117,7 +127,7 @@ export class BufferService {
         // Verificar buffer solo para el primer bloque
         if (i === 0) {
           const needsBufferCheck = existingBookings.some(booking => 
-            this.needsBuffer(booking, currentHour, clientId, date)
+            BufferService.needsBuffer(booking, currentHour, clientId, date)
           );
 
           if (needsBufferCheck) {
@@ -237,7 +247,7 @@ export class BufferService {
     clientId: string
   ): Promise<number[]> {
     try {
-      const existingBookings = await this.getGardenerBookingsForDate(gardenerId, date);
+      const existingBookings = await BufferService.getGardenerBookingsForDate(gardenerId, date);
       const suggestions: number[] = [];
 
       // Intentar encontrar 3 alternativas

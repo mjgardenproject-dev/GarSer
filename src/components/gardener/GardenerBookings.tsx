@@ -34,7 +34,7 @@ const GardenerBookings: React.FC = () => {
       if (bookingsError) throw bookingsError;
 
       if (bookingsData && bookingsData.length > 0) {
-        const clientIds = [...new Set(bookingsData.map(b => b.client_id))];
+        const clientIds = [...new Set(bookingsData.map((b: any) => b.client_id))];
         const { data: profilesData, error: profilesError } = await supabase
           .from('profiles')
           .select('id, full_name')
@@ -42,9 +42,9 @@ const GardenerBookings: React.FC = () => {
 
         if (profilesError) throw profilesError;
 
-        const bookingsWithProfiles = bookingsData.map(b => ({
+        const bookingsWithProfiles = bookingsData.map((b: any) => ({
           ...b,
-          client_profile: profilesData?.find(p => p.id === b.client_id) || null
+          client_profile: profilesData?.find((p: any) => p.id === b.client_id) || null
         }));
 
         setBookings(bookingsWithProfiles as any);
@@ -132,7 +132,7 @@ const GardenerBookings: React.FC = () => {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+                className="border border-gray-300 rounded-md px-3 py-2 text-base sm:text-sm"
               >
                 <option value="all">Todos</option>
                 <option value="confirmed">Confirmada</option>
@@ -143,7 +143,7 @@ const GardenerBookings: React.FC = () => {
               <div key={booking.id} className="border border-gray-200 rounded-xl p-4 sm:p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">{booking.services?.name}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">{(booking as any).services?.name}</h3>
                     <p className="text-gray-600">Cliente: {booking.client_profile?.full_name}</p>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>

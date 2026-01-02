@@ -197,7 +197,7 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
             onChange={handleInputChange}
             min={min}
             max={max}
-            className="w-16 px-2 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-16 px-2 py-1 text-center border border-gray-300 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
           />
           <span className="text-sm text-gray-500">km</span>
           <button

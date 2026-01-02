@@ -267,7 +267,7 @@ const DetailsPage: React.FC = () => {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Ej: Quiero un corte de césped y que poden los setos de la imagen"
-            className="w-full p-4 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-full p-4 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
             rows={4}
           />
       </div>
@@ -304,7 +304,7 @@ const DetailsPage: React.FC = () => {
               <select
                 value={debugService}
                 onChange={(e) => setDebugService(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
               >
                 <option value="">Selecciona…</option>
                 <option value="Corte de césped">Corte de césped</option>
@@ -320,7 +320,7 @@ const DetailsPage: React.FC = () => {
               <select
                 value={debugState}
                 onChange={(e) => setDebugState(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
               >
                 <option value="normal">normal</option>
                 <option value="descuidado">descuidado</option>
@@ -335,7 +335,7 @@ const DetailsPage: React.FC = () => {
                 step={1}
                 value={debugQuantity}
                 onChange={(e) => setDebugQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                 placeholder="Ej: 120"
               />
               <div className="text-xs text-gray-600 mt-1">Unidad: m² o plantas según servicio</div>

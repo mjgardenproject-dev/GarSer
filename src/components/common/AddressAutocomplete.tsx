@@ -296,7 +296,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           value={value}
           onChange={handleInputChange}
           placeholder={placeholder}
-          className={`w-full px-3.5 py-2.5 pl-12 pr-12 text-sm border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+          className={`w-full px-3.5 py-2.5 pl-12 pr-12 text-base sm:text-sm border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
             error ? 'border-red-500' : 'border-gray-300'
           }`}
         />

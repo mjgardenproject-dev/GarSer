@@ -357,7 +357,7 @@ const BookingCheckout: React.FC = () => {
               type="email"
               value={signupEmail}
               onChange={(e) => setSignupEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg p-2"
+              className="w-full border border-gray-300 rounded-lg p-2 text-base sm:text-sm"
               placeholder="tu@email.com"
             />
             <label className="block text-sm text-gray-700">Contraseña</label>
@@ -365,7 +365,7 @@ const BookingCheckout: React.FC = () => {
               type="password"
               value={signupPassword}
               onChange={(e) => setSignupPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg p-2"
+              className="w-full border border-gray-300 rounded-lg p-2 text-base sm:text-sm"
               placeholder="••••••••"
             />
             <button

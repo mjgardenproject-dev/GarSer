@@ -3,19 +3,18 @@ import { useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { format, addDays, startOfDay, addHours, parse, parseISO, isValid } from 'date-fns';
+import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Calendar, Clock, MapPin, DollarSign, Scissors, SprayCan as Spray, TreePine, CheckCircle } from 'lucide-react';
+import { Calendar, MapPin, Scissors, SprayCan as Spray, TreePine } from 'lucide-react';
 import { getCoordinatesFromAddress, calculateDistance } from '../../utils/geolocation';
-import { Service, PriceCalculation, TimeBlock } from '../../types';
+import { Service } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import AddressAutocomplete from '../common/AddressAutocomplete';
 import MergedSlotsSelector from '../booking/MergedSlotsSelector';
-import { MergedSlot, findEligibleGardeners } from '../../utils/mergedAvailabilityService';
- 
+import { MergedSlot } from '../../utils/mergedAvailabilityService';
 
 const schema = yup.object({
   service_id: yup.string().required('Servicio requerido'),
@@ -23,11 +22,7 @@ const schema = yup.object({
   notes: yup.string().optional()
 });
 
-type FormData = {
-  service_id: string;
-  client_address: string;
-  notes?: string;
-};
+type FormData = yup.InferType<typeof schema>;
 
 const ServiceBooking = () => {
   const { user } = useAuth();
@@ -52,7 +47,7 @@ const ServiceBooking = () => {
   const aiSuggestedHours: number | undefined = location.state?.aiHours;
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormData>({
-    resolver: yupResolver(schema),
+    resolver: yupResolver(schema) as any,
     defaultValues: {
       service_id: preselectedServiceId || '',
       client_address: '',
@@ -176,6 +171,45 @@ const ServiceBooking = () => {
   const handleDateChange = (date: Date) => {
     setSelectedDate(date);
     setSelectedSlot(null); // Limpiar franja seleccionada al cambiar fecha
+  };
+
+  // Función auxiliar para filtrar jardineros por rango (definida aquí para acceso a supabase/utils)
+  const filterGardenerIdsByRange = async (clientAddress: string, gardenerIds: string[]): Promise<string[]> => {
+    if (!gardenerIds.length) return [];
+    
+    // 1. Coordenadas cliente
+    const clientCoords = await getCoordinatesFromAddress(clientAddress);
+    if (!clientCoords) {
+      console.warn('No se pudieron obtener coordenadas del cliente, no se filtra por rango');
+      return gardenerIds; 
+    }
+
+    // 2. Obtener perfiles de jardineros (dirección y rango)
+    const { data: profiles } = await supabase
+      .from('gardener_profiles')
+      .select('user_id, address, max_distance')
+      .in('user_id', gardenerIds);
+    
+    if (!profiles) return gardenerIds;
+
+    const validIds: string[] = [];
+
+    for (const profile of profiles) {
+      if (!profile.address) continue;
+      
+      const gCoords = await getCoordinatesFromAddress(profile.address);
+      if (!gCoords) continue;
+
+      const dist = calculateDistance(clientCoords.lat, clientCoords.lng, gCoords.lat, gCoords.lng);
+      const max = profile.max_distance ?? 20;
+
+      if (dist <= max) {
+        validIds.push(profile.user_id);
+      }
+    }
+    
+    // Devolver intersección para mantener solo los que pasaron el filtro y estaban en la lista original
+    return gardenerIds.filter((id: string) => validIds.includes(id));
   };
 
   const onSubmit = async (data: FormData) => {
@@ -359,7 +393,7 @@ const ServiceBooking = () => {
       console.log(`👥 Encontrados ${gardeners.length} jardineros disponibles`);
 
       // 3. Obtener perfiles de los jardineros
-      const gardenerIds = gardeners.map(g => g.user_id);
+      const gardenerIds = gardeners.map((g: any) => g.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name')
@@ -373,7 +407,7 @@ const ServiceBooking = () => {
       const gardenersWithDistance = [];
       
       for (const gardener of gardeners) {
-        const profile = profiles?.find(p => p.id === gardener.user_id);
+        const profile = profiles?.find((p: any) => p.id === gardener.user_id);
         const gardenerWithProfile = {
           ...gardener,
           profiles: profile
@@ -611,7 +645,7 @@ const ServiceBooking = () => {
 
 
           {/* Notas adicionales */}
-          {watchedValues.duration_hours && (
+          {durationHours > 0 && (
             <div>
               <label className="block text-lg font-semibold text-gray-700 mb-3 sm:mb-4">
                 Información adicional (opcional)
@@ -619,7 +653,7 @@ const ServiceBooking = () => {
               <textarea
                 {...register('notes')}
                 rows={3}
-                className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm sm:text-base"
+                className="w-full p-3 sm:p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
                 placeholder="Cualquier información adicional que el jardinero deba saber (acceso al jardín, herramientas especiales, etc.)"
               />
               <p className="mt-2 text-xs sm:text-sm text-gray-500">

@@ -5,7 +5,7 @@ import { User as UserIcon, Mail, Lock, Trash2, UploadCloud, CheckCircle, Link as
 import toast from 'react-hot-toast';
 
 const MyAccount: React.FC = () => {
-  const { user, profile, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -14,8 +14,8 @@ const MyAccount: React.FC = () => {
   const [myProfile, setMyProfile] = useState<any | null>(null);
 
   useEffect(() => {
-    setAvatarPreview(profile?.avatar_url || null);
-  }, [profile?.avatar_url]);
+    setAvatarPreview(null);
+  }, []);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -27,7 +27,7 @@ const MyAccount: React.FC = () => {
         .limit(1);
       const p = data?.[0] || null;
       setMyProfile(p);
-      setAvatarPreview(p?.avatar_url || profile?.avatar_url || null);
+      setAvatarPreview(p?.avatar_url || null);
     };
     fetchProfile();
   }, [user?.id]);
@@ -118,7 +118,7 @@ const MyAccount: React.FC = () => {
             <div className="flex items-center gap-4 justify-start sm:justify-between mb-3">
               <div className="min-w-0">
                 <div className="text-lg font-semibold text-gray-900">Perfil</div>
-                <div className="text-sm text-gray-600 truncate">{(myProfile?.full_name || profile?.full_name || user?.email) || ''} · {effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}</div>
+                <div className="text-sm text-gray-600 truncate">{(myProfile?.full_name || user?.email) || ''} · {effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}</div>
               </div>
               <div className="shrink-0">
                 {avatarPreview ? (
@@ -155,7 +155,7 @@ const MyAccount: React.FC = () => {
                   <input
                     value={`${window.location.origin}/reservar/${user?.id || ''}`}
                     readOnly
-                    className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-800"
+                    className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-800 text-base sm:text-sm"
                   />
                 </div>
                 <div className="md:col-span-1">

@@ -312,7 +312,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               <input
                 {...register('full_name')}
                 type="text"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full p-3 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="Tu nombre completo"
               />
               {errors.full_name && (
@@ -327,7 +327,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               <input
                 {...register('phone')}
                 type="tel"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
                 placeholder="+34 600 000 000"
               />
               {errors.phone && (
@@ -382,7 +382,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
           <textarea
             {...register('description')}
             rows={4}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
             placeholder="Describe tu experiencia, especialidades y lo que te diferencia como jardinero profesional..."
           />
           {errors.description && (
@@ -421,21 +421,21 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                           <div className="relative w-32">
                             <span className="absolute left-3 top-2 text-gray-500">€</span>
                             <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={servicePrices[service.id] || ''}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                setServicePrices(prev => ({
-                                  ...prev,
-                                  [service.id]: isNaN(val) ? 0 : val
-                                }));
-                              }}
-                              className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                              placeholder="0.00"
-                              onClick={(e) => e.stopPropagation()}
-                            />
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={servicePrices[service.id] || ''}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setServicePrices(prev => ({
+                              ...prev,
+                              [service.id]: isNaN(val) ? 0 : val
+                            }));
+                          }}
+                          className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
+                          placeholder="0.00"
+                          onClick={(e) => e.stopPropagation()}
+                        />
                           </div>
                         </div>
                       )}

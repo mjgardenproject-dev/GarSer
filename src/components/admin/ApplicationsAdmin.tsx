@@ -119,7 +119,7 @@ const ApplicationsAdmin: React.FC = () => {
         )}
         <div className="flex items-center gap-2 mb-4">
           <Search className="w-4 h-4" />
-          <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Buscar por nombre o zona" className="w-full p-2 border rounded" />
+          <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="Buscar por nombre o zona" className="w-full p-2 border rounded text-base" />
         </div>
         <div className="grid grid-cols-1 gap-3">
           {filtered.map(app => (

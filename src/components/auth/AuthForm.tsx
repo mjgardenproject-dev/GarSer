@@ -393,7 +393,7 @@ const AuthForm = () => {
                 <input
                   {...register('email')}
                   type="email"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2.5 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="tu@email.com"
                 />
               </div>
@@ -409,7 +409,7 @@ const AuthForm = () => {
                 <input
                   {...register('password')}
                   type="password"
-                  className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2.5 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="••••••••"
                 />
               </div>
@@ -426,7 +426,7 @@ const AuthForm = () => {
                   <input
                     {...register('confirmPassword')}
                     type="password"
-                    className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2.5 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="••••••••"
                   />
                 </div>

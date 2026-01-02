@@ -8,7 +8,7 @@ import { es } from 'date-fns/locale';
 import ChatWindow from '../chat/ChatWindow';
 import { } from 'react-router-dom';
 
-interface BookingWithDetails extends Booking {
+interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: {
     name: string;
     icon?: string;
@@ -58,7 +58,7 @@ const BookingsList = () => {
 
       // Luego obtenemos los perfiles de los jardineros
       if (bookingsData && bookingsData.length > 0) {
-        const gardenerIds = [...new Set(bookingsData.map(booking => booking.gardener_id))];
+        const gardenerIds = [...new Set(bookingsData.map((booking: any) => booking.gardener_id))];
         
         const { data: profilesData, error: profilesError } = await supabase
           .from('profiles')
@@ -68,9 +68,9 @@ const BookingsList = () => {
         if (profilesError) throw profilesError;
 
         // Combinar los datos
-        const bookingsWithProfiles = bookingsData.map(booking => ({
+        const bookingsWithProfiles = bookingsData.map((booking: any) => ({
           ...booking,
-          gardener_profile: profilesData?.find(profile => profile.id === booking.gardener_id) || null
+          gardener_profile: profilesData?.find((profile: any) => profile.id === booking.gardener_id) || null
         }));
 
         setBookings(bookingsWithProfiles);
@@ -160,9 +160,9 @@ const BookingsList = () => {
         .select('rating')
         .eq('gardener_id', reviewTarget.gardener_id);
       if (ratingsError) throw ratingsError;
-      const ratings = (ratingsData || []).map(r => r.rating);
+      const ratings = (ratingsData || []).map((r: any) => r.rating);
       const count = ratings.length;
-      const avg = count > 0 ? Math.round((ratings.reduce((a, b) => a + b, 0) / count) * 100) / 100 : 5;
+      const avg = count > 0 ? Math.round((ratings.reduce((a: number, b: number) => a + b, 0) / count) * 100) / 100 : 5;
       const { error: updError } = await supabase
         .from('gardener_profiles')
         .update({ rating: avg, total_reviews: count })
@@ -201,7 +201,7 @@ const BookingsList = () => {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+            className="border border-gray-300 rounded-md px-3 py-2 text-base sm:text-sm"
           >
             <option value="all">Todos</option>
             <option value="pending">Pendiente</option>
@@ -356,7 +356,7 @@ const BookingsList = () => {
                 onChange={(e) => setComment(e.target.value)}
                 disabled={!!existingReview}
                 rows={3}
-                className="w-full p-3 border border-gray-300 rounded-lg"
+                className="w-full p-3 border border-gray-300 rounded-lg text-base sm:text-sm"
                 placeholder="Cuéntanos tu experiencia"
               />
             </div>

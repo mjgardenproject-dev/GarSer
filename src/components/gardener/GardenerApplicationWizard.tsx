@@ -185,13 +185,13 @@ const GardenerApplicationWizard: React.FC = () => {
         {step === 1 && (
           <div className="space-y-4">
             <label className="block text-sm font-medium text-gray-700">Nombre completo</label>
-            <input value={fullName} onChange={(e)=>setFullName(e.target.value)} className="w-full p-3 border rounded" />
+            <input value={fullName} onChange={(e)=>setFullName(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
             <label className="block text-sm font-medium text-gray-700">Teléfono</label>
-            <input value={phone} onChange={(e)=>setPhone(e.target.value)} className="w-full p-3 border rounded" />
+            <input value={phone} onChange={(e)=>setPhone(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
             <label className="block text-sm font-medium text-gray-700">Correo electrónico</label>
-            <input value={email} onChange={(e)=>setEmail(e.target.value)} className="w-full p-3 border rounded" />
+            <input value={email} onChange={(e)=>setEmail(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
             <label className="block text-sm font-medium text-gray-700">Ciudad / zona de trabajo</label>
-            <input value={cityZone} onChange={(e)=>setCityZone(e.target.value)} className="w-full p-3 border rounded" />
+            <input value={cityZone} onChange={(e)=>setCityZone(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Foto de perfil profesional</label>
               <div className="flex items-center gap-4">
@@ -229,7 +229,7 @@ const GardenerApplicationWizard: React.FC = () => {
               ))}
             </div>
             <label className="block text-sm font-medium text-gray-700">Otros</label>
-            <textarea value={otherServices} onChange={(e)=>setOtherServices(e.target.value)} rows={3} className="w-full p-3 border rounded" />
+            <textarea value={otherServices} onChange={(e)=>setOtherServices(e.target.value)} rows={3} className="w-full p-3 border rounded text-base sm:text-sm" />
           </div>
         )}
 
@@ -250,11 +250,11 @@ const GardenerApplicationWizard: React.FC = () => {
           <div className="space-y-3">
             <h3 className="text-base sm:text-lg font-semibold">Experiencia y demostraciones</h3>
             <div className="flex items-center gap-3">
-              <input type="number" min={0} value={expYearsInput} onFocus={()=>{ if (expYearsInput === '0') setExpYearsInput(''); }} onBlur={()=>{ if (expYearsInput.trim() === '') { setExpYearsInput('0'); setExpYears(0); } }} onChange={(e)=>{ const v=e.target.value; setExpYearsInput(v); const n=parseInt(v||'0',10); setExpYears(isNaN(n)?0:n); }} className="w-24 p-2 border rounded" />
+              <input type="number" min={0} value={expYearsInput} onFocus={()=>{ if (expYearsInput === '0') setExpYearsInput(''); }} onBlur={()=>{ if (expYearsInput.trim() === '') { setExpYearsInput('0'); setExpYears(0); } }} onChange={(e)=>{ const v=e.target.value; setExpYearsInput(v); const n=parseInt(v||'0',10); setExpYears(isNaN(n)?0:n); }} className="w-24 p-2 border rounded text-base sm:text-sm" />
               <span className="text-sm text-gray-700">años de experiencia</span>
             </div>
             <label className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
-            <textarea value={certText} onChange={(e)=>setCertText(e.target.value)} rows={4} className="w-full p-3 border rounded" />
+            <textarea value={certText} onChange={(e)=>setCertText(e.target.value)} rows={4} className="w-full p-3 border rounded text-base sm:text-sm" />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Adjunta fotos o documentos (opcional). Si lo tienes, añade tu CV</label>
               <input type="file" accept="image/*,.pdf,.doc,.docx" multiple onChange={async (e)=>{ const files=Array.from(e.target.files||[]); const urls: string[]=[]; for(const f of files){ const u=await uploadPhoto(f,'proof'); urls.push(u);} setProofPhotos((prev)=>[...prev,...urls]); }} />
@@ -283,7 +283,7 @@ const GardenerApplicationWizard: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">¿Qué harías si detectas plagas en un seto o planta?</label>
-              <textarea value={testPest} onChange={(e)=>setTestPest(e.target.value)} rows={3} className="w-full p-3 border rounded" />
+              <textarea value={testPest} onChange={(e)=>setTestPest(e.target.value)} rows={3} className="w-full p-3 border rounded text-base sm:text-sm" />
             </div>
           </div>
         )}
@@ -291,7 +291,7 @@ const GardenerApplicationWizard: React.FC = () => {
         {step === 6 && (
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700 mb-2">¿Tienes algún curso o formación en jardinería?</label>
-            <textarea value={certText} onChange={(e)=>setCertText(e.target.value)} rows={4} className="w-full p-3 border rounded" />
+            <textarea value={certText} onChange={(e)=>setCertText(e.target.value)} rows={4} className="w-full p-3 border rounded text-base sm:text-sm" />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Adjunta fotos o documentos de tu titulación (opcional)</label>
               <input type="file" accept="image/*,.pdf,.doc,.docx" multiple onChange={async (e)=>{ const files=Array.from(e.target.files||[]); const urls: string[]=[]; for(const f of files){ const u=await uploadPhoto(f,'certs'); urls.push(u);} setProofPhotos((prev)=>[...prev,...urls]); }} />

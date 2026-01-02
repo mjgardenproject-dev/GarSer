@@ -1101,7 +1101,7 @@ const ClientHome: React.FC = () => {
                       rows={4}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="w-full p-3 sm:p-4 text-sm sm:text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full p-3 sm:p-4 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       placeholder="Ej: Quiero un corte de césped y que poden los setos de la imagen"
                     />
                   </div>
@@ -1130,7 +1130,7 @@ const ClientHome: React.FC = () => {
                           <select
                             value={debugTaskDraft.tipo_servicio}
                             onChange={(e) => setDebugTaskDraft(prev => ({ ...prev, tipo_servicio: e.target.value }))}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                           >
                             <option value="" disabled>Selecciona…</option>
                             {services.map(s => (
@@ -1143,7 +1143,7 @@ const ClientHome: React.FC = () => {
                           <select
                             value={debugTaskDraft.estado_jardin}
                             onChange={(e) => setDebugTaskDraft(prev => ({ ...prev, estado_jardin: e.target.value }))}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                           >
                             <option value="normal">normal</option>
                             <option value="descuidado">descuidado</option>
@@ -1167,7 +1167,7 @@ const ClientHome: React.FC = () => {
                                 tamaño_plantas: null,
                               }));
                             }}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-sm"
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                             placeholder={debugQuantityUnit === 'm2' ? 'Ej: 120' : 'Ej: 8'}
                           />
                           <div className="text-xs text-gray-600 mt-1">Unidad: {debugQuantityUnit === 'm2' ? 'm²' : 'plantas'}</div>

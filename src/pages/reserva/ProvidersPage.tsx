@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, Star, Clock, MapPin, Check } from 'lucide-react';
@@ -26,6 +26,9 @@ const ProvidersPage: React.FC = () => {
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [monthLoading, setMonthLoading] = useState(false);
   const [hoursLoading, setHoursLoading] = useState(false);
+  const daysCacheRef = useRef<Map<string, Array<{ date: string; day: number; disabled: boolean; count: number }>>>(new Map());
+  const hoursCacheRef = useRef<Map<string, number[]>>(new Map());
+  const reqIdRef = useRef<number>(0);
 
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
@@ -100,44 +103,65 @@ const ProvidersPage: React.FC = () => {
 
   const rebuildMonth = async (providerId: string, monthStart: Date) => {
     setMonthLoading(true);
-    setHoursLoading(true);
+    setHoursLoading(false);
     const y = monthStart.getFullYear();
     const m = monthStart.getMonth();
-    const first = new Date(y, m, 1);
     const last = new Date(y, m + 1, 0);
     const todayStr = fmt(new Date());
-    const items: Array<{ date: string; day: number; disabled: boolean; count: number }> = [];
-    for (let d = 1; d <= last.getDate(); d++) {
-      const dateStr = fmt(new Date(y, m, d));
-      const past = dateStr < todayStr;
-      let count = 0;
-      if (!past) {
-        const hrs = await computeValidStartHours(providerId, dateStr);
-        count = hrs.length;
+    const cacheKey = `${providerId}-${y}-${m}-${Math.max(1, Number(bookingData.estimatedHours || 0))}`;
+    const cached = daysCacheRef.current.get(cacheKey);
+    const rid = ++reqIdRef.current;
+    if (cached) {
+      setMonthDays(cached);
+      setMonthLoading(false);
+      return;
+    }
+    try {
+      const startStr = fmt(new Date(y, m, 1));
+      const endStr = fmt(new Date(y, m, last.getDate()));
+      const blocks = await availCompat.getAvailabilityRange(providerId, startStr, endStr);
+      const byDate: Record<string, number[]> = {};
+      (blocks || []).forEach((b: any) => {
+        if (!b.is_available) return;
+        if (!byDate[b.date]) byDate[b.date] = [];
+        byDate[b.date].push(b.hour_block);
+      });
+      const dur = Math.max(1, Number(bookingData.estimatedHours || 0));
+      const items: Array<{ date: string; day: number; disabled: boolean; count: number }> = [];
+      for (let d = 1; d <= last.getDate(); d++) {
+        const dateStr = fmt(new Date(y, m, d));
+        const past = dateStr < todayStr;
+        const hours = (byDate[dateStr] || []).sort((a,b)=>a-b);
+        let count = 0;
+        if (!past && hours.length > 0) {
+          const set = new Set<number>(hours);
+          for (const h of hours) {
+            let fits = true;
+            for (let k=0;k<dur;k++) { if (!set.has(h+k)) { fits = false; break; } }
+            if (fits) count++;
+          }
+        }
+        items.push({ date: dateStr, day: d, disabled: past || count === 0, count });
       }
-      items.push({ date: dateStr, day: d, disabled: past || count === 0, count });
+      if (reqIdRef.current === rid) {
+        daysCacheRef.current.set(cacheKey, items);
+        setMonthDays(items);
+        const inMonth = new Date(Number(selectedDate.split('-')[0]), Number(selectedDate.split('-')[1])-1, Number(selectedDate.split('-')[2])).getMonth() === m;
+        if (!inMonth || !items.some(i => i.date === selectedDate && i.count > 0)) {
+          const firstWith = items.find(i => i.count > 0);
+          if (firstWith) setSelectedDate(firstWith.date);
+        }
+      }
+    } finally {
+      if (reqIdRef.current === rid) setMonthLoading(false);
     }
-    setMonthDays(items);
-    // Si el día seleccionado actual está fuera del mes o sin horas, mover al primer día con horas
-    const partsSel = selectedDate.split('-').map(Number);
-    const currentInMonth = new Date(partsSel[0], partsSel[1]-1, partsSel[2]).getMonth() === m && new Date(partsSel[0], partsSel[1]-1, partsSel[2]).getFullYear() === y;
-    if (!currentInMonth || !items.some(i => i.date === selectedDate && i.count > 0)) {
-      const firstWithHours = items.find(i => i.count > 0);
-      if (firstWithHours) setSelectedDate(firstWithHours.date);
-    }
-    setMonthLoading(false);
-    setHoursLoading(false);
   };
 
   useEffect(() => {
     (async () => {
       if (!selectedProvider) return;
       await rebuildMonth(selectedProvider, calendarMonthDate);
-      setHoursLoading(true);
-      const hrs = await computeValidStartHours(selectedProvider, selectedDate);
-      setValidHours(hrs);
       setSelectedHour(null);
-      setHoursLoading(false);
     })();
   }, [selectedProvider, calendarMonthDate]);
 
@@ -145,7 +169,15 @@ const ProvidersPage: React.FC = () => {
     (async () => {
       if (!selectedProvider) return;
       setHoursLoading(true);
-      const hrs = await computeValidStartHours(selectedProvider, selectedDate);
+      const cacheKey = `${selectedProvider}-${selectedDate}-${Math.max(1, Number(bookingData.estimatedHours || 0))}`;
+      const cached = hoursCacheRef.current.get(cacheKey);
+      let hrs: number[] = [];
+      if (cached) {
+        hrs = cached;
+      } else {
+        hrs = await computeValidStartHours(selectedProvider, selectedDate);
+        hoursCacheRef.current.set(cacheKey, hrs);
+      }
       setValidHours(hrs);
       setSelectedHour(null);
       setHoursLoading(false);
@@ -305,7 +337,7 @@ const ProvidersPage: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6">
+      <div className="max-w-md mx-auto px-4 py-6 pb-24">
         {/* Carrusel de jardineros */}
         <div className="mb-4">
           <div className="flex gap-3 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -449,8 +481,8 @@ const ProvidersPage: React.FC = () => {
 
       </div>
 
-      {/* Sticky CTA */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+      {/* Fixed CTA */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50">
         <div className="max-w-md mx-auto">
           <button
             onClick={handleContinue}

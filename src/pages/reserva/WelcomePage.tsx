@@ -42,7 +42,7 @@ const WelcomePage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex flex-col">
       {/* Hero Section */}
-      <div className="flex-1 flex flex-col justify-center px-6 py-12">
+      <div className="flex-1 flex flex-col justify-center px-6 pt-12 pb-32">
         <div className="max-w-md mx-auto w-full">
           {/* Logo */}
           <div className="text-center mb-8">
@@ -103,8 +103,8 @@ const WelcomePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Sticky CTA */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6">
+      {/* Fixed CTA */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-6 z-50">
         <div className="max-w-md mx-auto">
           <button
             onClick={handleStart}

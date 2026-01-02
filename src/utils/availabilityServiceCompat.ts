@@ -233,3 +233,24 @@ export async function setDefaultAvailability(gardenerId: string, date: string) {
     throw error;
   }
 }
+
+export async function getAvailabilityRange(gardenerId: string, startDate: string, endDate: string) {
+  try {
+    const { data, error } = await supabase
+      .from('availability')
+      .select('*')
+      .eq('gardener_id', gardenerId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: true })
+      .order('start_time', { ascending: true });
+    if (error) {
+      throw error;
+    }
+    const blocks = (data || []).map(convertToBlock);
+    return blocks;
+  } catch (error) {
+    console.error('Error in getAvailabilityRange:', error);
+    throw error;
+  }
+}

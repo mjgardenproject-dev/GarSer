@@ -98,7 +98,7 @@ const AddressPage: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6">
+      <div className="max-w-md mx-auto px-4 py-6 pb-24">
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-4">
           <h2 className="text-xl font-bold text-gray-900 mb-2">
             ¿Dónde está tu jardín?
@@ -153,8 +153,8 @@ const AddressPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Sticky CTA */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+      {/* Fixed CTA */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50">
         <div className="max-w-md mx-auto">
           <button
             onClick={validateAndContinue}

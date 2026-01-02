@@ -10,6 +10,7 @@ interface Service {
   description: string;
   icon: string;
   base_price: number;
+  image_url?: string;
 }
 
 const serviceIcons = {
@@ -44,7 +45,19 @@ const ServicesPage: React.FC = () => {
         .order('name');
       
       if (!error && data) {
-        setServices(data);
+        let imageMap: Record<string, string> = {};
+        try {
+          const { data: images } = await supabase
+            .from('service_images')
+            .select('service_id,image_url,active');
+          (images || []).forEach((row: any) => {
+            if (row?.active !== false && row?.service_id && row?.image_url) {
+              imageMap[row.service_id] = row.image_url;
+            }
+          });
+        } catch {}
+        const merged = (data as any[]).map(s => ({ ...s, image_url: imageMap[s.id] || s.image_url }));
+        setServices(merged as Service[]);
       }
     } catch (error) {
       console.error('Error fetching services:', error);
@@ -99,7 +112,7 @@ const ServicesPage: React.FC = () => {
 
       {/* Progress Bar */}
       <div className="bg-white">
-        <div className="max-w-md mx-auto px-4 py-3">
+        <div className="max-w-md mx-auto px-4 py-2">
           <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
             <span>Paso 2 de 5</span>
             <div className="flex-1 bg-gray-200 rounded-full h-1">
@@ -110,85 +123,65 @@ const ServicesPage: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6">
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
-            ¿Qué necesitas para tu jardín?
-          </h2>
-          <p className="text-gray-600">
-            Selecciona los servicios que necesitas. Puedes elegir varios.
+      <div className="max-w-md mx-auto px-3 py-3 pb-24">
+        <div className="mb-3">
+          <p className="text-sm font-medium text-gray-900">
+            Seleccione los servicios necesarios para su jardín
           </p>
         </div>
 
-        {/* Services Grid */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="grid grid-cols-2 gap-2 mb-4">
           {services.map((service) => {
-            const IconComponent = serviceIcons[service.name as keyof typeof serviceIcons] || Sparkles;
+            const images: Record<string, string> = {
+              'Corte de césped': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20freshly%20cut%20green%20lawn%20in%20a%20sunny%20residential%20garden%2C%20with%20sharp%20cut%20lines%20visible%20and%20a%20lawnmower%20partially%20visible%20in%20the%20background%2C%20soft%20natural%20lighting%2C%20realistic%20photography%2C%20high%20detail&image_size=landscape_4_3',
+              'Corte de setos a máquina': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Perfectly%20trimmed%20green%20hedges%20in%20a%20residential%20garden%2C%20showing%20a%20straight%20clean%20cut%2C%20with%20an%20electric%20hedge%20trimmer%20resting%20nearby%2C%20soft%20afternoon%20sunlight%2C%20realistic%20photography%2C%20professional%20gardening&image_size=landscape_4_3',
+              'Poda de plantas': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20trimming%20ornamental%20flowering%20plants%20with%20hand%20pruners%20in%20a%20garden%2C%20focus%20on%20the%20cut%20and%20healthy%20stems%2C%20natural%20soft%20lighting%2C%20realistic%20photography%2C%20detailed&image_size=landscape_4_3',
+              'Poda de árboles': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Professional%20pruning%20of%20a%20small%20residential%20tree%2C%20focus%20on%20a%20branch%20being%20cut%20with%20pruning%20shears%2C%20soft%20sunlight%20filtering%20through%20leaves%2C%20realistic%20photography%2C%20garden%20maintenance&image_size=landscape_4_3',
+              'Labrar y quitar malas hierbas a mano': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Hands%20with%20gardening%20gloves%20removing%20weeds%20from%20soil%20in%20a%20residential%20garden%2C%20showing%20tilled%20earth%20and%20small%20hand%20tools%2C%20close-up%20shot%2C%20natural%20daylight%2C%20realistic%20photography&image_size=landscape_4_3',
+              'Fumigación de plantas': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20a%20person%20spraying%20ornamental%20plants%20in%20a%20home%20garden%20with%20a%20manual%20sprayer%2C%20focus%20on%20the%20mist%20and%20green%20leaves%2C%20soft%20natural%20light%2C%20realistic%20photography%2C%20gardening%20care&image_size=landscape_4_3'
+            };
+            const imageUrl = (service as any)?.image_url || images[service.name] || 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?q=80&w=600&auto=format&fit=crop';
             const isSelected = selectedServices.includes(service.id);
             
             return (
               <button
                 key={service.id}
                 onClick={() => toggleService(service.id)}
-                className={`p-4 rounded-2xl border-2 transition-all duration-200 ${
-                  isSelected
-                    ? 'border-green-600 bg-green-50 shadow-lg'
-                    : 'border-gray-200 bg-white hover:border-green-300 hover:shadow-md'
+                className={`relative rounded-xl overflow-hidden border transition-all duration-200 h-[104px] w-full ${
+                  isSelected ? 'border-green-600 ring-2 ring-green-600' : 'border-gray-200'
                 }`}
+                style={{ backgroundImage: `url(${imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
               >
-                <div className="flex flex-col items-center text-center">
-                  <div className={`p-3 rounded-full mb-2 ${
-                    isSelected ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    <IconComponent className="w-6 h-6" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 text-sm mb-1">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/20 to-transparent" />
+                <div className="absolute inset-x-1 bottom-1 text-center">
+                  <h3 className={`text-white text-sm font-semibold ${isSelected ? '' : ''}`}>
                     {service.name}
                   </h3>
-                  <p className="text-xs text-gray-500 line-clamp-2">
-                    {service.description}
-                  </p>
-                  {isSelected && (
-                    <div className="mt-2">
-                      <Check className="w-5 h-5 text-green-600" />
-                    </div>
-                  )}
                 </div>
+                {isSelected && (
+                  <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1">
+                    <Check className="w-4 h-4" />
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* Selected Summary */}
-        {selectedServices.length > 0 && (
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-green-900">
-                  {selectedServices.length} servicio{selectedServices.length !== 1 ? 's' : ''} seleccionado{selectedServices.length !== 1 ? 's' : ''}
-                </p>
-                <p className="text-xs text-green-700">
-                  Puedes modificar tu selección más tarde
-                </p>
-              </div>
-              <Check className="w-5 h-5 text-green-600" />
-            </div>
-          </div>
-        )}
+        
       </div>
 
-      {/* Sticky CTA */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+      {/* Fixed CTA */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50">
         <div className="max-w-md mx-auto">
           <button
             onClick={handleContinue}
             disabled={selectedServices.length === 0}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 px-6 rounded-2xl font-semibold text-base shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
             {selectedServices.length === 0 
               ? 'Selecciona al menos un servicio'
-              : `Continuar con ${selectedServices.length} servicio${selectedServices.length !== 1 ? 's' : ''}`
-            }
+              : `Continuar con ${selectedServices.length} servicio${selectedServices.length !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>

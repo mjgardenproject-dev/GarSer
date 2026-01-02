@@ -285,7 +285,7 @@ const ConfirmationPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Contenido compacto */}
-      <div className="max-w-md mx-auto px-4 py-3">
+      <div className="max-w-md mx-auto px-4 py-3 pb-40">
         <div className="flex justify-end mb-2">
           <button
             onClick={() => setCurrentStep(4)}
@@ -438,8 +438,8 @@ const ConfirmationPage: React.FC = () => {
         )}
       </div>
 
-      {/* Sticky CTA */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+      {/* Fixed CTA */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50">
         <div className="max-w-md mx-auto">
           <button
             onClick={handleConfirmBooking}

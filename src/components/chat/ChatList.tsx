@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { MessageCircle, Calendar, Clock, User } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { MessageCircle, Calendar, Clock, User, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -32,7 +33,8 @@ interface BookingWithProfiles {
 }
 
 const ChatList: React.FC = () => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
@@ -82,10 +84,10 @@ const ChatList: React.FC = () => {
           .select('id, full_name')
           .in('id', uniqueUserIds as string[])
         if (profilesError) throw profilesError
-        namesMap = (profilesData || []).reduce<Record<string, string>>((acc, p: any) => {
+        namesMap = (profilesData || []).reduce((acc: Record<string, string>, p: any) => {
           if (p?.id) acc[p.id] = p.full_name || ''
           return acc
-        }, {})
+        }, {} as Record<string, string>)
       }
 
       // Para cada reserva, obtener el último mensaje
@@ -180,13 +182,21 @@ const ChatList: React.FC = () => {
   }
 
   return (
-    <div className="p-4 sm:p-8 overflow-x-hidden">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Mis Chats</h1>
+    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
+      <button
+        onClick={() => navigate('/dashboard')}
+        className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
+        aria-label="Volver al Panel"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Volver al Panel
+      </button>
+
+      <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">Mis Chats</h1>
         
-        {chats.length === 0 ? (
-          <div className="text-center py-12">
-            <MessageCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+      {chats.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+            <MessageCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No tienes chats activos</h3>
             <p className="text-gray-600">
               Los chats aparecerán aquí cuando tengas reservas confirmadas.
@@ -198,14 +208,14 @@ const ChatList: React.FC = () => {
               <div
                 key={chat.booking_id}
                 onClick={() => openChat(chat)}
-                className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 hover:shadow-md transition-shadow cursor-pointer"
+                className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow cursor-pointer"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center mb-2">
                       <User className="w-5 h-5 text-gray-400 mr-2" />
                       <h3 className="font-semibold text-gray-900">{chat.other_user_name}</h3>
-                      {chat.unread_count > 0 && (
+                      {chat.unread_count !== undefined && chat.unread_count > 0 && (
                         <span className="ml-2 bg-red-500 text-white text-xs rounded-full px-2 py-1">
                           {chat.unread_count}
                         </span>
@@ -249,7 +259,6 @@ const ChatList: React.FC = () => {
             ))}
           </div>
         )}
-      </div>
 
       {/* Chat Window */}
       {selectedChat && (

@@ -198,6 +198,16 @@ const AuthForm = () => {
         toast.success('¡Bienvenido de vuelta!');
         navigate(redirectTo || '/dashboard');
       } else {
+        // Pre-check: Verify if email exists using our custom RPC
+        // This avoids the confusing "Check your email" message for existing users
+        const { data: emailExists, error: rpcError } = await supabase.rpc('check_email_exists', { email_to_check: data.email });
+        
+        if (!rpcError && emailExists) {
+           toast.error('Esta cuenta ya está registrada. Por favor, inicia sesión simplemente.');
+           setLoading(false);
+           return;
+        }
+
         const roleToUse = selectedRole;
         const confirm = watch('confirmPassword');
         if (!confirm || confirm !== data.password) {
@@ -254,7 +264,17 @@ const AuthForm = () => {
       }
     } catch (error: any) {
       console.error('❌ Error en registro:', error);
-      toast.error(error.message || 'Ha ocurrido un error');
+      
+      let message = error.message || 'Ha ocurrido un error';
+      
+      // Personalizar mensajes de error según lo solicitado
+      if (message.includes('Invalid login credentials')) {
+        message = 'Este correo electrónico no parece estar registrado o la contraseña es incorrecta. Si aún no tienes cuenta, por favor regístrate.';
+      } else if (message.includes('User already registered')) {
+        message = 'Esta cuenta ya está registrada. Por favor, inicia sesión simplemente.';
+      }
+      
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -268,33 +288,36 @@ const AuthForm = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 sm:p-8">
-        <div className="text-center mb-8 mt-6 sm:mt-10">
-          <div className="flex justify-center mb-4">
+    <div className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6">
+      <div className="w-full max-w-md space-y-8">
+        {/* Logo & Header */}
+        <div className="text-center">
+          <div className="flex justify-center mb-6">
             {logoError ? (
-              <span className="text-3xl sm:text-4xl font-bold text-gray-900">
+              <span className="text-3xl font-bold text-gray-900 tracking-tight">
                 GarSer<span className="text-green-600">.es</span>
               </span>
             ) : (
               <img
                 src="/garser-logo.svg"
                 alt="GarSer.es — Garden Service"
-                className="h-20 sm:h-24 w-auto"
+                className="h-16 w-auto mx-auto drop-shadow-sm"
                 onError={() => setLogoError(true)}
               />
             )}
           </div>
-          <h1 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 text-center">
-            {isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+            {isLogin ? '¡Hola de nuevo!' : 'Crea tu cuenta'}
           </h1>
-          
+          <p className="text-sm text-gray-500 mt-2">
+            {isLogin ? 'Ingresa tus datos para continuar' : 'Únete a nuestra comunidad de jardinería'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
           {!isLogin && (
-            <div>
+            <div className="animate-fade-in-down">
               <label className="block text-sm font-medium text-gray-700 mb-3">
                 ¿Qué tipo de cuenta necesitas?
               </label>
@@ -310,26 +333,26 @@ const AuthForm = () => {
                   }`}
                 >
                   <div className="flex flex-col items-center space-y-2">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                       selectedRole === 'client' ? 'bg-green-500' : 'bg-gray-200'
                     }`}>
-                      <User className={`w-6 h-6 ${
+                      <User className={`w-6 h-6 transition-colors ${
                         selectedRole === 'client' ? 'text-white' : 'text-gray-600'
                       }`} />
                     </div>
                     <div className="text-center">
-                      <h3 className={`text-sm sm:text-base font-semibold ${
+                      <h3 className={`text-sm sm:text-base font-semibold transition-colors ${
                         selectedRole === 'client' ? 'text-green-700' : 'text-gray-700'
                       }`}>
                         Cliente
                       </h3>
                       <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                        Busco servicios de jardinería
+                        Busco servicios
                       </p>
                     </div>
                   </div>
                   {selectedRole === 'client' && (
-                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md animate-bounce-small">
                       <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -346,26 +369,26 @@ const AuthForm = () => {
                     }`}
                   >
                     <div className="flex flex-col items-center space-y-2">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
                         selectedRole === 'gardener' ? 'bg-green-500' : 'bg-gray-200'
                       }`}>
-                        <Briefcase className={`w-6 h-6 ${
+                        <Briefcase className={`w-6 h-6 transition-colors ${
                           selectedRole === 'gardener' ? 'text-white' : 'text-gray-600'
                         }`} />
                       </div>
                       <div className="text-center">
-                        <h3 className={`text-sm sm:text-base font-semibold ${
+                        <h3 className={`text-sm sm:text-base font-semibold transition-colors ${
                           selectedRole === 'gardener' ? 'text-green-700' : 'text-gray-700'
                         }`}>
                           Jardinero
                         </h3>
                         <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                          Ofrezco servicios de jardinería
+                          Ofrezco servicios
                         </p>
                       </div>
                     </div>
                     {selectedRole === 'gardener' && (
-                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md animate-bounce-small">
                         <Check className="w-4 h-4 text-white" />
                       </div>
                     )}
@@ -374,11 +397,11 @@ const AuthForm = () => {
               </div>
               
               {/* Indicador visual del rol seleccionado */}
-              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm text-green-700 text-center">
-                  <strong>Rol seleccionado:</strong> {selectedRole === 'client' ? 'Cliente' : 'Jardinero'}
-                  <span className="block text-xs sm:text-sm text-green-600 mt-1">
-                    Este rol será permanente y no podrá cambiarse después del registro
+              <div className="mt-4 p-3 bg-green-50/50 border border-green-200 rounded-xl">
+                <p className="text-sm text-green-800 text-center font-medium">
+                  Rol seleccionado: <span className="font-bold">{selectedRole === 'client' ? 'Cliente' : 'Jardinero'}</span>
+                  <span className="block text-xs font-normal text-green-600 mt-1">
+                    Este rol será permanente tras el registro
                   </span>
                 </p>
               </div>
@@ -388,45 +411,58 @@ const AuthForm = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Correo electrónico</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <div className="relative group">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
                 <input
                   {...register('email')}
                   type="email"
-                  className="w-full pl-10 pr-4 py-2.5 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
                   placeholder="tu@email.com"
                 />
               </div>
               {errors.email && (
-                <p className="mt-1 text-xs sm:text-sm text-red-600">{errors.email.message}</p>
+                <p className="mt-1 text-xs sm:text-sm text-red-600 flex items-center gap-1">
+                  <span className="w-1 h-1 bg-red-600 rounded-full"></span>
+                  {errors.email.message}
+                </p>
               )}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <div className="relative group">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
                 <input
                   {...register('password')}
-                  type="password"
-                  className="w-full pl-10 pr-4 py-2.5 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  type={showPassword ? 'text' : 'password'}
+                  className="w-full pl-10 pr-12 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
               {errors.password && (
-                <p className="mt-1 text-xs sm:text-sm text-red-600">{errors.password.message}</p>
+                <p className="mt-1 text-xs sm:text-sm text-red-600 flex items-center gap-1">
+                  <span className="w-1 h-1 bg-red-600 rounded-full"></span>
+                  {errors.password.message}
+                </p>
               )}
             </div>
 
             {!isLogin && (
-              <div>
+              <div className="animate-fade-in-up">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Repite la contraseña</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <div className="relative group">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
                   <input
                     {...register('confirmPassword')}
                     type="password"
-                    className="w-full pl-10 pr-4 py-2.5 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
                     placeholder="••••••••"
                   />
                 </div>
@@ -437,31 +473,59 @@ const AuthForm = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-green-600 text-white py-2.5 px-4 text-sm rounded-lg font-semibold hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-green-600/20 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
-            {loading ? 'Procesando...' : (isLogin ? 'Iniciar Sesión' : 'Crear Cuenta')}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Procesando...
+              </span>
+            ) : (isLogin ? 'Iniciar Sesión' : 'Crear Cuenta')}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
+        <div className="mt-8 text-center">
+          <p className="text-gray-600 text-sm">
+            {isLogin ? '¿No tienes cuenta? ' : '¿Ya tienes cuenta? '}
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="font-semibold text-green-600 hover:text-green-700 transition-colors hover:underline"
+            >
+              {isLogin ? 'Regístrate gratis' : 'Inicia sesión'}
+            </button>
+          </p>
+        </div>
+
+        <div className="mt-6 pt-6 border-t border-gray-100">
           <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-green-600 hover:text-green-700 font-medium text-sm"
+            type="button"
+            onClick={() => navigate('/')}
+            className="w-full py-3 px-4 bg-white border-2 border-gray-200 text-gray-600 rounded-xl font-semibold hover:border-green-200 hover:bg-green-50 hover:text-green-700 transition-all duration-200 flex items-center justify-center gap-2 group"
           >
-            {isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
+            <span>Ver vista previa de la web</span>
+            <svg 
+              className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
           </button>
         </div>
-      </div>
 
-      {/* Modal de confirmación de email */}
-      <EmailConfirmationModal
-        isOpen={showEmailModal}
-        onClose={() => {
-          setShowEmailModal(false);
-          setIsLogin(true); // Cambiar a modo login después de cerrar el modal
-        }}
-        email={registeredEmail}
-      />
+        <EmailConfirmationModal
+          isOpen={showEmailModal}
+          onClose={() => {
+            setShowEmailModal(false);
+            setIsLogin(true); // Cambiar a modo login después de cerrar el modal
+          }}
+          email={registeredEmail}
+        />
+      </div>
     </div>
   );
 };

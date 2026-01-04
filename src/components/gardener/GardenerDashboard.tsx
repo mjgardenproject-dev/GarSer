@@ -34,6 +34,20 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     if (!user?.id) return;
     console.log('📥 GardenerDashboard: fetching bookings for gardener_id=', user.id);
     fetchBookings();
+
+    // Trigger recurring availability maintenance (silent update)
+    const maintainAvailability = async () => {
+      try {
+        const { error } = await supabase.rpc('generate_recurring_slots', { 
+          target_gardener_id: user.id,
+          force_regenerate: false 
+        });
+        if (error) console.log('Availability maintenance skipped:', error.message);
+      } catch (e) {
+        // Ignore errors if function doesn't exist
+      }
+    };
+    maintainAvailability();
   }, [user?.id, authLoading]);
 
   // El perfil de jardinero se gestiona dentro de ProfileSettings de forma perezosa.
@@ -89,7 +103,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         `)
         .eq('gardener_id', user?.id)
         .order('date', { ascending: true })
-        , 10000);
+        , 10000) as { data: any[] | null, error: any };
 
       if (bookingsError) {
         console.error('❌ fetchBookings error:', bookingsError);
@@ -98,14 +112,14 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
 
       // Luego obtenemos los perfiles de los clientes
       if (bookingsData && bookingsData.length > 0) {
-        const clientIds = [...new Set(bookingsData.map(booking => booking.client_id))];
+        const clientIds = [...new Set(bookingsData.map((booking: any) => booking.client_id))];
         
         const { data: profilesData, error: profilesError } = await withTimeout(
           supabase
           .from('profiles')
           .select('id, full_name')
           .in('id', clientIds)
-          , 10000);
+          , 10000) as { data: any[] | null, error: any };
 
         if (profilesError) {
           console.error('❌ fetchBookings profiles error:', profilesError);
@@ -113,9 +127,9 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         }
 
         // Combinar los datos
-        const bookingsWithProfiles = bookingsData.map(booking => ({
+        const bookingsWithProfiles = bookingsData.map((booking: any) => ({
           ...booking,
-          client_profile: profilesData?.find(profile => profile.id === booking.client_id) || null
+          client_profile: profilesData?.find((profile: any) => profile.id === booking.client_id) || null
         }));
 
         console.log('✅ fetchBookings: bookings count', bookingsWithProfiles.length);
@@ -211,8 +225,18 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
 
   // Barra de pestañas eliminada: mantenemos la lógica de activeTab y los botones del panel
 
+  if (!pending && activeTab === 'requests') {
+    return <BookingRequestsManager onBack={() => setActiveTab('dashboard')} />;
+  }
+  if (!pending && activeTab === 'availability') {
+    return <AvailabilityManager onBack={() => setActiveTab('dashboard')} />;
+  }
+  if (!pending && activeTab === 'profile') {
+    return <ProfileSettings onBack={() => setActiveTab('dashboard')} />;
+  }
+
   return (
-    <div className="max-w-full sm:max-w-7xl mx-auto p-3 sm:p-6">
+    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
       {/* Barra de pestañas superior eliminada. La navegación se realiza con los botones del panel. */}
 
       {/* Tab Content */}
@@ -304,7 +328,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                       <div className="flex items-center space-x-4">
                         <div>
                           <h3 className="text-lg font-semibold text-gray-900">
-                            {booking.services?.name}
+                            {(booking as any).services?.name || 'Servicio'}
                           </h3>
                           <p className="text-gray-600">
                             Cliente: {booking.client_profile?.full_name}
@@ -341,13 +365,13 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         <div className="space-x-2">
                           <button
                             onClick={() => updateBookingStatus(booking.id, 'confirmed')}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                            className="px-4 py-3 sm:py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                           >
                             Confirmar
                           </button>
                           <button
                             onClick={() => updateBookingStatus(booking.id, 'cancelled')}
-                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                            className="px-4 py-3 sm:py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
                           >
                             Rechazar
                           </button>
@@ -357,7 +381,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                       {booking.status === 'confirmed' && (
                         <button
                           onClick={() => updateBookingStatus(booking.id, 'completed')}
-                          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                          className="px-4 py-3 sm:py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
                         >
                           Servicio Completado
                         </button>
@@ -366,7 +390,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                       {booking.status === 'confirmed' && (
                         <button
                           onClick={() => openChat(booking.id, booking.client_profile?.full_name || 'Cliente')}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ml-2"
+                          className="px-4 py-3 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ml-2 text-sm font-medium"
                         >
                           <MessageCircle className="w-4 h-4 mr-2 inline" />
                           Chat
@@ -389,15 +413,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         </>
       )}
 
-      {!pending && activeTab === 'requests' && (
-        <BookingRequestsManager onBack={() => setActiveTab('dashboard')} />
-      )}
-      {!pending && activeTab === 'availability' && (
-        <AvailabilityManager onBack={() => setActiveTab('dashboard')} />
-      )}
-      {!pending && activeTab === 'profile' && (
-        <ProfileSettings onBack={() => setActiveTab('dashboard')} />
-      )}
+
       {/* Tab de flyer eliminado */}
       
       {/* Chat Window */}

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, MapPin, MessageCircle, Star, Euro } from 'lucide-react';
+import { Calendar, Clock, MapPin, MessageCircle, Star, ArrowLeft, ChevronDown } from 'lucide-react';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from '../chat/ChatWindow';
-import { } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: {
@@ -22,6 +22,7 @@ interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profil
 
 const BookingsList = () => {
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [bookings, setBookings] = useState<BookingWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<{
@@ -193,113 +194,115 @@ const BookingsList = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-6">
-      <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8">Mis Reservas</h1>
-        <div className="mb-4 flex items-center gap-2">
-          <label className="text-sm text-gray-600">Estado</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="border border-gray-300 rounded-md px-3 py-2 text-base sm:text-sm"
-          >
-            <option value="all">Todos</option>
-            <option value="pending">Pendiente</option>
-            <option value="confirmed">Confirmado</option>
-            <option value="completed">Completado</option>
-            <option value="cancelled">Cancelado</option>
-          </select>
-        </div>
+    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6">
+      <button
+        onClick={() => navigate('/dashboard')}
+        className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
+        aria-label="Volver al Panel"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Volver al Panel
+      </button>
 
-        {bookings.length === 0 ? (
-          <div className="text-center py-12">
-            <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 text-lg">No tienes reservas aún</p>
-            <p className="text-gray-500">¡Explora nuestros servicios y haz tu primera reserva!</p>
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">Mis Reservas</h1>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600">Estado</label>
+          <div className="relative">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="appearance-none border border-gray-300 rounded-md pl-3 pr-10 py-2.5 sm:py-2 text-base sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer"
+            >
+              <option value="all">Todos</option>
+              <option value="pending">Pendiente</option>
+              <option value="confirmed">Confirmado</option>
+              <option value="completed">Completado</option>
+              <option value="cancelled">Cancelado</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+              <ChevronDown className="h-4 w-4" />
+            </div>
           </div>
-        ) : (
-          <div className="space-y-6">
-            {filteredBookings.map((booking) => (
-              <div key={booking.id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                      <Calendar className="w-6 h-6 text-green-600" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-gray-900">
-                        {booking.services?.name}
-                      </h3>
-                      <p className="text-gray-600">
-                        Jardinero: {booking.gardener_profile?.full_name}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
-                    {getStatusText(booking.status)}
+        </div>
+      </div>
+
+      {bookings.length === 0 ? (
+        <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
+          <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600 text-lg">No tienes reservas aún</p>
+          <p className="text-gray-500">¡Explora nuestros servicios y haz tu primera reserva!</p>
+        </div>
+      ) : (
+        <div className="space-y-4 sm:space-y-6">
+          {filteredBookings.map((booking) => (
+            <div key={booking.id} className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {booking.services?.name}
+                  </h3>
+                  <p className="text-gray-600">
+                    Jardinero: {booking.gardener_profile?.full_name}
+                  </p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
+                  {getStatusText(booking.status)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div className="flex items-center text-gray-600">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                </div>
+                <div className="flex items-center text-gray-600">
+                  <Clock className="w-4 h-4 mr-2" />
+                  {booking.start_time} ({booking.duration_hours}h)
+                </div>
+                <div className="flex items-center text-gray-600">
+                  <MapPin className="w-4 h-4 mr-2" />
+                  {booking.client_address}
+                </div>
+                <div className="flex items-center justify-end md:justify-start text-gray-600">
+                  <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-50 text-green-700 font-semibold">
+                    €{booking.total_price}
                   </span>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div className="flex items-center text-gray-600">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <Clock className="w-4 h-4 mr-2" />
-                    {booking.start_time} ({booking.duration_hours}h)
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <Euro className="w-4 h-4 mr-2" />
-                    €{booking.total_price}
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <div className="flex items-start text-gray-600">
-                    <MapPin className="w-4 h-4 mr-2 mt-0.5" />
-                    <span className="text-sm">{booking.client_address}</span>
-                  </div>
-                </div>
-
-                {booking.notes && (
-                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600">
-                      <strong>Notas:</strong> {booking.notes}
-                    </p>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                  <div className="text-sm text-gray-500">
-                    Reservado el {format(parseISO(booking.created_at), 'd MMM yyyy', { locale: es })}
-                  </div>
-                  <div className="flex space-x-2">
-                    {booking.status === 'confirmed' && (
-                      <button
-                        onClick={() => openChat(booking.id, booking.gardener_profile?.full_name || 'Jardinero')}
-                        className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        Chat
-                      </button>
-                    )}
-                    {booking.status === 'completed' && (
-                      <button
-                        onClick={() => openReview(booking)}
-                        className="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
-                      >
-                        <Star className="w-4 h-4 mr-2" />
-                        Valorar
-                      </button>
-                    )}
-                  </div>
-                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+
+              {booking.notes && (
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600">
+                    <strong>Notas:</strong> {booking.notes}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 flex-wrap">
+                {booking.status === 'confirmed' && (
+                  <button
+                    onClick={() => openChat(booking.id, booking.gardener_profile?.full_name || 'Jardinero')}
+                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Chat
+                  </button>
+                )}
+                {booking.status === 'completed' && (
+                  <button
+                    onClick={() => openReview(booking)}
+                    className="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors text-sm font-medium"
+                  >
+                    <Star className="w-4 h-4 mr-2" />
+                    Valorar
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Chat Window */}
       {selectedChat && (
@@ -360,7 +363,7 @@ const BookingsList = () => {
                 placeholder="Cuéntanos tu experiencia"
               />
             </div>
-            <div className="sticky bottom-0 bg-white flex items-center justify-end gap-2 pt-2 pb-3" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="sticky bottom-0 bg-white flex items-center justify-end gap-2 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
               <button
                 type="button"
                 onClick={() => { setReviewTarget(null); setExistingReview(null); }}

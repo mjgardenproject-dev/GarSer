@@ -128,7 +128,7 @@ const AvailabilityPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6 flex items-center justify-between">
           <button
             onClick={() => setCurrentStep(3)}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -275,7 +275,7 @@ const AvailabilityPage: React.FC = () => {
       </div>
 
       {/* Sticky CTA */}
-      <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4">
+      <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="max-w-md mx-auto">
           <button
             onClick={handleContinue}

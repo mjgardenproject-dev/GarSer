@@ -282,11 +282,11 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-8">
+    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg"
+          className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
           aria-label="Volver al Panel"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -294,15 +294,15 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </button>
       )}
       <div className="flex items-center justify-between mb-8">
-        <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-          <User className="w-6 h-6 mr-3" />
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
+          <User className="w-6 h-6 sm:w-8 sm:h-8 mr-3 text-green-600" />
           Configuración del Perfil
         </h2>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Personal Information */}
-        <div>
+        <div className="">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Información Personal</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -338,7 +338,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </div>
 
         {/* Address and Coverage */}
-        <div>
+        <div className="">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
             <MapPin className="w-5 h-5 mr-2" />
             Ubicación y Cobertura
@@ -358,7 +358,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               )}
             </div>
 
-            <div className="bg-gray-50 p-6 rounded-lg">
+            <div className="">
               <DistanceMapSelector
                 address={watch('address') || ''}
                 distance={watch('max_distance') || 25}
@@ -375,8 +375,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </div>
 
         {/* Description */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+        <div className="">
+          <label className="block text-lg font-semibold text-gray-900 mb-4">
             Descripción profesional
           </label>
           <textarea
@@ -391,7 +391,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </div>
 
         {/* Services */}
-        <div>
+        <div className="">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
             <Briefcase className="w-5 h-5 mr-2" />
             Servicios que ofreces
@@ -452,7 +452,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
         {/* Statistics */}
         {gardenerProfile && (
-          <div className="bg-gray-50 rounded-lg p-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Star className="w-5 h-5 mr-2" />
               Estadísticas

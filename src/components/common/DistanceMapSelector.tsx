@@ -55,6 +55,11 @@ const DistanceMapSelector: React.FC<DistanceMapSelectorProps> = ({
         zoom: 12,
         center: center,
         mapTypeId: google.maps.MapTypeId.ROADMAP,
+        disableDefaultUI: true, // Desactivar toda la UI por defecto (Street View, zoom, map type, etc.)
+        zoomControl: false,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
         styles: [
           {
             featureType: 'poi',

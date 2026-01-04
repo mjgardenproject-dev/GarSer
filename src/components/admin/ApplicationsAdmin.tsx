@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CheckCircle, XCircle, Search } from 'lucide-react';
+import DatabaseFix from '../debug/DatabaseFix';
 
 interface Application {
   id: string;
@@ -12,9 +13,11 @@ interface Application {
   city_zone?: string;
   professional_photo_url?: string;
   services?: string[];
+  other_services?: string;
   tools_available?: string[];
   experience_years?: number;
   experience_range?: string;
+  experience_description?: string;
   worked_for_companies?: boolean;
   can_prove?: boolean;
   proof_photos?: string[];
@@ -22,6 +25,7 @@ interface Application {
   test_hedge_season?: string;
   test_pest_action?: string;
   certification_text?: string;
+  certification_photos?: string[];
   declaration_truth?: boolean;
   accept_terms?: boolean;
   submitted_at?: string;
@@ -62,13 +66,24 @@ const ApplicationsAdmin: React.FC = () => {
       full_name: app.full_name,
       phone: app.phone,
       address: app.city_zone,
-      description: app.certification_text || '',
+      description: app.experience_description || app.certification_text || '',
       max_distance: 25,
       services: app.services || [],
       avatar_url: app.professional_photo_url || null,
       is_available: false,
       rating: 5.0,
-      total_reviews: 0
+      total_reviews: 0,
+      // Extended fields
+      tools_available: app.tools_available || [],
+      experience_years: app.experience_years || 0,
+      experience_description: app.experience_description,
+      worked_for_companies: app.worked_for_companies,
+      can_prove: app.can_prove,
+      proof_photos: app.proof_photos || [],
+      certification_text: app.certification_text,
+      certification_photos: app.certification_photos || [],
+      declaration_truth: app.declaration_truth,
+      other_services: app.other_services
     } as any;
 
     const { data: exists, error: existsErr } = await supabase
@@ -166,6 +181,9 @@ const ApplicationsAdmin: React.FC = () => {
               <div className="border rounded-lg p-4">
                 <div className="font-semibold mb-2">Servicios</div>
                 <div className="text-sm">{(selected.services||[]).join(', ') || '—'}</div>
+                <div className="text-sm mt-1 border-t pt-1">
+                  <span className="font-medium text-gray-600">Otros:</span> {selected.other_services || <span className="text-gray-400 italic">Ninguno especificado</span>}
+                </div>
               </div>
               <div className="border rounded-lg p-4">
                 <div className="font-semibold mb-2">Herramientas</div>
@@ -173,30 +191,56 @@ const ApplicationsAdmin: React.FC = () => {
               </div>
               <div className="border rounded-lg p-4">
                 <div className="font-semibold mb-2">Experiencia</div>
-                <div className="text-sm">Rango: {selected.experience_range || '—'}</div>
-                <div className="text-sm">Años: {selected.experience_years ?? '—'}</div>
-                <div className="text-sm">Trabajó para empresas: {selected.worked_for_companies ? 'Sí' : 'No'}</div>
+                <div className="text-sm">Años: {selected.experience_years ?? 0}</div>
+                {selected.experience_description && (
+                  <div className="text-sm mt-2 whitespace-pre-line p-2 bg-gray-50 rounded">
+                    {selected.experience_description}
+                  </div>
+                )}
+                <div className="mt-2 text-sm">Trabajó para empresas: {selected.worked_for_companies ? 'Sí' : 'No'}</div>
                 <div className="text-sm">Puede demostrar: {selected.can_prove ? 'Sí' : 'No'}</div>
               </div>
               <div className="border rounded-lg p-4">
-                <div className="font-semibold mb-2">Demostraciones y fotos</div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {(selected.proof_photos||[]).map((u, i) => (
-                    <button key={i} onClick={()=>setPhotoIndex(i)} className="relative group">
-                      <img src={u} className="w-full h-28 sm:h-32 object-cover rounded-lg" />
-                    </button>
-                  ))}
-                </div>
+                <div className="font-semibold mb-2">Fotos de trabajos / CV</div>
+                {(!selected.proof_photos || selected.proof_photos.length === 0) ? (
+                  <div className="text-sm text-gray-500">No adjuntó archivos.</div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {(selected.proof_photos).map((u, i) => (
+                      <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="block group relative border rounded hover:shadow-md transition-shadow">
+                        {u.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                          <img src={u} className="w-full h-28 object-cover rounded" alt={`Proof ${i}`} />
+                        ) : (
+                          <div className="w-full h-28 flex items-center justify-center bg-gray-100 text-gray-500 rounded flex-col">
+                            <span className="text-xs p-2 text-center break-all">{u.split('/').pop()}</span>
+                          </div>
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="border rounded-lg p-4">
                 <div className="font-semibold mb-2">Formación</div>
                 <div className="text-sm whitespace-pre-line">{selected.certification_text || '—'}</div>
-              </div>
-              <div className="border rounded-lg p-4">
-                <div className="font-semibold mb-2">Pruebas</div>
-                <div className="text-sm">Césped: {selected.test_grass_frequency || '—'}</div>
-                <div className="text-sm">Seto: {selected.test_hedge_season || '—'}</div>
-                <div className="text-sm whitespace-pre-line">Plagas: {selected.test_pest_action || '—'}</div>
+                {selected.certification_photos && selected.certification_photos.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-xs font-semibold text-gray-500 mb-2 uppercase">Documentos de formación</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {(selected.certification_photos).map((u, i) => (
+                        <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="block group relative border rounded hover:shadow-md transition-shadow">
+                          {u.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                            <img src={u} className="w-full h-28 object-cover rounded" alt={`Cert ${i}`} />
+                          ) : (
+                            <div className="w-full h-28 flex items-center justify-center bg-gray-100 text-gray-500 rounded flex-col">
+                              <span className="text-xs p-2 text-center break-all">{u.split('/').pop()}</span>
+                            </div>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="border rounded-lg p-4">
                 <div className="font-semibold mb-2">Declaraciones</div>
@@ -206,6 +250,11 @@ const ApplicationsAdmin: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button onClick={()=>approve(selected)} className="px-3 py-2 bg-green-600 text-white rounded inline-flex items-center gap-2"><CheckCircle className="w-4 h-4" />Aprobar</button>
                 <button onClick={()=>reject(selected)} className="px-3 py-2 bg-red-600 text-white rounded inline-flex items-center gap-2"><XCircle className="w-4 h-4" />Rechazar</button>
+              </div>
+              <div className="text-xs text-gray-300 mt-4 font-mono">
+                ID: {selected.id}
+                <br/>
+                Submitted: {selected.submitted_at}
               </div>
             </div>
           </div>
@@ -244,6 +293,11 @@ const ApplicationsAdmin: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Database Fix Tool - Visible only for admin to fix RLS issues */}
+      <div className="mt-8 border-t pt-8">
+        <DatabaseFix />
+      </div>
     </div>
   );
 };

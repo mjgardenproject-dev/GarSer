@@ -1,13 +1,31 @@
 import React, { useState } from 'react';
 import { fixDatabaseIssues, fixDatabaseIssuesAlternative } from '../../utils/databaseFix';
 
-// Script SQL completo para políticas RLS y storage (incluye services público y bucket booking-photos público)
 const FULL_RLS_SCRIPT = `
 -- ===========================================
--- HABILITAR RLS
+-- 1. FUNCIÓN HELPER PARA EVITAR RECURSIÓN
+-- ===========================================
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM profiles
+    WHERE user_id = auth.uid()
+    AND role = 'admin'
+  );
+$$;
+
+-- ===========================================
+-- 2. HABILITAR RLS
 -- ===========================================
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gardener_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gardener_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE availability ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
@@ -22,58 +40,79 @@ BEGIN
 END $$;
 
 -- ===========================================
--- PROFILES
+-- 3. PROFILES
 -- ===========================================
 DROP POLICY IF EXISTS "profiles_select_own_or_counterpart" ON profiles;
 DROP POLICY IF EXISTS "profiles_insert_own" ON profiles;
 DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
 DROP POLICY IF EXISTS "profiles_delete_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_select_self" ON profiles;
+DROP POLICY IF EXISTS "profiles_admin_all" ON profiles;
 
-CREATE POLICY "profiles_select_own_or_counterpart" ON profiles
-  FOR SELECT USING (
-    user_id = auth.uid()
-    OR EXISTS (
-      SELECT 1
-      FROM bookings b
-      WHERE (b.client_id = profiles.user_id AND b.gardener_id = auth.uid())
-         OR (b.gardener_id = profiles.user_id AND b.client_id = auth.uid())
-    )
-  );
+-- Usuario ve su propio perfil
+CREATE POLICY "profiles_select_self" ON profiles
+  FOR SELECT USING (user_id = auth.uid());
 
+-- Admin ve y edita todo (usa la función para evitar recursión)
+CREATE POLICY "profiles_admin_all" ON profiles
+  FOR ALL USING (is_admin());
+
+-- Usuario inserta su perfil
 CREATE POLICY "profiles_insert_own" ON profiles
   FOR INSERT WITH CHECK (user_id = auth.uid());
 
+-- Usuario actualiza su perfil
 CREATE POLICY "profiles_update_own" ON profiles
   FOR UPDATE USING (user_id = auth.uid());
 
-CREATE POLICY "profiles_delete_own" ON profiles
-  FOR DELETE USING (user_id = auth.uid());
-
 -- ===========================================
--- GARDENER_PROFILES
+-- 4. GARDENER_PROFILES
 -- ===========================================
 DROP POLICY IF EXISTS "gardener_profiles_select_public_or_own" ON gardener_profiles;
 DROP POLICY IF EXISTS "gardener_profiles_insert_own" ON gardener_profiles;
 DROP POLICY IF EXISTS "gardener_profiles_update_own" ON gardener_profiles;
 DROP POLICY IF EXISTS "gardener_profiles_delete_own" ON gardener_profiles;
+DROP POLICY IF EXISTS "gp_admin_all" ON gardener_profiles;
 
+-- Todo el mundo puede ver perfiles (catálogo)
 CREATE POLICY "gardener_profiles_select_public_or_own" ON gardener_profiles
-  FOR SELECT USING (
-    (auth.uid() IS NOT NULL AND is_available = true)
-    OR user_id = auth.uid()
-  );
+  FOR SELECT USING (true);
 
+-- Admin gestiona todo
+CREATE POLICY "gp_admin_all" ON gardener_profiles
+  FOR ALL USING (is_admin());
+
+-- Jardinero gestiona su perfil
 CREATE POLICY "gardener_profiles_insert_own" ON gardener_profiles
   FOR INSERT WITH CHECK (user_id = auth.uid());
 
 CREATE POLICY "gardener_profiles_update_own" ON gardener_profiles
   FOR UPDATE USING (user_id = auth.uid());
 
-CREATE POLICY "gardener_profiles_delete_own" ON gardener_profiles
-  FOR DELETE USING (user_id = auth.uid());
+-- ===========================================
+-- 5. GARDENER_APPLICATIONS
+-- ===========================================
+DROP POLICY IF EXISTS "apps_admin_all" ON gardener_applications;
+DROP POLICY IF EXISTS "apps_select_own" ON gardener_applications;
+DROP POLICY IF EXISTS "apps_insert_own" ON gardener_applications;
+DROP POLICY IF EXISTS "apps_update_own" ON gardener_applications;
+
+-- Admin gestiona todo
+CREATE POLICY "apps_admin_all" ON gardener_applications
+  FOR ALL USING (is_admin());
+
+-- Usuario ve/crea/edita su propia solicitud
+CREATE POLICY "apps_select_own" ON gardener_applications
+  FOR SELECT USING (user_id = auth.uid());
+
+CREATE POLICY "apps_insert_own" ON gardener_applications
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "apps_update_own" ON gardener_applications
+  FOR UPDATE USING (user_id = auth.uid());
 
 -- ===========================================
--- SERVICES (lectura pública)
+-- 6. SERVICES (lectura pública)
 -- ===========================================
 DROP POLICY IF EXISTS "services_select_authenticated" ON services;
 DROP POLICY IF EXISTS "services_select_public" ON services;
@@ -82,7 +121,7 @@ CREATE POLICY "services_select_public" ON services
   FOR SELECT USING (true);
 
 -- ===========================================
--- BOOKINGS
+-- 7. BOOKINGS & OTHERS
 -- ===========================================
 DROP POLICY IF EXISTS "bookings_select_participants" ON bookings;
 DROP POLICY IF EXISTS "bookings_insert_client_only" ON bookings;
@@ -90,238 +129,50 @@ DROP POLICY IF EXISTS "bookings_update_participants" ON bookings;
 DROP POLICY IF EXISTS "bookings_delete_participants" ON bookings;
 
 CREATE POLICY "bookings_select_participants" ON bookings
-  FOR SELECT USING (
-    client_id = auth.uid() OR gardener_id = auth.uid()
-  );
+  FOR SELECT USING (client_id = auth.uid() OR gardener_id = auth.uid());
 
 CREATE POLICY "bookings_insert_client_only" ON bookings
-  FOR INSERT WITH CHECK (
-    client_id = auth.uid()
-  );
+  FOR INSERT WITH CHECK (client_id = auth.uid());
 
 CREATE POLICY "bookings_update_participants" ON bookings
-  FOR UPDATE USING (
-    client_id = auth.uid() OR gardener_id = auth.uid()
-  );
-
-CREATE POLICY "bookings_delete_participants" ON bookings
-  FOR DELETE USING (
-    client_id = auth.uid() OR gardener_id = auth.uid()
-  );
+  FOR UPDATE USING (client_id = auth.uid() OR gardener_id = auth.uid());
 
 -- ===========================================
--- AVAILABILITY
+-- 8. COLUMNAS FALTANTES
 -- ===========================================
-DROP POLICY IF EXISTS "availability_select_public_or_owner" ON availability;
-DROP POLICY IF EXISTS "availability_insert_owner" ON availability;
-DROP POLICY IF EXISTS "availability_update_owner" ON availability;
-DROP POLICY IF EXISTS "availability_delete_owner" ON availability;
+ALTER TABLE gardener_applications ADD COLUMN IF NOT EXISTS experience_description text;
+ALTER TABLE gardener_applications ADD COLUMN IF NOT EXISTS certification_photos text[] DEFAULT '{}';
+ALTER TABLE gardener_applications ADD COLUMN IF NOT EXISTS other_services text;
 
-CREATE POLICY "availability_select_public_or_owner" ON availability
-  FOR SELECT USING (
-    (auth.uid() IS NOT NULL AND is_available = true)
-    OR gardener_id = auth.uid()
-  );
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS experience_description text;
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS certification_photos text[] DEFAULT '{}';
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS tools_available text[] DEFAULT '{}';
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS experience_years int DEFAULT 0;
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS worked_for_companies boolean DEFAULT false;
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS can_prove boolean DEFAULT false;
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS proof_photos text[] DEFAULT '{}';
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS certification_text text;
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS declaration_truth boolean DEFAULT false;
+ALTER TABLE gardener_profiles ADD COLUMN IF NOT EXISTS other_services text;
 
-CREATE POLICY "availability_insert_owner" ON availability
-  FOR INSERT WITH CHECK (gardener_id = auth.uid());
-
-CREATE POLICY "availability_update_owner" ON availability
-  FOR UPDATE USING (gardener_id = auth.uid());
-
-CREATE POLICY "availability_delete_owner" ON availability
-  FOR DELETE USING (gardener_id = auth.uid());
-
-DO $$
+-- ===========================================
+-- 9. CHECK EMAIL EXISTS (Auth Helper)
+-- ===========================================
+CREATE OR REPLACE FUNCTION public.check_email_exists(email_to_check text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
 BEGIN
-  IF to_regclass('public.availability_blocks') IS NOT NULL THEN
-    EXECUTE $pol$
-      DROP POLICY IF EXISTS "availability_blocks_select_public_or_owner" ON availability_blocks;
-      DROP POLICY IF EXISTS "availability_blocks_insert_owner" ON availability_blocks;
-      DROP POLICY IF EXISTS "availability_blocks_update_owner" ON availability_blocks;
-      DROP POLICY IF EXISTS "availability_blocks_delete_owner" ON availability_blocks;
-
-      CREATE POLICY "availability_blocks_select_public_or_owner" ON availability_blocks
-        FOR SELECT USING (
-          (auth.uid() IS NOT NULL AND is_available = true)
-          OR gardener_id = auth.uid()
-        );
-
-      CREATE POLICY "availability_blocks_insert_owner" ON availability_blocks
-        FOR INSERT WITH CHECK (gardener_id = auth.uid());
-
-      CREATE POLICY "availability_blocks_update_owner" ON availability_blocks
-        FOR UPDATE USING (gardener_id = auth.uid());
-
-      CREATE POLICY "availability_blocks_delete_owner" ON availability_blocks
-        FOR DELETE USING (gardener_id = auth.uid());
-    $pol$;
-  END IF;
-END $$;
-
--- ===========================================
--- CHAT_MESSAGES
--- ===========================================
-DROP POLICY IF EXISTS "chat_messages_select_booking_participants" ON chat_messages;
-DROP POLICY IF EXISTS "chat_messages_insert_booking_participants" ON chat_messages;
-DROP POLICY IF EXISTS "chat_messages_update_booking_participants" ON chat_messages;
-DROP POLICY IF EXISTS "chat_messages_delete_booking_participants" ON chat_messages;
-
-CREATE POLICY "chat_messages_select_booking_participants" ON chat_messages
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1
-      FROM bookings b
-      WHERE b.id = chat_messages.booking_id
-        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
-    )
+  -- Verifica si el email existe en auth.users
+  RETURN EXISTS (
+    SELECT 1 FROM auth.users WHERE email = email_to_check
   );
+END;
+$$;
 
-CREATE POLICY "chat_messages_insert_booking_participants" ON chat_messages
-  FOR INSERT WITH CHECK (
-    sender_id = auth.uid()
-    AND EXISTS (
-      SELECT 1
-      FROM bookings b
-      WHERE b.id = chat_messages.booking_id
-        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
-    )
-  );
-
-CREATE POLICY "chat_messages_update_booking_participants" ON chat_messages
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1
-      FROM bookings b
-      WHERE b.id = chat_messages.booking_id
-        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
-    )
-  );
-
-CREATE POLICY "chat_messages_delete_booking_participants" ON chat_messages
-  FOR DELETE USING (
-    EXISTS (
-      SELECT 1
-      FROM bookings b
-      WHERE b.id = chat_messages.booking_id
-        AND (b.client_id = auth.uid() OR b.gardener_id = auth.uid())
-    )
-  );
-
--- ===========================================
--- ROLE_LOGS
--- ===========================================
-DROP POLICY IF EXISTS "role_logs_select_own" ON role_logs;
-DROP POLICY IF EXISTS "role_logs_insert_own" ON role_logs;
-DROP POLICY IF EXISTS "role_logs_update_own" ON role_logs;
-DROP POLICY IF EXISTS "role_logs_delete_own" ON role_logs;
-
-CREATE POLICY "role_logs_select_own" ON role_logs
-  FOR SELECT USING (user_id = auth.uid());
-
-CREATE POLICY "role_logs_insert_own" ON role_logs
-  FOR INSERT WITH CHECK (user_id = auth.uid());
-
-CREATE POLICY "role_logs_update_own" ON role_logs
-  FOR UPDATE USING (user_id = auth.uid());
-
-CREATE POLICY "role_logs_delete_own" ON role_logs
-  FOR DELETE USING (user_id = auth.uid());
-
--- ===========================================
--- STORAGE: BUCKET booking-photos PÚBLICO + POLÍTICAS
--- ===========================================
-INSERT INTO storage.buckets (id, name, public)
-SELECT 'booking-photos', 'booking-photos', true
-WHERE NOT EXISTS (
-  SELECT 1 FROM storage.buckets WHERE id = 'booking-photos'
-);
-
-UPDATE storage.buckets SET public = true WHERE id = 'booking-photos';
-
--- Lectura simplificada: cualquiera puede leer objetos del bucket público
-DROP POLICY IF EXISTS "storage_objects_select_own_photos" ON storage.objects;
-DROP POLICY IF EXISTS "storage_objects_select_public_bucket" ON storage.objects;
-
-CREATE POLICY "storage_objects_select_public_bucket" ON storage.objects
-  FOR SELECT USING (bucket_id = 'booking-photos');
-
--- Escritura/actualización/borrado restringidos al dueño por ruta
-DROP POLICY IF EXISTS "storage_objects_insert_own_photos" ON storage.objects;
-DROP POLICY IF EXISTS "storage_objects_update_own_photos" ON storage.objects;
-DROP POLICY IF EXISTS "storage_objects_delete_own_photos" ON storage.objects;
-
-CREATE POLICY "storage_objects_insert_own_photos" ON storage.objects
-  FOR INSERT WITH CHECK (
-    bucket_id = 'booking-photos'
-    AND (
-      name LIKE ('drafts/' || auth.uid() || '/%')
-      OR name LIKE ('bookings/' || auth.uid() || '/%')
-    )
-  );
-
-CREATE POLICY "storage_objects_update_own_photos" ON storage.objects
-  FOR UPDATE USING (
-    bucket_id = 'booking-photos'
-    AND (
-      name LIKE ('drafts/' || auth.uid() || '/%')
-      OR name LIKE ('bookings/' || auth.uid() || '/%')
-    )
-  );
-
-CREATE POLICY "storage_objects_delete_own_photos" ON storage.objects
-  FOR DELETE USING (
-    bucket_id = 'booking-photos'
-    AND (
-      name LIKE ('drafts/' || auth.uid() || '/%')
-      OR name LIKE ('bookings/' || auth.uid() || '/%')
-    )
-  );
--- ===========================================
--- STORAGE: BUCKET applications PÚBLICO + POLÍTICAS
--- ===========================================
-INSERT INTO storage.buckets (id, name, public)
-SELECT 'applications', 'applications', true
-WHERE NOT EXISTS (
-  SELECT 1 FROM storage.buckets WHERE id = 'applications'
-);
-
-UPDATE storage.buckets SET public = true WHERE id = 'applications';
-
-DROP POLICY IF EXISTS "storage_objects_select_public_applications" ON storage.objects;
-CREATE POLICY "storage_objects_select_public_applications" ON storage.objects
-  FOR SELECT USING (bucket_id = 'applications');
-
-DROP POLICY IF EXISTS "storage_objects_insert_applications" ON storage.objects;
-DROP POLICY IF EXISTS "storage_objects_update_applications" ON storage.objects;
-DROP POLICY IF EXISTS "storage_objects_delete_applications" ON storage.objects;
-
-CREATE POLICY "storage_objects_insert_applications" ON storage.objects
-  FOR INSERT WITH CHECK (
-    bucket_id = 'applications'
-    AND (
-      name LIKE (auth.uid() || '/avatar/%')
-      OR name LIKE (auth.uid() || '/proof/%')
-    )
-  );
-
-CREATE POLICY "storage_objects_update_applications" ON storage.objects
-  FOR UPDATE USING (
-    bucket_id = 'applications'
-    AND (
-      name LIKE (auth.uid() || '/avatar/%')
-      OR name LIKE (auth.uid() || '/proof/%')
-    )
-  );
-
-CREATE POLICY "storage_objects_delete_applications" ON storage.objects
-  FOR DELETE USING (
-    bucket_id = 'applications'
-    AND (
-      name LIKE (auth.uid() || '/avatar/%')
-      OR name LIKE (auth.uid() || '/proof/%')
-    )
-  );
+GRANT EXECUTE ON FUNCTION public.check_email_exists(text) TO anon, authenticated, service_role;
 `;
 
 const DatabaseFix: React.FC = () => {

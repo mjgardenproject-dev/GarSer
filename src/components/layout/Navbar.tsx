@@ -156,23 +156,23 @@ const Navbar = () => {
               </button>
             ) : (
               <button
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-semibold"
-                aria-label="Iniciar sesión o reservar"
-                onMouseDown={(e) => e.preventDefault()}
-                onClickCapture={() => navigate('/reserva')}
+                onClick={() => navigate('/auth')}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-2 px-4 text-sm rounded-xl font-bold shadow-lg shadow-green-600/20 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                aria-label="Iniciar sesión"
               >
-                Iniciar sesión / Reservar
+                Iniciar sesión
               </button>
             )}
             {/* Botón menú móvil */}
-            <button
-              className="md:hidden p-2 rounded-md text-gray-700 hover:bg-gray-100"
-              aria-label="Abrir menú"
-              onClick={() => setIsMobileMenuOpen(v => !v)}
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+            {user && (
+              <button
+                className="md:hidden p-2 rounded-md text-gray-700 hover:bg-gray-100"
+                aria-label="Abrir menú"
+                onClick={() => setIsMobileMenuOpen(v => !v)}
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
 

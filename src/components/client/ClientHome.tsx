@@ -975,13 +975,13 @@ const ClientHome: React.FC = () => {
         </div>
 
         {/* Content */}
-        <div className="p-4 sm:p-6">
+        <div className="p-5 sm:p-8">
           {applicationStatus === 'submitted' ? (
             <div className="flex flex-col items-center justify-center py-16">
               <div className="w-16 h-16 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center mb-4">
                 <Clock className="w-8 h-8" />
               </div>
-              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">Tu solicitud está en revisión</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Tu solicitud está en revisión</h2>
               <p className="text-gray-600 text-center max-w-md">Has solicitado ser jardinero. Estamos revisando tu información para activar tu cuenta profesional. Te avisaremos por email en cuanto terminemos. Mientras tanto, no verás el panel de cliente y no necesitas hacer nada más.</p>
             </div>
           ) : (
@@ -1006,7 +1006,7 @@ const ClientHome: React.FC = () => {
                   </button>
                 )}
                 {step !== 'confirm' && (
-                  <button onClick={goNext} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
+                  <button onClick={goNext} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 inline-flex items-center text-sm sm:text-base">
                     Siguiente <ChevronRight className="w-4 h-4 ml-1" />
                   </button>
                 )}
@@ -1034,7 +1034,7 @@ const ClientHome: React.FC = () => {
               {step === 'address' && (
                 <div className="space-y-3 sm:space-y-4">
                   {restrictedGardenerProfile && <GardenerInfoBanner />}
-                  <label className="block text-base sm:text-lg font-semibold text-gray-800">Dirección</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
                   <AddressAutocomplete value={selectedAddress} onChange={handleAddressSelected} error={addressError} />
                   {selectedAddress && (
                     <div className="text-sm text-gray-600">Dirección seleccionada: <span className="font-medium">{selectedAddress}</span></div>
@@ -1130,7 +1130,7 @@ const ClientHome: React.FC = () => {
                           <select
                             value={debugTaskDraft.tipo_servicio}
                             onChange={(e) => setDebugTaskDraft(prev => ({ ...prev, tipo_servicio: e.target.value }))}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                            className="w-full py-2.5 px-3.5 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                           >
                             <option value="" disabled>Selecciona…</option>
                             {services.map(s => (
@@ -1139,7 +1139,7 @@ const ClientHome: React.FC = () => {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-800 mb-1">Estado del jardín</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Estado del jardín</label>
                           <select
                             value={debugTaskDraft.estado_jardin}
                             onChange={(e) => setDebugTaskDraft(prev => ({ ...prev, estado_jardin: e.target.value }))}
@@ -1151,7 +1151,7 @@ const ClientHome: React.FC = () => {
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-800 mb-1">Cantidad</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad</label>
                           <input
                             type="number"
                             min={0}
@@ -1167,7 +1167,7 @@ const ClientHome: React.FC = () => {
                                 tamaño_plantas: null,
                               }));
                             }}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                            className="w-full py-2.5 px-3.5 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                             placeholder={debugQuantityUnit === 'm2' ? 'Ej: 120' : 'Ej: 8'}
                           />
                           <div className="text-xs text-gray-600 mt-1">Unidad: {debugQuantityUnit === 'm2' ? 'm²' : 'plantas'}</div>
@@ -1588,7 +1588,7 @@ const ClientHome: React.FC = () => {
                                                     gardenerIds: [gardener.user_id]
                                                   });
                                                 }}
-                                                className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${
+                                                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
                                                   isSlotSelected 
                                                     ? 'bg-green-600 text-white border-green-600 shadow-md transform scale-105' 
                                                     : 'bg-white text-gray-700 border-gray-200 hover:border-green-400 hover:bg-green-50'
@@ -1626,7 +1626,7 @@ const ClientHome: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg sm:static sm:bg-transparent sm:border-0 sm:shadow-none sm:p-0">
+                  <div className="fixed bottom-0 left-0 right-0 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] bg-white border-t border-gray-200 shadow-lg sm:static sm:bg-transparent sm:border-0 sm:shadow-none sm:p-0">
                     <button
                       onClick={confirmAndSend}
                       disabled={!selectedSlot || !selectedGardener || sending}
@@ -1716,7 +1716,7 @@ const ClientHome: React.FC = () => {
       {(!(location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar'))) && (
         <div className="mt-8 space-y-6">
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Qué es Garser</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Qué es Garser</h2>
             <p className="text-gray-700 text-sm">
               GarSer es tu servicio de jardinería de confianza. Te ayudamos a reservar trabajos de forma rápida, clara y sin complicaciones.
             </p>
@@ -1734,7 +1734,7 @@ const ClientHome: React.FC = () => {
             </p>
           </div>
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Por qué confiar en nosotros</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Por qué confiar en nosotros</h2>
             <p className="text-gray-700 text-sm">
               Profesionales verificados, comunicación transparente y soporte en cada paso. No necesitas registrarte para empezar tu reserva.
             </p>

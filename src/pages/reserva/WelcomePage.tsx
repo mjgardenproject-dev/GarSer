@@ -42,14 +42,14 @@ const WelcomePage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex flex-col">
       {/* Hero Section */}
-      <div className="flex-1 flex flex-col justify-center px-6 pt-12 pb-32">
+      <div className="flex-1 flex flex-col justify-center px-6 pt-8 sm:pt-12 pb-32">
         <div className="max-w-md mx-auto w-full">
           {/* Logo */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">
               GarSer<span className="text-green-600">.es</span>
             </h1>
-            <p className="text-lg text-gray-600">
+            <p className="text-base sm:text-lg text-gray-600">
               Jardinería profesional a un clic
             </p>
           </div>
@@ -104,7 +104,7 @@ const WelcomePage: React.FC = () => {
       </div>
 
       {/* Fixed CTA */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-6 z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
         <div className="max-w-md mx-auto">
           <button
             onClick={handleStart}

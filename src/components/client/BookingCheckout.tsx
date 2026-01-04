@@ -328,7 +328,7 @@ const BookingCheckout: React.FC = () => {
 
   if (!payload) {
     return (
-      <div className="max-w-xl mx-auto p-6">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
         <div className="bg-white border border-gray-200 rounded-xl p-6 text-center">
           <div className="text-gray-900 font-semibold mb-2">No hay una reserva pendiente</div>
           <div className="text-gray-700 text-sm mb-4">Vuelve a la pantalla de reserva para continuar.</div>
@@ -345,7 +345,7 @@ const BookingCheckout: React.FC = () => {
 
   if (!user?.id) {
     return (
-      <div className="max-w-xl mx-auto p-6">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
         <div className="bg-white border border-gray-200 rounded-xl p-6">
           <div className="text-xl font-semibold text-gray-900 mb-3">Crea tu cuenta para continuar</div>
           <div className="text-gray-700 text-sm mb-4">
@@ -431,7 +431,7 @@ const BookingCheckout: React.FC = () => {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-4 sm:p-6">
+    <div className="max-w-4xl mx-auto p-4 sm:p-6">
       <div className="bg-white border border-gray-200 rounded-2xl p-6">
         <div className="text-xl font-semibold text-gray-900 mb-4">Resumen de tu reserva</div>
 

@@ -956,6 +956,61 @@ const ClientHome: React.FC = () => {
     );
   };
 
+  if (step === 'welcome' && applicationStatus !== 'submitted') {
+    return (
+      <div className="max-w-4xl mx-auto p-4 sm:p-6">
+        <div className="w-full bg-green-600 rounded-2xl p-6 sm:p-12 text-white shadow-lg text-center relative overflow-hidden">
+          {/* Decorative circles */}
+          <div className="absolute top-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+          <div className="absolute bottom-0 right-0 w-40 h-40 bg-white opacity-5 rounded-full translate-x-1/3 translate-y-1/3 pointer-events-none"></div>
+
+          {restrictedGardenerProfile && (
+             <div className="mb-6 bg-white/10 backdrop-blur-sm rounded-xl p-3 inline-block mx-auto border border-white/20">
+                <div className="flex items-center gap-3 text-left">
+                  {restrictedGardenerProfile.avatar_url && (
+                    <img 
+                      src={restrictedGardenerProfile.avatar_url} 
+                      alt={restrictedGardenerProfile.full_name}
+                      className="w-10 h-10 rounded-full object-cover border-2 border-white"
+                    />
+                  )}
+                  <div>
+                    <div className="text-xs text-green-100 font-medium opacity-90">Reservando con</div>
+                    <div className="text-base font-bold text-white leading-tight">{restrictedGardenerProfile.full_name}</div>
+                  </div>
+                </div>
+             </div>
+          )}
+
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold mb-6 leading-tight tracking-tight">
+            Tu jardín perfecto <br className="hidden sm:block"/> en un clic
+          </h2>
+          
+          <p className="text-green-50 text-lg sm:text-xl mb-10 max-w-2xl mx-auto font-medium opacity-90">
+            Profesionales verificados, precios justos y resultados garantizados.
+          </p>
+
+          <div className="flex flex-col items-center gap-4">
+            <button 
+              onClick={handleStart} 
+              className="group relative px-8 py-4 bg-white text-green-700 rounded-2xl text-xl font-bold shadow-lg hover:shadow-2xl hover:bg-green-50 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto min-w-[280px]"
+            >
+              <span className="flex items-center justify-center gap-2">
+                Empezar
+                <ChevronRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+              </span>
+            </button>
+            
+            <p className="text-sm font-semibold text-green-100 flex items-center justify-center gap-1.5 mt-2 bg-green-700/20 px-4 py-1.5 rounded-full backdrop-blur-sm">
+              <Clock className="w-3.5 h-3.5" />
+              Reserva en menos de 1 minuto
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6">
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
@@ -1020,16 +1075,6 @@ const ClientHome: React.FC = () => {
                 )}
               </div>
               </div>
-
-              {step === 'welcome' && (
-                <div className="text-center py-10 sm:py-16">
-                  {restrictedGardenerProfile && <GardenerInfoBanner />}
-                  <p className="text-gray-600 mb-8 text-sm sm:text-base">Tu nueva experiencia de reserva de jardinería, simple y directa.</p>
-                  <button onClick={handleStart} className="px-6 sm:px-8 py-3 sm:py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base sm:text-lg font-semibold shadow-lg transform hover:scale-[1.02] transition">
-                    Empezar
-                  </button>
-                </div>
-              )}
 
               {step === 'address' && (
                 <div className="space-y-3 sm:space-y-4">

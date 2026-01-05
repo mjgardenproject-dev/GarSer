@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, Save, Check, X, Copy, ChevronLeft, ChevronRight, ArrowLeft, RefreshCw } from 'lucide-react';
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks, isBefore, startOfToday } from 'date-fns';
+import { Calendar, Save, ChevronLeft, ChevronRight, ArrowLeft, RefreshCw, AlertTriangle } from 'lucide-react';
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks, isBefore, startOfToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { 
   generateDailyTimeBlocks, 
   getGardenerAvailability, 
   setGardenerAvailability 
 } from '../../utils/availabilityService';
-import { AvailabilityBlock, TimeBlock } from '../../types';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import RecurringScheduleManager from './RecurringScheduleManager';
@@ -26,6 +26,13 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
   const [saving, setSaving] = useState(false);
   const [bookedBlocks, setBookedBlocks] = useState<{ [date: string]: Set<number> }>({});
   const [hasRecurringSchedule, setHasRecurringSchedule] = useState(false);
+  
+  // Nuevo estado para controlar cambios sin guardar
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingNav, setPendingNav] = useState<{ type: 'switch'; target: 'weekly' | 'recurring' } | { type: 'leave' } | null>(null);
+  const [recurringSaveHandler, setRecurringSaveHandler] = useState<(() => Promise<boolean>) | null>(null);
+  const [recurringMountKey, setRecurringMountKey] = useState(0);
 
   // Generar bloques de tiempo de 1 hora (8:00 AM a 8:00 PM)
   const timeBlocks = generateDailyTimeBlocks();
@@ -61,12 +68,33 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
   useEffect(() => {
     if (authLoading) return;
     if (!user?.id) return;
-    // Reload when switching to weekly tab to show any generated slots
     if (activeTab === 'weekly') {
       fetchWeeklyAvailability();
       checkRecurringSchedule();
     }
   }, [selectedWeek, user?.id, authLoading, activeTab, checkRecurringSchedule]);
+
+  useEffect(() => {
+    if (showConfirmModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showConfirmModal]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges]);
 
   const fetchWeeklyAvailability = async () => {
     if (!user?.id) {
@@ -105,6 +133,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
 
       console.log('Final weekly availability data:', weeklyData);
       setWeeklyAvailability(weeklyData);
+      setHasUnsavedChanges(false); // Reset changes flag on load
 
       // Cargar reservas confirmadas dentro de la semana y marcar bloques
       try {
@@ -157,12 +186,13 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
         }
       };
     });
+    setHasUnsavedChanges(true); // Marcar que hay cambios sin guardar
   };
 
-  const saveWeeklyAvailability = async () => {
+  const saveWeeklyAvailability = async (): Promise<boolean> => {
     if (!user) {
       console.error('No user found when trying to save availability');
-      return;
+      return false;
     }
 
     console.log('Starting to save weekly availability for user:', user.id);
@@ -182,84 +212,23 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
       const results = await Promise.all(promises);
       console.log('Save results:', results);
       toast.success('Disponibilidad guardada correctamente');
+      setHasUnsavedChanges(false); // Reset changes flag on success
+      return true;
     } catch (error: any) {
       console.error('Error saving availability:', error);
       toast.error('Error al guardar la disponibilidad');
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
   const navigateWeek = (direction: 'prev' | 'next') => {
-    setSelectedWeek(prev => direction === 'prev' ? subWeeks(prev, 1) : addWeeks(prev, 1));
-  };
-
-  const copyPreviousWeekSchedule = async () => {
-    if (!user) return;
-
-    setSaving(true);
-    try {
-      const previousWeek = subWeeks(selectedWeek, 1);
-      const prevWeekStart = startOfWeek(previousWeek, { weekStartsOn: 1 });
-      const prevWeekEnd = endOfWeek(previousWeek, { weekStartsOn: 1 });
-      const prevWeekDays = eachDayOfInterval({ start: prevWeekStart, end: prevWeekEnd });
-      
-      const currentWeekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
-      const currentWeekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
-      const currentWeekDays = eachDayOfInterval({ start: currentWeekStart, end: currentWeekEnd });
-
-      const previousWeekData: { [date: string]: { [hour: number]: boolean } } = {};
-      
-      // Obtener datos de la semana anterior
-      for (const day of prevWeekDays) {
-        const dateStr = format(day, 'yyyy-MM-dd');
-        const availability = await getGardenerAvailability(user.id, dateStr);
-        
-        const dayAvailability: { [hour: number]: boolean } = {};
-        for (let hour = 8; hour <= 19; hour++) {
-          dayAvailability[hour] = availability.some(block => block.hour_block === hour && block.is_available);
-        }
-        previousWeekData[dateStr] = dayAvailability;
-      }
-
-      // Aplicar a la semana actual
-      const newWeeklyAvailability = { ...weeklyAvailability };
-      currentWeekDays.forEach((day, index) => {
-        const currentDateStr = format(day, 'yyyy-MM-dd');
-        const previousDateStr = format(prevWeekDays[index], 'yyyy-MM-dd');
-        
-        if (previousWeekData[previousDateStr]) {
-          newWeeklyAvailability[currentDateStr] = { ...previousWeekData[previousDateStr] };
-        }
-      });
-
-      // Actualizar el estado local
-      setWeeklyAvailability(newWeeklyAvailability);
-
-      // Guardar automáticamente en la base de datos solo para los días de la semana actual
-      const savePromises = currentWeekDays.map((day) => {
-        const dateStr = format(day, 'yyyy-MM-dd');
-        const dayAvailability = newWeeklyAvailability[dateStr] || {};
-        const availableHours = Object.entries(dayAvailability)
-          .filter(([_, isAvailable]) => isAvailable)
-          .map(([hour, _]) => parseInt(hour));
-        
-        console.log(`Auto-saving availability for date ${dateStr}:`, availableHours);
-        return setGardenerAvailability(user.id, dateStr, availableHours);
-      });
-
-      await Promise.all(savePromises);
-      
-      // Refrescar los datos desde la base de datos para asegurar sincronización
-      await fetchWeeklyAvailability();
-      
-      toast.success('Horario de la semana anterior copiado y guardado correctamente');
-    } catch (error) {
-      console.error('Error copying previous week schedule:', error);
-      toast.error('Error al copiar el horario de la semana anterior');
-    } finally {
-      setSaving(false);
+    if (hasUnsavedChanges) {
+      // Opcional: Podríamos advertir aquí también, pero por ahora solo al salir de la página
+      // toast('Tienes cambios sin guardar en esta semana', { icon: '⚠️' });
     }
+    setSelectedWeek(prev => direction === 'prev' ? subWeeks(prev, 1) : addWeeks(prev, 1));
   };
 
   const getWeekDays = () => {
@@ -278,32 +247,89 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
     return !!set && set.has(hour);
   };
 
+  // Manejadores para la confirmación de salida
+  const handleBack = () => {
+    if (hasUnsavedChanges) {
+      setPendingNav({ type: 'leave' });
+      setShowConfirmModal(true);
+    } else {
+      onBack?.();
+    }
+  };
+
+  const handleConfirmDiscard = () => {
+    setShowConfirmModal(false);
+    if (!pendingNav) return;
+    if (pendingNav.type === 'switch') {
+      if (pendingNav.target === 'weekly') {
+        setActiveTab('weekly');
+        fetchWeeklyAvailability();
+      } else {
+        setActiveTab('recurring');
+        setRecurringMountKey(k => k + 1);
+      }
+      setHasUnsavedChanges(false);
+      setPendingNav(null);
+    } else {
+      setHasUnsavedChanges(false);
+      setPendingNav(null);
+      onBack?.();
+    }
+  };
+
+  const handleConfirmSave = async () => {
+    let success = true;
+    if (activeTab === 'weekly') {
+      success = await saveWeeklyAvailability();
+    } else {
+      success = (await recurringSaveHandler?.()) ?? false;
+    }
+    if (!success) return;
+    setHasUnsavedChanges(false);
+    setShowConfirmModal(false);
+    if (!pendingNav) return;
+    if (pendingNav.type === 'switch') {
+      setActiveTab(pendingNav.target);
+      setPendingNav(null);
+    } else {
+      setPendingNav(null);
+      onBack?.();
+    }
+  };
+
   return (
-    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row items-center md:justify-between gap-4 mb-6">
-          <div className="flex items-center">
-            {onBack && (
-              <button
-                onClick={onBack}
-                className="mr-3 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
-                aria-label="Volver al Panel"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Volver
-              </button>
-            )}
-            <div className="flex items-center">
-                <Calendar className="w-6 h-6 text-green-600 mr-3" />
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestión de Disponibilidad</h2>
-            </div>
+    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6 relative">
+        {/* 1. Botón Volver (Parte superior) */}
+        {onBack && (
+          <div className="mb-4">
+            <button
+              onClick={handleBack}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
+              aria-label="Volver al Panel"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Volver
+            </button>
           </div>
+        )}
+
+        {/* 2. Título de la página (Justo debajo de volver) */}
+        <div className="flex items-center mb-6">
+            <Calendar className="w-6 h-6 text-green-600 mr-3" />
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestión de Disponibilidad</h2>
         </div>
 
-        {/* Tabs */}
+        {/* 3. Selector de subpáginas (Tabs) */}
         <div className="flex space-x-1 bg-white border border-gray-200 p-1 rounded-lg mb-6 w-full max-w-md mx-auto md:mx-0 shadow-sm">
           <button
-            onClick={() => setActiveTab('weekly')}
+            onClick={() => {
+              if (hasUnsavedChanges && activeTab !== 'weekly') {
+                setPendingNav({ type: 'switch', target: 'weekly' });
+                setShowConfirmModal(true);
+              } else {
+                setActiveTab('weekly');
+              }
+            }}
             className={`flex-1 flex items-center justify-center py-2 text-sm font-medium rounded-md transition-colors ${
               activeTab === 'weekly' 
                 ? 'bg-gray-100 text-gray-900 shadow-sm' 
@@ -314,7 +340,14 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
             Calendario Semanal
           </button>
           <button
-            onClick={() => setActiveTab('recurring')}
+            onClick={() => {
+              if (hasUnsavedChanges && activeTab !== 'recurring') {
+                setPendingNav({ type: 'switch', target: 'recurring' });
+                setShowConfirmModal(true);
+              } else {
+                setActiveTab('recurring');
+              }
+            }}
             className={`flex-1 flex items-center justify-center py-2 text-sm font-medium rounded-md transition-colors ${
               activeTab === 'recurring' 
                 ? 'bg-gray-100 text-gray-900 shadow-sm' 
@@ -327,59 +360,62 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
         </div>
 
         {activeTab === 'recurring' ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-            <RecurringScheduleManager />
-          </div>
+          <RecurringScheduleManager
+            key={recurringMountKey}
+            onChangePending={(p) => setHasUnsavedChanges(p)}
+            registerSaveHandler={(fn) => setRecurringSaveHandler(() => fn)}
+          />
         ) : (
           <>
-            <div className="flex flex-col md:flex-row items-center md:justify-between gap-4 mb-6">
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => navigateWeek('prev')}
-                  className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                
-                <div className="text-center">
-                  <p className="text-lg font-semibold text-gray-900">
-                    {format(startOfWeek(selectedWeek, { weekStartsOn: 1 }), 'dd MMM', { locale: es })} - {' '}
-                    {format(endOfWeek(selectedWeek, { weekStartsOn: 1 }), 'dd MMM yyyy', { locale: es })}
+            {/* 4. Selector de la semana actual */}
+            <div className="flex items-center justify-center space-x-4 mb-6">
+              <button
+                onClick={() => navigateWeek('prev')}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              
+              <div className="text-center">
+                <p className="text-lg font-semibold text-gray-900">
+                  {format(startOfWeek(selectedWeek, { weekStartsOn: 1 }), 'dd MMM', { locale: es })} - {' '}
+                  {format(endOfWeek(selectedWeek, { weekStartsOn: 1 }), 'dd MMM yyyy', { locale: es })}
+                </p>
+                {!hasRecurringSchedule && !Object.values(weeklyAvailability).some(day => Object.values(day).some(v => v)) && (
+                  <p className="text-xs text-red-500 mt-1 font-medium">
+                    No hay disponibilidad configurada
                   </p>
-                  {!hasRecurringSchedule && !Object.values(weeklyAvailability).some(day => Object.values(day).some(v => v)) && (
-                    <p className="text-xs text-red-500 mt-1 font-medium">
-                      No hay disponibilidad configurada para esta semana, para evitar que esto pase configura tu horario fijo.
-                    </p>
-                  )}
-                </div>
-                
-                <button
-                  onClick={() => navigateWeek('next')}
-                  className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
+                )}
               </div>
               
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={copyPreviousWeekSchedule}
-                  disabled={saving}
-                  className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  {saving ? 'Copiando...' : 'Copiar Semana Anterior'}
-                </button>
-                
-                <button
-                  onClick={saveWeeklyAvailability}
-                  disabled={saving}
-                  className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {saving ? 'Guardando...' : 'Guardar'}
-                </button>
-              </div>
+              <button
+                onClick={() => navigateWeek('next')}
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 5. Título del calendario y Botón Guardar (alineados) */}
+            <div className="flex items-center justify-between mb-4 px-1">
+              <h3 className="text-lg font-semibold text-gray-900">Calendario semanal</h3>
+              
+              {/* Botón Guardar movido aquí */}
+              <button
+                onClick={saveWeeklyAvailability}
+                disabled={saving || !hasUnsavedChanges}
+                className={`
+                  py-2 px-6 text-sm rounded-xl font-bold flex items-center gap-2 transition-all duration-200
+                  ${hasUnsavedChanges 
+                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg shadow-green-600/20 transform hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2' 
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+                  }
+                  ${saving ? 'opacity-70 cursor-wait' : ''}
+                `}
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Guardando...' : 'Guardar'}
+              </button>
             </div>
 
             {loading ? (
@@ -442,27 +478,21 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
               ))}
             </div>
 
-            {/* Móvil: vista por día apilada sin desbordes horizontales */}
             {/* Móvil: vista de calendario semanal compacta */}
             <div className="md:hidden">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 px-1">Calendario semanal</h3>
               <div className="grid grid-cols-7 gap-1">
                 {/* Header de días */}
                 {getWeekDays().map((day) => {
                   const dayName = format(day, 'EEEEE', { locale: es });
-                  // Si es miércoles (M o m según librería), forzar 'X'
-                  // Dependiendo de la versión de date-fns, miércoles puede ser 'X', 'mi' o 'M'
-                  // Para evitar conflictos con Martes ('M'), usamos 'X' para miércoles.
-                  // 'day.getDay()' devuelve 0 para domingo, 1 lunes, 2 martes, 3 miércoles...
                   const isWednesday = day.getDay() === 3;
                   const displayLabel = isWednesday ? 'X' : dayName;
 
                   return (
                     <div key={`header-${day.toISOString()}`} className="text-center py-2 bg-gray-50 rounded-md">
-                      <p className="text-[10px] font-bold text-gray-900 uppercase leading-tight">
+                      <p className="text-sm font-bold text-gray-900 uppercase leading-tight">
                         {displayLabel}
                       </p>
-                      <p className="text-[9px] text-gray-500 leading-tight">
+                      <p className="text-[11px] font-bold text-gray-800 leading-tight">
                         {format(day, 'dd')}
                       </p>
                     </div>
@@ -509,6 +539,44 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
         </>
       )}
 
+      {/* Confirm modal */}
+      {showConfirmModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                <AlertTriangle className="w-6 h-6 text-yellow-600" />
+              </div>
+              
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                ¿Deseas guardar los cambios?
+              </h3>
+              
+              <p className="text-sm text-gray-600 mb-6">
+                Tienes cambios pendientes en tu horario. Si sales sin guardar, perderás las modificaciones realizadas.
+              </p>
+              
+              <div className="flex flex-col gap-3 w-full">
+                <button
+                  onClick={handleConfirmSave}
+                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-green-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
+                >
+                  Guardar cambios
+                </button>
+                
+                <button
+                  onClick={handleConfirmDiscard}
+                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  No guardar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Legend and Instructions */}
       {activeTab === 'weekly' && (
         <div className="mt-6 bg-gray-50 rounded-lg p-4">
@@ -535,6 +603,8 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
           </div>
         </div>
       )}
+
+      
     </div>
   );
 };

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS recurring_schedules (
 CREATE TABLE IF NOT EXISTS recurring_availability_settings (
   gardener_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   weeks_to_maintain INT DEFAULT 2 CHECK (weeks_to_maintain BETWEEN 1 AND 12),
+  min_notice_hours INT DEFAULT 24,
   last_generated_date DATE,
   updated_at TIMESTAMPTZ DEFAULT now()
 );

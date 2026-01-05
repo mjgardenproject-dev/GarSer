@@ -64,7 +64,7 @@ const AddressPage: React.FC = () => {
 
     setBookingData({ address });
     saveProgress();
-    setCurrentStep(2);
+    setCurrentStep(1);
   };
 
   return (
@@ -74,7 +74,7 @@ const AddressPage: React.FC = () => {
         <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
           <button
             onClick={() => {
-              prevStep();
+              navigate('/');
             }}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
           >

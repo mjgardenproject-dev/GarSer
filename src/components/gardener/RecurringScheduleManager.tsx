@@ -1,22 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { Plus, Trash2, Save, Clock, Calendar, RefreshCw } from 'lucide-react';
+import { Save, Clock, Calendar, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-interface RecurringScheduleGroup {
-  id: string; // client-side only ID for key
-  days: number[]; // Array of day indices (0-6)
-  start_time: string;
-  end_time: string;
-}
-
+// Tipos
 interface RecurringSettings {
   weeks_to_maintain: number;
+  min_notice_hours: number;
   last_generated_date?: string;
 }
 
-// Order: Monday (1) to Sunday (0)
+// Constantes
 const DAYS_OF_WEEK = [
   { label: 'L', value: 1, full: 'Lunes' },
   { label: 'M', value: 2, full: 'Martes' },
@@ -27,52 +23,93 @@ const DAYS_OF_WEEK = [
   { label: 'D', value: 0, full: 'Domingo' },
 ];
 
-// Generate hours for dropdown (08:00 to 20:00)
-const HOURS = Array.from({ length: 13 }, (_, i) => {
-  const hour = (i + 8).toString().padStart(2, '0');
-  return `${hour}:00`;
-});
+// Horas del día (8:00 a 20:00)
+const WORK_HOURS = Array.from({ length: 12 }, (_, i) => i + 8); // [8, 9, ..., 19]
 
-const TimeSelect = ({ value, onChange, label }: { value: string, onChange: (val: string) => void, label: string }) => (
-  <div className="flex flex-col">
-    <label className="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-1">{label}</label>
-    <div className="relative">
-      <select
-        value={value?.substring(0, 5) || '09:00'}
-        onChange={(e) => onChange(e.target.value)}
-        className="appearance-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-lg focus:ring-green-500 focus:border-green-500 block w-full p-2.5 pr-8"
-      >
-        {HOURS.map((time) => (
-          <option key={time} value={time}>
-            {time}
-          </option>
-        ))}
-      </select>
-      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-        <Clock className="w-4 h-4" />
-      </div>
-    </div>
-  </div>
-);
-
-export default function RecurringScheduleManager() {
+export default function RecurringScheduleManager({ onChangePending, registerSaveHandler }: { onChangePending?: (pending: boolean) => void; registerSaveHandler?: (fn: () => Promise<boolean>) => void; }) {
   const { user } = useAuth();
-  const [scheduleGroups, setScheduleGroups] = useState<RecurringScheduleGroup[]>([]);
-  const [settings, setSettings] = useState<RecurringSettings>({ weeks_to_maintain: 2 });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
+  // Estado del Paso 1: Generador
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]); // L-V por defecto
+  const [startHour, setStartHour] = useState(9);
+  const [endHour, setEndHour] = useState(17);
+
+  // Estado del Paso 2: Matriz de horario (Source of Truth)
+  // Mapa: día (0-6) -> Set de horas activas (8-19)
+  const [scheduleMatrix, setScheduleMatrix] = useState<Record<number, Set<number>>>({});
+
+  // Estado de Configuración
+  const [settings, setSettings] = useState<RecurringSettings>({
+    weeks_to_maintain: 4, // "1 mes" por defecto aprox
+    min_notice_hours: 24,
+  });
+
+  const markDirty = () => {
+    if (!dirty) {
+      setDirty(true);
+      onChangePending?.(true);
+    }
+  };
+
+  // Cargar datos iniciales
   useEffect(() => {
     if (user) {
       fetchData();
     }
   }, [user]);
 
+  // Bloquear scroll cuando el modal está activo
+  useEffect(() => {
+    if (showConfirmation) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showConfirmation]);
+
+  // Efecto para aplicar cambios del Paso 1 al Paso 2 (Generador -> Matriz)
+  const applyGeneratorToMatrix = (days: number[], start: number, end: number) => {
+    const newMatrix: Record<number, Set<number>> = {};
+    
+    // Inicializar todos los días vacíos
+    DAYS_OF_WEEK.forEach(d => newMatrix[d.value] = new Set());
+
+    // Rellenar días seleccionados con el rango
+    days.forEach(day => {
+      const hours = new Set<number>();
+      for (let h = start; h < end; h++) {
+        hours.add(h);
+      }
+      newMatrix[day] = hours;
+    });
+
+    setScheduleMatrix(newMatrix);
+    markDirty();
+  };
+
+  const handleGeneratorChange = (
+    newDays: number[], 
+    newStart: number, 
+    newEnd: number
+  ) => {
+    setSelectedDays(newDays);
+    setStartHour(newStart);
+    setEndHour(newEnd);
+    applyGeneratorToMatrix(newDays, newStart, newEnd);
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
       
-      // Fetch schedules
+      // 1. Cargar horarios recurrentes existentes
       const { data: schedData, error: schedError } = await supabase
         .from('recurring_schedules')
         .select('*')
@@ -80,37 +117,7 @@ export default function RecurringScheduleManager() {
 
       if (schedError) throw schedError;
 
-      // Group by start_time + end_time
-      const groups: RecurringScheduleGroup[] = [];
-      if (schedData) {
-        // Map "time-key" -> days array
-        const timeMap = new Map<string, number[]>();
-        
-        schedData.forEach((row: any) => {
-          // Normalize times (e.g. 09:00:00 -> 09:00)
-          const start = row.start_time.substring(0, 5);
-          const end = row.end_time.substring(0, 5);
-          const key = `${start}-${end}`;
-          
-          if (!timeMap.has(key)) {
-            timeMap.set(key, []);
-          }
-          timeMap.get(key)?.push(row.day_of_week);
-        });
-
-        // Convert map to array
-        timeMap.forEach((days, key) => {
-          const [start, end] = key.split('-');
-          groups.push({
-            id: Math.random().toString(36).substring(2, 11),
-            days: days.sort((a, b) => a - b),
-            start_time: start,
-            end_time: end
-          });
-        });
-      }
-
-      // Fetch settings
+      // 2. Cargar configuración
       const { data: settData, error: settError } = await supabase
         .from('recurring_availability_settings')
         .select('*')
@@ -119,72 +126,77 @@ export default function RecurringScheduleManager() {
 
       if (settError && settError.code !== 'PGRST116') throw settError;
 
-      setScheduleGroups(groups);
-      if (settData) {
-        setSettings({ 
-          weeks_to_maintain: settData.weeks_to_maintain,
-          last_generated_date: settData.last_generated_date 
+      // 3. Reconstruir la matriz desde los datos
+      const matrix: Record<number, Set<number>> = {};
+      DAYS_OF_WEEK.forEach(d => matrix[d.value] = new Set());
+
+      if (schedData) {
+        schedData.forEach((row: any) => {
+          const start = parseInt(row.start_time.substring(0, 2));
+          const end = parseInt(row.end_time.substring(0, 2));
+          const day = row.day_of_week;
+          
+          if (!matrix[day]) matrix[day] = new Set();
+          
+          for (let h = start; h < end; h++) {
+            matrix[day].add(h);
+          }
         });
       }
+      setScheduleMatrix(matrix);
+
+      // 4. Establecer configuración
+      if (settData) {
+        setSettings({
+          weeks_to_maintain: settData.weeks_to_maintain || 4,
+          min_notice_hours: settData.min_notice_hours || 24,
+          last_generated_date: settData.last_generated_date
+        });
+      }
+
     } catch (error) {
       console.error('Error fetching recurring data:', error);
+      toast.error('Error al cargar horario fijo');
     } finally {
       setLoading(false);
     }
   };
 
-  const addGroup = () => {
-    if (scheduleGroups.length > 0) return; // Prevent more than 1 group
-    setScheduleGroups([
-      ...scheduleGroups,
-      { 
-        id: Math.random().toString(36).substring(2, 11),
-        days: [1, 2, 3, 4, 5], // Mon-Fri default
-        start_time: '09:00', 
-        end_time: '17:00' 
-      }
-    ]);
-  };
+  const toggleMatrixCell = (day: number, hour: number) => {
+    const newMatrix = { ...scheduleMatrix };
+    if (!newMatrix[day]) newMatrix[day] = new Set();
 
-  const removeGroup = (index: number) => {
-    const newGroups = [...scheduleGroups];
-    newGroups.splice(index, 1);
-    setScheduleGroups(newGroups);
-  };
-
-  const updateGroup = (index: number, field: keyof RecurringScheduleGroup, value: any) => {
-    const newGroups = [...scheduleGroups];
-    newGroups[index] = { ...newGroups[index], [field]: value };
-    setScheduleGroups(newGroups);
-  };
-
-  const toggleDay = (groupIndex: number, dayValue: number) => {
-    const group = scheduleGroups[groupIndex];
-    const newDays = group.days.includes(dayValue)
-      ? group.days.filter(d => d !== dayValue)
-      : [...group.days, dayValue].sort((a, b) => a - b);
+    const newDaySet = new Set(newMatrix[day]);
+    if (newDaySet.has(hour)) {
+      newDaySet.delete(hour);
+    } else {
+      newDaySet.add(hour);
+    }
     
-    updateGroup(groupIndex, 'days', newDays);
+    newMatrix[day] = newDaySet;
+    setScheduleMatrix(newMatrix);
+    markDirty();
   };
 
-  const handleSave = async () => {
-    if (!user) return;
+  const commitSave = useCallback(async (): Promise<boolean> => {
     setSaving(true);
 
     try {
-      // 1. Save Settings
+      if (!user?.id) return false;
+
+      // 1. Guardar Configuración
       const { error: settError } = await supabase
         .from('recurring_availability_settings')
         .upsert({
           gardener_id: user.id,
           weeks_to_maintain: settings.weeks_to_maintain,
+          min_notice_hours: settings.min_notice_hours,
           updated_at: new Date().toISOString()
         });
 
       if (settError) throw settError;
 
-      // 2. Save Schedules
-      // First delete all existing
+      // 2. Eliminar horarios recurrentes anteriores
       const { error: delError } = await supabase
         .from('recurring_schedules')
         .delete()
@@ -192,182 +204,405 @@ export default function RecurringScheduleManager() {
 
       if (delError) throw delError;
 
-      // Flatten groups to individual rows
-      const flatSchedules = [];
-      for (const group of scheduleGroups) {
-        for (const day of group.days) {
-          flatSchedules.push({
-            gardener_id: user.id,
-            day_of_week: day,
-            start_time: group.start_time,
-            end_time: group.end_time
-          });
+      // 3. Generar nuevas filas para recurring_schedules
+      // Agrupamos horas contiguas para minimizar filas
+      const newRows = [];
+      
+      for (const dayObj of DAYS_OF_WEEK) {
+        const day = dayObj.value;
+        const hours = Array.from(scheduleMatrix[day] || []).sort((a, b) => a - b);
+        
+        if (hours.length === 0) continue;
+
+        let rangeStart = hours[0];
+        let prevHour = hours[0];
+
+        for (let i = 1; i < hours.length; i++) {
+          const currentHour = hours[i];
+          if (currentHour !== prevHour + 1) {
+            // Fin de bloque
+            newRows.push({
+              gardener_id: user.id,
+              day_of_week: day,
+              start_time: `${rangeStart.toString().padStart(2, '0')}:00:00`,
+              end_time: `${(prevHour + 1).toString().padStart(2, '0')}:00:00`
+            });
+            rangeStart = currentHour;
+          }
+          prevHour = currentHour;
         }
+        // Último bloque
+        newRows.push({
+          gardener_id: user.id,
+          day_of_week: day,
+          start_time: `${rangeStart.toString().padStart(2, '0')}:00:00`,
+          end_time: `${(prevHour + 1).toString().padStart(2, '0')}:00:00`
+        });
       }
 
-      // Insert new rows
-      if (flatSchedules.length > 0) {
+      if (newRows.length > 0) {
         const { error: insError } = await supabase
           .from('recurring_schedules')
-          .insert(flatSchedules);
-
+          .insert(newRows);
+        
         if (insError) throw insError;
       }
 
-      // 3. Trigger Generation via RPC (Force Regenerate = true)
+      // 4. Regenerar disponibilidad futura
       const { error: rpcError } = await supabase.rpc('generate_recurring_slots', {
         target_gardener_id: user.id,
-        force_regenerate: true
+        force_regenerate: true 
       });
 
       if (rpcError) throw rpcError;
 
-      toast.success('Horario guardado y aplicado correctamente.');
+      toast.success('Horario fijo guardado y aplicado correctamente');
+      setDirty(false);
+      onChangePending?.(false);
+      return true;
       
-      fetchData();
     } catch (error: any) {
-      console.error('Error saving recurring schedule:', error);
+      console.error('Error saving:', error);
       toast.error('Error al guardar: ' + error.message);
+      return false;
     } finally {
       setSaving(false);
     }
+  }, [settings, scheduleMatrix, user?.id]);
+  
+  useEffect(() => {
+    registerSaveHandler?.(commitSave);
+  }, [commitSave]);
+  
+  const handleSave = async () => {
+    setShowConfirmation(false);
+    await commitSave();
   };
 
-  if (loading) return <div className="p-4">Cargando configuración...</div>;
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
-      <div className="flex items-center justify-between border-b border-gray-100 pb-4">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-            <RefreshCw className="w-5 h-5 text-green-600" />
-            Horario Fijo Recurrente
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Configura tu disponibilidad semanal habitual y deja que el sistema la mantenga por ti.
-          </p>
-        </div>
-        {scheduleGroups.length === 0 && (
-          <button
-            onClick={addGroup}
-            className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Crear Horario
-          </button>
-        )}
-      </div>
-
-      <div className="space-y-4">
-        {scheduleGroups.length === 0 ? (
-          <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-            No tienes un horario fijo configurado. Pulsa en "Crear Horario" para empezar.
+    <div className="space-y-8">
+      
+      {/* SECCIÓN 1: CREA TU HORARIO FIJO */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-green-600" />
+          Crea tu horario fijo
+        </h2>
+        
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Selector de Días */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700 block">
+              Días de trabajo
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {DAYS_OF_WEEK.map((day) => {
+                const isSelected = selectedDays.includes(day.value);
+                return (
+                  <button
+                    key={day.value}
+                    onClick={() => {
+                      const newDays = isSelected 
+                        ? selectedDays.filter(d => d !== day.value)
+                        : [...selectedDays, day.value];
+                      handleGeneratorChange(newDays, startHour, endHour);
+                    }}
+                    className={`
+                      w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all
+                      ${isSelected 
+                        ? 'bg-green-600 text-white shadow-md shadow-green-200 scale-105' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
+                    `}
+                    title={day.full}
+                  >
+                    {day.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        ) : (
-          scheduleGroups.map((group, index) => (
-            <div key={group.id} className="flex flex-col gap-4 p-5 bg-gray-50 rounded-lg border border-gray-200 hover:border-green-200 transition-colors">
-              
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-500 mb-2">Días de la semana</label>
-                  <div className="flex flex-wrap gap-2">
+
+          {/* Selector de Horas */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700 block">
+              Horario base
+            </label>
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <span className="text-xs text-gray-500 mb-1 block">Desde</span>
+                <select
+                  value={startHour}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    handleGeneratorChange(selectedDays, val, Math.max(val + 1, endHour));
+                  }}
+                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500"
+                >
+                  {WORK_HOURS.slice(0, -1).map(h => (
+                    <option key={h} value={h}>{h}:00</option>
+                  ))}
+                </select>
+              </div>
+              <span className="text-gray-400 mt-5">-</span>
+              <div className="flex-1">
+                <span className="text-xs text-gray-500 mb-1 block">Hasta</span>
+                <select
+                  value={endHour}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    handleGeneratorChange(selectedDays, Math.min(startHour, val - 1), val);
+                  }}
+                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500"
+                >
+                  {WORK_HOURS.map(h => (
+                    <option key={h} value={h} disabled={h <= startHour}>{h}:00</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* SECCIÓN 2: PERFECCIONA TU HORARIO (CALENDARIO) */}
+      <section className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-green-600" />
+            Perfecciona tu horario
+          </h2>
+          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+            Toca las casillas para añadir/quitar horas
+          </span>
+        </div>
+        
+        <p className="text-sm text-gray-600 mb-6">
+          Añade pausas o ajusta horas sueltas. Lo que veas aquí será tu horario fijo real.
+        </p>
+
+        {/* Grid Calendario Semanal Fijo (Estilo unificado con AvailabilityManager) */}
+        <div className="bg-transparent shadow-none border-0 p-0 sm:bg-white sm:rounded-xl sm:shadow-sm sm:border sm:border-gray-200 sm:p-6 overflow-hidden space-y-4 w-full">
+            {/* Desktop/Tablet: vista semanal en rejilla */}
+            <div className="hidden md:block md:overflow-x-auto">
+              {/* Header de días */}
+              <div className="grid md:grid-cols-7 gap-2 mb-4 md:min-w-[720px]">
+                {DAYS_OF_WEEK.map((day) => (
+                  <div key={day.value} className="text-center py-3 bg-gray-50 rounded-lg">
+                    <p className="text-xs sm:text-sm font-medium text-gray-900">
+                      {day.full}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bloques por hora x día */}
+              {WORK_HOURS.map((hour) => (
+                <div key={hour} className="grid md:grid-cols-7 gap-2 md:min-w-[720px]">
+                  {DAYS_OF_WEEK.map((day) => {
+                    const isActive = scheduleMatrix[day.value]?.has(hour);
+                    
+                    return (
+                      <button
+                        key={`${day.value}-${hour}`}
+                        onClick={() => toggleMatrixCell(day.value, hour)}
+                        className={`
+                          py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200 
+                          flex items-center justify-center font-medium text-xs sm:text-sm
+                          ${isActive 
+                            ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
+                            : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
+                          }
+                        `}
+                      >
+                        <span className="text-[11px] sm:text-xs">
+                          {hour.toString().padStart(2, '0')}:00
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* Móvil: vista de calendario semanal compacta */}
+            <div className="md:hidden">
+              <div className="grid grid-cols-7 gap-1">
+                {/* Header de días */}
+                {DAYS_OF_WEEK.map((day) => (
+                    <div key={`header-${day.value}`} className="text-center py-2 bg-gray-50 rounded-md">
+                      <p className="text-sm font-bold text-gray-900 uppercase leading-tight">
+                        {day.label}
+                      </p>
+                    </div>
+                ))}
+
+                {/* Grid de horas (filas) */}
+                {WORK_HOURS.map((hour) => (
+                  <React.Fragment key={`row-${hour}`}>
                     {DAYS_OF_WEEK.map((day) => {
-                      const isSelected = group.days.includes(day.value);
+                      const isActive = scheduleMatrix[day.value]?.has(hour);
+                      
                       return (
                         <button
-                          key={day.value}
-                          onClick={() => toggleDay(index, day.value)}
+                          key={`mob-${day.value}-${hour}`}
+                          onClick={() => toggleMatrixCell(day.value, hour)}
                           className={`
-                            w-8 h-8 rounded-full text-xs font-medium flex items-center justify-center transition-all
-                            ${isSelected 
-                              ? 'bg-green-600 text-white shadow-sm ring-2 ring-green-600 ring-offset-1' 
-                              : 'bg-white text-gray-600 border border-gray-300 hover:border-green-400'}
+                            h-9 rounded-md border-2 transition-all duration-200 
+                            flex items-center justify-center font-bold text-xs
+                            ${isActive 
+                              ? 'bg-green-100 border-green-400 text-green-900 hover:bg-green-200' 
+                              : 'bg-gray-50 border-gray-300 text-gray-900 hover:bg-gray-100'
+                            }
                           `}
-                          title={day.full}
                         >
-                          {day.label}
+                          {hour.toString().padStart(2, '0')}
                         </button>
                       );
                     })}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-gray-200">
-                  <TimeSelect 
-                    label="Desde" 
-                    value={group.start_time} 
-                    onChange={(val) => updateGroup(index, 'start_time', val)} 
-                  />
-                  <div className="h-8 w-px bg-gray-200 self-center"></div>
-                  <TimeSelect 
-                    label="Hasta" 
-                    value={group.end_time} 
-                    onChange={(val) => updateGroup(index, 'end_time', val)} 
-                  />
-                </div>
-
-                <button
-                  onClick={() => removeGroup(index)}
-                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors self-end sm:self-center"
-                  title="Eliminar horario"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
+                  </React.Fragment>
+                ))}
               </div>
-
             </div>
-          ))
-        )}
-      </div>
+        </div>
+      </section>
 
-      <div className="border-t border-gray-100 pt-6">
-        <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-          <Calendar className="w-4 h-4" />
-          Configuración de Automatización
-        </h3>
-        
-        <div className="flex flex-col md:flex-row md:items-end gap-6">
-          <div className="flex-1">
-            <label className="block text-sm text-gray-600 mb-2">
-              Mantener disponibilidad visible por:
+      {/* SECCIÓN 3: CONFIGURACIÓN ADELANTO/ANTELACIÓN */}
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
+          <Info className="w-5 h-5 text-green-600" />
+          Reglas de disponibilidad
+        </h2>
+
+        <div className="grid gap-8 md:grid-cols-2">
+          {/* Adelanto (Weeks to maintain) */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-900">
+              ¿Con cuánta antelación quieres mostrar tu agenda?
             </label>
-            <div className="flex gap-4">
-              {[1, 2, 3].map((weeks) => (
-                <label key={weeks} className={`
-                  flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all
-                  ${settings.weeks_to_maintain === weeks 
-                    ? 'bg-green-50 border-green-500 text-green-700 font-medium ring-1 ring-green-500' 
-                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}
-                `}>
-                  <input
-                    type="radio"
-                    name="weeks"
-                    value={weeks}
-                    checked={settings.weeks_to_maintain === weeks}
-                    onChange={() => setSettings({ ...settings, weeks_to_maintain: weeks })}
-                    className="hidden"
-                  />
-                  {weeks} {weeks === 1 ? 'Semana' : 'Semanas'}
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              El sistema añadirá automáticamente un nuevo día al final de este periodo cada día.
+            <p className="text-xs text-gray-500">
+              Tu calendario estará siempre abierto por este tiempo.
             </p>
+            <select
+              value={settings.weeks_to_maintain}
+              onChange={(e) => {
+                setSettings({ ...settings, weeks_to_maintain: parseInt(e.target.value) });
+                markDirty();
+              }}
+              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-green-500 focus:border-green-500 shadow-sm"
+            >
+              <option value={2}>2 semanas</option>
+              <option value={4}>1 mes (Recomendado)</option>
+              <option value={8}>2 meses</option>
+              <option value={12}>3 meses</option>
+            </select>
           </div>
 
-          <div className="flex flex-col gap-3">
-             <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2 justify-center shadow-sm"
+          {/* Antelación mínima (Min notice hours) */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-900">
+              Antelación mínima para recibir reservas
+            </label>
+            <p className="text-xs text-gray-500">
+              Los clientes no podrán reservar antes de este tiempo.
+            </p>
+            <select
+              value={settings.min_notice_hours}
+              onChange={(e) => {
+                setSettings({ ...settings, min_notice_hours: parseInt(e.target.value) });
+                markDirty();
+              }}
+              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-green-500 focus:border-green-500 shadow-sm"
             >
-              <Save className="w-4 h-4" />
-              {saving ? 'Guardando...' : 'Guardar Configuración'}
-            </button>
+              <option value={0}>Sin restricción (Inmediato)</option>
+              <option value={24}>24 horas antes</option>
+              <option value={48}>48 horas antes</option>
+              <option value={72}>3 días antes</option>
+              <option value={168}>1 semana antes</option>
+            </select>
           </div>
         </div>
+      </section>
+
+      {/* SECCIÓN 4: GUARDADO */}
+      <div className="pt-4 pb-8">
+        <button
+          onClick={() => setShowConfirmation(true)}
+          disabled={saving}
+          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-4 px-6 text-lg rounded-xl font-bold shadow-lg shadow-green-600/20 transform transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-3"
+        >
+          <Save className="w-6 h-6" />
+          Guardar horario fijo
+        </button>
       </div>
+
+      {/* Modal de Confirmación */}
+      {showConfirmation && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex flex-col items-center">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-6 shrink-0">
+                <AlertTriangle className="w-8 h-8 text-yellow-600" />
+              </div>
+              
+              <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">
+                ¿Confirmar nuevo horario fijo?
+              </h3>
+              
+              <div className="bg-yellow-50 rounded-xl p-4 mb-6 w-full">
+                <ul className="space-y-3 text-sm text-gray-700">
+                  <li className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    <span>Este horario se guardará y <strong>se renovará automáticamente</strong> cada día.</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    <span>Toda la disponibilidad futura se <strong>sobrescribirá</strong> con este nuevo horario.</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" />
+                    <span>Los ajustes manuales o excepciones que hayas hecho en el calendario semanal <strong>se perderán</strong> y deberás rehacerlos si es necesario.</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-3 w-full">
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3.5 px-6 rounded-xl font-bold shadow-lg shadow-green-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    'Sí, aplicar cambios'
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => setShowConfirmation(false)}
+                  disabled={saving}
+                  className="w-full bg-white border border-gray-200 text-gray-700 py-3.5 px-6 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
     </div>
   );
 }

@@ -273,7 +273,7 @@ const ProvidersPage: React.FC = () => {
         totalPrice: computePrice(selectedProvider),
         preferredDate: selectedDate 
       }); 
-      setCurrentStep(5); 
+      setCurrentStep(4); 
     } 
   };
 
@@ -307,7 +307,7 @@ const ProvidersPage: React.FC = () => {
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
           <button
-            onClick={() => setCurrentStep(3)}
+            onClick={() => setCurrentStep(2)}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <ChevronLeft className="w-5 h-5 text-gray-600" />

@@ -1,6 +1,5 @@
 import React from 'react';
 import { useBooking } from '../../contexts/BookingContext';
-import WelcomePage from './WelcomePage';
 import AddressPage from './AddressPage';
 import ServicesPage from './ServicesPage';
 import DetailsPage from './DetailsPage';
@@ -14,19 +13,17 @@ const BookingFlow: React.FC = () => {
   const renderCurrentStep = () => {
     switch (currentStep) {
       case 0:
-        return <WelcomePage />;
-      case 1:
         return <AddressPage />;
-      case 2:
+      case 1:
         return <ServicesPage />;
-      case 3:
+      case 2:
         return <DetailsPage />;
-      case 4:
+      case 3:
         return <ProvidersPage />;
-      case 5:
+      case 4:
         return <ConfirmationPage />;
       default:
-        return <WelcomePage />;
+        return <AddressPage />;
     }
   };
 

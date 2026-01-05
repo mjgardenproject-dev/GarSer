@@ -288,7 +288,7 @@ const ConfirmationPage: React.FC = () => {
       <div className="max-w-md mx-auto px-4 py-3 pb-40">
         <div className="flex justify-end mb-2">
           <button
-            onClick={() => setCurrentStep(4)}
+            onClick={() => setCurrentStep(3)}
             className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50"
           >
             Volver

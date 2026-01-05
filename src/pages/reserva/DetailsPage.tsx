@@ -64,7 +64,7 @@ const DetailsPage: React.FC = () => {
   const handleContinue = () => {
     setBookingData({ photos, description });
     saveProgress();
-    setCurrentStep(4);
+    setCurrentStep(3);
   };
 
   const runAIAnalysis = async () => {
@@ -158,7 +158,7 @@ const DetailsPage: React.FC = () => {
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
           <button
-            onClick={() => setCurrentStep(2)}
+            onClick={() => setCurrentStep(1)}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <ChevronLeft className="w-5 h-5 text-gray-600" />

@@ -10,7 +10,6 @@ const ResetPassword: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const navigate = useNavigate();
-  const [successOpen, setSuccessOpen] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -35,8 +34,8 @@ const ResetPassword: React.FC = () => {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       toast.success('Contraseña cambiada con éxito');
-      localStorage.setItem('passwordChanged', '1');
-      setSuccessOpen(true);
+      
+      navigate('/dashboard');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al actualizar la contraseña';
       toast.error(msg);
@@ -85,23 +84,6 @@ const ResetPassword: React.FC = () => {
           )}
         </form>
       </div>
-
-      {successOpen && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white w-11/12 max-w-sm rounded-2xl shadow-xl p-6">
-            <div className="text-center">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Contraseña cambiada</h2>
-              <p className="text-gray-600 mb-4">Tu contraseña se ha actualizado correctamente.</p>
-              <button
-                onClick={async () => { await supabase.auth.signOut(); navigate('/auth'); }}
-                className="w-full px-4 py-2 bg-green-600 text-white rounded-lg"
-              >
-                Iniciar sesión
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

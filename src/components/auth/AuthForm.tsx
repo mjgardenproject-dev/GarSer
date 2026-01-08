@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Eye, EyeOff, User, Briefcase, Check, Mail, Lock, UploadCloud, Plus } from 'lucide-react';
+import { Eye, EyeOff, User, Briefcase, Check, Mail, Lock, UploadCloud, Plus, AlertTriangle } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import EmailConfirmationModal from './EmailConfirmationModal';
@@ -26,6 +27,10 @@ type FormData = {
 
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [sendingForgot, setSendingForgot] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState<'client' | 'gardener'>('client');
   const location = useLocation();
@@ -190,6 +195,31 @@ const AuthForm = () => {
     return true;
   };
 
+  const handleForgotSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotPasswordEmail) {
+      toast.error('Email requerido');
+      return;
+    }
+    setShowForgotModal(true);
+  };
+
+  const confirmForgotReset = async () => {
+    setSendingForgot(true);
+    try {
+      const redirectTo = `${window.location.origin}/reset-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, { redirectTo });
+      if (error) throw error;
+      toast.success('Email de recuperación enviado');
+      setShowForgotModal(false);
+      setShowForgotPassword(false);
+    } catch (e: any) {
+      toast.error(e?.message || 'Error enviando recuperación');
+    } finally {
+      setSendingForgot(false);
+    }
+  };
+
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     try {
@@ -307,14 +337,48 @@ const AuthForm = () => {
             )}
           </div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-            {isLogin ? '¡Hola de nuevo!' : 'Crea tu cuenta'}
+            {showForgotPassword ? 'Recuperar contraseña' : (isLogin ? '¡Hola de nuevo!' : 'Crea tu cuenta')}
           </h1>
           <p className="text-sm text-gray-500 mt-2">
-            {isLogin ? 'Ingresa tus datos para continuar' : 'Únete a nuestra comunidad de jardinería'}
+            {showForgotPassword ? 'Ingresa tu email para recibir instrucciones' : (isLogin ? 'Ingresa tus datos para continuar' : 'Únete a nuestra comunidad de jardinería')}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        {showForgotPassword ? (
+          <form onSubmit={handleForgotSubmit} className="space-y-6 animate-fade-in-up">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <div className="relative group">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
+                <input
+                  type="email"
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
+                  placeholder="ejemplo@correo.com"
+                  required
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={sendingForgot}
+              className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-green-600/20 transition-all disabled:opacity-50"
+            >
+              Enviar email
+            </button>
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(false)}
+                className="text-sm font-medium text-green-600 hover:text-green-700 hover:underline"
+              >
+                Volver al inicio de sesión
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 
           {!isLogin && (
             <div className="animate-fade-in-down">
@@ -452,6 +516,17 @@ const AuthForm = () => {
                   {errors.password.message}
                 </p>
               )}
+              {isLogin && (
+                <div className="flex justify-end mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(true)}
+                    className="text-xs sm:text-sm font-medium text-green-600 hover:text-green-700 transition-colors"
+                  >
+                    ¿Has olvidado tu contraseña?
+                  </button>
+                </div>
+              )}
             </div>
 
             {!isLogin && (
@@ -486,7 +561,9 @@ const AuthForm = () => {
             ) : (isLogin ? 'Iniciar Sesión' : 'Crear Cuenta')}
           </button>
         </form>
+        )}
 
+        {!showForgotPassword && (
         <div className="mt-8 text-center">
           <p className="text-gray-600 text-sm">
             {isLogin ? '¿No tienes cuenta? ' : '¿Ya tienes cuenta? '}
@@ -498,6 +575,7 @@ const AuthForm = () => {
             </button>
           </p>
         </div>
+        )}
 
         <div className="mt-6 pt-6 border-t border-gray-100">
           <button
@@ -525,6 +603,53 @@ const AuthForm = () => {
           }}
           email={registeredEmail}
         />
+
+      {showForgotModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-6 shrink-0">
+                <AlertTriangle className="w-8 h-8 text-yellow-600" />
+              </div>
+              
+              <h3 className="text-xl font-bold text-gray-900 mb-4">
+                ¿Enviar correo de recuperación?
+              </h3>
+              
+              <div className="bg-yellow-50 rounded-xl p-4 mb-6 w-full text-left">
+                <p className="text-sm text-gray-700">
+                  Se enviará un enlace a tu correo electrónico <strong>{forgotPasswordEmail}</strong> para restablecer tu contraseña.
+                </p>
+                <p className="text-sm text-gray-700 mt-2">
+                  Si continúas, recibirás un email con las instrucciones.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 w-full">
+                 <button
+                   onClick={confirmForgotReset}
+                   disabled={sendingForgot}
+                   className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                 >
+                   {sendingForgot ? (
+                     <>Enviando...</>
+                   ) : (
+                     <>Confirmar</>
+                   )}
+                 </button>
+                 <button
+                   onClick={() => setShowForgotModal(false)}
+                   disabled={sendingForgot}
+                   className="w-full py-3 px-4 bg-white border-2 border-gray-100 hover:bg-gray-50 text-gray-700 rounded-xl font-semibold transition-colors"
+                 >
+                   Cancelar
+                 </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       </div>
     </div>
   );

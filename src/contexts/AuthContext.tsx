@@ -114,6 +114,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } catch {}
           break;
         }
+        case 'PASSWORD_RECOVERY': {
+          console.log('🕒', ts(), 'Recuperación de contraseña detectada');
+          // Redirigir a la página de reset si no estamos ya allí
+          if (window.location.pathname !== '/reset-password') {
+             window.location.assign('/reset-password');
+          }
+          break;
+        }
         case 'SIGNED_OUT': {
           console.log('🕒', ts(), 'Signed out');
           setUser(null);

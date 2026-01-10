@@ -82,7 +82,9 @@ function MyAccount() {
     }
     setSendingReset(true);
     try {
-      const redirectTo = `${window.location.origin}/reset-password`;
+      // Usamos el origen (root) para asegurar que la URL está en la whitelist de Supabase
+      // AuthContext manejará la redirección a /reset-password al detectar el evento PASSWORD_RECOVERY
+      const redirectTo = window.location.origin;
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo });
       if (error) throw error;
       toast.success('Email de recuperación enviado');

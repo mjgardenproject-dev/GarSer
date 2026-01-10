@@ -17,11 +17,13 @@ interface AvailabilitySlot {
 const AvailabilityPage: React.FC = () => {
   const navigate = useNavigate();
   const { bookingData, setBookingData, saveProgress, setCurrentStep } = useBooking();
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [selectedSlot, setSelectedSlot] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>(bookingData.preferredDate || '');
+  const [selectedSlot, setSelectedSlot] = useState<string>(bookingData.timeSlot || '');
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentWeek, setCurrentWeek] = useState(new Date());
+  const [currentWeek, setCurrentWeek] = useState(() => {
+    return bookingData.preferredDate ? new Date(bookingData.preferredDate) : new Date();
+  });
 
   useEffect(() => {
     fetchAvailability();
@@ -61,6 +63,20 @@ const AvailabilityPage: React.FC = () => {
       }
       
       setAvailability(mockAvailability);
+
+      // Si no hay fecha seleccionada previamente, seleccionar el primer día con disponibilidad real
+      if (!bookingData.preferredDate) {
+        const sortedSlots = [...mockAvailability].sort((a, b) => 
+          new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime()
+        );
+
+        const firstAvailable = sortedSlots.find(slot => slot.available);
+        
+        if (firstAvailable) {
+          setSelectedDate(firstAvailable.date);
+          setCurrentWeek(new Date(firstAvailable.date));
+        }
+      }
     } catch (error) {
       console.error('Error fetching availability:', error);
     } finally {

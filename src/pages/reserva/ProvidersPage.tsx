@@ -159,7 +159,13 @@ const ProvidersPage: React.FC = () => {
 
   useEffect(() => {
     (async () => {
-      if (!selectedProvider) return;
+      if (!selectedProvider) {
+        setMonthDays([]);
+        setValidHours([]);
+        setHoursAvailable([]);
+        setSelectedHour(null);
+        return;
+      }
       await rebuildMonth(selectedProvider, calendarMonthDate);
       setSelectedHour(null);
     })();
@@ -376,6 +382,7 @@ const ProvidersPage: React.FC = () => {
         </div>
 
         {/* Calendario fijo y horas */}
+        {selectedProvider && (
         <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-200">
           {/* Encabezado selector */}
           <div className="mb-3">
@@ -478,6 +485,7 @@ const ProvidersPage: React.FC = () => {
             </div>
           )}
         </div>
+        )}
 
       </div>
 

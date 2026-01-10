@@ -11,8 +11,10 @@ function MyAccount() {
   const navigate = useNavigate();
   const [myProfile, setMyProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [sendingReset, setSendingReset] = useState(false);
-  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [updatingPassword, setUpdatingPassword] = useState(false);
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -71,28 +73,27 @@ function MyAccount() {
     }
   };
 
-  const sendPasswordReset = () => {
-    setShowPasswordResetModal(true);
-  };
-
-  const confirmPasswordReset = async () => {
-    if (!user?.email) {
-      toast.error('No hay email asociado a la cuenta');
-      return;
+  const updatePassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+        toast.error('La contraseña debe tener al menos 6 caracteres');
+        return;
     }
-    setSendingReset(true);
+    if (newPassword !== confirmPassword) {
+        toast.error('Las contraseñas no coinciden');
+        return;
+    }
+    setUpdatingPassword(true);
     try {
-      // Usamos el origen (root) para asegurar que la URL está en la whitelist de Supabase
-      // AuthContext manejará la redirección a /reset-password al detectar el evento PASSWORD_RECOVERY
-      const redirectTo = window.location.origin;
-      const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo });
-      if (error) throw error;
-      toast.success('Email de recuperación enviado');
-      setShowPasswordResetModal(false);
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+        toast.success('Contraseña actualizada correctamente');
+        setShowChangePasswordModal(false);
+        setNewPassword('');
+        setConfirmPassword('');
     } catch (e: any) {
-      toast.error(e?.message || 'Error enviando recuperación');
+        toast.error(e?.message || 'Error al actualizar contraseña');
     } finally {
-      setSendingReset(false);
+        setUpdatingPassword(false);
     }
   };
 
@@ -204,16 +205,15 @@ function MyAccount() {
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
           <div className="flex items-center mb-3">
             <Lock className="w-5 h-5 text-green-600 mr-2" />
-            <div className="text-lg font-semibold text-gray-900">Cambiar contraseña</div>
+            <div className="text-lg font-semibold text-gray-900">Seguridad</div>
           </div>
           <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-700">Enviar email para recuperar contraseña</div>
+            <div className="text-sm text-gray-700">Cambiar contraseña de acceso</div>
             <button
-              onClick={sendPasswordReset}
-              disabled={sendingReset}
+              onClick={() => setShowChangePasswordModal(true)}
               className="px-3 py-3 sm:py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
             >
-              Enviar
+              Cambiar
             </button>
           </div>
         </div>
@@ -232,42 +232,56 @@ function MyAccount() {
             Cerrar cuenta
           </button>
         </div>
-      {showPasswordResetModal && createPortal(
+      {showChangePasswordModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200">
             <div className="flex flex-col items-center text-center">
-              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-6 shrink-0">
-                <AlertTriangle className="w-8 h-8 text-yellow-600" />
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6 shrink-0">
+                <Lock className="w-8 h-8 text-green-600" />
               </div>
               
               <h3 className="text-xl font-bold text-gray-900 mb-4">
-                ¿Enviar correo de recuperación?
+                Cambiar contraseña
               </h3>
               
-              <div className="bg-yellow-50 rounded-xl p-4 mb-6 w-full text-left">
-                <p className="text-sm text-gray-700">
-                  Se enviará un enlace a tu correo electrónico <strong>{user?.email}</strong> para restablecer tu contraseña.
-                </p>
-                <p className="text-sm text-gray-700 mt-2">
-                  Si continúas, recibirás un email con las instrucciones.
-                </p>
+              <div className="w-full text-left mb-6 space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
+                    <input 
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        placeholder="Mínimo 6 caracteres"
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirmar contraseña</label>
+                    <input 
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full p-3 border border-gray-300 rounded-lg"
+                        placeholder="Repite la nueva contraseña"
+                    />
+                </div>
               </div>
 
               <div className="flex flex-col gap-3 w-full">
                  <button
-                   onClick={confirmPasswordReset}
-                   disabled={sendingReset}
+                   onClick={updatePassword}
+                   disabled={updatingPassword}
                    className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                  >
-                   {sendingReset ? (
-                     <>Enviando...</>
+                   {updatingPassword ? (
+                     <>Actualizando...</>
                    ) : (
-                     <>Confirmar</>
+                     <>Actualizar contraseña</>
                    )}
                  </button>
                  <button
-                   onClick={() => setShowPasswordResetModal(false)}
-                   disabled={sendingReset}
+                   onClick={() => setShowChangePasswordModal(false)}
+                   disabled={updatingPassword}
                    className="w-full py-3 px-4 bg-white border-2 border-gray-100 hover:bg-gray-50 text-gray-700 rounded-xl font-semibold transition-colors"
                  >
                    Cancelar

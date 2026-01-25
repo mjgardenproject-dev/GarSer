@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Reglas globales para responsividad */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { overflow-x: hidden; }
+img, video, canvas { max-width: 100%; height: auto; }

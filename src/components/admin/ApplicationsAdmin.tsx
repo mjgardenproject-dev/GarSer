@@ -39,7 +39,34 @@ const ApplicationsAdmin: React.FC = () => {
   const [selected, setSelected] = useState<Application | null>(null);
   const [photoIndex, setPhotoIndex] = useState<number | null>(null);
 
+  // Rejection Modal State
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [appToReject, setAppToReject] = useState<Application | null>(null);
+
   useEffect(() => { fetchSubmitted(); }, []);
+
+  const sendNotification = async (app: Application, type: 'gardener_approved' | 'gardener_rejected', reason?: string) => {
+    try {
+      const { error } = await supabase.functions.invoke('send-email-notification', {
+        body: {
+          to: app.email, // If undefined, edge function will try to fetch using user_id
+          user_id: app.user_id,
+          type,
+          data: {
+            name: app.full_name || 'Jardinero',
+            reason,
+            loginUrl: `${window.location.origin}/auth`,
+            applyUrl: `${window.location.origin}/gardener/apply`
+          }
+        }
+      });
+      
+      if (error) console.error('Error enviando notificación:', error);
+    } catch (err) {
+      console.error('Error al invocar función de email:', err);
+    }
+  };
 
   const fetchSubmitted = async () => {
     setLoading(true);
@@ -109,13 +136,52 @@ const ApplicationsAdmin: React.FC = () => {
     const { error: appErr } = await supabase.from('gardener_applications').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', app.id);
     if (appErr) { setErrorMsg(appErr.message || 'Error actualizando solicitud'); return; }
 
+    // Send email notification
+    await sendNotification(app, 'gardener_approved');
+
+    if (selected?.id === app.id) setSelected(null);
     fetchSubmitted();
   };
 
-  const reject = async (app: Application) => {
-    const reason = window.prompt('Motivo del rechazo (opcional):') || null;
-    await supabase.from('gardener_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), review_comment: reason }).eq('id', app.id);
-    fetchSubmitted();
+  const reject = (app: Application) => {
+    setAppToReject(app);
+    setRejectReason('');
+    setRejectModalOpen(true);
+  };
+
+  const confirmReject = async () => {
+    if (!appToReject) return;
+    if (!rejectReason.trim()) {
+      alert('El motivo de rechazo es obligatorio');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('gardener_applications')
+        .update({ 
+          status: 'rejected', 
+          reviewed_at: new Date().toISOString(), 
+          review_comment: rejectReason 
+        })
+        .eq('id', appToReject.id);
+
+      if (error) {
+        setErrorMsg(error.message || 'Error rechazando solicitud');
+        return;
+      }
+
+      // Send email notification
+      await sendNotification(appToReject, 'gardener_rejected', rejectReason);
+
+      setRejectModalOpen(false);
+      setAppToReject(null);
+      if (selected?.id === appToReject.id) setSelected(null);
+      fetchSubmitted();
+    } catch (e) {
+      console.error(e);
+      setErrorMsg('Error desconocido al rechazar');
+    }
   };
 
   const filtered = apps.filter(a => (a.full_name||'').toLowerCase().includes(q.toLowerCase()) || (a.city_zone||'').toLowerCase().includes(q.toLowerCase()));
@@ -260,6 +326,40 @@ const ApplicationsAdmin: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Rejection Modal */}
+      {rejectModalOpen && appToReject && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full shadow-xl">
+            <h3 className="text-lg font-bold mb-4 text-gray-800">Rechazar solicitud</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Por favor, indica el motivo del rechazo para informar a <strong>{appToReject.full_name}</strong>.
+              Este mensaje se incluirá en el email que se le enviará.
+            </p>
+            <textarea
+              className="w-full border rounded p-3 text-sm focus:ring-2 focus:ring-red-500 focus:outline-none"
+              rows={4}
+              placeholder="Ej: La experiencia demostrada no es suficiente para los servicios seleccionados..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+            <div className="flex justify-end gap-3 mt-4">
+              <button 
+                onClick={() => setRejectModalOpen(false)}
+                className="px-4 py-2 text-gray-600 bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={confirmReject}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-medium"
+              >
+                Confirmar Rechazo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selected && photoIndex !== null && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
           <div className="relative max-w-5xl w-full px-4">

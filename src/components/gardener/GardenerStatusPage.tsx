@@ -3,18 +3,64 @@ import { Clock, AlertTriangle, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
+import { supabase } from '../../lib/supabase';
+
 interface GardenerStatusPageProps {
   status: 'pending' | 'denied';
   denialReason?: string;
 }
 
 const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialReason }) => {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [isResetting, setIsResetting] = React.useState(false);
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
+  };
+
+  const handleRetry = async () => {
+    if (!user) return;
+    
+    try {
+      setIsResetting(true);
+      
+      // 1. Primero pasamos a 'draft' para asegurarnos de que tenemos permisos de edición/borrado
+      // según las políticas RLS (que suelen permitir gestión sobre 'draft')
+      const { error: updateError } = await supabase
+        .from('gardener_applications')
+        .update({ status: 'draft' })
+        .eq('user_id', user.id)
+        .eq('status', 'rejected');
+
+      if (updateError) throw updateError;
+
+      // 2. Eliminamos completamente el registro de la base de datos
+      const { error: deleteError } = await supabase
+        .from('gardener_applications')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteError) throw deleteError;
+
+      // 3. Limpiamos todos los datos locales relacionados con el formulario
+      try {
+        const wizardKey = `gardener_wizard_progress_${user.id}`;
+        localStorage.removeItem(wizardKey);
+        localStorage.removeItem('gardenerApplicationStatus');
+        localStorage.removeItem('gardenerApplicationJustSubmitted');
+      } catch (e) {
+        console.error('Error clearing local storage:', e);
+      }
+
+      // 4. Forzamos una recarga para reiniciar la app limpia
+      window.location.reload();
+    } catch (error) {
+      console.error('Error resetting application:', error);
+      alert('Hubo un error al reiniciar tu solicitud. Por favor intenta de nuevo.');
+      setIsResetting(false);
+    }
   };
 
   if (status === 'pending') {
@@ -65,10 +111,11 @@ const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialR
           
           <div className="space-y-3">
             <button
-              onClick={() => navigate('/apply')}
-              className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              onClick={handleRetry}
+              disabled={isResetting}
+              className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Corregir y volver a enviar
+              {isResetting ? 'Procesando...' : 'Corregir y volver a enviar'}
             </button>
             <button
               onClick={handleSignOut}

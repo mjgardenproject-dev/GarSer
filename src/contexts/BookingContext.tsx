@@ -14,6 +14,7 @@ export interface BookingData {
   aiUnit?: string;
   aiDifficulty?: number;
   aiTasks?: Array<{ tipo_servicio: string; estado_jardin?: string; superficie_m2?: number|null; numero_plantas?: number|null; tamaño_plantas?: string|null }>;
+  palmSpecies?: string;
 }
 
 interface BookingContextType {
@@ -42,6 +43,7 @@ const initialBookingData: BookingData = {
   aiUnit: '',
   aiDifficulty: 1,
   aiTasks: [],
+  palmSpecies: '',
 };
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);

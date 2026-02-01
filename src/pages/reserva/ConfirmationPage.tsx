@@ -74,7 +74,11 @@ const ConfirmationPage: React.FC = () => {
         setIsProcessing(false);
         return;
       }
-      const notesWithPhotos = [bookingData.description || '', photoUrls.length > 0 ? `Fotos:\n${photoUrls.join('\n')}` : ''].filter(Boolean).join('\n\n');
+      const notesWithPhotos = [
+        bookingData.description || '',
+        bookingData.palmSpecies ? `Especie de palmera: ${bookingData.palmSpecies}` : '',
+        photoUrls.length > 0 ? `Fotos:\n${photoUrls.join('\n')}` : ''
+      ].filter(Boolean).join('\n\n');
       const row = {
         client_id: user?.id || null,
         gardener_id: bookingData.providerId || null,
@@ -164,7 +168,8 @@ const ConfirmationPage: React.FC = () => {
       timeSlot: bookingData.timeSlot,
       providerId: bookingData.providerId,
       estimatedHours: bookingData.estimatedHours,
-      totalPrice: bookingData.totalPrice
+      totalPrice: bookingData.totalPrice,
+      palmSpecies: bookingData.palmSpecies
     };
     try { return encodeURIComponent(btoa(JSON.stringify(snapshot))); } catch { return ''; }
   };

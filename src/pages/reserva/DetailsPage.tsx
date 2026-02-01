@@ -1,9 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, Camera, Upload, Trash2, Wand2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, estimateServiceAutoQuote } from '../../utils/aiPricingEstimator';
+
+const PALM_SPECIES = [
+  'Phoenix (datilera o canaria)',
+  'Washingtonia',
+  'Roystonea regia (cubana)',
+  'Syagrus romanzoffiana (cocotera)',
+  'Livistona',
+  'Kentia (palmito)',
+  'Phoenix roebelenii(pigmea)',
+  'cycas revoluta (falsa palmera)'
+];
 
 const DetailsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -13,9 +24,20 @@ const DetailsPage: React.FC = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [debugService, setDebugService] = useState<string>('');
   const [debugState, setDebugState] = useState<string>('normal');
+  const [debugPalmSpecies, setDebugPalmSpecies] = useState<string>('');
   const [debugQuantity, setDebugQuantity] = useState<number | ''>('');
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const fetchServiceName = async () => {
+      if (bookingData.serviceIds?.[0]) {
+        const { data } = await supabase.from('services').select('name').eq('id', bookingData.serviceIds[0]).single();
+        if (data) setDebugService(data.name);
+      }
+    };
+    fetchServiceName();
+  }, [bookingData.serviceIds]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -62,6 +84,10 @@ const DetailsPage: React.FC = () => {
   };
 
   const handleContinue = () => {
+    if (debugService === 'Poda de palmeras' && !bookingData.palmSpecies) {
+      alert('Por favor, selecciona la especie de palmera en el panel de Debug para continuar.');
+      return;
+    }
     setBookingData({ photos, description });
     saveProgress();
     setCurrentStep(3);
@@ -313,6 +339,7 @@ const DetailsPage: React.FC = () => {
                 <option value="Poda de árboles">Poda de árboles</option>
                 <option value="Labrar y quitar malas hierbas a mano">Labrar y quitar malas hierbas a mano</option>
                 <option value="Fumigación de plantas">Fumigación de plantas</option>
+                <option value="Poda de palmeras">Poda de palmeras</option>
               </select>
             </div>
             <div>
@@ -327,6 +354,23 @@ const DetailsPage: React.FC = () => {
                 <option value="muy descuidado">muy descuidado</option>
               </select>
             </div>
+            
+            {debugService === 'Poda de palmeras' && (
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-800 mb-1">Especie de palmera</label>
+                <select
+                  value={debugPalmSpecies}
+                  onChange={(e) => setDebugPalmSpecies(e.target.value)}
+                  className="w-full p-2 border border-blue-300 rounded-lg bg-blue-50 text-base sm:text-sm"
+                >
+                  <option value="">Selecciona especie...</option>
+                  {PALM_SPECIES.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-800 mb-1">Cantidad</label>
               <input
@@ -348,7 +392,13 @@ const DetailsPage: React.FC = () => {
                   const unit = debugService.includes('césped') || debugService.includes('setos') || debugService.includes('hierbas') || debugService.includes('labrar') ? 'm2' : 'plantas';
                   const diff = debugState.includes('muy') ? 3 : debugState.includes('descuidado') ? 2 : 1;
                   const hours = unit === 'm2' ? Math.ceil(qty / 150) : Math.ceil(qty * 0.15);
-                  setBookingData({ aiQuantity: qty, aiUnit: unit, aiDifficulty: diff, estimatedHours: hours });
+                  setBookingData({ 
+                    aiQuantity: qty, 
+                    aiUnit: unit, 
+                    aiDifficulty: diff, 
+                    estimatedHours: hours,
+                    palmSpecies: debugPalmSpecies || undefined 
+                  });
                   saveProgress();
                 }}
                 className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm"
@@ -361,6 +411,7 @@ const DetailsPage: React.FC = () => {
                   setDebugService('');
                   setDebugState('normal');
                   setDebugQuantity('');
+                  setDebugPalmSpecies('');
                 }}
                 className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 rounded-lg border border-gray-300 text-sm"
               >

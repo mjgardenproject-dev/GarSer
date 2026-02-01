@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { addDays, format } from 'date-fns';
 
 // Compatibility layer to work with the existing 'availability' table
 // while the code expects 'availability_blocks' structure
@@ -212,7 +213,7 @@ export async function getAvailableDates(gardenerId: string, startDate: string, e
     }
 
     // Get unique dates
-    const uniqueDates = [...new Set(data?.map(item => item.date) || [])];
+    const uniqueDates = [...new Set(data?.map((item: { date: string }) => item.date) || [])];
     return uniqueDates;
   } catch (error) {
     console.error('Error in getAvailableDates:', error);
@@ -251,6 +252,48 @@ export async function getAvailabilityRange(gardenerId: string, startDate: string
     return blocks;
   } catch (error) {
     console.error('Error in getAvailabilityRange:', error);
+    throw error;
+  }
+}
+
+export async function applyRecurringSchedule(
+  gardenerId: string,
+  scheduleMatrix: Record<number, Set<number>>,
+  weeksToMaintain: number
+) {
+  try {
+    console.log(`Applying recurring schedule for gardener ${gardenerId} for ${weeksToMaintain} weeks`);
+    
+    const startDate = new Date();
+    const endDate = addDays(startDate, weeksToMaintain * 7);
+    
+    const datesToProcess: Date[] = [];
+    let currentDate = startDate;
+    while (currentDate <= endDate) {
+      datesToProcess.push(new Date(currentDate));
+      currentDate = addDays(currentDate, 1);
+    }
+
+    // Process in chunks to avoid overwhelming the server/connection
+    const CHUNK_SIZE = 7;
+    for (let i = 0; i < datesToProcess.length; i += CHUNK_SIZE) {
+      const chunk = datesToProcess.slice(i, i + CHUNK_SIZE);
+      await Promise.all(chunk.map(async (date) => {
+        const dayOfWeek = date.getDay(); // 0 (Sunday) to 6 (Saturday)
+        const hours = scheduleMatrix[dayOfWeek];
+        const dateStr = format(date, 'yyyy-MM-dd');
+        
+        // If we have hours for this day, set them. 
+        // If not, we should clear the day (set empty array)
+        const hoursList = hours ? Array.from(hours) : [];
+        await setGardenerAvailability(gardenerId, dateStr, hoursList);
+      }));
+    }
+    
+    console.log('Successfully applied recurring schedule');
+    return { success: true };
+  } catch (error) {
+    console.error('Error in applyRecurringSchedule:', error);
     throw error;
   }
 }

@@ -26,6 +26,7 @@ const ProvidersPage: React.FC = () => {
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [monthLoading, setMonthLoading] = useState(false);
   const [hoursLoading, setHoursLoading] = useState(false);
+  const [serviceName, setServiceName] = useState('');
   const daysCacheRef = useRef<Map<string, Array<{ date: string; day: number; disabled: boolean; count: number }>>>(new Map());
   const hoursCacheRef = useRef<Map<string, number[]>>(new Map());
   const reqIdRef = useRef<number>(0);
@@ -194,11 +195,20 @@ const ProvidersPage: React.FC = () => {
     const fetchProviders = async () => {
       try {
         const primaryServiceId = bookingData.serviceIds[0];
-        const { data: priceRows } = await supabase
+        
+        let query = supabase
           .from('gardener_service_prices')
-          .select('gardener_id, service_id, price_per_unit')
+          .select('gardener_id, service_id, price_per_unit, additional_config')
           .eq('service_id', primaryServiceId)
           .eq('active', true);
+          
+        if (bookingData.palmSpecies) {
+          // Filter by species in JSONB config
+          query = query.contains('additional_config', { selected_species: [bookingData.palmSpecies] });
+        }
+
+        const { data: priceRows } = await query;
+
         const gardenerIds = Array.from(new Set((priceRows || []).map((p: any) => p.gardener_id)));
         const { data: profiles } = await supabase
           .from('gardener_profiles')
@@ -318,7 +328,9 @@ const ProvidersPage: React.FC = () => {
           >
             <ChevronLeft className="w-5 h-5 text-gray-600" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">Jardineros</h1>
+          <h1 className="text-lg font-semibold text-gray-900">
+            {serviceName ? (bookingData.palmSpecies && serviceName.toLowerCase().includes('palmera') ? `${serviceName}: ${bookingData.palmSpecies}` : serviceName) : 'Jardineros'}
+          </h1>
           <div className="flex items-center gap-2">
             <button
               onClick={() => { try { localStorage.removeItem('bookingProgress'); } catch {}; navigate('/dashboard'); }}

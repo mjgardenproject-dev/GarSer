@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { applyRecurringSchedule } from '../../utils/availabilityService';
 import { Save, Clock, Calendar, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -249,12 +250,25 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
       }
 
       // 4. Regenerar disponibilidad futura
+      // Intentamos usar RPC primero
       const { error: rpcError } = await supabase.rpc('generate_recurring_slots', {
         target_gardener_id: user.id,
         force_regenerate: true 
       });
 
-      if (rpcError) throw rpcError;
+      if (rpcError) {
+        console.warn('RPC generate_recurring_slots failed or not found, using client-side fallback', rpcError);
+      }
+
+      // SIEMPRE ejecutamos la lógica del cliente para asegurar que se aplica correctamente
+      // y para cubrir el caso donde el RPC no existe o está desactualizado.
+      try {
+        await applyRecurringSchedule(user.id, scheduleMatrix, settings.weeks_to_maintain);
+      } catch (clientError) {
+        console.error('Client-side generation failed:', clientError);
+        // Si el RPC también falló, lanzamos error
+        if (rpcError) throw clientError;
+      }
 
       toast.success('Horario fijo guardado y aplicado correctamente');
       setDirty(false);

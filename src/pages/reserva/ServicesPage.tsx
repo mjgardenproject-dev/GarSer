@@ -20,6 +20,7 @@ const serviceIcons = {
   'Poda de árboles': TreePine,
   'Labrar y quitar malas hierbas a mano': Leaf,
   'Fumigación de plantas': Sparkles,
+  'Poda de palmeras': Sprout,
 };
 
 const ServicesPage: React.FC = () => {

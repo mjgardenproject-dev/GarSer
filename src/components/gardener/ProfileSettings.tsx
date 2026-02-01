@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import AddressAutocomplete from '../common/AddressAutocomplete';
 import DistanceMapSelector from '../common/DistanceMapSelector';
+import PalmPricingConfigurator, { PalmPricingConfig } from './PalmPricingConfigurator';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
 const ALLOWED_SERVICE_NAMES = [
@@ -56,6 +57,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [loading, setLoading] = useState(false);
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
+  const [palmConfig, setPalmConfig] = useState<PalmPricingConfig | undefined>(undefined);
+  const [highlightPalmError, setHighlightPalmError] = useState(false);
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
@@ -82,18 +85,52 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     try {
       const { data, error } = await supabase
         .from('gardener_service_prices')
-        .select('service_id, price_per_unit')
+        .select('service_id, price_per_unit, additional_config')
         .eq('gardener_id', user.id);
       if (error) throw error;
       const prices: Record<string, number> = {};
       data?.forEach((row: any) => {
         prices[row.service_id] = row.price_per_unit;
+        // Cargar configuración de palmeras si existe
+        if (row.additional_config && Object.keys(row.additional_config).length > 0) {
+           // Aquí podríamos validar si el servicio es "Poda de palmeras", 
+           // pero por ahora asumimos que si tiene config es de ese tipo o similar.
+           // Lo ideal es verificar el nombre del servicio, pero requeriría un cruce con `services`.
+           // Lo haremos al guardar o al mapear `services` con sus precios.
+        }
       });
       setServicePrices(prices);
+      
+      // Intentar cargar la configuración específica de palmeras
+      // Primero necesitamos saber cuál es el ID del servicio "Poda de palmeras"
+      // Lo haremos en un efecto separado o aquí si ya tenemos los servicios cargados.
+      // Como fetchServices es asíncrono, lo mejor es hacerlo después o buscar el ID.
     } catch (e) {
       console.error('Error fetching service prices:', e);
     }
   };
+
+  // Cargar configuración de palmeras específicamente cuando tengamos servicios y precios
+  useEffect(() => {
+    const loadPalmConfig = async () => {
+      if (!user?.id || services.length === 0) return;
+      
+      const palmService = services.find(s => s.name === 'Poda de palmeras');
+      if (!palmService) return;
+
+      const { data } = await supabase
+        .from('gardener_service_prices')
+        .select('additional_config')
+        .eq('gardener_id', user.id)
+        .eq('service_id', palmService.id)
+        .single();
+        
+      if (data?.additional_config) {
+        setPalmConfig(data.additional_config as PalmPricingConfig);
+      }
+    };
+    loadPalmConfig();
+  }, [user?.id, services]);
 
   const fetchServices = async () => {
     try {
@@ -153,6 +190,11 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
 
 
+  const onError = (errors: any) => {
+    toast.error('Por favor, completa todos los campos requeridos marcados en rojo.');
+    console.log('Validation errors:', errors);
+  };
+
   const onSubmit = async (data: FormData) => {
     if (!user) {
       console.error('No user found when trying to save profile');
@@ -161,6 +203,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
     console.log('Starting to save profile for user:', user.id);
     console.log('Profile data to save:', data);
+
+    // Validación específica para Poda de palmeras
+    const palmService = services.find(s => s.name === 'Poda de palmeras');
+    if (palmService && data.services.includes(palmService.id)) {
+        // Si el servicio está seleccionado, debe tener al menos una especie configurada
+        if (!palmConfig?.selected_species || palmConfig.selected_species.length === 0) {
+            toast.error('El servicio "Poda de palmeras" está seleccionado pero no tiene especies configuradas. Por favor, selecciona al menos una especie o desactiva el servicio.');
+            setHighlightPalmError(true);
+            return;
+        }
+    }
 
     setLoading(true);
     try {
@@ -220,13 +273,18 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         const service = services.find(s => s.id === serviceId);
         const price = servicePrices[serviceId];
         if (service && price !== undefined) {
+          // Si es "Poda de palmeras", incluir la configuración adicional
+          const isPalmService = service.name === 'Poda de palmeras';
+          const additionalConfig = isPalmService ? (palmConfig || undefined) : undefined;
+
           return {
             gardener_id: user.id,
             service_id: serviceId,
             unit_type: (service as any).measurement || 'area',
             price_per_unit: price,
             currency: 'EUR',
-            active: true
+            active: true,
+            additional_config: additionalConfig // Guardar JSONB
           };
         }
         return null;
@@ -270,11 +328,50 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     }
   };
 
+  const handleSavePalmConfig = async (config: PalmPricingConfig) => {
+    if (!user) return;
+    const palmService = services.find(s => s.name === 'Poda de palmeras');
+    if (!palmService) return;
+
+    // Actualizamos el estado local por si acaso
+    setPalmConfig(config);
+
+    // Guardado específico solo para el servicio de palmeras
+    const payload = {
+      gardener_id: user.id,
+      service_id: palmService.id,
+      unit_type: (palmService as any).measurement || 'area', // Debería ser 'count' o 'area' según servicio
+      price_per_unit: servicePrices[palmService.id] || 0, // Mantenemos el precio base actual
+      currency: 'EUR',
+      active: true,
+      additional_config: config
+    };
+
+    try {
+      const { error } = await supabase
+        .from('gardener_service_prices')
+        .upsert(payload);
+
+      if (error) throw error;
+      toast.success('Tus precios para el servicio poda de palmeras han sido guardados correctamente');
+    } catch (error) {
+      console.error('Error saving palm prices:', error);
+      toast.error('Error al guardar los precios de palmeras');
+      throw error; // Re-lanzar para que el componente hijo sepa que falló
+    }
+  };
+
   const handleServiceToggle = (serviceId: string) => {
     const currentServices = watchedServices || [];
     const updatedServices = currentServices.includes(serviceId)
       ? currentServices.filter(id => id !== serviceId)
       : [...currentServices, serviceId];
+    
+    // Si deseleccionamos palmeras, quitamos el error
+    const palmService = services.find(s => s.name === 'Poda de palmeras');
+    if (palmService && serviceId === palmService.id && currentServices.includes(serviceId)) {
+        setHighlightPalmError(false);
+    }
     
     setValue('services', updatedServices);
   };
@@ -300,7 +397,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </h2>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit, onError)} className="space-y-6">
         {/* Personal Information */}
         <div className="">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Información Personal</h3>
@@ -400,10 +497,14 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             {services.map((service) => {
               const isSelected = watchedServices.includes(service.id);
               const measurement = (service as any).measurement === 'count' ? 'unidad' : 'm²';
+              const isPalm = service.name === 'Poda de palmeras';
+              const hasError = isPalm && highlightPalmError;
+
               return (
-                <div key={service.id} className={`p-4 border-2 rounded-lg transition-colors ${
-                  isSelected ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'
-                }`}>
+                <div key={service.id} className={`border-2 rounded-lg transition-colors ${
+                  hasError ? 'border-red-500 bg-red-50' : (isSelected ? 'border-green-500' : 'border-gray-200 hover:border-green-300')
+                } ${isPalm && isSelected ? 'p-0 overflow-hidden bg-white' : (isSelected ? 'bg-green-50 p-4' : 'p-4')}`}>
+                  <div className={isPalm && isSelected ? 'bg-green-50 p-4' : ''}>
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -414,33 +515,53 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     <div className="flex-1">
                       <h4 className="font-semibold text-gray-900">{service.name}</h4>
                       <p className="text-sm text-gray-600 mb-2">{service.description}</p>
-                      
-                      {isSelected && (
-                        <div className="mt-3 flex items-center gap-2">
+                    </div>
+                  </label>
+                  </div>
+
+                  {isSelected && (
+                    <div className={`${service.name === 'Poda de palmeras' ? 'border-t border-gray-100 p-4' : 'mt-3 pl-7'}`}>
+                      {service.name !== 'Poda de palmeras' && (
+                        <div className="flex items-center gap-2">
                           <label className="text-sm font-medium text-gray-700">Precio por {measurement}:</label>
                           <div className="relative w-32">
                             <span className="absolute left-3 top-2 text-gray-500">€</span>
                             <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={servicePrices[service.id] || ''}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            setServicePrices(prev => ({
-                              ...prev,
-                              [service.id]: isNaN(val) ? 0 : val
-                            }));
-                          }}
-                          className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
-                          placeholder="0.00"
-                          onClick={(e) => e.stopPropagation()}
-                        />
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={servicePrices[service.id] || ''}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setServicePrices(prev => ({
+                                  ...prev,
+                                  [service.id]: isNaN(val) ? 0 : val
+                                }));
+                              }}
+                              className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
+                              placeholder="0.00"
+                            />
                           </div>
                         </div>
                       )}
+                      
+                      {/* Configuración avanzada de palmeras */}
+                      {service.name === 'Poda de palmeras' && (
+                        <div className="cursor-default bg-white p-4">
+                          <PalmPricingConfigurator 
+                            value={palmConfig} 
+                            onChange={(newConfig) => {
+                                setPalmConfig(newConfig);
+                                if (newConfig.selected_species && newConfig.selected_species.length > 0) {
+                                    setHighlightPalmError(false);
+                                }
+                            }}
+                            onSave={handleSavePalmConfig} 
+                          />
+                        </div>
+                      )}
                     </div>
-                  </label>
+                  )}
                 </div>
               );
             })}

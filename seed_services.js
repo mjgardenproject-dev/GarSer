@@ -76,6 +76,11 @@ const canonical = [
     base_price: 50,
     price_per_hour: 30,
   },
+  {
+    name: 'Poda de palmeras',
+    description: 'Poda y limpieza de palmeras, retirada de hojas secas y frutos.',
+    base_price: 60,
+  },
 ];
 
 async function ensureServices() {

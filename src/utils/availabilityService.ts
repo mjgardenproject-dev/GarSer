@@ -59,6 +59,15 @@ export async function setDefaultAvailability(gardenerId: string, date: string): 
   return compatService.setDefaultAvailability(gardenerId, date);
 }
 
+// Aplicar horario recurrente (client-side fallback)
+export async function applyRecurringSchedule(
+  gardenerId: string,
+  scheduleMatrix: Record<number, Set<number>>,
+  weeksToMaintain: number
+) {
+  return compatService.applyRecurringSchedule(gardenerId, scheduleMatrix, weeksToMaintain);
+}
+
 // Clase de servicio para compatibilidad con código existente
 export class AvailabilityService {
   static generateDailyTimeBlocks = generateDailyTimeBlocks;
@@ -70,4 +79,5 @@ export class AvailabilityService {
   static releaseTimeSlots = releaseTimeSlots;
   static getAvailableDates = getAvailableDates;
   static setDefaultAvailability = setDefaultAvailability;
+  static applyRecurringSchedule = applyRecurringSchedule;
 }

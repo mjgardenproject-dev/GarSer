@@ -10,6 +10,22 @@ const PALM_SPECIES = [
   'Washingtonia',
   'Roystonea regia (cubana)',
   'Syagrus romanzoffiana (cocotera)',
+  'Trachycarpus fortunei',
+  'Livistona',
+  'Kentia (palmito)',
+  'Phoenix roebelenii(pigmea)',
+  'cycas revoluta (falsa palmera)'
+];
+
+const PALM_GROUP_A = [
+  'Phoenix (datilera o canaria)',
+  'Washingtonia',
+  'Roystonea regia (cubana)',
+  'Syagrus romanzoffiana (cocotera)',
+  'Trachycarpus fortunei'
+];
+
+const PALM_GROUP_B = [
   'Livistona',
   'Kentia (palmito)',
   'Phoenix roebelenii(pigmea)',
@@ -25,9 +41,13 @@ const DetailsPage: React.FC = () => {
   const [debugService, setDebugService] = useState<string>('');
   const [debugState, setDebugState] = useState<string>('normal');
   const [debugPalmSpecies, setDebugPalmSpecies] = useState<string>('');
+  const [debugPalmHeight, setDebugPalmHeight] = useState<string>('');
+  const [debugWasteRemoval, setDebugWasteRemoval] = useState<boolean>(true);
   const [debugQuantity, setDebugQuantity] = useState<number | ''>('');
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [debugPalmGroups, setDebugPalmGroups] = useState<Array<{species: string, height: string, quantity: number, state: string}>>([]);
 
   useEffect(() => {
     const fetchServiceName = async () => {
@@ -84,9 +104,17 @@ const DetailsPage: React.FC = () => {
   };
 
   const handleContinue = () => {
-    if (debugService === 'Poda de palmeras' && !bookingData.palmSpecies) {
-      alert('Por favor, selecciona la especie de palmera en el panel de Debug para continuar.');
-      return;
+    if (debugService === 'Poda de palmeras') {
+        if (!bookingData.palmGroups || bookingData.palmGroups.length === 0) {
+             alert('Por favor, asegúrate de tener al menos un grupo de palmeras configurado.');
+             return;
+        }
+        // Validate quantities
+        const invalid = bookingData.palmGroups.some(g => g.quantity <= 0);
+        if (invalid) {
+            alert('Por favor, introduce una cantidad válida para todas las palmeras.');
+            return;
+        }
     }
     setBookingData({ photos, description });
     saveProgress();
@@ -133,7 +161,38 @@ const DetailsPage: React.FC = () => {
         }
       }
 
-      const res = await estimateWorkWithAI({ description, photoCount: photos.length, selectedServiceIds: bookingData.serviceIds, photoUrls });
+      const res = await estimateWorkWithAI({ 
+        description, 
+        photoCount: photos.length, 
+        selectedServiceIds: bookingData.serviceIds, 
+        photoUrls,
+        serviceName: debugService 
+      });
+      
+      // Handle Palm Analysis Results
+      if (res.palmas && res.palmas.length > 0) {
+        const newGroups = res.palmas.map((p, idx) => ({
+            id: `ai-${Date.now()}-${idx}`,
+            species: p.especie,
+            height: p.altura,
+            quantity: 1, // Default to 1, user must confirm
+            state: p.estado || 'normal',
+            wasteRemoval: true,
+            photoUrl: photoUrls[p.indice_imagen] || undefined
+        }));
+        
+        // Calculate estimated hours for the new groups
+        const totalHours = newGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
+        
+        setBookingData({ 
+            palmGroups: newGroups,
+            estimatedHours: totalHours
+        });
+        saveProgress();
+        setAnalyzing(false);
+        return;
+      }
+
       const tareas = Array.isArray(res.tareas) ? res.tareas : [];
       if (tareas.length > 0) {
         const norm = (s: string) => (s || '').toLowerCase();
@@ -211,11 +270,16 @@ const DetailsPage: React.FC = () => {
         {/* Photo Upload */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">Fotos de tu jardín</h2>
+            <h2 className="text-lg font-bold text-gray-900">
+                {debugService === 'Poda de palmeras' ? 'Fotos de tus palmeras' : 'Fotos de tu jardín'}
+            </h2>
             <span className="text-sm text-gray-500">{photos.length}/5</span>
           </div>
           <p className="text-gray-600 text-sm mb-4">
-            Las fotos ayudan a los jardineros a entender mejor tu espacio
+            {debugService === 'Poda de palmeras' 
+                ? 'Sube una foto de ejemplo por cada tipo de palmera distinta (especie/altura) que tengas. Si tienes 3 palmeras iguales, sube solo una foto.'
+                : 'Las fotos ayudan a los jardineros a entender mejor tu espacio'
+            }
           </p>
 
           {/* Upload Area */}
@@ -322,6 +386,102 @@ const DetailsPage: React.FC = () => {
           </div>
         )}
 
+      {/* Palm Pruning Manual Input Section - Rendered from palmGroups */}
+      {debugService === 'Poda de palmeras' && bookingData.palmGroups && bookingData.palmGroups.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm p-6 mb-4 border border-blue-100">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">Detalles de tus palmeras</h2>
+          <div className="space-y-6">
+            {bookingData.palmGroups.map((group, idx) => (
+                <div key={group.id} className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                    <div className="flex gap-4 mb-4">
+                        {group.photoUrl ? (
+                            <img src={group.photoUrl} alt="Palmera detectada" className="w-20 h-20 object-cover rounded-lg" />
+                        ) : (
+                            <div className="w-20 h-20 bg-blue-100 rounded-lg flex items-center justify-center text-blue-500">
+                                <span className="text-xs text-center p-1">Sin foto</span>
+                            </div>
+                        )}
+                        <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900">{group.species}</h3>
+                            <p className="text-sm text-gray-600">Altura: {group.height}m</p>
+                            <div className="mt-2">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Estado</label>
+                                <select
+                                    value={group.state || 'normal'}
+                                    onChange={(e) => {
+                                        const newGroups = [...(bookingData.palmGroups || [])];
+                                        newGroups[idx] = { ...newGroups[idx], state: e.target.value };
+                                        setBookingData({ palmGroups: newGroups });
+                                        saveProgress();
+                                    }}
+                                    className="w-full p-1 border border-gray-300 rounded text-sm bg-white"
+                                >
+                                    <option value="normal">Normal</option>
+                                    <option value="descuidado">Descuidado</option>
+                                    <option value="muy descuidado">Muy descuidado</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-800 mb-1">
+                                ¿Cuántas palmeras como esta tienes?
+                            </label>
+                            <input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={group.quantity}
+                                onChange={(e) => {
+                                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                                    const newGroups = [...(bookingData.palmGroups || [])];
+                                    newGroups[idx] = { ...newGroups[idx], quantity: val };
+                                    
+                                    // Recalculate total estimated hours
+                                    const totalHours = newGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
+                                    
+                                    setBookingData({ 
+                                        palmGroups: newGroups,
+                                        estimatedHours: totalHours
+                                    });
+                                    saveProgress();
+                                }}
+                                className="w-full p-2 border border-gray-300 rounded-lg bg-white"
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="checkbox" 
+                                id={`waste-${group.id}`}
+                                checked={group.wasteRemoval !== false}
+                                onChange={(e) => {
+                                    const newGroups = [...(bookingData.palmGroups || [])];
+                                    newGroups[idx] = { ...newGroups[idx], wasteRemoval: e.target.checked };
+                                    setBookingData({ palmGroups: newGroups });
+                                    saveProgress();
+                                }}
+                                className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
+                            />
+                            <label htmlFor={`waste-${group.id}`} className="text-sm text-gray-700">
+                                Incluir retirada de residuos
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            ))}
+            
+            <div className="text-right text-sm text-gray-600">
+                Tiempo total estimado: <span className="font-semibold">{bookingData.estimatedHours} h</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy single-group manual input - REMOVED/REPLACED by the above loop */}
+
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
           <h3 className="text-amber-900 font-semibold mb-3">Debug IA (manual)</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -342,63 +502,205 @@ const DetailsPage: React.FC = () => {
                 <option value="Poda de palmeras">Poda de palmeras</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">Estado del jardín</label>
-              <select
-                value={debugState}
-                onChange={(e) => setDebugState(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-              >
-                <option value="normal">normal</option>
-                <option value="descuidado">descuidado</option>
-                <option value="muy descuidado">muy descuidado</option>
-              </select>
-            </div>
-            
-            {debugService === 'Poda de palmeras' && (
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-800 mb-1">Especie de palmera</label>
+            {debugService !== 'Poda de palmeras' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">Estado del jardín</label>
                 <select
-                  value={debugPalmSpecies}
-                  onChange={(e) => setDebugPalmSpecies(e.target.value)}
-                  className="w-full p-2 border border-blue-300 rounded-lg bg-blue-50 text-base sm:text-sm"
+                  value={debugState}
+                  onChange={(e) => setDebugState(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                 >
-                  <option value="">Selecciona especie...</option>
-                  {PALM_SPECIES.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
+                  <option value="normal">normal</option>
+                  <option value="descuidado">descuidado</option>
+                  <option value="muy descuidado">muy descuidado</option>
                 </select>
               </div>
             )}
+            
+            {debugService === 'Poda de palmeras' && (
+              <div className="sm:col-span-2 space-y-3 p-3 bg-blue-50/50 rounded-lg border border-blue-100">
+                <h4 className="font-semibold text-blue-900 text-sm">Simulador de Grupos de Palmeras</h4>
+                
+                {/* List of simulated groups */}
+                {debugPalmGroups.length > 0 && (
+                    <ul className="space-y-2 mb-2">
+                        {debugPalmGroups.map((g, i) => (
+                            <li key={i} className="flex justify-between items-center bg-white p-2 rounded border border-blue-200 text-sm">
+                                <span>{g.quantity}x {g.species} ({g.height}) - {g.state}</span>
+                                <button 
+                                    onClick={() => setDebugPalmGroups(prev => prev.filter((_, idx) => idx !== i))}
+                                    className="text-red-500 hover:text-red-700"
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">Cantidad</label>
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={debugQuantity}
-                onChange={(e) => setDebugQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                placeholder="Ej: 120"
-              />
-              <div className="text-xs text-gray-600 mt-1">Unidad: m² o plantas según servicio</div>
-            </div>
+                <div className="space-y-2 border-t border-blue-200 pt-2">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Especie</label>
+                        <select
+                            value={debugPalmSpecies}
+                            onChange={(e) => {
+                                setDebugPalmSpecies(e.target.value);
+                                setDebugPalmHeight(''); 
+                            }}
+                            className="w-full p-1 border border-blue-300 rounded text-sm"
+                        >
+                            <option value="">Selecciona...</option>
+                            {PALM_SPECIES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+
+                    {debugPalmSpecies && (
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Altura</label>
+                            <select
+                                value={debugPalmHeight}
+                                onChange={(e) => setDebugPalmHeight(e.target.value)}
+                                className="w-full p-1 border border-blue-300 rounded text-sm"
+                            >
+                                <option value="">Selecciona...</option>
+                                {PALM_GROUP_A.includes(debugPalmSpecies) ? (
+                                    <>
+                                        <option value="0-5">0 – 5 m</option>
+                                        <option value="5-12">5 – 12 m</option>
+                                        <option value="12-20">12 – 20 m</option>
+                                        <option value="20+">Más de 20 m</option>
+                                    </>
+                                ) : PALM_GROUP_B.includes(debugPalmSpecies) ? (
+                                    <>
+                                        <option value="0-2">0 – 2 m</option>
+                                        <option value="2+">Más de 2 m</option>
+                                    </>
+                                ) : null}
+                            </select>
+                        </div>
+                    )}
+                    
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Estado</label>
+                        <select
+                            value={debugState}
+                            onChange={(e) => setDebugState(e.target.value)}
+                            className="w-full p-1 border border-blue-300 rounded text-sm"
+                        >
+                            <option value="normal">Normal</option>
+                            <option value="descuidado">Descuidado</option>
+                            <option value="muy descuidado">Muy descuidado</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Cantidad Inicial</label>
+                        <input
+                            type="number"
+                            min="1"
+                            value={debugQuantity}
+                            onChange={(e) => setDebugQuantity(Number(e.target.value))}
+                            className="w-full p-1 border border-blue-300 rounded text-sm"
+                            placeholder="1"
+                        />
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (debugPalmSpecies && debugPalmHeight && debugQuantity) {
+                                setDebugPalmGroups(prev => [...prev, {
+                                    species: debugPalmSpecies,
+                                    height: debugPalmHeight,
+                                    quantity: Number(debugQuantity),
+                                    state: debugState
+                                }]);
+                                // Reset fields
+                                setDebugPalmSpecies('');
+                                setDebugPalmHeight('');
+                                setDebugQuantity('');
+                            }
+                        }}
+                        disabled={!debugPalmSpecies || !debugPalmHeight || !debugQuantity}
+                        className="w-full py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
+                    >
+                        + Añadir Grupo
+                    </button>
+                </div>
+              </div>
+            )}
+
+            {debugService !== 'Poda de palmeras' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">Cantidad</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={debugQuantity}
+                  onChange={(e) => setDebugQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                  placeholder="Ej: 1"
+                />
+                <div className="text-xs text-gray-600 mt-1">Unidad: m² o plantas según servicio</div>
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  const qty = debugQuantity === '' ? 0 : Number(debugQuantity);
-                  const unit = debugService.includes('césped') || debugService.includes('setos') || debugService.includes('hierbas') || debugService.includes('labrar') ? 'm2' : 'plantas';
-                  const diff = debugState.includes('muy') ? 3 : debugState.includes('descuidado') ? 2 : 1;
-                  const hours = unit === 'm2' ? Math.ceil(qty / 150) : Math.ceil(qty * 0.15);
-                  setBookingData({ 
-                    aiQuantity: qty, 
-                    aiUnit: unit, 
-                    aiDifficulty: diff, 
-                    estimatedHours: hours,
-                    palmSpecies: debugPalmSpecies || undefined 
-                  });
+                  if (debugService === 'Poda de palmeras') {
+                      if (debugPalmGroups.length === 0) {
+                          alert('Añade al menos un grupo de palmeras para simular.');
+                          return;
+                      }
+
+                      // Convert simulated groups to context structure
+                      // Note: We use a placeholder ID and assume no photo for debug simulation
+                      const groups = debugPalmGroups.map((g, i) => ({
+                          id: `debug-${Date.now()}-${i}`,
+                          species: g.species,
+                          height: g.height,
+                          quantity: g.quantity,
+                          state: g.state,
+                          wasteRemoval: debugWasteRemoval,
+                          photoUrl: undefined 
+                      }));
+
+                      const totalHours = groups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
+
+                      setBookingData({ 
+                        palmGroups: groups,
+                        estimatedHours: totalHours,
+                        // Clear single fields just in case
+                        palmSpecies: undefined,
+                        palmHeight: undefined,
+                        palmState: undefined,
+                      });
+                  } else {
+                      const qty = debugQuantity === '' ? 0 : Number(debugQuantity);
+                      const unit = debugService.includes('césped') || debugService.includes('setos') || debugService.includes('hierbas') || debugService.includes('labrar') ? 'm2' : 'plantas';
+                      const diff = debugState.includes('muy') ? 3 : debugState.includes('descuidado') ? 2 : 1;
+                      
+                      let hours = 0;
+                      if (unit === 'm2') {
+                          hours = Math.ceil(qty / 150);
+                      } else {
+                          hours = Math.ceil(qty * 0.15);
+                      }
+
+                      setBookingData({ 
+                        aiQuantity: qty, 
+                        aiUnit: unit, 
+                        aiDifficulty: diff, 
+                        estimatedHours: hours,
+                        // Limpiamos datos de palmeras si cambiamos a otro servicio
+                        palmSpecies: undefined,
+                        palmHeight: undefined,
+                        palmState: undefined,
+                        palmWasteRemoval: undefined
+                      });
+                  }
                   saveProgress();
                 }}
                 className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm"
@@ -412,6 +714,9 @@ const DetailsPage: React.FC = () => {
                   setDebugState('normal');
                   setDebugQuantity('');
                   setDebugPalmSpecies('');
+                  setDebugPalmHeight('');
+                  setDebugPalmGroups([]);
+                  setDebugWasteRemoval(true);
                 }}
                 className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 rounded-lg border border-gray-300 text-sm"
               >

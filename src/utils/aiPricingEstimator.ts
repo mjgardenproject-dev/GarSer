@@ -11,10 +11,17 @@ interface EstimationInput {
   photoCount: number;
   selectedServiceIds: string[];
   photoUrls?: string[]; // URLs de las fotos para análisis IA
+  serviceName?: string; // Optional: Name of the primary service for specific prompting
 }
 
 interface EstimationResult {
   tareas: AITask[];
+  palmas?: Array<{
+    indice_imagen: number;
+    especie: string;
+    altura: string;
+    estado?: string;
+  }>;
   reasons?: string[];
 }
 
@@ -29,6 +36,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
         service_ids: input.selectedServiceIds,
         photo_urls: input.photoUrls,
         photo_count: input.photoCount,
+        service_name: input.serviceName,
       },
     });
     if (error) {
@@ -36,8 +44,9 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
       return { tareas: [] };
     }
     const tareas = Array.isArray((data as any)?.tareas) ? (data as any).tareas : [];
+    const palmas = Array.isArray((data as any)?.palmas) ? (data as any).palmas : undefined;
     const reasons = Array.isArray((data as any)?.reasons) ? (data as any).reasons : undefined;
-    return { tareas, reasons };
+    return { tareas, palmas, reasons };
   } catch (e) {
     console.warn('[AI] Fallo invocando Edge Function:', e);
     return { tareas: [] };

@@ -8,6 +8,7 @@ export type PalmSpecies =
   | 'Washingtonia' 
   | 'Roystonea regia (cubana)' 
   | 'Syagrus romanzoffiana (cocotera)' 
+  | 'Trachycarpus fortunei'
   | 'Livistona' 
   | 'Kentia (palmito)'
   | 'Phoenix roebelenii(pigmea)'
@@ -36,6 +37,7 @@ const EMPTY_CONFIG: PalmPricingConfig = {
     'Washingtonia': 0, 
     'Roystonea regia (cubana)': 0, 
     'Syagrus romanzoffiana (cocotera)': 0, 
+    'Trachycarpus fortunei': 0,
     'Livistona': 0, 
     'Kentia (palmito)': 0,
     'Phoenix roebelenii(pigmea)': 0,
@@ -46,6 +48,7 @@ const EMPTY_CONFIG: PalmPricingConfig = {
     'Washingtonia': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
     'Roystonea regia (cubana)': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
     'Syagrus romanzoffiana (cocotera)': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
+    'Trachycarpus fortunei': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
     'Livistona': { '0-2': 0, '2+': 0 },
     'Kentia (palmito)': { '0-2': 0, '2+': 0 },
     'Phoenix roebelenii(pigmea)': { '0-2': 0, '2+': 0 },
@@ -60,7 +63,8 @@ const LARGE_PALMS: PalmSpecies[] = [
   'Phoenix (datilera o canaria)',
   'Washingtonia',
   'Roystonea regia (cubana)',
-  'Syagrus romanzoffiana (cocotera)'
+  'Syagrus romanzoffiana (cocotera)',
+  'Trachycarpus fortunei'
 ];
 
 const SMALL_PALMS: PalmSpecies[] = [
@@ -153,7 +157,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
   // Helper to identify groups
   const getMultipliers = (species: PalmSpecies) => {
     // Large Palms
-    if (['Phoenix (datilera o canaria)', 'Washingtonia', 'Roystonea regia (cubana)'].includes(species)) {
+    if (['Phoenix (datilera o canaria)', 'Washingtonia', 'Roystonea regia (cubana)', 'Trachycarpus fortunei'].includes(species)) {
       return { '5-12': 1.30, '12-20': 1.70, '20+': 2.00 }; // +30%, +70%, +100% sobre base (0-5)
     }
     if (species === 'Syagrus romanzoffiana (cocotera)') {

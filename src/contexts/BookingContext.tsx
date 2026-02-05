@@ -15,6 +15,18 @@ export interface BookingData {
   aiDifficulty?: number;
   aiTasks?: Array<{ tipo_servicio: string; estado_jardin?: string; superficie_m2?: number|null; numero_plantas?: number|null; tamaño_plantas?: string|null }>;
   palmSpecies?: string;
+  palmHeight?: string;
+  palmState?: string;
+  palmWasteRemoval?: boolean;
+  palmGroups?: Array<{
+    id: string;
+    species: string;
+    height: string;
+    quantity: number;
+    state?: string;
+    wasteRemoval?: boolean;
+    photoUrl?: string;
+  }>;
 }
 
 interface BookingContextType {
@@ -44,6 +56,7 @@ const initialBookingData: BookingData = {
   aiDifficulty: 1,
   aiTasks: [],
   palmSpecies: '',
+  palmGroups: [],
 };
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);

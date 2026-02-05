@@ -14,6 +14,7 @@ interface Payload {
   service_ids?: string[];
   photo_urls?: string[];
   photo_count?: number;
+  service_name?: string; // Nombre del servicio (opcional, para lógica específica)
   // Nuevo modo de auto‑presupuesto por servicio
   mode?: 'auto_quote';
   service?: string; // nombre exacto del servicio
@@ -22,6 +23,83 @@ interface Payload {
 
 // Mapeo de System Prompts por servicio (estrictamente detallados)
 const PROMPTS: Record<string, string> = {
+  'Poda de palmeras': [
+    "You are an image analysis AI used in a gardening services marketplace.",
+    "",
+    "Your role is to analyze one or more images provided by a client and extract objective, visible data required to generate an automatic service estimate.",
+    "",
+    "You DO NOT calculate prices.",
+    "You DO NOT explain your reasoning.",
+    "You DO NOT include text outside the required JSON.",
+    "",
+    "Your task is limited strictly to image analysis.",
+    "",
+    "SERVICE:",
+    "Poda de palmeras",
+    "",
+    "ANALYSIS OBJECTIVE:",
+    "Analyze each provided image to identify the palm species, its approximate height range, and its maintenance state. Map each analysis to the corresponding image index.",
+    "",
+    "VARIABLES TO EXTRACT:",
+    "For each image, extract:",
+    "1. \"indice_imagen\": Integer representing the 0-based index of the analyzed image in the input list.",
+    "2. \"especie\": The biological species of the palm.",
+    "3. \"altura\": The height range of the palm trunk/overall structure.",
+    "4. \"estado\": The maintenance condition of the palm.",
+    "",
+    "CLASSIFICATION RULES:",
+    "",
+    "SPECIES (Must be exactly one of):",
+    "- \"Phoenix (datilera o canaria)\"",
+    "- \"Washingtonia\"",
+    "- \"Roystonea regia (cubana)\"",
+    "- \"Syagrus romanzoffiana (cocotera)\"",
+    "- \"Trachycarpus fortunei\"",
+    "- \"Livistona\"",
+    "- \"Kentia (palmito)\"",
+    "- \"Phoenix roebelenii(pigmea)\"",
+    "- \"cycas revoluta (falsa palmera)\"",
+    "",
+    "HEIGHT RANGES (Dependent on Species):",
+    "- For \"Phoenix (datilera o canaria)\", \"Washingtonia\", \"Roystonea regia (cubana)\", \"Syagrus romanzoffiana (cocotera)\", \"Trachycarpus fortunei\":",
+    "  - \"0-5\": Less than 5 meters.",
+    "  - \"5-12\": Between 5 and 12 meters.",
+    "  - \"12-20\": Between 12 and 20 meters.",
+    "  - \"20+\": More than 20 meters.",
+    "- For \"Livistona\", \"Kentia (palmito)\", \"Phoenix roebelenii(pigmea)\", \"cycas revoluta (falsa palmera)\":",
+    "  - \"0-2\": Less than 2 meters.",
+    "  - \"2+\": More than 2 meters.",
+    "",
+    "STATE (Maintenance Condition):",
+    "- \"normal\": Standard condition. Few or no dry fronds. Evidence of regular maintenance. Clean appearance.",
+    "- \"descuidado\": Some accumulation of dry/brown fronds (partial beard). Presence of some fruit clusters. Slightly overgrown.",
+    "- \"muy descuidado\": Heavy accumulation of dry fronds (full/long beard). Abundant fruit clusters. Wild, unkempt appearance. Neglected for a long time.",
+    "",
+    "OUTPUT RULES (MANDATORY):",
+    "- Return ONLY valid JSON",
+    "- No explanations",
+    "- No comments",
+    "- No additional fields",
+    "- No markdown",
+    "- No text outside the JSON",
+    "",
+    "ESTIMATION RULES:",
+    "- If a value cannot be determined with absolute certainty, provide the most reasonable estimate based on visible information.",
+    "- Never return null or empty values unless explicitly allowed.",
+    "- If multiple palms appear in one image, analyze the most prominent/central one.",
+    "",
+    "RESPONSE FORMAT (STRICT):",
+    "{",
+    "  \"palmas\": [",
+    "    {",
+    "      \"indice_imagen\": 0,",
+    "      \"especie\": \"string\",",
+    "      \"altura\": \"string\",",
+    "      \"estado\": \"string\"",
+    "    }",
+    "  ]",
+    "}"
+  ].join('\n'),
   'Corte de césped': [
     "Eres una IA especializada en análisis de jardines llamada 'GrassScan'. Tu objetivo es analizar imágenes para presupuestar un servicio de corte de césped.",
     '',
@@ -154,7 +232,32 @@ const PROMPTS: Record<string, string> = {
 };
 
 function buildMessages(payload: Payload) {
-  const { description, service_ids = [], photo_urls = [] } = payload;
+  const { description, service_ids = [], photo_urls = [], service_name } = payload;
+
+  // Lógica específica para Poda de Palmeras
+  if (service_name === 'Poda de palmeras') {
+    const userContent: any[] = [
+      { type: 'text', text: `Descripción del cliente: ${description || ''}` },
+      { type: 'text', text: `Analiza las siguientes imágenes e identifica las palmeras según el índice.` }
+    ];
+
+    photo_urls.slice(0, 5).forEach((url, idx) => {
+      userContent.push({
+        type: 'text',
+        text: `Imagen Índice ${idx}:`
+      });
+      userContent.push({
+        type: 'image_url',
+        image_url: { url, detail: 'auto' },
+      });
+    });
+
+    return [
+      { role: 'system', content: PROMPTS['Poda de palmeras'] },
+      { role: 'user', content: userContent },
+    ];
+  }
+
   const userContent: any[] = [
     { type: 'text', text: `Descripción del cliente: ${description || ''}` },
     { type: 'text', text: `Servicios seleccionados (informativo): ${service_ids.join(', ')}` },
@@ -389,6 +492,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Modo existente: estimación de tareas múltiples desde imágenes/texto
     const messages = buildMessages(payload);
     const ai = await callOpenAI(messages);
+
+    // Support for Palm Analysis Response
+    if (ai?.palmas && Array.isArray(ai.palmas)) {
+      return new Response(JSON.stringify({ palmas: ai.palmas }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const tareas = Array.isArray(ai?.tareas) ? ai.tareas : [];
     if (tareas.length > 0) {
       return new Response(JSON.stringify({ tareas }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

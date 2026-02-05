@@ -17,6 +17,7 @@ const ProvidersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<string>(bookingData.providerId);
   const [prices, setPrices] = useState<Record<string, number>>({});
+  const [configs, setConfigs] = useState<Record<string, any>>({});
   const [selectedDate, setSelectedDate] = useState<string>(bookingData.preferredDate || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`);
   const [hoursAvailable, setHoursAvailable] = useState<number[]>([]);
   const [showDatePicker] = useState(false);
@@ -216,8 +217,13 @@ const ProvidersPage: React.FC = () => {
           .in('user_id', gardenerIds);
         let list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
         const map: Record<string, number> = {};
-        (priceRows || []).forEach((p: any) => { map[p.gardener_id] = p.price_per_unit; });
+        const configMap: Record<string, any> = {};
+        (priceRows || []).forEach((p: any) => { 
+            map[p.gardener_id] = p.price_per_unit;
+            configMap[p.gardener_id] = p.additional_config;
+        });
         setPrices(map);
+        setConfigs(configMap);
         // Ordenar por disponibilidad más próxima
         const hoursNeeded = Math.max(1, Number(bookingData.estimatedHours || 0));
         const today = new Date();
@@ -272,6 +278,110 @@ const ProvidersPage: React.FC = () => {
 
 
   const computePrice = (gardenerId: string) => {
+    // 1. Lógica específica para Poda de Palmeras (Multi-Group Support)
+    const config = configs[gardenerId];
+    if (bookingData.palmGroups && bookingData.palmGroups.length > 0 && config) {
+        let total = 0;
+        
+        for (const group of bookingData.palmGroups) {
+            const species = group.species;
+            const height = group.height;
+            const state = group.state || 'normal';
+            const waste = group.wasteRemoval;
+            const qty = group.quantity;
+
+            // Base Price from Config
+            let base = 0;
+            if (height && config.height_prices?.[species]?.[height]) {
+                base = config.height_prices[species][height];
+            } else if (config.species_prices?.[species]) {
+                base = config.species_prices[species];
+            } else {
+                base = prices[gardenerId] || 0; // Fallback to generic price
+            }
+
+            // State Surcharge
+            let stateKey = state;
+            const surcharges = config.condition_surcharges || {};
+
+            if (state === 'muy descuidado') {
+                if (surcharges['muy_descuidada'] !== undefined) stateKey = 'muy_descuidada';
+                else if (surcharges['muy_descuidado'] !== undefined) stateKey = 'muy_descuidado';
+                else stateKey = 'muy_descuidada';
+            } else if (state === 'descuidado') {
+                if (surcharges['descuidada'] !== undefined) stateKey = 'descuidada';
+                else if (surcharges['descuidado'] !== undefined) stateKey = 'descuidado';
+                else stateKey = 'descuidada';
+            }
+            
+            const stateSurchargePercent = surcharges[stateKey] || 0;
+            const stateMult = 1 + (stateSurchargePercent / 100);
+
+            // Waste Removal Surcharge (applied after state surcharge)
+            let wasteMult = 1;
+            if (waste) {
+                 const wastePercent = config.waste_removal?.percentage || 0;
+                 wasteMult = 1 + (wastePercent / 100);
+            }
+
+            if (base > 0 && qty > 0) {
+                // Formula: Base * StateMult * WasteMult * Qty
+                total += Math.ceil(base * stateMult * wasteMult * qty);
+            }
+        }
+        return total;
+    }
+    
+    // Fallback: Legacy single-group logic (for backward compatibility or if groups are empty but fields exist)
+    if (bookingData.palmSpecies && config) {
+        const species = bookingData.palmSpecies;
+        const height = bookingData.palmHeight;
+        const state = bookingData.palmState || 'normal';
+        const waste = bookingData.palmWasteRemoval;
+        const qty = bookingData.aiQuantity || 0;
+
+        // Base Price from Config
+        let base = 0;
+        if (height && config.height_prices?.[species]?.[height]) {
+            base = config.height_prices[species][height];
+        } else if (config.species_prices?.[species]) {
+            base = config.species_prices[species];
+        } else {
+            base = prices[gardenerId] || 0; // Fallback to generic price
+        }
+
+        // State Surcharge
+        let stateKey = state;
+        const surcharges = config.condition_surcharges || {};
+
+        if (state === 'muy descuidado') {
+            if (surcharges['muy_descuidada'] !== undefined) stateKey = 'muy_descuidada';
+            else if (surcharges['muy_descuidado'] !== undefined) stateKey = 'muy_descuidado';
+            else stateKey = 'muy_descuidada';
+        } else if (state === 'descuidado') {
+            if (surcharges['descuidada'] !== undefined) stateKey = 'descuidada';
+            else if (surcharges['descuidado'] !== undefined) stateKey = 'descuidado';
+            else stateKey = 'descuidada';
+        }
+        
+        const stateSurchargePercent = surcharges[stateKey] || 0;
+        const stateMult = 1 + (stateSurchargePercent / 100);
+
+        // Waste Removal Surcharge (applied after state surcharge)
+        let wasteMult = 1;
+        if (waste) {
+             const wastePercent = config.waste_removal?.percentage || 0;
+             wasteMult = 1 + (wastePercent / 100);
+        }
+
+        if (base > 0 && qty > 0) {
+            // Formula: Base * StateMult * WasteMult * Qty
+            return Math.ceil(base * stateMult * wasteMult * qty);
+        }
+        return 0;
+    }
+
+    // 2. Lógica por defecto (otros servicios)
     const unitPrice = prices[gardenerId] || 0;
     const qty = bookingData.aiQuantity || 0;
     const mult = bookingData.aiDifficulty ? (bookingData.aiDifficulty === 3 ? 1.6 : bookingData.aiDifficulty === 2 ? 1.3 : 1.0) : 1.0;

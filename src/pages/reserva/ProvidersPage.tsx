@@ -287,7 +287,8 @@ const ProvidersPage: React.FC = () => {
             const species = group.species;
             const height = group.height;
             const state = group.state || 'normal';
-            const waste = group.wasteRemoval;
+            // Use global wasteRemoval setting if defined, otherwise fallback to group setting
+            const waste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : group.wasteRemoval;
             const qty = group.quantity;
 
             // Base Price from Config
@@ -337,7 +338,7 @@ const ProvidersPage: React.FC = () => {
         const species = bookingData.palmSpecies;
         const height = bookingData.palmHeight;
         const state = bookingData.palmState || 'normal';
-        const waste = bookingData.palmWasteRemoval;
+        const waste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : bookingData.palmWasteRemoval;
         const qty = bookingData.aiQuantity || 0;
 
         // Base Price from Config
@@ -441,14 +442,7 @@ const ProvidersPage: React.FC = () => {
           <h1 className="text-lg font-semibold text-gray-900">
             {serviceName ? (bookingData.palmSpecies && serviceName.toLowerCase().includes('palmera') ? `${serviceName}: ${bookingData.palmSpecies}` : serviceName) : 'Jardineros'}
           </h1>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => { try { localStorage.removeItem('bookingProgress'); } catch {}; navigate('/dashboard'); }}
-              className="px-3 py-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-gray-700"
-            >
-              Cancelar reserva
-            </button>
-          </div>
+          {/* Botón de cancelar reserva movido al layout principal en BookingFlow */}
         </div>
       </div>
 

@@ -135,6 +135,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             }
             keysToRemove.forEach(k => localStorage.removeItem(k));
+            
+            // También limpiar progreso de reserva de cliente al cerrar sesión
+            localStorage.removeItem('bookingProgress');
           } catch (e) {
             console.error('Error cleaning up wizard progress:', e);
           }

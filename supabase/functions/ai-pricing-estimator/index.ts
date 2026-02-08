@@ -19,6 +19,7 @@ interface Payload {
   mode?: 'auto_quote';
   service?: string; // nombre exacto del servicio
   image_url?: string; // http(s) o dataURL
+  model?: 'gpt-4o-mini' | 'gemini-2.0-flash';
 }
 
 // Mapeo de System Prompts por servicio (estrictamente detallados)
@@ -437,6 +438,122 @@ function heuristicTasks(payload: Payload) {
   return { tareas: tasks, reasons: ['Heurística local'] };
 }
 
+async function fetchImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    const buf = await blob.arrayBuffer();
+    // Use standard Buffer approach or chunked processing for large files to avoid stack overflow
+    // In Deno/Edge, btoa on very large strings can cause stack overflow if spread operator is used on massive arrays
+    // Better approach:
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    return base64;
+  } catch (e) {
+    console.warn('Error fetching image for Gemini:', e);
+    return null;
+  }
+}
+
+async function callGemini(messages: any[]) {
+  const apiKey = Deno.env.get('GOOGLE_API_KEY');
+  if (!apiKey) {
+    return { tareas: [], reasons: ['Falta GOOGLE_API_KEY'] };
+  }
+
+  // Extract system prompt
+  const systemMsg = messages.find(m => m.role === 'system');
+  const systemPrompt = systemMsg ? systemMsg.content : '';
+
+  // Build contents
+  const contents: any[] = [];
+  
+  for (const msg of messages) {
+    if (msg.role === 'system') continue;
+    
+    if (msg.role === 'user') {
+       const parts: any[] = [];
+       if (Array.isArray(msg.content)) {
+         for (const part of msg.content) {
+           if (part.type === 'text') {
+             parts.push({ text: part.text });
+           } else if (part.type === 'image_url') {
+             const url = part.image_url?.url;
+             if (url) {
+               const base64 = await fetchImageAsBase64(url);
+               if (base64) {
+                 parts.push({
+                   inline_data: {
+                     mime_type: 'image/jpeg',
+                     data: base64
+                   }
+                 });
+               }
+             }
+           }
+         }
+       } else {
+         parts.push({ text: msg.content });
+       }
+       if (parts.length > 0) {
+         contents.push({ role: 'user', parts });
+       }
+    }
+  }
+
+  const body = {
+    contents,
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+      response_mime_type: "application/json"
+    }
+  };
+
+  // Implement simple retry logic for 429
+  let attempts = 0;
+  const maxAttempts = 3;
+  
+  while (attempts < maxAttempts) {
+    attempts++;
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (resp.ok) {
+        const data = await resp.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        try {
+            return JSON.parse(text);
+        } catch {
+            return { tareas: [], reasons: ['Respuesta Gemini no parseable'] };
+        }
+    }
+
+    if (resp.status === 429) {
+        const txt = await resp.text();
+        console.warn(`Gemini 429 Rate Limit (Attempt ${attempts}/${maxAttempts}):`, txt);
+        if (attempts < maxAttempts) {
+            // Wait 2s, 4s, etc.
+            const delay = 2000 * attempts;
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+        }
+    }
+
+    const txt = await resp.text();
+    console.error('Gemini error:', txt);
+    return { tareas: [], reasons: ['Error llamando a Gemini'] };
+  }
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -464,7 +581,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
         { role: 'system', content: system },
         { role: 'user', content: userContent },
       ];
-      const analysis = await callOpenAI(messages);
+      
+      let analysis;
+      if (payload.model === 'gemini-2.0-flash') {
+        analysis = await callGemini(messages);
+      } else {
+        analysis = await callOpenAI(messages);
+      }
+
       const servicio = analysis?.servicio as string | undefined;
       const cantidad = Number(analysis?.cantidad ?? 0);
       const unidad = analysis?.unidad as string | undefined;
@@ -491,7 +615,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     // Modo existente: estimación de tareas múltiples desde imágenes/texto
     const messages = buildMessages(payload);
-    const ai = await callOpenAI(messages);
+    
+    let ai;
+    if (payload.model === 'gemini-2.0-flash') {
+      ai = await callGemini(messages);
+    } else {
+      ai = await callOpenAI(messages);
+    }
 
     // Support for Palm Analysis Response
     if (ai?.palmas && Array.isArray(ai.palmas)) {

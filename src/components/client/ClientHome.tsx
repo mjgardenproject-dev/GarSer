@@ -88,6 +88,7 @@ const ClientHome: React.FC = () => {
 
   // Estimación IA y precio
   const [analyzing, setAnalyzing] = useState(false);
+  const [aiModel, setAiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gpt-4o-mini');
   const [estimatedHours, setEstimatedHours] = useState<number>(0);
   const [aiTasks, setAiTasks] = useState<AITask[]>([]);
   const [aiAutoAnalysis, setAiAutoAnalysis] = useState<AutoQuoteAnalysis | null>(null);
@@ -452,7 +453,7 @@ const ClientHome: React.FC = () => {
       const firstImageUrl = photoUrls[0];
       if (primaryService && firstImageUrl) {
         console.log('[AI] calling estimateServiceAutoQuote', { service: primaryService, hasImage: !!firstImageUrl });
-        const auto = await estimateServiceAutoQuote({ service: primaryService, imageUrl: firstImageUrl, description: '' });
+        const auto = await estimateServiceAutoQuote({ service: primaryService, imageUrl: firstImageUrl, description: '', model: aiModel });
         if (auto?.analysis && auto?.result) {
           console.log('[AI] auto_quote returned', auto);
           setAiAutoAnalysis(auto.analysis);
@@ -460,13 +461,13 @@ const ClientHome: React.FC = () => {
           setAiAutoPrice(Math.max(0, Number(auto.result.precio_estimado || 0)));
         } else {
           console.log('[AI] auto_quote not available, falling back to multi-task analysis');
-          const result = await estimateWorkWithAI({ description, photoCount: photos.length, selectedServiceIds, photoUrls });
+          const result = await estimateWorkWithAI({ description, photoCount: photos.length, selectedServiceIds, photoUrls, model: aiModel });
           const tareas = Array.isArray(result.tareas) ? result.tareas : [];
           setAiTasks(tareas);
         }
       } else {
         console.log('[AI] calling estimateWorkWithAI', { photoUrlsLen: photoUrls.length, descriptionLen: description.length, selectedServiceIdsLen: selectedServiceIds.length });
-        const result = await estimateWorkWithAI({ description, photoCount: photos.length, selectedServiceIds, photoUrls });
+        const result = await estimateWorkWithAI({ description, photoCount: photos.length, selectedServiceIds, photoUrls, model: aiModel });
         const tareas = Array.isArray(result.tareas) ? result.tareas : [];
         setAiTasks(tareas);
         tareasLocal = tareas;
@@ -1152,6 +1153,15 @@ const ClientHome: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-3">
+                    <select
+                      value={aiModel}
+                      onChange={(e) => setAiModel(e.target.value as any)}
+                      className="px-3 py-3 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="gpt-4o-mini">ChatGPT-4o Mini</option>
+                      <option value="gemini-2.0-flash">Google Gemini 2 Flash</option>
+                    </select>
+
                     <button
                       onClick={runAIAnalysis}
                       disabled={analyzing}

@@ -12,6 +12,7 @@ interface EstimationInput {
   selectedServiceIds: string[];
   photoUrls?: string[]; // URLs de las fotos para análisis IA
   serviceName?: string; // Optional: Name of the primary service for specific prompting
+  model?: 'gpt-4o-mini' | 'gemini-2.0-flash'; // Nuevo selector de modelo
 }
 
 interface EstimationResult {
@@ -37,6 +38,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
         photo_urls: input.photoUrls,
         photo_count: input.photoCount,
         service_name: input.serviceName,
+        model: input.model || 'gpt-4o-mini',
       },
     });
     if (error) {
@@ -68,7 +70,7 @@ export interface AutoQuoteResponse {
   version?: string;
 }
 
-export async function estimateServiceAutoQuote(params: { service: string; imageUrl: string; description?: string }): Promise<AutoQuoteResponse | null> {
+export async function estimateServiceAutoQuote(params: { service: string; imageUrl: string; description?: string; model?: 'gpt-4o-mini' | 'gemini-2.0-flash' }): Promise<AutoQuoteResponse | null> {
   try {
     const { data, error } = await supabase.functions.invoke('ai-pricing-estimator', {
       body: {
@@ -76,6 +78,7 @@ export async function estimateServiceAutoQuote(params: { service: string; imageU
         service: params.service,
         image_url: params.imageUrl,
         description: '',
+        model: params.model || 'gpt-4o-mini',
       },
     });
     if (error) {

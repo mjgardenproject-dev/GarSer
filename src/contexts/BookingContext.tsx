@@ -13,7 +13,16 @@ export interface BookingData {
   aiQuantity?: number;
   aiUnit?: string;
   aiDifficulty?: number;
-  aiTasks?: Array<{ tipo_servicio: string; estado_jardin?: string; superficie_m2?: number|null; numero_plantas?: number|null; tamaño_plantas?: string|null }>;
+  aiTasks?: Array<{ 
+    tipo_servicio: string; 
+    estado_jardin?: string; 
+    superficie_m2?: number|null; 
+    numero_plantas?: number|null; 
+    tamaño_plantas?: string|null;
+    nivel_analisis?: number;
+    observaciones?: string[] | null;
+  }>;
+  lawnSpecies?: string;
   palmSpecies?: string;
   palmHeight?: string;
   palmState?: string;
@@ -31,6 +40,37 @@ export interface BookingData {
   }>;
   uploadedPhotoUrls?: string[];
   isAnalyzing?: boolean;
+  lawnZones?: Array<{
+    id: string;
+    species: string;
+    state: string; // "normal" | "descuidado" | "muy descuidado"
+    quantity: number; // m2
+    wasteRemoval: boolean;
+    photoUrls: string[]; // Multiple photos per zone
+    imageIndices: number[]; // Indices in the main photos array
+    files?: File[]; // Local files pending upload
+    analysisLevel?: number;
+    observations?: string[];
+  }>;
+  // Per-service isolated state storage
+  servicesData?: Record<string, {
+    photos?: File[];
+    uploadedPhotoUrls?: string[];
+    description?: string;
+    aiTasks?: any[];
+    estimatedHours?: number;
+    // Specific fields per service type
+    lawnZones?: any[];
+    palmGroups?: any[];
+    lawnSpecies?: string;
+    palmSpecies?: string;
+    palmHeight?: string;
+    palmState?: string;
+    aiQuantity?: number;
+    aiDifficulty?: number;
+    aiUnit?: string;
+    wasteRemoval?: boolean; // Can be per-service override if needed
+  }>;
 }
 
 interface BookingContextType {
@@ -44,6 +84,8 @@ interface BookingContextType {
   resetBooking: () => void;
   saveProgress: () => void;
   loadProgress: () => void;
+  updateServiceData: (serviceId: string, data: any) => void;
+  switchToService: (serviceId: string) => void;
 }
 
 const initialBookingData: BookingData = {
@@ -60,11 +102,14 @@ const initialBookingData: BookingData = {
   aiUnit: '',
   aiDifficulty: 1,
   aiTasks: [],
+  lawnSpecies: '',
   palmSpecies: '',
   palmGroups: [],
+  lawnZones: [],
   wasteRemoval: true, // Default to true
   uploadedPhotoUrls: [],
   isAnalyzing: false,
+  servicesData: {},
 };
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
@@ -83,7 +128,53 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isLoading, setIsLoading] = useState(true); // Inicialmente cargando
 
   const setBookingData = (data: Partial<BookingData>) => {
-    setBookingDataState(prev => ({ ...prev, ...data }));
+    setBookingDataState(prev => {
+        const newData = { ...prev, ...data };
+        
+        // Auto-persist to service isolation if we have a current service context
+        // This is a heuristic: if we are updating fields that are service-specific
+        // and we have a single selected service ID (common in flow), save to that bucket.
+        // However, explicit saving is better controlled by the UI. 
+        // For now, we just update the main state. The UI will handle "switching" contexts.
+        
+        return newData;
+    });
+  };
+
+  const updateServiceData = (serviceId: string, data: any) => {
+      setBookingDataState(prev => ({
+          ...prev,
+          servicesData: {
+              ...prev.servicesData,
+              [serviceId]: {
+                  ...(prev.servicesData?.[serviceId] || {}),
+                  ...data
+              }
+          }
+      }));
+  };
+  
+  // Helper to switch context to a specific service
+  const switchToService = (serviceId: string) => {
+      setBookingDataState(prev => {
+          const saved = prev.servicesData?.[serviceId] || {};
+          // Merge saved data into active fields, resetting others to defaults if not present
+          return {
+              ...prev,
+              // Reset common fields to avoid contamination, then overwrite with saved
+              photos: [],
+              uploadedPhotoUrls: [],
+              description: '',
+              aiTasks: [],
+              estimatedHours: 0,
+              lawnZones: [],
+              palmGroups: [],
+              aiQuantity: 0,
+              aiDifficulty: 1,
+              // Apply saved
+              ...saved
+          };
+      });
   };
 
   const nextStep = () => {
@@ -159,6 +250,8 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     resetBooking,
     saveProgress,
     loadProgress,
+    updateServiceData,
+    switchToService,
   };
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;

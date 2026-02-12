@@ -102,25 +102,75 @@ const PROMPTS: Record<string, string> = {
     "}"
   ].join('\n'),
   'Corte de césped': [
-    "Eres una IA especializada en análisis de jardines llamada 'GrassScan'. Tu objetivo es analizar imágenes para presupuestar un servicio de corte de césped.",
-    '',
-    'INSTRUCCIONES DE ANÁLISIS:',
-    '1. Detecta la superficie total de césped en m², ignorando tierra, grava, mobiliario u otras áreas que no sean césped.',
-    '2. Evalúa la altura del césped mediante textura y color, densidad, irregularidades y obstáculos.',
-    '3. Analiza sombra y orientación para corregir áreas parcialmente visibles.',
-    '4. Evalúa la accesibilidad: bordes, objetos, pendientes y obstáculos.',
-    'DETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):',
-    '- Nivel 1: Césped <3 cm, terreno llano, sin obstáculos.',
-    '- Nivel 2: Césped 3–10 cm, algunos obstáculos, terreno ligeramente irregular, densidad media.',
-    '- Nivel 3: Césped >10 cm, muchos obstáculos, terreno irregular, césped tupido o con malas hierbas.',
-    '',
-    'FORMATO DE SALIDA (JSON ÚNICAMENTE):',
-    '{',
-    '  "servicio": "Corte de césped",',
-    '  "cantidad": [número estimado de m2],',
-    '  "unidad": "m2",',
-    '  "dificultad": [1, 2 o 3]',
-    '}',
+    `---
+You are an expert image analysis AI for a gardening marketplace. Your task is to objectively analyze lawn areas visible in images to extract structured data.
+
+CORE RULES:
+1. OUTPUT MUST BE VALID JSON ONLY. No markdown (json), no conversational text.
+2. DO NOT infer hidden areas. Analyze ONLY what is strictly visible.
+3. DO NOT calculate prices.
+4. Accuracy is priority over completeness. If unsure, declare lower reliability.
+
+SERVICE CONTEXT:
+Service Type: "Corte de césped"
+
+---------------------------------------------------------------------
+ANALYSIS LOGIC & RELIABILITY LEVELS (nivel_analisis):
+
+Determine the level based on visibility, lighting, and scale references.
+
+LEVEL 1 (High Confidence):
+- Criteria: Entire lawn visible, perfect lighting, clear scale references (doors, people, standard paving).
+- Output: All fields populated. observaciones = null.
+
+LEVEL 2 (Moderate Limitations):
+- Criteria: Partial visibility, shadows, awkward angles, or lack of scale references.
+- Output: All fields populated (best estimate). observaciones = ARRAY with specific allowed notes.
+
+LEVEL 3 (Failed/Unusable):
+- Criteria: Lawn not detectable, extreme blur, pitch black, or not a garden.
+- Output: superficie_m2 = 0, especie_cesped = null, estado_jardin = null. observaciones = ARRAY with failure notes.
+
+---------------------------------------------------------------------
+DATA EXTRACTION RULES:
+
+A) SURFACE AREA (superficie_m2):
+- Estimate ONLY visible natural grass.
+- USE REFERENCES: Look for standard objects (doors ~0.9m wide, cars ~4.5m long, standard tiles) to calibrate scale.
+- If scale is impossible to determine (no references), set nivel_analisis = 2 and add "pocas referencias de escala".
+
+B) SPECIES (especie_cesped):
+- "Dichondra (oreja de ratón o similares)" -> Round leaves.
+- "Gramón (Kikuyu, San Agustín o similares)" -> Very wide blades, creeping runners.
+- "Bermuda (fina o gramilla)" -> Very fine, dense needle-like blades.
+- "Césped Mixto (Festuca/Raygrass)" -> DEFAULT. Use this if distance prevents blade analysis.
+
+C) CONDITION (estado_jardin):
+- "normal" -> Even surface, defined edges.
+- "descuidado" -> Uneven height, invading edges.
+- "muy descuidado" -> High weeds, undefined edges, wild appearance.
+
+D) OBSERVACIONES (Allowed values ONLY):
+- Level 2: "mala luz", "zonas no visibles", "foto de baja calidad", "pocas referencias de escala", "ángulo limitado", "parte del jardín fuera de encuadre", "posible solapamiento entre imágenes".
+- Level 3: "muy mala luz", "foto extremadamente borrosa", "césped no detectable", "imagen no corresponde a un jardín", "superficie completamente fuera de encuadre", "imagen obstruida".
+
+---------------------------------------------------------------------
+RESPONSE FORMAT (JSON Schema):
+
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Corte de césped",
+      "especie_cesped": "string OR null",
+      "estado_jardin": "string OR null",
+      "superficie_m2": number,
+      "numero_plantas": null,
+      "tamaño_plantas": null,
+      "nivel_analisis": integer (1, 2, or 3),
+      "observaciones": ["string"] OR null
+    }
+  ]
+}`
   ].join('\n'),
   'Corte de setos': [
     "Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.",
@@ -256,6 +306,26 @@ function buildMessages(payload: Payload) {
     return [
       { role: 'system', content: PROMPTS['Poda de palmeras'] },
       { role: 'user', content: userContent },
+    ];
+  }
+
+  // Lógica específica para Corte de césped (Nuevo)
+  if (service_name === 'Corte de césped' || (service_name && service_name.toLowerCase().includes('césped'))) {
+    const userContent: any[] = [
+      { type: 'text', text: `Descripción del cliente: ${description || ''}` },
+      { type: 'text', text: `Analiza las imágenes para el servicio de corte de césped.` }
+    ];
+
+    photo_urls.slice(0, 5).forEach((url, idx) => {
+        userContent.push({
+            type: 'image_url',
+            image_url: { url, detail: 'auto' },
+        });
+    });
+
+    return [
+        { role: 'system', content: PROMPTS['Corte de césped'] },
+        { role: 'user', content: userContent },
     ];
   }
 
@@ -546,12 +616,14 @@ async function callGemini(messages: any[]) {
             await new Promise(r => setTimeout(r, delay));
             continue;
         }
+        return { tareas: [], reasons: ['Gemini Rate Limit Exceeded'] };
     }
 
     const txt = await resp.text();
     console.error('Gemini error:', txt);
     return { tareas: [], reasons: ['Error llamando a Gemini'] };
   }
+  return { tareas: [], reasons: ['Gemini Failed'] };
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -585,6 +657,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let analysis;
       if (payload.model === 'gemini-2.0-flash') {
         analysis = await callGemini(messages);
+        // Fallback to OpenAI if Gemini fails (Rate Limit or other error)
+        if (!analysis || !analysis.servicio || (analysis.reasons && analysis.reasons.length > 0)) {
+           console.warn('Gemini failed, falling back to OpenAI...');
+           analysis = await callOpenAI(messages);
+        }
       } else {
         analysis = await callOpenAI(messages);
       }
@@ -619,8 +696,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let ai;
     if (payload.model === 'gemini-2.0-flash') {
       ai = await callGemini(messages);
+      // Fallback to OpenAI if Gemini fails
+      if (!ai || (!ai.tareas && !ai.palmas) || (ai.reasons && ai.reasons.length > 0)) {
+           console.warn('Gemini failed, falling back to OpenAI...');
+           ai = await callOpenAI(messages);
+      }
     } else {
       ai = await callOpenAI(messages);
+    }
+
+    // Check if both AIs failed (OpenAI also returned error reasons or insufficient quota)
+    if (!ai || (!ai.tareas && !ai.palmas)) {
+        console.warn('Both AI models failed. Falling back to heuristic/manual mode.');
+        const h = heuristicTasks(payload);
+        return new Response(JSON.stringify({ ...h, reasons: ['AI Quota Exceeded - Manual Mode'] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Support for Palm Analysis Response

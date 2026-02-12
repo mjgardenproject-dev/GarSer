@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBooking } from "../../contexts/BookingContext";
-import { ChevronLeft, Camera, Upload, Trash2, Wand2, Image } from 'lucide-react';
+import { ChevronLeft, Camera, Upload, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, estimateServiceAutoQuote } from '../../utils/aiPricingEstimator';
 
@@ -34,17 +34,35 @@ const PALM_GROUP_B = [
 
 const DetailsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { bookingData, setBookingData, saveProgress, setCurrentStep } = useBooking();
+  const { bookingData, setBookingData, saveProgress, setCurrentStep, updateServiceData, switchToService } = useBooking();
+  
+  // Initialize state on mount when service changes
+  useEffect(() => {
+    if (bookingData.serviceIds?.[0]) {
+        switchToService(bookingData.serviceIds[0]);
+    }
+  }, [bookingData.serviceIds?.[0]]); // Trigger only when primary service ID changes
+
   // Initialize photos from uploadedPhotoUrls if available, otherwise from bookingData.photos
-  const [photos, setPhotos] = useState<(File | string)[]>(() => {
-    if (bookingData.photos && bookingData.photos.length > 0) return bookingData.photos;
-    if (bookingData.uploadedPhotoUrls && bookingData.uploadedPhotoUrls.length > 0) return bookingData.uploadedPhotoUrls;
-    return [];
-  });
+  // We need to keep this in sync with bookingData changes triggered by switchToService
+  const [photos, setPhotos] = useState<(File | string)[]>([]);
+  
+  useEffect(() => {
+      if (bookingData.photos && bookingData.photos.length > 0) setPhotos(bookingData.photos);
+      else if (bookingData.uploadedPhotoUrls && bookingData.uploadedPhotoUrls.length > 0) setPhotos(bookingData.uploadedPhotoUrls);
+      else setPhotos([]);
+  }, [bookingData.photos, bookingData.uploadedPhotoUrls]);
+
   const [description, setDescription] = useState(bookingData.description);
+  
+  // Sync description when bookingData changes (e.g. context switch)
+  useEffect(() => {
+      setDescription(bookingData.description);
+  }, [bookingData.description]);
   const [analyzing, setAnalyzing] = useState(false);
-  const [aiModel, setAiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gpt-4o-mini');
+  const [aiModel, setAiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gemini-2.0-flash');
   const [debugService, setDebugService] = useState<string>('');
+  const [debugLawnSpecies, setDebugLawnSpecies] = useState<string>('');
   const [debugState, setDebugState] = useState<string>('normal');
   const [debugPalmSpecies, setDebugPalmSpecies] = useState<string>('');
   const [debugPalmHeight, setDebugPalmHeight] = useState<string>('');
@@ -74,6 +92,43 @@ const DetailsPage: React.FC = () => {
     };
     fetchServiceName();
   }, [bookingData.serviceIds]);
+
+  // Sync lawn zones to global state
+  useEffect(() => {
+      const isLawnService = debugService.includes('Corte de césped') || debugService.includes('césped');
+      if (isLawnService && bookingData.lawnZones) {
+          // 1. Calculate Hours
+          let totalHours = 0;
+          let totalQty = 0;
+          bookingData.lawnZones.forEach(z => {
+              if (z.quantity > 0) {
+                  const diff = z.state === 'muy descuidado' ? 1.6 : z.state === 'descuidado' ? 1.3 : 1.0;
+                  const h = (z.quantity / 150) * diff;
+                  totalHours += h;
+                  totalQty += z.quantity;
+              }
+          });
+          
+          // 2. Aggregate Photos
+          const allUrls = bookingData.lawnZones.flatMap(z => z.photoUrls);
+          
+          // Only update if changed
+          const currentHours = bookingData.estimatedHours || 0;
+          const currentUrls = bookingData.uploadedPhotoUrls || [];
+          
+          const hoursChanged = Math.abs(currentHours - Math.ceil(totalHours)) > 0.1;
+          const urlsChanged = allUrls.length !== currentUrls.length || !allUrls.every((u, i) => u === currentUrls[i]);
+          
+          if (hoursChanged || urlsChanged) {
+              setBookingData({ 
+                  estimatedHours: Math.ceil(totalHours),
+                  uploadedPhotoUrls: allUrls,
+                  aiQuantity: totalQty,
+                  aiUnit: 'm2'
+              });
+          }
+      }
+  }, [bookingData.lawnZones, debugService]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -157,6 +212,15 @@ const DetailsPage: React.FC = () => {
     });
 
     setPhotos(updatedPhotosState);
+    
+    // Explicitly update per-service data
+    if (bookingData.serviceIds?.[0]) {
+        updateServiceData(bookingData.serviceIds[0], {
+            uploadedPhotoUrls: updatedUrls,
+            photos: updatedPhotosState.filter(p => p instanceof File) // Best effort, though URLs are primary
+        });
+    }
+    
     setBookingData({ uploadedPhotoUrls: updatedUrls });
     saveProgress();
   };
@@ -199,6 +263,15 @@ const DetailsPage: React.FC = () => {
     });
 
     setPhotos(updatedPhotosState);
+    
+    // Explicitly update per-service data
+    if (bookingData.serviceIds?.[0]) {
+        updateServiceData(bookingData.serviceIds[0], {
+            uploadedPhotoUrls: updatedUrls,
+            photos: updatedPhotosState.filter(p => p instanceof File)
+        });
+    }
+
     setBookingData({ uploadedPhotoUrls: updatedUrls });
     saveProgress();
   };
@@ -209,6 +282,15 @@ const DetailsPage: React.FC = () => {
     
     const newUrls = (bookingData.uploadedPhotoUrls || []).filter((_, i) => i !== index);
     setBookingData({ uploadedPhotoUrls: newUrls });
+    
+    // Explicitly update per-service data
+    if (bookingData.serviceIds?.[0]) {
+        updateServiceData(bookingData.serviceIds[0], {
+            uploadedPhotoUrls: newUrls,
+            photos: newPhotos.filter(p => p instanceof File)
+        });
+    }
+    
     saveProgress();
     
     // Update palmGroups when a photo is removed to keep indices in sync
@@ -222,6 +304,13 @@ const DetailsPage: React.FC = () => {
         
         const totalHours = newGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
         setBookingData({ palmGroups: newGroups, estimatedHours: totalHours });
+        
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], {
+                 palmGroups: newGroups,
+                 estimatedHours: totalHours
+             });
+        }
     }
   };
 
@@ -241,6 +330,22 @@ const DetailsPage: React.FC = () => {
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
     setBookingData({ photos: filePhotos, description });
+    
+    // Explicit persist before leaving
+    if (bookingData.serviceIds?.[0]) {
+        updateServiceData(bookingData.serviceIds[0], {
+            photos: filePhotos,
+            description,
+            // Ensure all current context is saved
+            aiTasks: bookingData.aiTasks,
+            estimatedHours: bookingData.estimatedHours,
+            lawnZones: bookingData.lawnZones,
+            palmGroups: bookingData.palmGroups,
+            aiQuantity: bookingData.aiQuantity,
+            aiDifficulty: bookingData.aiDifficulty
+        });
+    }
+    
     saveProgress();
     setCurrentStep(3);
   };
@@ -295,7 +400,9 @@ const DetailsPage: React.FC = () => {
         const svc = bookingData.serviceIds[0];
         const { data: svcRow } = await supabase.from('services').select('name').eq('id', svc).maybeSingle();
         const svcName = (svcRow as any)?.name as string | undefined;
-        if (svcName) {
+        // Evitar AutoQuote para servicios con prompts complejos (como césped o palmeras)
+        // ya que estimateServiceAutoQuote espera un JSON plano y nuestros prompts devuelven { tareas: [] }
+        if (svcName && !svcName.toLowerCase().includes('césped') && !svcName.toLowerCase().includes('palmera')) {
           const auto = await estimateServiceAutoQuote({ service: svcName, imageUrl: firstImageUrl, description: '', model: aiModel });
           if (auto?.analysis && auto?.result) {
             const qty = Math.max(0, Number(auto.analysis.cantidad || 0));
@@ -339,6 +446,15 @@ const DetailsPage: React.FC = () => {
             estimatedHours: totalHours,
             isAnalyzing: false
         });
+        
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], {
+                 palmGroups: newGroups,
+                 estimatedHours: totalHours,
+                 isAnalyzing: false // Persist analysis state
+             });
+        }
+        
         saveProgress();
         setAnalyzing(false);
         return;
@@ -372,11 +488,41 @@ const DetailsPage: React.FC = () => {
         const qty = Number(first.superficie_m2 ?? first.numero_plantas ?? 0);
         const unit = first.superficie_m2 != null ? 'm2' : 'plantas';
         const diff = first.estado_jardin?.includes('muy') ? 3 : first.estado_jardin?.includes('descuidado') ? 2 : 1;
-        setBookingData({ aiTasks: tareas, estimatedHours: total, aiQuantity: qty, aiUnit: unit, aiDifficulty: diff, isAnalyzing: false });
+        const species = first.especie_cesped || undefined;
+        
+        setBookingData({ 
+            aiTasks: tareas, 
+            estimatedHours: total, 
+            aiQuantity: qty, 
+            aiUnit: unit, 
+            aiDifficulty: diff, 
+            lawnSpecies: species,
+            isAnalyzing: false 
+        });
+        
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], {
+                 aiTasks: tareas,
+                 estimatedHours: total,
+                 aiQuantity: qty,
+                 aiUnit: unit,
+                 aiDifficulty: diff,
+                 lawnSpecies: species,
+                 isAnalyzing: false
+             });
+        }
+        
         saveProgress();
       }
     } catch {
         setBookingData({ isAnalyzing: false });
+        
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], {
+                 isAnalyzing: false
+             });
+        }
+        
         saveProgress();
     }
     finally {
@@ -384,12 +530,226 @@ const DetailsPage: React.FC = () => {
     }
   };
 
-  const gardenSizeSuggestions = [
-    { label: 'Pequeño', value: 50 },
-    { label: 'Mediano', value: 150 },
-    { label: 'Grande', value: 300 },
-    { label: 'Muy grande', value: 500 },
-  ];
+  const getServiceContent = () => {
+    const defaultContent = {
+        title: 'Fotos de tu jardín',
+        description: 'Las fotos ayudan a los jardineros a entender mejor tu espacio.'
+    };
+    
+    if (!debugService) return defaultContent;
+    
+    const lower = debugService.toLowerCase();
+    if (lower.includes('palmera')) {
+        return {
+            title: 'Fotos de tus palmeras',
+            description: 'Sube una foto por cada tipo de palmera diferente. Si tienes varias iguales en especie, tamaño y estado, solo necesitas subir una foto.'
+        };
+    }
+    if (lower.includes('césped') || lower.includes('cesped')) {
+        return {
+            title: 'Fotos del césped',
+            description: 'Sube fotos de la zona de césped a cortar. Intenta mostrar la altura actual y los bordes.'
+        };
+    }
+    if (lower.includes('seto')) {
+        return {
+            title: 'Fotos de los setos',
+            description: 'Sube fotos que muestren la longitud y altura de los setos.'
+        };
+    }
+    if (lower.includes('árbol') || lower.includes('arbol')) {
+        return {
+            title: 'Fotos de los árboles',
+            description: 'Sube fotos generales de los árboles a podar.'
+        };
+    }
+    if (lower.includes('limpieza') || lower.includes('desbroce') || lower.includes('hierbas')) {
+        return {
+            title: 'Fotos de la zona',
+            description: 'Sube fotos que muestren la densidad de la vegetación a limpiar.'
+        };
+    }
+    
+    return defaultContent;
+  };
+
+  const serviceContent = getServiceContent();
+
+  // --- NEW: Lawn Zone Logic ---
+  const addLawnZone = () => {
+    const newZone = {
+        id: `zone-${Date.now()}`,
+        species: '',
+        state: 'normal',
+        quantity: 0,
+        wasteRemoval: true,
+        photoUrls: [],
+        imageIndices: [],
+        files: [] 
+    };
+    const newZones = [...(bookingData.lawnZones || []), newZone];
+    setBookingData({ 
+        lawnZones: newZones,
+        wasteRemoval: true 
+    });
+    
+    if (bookingData.serviceIds?.[0]) {
+         updateServiceData(bookingData.serviceIds[0], {
+             lawnZones: newZones,
+             wasteRemoval: true
+         });
+    }
+    
+    saveProgress(); // Ensure persistence
+  };
+
+  const removeLawnZone = (zoneId: string) => {
+    if (!window.confirm('¿Estás seguro de eliminar esta zona y sus fotos?')) return;
+    const newZones = (bookingData.lawnZones || []).filter(z => z.id !== zoneId);
+    setBookingData({ lawnZones: newZones });
+    
+    if (bookingData.serviceIds?.[0]) {
+         updateServiceData(bookingData.serviceIds[0], {
+             lawnZones: newZones
+         });
+    }
+    
+    saveProgress(); // Ensure persistence
+  };
+
+  const handleLawnFileSelect = async (zoneId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+
+    const zones = [...(bookingData.lawnZones || [])];
+    const idx = zones.findIndex(z => z.id === zoneId);
+    if (idx === -1) return;
+
+    // Upload immediately
+    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now(); // Ensure uniqueness
+    const uploadPromises = files.map((file, i) => uploadFile(file, startIdx + i));
+    
+    // We could show a loading state here if needed
+    const urls = await Promise.all(uploadPromises);
+    const validUrls = urls.filter((u): u is string => !!u);
+    
+    if (validUrls.length > 0) {
+        zones[idx].photoUrls = [...zones[idx].photoUrls, ...validUrls];
+        setBookingData({ lawnZones: zones });
+        
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], {
+                 lawnZones: zones
+             });
+        }
+    }
+  };
+
+  const removePhotoFromZone = (zoneId: string, photoIndex: number) => {
+      const zones = [...(bookingData.lawnZones || [])];
+      const idx = zones.findIndex(z => z.id === zoneId);
+      if (idx === -1) return;
+      
+      const zone = { ...zones[idx] };
+      // Can only remove if not analyzed (handled by UI, but double check)
+      if (zone.quantity > 0 || zone.analysisLevel !== undefined) {
+          // It's analyzed. User should not be able to do this.
+          // But maybe they want to reset analysis?
+          // User said: "Si el usuario quiere borrar algo, debe eliminarse el conjunto completo"
+          // So we simply block this.
+          return; 
+      }
+      
+      if (zone.files && zone.files[photoIndex]) {
+          zone.files = zone.files.filter((_, i) => i !== photoIndex);
+      } else {
+          // It's a URL
+          // If we mix files and URLs, index management is tricky.
+          // Let's assume files are appended after URLs?
+          // Simpler: Just reconstruct arrays.
+          const urlCount = zone.photoUrls.length;
+          if (photoIndex < urlCount) {
+              zone.photoUrls = zone.photoUrls.filter((_, i) => i !== photoIndex);
+          } else {
+              const fileIdx = photoIndex - urlCount;
+              if (zone.files) zone.files = zone.files.filter((_, i) => i !== fileIdx);
+          }
+      }
+      zones[idx] = zone;
+      setBookingData({ lawnZones: zones });
+      
+      if (bookingData.serviceIds?.[0]) {
+           updateServiceData(bookingData.serviceIds[0], {
+               lawnZones: zones
+           });
+      }
+  };
+
+  const analyzeLawnZone = async (zoneId: string) => {
+      const zones = [...(bookingData.lawnZones || [])];
+      const idx = zones.findIndex(z => z.id === zoneId);
+      if (idx === -1) return;
+      const zone = zones[idx];
+
+      try {
+          setAnalyzing(true);
+          
+          // Files are already uploaded
+          const finalUrls = zone.photoUrls;
+          
+          if (finalUrls.length === 0) {
+              alert('Añade fotos primero');
+              setAnalyzing(false);
+              return;
+          }
+
+          // 2. Call AI
+          const res = await estimateWorkWithAI({
+             description: '',
+             photoCount: finalUrls.length,
+             selectedServiceIds: bookingData.serviceIds,
+             photoUrls: finalUrls,
+             serviceName: 'Corte de césped',
+             model: aiModel
+          });
+          
+          // 3. Process Result
+          // Expected: tareas[0] with superficie_m2, estado_jardin
+          if (res.tareas && res.tareas.length > 0) {
+              const t = res.tareas[0];
+              zone.species = t.especie_cesped || 'Césped estándar'; // AI might not return species for lawn sometimes
+              zone.state = t.estado_jardin || 'normal';
+              zone.quantity = Number(t.superficie_m2 || 0);
+              
+              // New Analysis Fields
+              zone.analysisLevel = t.nivel_analisis;
+              zone.observations = t.observaciones;
+          } else {
+              // Fallback or error
+              zone.state = 'normal';
+              zone.quantity = 0;
+          }
+          
+          zones[idx] = zone;
+          setBookingData({ lawnZones: zones });
+          
+          if (bookingData.serviceIds?.[0]) {
+               updateServiceData(bookingData.serviceIds[0], {
+                   lawnZones: zones
+               });
+          }
+          
+          saveProgress();
+
+      } catch (e) {
+          console.error(e);
+          alert('Error en el análisis');
+      } finally {
+          setAnalyzing(false);
+      }
+  };
+
+  // --- End New Logic ---
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -422,40 +782,284 @@ const DetailsPage: React.FC = () => {
       {/* Main Content */}
       <div className="max-w-md mx-auto px-4 py-6 pb-24">
         {/* Photo Upload */}
-        <div className={debugService === 'Poda de palmeras' ? "mb-4" : "bg-white rounded-2xl shadow-sm p-6 mb-4"}>
+        <div className="mb-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-gray-900">
-                {debugService === 'Poda de palmeras' ? 'Fotos de tus palmeras' : 'Fotos de tu jardín'}
+                {serviceContent.title}
             </h2>
             <span className="text-sm text-gray-500">{photos.length}/5</span>
           </div>
           <p className="text-gray-600 text-sm mb-4">
-            {debugService === 'Poda de palmeras' 
-                ? 'Sube una foto por cada tipo de palmera diferente. Si tienes varias iguales en especie tamaño y estado, solo necesitas subir una foto'
-                : 'Las fotos ayudan a los jardineros a entender mejor tu espacio'
-            }
+            {serviceContent.description}
           </p>
 
-          {debugService === 'Poda de palmeras' ? (
              <div className="flex flex-col gap-4">
-               {photos.map((photo, index) => {
-                   const palmGroup = bookingData.palmGroups?.find(g => g.imageIndex === index);
+               {(() => {
+                   const isLawnService = debugService.includes('Corte de césped') || debugService.includes('césped');
                    
+                   if (isLawnService) {
+                     return (
+                         <div className="space-y-6">
+                             {/* Initial State: No zones */}
+                             {(!bookingData.lawnZones || bookingData.lawnZones.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Sprout className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tu zona de césped</h3>
+                                     <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
+                                         Si tienes varias zonas separadas (ej: jardín delantero y trasero), añádelas por separado.
+                                     </p>
+                                     <button 
+                                         onClick={addLawnZone}
+                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                                     >
+                                         + Añadir primera zona
+                                     </button>
+                                 </div>
+                             )}
+
+                             {(bookingData.lawnZones || []).map((zone, idx) => {
+                                 const isAnalyzed = zone.quantity > 0 || (zone.analysisLevel !== undefined);
+                                 const allPhotos = [...zone.photoUrls, ...(zone.files || [])];
+                                 
+                                 return (
+                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         {/* Header */}
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <div className="flex items-center gap-2">
+                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                                                     {idx + 1}
+                                                 </div>
+                                                 <h3 className="font-semibold text-gray-900">Zona de Césped {idx + 1}</h3>
+                                             </div>
+                                             <div className="flex gap-2">
+                                                 <button 
+                                                     onClick={() => removeLawnZone(zone.id)}
+                                                     className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                                     title={isAnalyzed ? "Eliminar zona y análisis" : "Eliminar zona"}
+                                                 >
+                                                     <Trash2 className="w-5 h-5" />
+                                                 </button>
+                                             </div>
+                                         </div>
+
+                                         {/* Photos Grid for this Zone */}
+                                         <div className="mb-4">
+                                             <div className="text-xs text-gray-500 mb-2">Fotos de esta zona ({allPhotos.length})</div>
+                                             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                                 {allPhotos.map((p, i) => (
+                                                     <div key={i} className="relative aspect-square group">
+                                                         <img 
+                                                             src={typeof p === 'string' ? p : URL.createObjectURL(p)} 
+                                                             alt={`Foto ${i}`}
+                                                             className="w-full h-full object-cover rounded-lg border border-gray-200"
+                                                         />
+                                                         {!isAnalyzed && (
+                                                             <button
+                                                                 onClick={() => removePhotoFromZone(zone.id, i)}
+                                                                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 w-6 h-6 flex items-center justify-center hover:bg-red-600 shadow-sm opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
+                                                             >
+                                                                 &times;
+                                                             </button>
+                                                         )}
+                                                     </div>
+                                                 ))}
+                                                 
+                                                 {/* Add Photo Button (Small) */}
+                                                 {!isAnalyzed && (
+                                                     <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 aspect-square transition-colors text-gray-400 hover:text-green-600 hover:border-green-300">
+                                                         <Camera className="w-6 h-6 mb-1" />
+                                                         <span className="text-[10px] font-medium">+ Foto</span>
+                                                         <input 
+                                                             type="file" 
+                                                             accept="image/*" 
+                                                             multiple 
+                                                             className="hidden" 
+                                                             onChange={(e) => handleLawnFileSelect(zone.id, e)}
+                                                         />
+                                                     </label>
+                                                 )}
+                                             </div>
+                                         </div>
+
+                                         {/* Actions / Results */}
+                                         {!isAnalyzed ? (
+                                             <div className="mt-2">
+                                                 <button
+                                                     onClick={() => analyzeLawnZone(zone.id)}
+                                                     disabled={analyzing || allPhotos.length === 0}
+                                                     className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                                                 >
+                                                     {analyzing ? (
+                                                         <>
+                                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                                            Analizando...
+                                                         </>
+                                                     ) : (
+                                                         <>
+                                                            <Wand2 className="w-4 h-4" />
+                                                            Analizar esta zona
+                                                         </>
+                                                     )}
+                                                 </button>
+                                                 {allPhotos.length === 0 && (
+                                                     <p className="text-xs text-center text-amber-600 mt-2">
+                                                         Añade al menos una foto para analizar
+                                                     </p>
+                                                 )}
+                                             </div>
+                                         ) : (
+                                             <div className="bg-green-50 p-4 rounded-xl border border-green-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2 text-green-800 font-medium text-sm">
+                                                        <Sparkles className="w-4 h-4" />
+                                                        Resultado del análisis
+                                                    </div>
+                                                    {zone.analysisLevel && (
+                                                         <div className={`px-2 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 ${
+                                                             zone.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' :
+                                                             zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' :
+                                                             'bg-red-50 border-red-200 text-red-800'
+                                                         }`}>
+                                                             {zone.analysisLevel === 1 ? 'Calidad Alta' : zone.analysisLevel === 2 ? 'Calidad Media' : 'Calidad Baja'}
+                                                         </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Observations / Warnings */}
+                                                {zone.analysisLevel && zone.analysisLevel > 1 && zone.observations && zone.observations.length > 0 && (
+                                                    <div className={`mb-3 p-2 rounded-lg text-xs border ${
+                                                        zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'
+                                                    }`}>
+                                                        <div className="flex items-center gap-1 font-semibold mb-1">
+                                                             {zone.analysisLevel === 2 ? <AlertTriangle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                                                             Observaciones:
+                                                        </div>
+                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                                            {zone.observations.map((obs, k) => (
+                                                                <li key={k}>{obs}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                     <div>
+                                                         <label className="text-xs text-gray-500 block mb-1">Superficie (m²)</label>
+                                                         <input 
+                                                             type="number" 
+                                                             min="0"
+                                                             value={zone.quantity}
+                                                             onChange={(e) => {
+                                                                 const val = Number(e.target.value);
+                                                                 const newZones = [...(bookingData.lawnZones || [])];
+                                                                 const z = newZones.find(z => z.id === zone.id);
+                                                                 if (z) { 
+        z.quantity = val; 
+        setBookingData({ lawnZones: newZones }); 
+        
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], {
+                 lawnZones: newZones
+             });
+        }
+    }
+                                                             }}
+                                                             className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                                         />
+                                                     </div>
+                                                     <div>
+                                                         <label className="text-xs text-gray-500 block mb-1">Estado</label>
+                                                         <select 
+                                                             value={zone.state}
+                                                             onChange={(e) => {
+                                                                 const val = e.target.value;
+                                                                 const newZones = [...(bookingData.lawnZones || [])];
+                                                                 const z = newZones.find(z => z.id === zone.id);
+                                                                 if (z) { 
+        z.state = val; 
+        setBookingData({ lawnZones: newZones }); 
+        
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], {
+                 lawnZones: newZones
+             });
+        }
+    }
+                                                             }}
+                                                             className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                                         >
+                                                             <option value="normal">Normal</option>
+                                                             <option value="descuidado">Descuidado</option>
+                                                             <option value="muy descuidado">Muy descuidado</option>
+                                                         </select>
+                                                     </div>
+                                                 </div>
+                                                 {zone.species && (
+                                                     <div className="mt-2 text-xs text-gray-500">
+                                                         Especie detectada: <span className="font-medium text-gray-700">{zone.species}</span>
+                                                     </div>
+                                                 )}
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })}
+                             
+                             {(bookingData.lawnZones && bookingData.lawnZones.length > 0) && (
+                                 <button 
+                                     onClick={addLawnZone}
+                                     className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors flex items-center justify-center gap-2 group"
+                                 >
+                                     <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm group-hover:bg-gray-300 transition-colors">+</span> 
+                                     Añadir otra zona de césped
+                                 </button>
+                             )}
+                         </div>
+                     );
+                   }
+
+                   // If lawn service and no photos but we have AI tasks (simulated), we need a placeholder
+                   const displayItems = (photos.length === 0 && isLawnService && bookingData.aiTasks && bookingData.aiTasks.length > 0) 
+                        ? [null] 
+                        : photos;
+
+                   return displayItems.map((photo, index) => {
+                   // Logic for Palm Trees
+                   const palmGroup = debugService === 'Poda de palmeras' ? bookingData.palmGroups?.find(g => g.imageIndex === index) : null;
+                   
+                   // Logic for Lawn Mowing (Specialized Card)
+                   const lawnTask = isLawnService && bookingData.aiTasks && bookingData.aiTasks.length > 0 ? bookingData.aiTasks[0] : null;
+                   
+                   // Logic for Other Services (Generic)
+                   // We'll show the global AI result in the first slot for now, or per-item if implemented later
+                   const isGeneric = debugService !== 'Poda de palmeras' && !isLawnService;
+                   const showGenericResult = isGeneric && index === 0 && !bookingData.isAnalyzing && (bookingData.aiQuantity || bookingData.estimatedHours);
+
                    return (
-                     <div key={index} className={`flex gap-4 p-3 ${debugService === 'Poda de palmeras' ? '' : 'border border-gray-100 rounded-xl bg-gray-50/50'}`}>
+                     <div key={index} className="flex gap-4 p-3">
                         {/* Photo Slot */}
                         <div className="relative shrink-0">
-                           <img 
-                             src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
-                             alt={`Palmera ${index + 1}`} 
-                             className="w-24 h-24 object-cover rounded-lg border border-gray-200"
-                           />
-                           <button
-                             onClick={(e) => { e.stopPropagation(); removePhoto(index); }}
-                             className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors"
-                           >
-                             <Trash2 className="w-3.5 h-3.5" />
-                           </button>
+                           {photo ? (
+                               <img 
+                                 src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
+                                 alt={`Foto ${index + 1}`} 
+                                 className="w-24 h-24 object-cover rounded-lg border border-gray-200"
+                               />
+                           ) : (
+                               // Placeholder for simulated data without photo
+                               <div className="w-24 h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center">
+                                   <Image className="w-8 h-8 text-gray-400" />
+                               </div>
+                           )}
+                           
+                           {photo && (
+                               <button
+                                 onClick={(e) => { e.stopPropagation(); removePhoto(index); }}
+                                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors"
+                               >
+                                 <Trash2 className="w-3.5 h-3.5" />
+                               </button>
+                           )}
                         </div>
 
                         {/* Analysis Result / Info Slot */}
@@ -499,29 +1103,141 @@ const DetailsPage: React.FC = () => {
                                        </div>
                                    </div>
                                </div>
+                           ) : lawnTask && (index === 0 || !photo) ? (
+                               // Specialized Lawn Mowing Card (Simulated or Real)
+                               <div className="space-y-2 text-sm">
+                                   <div className="flex justify-between items-start">
+                                       <div>
+                                           <p className="font-semibold text-gray-900">{bookingData.lawnSpecies || 'Especie desconocida'}</p>
+                                           <p className="text-gray-500 capitalize">{lawnTask.estado_jardin || 'normal'}</p>
+                                       </div>
+                                   </div>
+                                   
+                                   <div className="grid grid-cols-2 gap-3 mt-1">
+                                       <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Superficie (m²)</label>
+                                            <input 
+                                                type="number" 
+                                                min={0} 
+                                                value={bookingData.aiQuantity || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value));
+                                                    const diff = bookingData.aiDifficulty || 1;
+                                                    const mult = diff === 3 ? 1.6 : diff === 2 ? 1.3 : 1.0;
+                                                    const hours = (val / 150) * mult;
+                                                    
+                                                    // Update simulated task
+                                                    const newTasks = [...(bookingData.aiTasks || [])];
+                                                    if (newTasks.length > 0) {
+                                                        newTasks[0] = { ...newTasks[0], superficie_m2: val };
+                                                    }
+
+                                                    setBookingData({ 
+                                                        aiQuantity: val, 
+                                                        estimatedHours: Math.ceil(hours),
+                                                        aiTasks: newTasks 
+                                                    });
+                                                    saveProgress();
+                                                }}
+                                                placeholder="0"
+                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+                                            />
+                                       </div>
+                                       <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Estado</label>
+                                            <select
+                                                value={bookingData.aiDifficulty === 3 ? 'muy descuidado' : bookingData.aiDifficulty === 2 ? 'descuidado' : 'normal'}
+                                                onChange={(e) => {
+                                                    const state = e.target.value;
+                                                    const diff = state === 'muy descuidado' ? 3 : state === 'descuidado' ? 2 : 1;
+                                                    const mult = diff === 3 ? 1.6 : diff === 2 ? 1.3 : 1.0;
+                                                    const qty = bookingData.aiQuantity || 0;
+                                                    const hours = (qty / 150) * mult;
+
+                                                    // Update simulated task
+                                                    const newTasks = [...(bookingData.aiTasks || [])];
+                                                    if (newTasks.length > 0) {
+                                                        newTasks[0] = { ...newTasks[0], estado_jardin: state };
+                                                    }
+
+                                                    setBookingData({ 
+                                                        aiDifficulty: diff,
+                                                        estimatedHours: Math.ceil(hours),
+                                                        aiTasks: newTasks
+                                                    });
+                                                    saveProgress();
+                                                }}
+                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                                            >
+                                                <option value="normal">Normal</option>
+                                                <option value="descuidado">Descuidado</option>
+                                                <option value="muy descuidado">Muy descuidado</option>
+                                            </select>
+                                       </div>
+                                   </div>
+                               </div>
+                           ) : showGenericResult ? (
+                               <div className="space-y-2 text-sm">
+                                   <div className="font-semibold text-gray-900">Análisis del servicio</div>
+                                   <div className="grid grid-cols-2 gap-3 mt-1">
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Cantidad ({bookingData.aiUnit || 'u'})</label>
+                                            <input 
+                                                type="number"
+                                                min={0}
+                                                value={bookingData.aiQuantity || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                                    // Simple recalculation based on difficulty and unit
+                                                    // Note: This logic duplicates estimateWorkWithAI somewhat, but is needed for manual adjustment
+                                                    const unit = bookingData.aiUnit || 'm2';
+                                                    const diff = bookingData.aiDifficulty || 1;
+                                                    const mult = diff === 3 ? 1.6 : diff === 2 ? 1.3 : 1.0;
+                                                    let hours = 0;
+                                                    if (unit === 'm2') hours = (val / 150) * mult; // Example for grass
+                                                    else hours = val * 0.15 * mult; // Example for plants
+                                                    // Improve: Ideally we should store the factor/type to recalculate accurately
+                                                    setBookingData({ aiQuantity: val, estimatedHours: Math.ceil(hours) });
+                                                    saveProgress();
+                                                }}
+                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+                                            />
+                                       </div>
+                                       <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Dificultad</label>
+                                            <select 
+                                                value={bookingData.aiDifficulty || 1}
+                                                onChange={(e) => {
+                                                    const val = Number(e.target.value);
+                                                    setBookingData({ aiDifficulty: val });
+                                                    saveProgress();
+                                                    // Trigger recalculation in effect or simple logic here
+                                                }}
+                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                                            >
+                                                <option value={1}>Normal</option>
+                                                <option value={2}>Descuidado</option>
+                                                <option value={3}>Muy descuidado</option>
+                                            </select>
+                                       </div>
+                                   </div>
+                               </div>
                            ) : (
                                <div className="h-full flex items-center text-gray-400 italic text-sm border-l-2 border-gray-200 pl-4">
-                                   {analyzing ? 'Analizando...' : 'Pendiente de análisis. Haz clic en "Analizar" abajo.'}
+                                   {analyzing ? 'Analizando...' : isGeneric ? (index === 0 ? 'Pendiente de análisis...' : 'Foto añadida') : 'Pendiente de análisis...'}
                                </div>
                            )}
                         </div>
                      </div>
                    );
-               })}
+               });
+               })()}
 
                {/* Add Photo Slot */}
                {photos.length < 5 && (
-                 <div className={`flex gap-4 p-3 ${debugService === 'Poda de palmeras' ? '' : 'border-2 border-dashed border-gray-300 rounded-xl hover:bg-gray-50'} transition-colors cursor-pointer group`} onClick={() => fileInputRef.current?.click()}>
-                    <div className={`w-24 h-24 flex items-center justify-center rounded-lg text-gray-400 border border-transparent ${
-                        debugService === 'Poda de palmeras' 
-                        ? 'bg-gray-200 group-hover:bg-gray-300' 
-                        : 'bg-gray-50 group-hover:bg-gray-100'
-                    }`}>
-                        {debugService === 'Poda de palmeras' ? (
-                            <Image className="w-8 h-8 text-gray-500 group-hover:text-gray-700 transition-colors" />
-                        ) : (
-                            <Upload className="w-8 h-8 text-gray-400 group-hover:text-green-600 transition-colors" />
-                        )}
+                 <div className="flex gap-4 p-3 transition-colors cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
+                    <div className="w-24 h-24 flex items-center justify-center rounded-lg text-gray-400 border border-transparent bg-gray-200 group-hover:bg-gray-300">
+                        <Image className="w-8 h-8 text-gray-500 group-hover:text-gray-700 transition-colors" />
                     </div>
                     <div className="flex-1 flex items-center text-gray-500 font-medium group-hover:text-green-700 transition-colors">
                         Haz clic para añadir otra foto...
@@ -538,76 +1254,10 @@ const DetailsPage: React.FC = () => {
                   className="hidden"
                 />
              </div>
-          ) : (
-            <>
-              {/* Upload Area */}
-              <div
-                className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
-                  dragActive ? 'border-green-600 bg-green-50' : 'border-gray-300'
-                }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-gray-600 font-medium mb-1">Arrastra fotos aquí</p>
-                <p className="text-gray-500 text-sm mb-3">o haz clic para seleccionar</p>
-                <button className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors">
-                  <Camera className="w-4 h-4 inline mr-2" />
-                  Elegir fotos
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
-
-              {/* Photo Preview */}
-              {photos.length > 0 && (
-                <div className="mt-4">
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    {photos.map((photo, index) => (
-                      <div key={index} className="relative flex-shrink-0">
-                        <img
-                          src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)}
-                          alt={`Foto ${index + 1}`}
-                          className="w-20 h-20 object-cover rounded-lg"
-                        />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removePhoto(index);
-                          }}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
         </div>
 
-      {debugService === 'Poda de palmeras' ? (
           <div className="flex flex-col gap-4 mb-4">
             <div className="flex items-center justify-end gap-3">
-              <select
-                value={aiModel}
-                onChange={(e) => setAiModel(e.target.value as any)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500"
-              >
-                <option value="gpt-4o-mini">ChatGPT-4o Mini</option>
-                <option value="gemini-2.0-flash">Google Gemini 2 Flash</option>
-              </select>
               <button
                 onClick={runAIAnalysis}
                 disabled={analyzing || photos.length === 0 || bookingData.serviceIds.length === 0}
@@ -618,7 +1268,7 @@ const DetailsPage: React.FC = () => {
             </div>
             
             {/* Waste Removal Switch - Only shown after analysis */}
-            {bookingData.palmGroups && bookingData.palmGroups.length > 0 && (
+            {((bookingData.palmGroups && bookingData.palmGroups.length > 0) || (bookingData.aiQuantity && bookingData.aiQuantity > 0)) && (
                 <div className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-100">
                     <span className="text-gray-700 font-medium text-sm">Incluir retirada de restos</span>
                     <button 
@@ -641,33 +1291,8 @@ const DetailsPage: React.FC = () => {
                 </div>
             )}
           </div>
-      ) : (
-      <div className="bg-white rounded-2xl shadow-sm p-6 mb-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">Analizar con IA</h2>
-          <div className="flex items-center gap-2">
-            <select
-              value={aiModel}
-              onChange={(e) => setAiModel(e.target.value as any)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500"
-            >
-              <option value="gpt-4o-mini">ChatGPT-4o Mini</option>
-              <option value="gemini-2.0-flash">Google Gemini 2 Flash</option>
-            </select>
-            <button
-              onClick={runAIAnalysis}
-              disabled={analyzing || photos.length === 0 || bookingData.serviceIds.length === 0}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
-            >
-              <Wand2 className="w-4 h-4 inline mr-2" /> Analizar
-            </button>
-          </div>
-        </div>
-        <p className="text-sm text-gray-600">Usa las fotos y el servicio seleccionado para estimar cantidad y horas automáticamente.</p>
-      </div>
-      )}
 
-        <div className={debugService === 'Poda de palmeras' ? "mb-4" : "bg-white rounded-2xl shadow-sm p-6 mb-4"}>
+        <div className="mb-4">
           <h2 className="text-lg font-bold text-gray-900 mb-2">Nota para el jardinero (opcional)</h2>
           <div className="relative">
              <div className="absolute -top-10 right-0 text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-100 hidden sm:block">
@@ -683,7 +1308,7 @@ const DetailsPage: React.FC = () => {
           />
       </div>
 
-        {bookingData.aiTasks && bookingData.aiTasks.length > 0 && (
+        {bookingData.aiTasks && bookingData.aiTasks.length > 0 && !debugService.includes('césped') && !debugService.includes('Corte de césped') && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-4">
             <h3 className="text-green-800 font-semibold mb-3">Resultado IA</h3>
             <ul className="space-y-2">
@@ -731,6 +1356,22 @@ const DetailsPage: React.FC = () => {
                 <option value="Poda de palmeras">Poda de palmeras</option>
               </select>
             </div>
+            {debugService === 'Corte de césped' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-800 mb-1">Especie de césped</label>
+                <select
+                  value={debugLawnSpecies}
+                  onChange={(e) => setDebugLawnSpecies(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                >
+                  <option value="" disabled>Selecciona especie...</option>
+                  <option value="Bermuda (fina o gramilla)">Bermuda (fina o gramilla)</option>
+                  <option value="Gramón (Kikuyu, San Agustín o similares)">Gramón (Kikuyu, San Agustín o similares)</option>
+                  <option value="Dichondra (oreja de ratón o similares)">Dichondra (oreja de ratón o similares)</option>
+                  <option value="Césped Mixto (Festuca/Raygrass)">Césped Mixto (Festuca/Raygrass)</option>
+                </select>
+              </div>
+            )}
             {debugService !== 'Poda de palmeras' && (
               <div>
                 <label className="block text-sm font-medium text-gray-800 mb-1">Estado del jardín</label>
@@ -918,16 +1559,33 @@ const DetailsPage: React.FC = () => {
                           hours = Math.ceil(qty * 0.15);
                       }
 
-                      setBookingData({ 
-                        aiQuantity: qty, 
+                      // Create synthetic task for AI simulation
+                      const syntheticTask = {
+                        tipo_servicio: debugService,
+                        estado_jardin: debugState,
+                        superficie_m2: unit === 'm2' ? qty : null,
+                        numero_plantas: unit === 'plantas' ? qty : null,
+                        tamaño_plantas: null
+                       };
+ 
+                       console.log('[Debug] Simulating AI Result:', { 
+                           aiQuantity: qty, 
+                           aiTasks: [syntheticTask], 
+                           lawnSpecies: debugLawnSpecies 
+                       });
+
+                       setBookingData({ 
+                         aiQuantity: qty, 
                         aiUnit: unit, 
                         aiDifficulty: diff, 
                         estimatedHours: hours,
+                        aiTasks: [syntheticTask], // Simulate AI task detection
                         // Limpiamos datos de palmeras si cambiamos a otro servicio
                         palmSpecies: undefined,
                         palmHeight: undefined,
                         palmState: undefined,
-                        palmWasteRemoval: undefined
+                        palmWasteRemoval: undefined,
+                        lawnSpecies: debugLawnSpecies
                       });
                   }
                   saveProgress();
@@ -940,6 +1598,7 @@ const DetailsPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setDebugService('');
+                  setDebugLawnSpecies('');
                   setDebugState('normal');
                   setDebugQuantity('');
                   setDebugPalmSpecies('');

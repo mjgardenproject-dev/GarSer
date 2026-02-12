@@ -19,7 +19,7 @@ const ClientHome: React.FC = () => {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
+    //.replace(/[^a-z0-9\s]/g, ' ') // Removed to keep special characters if needed, or check logic
     .replace(/\s+/g, ' ')
     .trim();
   const manualPricingEnabled = import.meta.env.DEV;
@@ -101,9 +101,16 @@ const ClientHome: React.FC = () => {
     numero_plantas: null,
     tamaño_plantas: null,
   });
+  const [debugLawnSpecies, setDebugLawnSpecies] = useState<string>(''); // Nuevo estado para especie de césped
   const [debugQuantity, setDebugQuantity] = useState<number | null>(null);
   const debugQuantityUnit = useMemo(() => {
+    // Si no hay tipo seleccionado, retornamos algo por defecto
+    if (!debugTaskDraft.tipo_servicio) return 'plantas';
+    
     const n = normalizeForPricing(debugTaskDraft.tipo_servicio);
+    // Agregamos log para depuración
+    console.log('[Debug] normalizeForPricing result:', n);
+    
     if (n.includes('cesped') || n.includes('setos') || n.includes('malas hierbas') || n.includes('labrar')) return 'm2' as const;
     return 'plantas' as const;
   }, [debugTaskDraft.tipo_servicio]);
@@ -553,14 +560,17 @@ const ClientHome: React.FC = () => {
           
         const { data: pricesData } = await supabase
           .from('gardener_service_prices')
-          .select('gardener_id, service_id, price_per_unit, unit_type')
+          .select('gardener_id, service_id, price_per_unit, unit_type, additional_config')
           .in('gardener_id', ids)
           .eq('active', true);
           
-        const pricesMap = new Map<string, Record<string, number>>(); // gardener_id -> { service_id: price }
+        const pricesMap = new Map<string, Record<string, { price: number; config?: any }>>(); // gardener_id -> { service_id: { price, config } }
         pricesData?.forEach((p: any) => {
           if (!pricesMap.has(p.gardener_id)) pricesMap.set(p.gardener_id, {});
-          pricesMap.get(p.gardener_id)![p.service_id] = p.price_per_unit;
+          pricesMap.get(p.gardener_id)![p.service_id] = { 
+            price: p.price_per_unit,
+            config: p.additional_config
+          };
         });
 
         if (!profilesError && profiles) {
@@ -572,19 +582,96 @@ const ClientHome: React.FC = () => {
             
             // Usar análisis IA
             const quantity = aiAutoAnalysis ? parseFloat(String(aiAutoAnalysis.cantidad)) : (debugQuantity || 0);
-            const difficulty = aiAutoAnalysis ? 
-              (String(aiAutoAnalysis.dificultad).includes('muy') ? 1.6 : String(aiAutoAnalysis.dificultad).includes('descuidado') ? 1.3 : 1.0) 
-              : 1.0;
+            
+            // Dificultad (Estado)
+            // Si es debug manual, usar debugTaskDraft.estado_jardin
+            // Si es IA, usar aiAutoAnalysis.dificultad mapeado
+            let state = 'normal';
+            if (aiAutoAnalysis) {
+               state = String(aiAutoAnalysis.dificultad).includes('muy') ? 'muy descuidado' : String(aiAutoAnalysis.dificultad).includes('descuidado') ? 'descuidado' : 'normal';
+            } else {
+               state = debugTaskDraft.estado_jardin || 'normal';
+            }
 
             if (selectedServiceIds.length > 0) {
               const svcId = selectedServiceIds[0];
-              const price = pricesMap.get(p.user_id)?.[svcId] || 0; // Default a 0 si no tiene precio configurado
-              if (price > 0 && quantity > 0) {
-                finalPrice = quantity * price * difficulty;
-                breakdown = `${quantity} ${aiAutoAnalysis?.unidad || 'ud'} × €${price} × ${difficulty}`;
+              const priceData = pricesMap.get(p.user_id)?.[svcId];
+              
+              if (!priceData) {
+                 // Fallback si no hay precio configurado: usar estimación global
+                 finalPrice = totalPrice;
               } else {
-                // Fallback si no hay precio configurado: usar estimación global
-                finalPrice = totalPrice; 
+                 const serviceName = services.find(s => s.id === svcId)?.name || '';
+                 const isLawn = normalizeForPricing(serviceName).includes('cesped');
+                 const config = priceData.config;
+                 
+                 // --- LOGICA DE PRECIOS ---
+                 
+                 if (isLawn && config && debugLawnSpecies) {
+                    // 1. Filtrado por especie (estricto)
+                    // Si el jardinero no tiene la especie seleccionada en su lista, precio = 0 (o excluir jardinero)
+                    const gardenerSpecies = config.selected_species || [];
+                    if (!gardenerSpecies.includes(debugLawnSpecies)) {
+                        finalPrice = 0; // Se filtrará abajo si precio es 0? O mejor marcar como no disponible.
+                        // Para este caso, retornaremos 0 y luego filtraremos.
+                    } else {
+                        // 2. Cálculo de precio base por rangos
+                        let basePrice = 0;
+                        const speciesPrices = config.species_prices?.[debugLawnSpecies] || {};
+                        
+                        if (quantity < 50) {
+                            basePrice = speciesPrices['0-50'] || 0; // Precio fijo
+                        } else if (quantity <= 200) {
+                             const p = speciesPrices['50-200'] || 0;
+                             basePrice = quantity * p;
+                        } else {
+                             const p = speciesPrices['200+'] || 0;
+                             basePrice = quantity * p;
+                        }
+                        
+                        // 3. Recargo por Estado (Global Rule Step 1)
+                        // Precio_Intermedio = Precio_Base + (Precio_Base * %_Recargo_Estado)
+                        const surcharges = config.condition_surcharges || {};
+                        let stateSurcharge = 0;
+                        if (state === 'descuidado') stateSurcharge = surcharges.descuidado || 20; // Default 20%
+                        if (state === 'muy descuidado') stateSurcharge = surcharges.muy_descuidado || 50; // Default 50%
+                        
+                        const intermediatePrice = basePrice * (1 + (stateSurcharge / 100));
+                        
+                        // 4. Recargo por Retirada de Restos (Global Rule Step 2)
+                        // Precio_Final = Precio_Intermedio + (Precio_Intermedio * %_Recargo_Retirada)
+                        // Asumimos siempre seleccionada en debug
+                        const wasteSurcharge = config.waste_removal?.percentage || 0;
+                        finalPrice = intermediatePrice * (1 + (wasteSurcharge / 100));
+                        
+                        breakdown = `Base: €${basePrice.toFixed(2)} (Especie: ${debugLawnSpecies}) + Estado: ${stateSurcharge}% + Retirada: ${wasteSurcharge}%`;
+                    }
+                 } else {
+                    // Lógica Genérica (otros servicios)
+                    // Aplicar regla global de recargos si existe config, sino usar dificultad simple
+                    const basePrice = quantity * priceData.price;
+                    
+                    if (config) {
+                        // Recargo Estado
+                        const surcharges = config.condition_surcharges || {};
+                        let stateSurcharge = 0;
+                        if (state === 'descuidado') stateSurcharge = surcharges.descuidado || 20;
+                        if (state === 'muy descuidado') stateSurcharge = surcharges.muy_descuidado || 50;
+                        
+                        const intermediatePrice = basePrice * (1 + (stateSurcharge / 100));
+                        
+                        // Recargo Retirada
+                        const wasteSurcharge = config.waste_removal?.percentage || 0;
+                        finalPrice = intermediatePrice * (1 + (wasteSurcharge / 100));
+                        
+                        breakdown = `${quantity} ud × €${priceData.price} + Estado: ${stateSurcharge}% + Retirada: ${wasteSurcharge}%`;
+                    } else {
+                        // Fallback Legacy (solo dificultad multiplicador simple)
+                        const difficultyMult = state === 'muy descuidado' ? 1.6 : state === 'descuidado' ? 1.3 : 1.0;
+                        finalPrice = basePrice * difficultyMult;
+                        breakdown = `${quantity} ud × €${priceData.price} × ${difficultyMult} (Legacy)`;
+                    }
+                 }
               }
             }
 
@@ -1193,6 +1280,30 @@ const ClientHome: React.FC = () => {
                             ))}
                           </select>
                         </div>
+
+                        {/* Selector de Especie de Césped (Condicional) */}
+                        {(() => {
+                            const n = normalizeForPricing(debugTaskDraft.tipo_servicio);
+                            const showSpecies = n.includes('cesped');
+                            // console.log('[Debug] Show species selector?', { tipo: debugTaskDraft.tipo_servicio, normalized: n, show: showSpecies });
+                            return showSpecies;
+                        })() && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Especie de césped</label>
+                            <select
+                              value={debugLawnSpecies}
+                              onChange={(e) => setDebugLawnSpecies(e.target.value)}
+                              className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                            >
+                              <option value="" disabled>Selecciona especie...</option>
+                              <option value="Bermuda (fina o gramilla)">Bermuda (fina o gramilla)</option>
+                              <option value="Gramón (Kikuyu, San Agustín o similares)">Gramón (Kikuyu, San Agustín o similares)</option>
+                              <option value="Dichondra (oreja de ratón o similares)">Dichondra (oreja de ratón o similares)</option>
+                              <option value="Césped Mixto (Festuca/Raygrass)">Césped Mixto (Festuca/Raygrass)</option>
+                            </select>
+                          </div>
+                        )}
+
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Estado del jardín</label>
                           <select

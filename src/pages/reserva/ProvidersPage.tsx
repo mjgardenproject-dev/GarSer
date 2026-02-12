@@ -194,6 +194,7 @@ const ProvidersPage: React.FC = () => {
 
   useEffect(() => {
     const fetchProviders = async () => {
+      setLoading(true);
       try {
         const primaryServiceId = bookingData.serviceIds[0];
         
@@ -206,6 +207,13 @@ const ProvidersPage: React.FC = () => {
         if (bookingData.palmSpecies) {
           // Filter by species in JSONB config
           query = query.contains('additional_config', { selected_species: [bookingData.palmSpecies] });
+        } else if (bookingData.lawnZones && bookingData.lawnZones.length > 0) {
+          // Filter by ALL unique species in zones
+          const speciesList = Array.from(new Set(bookingData.lawnZones.map(z => z.species)));
+          query = query.contains('additional_config', { selected_species: speciesList });
+        } else if (bookingData.lawnSpecies) {
+          // Filter by lawn species
+          query = query.contains('additional_config', { selected_species: [bookingData.lawnSpecies] });
         }
 
         const { data: priceRows } = await query;
@@ -250,8 +258,15 @@ const ProvidersPage: React.FC = () => {
           return ta - tb;
         });
         setProviders(list);
-        if (!selectedProvider && list.length > 0) {
-          setSelectedProvider(list[0].user_id);
+        
+        // Ensure selected provider is valid for the current filters
+        const stillValid = list.some(p => p.user_id === selectedProvider);
+        if (list.length > 0) {
+            if (!selectedProvider || !stillValid) {
+                setSelectedProvider(list[0].user_id);
+            }
+        } else {
+            setSelectedProvider('');
         }
       } catch (e) {
         setProviders([]);
@@ -260,7 +275,17 @@ const ProvidersPage: React.FC = () => {
       }
     };
     fetchProviders();
-  }, [bookingData.serviceIds.join(','), bookingData.estimatedHours]);
+  }, [
+    bookingData.serviceIds.join(','), 
+    bookingData.estimatedHours,
+    bookingData.lawnSpecies,
+    bookingData.palmSpecies,
+    bookingData.aiQuantity,
+    bookingData.aiDifficulty,
+    bookingData.wasteRemoval,
+    bookingData.palmGroups ? JSON.stringify(bookingData.palmGroups.map(g => g.species)) : '', // Detect species changes in groups
+    bookingData.lawnZones ? JSON.stringify(bookingData.lawnZones.map(z => ({s: z.species, q: z.quantity, st: z.state}))) : ''
+  ]);
 
   // Cargar disponibilidad del jardinero seleccionado para la fecha elegida
   useEffect(() => {
@@ -382,10 +407,157 @@ const ProvidersPage: React.FC = () => {
         return 0;
     }
 
-    // 2. Lógica por defecto (otros servicios)
+    // 2. Lógica para Corte de Césped (Lawn Service)
+    // Detectamos si es césped por la presencia de lawnSpecies o lawnZones y la estructura de la config
+    if ((bookingData.lawnSpecies || (bookingData.lawnZones && bookingData.lawnZones.length > 0)) && config && config.species_prices && !config.height_prices) {
+        
+        // Unificar zonas (Legacy + New Model)
+        let zones: Array<{ species: string; state: string; quantity: number; wasteRemoval: boolean }> = [];
+        
+        // GLOBAL OVERRIDE: La retirada de restos es una configuración global.
+        // Si el usuario la desactiva en DetailsPage, aplica a todas las zonas.
+        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+
+        if (bookingData.lawnZones && bookingData.lawnZones.length > 0) {
+            zones = bookingData.lawnZones.map(z => ({
+                species: z.species,
+                state: z.state,
+                quantity: z.quantity,
+                wasteRemoval: globalWaste
+            }));
+        } else if (bookingData.lawnSpecies) {
+            // Fallback Legacy
+            let state = 'normal';
+            if (bookingData.aiDifficulty === 2) state = 'descuidado';
+            if (bookingData.aiDifficulty === 3) state = 'muy_descuidado';
+            
+            zones.push({
+                species: bookingData.lawnSpecies,
+                state: state,
+                quantity: bookingData.aiQuantity || 0,
+                wasteRemoval: globalWaste
+            });
+        }
+
+        // 1. Calcular superficie total
+        const totalArea = zones.reduce((acc, z) => acc + (z.quantity || 0), 0);
+        
+        // 2. Determinar rango de superficie basado en el TOTAL
+        let range = '0-50';
+        if (totalArea > 200) range = '200+';
+        else if (totalArea > 50) range = '50-200';
+
+        // 3. Agrupar zonas por Especie + Estado + WasteRemoval (para sumar superficies)
+        const groups: Record<string, { species: string; state: string; wasteRemoval: boolean; quantity: number }> = {};
+        
+        for (const z of zones) {
+            if (z.quantity <= 0) continue;
+            // Clave única para agrupación
+            const key = `${z.species}|${z.state}|${z.wasteRemoval}`;
+            
+            if (!groups[key]) {
+                groups[key] = { 
+                    species: z.species, 
+                    state: z.state, 
+                    wasteRemoval: z.wasteRemoval, 
+                    quantity: 0 
+                };
+            }
+            groups[key].quantity += z.quantity;
+        }
+
+        // 4. Calcular precio para cada grupo usando el rango TOTAL
+        let totalCost = 0;
+        
+        for (const key in groups) {
+            const group = groups[key];
+            const baseRate = config.species_prices[group.species]?.[range] || 0;
+            
+            // Calcular subtotal del grupo
+            let subtotal = 0;
+            if (range === '0-50') {
+                // Si es rango fijo (0-50), ¿se aplica por grupo o se prorratea?
+                // Interpretación: "Cada combinación especie + estado se calcula de forma independiente."
+                // Si el rango es 0-50, asumimos que el precio base es el coste mínimo para ese servicio.
+                subtotal = baseRate;
+                
+                // AJUSTE: Si tenemos múltiples grupos en rango 0-50 (ej: 10m2 A + 10m2 B = 20m2 Total),
+                // aplicar el precio fijo completo a cada uno podría duplicar costes excesivamente si es "visita mínima".
+                // Sin embargo, si son especies distintas, son trabajos distintos.
+                // Si es la misma especie y estado, ya están agrupados.
+                // Por tanto, aplicamos el precio base al grupo.
+            } else {
+                subtotal = baseRate * group.quantity;
+            }
+            
+            if (subtotal <= 0) continue;
+
+            // Surcharges
+            // State
+            const surcharges = config.condition_surcharges || {};
+            let stateSurchargePercent = 0;
+            
+            // Normalizar keys de estado para coincidir con config
+            // Config keys: 'descuidado', 'muy_descuidado'
+            // Zone state: 'normal', 'descuidado', 'muy_descuidado' (o 'descuidada'?)
+            // Mapeamos variaciones comunes
+            const s = group.state.toLowerCase();
+            if (s.includes('muy') && s.includes('descuidad')) {
+                stateSurchargePercent = surcharges.muy_descuidado || 0;
+            } else if (s.includes('descuidad') && !s.includes('muy')) {
+                 stateSurchargePercent = surcharges.descuidado || 0;
+            }
+            
+            const stateMult = 1 + (stateSurchargePercent / 100);
+
+            // Waste
+            let wasteMult = 1;
+            if (group.wasteRemoval) {
+                const wastePercent = config.waste_removal?.percentage || 0;
+                wasteMult = 1 + (wastePercent / 100);
+            }
+
+            totalCost += subtotal * stateMult * wasteMult;
+        }
+
+        return Math.ceil(totalCost);
+    }
+
+    // 3. Lógica por defecto (otros servicios)
     const unitPrice = prices[gardenerId] || 0;
     const qty = bookingData.aiQuantity || 0;
-    const mult = bookingData.aiDifficulty ? (bookingData.aiDifficulty === 3 ? 1.6 : bookingData.aiDifficulty === 2 ? 1.3 : 1.0) : 1.0;
+    
+    // Apply surcharges from config if available
+    let mult = 1.0;
+    if (config) {
+        const difficulty = bookingData.aiDifficulty || 1;
+        const surcharges = config.condition_surcharges || {};
+        
+        let stateSurcharge = 0;
+        if (difficulty === 3) { // Muy descuidado
+            stateSurcharge = surcharges.muy_descuidado !== undefined ? surcharges.muy_descuidado : 50;
+        } else if (difficulty === 2) { // Descuidado
+            stateSurcharge = surcharges.descuidado !== undefined ? surcharges.descuidado : 20;
+        }
+        
+        const stateMult = 1 + (stateSurcharge / 100);
+        
+        // Waste Removal Surcharge
+        let wasteMult = 1;
+        const waste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+        if (waste) {
+             const wastePercent = config.waste_removal?.percentage || 0;
+             wasteMult = 1 + (wastePercent / 100);
+        }
+        
+        mult = stateMult * wasteMult;
+    } else {
+        // Fallback to legacy hardcoded multipliers if no config found
+        mult = bookingData.aiDifficulty ? (bookingData.aiDifficulty === 3 ? 1.6 : bookingData.aiDifficulty === 2 ? 1.3 : 1.0) : 1.0;
+        // Legacy waste removal was implicit in price or not handled well for generic services previously
+        // We leave it as is for backward compatibility if no config exists
+    }
+
     if (unitPrice > 0 && qty > 0) return Math.ceil(qty * unitPrice * mult);
     return 0;
   };

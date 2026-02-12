@@ -10,6 +10,8 @@ import toast from 'react-hot-toast';
 import AddressAutocomplete from '../common/AddressAutocomplete';
 import DistanceMapSelector from '../common/DistanceMapSelector';
 import PalmPricingConfigurator, { PalmPricingConfig } from './PalmPricingConfigurator';
+import LawnPricingConfigurator, { LawnPricingConfig } from './LawnPricingConfigurator';
+import StandardServiceConfig, { StandardPricingConfig } from './StandardServiceConfig';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
 const ALLOWED_SERVICE_NAMES = [
@@ -58,6 +60,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
   const [palmConfig, setPalmConfig] = useState<PalmPricingConfig | undefined>(undefined);
+  const [lawnConfig, setLawnConfig] = useState<LawnPricingConfig | undefined>(undefined);
+  const [standardConfigs, setStandardConfigs] = useState<Record<string, StandardPricingConfig>>({});
   const [highlightPalmError, setHighlightPalmError] = useState(false);
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
@@ -89,17 +93,20 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         .eq('gardener_id', user.id);
       if (error) throw error;
       const prices: Record<string, number> = {};
+      const configs: Record<string, StandardPricingConfig> = {};
+      
       data?.forEach((row: any) => {
         prices[row.service_id] = row.price_per_unit;
-        // Cargar configuración de palmeras si existe
+        // Cargar configuración adicional si existe
         if (row.additional_config && Object.keys(row.additional_config).length > 0) {
-           // Aquí podríamos validar si el servicio es "Poda de palmeras", 
-           // pero por ahora asumimos que si tiene config es de ese tipo o similar.
-           // Lo ideal es verificar el nombre del servicio, pero requeriría un cruce con `services`.
-           // Lo haremos al guardar o al mapear `services` con sus precios.
+            // Guardamos la config en el estado genérico.
+            // Para palmeras se sobrescribirá/gestionará con el efecto específico loadPalmConfig,
+            // pero para el resto lo necesitamos aquí.
+            configs[row.service_id] = row.additional_config;
         }
       });
       setServicePrices(prices);
+      setStandardConfigs(configs);
       
       // Intentar cargar la configuración específica de palmeras
       // Primero necesitamos saber cuál es el ID del servicio "Poda de palmeras"
@@ -130,6 +137,28 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       }
     };
     loadPalmConfig();
+  }, [user?.id, services]);
+
+  // Cargar configuración de césped
+  useEffect(() => {
+    const loadLawnConfig = async () => {
+      if (!user?.id || services.length === 0) return;
+      
+      const lawnService = services.find(s => s.name === 'Corte de césped');
+      if (!lawnService) return;
+
+      const { data } = await supabase
+        .from('gardener_service_prices')
+        .select('additional_config')
+        .eq('gardener_id', user.id)
+        .eq('service_id', lawnService.id)
+        .single();
+        
+      if (data?.additional_config) {
+        setLawnConfig(data.additional_config as LawnPricingConfig);
+      }
+    };
+    loadLawnConfig();
   }, [user?.id, services]);
 
   const fetchServices = async () => {
@@ -273,9 +302,18 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         const service = services.find(s => s.id === serviceId);
         const price = servicePrices[serviceId];
         if (service && price !== undefined) {
-          // Si es "Poda de palmeras", incluir la configuración adicional
+          // Si es "Poda de palmeras" o "Corte de césped", incluir la configuración adicional específica
           const isPalmService = service.name === 'Poda de palmeras';
-          const additionalConfig = isPalmService ? (palmConfig || undefined) : undefined;
+          const isLawnService = service.name === 'Corte de césped';
+          
+          let additionalConfig;
+          if (isPalmService) {
+              additionalConfig = palmConfig || undefined;
+          } else if (isLawnService) {
+              additionalConfig = lawnConfig || undefined;
+          } else {
+              additionalConfig = standardConfigs[serviceId] || undefined;
+          }
 
           return {
             gardener_id: user.id,
@@ -358,6 +396,70 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       console.error('Error saving palm prices:', error);
       toast.error('Error al guardar los precios de palmeras');
       throw error; // Re-lanzar para que el componente hijo sepa que falló
+    }
+  };
+
+  const handleSaveLawnConfig = async (config: LawnPricingConfig) => {
+    if (!user) return;
+    const lawnService = services.find(s => s.name === 'Corte de césped');
+    if (!lawnService) return;
+
+    // Actualizamos el estado local
+    setLawnConfig(config);
+
+    const payload = {
+      gardener_id: user.id,
+      service_id: lawnService.id,
+      unit_type: (lawnService as any).measurement || 'area',
+      price_per_unit: servicePrices[lawnService.id] || 0,
+      currency: 'EUR',
+      active: true,
+      additional_config: config
+    };
+
+    try {
+      const { error } = await supabase
+        .from('gardener_service_prices')
+        .upsert(payload);
+
+      if (error) throw error;
+      toast.success('Configuración de césped guardada correctamente');
+    } catch (error) {
+      console.error('Error saving lawn prices:', error);
+      toast.error('Error al guardar configuración de césped');
+      throw error;
+    }
+  };
+
+  const handleSaveStandardConfig = async (serviceId: string, config: StandardPricingConfig) => {
+    if (!user) return;
+    const service = services.find(s => s.id === serviceId);
+    if (!service) return;
+
+    // Update local state
+    setStandardConfigs(prev => ({ ...prev, [serviceId]: config }));
+
+    const payload = {
+      gardener_id: user.id,
+      service_id: service.id,
+      unit_type: (service as any).measurement || 'area',
+      price_per_unit: servicePrices[service.id] || 0,
+      currency: 'EUR',
+      active: true,
+      additional_config: config
+    };
+
+    try {
+      const { error } = await supabase
+        .from('gardener_service_prices')
+        .upsert(payload);
+
+      if (error) throw error;
+      toast.success(`Configuración guardada para ${service.name}`);
+    } catch (error) {
+      console.error('Error saving standard config:', error);
+      toast.error('Error al guardar la configuración');
+      throw error;
     }
   };
 
@@ -498,13 +600,16 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               const isSelected = watchedServices.includes(service.id);
               const measurement = (service as any).measurement === 'count' ? 'unidad' : 'm²';
               const isPalm = service.name === 'Poda de palmeras';
+              const isLawn = service.name === 'Corte de césped';
               const hasError = isPalm && highlightPalmError;
+
+              const isSpecialService = isPalm || isLawn;
 
               return (
                 <div key={service.id} className={`border-2 rounded-lg transition-colors ${
                   hasError ? 'border-red-500 bg-red-50' : (isSelected ? 'border-green-500' : 'border-gray-200 hover:border-green-300')
-                } ${isPalm && isSelected ? 'p-0 overflow-hidden bg-white' : (isSelected ? 'bg-green-50 p-4' : 'p-4')}`}>
-                  <div className={isPalm && isSelected ? 'bg-green-50 p-4' : ''}>
+                } ${isSpecialService && isSelected ? 'p-0 overflow-hidden bg-white' : (isSelected ? 'bg-green-50 p-4' : 'p-4')}`}>
+                  <div className={isSpecialService && isSelected ? 'bg-green-50 p-4' : ''}>
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
@@ -520,47 +625,73 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                   </div>
 
                   {isSelected && (
-                    <div className={`${service.name === 'Poda de palmeras' ? 'border-t border-gray-100 p-4' : 'mt-3 pl-7'}`}>
-                      {service.name !== 'Poda de palmeras' && (
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm font-medium text-gray-700">Precio por {measurement}:</label>
-                          <div className="relative w-32">
-                            <span className="absolute left-3 top-2 text-gray-500">€</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={servicePrices[service.id] || ''}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                setServicePrices(prev => ({
-                                  ...prev,
-                                  [service.id]: isNaN(val) ? 0 : val
-                                }));
+                    <>
+                      <div className={`${isSpecialService ? 'border-t border-gray-100 p-4' : 'mt-3 pl-7'}`}>
+                        {!isSpecialService && (
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-gray-700">Precio por {measurement}:</label>
+                            <div className="relative w-32">
+                              <span className="absolute left-3 top-2 text-gray-500">€</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={servicePrices[service.id] || ''}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  setServicePrices(prev => ({
+                                    ...prev,
+                                    [service.id]: isNaN(val) ? 0 : val
+                                  }));
+                                }}
+                                className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
+                                placeholder="0.00"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Configuración avanzada de palmeras */}
+                        {isPalm && (
+                          <div className="cursor-default bg-white p-4">
+                            <PalmPricingConfigurator 
+                              value={palmConfig} 
+                              onChange={(newConfig) => {
+                                  setPalmConfig(newConfig);
+                                  if (newConfig.selected_species && newConfig.selected_species.length > 0) {
+                                      setHighlightPalmError(false);
+                                  }
                               }}
-                              className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
-                              placeholder="0.00"
+                              onSave={handleSavePalmConfig} 
                             />
                           </div>
-                        </div>
-                      )}
+                        )}
+
+                        {/* Configuración avanzada de césped */}
+                        {isLawn && (
+                          <div className="cursor-default bg-white p-4">
+                            <LawnPricingConfigurator 
+                              value={lawnConfig} 
+                              onChange={(newConfig) => {
+                                  setLawnConfig(newConfig);
+                              }}
+                              onSave={handleSaveLawnConfig} 
+                            />
+                          </div>
+                        )}
+                      </div>
                       
-                      {/* Configuración avanzada de palmeras */}
-                      {service.name === 'Poda de palmeras' && (
-                        <div className="cursor-default bg-white p-4">
-                          <PalmPricingConfigurator 
-                            value={palmConfig} 
-                            onChange={(newConfig) => {
-                                setPalmConfig(newConfig);
-                                if (newConfig.selected_species && newConfig.selected_species.length > 0) {
-                                    setHighlightPalmError(false);
-                                }
-                            }}
-                            onSave={handleSavePalmConfig} 
-                          />
-                        </div>
+                      {/* Configuración estándar para otros servicios */}
+                      {!isSpecialService && (
+                          <div className="mt-4 border-t border-gray-100 pt-4 cursor-default bg-white -mx-4 -mb-4 px-4 pb-4">
+                              <StandardServiceConfig
+                                  value={standardConfigs[service.id]}
+                                  onChange={(newConfig) => setStandardConfigs(prev => ({ ...prev, [service.id]: newConfig }))}
+                                  onSave={(config) => handleSaveStandardConfig(service.id, config)}
+                              />
+                          </div>
                       )}
-                    </div>
+                    </>
                   )}
                 </div>
               );

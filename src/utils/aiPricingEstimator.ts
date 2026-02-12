@@ -1,9 +1,12 @@
 export interface AITask {
   tipo_servicio: string;
+  especie_cesped?: string; // "Bermuda...", "Gramón...", "Dichondra...", "Césped Mixto..."
   estado_jardin: string; // "normal" | "descuidado" | "muy descuidado"
   superficie_m2: number | null;
   numero_plantas: number | null;
   tamaño_plantas: string | null; // "pequeñas" | "medianas" | "grandes" | "muy grandes"
+  nivel_analisis?: number; // 1, 2, 3
+  observaciones?: string[];
 }
 
 interface EstimationInput {
@@ -108,7 +111,73 @@ const LOCAL_PERF: Record<string, { performance: number; pricePerUnit: number }> 
 };
 
 const PROMPTS_MAP: Record<string, string> = {
-  'Corte de césped': "Eres una IA especializada en análisis de jardines llamada 'GrassScan'. Tu objetivo es analizar imágenes para presupuestar un servicio de corte de césped.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta la superficie total de césped en m², ignorando tierra, grava, mobiliario u otras áreas que no sean césped.\n2. Evalúa la altura del césped mediante textura y color, densidad, irregularidades y obstáculos.\n3. Analiza sombra y orientación para corregir áreas parcialmente visibles.\n4. Evalúa la accesibilidad: bordes, objetos, pendientes y obstáculos.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Césped <3 cm, terreno llano, sin obstáculos.\n- Nivel 2: Césped 3–10 cm, algunos obstáculos, terreno ligeramente irregular, densidad media.\n- Nivel 3: Césped >10 cm, muchos obstáculos, terreno irregular, césped tupido o con malas hierbas.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Corte de césped\",\n  \"cantidad\": [número estimado de m2],\n  \"unidad\": \"m2\",\n  \"dificultad\": [1, 2 o 3]\n}",
+  'Corte de césped': `---
+You are an image analysis AI used in a gardening services marketplace.
+
+Your role is to analyze one or more images provided by a client and extract objective, visible data required to generate an automatic service estimate.
+
+You DO NOT calculate prices.
+You DO NOT explain your reasoning.
+You DO NOT include text outside the required JSON.
+
+Your task is limited strictly to image analysis.
+
+SERVICE:
+Corte de césped
+
+ANALYSIS OBJECTIVE:
+Analyze the lawn area to determine its surface area in square meters and its current state based on height, invasion of boundaries, and uniformity.
+
+VARIABLES TO EXTRACT:
+- tipo_servicio (Fixed value: "Corte de césped")
+- estado_jardin (Classification based on rules below)
+- superficie_m2 (Visual estimation of the total lawn area)
+- numero_plantas (Always null for this service)
+- tamaño_plantas (Always null for this service)
+
+CLASSIFICATION RULES (estado_jardin):
+
+1. normal
+   - Height: Max 5 cm. Stem base visible if close. Sprinkler heads not hidden.
+   - Invasion: Respects boundaries (paths/curbs). No grass hanging over pavement.
+   - Uniformity: 100% grass (or dominant species). No broad-leaf weeds or woody stems.
+
+2. descuidado
+   - Height: 6-12 cm. Tips bending due to weight. Sprinklers/furniture legs hidden.
+   - Invasion: Overhangs >5 cm onto paths/stones. Requires edge trimming.
+   - Uniformity: Patchy heights or seed heads (flowering) visible. Indicates lack of recent cut.
+
+3. muy descuidado
+   - Height: >12-15 cm. Soil/plant bases not visible due to density.
+   - Invasion: No defined edges; grass colonized paths/beds.
+   - Uniformity: Tall weeds, hard stems, or non-grass vegetation present. Requires brush cutter before mowing.
+
+OUTPUT RULES (MANDATORY):
+- Return ONLY valid JSON
+- No explanations
+- No comments
+- No additional fields
+- No markdown
+- No text outside the JSON
+
+ESTIMATION RULES:
+- If a value cannot be determined with absolute certainty, provide the most reasonable estimate based on visible information.
+- Never return null or empty values unless explicitly allowed.
+- For "superficie_m2", estimate the total visible lawn area across all images.
+
+RESPONSE FORMAT (STRICT):
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Corte de césped",
+      "estado_jardin": "normal" | "descuidado" | "muy descuidado",
+      "superficie_m2": number,
+      "numero_plantas": null,
+      "tamaño_plantas": null
+    }
+  ]
+}
+---`,
   'Corte de setos': "Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta la superficie total de setos (largo × altura) en m².\n2. Analiza densidad, grosor de ramas y uniformidad.\n3. Evalúa accesibilidad frontal y trasera, necesidad de escalera o pértiga.\n4. Detecta obstáculos cercanos (macetas, vallas) y terreno irregular.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Altura ≤1,5 m, ramas finas, accesible desde el suelo.\n- Nivel 2: Altura 1,5–2,5 m, ramas medianas, obstáculos moderados.\n- Nivel 3: Altura >2,5 m, ramas gruesas o densas, acceso limitado, requiere poda fuerte.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Corte de setos\",\n  \"cantidad\": [número estimado de m2],\n  \"unidad\": \"m2\",\n  \"dificultad\": [1, 2 o 3]\n}",
   'Fumigación': "Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar fumigación.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta plantas afectadas por plagas o áreas continuas.\n2. IMPORTANTE: Para calcular la cantidad, convierte las plantas reales a \"plantas equivalentes\" usando esta fórmula mental:\n   Plantas_equivalentes = (altura_real_cm / 40) × (diametro_real_cm / 35)\n3. Detecta densidad de plaga y gravedad de daños.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Plaga leve, <20% afectación, plantas ≤2 equivalentes.\n- Nivel 2: Afectación 20–60%, plantas 2–5 equivalentes, acceso parcial.\n- Nivel 3: >60% afectación, plantas >5 equivalentes, acceso difícil, plaga severa.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Fumigación\",\n  \"cantidad\": [número de plantas equivalentes],\n  \"unidad\": \"plantas\",\n  \"dificultad\": [1, 2 o 3]\n}",
   'Poda de plantas': "Eres una IA especializada en análisis de jardines llamada 'PlantShapeAI'. Tu objetivo es analizar arbustos, rosales u ornamentales (excluye árboles grandes).\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta plantas que requieren poda.\n2. IMPORTANTE: Convierte cada planta a \"plantas equivalentes\" usando esta fórmula:\n   Plantas_equivalentes = (altura_real_cm / 40) × (diametro_real_cm / 35)\n3. Evalúa densidad de ramas y dureza aparente.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Plantas ≤1 m (≤2,5 equivalentes), ramas finas, accesibles, poda ligera.\n- Nivel 2: Plantas 1–1,8 m (2,5–4,5 equivalentes), ramas medianas, acceso parcial.\n- Nivel 3: Plantas >1,8 m (>4,5 equivalentes), ramas gruesas, densas, espacios reducidos, poda fuerte.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Poda de plantas\",\n  \"cantidad\": [número de plantas equivalentes],\n  \"unidad\": \"plantas\",\n  \"dificultad\": [1, 2 o 3]\n}",

@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, Camera, Upload, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Shovel, Bug, Eye, EyeOff, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { estimateWorkWithAI, estimateServiceAutoQuote } from '../../utils/aiPricingEstimator';
+import { estimateWorkWithAI, estimateServiceAutoQuote, calculatePalmHours } from '../../utils/aiPricingEstimator';
 
 const PALM_SPECIES = [
   'Phoenix (datilera o canaria)',
@@ -847,10 +847,23 @@ const DetailsPage: React.FC = () => {
         
         const mergedGroups = [...oldGroups, ...newGroups];
         
-        // Calculate estimated hours for the new groups
-        const totalHours = mergedGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
+        // Calculate estimated hours via Backend (Strict requirement)
+        let totalHours = 0;
+        try {
+             // Map to backend expected format
+             const pricingInput = mergedGroups.map(g => ({
+                 especie: g.species,
+                 altura: g.height,
+                 estado: g.state || 'normal'
+             }));
+             const estimation = await calculatePalmHours(pricingInput);
+             totalHours = estimation.tiempoTotalEstimado;
+        } catch (e) {
+             console.error('Error calculating palm pricing:', e);
+             toast.error('Error calculando precio. Verifica tu conexión.');
+        }
         
-        const palmPayload = { 
+        const palmPayload = {  
             palmGroups: mergedGroups,
             estimatedHours: totalHours,
             isAnalyzing: false

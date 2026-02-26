@@ -16,10 +16,115 @@ interface Payload {
   photo_count?: number;
   service_name?: string; // Nombre del servicio (opcional, para lógica específica)
   // Nuevo modo de auto‑presupuesto por servicio
-  mode?: 'auto_quote';
+  mode?: 'auto_quote' | 'calculate_palm_pricing';
   service?: string; // nombre exacto del servicio
   image_url?: string; // http(s) o dataURL
   model?: 'gpt-4o-mini' | 'gemini-2.0-flash';
+  palms?: any[]; // Array for palm pricing calculation
+}
+
+// --- PALM PRICING LOGIC ---
+const PALM_CONSTANTS = {
+  GROUP_A: [
+    "Phoenix (datilera o canaria)", 
+    "Washingtonia", 
+    "Roystonea regia (cubana)", 
+    "Syagrus romanzoffiana (cocotera)", 
+    "Trachycarpus fortunei"
+  ],
+  GROUP_B: [
+    "Livistona", 
+    "Kentia (palmito)", 
+    "Phoenix roebelenii(pigmea)", 
+    "cycas revoluta (falsa palmera)"
+  ],
+  PRICING: {
+    A: {
+      "0-5": { normal: 0.5, descuidado: 1.0, "muy descuidado": 1.5 },
+      "5-12": { normal: 1.0, descuidado: 1.5, "muy descuidado": 2.5 },
+      "12-20": { normal: 1.5, descuidado: 2.5, "muy descuidado": 3.5 },
+      "20+": { normal: 2.5, descuidado: 3.5, "muy descuidado": 5.0 }
+    },
+    B: {
+      "0-2": { normal: 0.25, descuidado: 0.5, "muy descuidado": 0.75 },
+      "2+": { normal: 0.5, descuidado: 0.75, "muy descuidado": 1.0 }
+    }
+  }
+};
+
+function normalizeStr(s: string) {
+  return (s || '').toLowerCase().trim();
+}
+
+function calculatePalmEstimation(palms: any[]) {
+  let tiempoPodaBruto = 0;
+  
+  // Setup Time Logic
+  // - "12-20" or "20+" -> 2.0h (Tier 3)
+  // - "5-12" -> 1.5h (Tier 2)
+  // - "0-5", "0-2", "2+" -> 1.0h (Tier 1)
+  let maxSetupTier = 0; 
+
+  palms.forEach(p => {
+      const species = normalizeStr(p.especie);
+      const height = p.altura;
+      const state = normalizeStr(p.estado || 'normal');
+      
+      // Determine Group
+      let group = 'A';
+      if (PALM_CONSTANTS.GROUP_B.some(s => normalizeStr(s) === species)) {
+          group = 'B';
+      }
+      
+      // Calculate Hours
+      let hours = 0;
+      const groupPrices = (PALM_CONSTANTS.PRICING as any)[group];
+      
+      // Fallback/Safety
+      if (groupPrices && groupPrices[height]) {
+          if (groupPrices[height][state] !== undefined) {
+              hours = groupPrices[height][state];
+          } else {
+              hours = groupPrices[height]['normal'] || 0;
+          }
+      } else {
+           // Default fallback: Group A, 5-12, normal
+           hours = PALM_CONSTANTS.PRICING.A['5-12'].normal; 
+      }
+      
+      tiempoPodaBruto += hours;
+      
+      // Determine Setup Tier
+      let tier = 1;
+      if (height === '12-20' || height === '20+') tier = 3;
+      else if (height === '5-12') tier = 2;
+      else tier = 1;
+      
+      if (tier > maxSetupTier) maxSetupTier = tier;
+  });
+  
+  // Calculate Final Setup Time
+  let tiempoPreparacion = 0;
+  if (palms.length > 0) {
+      if (maxSetupTier === 3) tiempoPreparacion = 2.0;
+      else if (maxSetupTier === 2) tiempoPreparacion = 1.5;
+      else tiempoPreparacion = 1.0;
+  }
+  
+  // Efficiency Factor
+  const count = palms.length;
+  let factorEficiencia = 1.0;
+  if (count >= 6) factorEficiencia = 0.8;
+  else if (count >= 3) factorEficiencia = 0.9;
+  
+  const tiempoTotalEstimado = tiempoPreparacion + (tiempoPodaBruto * factorEficiencia);
+  
+  return {
+      tiempoPreparacion,
+      tiempoPodaBruto,
+      factorEficiencia,
+      tiempoTotalEstimado: Math.round(tiempoTotalEstimado * 100) / 100
+  };
 }
 
 // Mapeo de System Prompts por servicio (estrictamente detallados)
@@ -952,6 +1057,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
         reasons: analysis.reasons || []
       };
       return new Response(JSON.stringify(out), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Nuevo modo: cálculo de precios de palmeras
+    if (payload.mode === 'calculate_palm_pricing' && Array.isArray(payload.palms)) {
+        const result = calculatePalmEstimation(payload.palms);
+        return new Response(JSON.stringify(result), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Modo existente: estimación de tareas múltiples desde imágenes/texto

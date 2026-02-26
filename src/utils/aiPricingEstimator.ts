@@ -103,6 +103,27 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
   }
 }
 
+export interface PalmPricingResult {
+    tiempoPreparacion: number;
+    tiempoPodaBruto: number;
+    factorEficiencia: number;
+    tiempoTotalEstimado: number;
+}
+
+export async function calculatePalmHours(palms: any[]): Promise<PalmPricingResult> {
+    const { data, error } = await supabase.functions.invoke('ai-pricing-estimator', {
+        body: {
+            mode: 'calculate_palm_pricing',
+            palms
+        }
+    });
+    if (error) {
+        console.warn('[AI] Palm pricing calculation error:', error);
+        throw error;
+    }
+    return data as PalmPricingResult;
+}
+
 /* Merged into primary estimateWorkWithAI; duplicate removed to avoid conflicts */
 
 export interface AutoQuoteAnalysis {

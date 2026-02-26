@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBooking } from "../../contexts/BookingContext";
-import { ChevronLeft, Star, Clock, MapPin, Check } from 'lucide-react';
+import { ChevronLeft, Star, Clock, MapPin, Check, AlertTriangle, TreePine, SearchX, Sprout } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import * as availCompat from '../../utils/availabilityServiceCompat';
@@ -18,6 +18,7 @@ const ProvidersPage: React.FC = () => {
   const [selectedProvider, setSelectedProvider] = useState<string>(bookingData.providerId);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [configs, setConfigs] = useState<Record<string, any>>({});
+  const [palmCoverageMap, setPalmCoverageMap] = useState<Record<string, { isFull: boolean; coveredCount: number; totalCount: number; missingGroups: any[] }>>({});
   const [selectedDate, setSelectedDate] = useState<string>(bookingData.preferredDate || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`);
   const [hoursAvailable, setHoursAvailable] = useState<number[]>([]);
   const [showDatePicker] = useState(false);
@@ -35,6 +36,135 @@ const ProvidersPage: React.FC = () => {
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
   const chips: string[] = [];
+
+  // Helper function to robustly find palm price
+  const findPalmPrice = (config: any, species: string, height: string): number => {
+    // 1. Check for valid configuration
+    if (!config || !config.height_prices) {
+        // Fallback: Check species_prices (legacy/base) if height_prices is missing
+        if (config?.species_prices?.[species] && typeof config.species_prices[species] === 'number') {
+            return config.species_prices[species];
+        }
+        return 0;
+    }
+
+    // 2. Try exact match in height_prices
+    if (config.height_prices[species]?.[height]) {
+        return config.height_prices[species][height];
+    }
+
+    // 3. Normalize species
+    let speciesKey = species;
+    const speciesLower = species.toLowerCase();
+    
+    // Map of common AI outputs/User inputs to Config Keys
+    const speciesMap: Record<string, string> = {
+        'phoenix': 'Phoenix (datilera o canaria)',
+        'datilera': 'Phoenix (datilera o canaria)',
+        'canaria': 'Phoenix (datilera o canaria)',
+        'washingtonia': 'Washingtonia',
+        'roystonea': 'Roystonea regia (cubana)',
+        'cubana': 'Roystonea regia (cubana)',
+        'syagrus': 'Syagrus romanzoffiana (cocotera)',
+        'cocotera': 'Syagrus romanzoffiana (cocotera)',
+        'trachycarpus': 'Trachycarpus fortunei',
+        'fortunei': 'Trachycarpus fortunei',
+        'livistona': 'Livistona',
+        'kentia': 'Kentia (palmito)',
+        'palmito': 'Kentia (palmito)',
+        'roebelenii': 'Phoenix roebelenii(pigmea)',
+        'pigmea': 'Phoenix roebelenii(pigmea)',
+        'cycas': 'cycas revoluta (falsa palmera)',
+        'revoluta': 'cycas revoluta (falsa palmera)',
+        'falsa': 'cycas revoluta (falsa palmera)'
+    };
+
+    // Find matching species key via map
+    let found = false;
+    for (const [key, val] of Object.entries(speciesMap)) {
+        if (speciesLower.includes(key)) {
+            speciesKey = val;
+            found = true;
+            break;
+        }
+    }
+
+    // If not found via map, try partial match against actual config keys (height_prices)
+    if (!found && !config.height_prices[speciesKey]) {
+        const configKeys = Object.keys(config.height_prices);
+        const match = configKeys.find(k => k.toLowerCase().includes(speciesLower) || speciesLower.includes(k.toLowerCase()));
+        if (match) {
+            speciesKey = match;
+            found = true;
+        }
+    }
+
+    // Check if species exists in config (height_prices)
+    if (!config.height_prices[speciesKey]) {
+        // Last resort: Check species_prices (base)
+        if (config.species_prices?.[speciesKey] && typeof config.species_prices[speciesKey] === 'number') {
+            return config.species_prices[speciesKey];
+        }
+        console.warn(`[findPalmPrice] Species not found in config: ${species} (mapped to ${speciesKey})`);
+        return 0;
+    }
+
+    // 4. Try normalized species with exact height
+    if (config.height_prices[speciesKey][height]) {
+        return config.height_prices[speciesKey][height];
+    }
+
+    // 5. Parse height number from string for range matching
+    // Handle "X-Y" format in input (e.g. "4-8m")
+    const matches = height.match(/(\d+(?:\.\d+)?)/g);
+    let heightNum = 0;
+    if (matches && matches.length > 0) {
+        if (matches.length === 1) {
+             heightNum = parseFloat(matches[0]);
+        } else {
+             // If range provided by AI (e.g. 4-8), take average
+             const v1 = parseFloat(matches[0]);
+             const v2 = parseFloat(matches[1]);
+             heightNum = (v1 + v2) / 2;
+        }
+    } else {
+         console.warn(`[findPalmPrice] Could not parse height: ${height}`);
+         // Fallback to base price if height parse fails
+         if (config.species_prices?.[speciesKey]) return config.species_prices[speciesKey];
+         return 0; 
+    }
+
+    // Find correct range in height_prices[speciesKey]
+    const ranges = Object.keys(config.height_prices[speciesKey]);
+    let bestRange = '';
+
+    for (const range of ranges) {
+        if (range.includes('+')) {
+            const min = parseFloat(range.replace('+', ''));
+            if (heightNum >= min) {
+                bestRange = range;
+            }
+        } else if (range.includes('-')) {
+            const [min, max] = range.split('-').map(Number);
+            if (heightNum >= min && heightNum < max) {
+                bestRange = range;
+                break; // Exact range found
+            }
+        }
+    }
+    
+    if (bestRange) {
+        return config.height_prices[speciesKey][bestRange] || 0;
+    }
+
+    // If no specific height found, try fallback to base (species_prices)
+    if (config.species_prices?.[speciesKey]) {
+        return config.species_prices[speciesKey];
+    }
+
+    console.warn(`[findPalmPrice] No matching height range for: ${height} (${heightNum}m) in species ${speciesKey}`);
+    return 0;
+  };
 
   const findFirstAvailableDate = async (providerId: string, startDate: string, hoursNeeded: number) => {
     for (let i=0;i<14;i++) {
@@ -206,7 +336,10 @@ const ProvidersPage: React.FC = () => {
           
         if (bookingData.palmSpecies) {
           // Filter by species in JSONB config
-          query = query.contains('additional_config', { selected_species: [bookingData.palmSpecies] });
+          // Previously we filtered by ALL species, now we want to fetch ANY potential match
+          // to calculate partial coverage later.
+          // query = query.contains('additional_config', { selected_species: [bookingData.palmSpecies] });
+          // Instead of filtering in DB, we fetch all palm service providers and filter in JS
         } else if (bookingData.lawnZones && bookingData.lawnZones.length > 0) {
           // Filter by ALL unique species in zones
           const speciesList = Array.from(new Set(bookingData.lawnZones.map(z => z.species)));
@@ -226,13 +359,46 @@ const ProvidersPage: React.FC = () => {
         let list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
         const map: Record<string, number> = {};
         const configMap: Record<string, any> = {};
+        const coverageMap: Record<string, { isFull: boolean; coveredCount: number; totalCount: number; missingGroups: any[] }> = {};
+
         (priceRows || []).forEach((p: any) => { 
             map[p.gardener_id] = p.price_per_unit;
             configMap[p.gardener_id] = p.additional_config;
+            
+            // Calculate Palm Coverage if applicable
+            if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
+                const config = p.additional_config;
+                let covered = 0;
+                const missing = [];
+                const total = bookingData.palmGroups.length;
+                
+                for (const group of bookingData.palmGroups) {
+                     const price = findPalmPrice(config, group.species, group.height);
+                     if (price > 0) {
+                         covered++;
+                     } else {
+                         missing.push(group);
+                     }
+                }
+                
+                coverageMap[p.gardener_id] = {
+                    isFull: covered === total,
+                    coveredCount: covered,
+                    totalCount: total,
+                    missingGroups: missing
+                };
+            }
         });
         setPrices(map);
         setConfigs(configMap);
-        // Ordenar por disponibilidad más próxima
+        setPalmCoverageMap(coverageMap);
+
+        // Filter list: Remove gardeners with 0 coverage for palms
+        if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
+             list = list.filter(p => coverageMap[p.user_id]?.coveredCount > 0);
+        }
+
+        // Ordenar por disponibilidad más próxima Y cobertura (Full coverage first)
         const hoursNeeded = Math.max(1, Number(bookingData.estimatedHours || 0));
         const today = new Date();
         const addDaysLocal = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
@@ -255,6 +421,18 @@ const ProvidersPage: React.FC = () => {
         list.sort((a,b)=>{
           const ta = earliestMap[a.user_id] ?? Number.POSITIVE_INFINITY;
           const tb = earliestMap[b.user_id] ?? Number.POSITIVE_INFINITY;
+          
+          // Primary Sort: Full Coverage > Partial Coverage (if Palm Service)
+          if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
+              const coverageA = coverageMap[a.user_id];
+              const coverageB = coverageMap[b.user_id];
+              if (coverageA?.isFull && !coverageB?.isFull) return -1;
+              if (!coverageA?.isFull && coverageB?.isFull) return 1;
+              // Secondary: More coverage count
+              if ((coverageA?.coveredCount || 0) > (coverageB?.coveredCount || 0)) return -1;
+              if ((coverageA?.coveredCount || 0) < (coverageB?.coveredCount || 0)) return 1;
+          }
+
           return ta - tb;
         });
         setProviders(list);
@@ -303,59 +481,83 @@ const ProvidersPage: React.FC = () => {
 
 
   const computePrice = (gardenerId: string) => {
-    // 1. Lógica específica para Poda de Palmeras (Multi-Group Support)
+    // Debug Log Start
+    console.log(`[ComputePrice] Calculating for Gardener: ${gardenerId}`);
+    console.log(`[ComputePrice] BookingData:`, JSON.stringify({
+        serviceIds: bookingData.serviceIds,
+        hedgeZones: bookingData.hedgeZones,
+        palmGroups: bookingData.palmGroups,
+        treeGroups: bookingData.treeGroups,
+        shrubGroups: bookingData.shrubGroups,
+        clearingZones: bookingData.clearingZones,
+        fumigationZones: bookingData.fumigationZones,
+        lawnZones: bookingData.lawnZones
+    }, null, 2));
+
     const config = configs[gardenerId];
+    console.log(`[ComputePrice] Config found:`, config);
+
+    if (!config) {
+        console.warn(`[ComputePrice] No config for gardener ${gardenerId}`);
+        return 0;
+    }
+
+    // Palms (Poda de palmeras)
     if (bookingData.palmGroups && bookingData.palmGroups.length > 0 && config) {
+        // GLOBAL OVERRIDE
+        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+        
+        // Ensure species_prices exists
+        if (!config.species_prices) return 0;
+
         let total = 0;
         
         for (const group of bookingData.palmGroups) {
+            // Price = Base Price (Species + Height) * Quantity * Multipliers
             const species = group.species;
             const height = group.height;
-            const state = group.state || 'normal';
-            // Use global wasteRemoval setting if defined, otherwise fallback to group setting
-            const waste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : group.wasteRemoval;
-            const qty = group.quantity;
-
-            // Base Price from Config
-            let base = 0;
-            if (height && config.height_prices?.[species]?.[height]) {
-                base = config.height_prices[species][height];
-            } else if (config.species_prices?.[species]) {
-                base = config.species_prices[species];
-            } else {
-                base = prices[gardenerId] || 0; // Fallback to generic price
+            const quantity = group.quantity || 1;
+            
+            // Lookup base price
+            // Use robust helper function
+            const basePrice = findPalmPrice(config, species, height);
+            
+            if (basePrice <= 0) {
+                console.warn(`[ComputePrice] Base price 0 for ${species} / ${height}`);
+                continue;
             }
 
-            // State Surcharge
-            let stateKey = state;
-            const surcharges = config.condition_surcharges || {};
-
-            if (state === 'muy descuidado') {
-                if (surcharges['muy_descuidada'] !== undefined) stateKey = 'muy_descuidada';
-                else if (surcharges['muy_descuidado'] !== undefined) stateKey = 'muy_descuidado';
-                else stateKey = 'muy_descuidada';
-            } else if (state === 'descuidado') {
-                if (surcharges['descuidada'] !== undefined) stateKey = 'descuidada';
-                else if (surcharges['descuidado'] !== undefined) stateKey = 'descuidado';
-                else stateKey = 'descuidada';
+            // Condition Surcharge
+            const state = (group.state || 'normal').toLowerCase();
+            const surcharges = config.condition_surcharges || { normal: 0, neglected: 15, overgrown: 30 };
+            let statePercent = 0;
+            
+            // Map state strings to config keys
+            // Config keys usually: 'normal', 'descuidada', 'muy_descuidada' (feminine in config)
+            if (state.includes('muy') && (state.includes('descuidado') || state.includes('mal'))) {
+                statePercent = surcharges.muy_descuidado || surcharges.muy_descuidada || surcharges.overgrown || 0;
+            } else if (state.includes('descuidado') || state.includes('mal')) {
+                statePercent = surcharges.descuidado || surcharges.descuidada || surcharges.neglected || 0;
+            } else {
+                statePercent = surcharges.normal || 0;
             }
             
-            const stateSurchargePercent = surcharges[stateKey] || 0;
-            const stateMult = 1 + (stateSurchargePercent / 100);
+            const stateMult = 1 + (statePercent / 100);
 
-            // Waste Removal Surcharge (applied after state surcharge)
-            let wasteMult = 1;
-            if (waste) {
-                 const wastePercent = config.waste_removal?.percentage || 0;
-                 wasteMult = 1 + (wastePercent / 100);
+            // Waste Removal Surcharge
+            let wastePercent = 0;
+            if (globalWaste) {
+                wastePercent = config.wasteRemovalModifier !== undefined 
+                    ? config.wasteRemovalModifier 
+                    : (config.waste_removal?.percentage || 0);
             }
-
-            if (base > 0 && qty > 0) {
-                // Formula: Base * StateMult * WasteMult * Qty
-                total += Math.ceil(base * stateMult * wasteMult * qty);
-            }
+            const wasteMult = 1 + (wastePercent / 100);
+            
+            // Final Calculation for this group
+            total += basePrice * quantity * stateMult * wasteMult;
         }
-        return total;
+        
+        return Math.ceil(total);
     }
     
     // Fallback: Legacy single-group logic (for backward compatibility or if groups are empty but fields exist)
@@ -405,6 +607,199 @@ const ProvidersPage: React.FC = () => {
             return Math.ceil(base * stateMult * wasteMult * qty);
         }
         return 0;
+    }
+
+    // --- New Service Pricing Logic ---
+
+    // Hedges
+    if (bookingData.hedgeZones && bookingData.hedgeZones.length > 0) {
+        if (!config || !config.species_prices) {
+            console.warn('[ComputePrice] Hedges: Missing config or species_prices', config);
+            return 0;
+        }
+        
+        // GLOBAL OVERRIDE
+        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+
+        console.log('[ComputePrice] Starting Hedge Calculation...');
+        let total = 0;
+        for (const zone of bookingData.hedgeZones) {
+            const { type, height, length, access } = zone;
+            console.log(`[ComputePrice] Processing Zone:`, zone);
+            
+            // Config keys match the values stored in bookingData (verified in Configurator)
+            const base = config.species_prices[type]?.[height] || 0;
+            console.log(`[ComputePrice] Base price lookup for type='${type}', height='${height}':`, base);
+            
+            if (base <= 0) {
+                console.warn(`[ComputePrice] Invalid base price (${base}) for type='${type}', height='${height}'`);
+                continue;
+            }
+            
+            // Access Surcharge
+            const surcharges = config.access_surcharges || {};
+            let accessPercent = 0;
+            if (access === 'dificil') accessPercent = surcharges.dificil || 0;
+            else if (access === 'medio') accessPercent = surcharges.medio || 0;
+            
+            const accessMult = 1 + (accessPercent / 100);
+            
+            // Waste
+            let wasteMult = 1;
+            if (globalWaste) {
+                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+            }
+            
+            const lineTotal = base * length * accessMult * wasteMult;
+            console.log(`[ComputePrice] Line Total: ${lineTotal} (Base: ${base}, Length: ${length}, AccessMult: ${accessMult}, WasteMult: ${wasteMult})`);
+            
+            total += lineTotal;
+        }
+        console.log(`[ComputePrice] Final Hedge Total: ${Math.ceil(total)}`);
+        return Math.ceil(total);
+    }
+
+    // Trees
+    if (bookingData.treeGroups && bookingData.treeGroups.length > 0 && config) {
+        // GLOBAL OVERRIDE
+        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+        
+        let total = 0;
+        
+        // Iterate over EACH tree group (individual tree from AI)
+        for (const group of bookingData.treeGroups) {
+            // Use per-tree estimated hours from AI, fallback to average if missing
+            const treeHours = group.estimatedHours || (Number(bookingData.estimatedHours || 0) / bookingData.treeGroups.length) || 1.5;
+            
+            const pruningType = group.pruningType || 'structural';
+            const access = group.access || 'normal';
+
+            // Hourly Rate based on Type
+            let hourlyRate = 0;
+            if (pruningType === 'shaping') {
+                hourlyRate = config.shapingHourlyRate || 30;
+            } else {
+                hourlyRate = config.structuralHourlyRate || 40;
+            }
+
+            // Access Surcharge
+            let accessPercent = 0;
+            const legacySurcharges = config.access_surcharges || {};
+            
+            if (access === 'medio') { // Escalera
+                accessPercent = config.ladderModifier !== undefined 
+                    ? config.ladderModifier 
+                    : (legacySurcharges.medio || 0);
+            } else if (access === 'dificil') { // Trepa
+                accessPercent = config.climbingModifier !== undefined 
+                    ? config.climbingModifier 
+                    : (legacySurcharges.dificil || 0);
+            }
+            
+            // Waste Removal Surcharge
+            let wastePercent = 0;
+            if (globalWaste) {
+                wastePercent = config.wasteRemovalModifier !== undefined 
+                    ? config.wasteRemovalModifier 
+                    : (config.waste_removal?.percentage || 0);
+            }
+            
+            const totalMultiplier = 1 + (accessPercent / 100) + (wastePercent / 100);
+            
+            total += treeHours * hourlyRate * totalMultiplier;
+        }
+        
+        return Math.ceil(total);
+    }
+
+    // Shrubs
+    if (bookingData.shrubGroups && bookingData.shrubGroups.length > 0 && config && config.species_prices) {
+        // GLOBAL OVERRIDE: La retirada de restos es una configuración global.
+        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+        
+        let total = 0;
+        for (const group of bookingData.shrubGroups) {
+            const { type, size, quantity, state } = group;
+            const base = config.species_prices[type]?.[size] || 0;
+            if (base <= 0) continue;
+            
+            // Condition Multiplier
+            const surcharges = config.condition_multipliers || { normal: 0, neglected: 15, overgrown: 30 };
+            let conditionPercent = 0;
+            const s = (state || 'normal').toLowerCase();
+            
+            if (s.includes('muy') && s.includes('descuidado')) conditionPercent = surcharges.overgrown;
+            else if (s.includes('descuidado')) conditionPercent = surcharges.neglected;
+            else conditionPercent = surcharges.normal;
+
+            const conditionMult = 1 + (conditionPercent / 100);
+
+            let wasteMult = 1;
+            if (globalWaste) {
+                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+            }
+            
+            total += base * quantity * conditionMult * wasteMult;
+        }
+        return Math.ceil(total);
+    }
+
+    // Clearing
+    if (bookingData.clearingZones && bookingData.clearingZones.length > 0 && config && config.type_prices) {
+        // GLOBAL OVERRIDE
+        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+        
+        const totalArea = bookingData.clearingZones.reduce((acc, z) => acc + (z.area || 0), 0);
+        let range = '0-50';
+        if (totalArea > 200) range = '200+';
+        else if (totalArea > 50) range = '50-200';
+        
+        let total = 0;
+        for (const zone of bookingData.clearingZones) {
+            const { type, area } = zone;
+            const baseRate = config.type_prices[type]?.[range] || 0;
+            
+            let subtotal = 0;
+            if (range === '0-50') subtotal = baseRate; // Fixed price
+            else subtotal = baseRate * area;
+            
+            let wasteMult = 1;
+            if (globalWaste) {
+                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+            }
+            
+            total += subtotal * wasteMult;
+        }
+        return Math.ceil(total);
+    }
+
+    // Fumigation
+    if (bookingData.fumigationZones && bookingData.fumigationZones.length > 0 && config && config.type_prices) {
+        // GLOBAL OVERRIDE
+        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+
+        const totalArea = bookingData.fumigationZones.reduce((acc, z) => acc + (z.area || 0), 0);
+        let range = '0-50';
+        if (totalArea > 200) range = '200+';
+        else if (totalArea > 50) range = '50-200';
+        
+        let total = 0;
+        for (const zone of bookingData.fumigationZones) {
+            const { type, area } = zone;
+            const baseRate = config.type_prices[type]?.[range] || 0;
+            
+            let subtotal = 0;
+            if (range === '0-50') subtotal = baseRate; // Fixed price
+            else subtotal = baseRate * area;
+            
+            let wasteMult = 1;
+            if (globalWaste) {
+                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+            }
+            
+            total += subtotal * wasteMult;
+        }
+        return Math.ceil(total);
     }
 
     // 2. Lógica para Corte de Césped (Lawn Service)
@@ -501,7 +896,7 @@ const ProvidersPage: React.FC = () => {
             // Config keys: 'descuidado', 'muy_descuidado'
             // Zone state: 'normal', 'descuidado', 'muy_descuidado' (o 'descuidada'?)
             // Mapeamos variaciones comunes
-            const s = group.state.toLowerCase();
+            const s = (group.state || 'normal').toLowerCase();
             if (s.includes('muy') && s.includes('descuidad')) {
                 stateSurchargePercent = surcharges.muy_descuidado || 0;
             } else if (s.includes('descuidad') && !s.includes('muy')) {
@@ -512,7 +907,7 @@ const ProvidersPage: React.FC = () => {
 
             // Waste
             let wasteMult = 1;
-            if (group.wasteRemoval) {
+            if (globalWaste) {
                 const wastePercent = config.waste_removal?.percentage || 0;
                 wasteMult = 1 + (wastePercent / 100);
             }
@@ -633,18 +1028,56 @@ const ProvidersPage: React.FC = () => {
       {/* Main Content */}
       <div className="max-w-md mx-auto px-4 py-6 pb-24">
         {/* Carrusel de jardineros */}
-        <div className="mb-4">
+      <div className="mb-4">
+        {/* Partial Coverage Warning */}
+        {providers.length > 0 && bookingData.palmGroups && bookingData.palmGroups.length > 0 && 
+         !providers.some(p => palmCoverageMap[p.user_id]?.isFull) && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                <div className="p-1 bg-amber-100 rounded-full text-amber-600 shrink-0 mt-0.5">
+                    <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div className="text-sm text-amber-800">
+                    <p className="font-medium">No hay ningún jardinero disponible para realizar el trabajo completo.</p>
+                    <p className="text-amber-700 mt-1">A continuación mostramos profesionales que pueden realizar parte del servicio (se cobrará solo la parte realizada).</p>
+                </div>
+            </div>
+        )}
+
+        {/* No providers message */}
+        {!loading && providers.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center max-w-sm mx-auto mt-8">
+            <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Sprout className="w-10 h-10 text-green-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              No hay jardineros disponibles
+            </h3>
+            <p className="text-gray-600 mb-6 leading-relaxed">
+              Actualmente no hay ningún jardinero disponible para este servicio en tu zona. Por favor, intenta nuevamente más tarde.
+            </p>
+          </div>
+        ) : (
           <div className="flex gap-3 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {providers.map((p) => {
               const selected = selectedProvider === p.user_id;
+              const coverage = palmCoverageMap[p.user_id];
+              const isPartial = coverage && !coverage.isFull;
+
               return (
                 <button
                   key={p.user_id}
                   onClick={() => openAvailability(p.user_id)}
-                  className={`min-w-[220px] bg-white rounded-2xl shadow-sm p-3 border-2 text-left ${
-                    selected ? 'border-green-600 bg-green-50' : 'border-gray-200 hover:border-gray-300'
+                  className={`min-w-[240px] bg-white rounded-2xl shadow-sm p-3 border-2 text-left relative overflow-hidden transition-all ${
+                    selected ? 'border-green-600 bg-green-50' : isPartial ? 'border-amber-200 bg-amber-50/30 hover:border-amber-300' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
+                  {/* Partial Tag */}
+                  {isPartial && (
+                      <div className="absolute top-0 right-0 bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-bl-lg border-b border-l border-amber-200">
+                          PARCIAL ({coverage.coveredCount}/{coverage.totalCount})
+                      </div>
+                  )}
+
                   <div className="flex items-center gap-3">
                     {p.avatar_url ? (
                       <img src={p.avatar_url} alt={p.full_name} className="w-12 h-12 rounded-full object-cover" />
@@ -653,21 +1086,47 @@ const ProvidersPage: React.FC = () => {
                         {p.full_name.charAt(0)}
                       </div>
                     )}
-                    <div className="flex-1">
-                      <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
-                      <div className="text-sm text-gray-700">€{computePrice(p.user_id) || '—'}</div>
-                      <div className="text-xs text-gray-500 flex items-center gap-1">
-                        <Star className="w-3 h-3 text-yellow-400 fill-current" />
-                        {p.rating_average ? Number(p.rating_average).toFixed(1) : 'Nuevo'}
-                        {typeof p.rating_count === 'number' && ` (${p.rating_count})`}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-gray-900 truncate pr-4">{p.full_name}</div>
+                      <div className="text-sm text-gray-700 font-medium">
+                        {(() => {
+                            const price = computePrice(p.user_id);
+                            if (price <= 0) return <span className="text-gray-400 font-normal">No disponible</span>;
+                            return (
+                              <div className="flex items-baseline gap-1">
+                                  <span>€{price}</span>
+                                  {isPartial && <span className="text-[10px] text-amber-600 font-normal">(parcial)</span>}
+                              </div>
+                            );
+                        })()}
                       </div>
+                      
+                      {/* Partial Coverage Details */}
+                      {isPartial && coverage?.missingGroups.length > 0 && (
+                          <div className="mt-1.5 text-[10px] text-amber-700 bg-amber-100/50 p-1 rounded border border-amber-100 leading-tight">
+                              <span className="font-semibold block mb-0.5">No incluye:</span>
+                              {coverage.missingGroups.slice(0, 2).map((g: any, i: number) => (
+                                  <div key={i} className="truncate">• {g.species} {g.height}</div>
+                              ))}
+                              {coverage.missingGroups.length > 2 && <div>+ {coverage.missingGroups.length - 2} más...</div>}
+                          </div>
+                      )}
+
+                      {!isPartial && (
+                          <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                            <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                            {p.rating_average ? Number(p.rating_average).toFixed(1) : 'Nuevo'}
+                            {typeof p.rating_count === 'number' && ` (${p.rating_count})`}
+                          </div>
+                      )}
                     </div>
                   </div>
                 </button>
               );
             })}
           </div>
-        </div>
+        )}
+      </div>
 
         {/* Calendario fijo y horas */}
         {selectedProvider && (

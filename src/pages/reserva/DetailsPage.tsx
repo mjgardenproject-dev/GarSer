@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useBooking } from "../../contexts/BookingContext";
-import { ChevronLeft, Camera, Upload, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info } from 'lucide-react';
+import { ChevronLeft, Camera, Upload, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Shovel, Bug, Eye, EyeOff, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, estimateServiceAutoQuote } from '../../utils/aiPricingEstimator';
 
@@ -32,11 +33,69 @@ const PALM_GROUP_B = [
   'cycas revoluta (falsa palmera)'
 ];
 
+const compressImage = async (file: File): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      const maxDimension = 1920;
+
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+          resolve(file);
+          return;
+      }
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const compressedFile = new File([blob], file.name, {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          });
+          resolve(compressedFile);
+        } else {
+          resolve(file);
+        }
+      }, 'image/jpeg', 0.8);
+    };
+    
+    img.onerror = (error: Event | string) => {
+        URL.revokeObjectURL(url);
+        reject(error);
+    };
+    
+    img.src = url;
+  });
+};
+
 const DetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const { bookingData, setBookingData, saveProgress, setCurrentStep, updateServiceData, switchToService } = useBooking();
+  const [analysisError, setAnalysisError] = useState<{title: string, message: string, type: 'error' | 'warning'} | null>(null);
   
-  // Initialize state on mount when service changes
+  // --- NEW: Selective Analysis State ---
+  const [analyzedPhotoIndices, setAnalyzedPhotoIndices] = useState<Set<number>>(new Set());
+  const [photosToAnalyze, setPhotosToAnalyze] = useState<Set<number>>(new Set());
+  // -------------------------------------
   useEffect(() => {
     if (bookingData.serviceIds?.[0]) {
         switchToService(bookingData.serviceIds[0]);
@@ -45,13 +104,17 @@ const DetailsPage: React.FC = () => {
 
   // Initialize photos from uploadedPhotoUrls if available, otherwise from bookingData.photos
   // We need to keep this in sync with bookingData changes triggered by switchToService
-  const [photos, setPhotos] = useState<(File | string)[]>([]);
+    const [photos, setPhotos] = useState<(File | string)[]>([]);
+  const [uploadingIndices, setUploadingIndices] = useState<Set<number>>(new Set());
   
   useEffect(() => {
+      // Skip sync if currently uploading
+      if (uploadingIndices.size > 0) return;
+
       if (bookingData.photos && bookingData.photos.length > 0) setPhotos(bookingData.photos);
       else if (bookingData.uploadedPhotoUrls && bookingData.uploadedPhotoUrls.length > 0) setPhotos(bookingData.uploadedPhotoUrls);
       else setPhotos([]);
-  }, [bookingData.photos, bookingData.uploadedPhotoUrls]);
+  }, [bookingData.photos, bookingData.uploadedPhotoUrls, uploadingIndices.size]);
 
   const [description, setDescription] = useState(bookingData.description);
   
@@ -71,8 +134,95 @@ const DetailsPage: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // New Debug States for specific services
+  const [debugHedgeHeight, setDebugHedgeHeight] = useState<string>('');
+  const [debugHedgeType, setDebugHedgeType] = useState<string>('');
+  const [debugHedgeAccess, setDebugHedgeAccess] = useState<string>('normal');
+  const [debugTreePruningType, setDebugTreePruningType] = useState<string>('structural');
+  const [debugTreeAccess, setDebugTreeAccess] = useState<string>('normal');
+  const [debugTreeHours, setDebugTreeHours] = useState<string>('');
+  const [debugShrubType, setDebugShrubType] = useState<string>('');
+  const [debugShrubSize, setDebugShrubSize] = useState<string>('');
+  const [debugClearingType, setDebugClearingType] = useState<string>('');
+  const [debugFumigationType, setDebugFumigationType] = useState<string>('');
+
   const [debugPalmGroups, setDebugPalmGroups] = useState<Array<{species: string, height: string, quantity: number, state: string}>>([]);
   const [showWasteModal, setShowWasteModal] = useState(false);
+  const [showRetryModal, setShowRetryModal] = useState(false);
+  const [isImageStackExpanded, setIsImageStackExpanded] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Escaneando terreno...');
+
+  useEffect(() => {
+    if (analyzing) {
+      const messages = [
+        "Escaneando terreno...",
+        "Detectando plantas...",
+        "Calculando dimensiones...",
+        "Analizando densidad...",
+        "Estimando trabajo..."
+      ];
+      let i = 0;
+      setLoadingMessage(messages[0]);
+      const interval = setInterval(() => {
+        i = (i + 1) % messages.length;
+        setLoadingMessage(messages[i]);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [analyzing]);
+
+  // Helper to check if analysis has been performed
+  const isAnalysisComplete = React.useMemo(() => {
+    const hasAiTasks = bookingData.aiTasks && bookingData.aiTasks.length > 0;
+    const hasPalmGroups = bookingData.palmGroups && bookingData.palmGroups.length > 0 && bookingData.palmGroups.some(g => g.id.startsWith('ai-'));
+    // We can also check other service-specific groups if they have AI IDs
+    const hasLawnZones = bookingData.lawnZones && bookingData.lawnZones.some(z => z.id.startsWith('ai-'));
+    const hasHedgeZones = bookingData.hedgeZones && bookingData.hedgeZones.some(z => z.id.startsWith('ai-'));
+    const hasTreeGroups = bookingData.treeGroups && bookingData.treeGroups.some(z => z.id.startsWith('ai-'));
+    const hasShrubGroups = bookingData.shrubGroups && bookingData.shrubGroups.some(z => z.id.startsWith('ai-'));
+    const hasClearingZones = bookingData.clearingZones && bookingData.clearingZones.some(z => z.id.startsWith('ai-'));
+    const hasFumigationZones = bookingData.fumigationZones && bookingData.fumigationZones.some(z => z.id.startsWith('ai-'));
+
+    return hasAiTasks || hasPalmGroups || hasLawnZones || hasHedgeZones || hasTreeGroups || hasShrubGroups || hasClearingZones || hasFumigationZones;
+  }, [bookingData]);
+
+  const resetAnalysis = () => {
+      const resetData = {
+          aiTasks: [],
+          lawnZones: [],
+          hedgeZones: [],
+          treeGroups: [],
+          shrubGroups: [],
+          clearingZones: [],
+          fumigationZones: [],
+          palmGroups: [],
+          estimatedHours: 0,
+          aiQuantity: 0,
+          aiDifficulty: 1
+      };
+      setBookingData(resetData);
+      
+      if (bookingData.serviceIds?.[0]) {
+           updateServiceData(bookingData.serviceIds[0], resetData);
+      }
+      setIsImageStackExpanded(false);
+  };
+
+  // --- DEBUG TOOL STATE ---
+  interface AnalysisDebugInfo {
+    service: string;
+    model: string;
+    promptInputs: any;
+    rawResponse: any;
+    parsedResponse: any;
+    finalAnalysisData: any;
+    errors: any[];
+    timestamp: string;
+  }
+
+  const [debugLogs, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
+  const [showDebugPanel, setShowDebugPanel] = useState(import.meta.env.DEV || false);
+  // -----------------------
 
   // Auto-resume analysis if needed
   useEffect(() => {
@@ -168,6 +318,9 @@ const DetailsPage: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
+    
+    // Clear previous analysis errors when new photos are added
+    setAnalysisError(null);
 
     const files = Array.from(e.dataTransfer.files).filter(file => 
       file.type.startsWith('image/')
@@ -179,53 +332,104 @@ const DetailsPage: React.FC = () => {
     }
 
     // Add files to state first for immediate UI feedback
-    const newPhotos = [...photos, ...files];
-    setPhotos(newPhotos);
+    const startIndex = photos.length;
+    // Use functional update to ensure we don't lose previous state if multiple drops happen quickly
+    // (though drag-drop is usually sequential user action)
+    setPhotos(prev => [...prev, ...files]);
 
-    // Upload files immediately
+    // Mark indices as uploading
+    setUploadingIndices(prev => {
+        const next = new Set(prev);
+        files.forEach((_, i) => next.add(startIndex + i));
+        return next;
+    });
+
+    // Add new indices to analysis queue (pending by default)
+    setPhotosToAnalyze(prev => {
+        const next = new Set(prev);
+        files.forEach((_, i) => next.add(startIndex + i));
+        return next;
+    });
+
+    // Prepare local mutable state for incremental updates
+    // We start with the current known state plus placeholders for new files
+    // Note: bookingData might be slightly stale if a re-render is pending, 
+    // but typically handleDrop runs on stable state.
     const currentUrls = [...(bookingData.uploadedPhotoUrls || [])];
-    // Ensure currentUrls has same length as original photos to match indices
-    while(currentUrls.length < photos.length) currentUrls.push('');
+    while(currentUrls.length < startIndex) currentUrls.push(''); // Fill gaps if any
+    files.forEach(() => currentUrls.push('')); // Add placeholders for new files
 
-    const uploadPromises = files.map(async (file, i) => {
-        const globalIndex = photos.length + i;
-        const url = await uploadFile(file, globalIndex);
-        if (url) {
-            // Update the specific index in the state to be the URL instead of File
-            // We need to do this carefully to avoid race conditions if possible, 
-            // but for now we'll just update context and let state follow if needed or mix them
-            return { index: globalIndex, url };
+    // We also need to track the mixed array of File|string for local state updates
+    // We can't easily get the "current" photos from state inside the loop without functional updates,
+    // but we can maintain a local shadow copy that assumes we started from `photos` + `files`.
+    const localPhotosState = [...photos, ...files];
+
+    files.forEach(async (file, i) => {
+        const globalIndex = startIndex + i;
+        
+        try {
+            const compressedFile = await compressImage(file);
+            const url = await uploadFile(compressedFile, globalIndex);
+            
+            if (url) {
+                // Update local tracking variables
+                currentUrls[globalIndex] = url;
+                localPhotosState[globalIndex] = url;
+
+                // 1. Update uploading status
+                setUploadingIndices(prev => {
+                    const next = new Set(prev);
+                    next.delete(globalIndex);
+                    return next;
+                });
+
+                // 2. Update photos state
+                setPhotos(prev => {
+                    const next = [...prev];
+                    // Ensure we don't go out of bounds if state changed unexpectedly, though unlikely with indices
+                    if (next.length > globalIndex) {
+                        next[globalIndex] = url;
+                    }
+                    return next;
+                });
+
+                // 3. Update global booking data incrementally
+                setBookingData({ uploadedPhotoUrls: [...currentUrls] });
+                
+                // 4. Update service specific data
+                if (bookingData.serviceIds?.[0]) {
+                    updateServiceData(bookingData.serviceIds[0], {
+                        uploadedPhotoUrls: [...currentUrls],
+                        // We filter for Files to match the type expectation, 
+                        // but effectively we are saving the progress of URLs
+                        photos: localPhotosState.filter(p => p instanceof File) 
+                    });
+                }
+            } else {
+                // Handle upload failure (remove spinner)
+                setUploadingIndices(prev => {
+                    const next = new Set(prev);
+                    next.delete(globalIndex);
+                    return next;
+                });
+            }
+        } catch (e) {
+            console.error('Error uploading file:', e);
+            setUploadingIndices(prev => {
+                const next = new Set(prev);
+                next.delete(globalIndex);
+                return next;
+            });
         }
-        return null;
     });
-
-    // Wait for uploads and update context
-    const results = await Promise.all(uploadPromises);
-    const updatedUrls = [...currentUrls];
-    const updatedPhotosState = [...newPhotos];
-
-    results.forEach(res => {
-        if (res) {
-            updatedUrls[res.index] = res.url;
-            updatedPhotosState[res.index] = res.url; // Replace File with URL in state
-        }
-    });
-
-    setPhotos(updatedPhotosState);
     
-    // Explicitly update per-service data
-    if (bookingData.serviceIds?.[0]) {
-        updateServiceData(bookingData.serviceIds[0], {
-            uploadedPhotoUrls: updatedUrls,
-            photos: updatedPhotosState.filter(p => p instanceof File) // Best effort, though URLs are primary
-        });
-    }
-    
-    setBookingData({ uploadedPhotoUrls: updatedUrls });
     saveProgress();
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Clear previous analysis errors
+    setAnalysisError(null);
+
     const files = Array.from(e.target.files || []).filter(file => 
       file.type.startsWith('image/')
     );
@@ -236,51 +440,143 @@ const DetailsPage: React.FC = () => {
     }
 
     // Add files to state first for immediate UI feedback
-    const newPhotos = [...photos, ...files];
-    setPhotos(newPhotos);
+    const startIndex = photos.length;
+    setPhotos(prev => [...prev, ...files]);
 
-    // Upload files immediately
-    const currentUrls = [...(bookingData.uploadedPhotoUrls || [])];
-    // Ensure currentUrls has same length as original photos to match indices
-    while(currentUrls.length < photos.length) currentUrls.push('');
-
-    const uploadPromises = files.map(async (file, i) => {
-        const globalIndex = photos.length + i;
-        const url = await uploadFile(file, globalIndex);
-        if (url) return { index: globalIndex, url };
-        return null;
+    // Mark indices as uploading
+    setUploadingIndices(prev => {
+        const next = new Set(prev);
+        files.forEach((_, i) => next.add(startIndex + i));
+        return next;
     });
 
-    const results = await Promise.all(uploadPromises);
-    const updatedUrls = [...currentUrls];
-    const updatedPhotosState = [...newPhotos];
+    // Auto-select new photos for analysis
+    setPhotosToAnalyze(prev => {
+        const next = new Set(prev);
+        files.forEach((_, i) => next.add(startIndex + i));
+        return next;
+    });
 
-    results.forEach(res => {
-        if (res) {
-            updatedUrls[res.index] = res.url;
-            updatedPhotosState[res.index] = res.url; // Replace File with URL in state
+    // Prepare local mutable state for incremental updates
+    const currentUrls = [...(bookingData.uploadedPhotoUrls || [])];
+    while(currentUrls.length < startIndex) currentUrls.push('');
+    files.forEach(() => currentUrls.push(''));
+
+    const localPhotosState = [...photos, ...files];
+
+    files.forEach(async (file, i) => {
+        const globalIndex = startIndex + i;
+        try {
+            const compressedFile = await compressImage(file);
+            const url = await uploadFile(compressedFile, globalIndex);
+            
+            if (url) {
+                // Update local tracking variables
+                currentUrls[globalIndex] = url;
+                localPhotosState[globalIndex] = url;
+
+                // 1. Update uploading status
+                setUploadingIndices(prev => {
+                    const next = new Set(prev);
+                    next.delete(globalIndex);
+                    return next;
+                });
+
+                // 2. Update photos state
+                setPhotos(prev => {
+                    const next = [...prev];
+                    if (next.length > globalIndex) {
+                        next[globalIndex] = url;
+                    }
+                    return next;
+                });
+
+                // 3. Update global booking data incrementally
+                setBookingData({ uploadedPhotoUrls: [...currentUrls] });
+
+                // 4. Update service specific data
+                if (bookingData.serviceIds?.[0]) {
+                    updateServiceData(bookingData.serviceIds[0], {
+                        uploadedPhotoUrls: [...currentUrls],
+                        photos: localPhotosState.filter(p => p instanceof File)
+                    });
+                }
+            } else {
+                 setUploadingIndices(prev => {
+                    const next = new Set(prev);
+                    next.delete(globalIndex);
+                    return next;
+                });
+            }
+        } catch (e) {
+            console.error('Error uploading file:', e);
+            setUploadingIndices(prev => {
+                const next = new Set(prev);
+                next.delete(globalIndex);
+                return next;
+            });
         }
     });
 
-    setPhotos(updatedPhotosState);
-    
-    // Explicitly update per-service data
-    if (bookingData.serviceIds?.[0]) {
-        updateServiceData(bookingData.serviceIds[0], {
-            uploadedPhotoUrls: updatedUrls,
-            photos: updatedPhotosState.filter(p => p instanceof File)
-        });
-    }
-
-    setBookingData({ uploadedPhotoUrls: updatedUrls });
+    // Remove resetAnalysis to persist previous results when adding new photos
+    // if (isAnalysisComplete) resetAnalysis();
     saveProgress();
   };
 
-  const removePhoto = (index: number) => {
-    const newPhotos = photos.filter((_, i) => i !== index);
+  const togglePending = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPhotosToAnalyze(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+        // If we mark as pending, we might want to clear 'analyzed' status?
+        // Or just keep it as 're-analyze'
+        setAnalyzedPhotoIndices(prevAnalyzed => {
+            const nextAnalyzed = new Set(prevAnalyzed);
+            nextAnalyzed.delete(index);
+            return nextAnalyzed;
+        });
+      }
+      return next;
+    });
+  };
+
+  const calculateTotalTreeHours = (groups: any[]) => {
+    const total = groups.reduce((acc: number, t: any) => {
+      // Use the AI estimated hours stored in the group, fallback to 1.5 if missing
+      const h = Number(t.estimatedHours || t._estimatedHours || 1.5);
+      return acc + h;
+    }, 0);
+    return Math.max(1, Math.ceil(total));
+  };
+
+  const removePhoto = (indexToRemove: number) => {
+    // 1. Remove from 'photos' array
+    const newPhotos = photos.filter((_, i) => i !== indexToRemove);
     setPhotos(newPhotos);
     
-    const newUrls = (bookingData.uploadedPhotoUrls || []).filter((_, i) => i !== index);
+    // 2. Remove from 'analyzed' and 'toAnalyze' sets (adjusting indices)
+    setAnalyzedPhotoIndices(prev => {
+        const next = new Set<number>();
+        prev.forEach(idx => {
+            if (idx < indexToRemove) next.add(idx);
+            else if (idx > indexToRemove) next.add(idx - 1);
+        });
+        return next;
+    });
+
+    setPhotosToAnalyze(prev => {
+        const next = new Set<number>();
+        prev.forEach(idx => {
+            if (idx < indexToRemove) next.add(idx);
+            else if (idx > indexToRemove) next.add(idx - 1);
+        });
+        return next;
+    });
+    
+    const newUrls = (bookingData.uploadedPhotoUrls || []).filter((_, i) => i !== indexToRemove);
     setBookingData({ uploadedPhotoUrls: newUrls });
     
     // Explicitly update per-service data
@@ -291,15 +587,33 @@ const DetailsPage: React.FC = () => {
         });
     }
     
-    saveProgress();
+    // 3. Remove associated tree results (Bidirectional Deletion)
+    // ONLY for Tree Service, and ONLY if we are using the new logic
+    if (debugService === 'Poda de árboles' && bookingData.treeGroups) {
+        // We need to know which group corresponds to the deleted photo index.
+        // But since indices shift, we rely on the fact that `runAIAnalysis` maps index to group.
+        // However, we don't store the index on the group permanently (we use photoUrl).
+        
+        // Strategy: Match by URL (Robust)
+        // Get the URL that is being removed
+        const removedUrl = bookingData.uploadedPhotoUrls?.[indexToRemove];
+        
+        if (removedUrl) {
+            const n = bookingData.treeGroups.filter(g => !g.photoUrls?.includes(removedUrl));
+            const newHours = calculateTotalTreeHours(n);
+            setBookingData({ treeGroups: n, estimatedHours: newHours });
+            if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: n, estimatedHours: newHours });
+        }
+    }
     
+    // Legacy logic for other services (Palms, Shrubs)
     // Update palmGroups when a photo is removed to keep indices in sync
     if (debugService === 'Poda de palmeras' && bookingData.palmGroups) {
         const newGroups = bookingData.palmGroups
-            .filter(g => g.imageIndex !== index)
+            .filter(g => g.imageIndex !== indexToRemove)
             .map(g => ({
                 ...g,
-                imageIndex: (g.imageIndex !== undefined && g.imageIndex > index) ? g.imageIndex - 1 : g.imageIndex
+                imageIndex: (g.imageIndex !== undefined && g.imageIndex > indexToRemove) ? g.imageIndex - 1 : g.imageIndex
             }));
         
         const totalHours = newGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
@@ -312,6 +626,32 @@ const DetailsPage: React.FC = () => {
              });
         }
     }
+
+    // Update shrubGroups (Advanced Deletion)
+    if (debugService === 'Poda de plantas' && bookingData.shrubGroups) {
+        let newGroups = bookingData.shrubGroups.map(g => {
+            if (!g.imageIndices) return g;
+            const newIndices = g.imageIndices
+                .filter(idx => idx !== indexToRemove)
+                .map(idx => idx > indexToRemove ? idx - 1 : idx);
+            return { ...g, imageIndices: newIndices };
+        });
+
+        // Remove groups that lost all their source images (only for AI groups)
+        newGroups = newGroups.filter(g => {
+             const isAI = g.id.startsWith('ai-');
+             if (isAI && g.imageIndices && g.imageIndices.length === 0) return false;
+             return true;
+        });
+
+        // Recalculate hours (approx logic, provider page does real calc)
+        const totalHours = newGroups.reduce((acc, g) => acc + (Math.ceil(g.quantity * 0.15) || 1), 0);
+
+        setBookingData({ shrubGroups: newGroups, estimatedHours: totalHours });
+        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups, estimatedHours: totalHours });
+    }
+    
+    saveProgress();
   };
 
   const handleContinue = () => {
@@ -356,15 +696,35 @@ const DetailsPage: React.FC = () => {
       setBookingData({ isAnalyzing: true });
       saveProgress();
 
+      // Filter photos to analyze based on photosToAnalyze set
+      const indicesToProcess = Array.from(photosToAnalyze).sort((a, b) => a - b);
+      
+      // If no new photos to analyze, do nothing or just re-run all if forced?
+      // Spec says "Analyze X new photos", so we respect the set.
+      if (indicesToProcess.length === 0) {
+          setAnalyzing(false);
+          setBookingData({ isAnalyzing: false });
+          return;
+      }
+
       const photoUrls: string[] = [];
       const uploadsToPerform: { file: File, index: number }[] = [];
 
-      // Sort existing URLs and identify files that need upload
-      photos.forEach((p, i) => {
-          if (typeof p === 'string') {
-              photoUrls[i] = p; // Keep index position
+      // Only process selected indices
+      indicesToProcess.forEach(i => {
+          const p = photos[i];
+          if (!p) return;
+          
+          // Check if already uploaded
+          const existingUrl = bookingData.uploadedPhotoUrls?.[i];
+          if (existingUrl) {
+              photoUrls[i] = existingUrl; // Keep original index position in sparse array
           } else {
-              uploadsToPerform.push({ file: p, index: i });
+              if (typeof p === 'string') {
+                  photoUrls[i] = p;
+              } else {
+                  uploadsToPerform.push({ file: p, index: i });
+              }
           }
       });
 
@@ -383,78 +743,257 @@ const DetailsPage: React.FC = () => {
         }));
       }
 
-      // Filter out undefined holes if any (though logic should prevent holes)
-      const validUrls = photoUrls.filter(Boolean);
+      // Filter out undefined holes, but we need to map results back to original indices?
+      // The AI takes a list of URLs. It returns items with 'indice_imagen'.
+      // If we send a filtered list [url_A, url_C] (indices 0 and 2),
+      // the AI sees them as index 0 and 1 relative to the sent list.
+      // WE MUST MAP THEM BACK.
+      
+      // Construct the payload URLs list
+      const targetUrls = indicesToProcess.map(i => photoUrls[i]).filter(Boolean);
+      const validUrls = targetUrls; // Alias for legacy code compatibility
+      
+      // Map AI relative index (0, 1, 2) -> Global Photo Index (0, 2, 5)
+      const indexMap = targetUrls.map((_, relativeIdx) => indicesToProcess[relativeIdx]);
 
-      if (photos.length > 0 && validUrls.length === 0) {
+      if (targetUrls.length === 0) {
         setAnalyzing(false);
         setBookingData({ isAnalyzing: false });
-        saveProgress();
-        alert('Error al subir las imágenes. Por favor, verifica tu conexión o inténtalo de nuevo.');
+        alert('Error al procesar las imágenes seleccionadas.');
         return;
       }
 
-      const primaryServiceName = bookingData.serviceIds.length === 1 ? undefined : undefined;
-      const firstImageUrl = validUrls[0];
-      if (bookingData.serviceIds.length === 1 && firstImageUrl) {
-        const svc = bookingData.serviceIds[0];
-        const { data: svcRow } = await supabase.from('services').select('name').eq('id', svc).maybeSingle();
-        const svcName = (svcRow as any)?.name as string | undefined;
-        // Evitar AutoQuote para servicios con prompts complejos (como césped o palmeras)
-        // ya que estimateServiceAutoQuote espera un JSON plano y nuestros prompts devuelven { tareas: [] }
-        if (svcName && !svcName.toLowerCase().includes('césped') && !svcName.toLowerCase().includes('palmera')) {
-          const auto = await estimateServiceAutoQuote({ service: svcName, imageUrl: firstImageUrl, description: '', model: aiModel });
-          if (auto?.analysis && auto?.result) {
-            const qty = Math.max(0, Number(auto.analysis.cantidad || 0));
-            const unit = String(auto.analysis.unidad || '');
-            const diff = Number(auto.analysis.dificultad || 1);
-            const hours = Math.max(0, Number(auto.result.tiempo_estimado_horas || 0));
-            setBookingData({ estimatedHours: Math.ceil(hours), aiQuantity: qty, aiUnit: unit, aiDifficulty: diff, isAnalyzing: false });
-            saveProgress();
-            return;
-          }
-        }
-      }
+      // ---------------------------------------------------------
+      // DEBUG: Capture inputs
+      const debugInputs = {
+        description: '',
+        photoCount: targetUrls.length,
+        selectedServiceIds: bookingData.serviceIds,
+        photoUrls: targetUrls,
+        serviceName: debugService,
+        model: aiModel
+      };
+      // ---------------------------------------------------------
 
       const res = await estimateWorkWithAI({ 
-        description: '', // Don't send user notes to AI 
-        photoCount: photos.length, 
+        description: '', 
+        photoCount: targetUrls.length, 
         selectedServiceIds: bookingData.serviceIds, 
-        photoUrls: validUrls,
+        photoUrls: targetUrls,
         serviceName: debugService,
         model: aiModel
       });
       
+      // ---------------------------------------------------------
+      // DEBUG: Initialize Debug Info
+      const currentDebugInfo: AnalysisDebugInfo = {
+        service: debugService,
+        model: aiModel,
+        promptInputs: debugInputs,
+        rawResponse: res.rawResponse,
+        parsedResponse: res.tareas || res.palmas || res.arboles,
+        finalAnalysisData: {},
+        errors: [],
+        timestamp: new Date().toISOString()
+      };
+      
+      // Mark these photos as analyzed
+      setAnalyzedPhotoIndices(prev => {
+          const next = new Set(prev);
+          indicesToProcess.forEach(i => next.add(i));
+          return next;
+      });
+      
+      // Clear them from pending queue
+      setPhotosToAnalyze(prev => {
+          const next = new Set(prev);
+          indicesToProcess.forEach(i => next.delete(i));
+          return next;
+      });
+      
+      // We do NOT reset previous results here. We only filter them during merging.
+      
+      // ... logic continues in next block ...
+      // Set debug info immediately so user sees raw data even if processing fails/finds nothing
+      setDebugLogs(currentDebugInfo);
+      // ---------------------------------------------------------
+
       // Handle Palm Analysis Results
       if (res.palmas && res.palmas.length > 0) {
-        const newGroups = res.palmas.map((p, idx) => ({
-            id: `ai-${Date.now()}-${idx}`,
-            species: p.especie,
-            height: p.altura,
-            quantity: 1, // Default to 1, user must confirm
-            state: p.estado || 'normal',
-            wasteRemoval: true,
-            photoUrl: validUrls[p.indice_imagen] || undefined,
-            imageIndex: p.indice_imagen
-        }));
-        
-        // Calculate estimated hours for the new groups
-        const totalHours = newGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
-        
-        setBookingData({ 
-            palmGroups: newGroups,
-            estimatedHours: totalHours,
-            isAnalyzing: false
+        const newGroups = res.palmas.map((p, idx) => {
+             // Map AI relative index back to global index
+             const globalIndex = indexMap[p.indice_imagen];
+             const originalUrl = photoUrls[globalIndex];
+             
+             return {
+                id: `ai-${Date.now()}-${idx}`,
+                species: p.especie,
+                height: p.altura,
+                quantity: 1, // Default to 1, user must confirm
+                state: p.estado || 'normal',
+                wasteRemoval: true,
+                photoUrl: originalUrl || undefined,
+                imageIndex: globalIndex,
+                analysisLevel: p.nivel_analisis,
+                observations: p.observaciones
+            };
         });
         
+        // Merge with existing palms not in current analysis batch
+        const oldGroups = (bookingData.palmGroups || []).filter(g => {
+            // Keep if imageIndex is NOT in indicesToProcess
+            return g.imageIndex !== undefined && !indicesToProcess.includes(g.imageIndex);
+        });
+        
+        const mergedGroups = [...oldGroups, ...newGroups];
+        
+        // Calculate estimated hours for the new groups
+        const totalHours = mergedGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
+        
+        const palmPayload = { 
+            palmGroups: mergedGroups,
+            estimatedHours: totalHours,
+            isAnalyzing: false
+        };
+
+        setBookingData(palmPayload);
+        
         if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], {
-                 palmGroups: newGroups,
-                 estimatedHours: totalHours,
-                 isAnalyzing: false // Persist analysis state
-             });
+             updateServiceData(bookingData.serviceIds[0], palmPayload);
         }
         
+        // DEBUG: Update Final Data
+        currentDebugInfo.finalAnalysisData = palmPayload;
+        setDebugLogs({...currentDebugInfo}); // Force update
+
+        saveProgress();
+        setAnalyzing(false);
+        return;
+      }
+
+      // Handle Tree Analysis Results
+      // NEW: Check for empty detection to prevent hallucinations
+      if (debugService === 'Poda de árboles') {
+          if (!res.arboles || res.arboles.length === 0) {
+              setAnalyzing(false);
+              setAnalysisError({
+                  title: 'No se han detectado árboles',
+                  message: 'La inteligencia artificial no ha encontrado árboles claros en la imagen. Por favor, asegúrate de que el árbol sea el protagonista de la foto.',
+                  type: 'warning'
+              });
+              
+              // DEBUG: Update Final Data with error
+              currentDebugInfo.errors.push('No trees detected (AI returned empty list)');
+              setDebugLogs({...currentDebugInfo});
+              return;
+          }
+      }
+
+      if (res.arboles && res.arboles.length > 0) {
+        const newTreeGroups = res.arboles.map((t: any, idx: number) => {
+            // Calculate heuristic height range: H-2m to H+1m (min 1m)
+            const h = Number(t.altura_m || t.altura_aprox_m || 3);
+            const minH = Math.max(1, Math.floor(h - 2));
+            const maxH = Math.ceil(h + 1);
+            const aiHeightRange = `${minH}-${maxH}m`;
+
+            // Map height to standard buckets for pricing
+            let standardHeight = '<3m';
+            if (h < 3) standardHeight = '<3m';
+            else if (h < 6) standardHeight = '3-6m';
+            else if (h < 9) standardHeight = '6-9m';
+            else standardHeight = '>9m';
+
+            // Detect failure
+            const isFailed = t.nivel_analisis === 3 || t.horas_estimadas === 0;
+
+            // Map AI relative index back to global index
+            const globalIndex = indexMap[t.indice_imagen];
+            const originalUrl = photoUrls[globalIndex];
+
+            return {
+                id: `ai-tree-${Date.now()}-${idx}`,
+                type: t.tipo_arbol || 'Decorativo',
+                height: standardHeight, // Standard bucket for pricing
+                aiHeightRange: aiHeightRange, // Display range
+                pruningType: t.tipo_poda === 'shaping' ? 'shaping' as const : 'structural' as const,
+                access: (() => {
+                    // Normalize input string
+                    const ta = (t.tipo_acceso || '').toLowerCase();
+                    const da = (t.dificultad_acceso || '').toLowerCase();
+                    
+                    // Check new verbose values
+                    if (ta.includes('trepa') || ta.includes('altura')) return 'dificil';
+                    if (ta.includes('escalera')) return 'medio';
+                    if (ta.includes('suelo')) return 'normal';
+                    
+                    // Fallback to legacy short values
+                    if (da === 'dificil' || ta === 'dificil') return 'dificil';
+                    if (da === 'medio' || ta === 'medio') return 'medio';
+                    
+                    return 'normal';
+                })() as 'normal' | 'medio' | 'dificil',
+                quantity: 1,
+                wasteRemoval: true,
+                photoUrls: [originalUrl].filter(Boolean),
+                analysisLevel: t.nivel_analisis,
+                observations: t.observaciones,
+                isFailed: isFailed, // Mark as failed
+                estimatedHours: Number(t.horas_estimadas) || 1.5, // Store explicit AI hours
+                _estimatedHours: Number(t.horas_estimadas) || 1.5 // Keep internal backup
+            };
+        });
+        
+        // MERGE LOGIC:
+        // Filter out old groups that came from the photos we just re-analyzed
+        const oldGroups = (bookingData.treeGroups || []).filter(g => {
+            if (!g.photoUrls || g.photoUrls.length === 0) return true;
+            const groupUrl = g.photoUrls[0];
+            return !targetUrls.includes(groupUrl);
+        });
+        
+        const mergedGroups = [...oldGroups, ...newTreeGroups];
+
+        // Recalculate Total Hours (Valid Only)
+        // Ensure old groups have estimatedHours (fallback if missing)
+        const mergedGroupsWithHours = mergedGroups.map(g => ({
+            ...g,
+            estimatedHours: (g as any).estimatedHours || (g as any)._estimatedHours || 1.5
+        }));
+        
+        const validTrees = mergedGroupsWithHours.filter((t: any) => !t.isFailed);
+        
+        // Recalculate Total Hours using AI values
+        const totalTreeHours = calculateTotalTreeHours(validTrees);
+        
+        const treePayload = { 
+            treeGroups: mergedGroupsWithHours, // Include ALL trees (valid + failed)
+            estimatedHours: totalTreeHours,
+            isAnalyzing: false
+        };
+
+        // Check for any failures in the CURRENT analysis run
+        const failedCount = newTreeGroups.filter((t: any) => t.isFailed).length;
+        if (failedCount > 0) {
+             setAnalysisError({
+                  title: `No se ha podido analizar ${failedCount} foto${failedCount !== 1 ? 's' : ''}`,
+                  message: '', // User requested minimal text
+                  type: 'warning'
+              });
+        }
+        
+        setBookingData(prev => ({
+            ...prev,
+            ...treePayload
+        }));
+
+        if (bookingData.serviceIds?.[0]) {
+            updateServiceData(bookingData.serviceIds[0], treePayload);
+        }
+        
+        currentDebugInfo.finalAnalysisData = treePayload;
+        setDebugLogs({...currentDebugInfo}); 
+
         saveProgress();
         setAnalyzing(false);
         return;
@@ -462,59 +1001,223 @@ const DetailsPage: React.FC = () => {
 
       const tareas = Array.isArray(res.tareas) ? res.tareas : [];
       if (tareas.length > 0) {
-        const norm = (s: string) => (s || '').toLowerCase();
-        const perfHours = (t: any) => {
-          const tipo = norm(t.tipo_servicio || '');
-          const estado = norm(t.estado_jardin || '');
-          const mult = estado.includes('muy') ? 1.6 : estado.includes('descuidado') ? 1.3 : 1.0;
-          let h = 0;
-          if (tipo.includes('césped') || tipo.includes('cesped')) {
-            h = (Number(t.superficie_m2 || 0) / 150) * mult;
-          } else if (tipo.includes('setos') || tipo.includes('seto')) {
-            h = (Number(t.superficie_m2 || 0) / 8.4) * mult;
-          } else if (tipo.includes('poda de árboles') || tipo.includes('poda de arboles') || (tipo.includes('poda') && (tipo.includes('árbol') || tipo.includes('arbol')))) {
-            h = Number(t.numero_plantas || 0) * 1.0 * mult;
-          } else if (tipo.includes('poda de plantas') || (tipo.includes('poda') && tipo.includes('planta'))) {
-            h = Number(t.numero_plantas || 0) * 0.15 * mult;
-          } else if (tipo.includes('malas hierbas') || tipo.includes('hierbas') || tipo.includes('maleza') || tipo.includes('labrar')) {
-            h = (Number(t.superficie_m2 || 0) / 20) * mult;
-          } else if (tipo.includes('fumig')) {
-            h = Number(t.numero_plantas || 0) * 0.05 * mult;
-          }
-          return Math.max(0, h);
-        };
-        const total = Math.ceil(tareas.reduce((acc, t) => acc + perfHours(t), 0));
-        const first = tareas[0];
-        const qty = Number(first.superficie_m2 ?? first.numero_plantas ?? 0);
-        const unit = first.superficie_m2 != null ? 'm2' : 'plantas';
-        const diff = first.estado_jardin?.includes('muy') ? 3 : first.estado_jardin?.includes('descuidado') ? 2 : 1;
-        const species = first.especie_cesped || undefined;
+        let totalHours = 0;
+        let updatePayload: any = { isAnalyzing: false };
         
-        setBookingData({ 
-            aiTasks: tareas, 
-            estimatedHours: total, 
-            aiQuantity: qty, 
-            aiUnit: unit, 
-            aiDifficulty: diff, 
-            lawnSpecies: species,
-            isAnalyzing: false 
+        // Initialize accumulator arrays
+        const newLawnZones: any[] = [];
+        const newHedgeZones: any[] = [];
+        const newTreeGroups: any[] = [];
+        const newShrubGroups: any[] = [];
+        const newClearingZones: any[] = [];
+        const newFumigationZones: any[] = [];
+        
+        let totalAiQty = 0;
+
+        tareas.forEach((t, idx) => {
+            const norm = (s: string) => (s || '').toLowerCase();
+            const normService = norm(debugService || t.tipo_servicio);
+
+            if (normService.includes('césped') || normService.includes('cesped')) {
+                const qty = Number(t.superficie_m2 || 0);
+                const state = t.estado_jardin || 'normal';
+                const mult = state.includes('muy') ? 1.6 : state.includes('descuidado') ? 1.3 : 1.0;
+                totalHours += Math.ceil((qty / 150) * mult);
+                totalAiQty += qty;
+                
+                newLawnZones.push({
+                    id: `ai-zone-${Date.now()}-${idx}`,
+                    species: t.especie_cesped || 'Césped estándar',
+                    state: state,
+                    quantity: qty,
+                    wasteRemoval: true,
+                    photoUrls: validUrls, // TODO: Map specific indices if available
+                    imageIndices: [],
+                    analysisLevel: t.nivel_analisis,
+                    observations: t.observaciones
+                });
+            } 
+            else if (normService.includes('seto')) {
+                const len = Number(t.longitud_m || 0);
+                const height = Number(t.altura_m || 0);
+                const hCat = height < 1 ? '<1m' : height <= 2 ? '1-2m' : '>2m';
+                const diff = t.dificultad_acceso === 3 ? 'dificil' : t.dificultad_acceso === 2 ? 'medio' : 'normal';
+                
+                const hMod = height > 2 ? 1.5 : 1;
+                const dMod = diff === 'dificil' ? 1.5 : diff === 'medio' ? 1.2 : 1;
+                totalHours += Math.ceil((len / 10) * hMod * dMod) || 1;
+                totalAiQty += len;
+
+                newHedgeZones.push({
+                    id: `ai-hedge-${Date.now()}-${idx}`,
+                    type: t.tipo_seto || 'Seto Mixto/Otro',
+                    height: hCat,
+                    length: len,
+                    access: diff,
+                    wasteRemoval: true,
+                    photoUrls: validUrls,
+                    analysisLevel: t.nivel_analisis,
+                    observations: t.observaciones
+                });
+            }
+            else if (normService.includes('árbol') || normService.includes('arbol')) {
+                const qty = Number(t.cantidad || 0);
+                const height = Number(t.altura_aprox_m || 0);
+                const hCat = height < 3 ? '<3m' : height <= 6 ? '3-6m' : height <= 9 ? '6-9m' : '>9m';
+                
+                const perTree = height < 3 ? 0.5 : height <= 6 ? 1.5 : height <= 9 ? 3 : 5;
+                totalHours += Math.ceil(qty * perTree) || 1;
+                totalAiQty += qty;
+
+                newTreeGroups.push({
+                    id: `ai-tree-${Date.now()}-${idx}`,
+                    type: t.tipo_arbol || 'Decorativo',
+                    height: hCat,
+                    quantity: qty,
+                    access: 'normal',
+                    wasteRemoval: true,
+                    photoUrls: validUrls,
+                    analysisLevel: t.nivel_analisis,
+                    observations: t.observaciones
+                });
+            }
+            else if (normService.includes('poda de plantas')) {
+                const qty = Number(t.cantidad_estimada || 0);
+                
+                // Map AI size to new configuration
+                let size = 'Pequeño (hasta 1m)';
+                const aiSize = t.tamano_promedio || '';
+                if (aiSize.includes('Grande')) size = 'Grande (>2.5m)';
+                else if (aiSize.includes('Mediano')) size = 'Mediano (1-2.5m)';
+                
+                // Map AI type to new configuration
+                let type = 'Arbustos ornamentales';
+                const aiType = t.tipo_plantacion || '';
+                if (aiType.includes('Rosal')) type = 'Rosales y plantas florales';
+                else if (aiType.includes('Trepadora')) type = 'Trepadoras';
+                else if (aiType.includes('Cactus') || aiType.includes('Suculenta')) type = 'Cactus y suculentas grandes';
+
+                totalHours += Math.ceil(qty * 0.15) || 1; 
+                totalAiQty += qty;
+
+                newShrubGroups.push({
+                    id: `ai-shrub-${Date.now()}-${idx}`,
+                    type: type,
+                    size: size,
+                    quantity: qty,
+                    wasteRemoval: true,
+                    photoUrls: validUrls,
+                    analysisLevel: t.nivel_analisis,
+                    observations: t.observaciones,
+                    imageIndices: t.indices_imagenes || []
+                });
+            }
+            else if (normService.includes('malas hierbas') || normService.includes('maleza') || normService.includes('labrar')) {
+                const qty = Number(t.superficie_m2 || 0);
+                const density = t.densidad_maleza || 'Media';
+                const dMod = density === 'Alta' ? 2 : density === 'Media' ? 1.5 : 1;
+                
+                totalHours += Math.ceil((qty / 20) * dMod) || 1;
+                totalAiQty += qty;
+
+                newClearingZones.push({
+                    id: `ai-clearing-${Date.now()}-${idx}`,
+                    type: t.densidad_maleza === 'Alta' ? 'Cañaveral/Zarzas' : t.densidad_maleza === 'Baja' ? 'Maleza ligera' : 'Maleza densa',
+                    area: qty,
+                    wasteRemoval: true,
+                    photoUrls: validUrls,
+                    analysisLevel: t.nivel_analisis,
+                    observations: t.observaciones
+                });
+            }
+            else if (normService.includes('fumiga')) {
+                const qty = Number(t.cantidad_o_superficie || 0);
+                const unit = t.unidad || 'm2';
+                
+                if (unit === 'm2') totalHours += Math.ceil(qty / 100) || 1;
+                else totalHours += Math.ceil(qty * 0.1) || 1;
+                totalAiQty += qty;
+
+                newFumigationZones.push({
+                    id: `ai-fum-${Date.now()}-${idx}`,
+                    type: t.nivel_plaga === 'Curativo' ? 'Plaga activa' : 'Preventivo',
+                    area: qty,
+                    wasteRemoval: true,
+                    photoUrls: validUrls,
+                    analysisLevel: t.nivel_analisis,
+                    observations: t.observaciones
+                });
+            }
+            else {
+                // Fallback
+                totalAiQty += Number(t.superficie_m2 ?? t.numero_plantas ?? 0);
+                totalHours += 1;
+            }
         });
+
+        // Update Payload with accumulated results
+        if (newLawnZones.length > 0) {
+            updatePayload.lawnZones = newLawnZones;
+            if (!updatePayload.aiUnit) updatePayload.aiUnit = 'm2';
+        }
+        if (newHedgeZones.length > 0) {
+            updatePayload.hedgeZones = newHedgeZones;
+            if (!updatePayload.aiUnit) updatePayload.aiUnit = 'm';
+        }
+        if (newTreeGroups.length > 0) {
+            updatePayload.treeGroups = newTreeGroups;
+            if (!updatePayload.aiUnit) updatePayload.aiUnit = 'u';
+        }
+        if (newShrubGroups.length > 0) {
+            updatePayload.shrubGroups = newShrubGroups;
+            if (!updatePayload.aiUnit) updatePayload.aiUnit = 'u';
+        }
+        if (newClearingZones.length > 0) {
+            updatePayload.clearingZones = newClearingZones;
+            if (!updatePayload.aiUnit) updatePayload.aiUnit = 'm2';
+        }
+        if (newFumigationZones.length > 0) {
+            updatePayload.fumigationZones = newFumigationZones;
+            if (!updatePayload.aiUnit) updatePayload.aiUnit = 'u'; // Default to unit if mixed
+        }
+        
+        // General fallback if mixed or unknown
+        if (totalAiQty > 0) updatePayload.aiQuantity = totalAiQty;
+        
+        updatePayload.estimatedHours = totalHours;
+        updatePayload.aiTasks = tareas;
+        
+        setBookingData(updatePayload);
         
         if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], {
-                 aiTasks: tareas,
-                 estimatedHours: total,
-                 aiQuantity: qty,
-                 aiUnit: unit,
-                 aiDifficulty: diff,
-                 lawnSpecies: species,
-                 isAnalyzing: false
-             });
+             updateServiceData(bookingData.serviceIds[0], updatePayload);
         }
+
+        // DEBUG: Update Final Data
+        currentDebugInfo.finalAnalysisData = updatePayload;
+        setDebugLogs({...currentDebugInfo}); // Force update
+        
+        saveProgress();
+      } else {
+        // No tasks found logic
+        const noTasksPayload = { 
+            isAnalyzing: false, 
+            aiQuantity: 0, 
+            estimatedHours: 0,
+            aiTasks: [] 
+        };
+        setBookingData(noTasksPayload);
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], noTasksPayload);
+        }
+        
+        // DEBUG: Update Final Data for empty result
+        currentDebugInfo.finalAnalysisData = { ...noTasksPayload, message: 'No tasks detected by AI' };
+        setDebugLogs({...currentDebugInfo}); // Force update
         
         saveProgress();
       }
-    } catch {
+    } catch (e) {
         setBookingData({ isAnalyzing: false });
         
         if (bookingData.serviceIds?.[0]) {
@@ -523,6 +1226,18 @@ const DetailsPage: React.FC = () => {
              });
         }
         
+        // DEBUG: Capture Error
+        setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
+            service: debugService,
+            model: aiModel,
+            promptInputs: {},
+            rawResponse: {},
+            parsedResponse: {},
+            finalAnalysisData: {},
+            errors: [e],
+            timestamp: new Date().toISOString()
+        });
+
         saveProgress();
     }
     finally {
@@ -577,6 +1292,8 @@ const DetailsPage: React.FC = () => {
 
   // --- NEW: Lawn Zone Logic ---
   const addLawnZone = () => {
+    // Clear analysis error when user interacts
+    setAnalysisError(null);
     const newZone = {
         id: `zone-${Date.now()}`,
         species: '',
@@ -749,6 +1466,449 @@ const DetailsPage: React.FC = () => {
       }
   };
 
+  // --- Hedge Logic ---
+  const addHedgeZone = () => {
+    const newZone = {
+        id: `hedge-${Date.now()}`,
+        type: 'Seto Mixto/Otro',
+        height: '1-2m',
+        length: 0,
+        access: 'normal' as const,
+        wasteRemoval: true,
+        photoUrls: [] as string[],
+        files: [] as File[]
+    };
+    const newZones = [...(bookingData.hedgeZones || []), newZone];
+    setBookingData({ hedgeZones: newZones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: newZones });
+    saveProgress();
+  };
+
+  const removeHedgeZone = (id: string) => {
+    if (!window.confirm('¿Eliminar esta zona?')) return;
+    const newZones = (bookingData.hedgeZones || []).filter(z => z.id !== id);
+    setBookingData({ hedgeZones: newZones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: newZones });
+    saveProgress();
+  };
+
+  const handleHedgeFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    const zones = [...(bookingData.hedgeZones || [])];
+    const idx = zones.findIndex(z => z.id === id);
+    if (idx === -1) return;
+
+    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
+    const urls = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
+    const validUrls = urls.filter((u): u is string => !!u);
+    
+    if (validUrls.length > 0) {
+        zones[idx].photoUrls = [...(zones[idx].photoUrls || []), ...validUrls];
+        setBookingData({ hedgeZones: zones });
+        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: zones });
+    }
+  };
+
+  const analyzeHedgeZone = async (id: string) => {
+      const zones = [...(bookingData.hedgeZones || [])];
+      const idx = zones.findIndex(z => z.id === id);
+      if (idx === -1) return;
+      const zone = zones[idx];
+      
+      try {
+          setAnalyzing(true);
+          const res = await estimateWorkWithAI({
+             description: '',
+             photoCount: zone.photoUrls?.length || 0,
+             selectedServiceIds: bookingData.serviceIds,
+             photoUrls: zone.photoUrls || [],
+             serviceName: 'Corte de setos a máquina',
+             model: aiModel
+          });
+          
+          if (res.tareas && res.tareas.length > 0) {
+              const t = res.tareas[0];
+              zone.type = t.tipo_seto || 'Seto Mixto/Otro';
+              zone.length = Number(t.longitud_m || 0);
+              const h = Number(t.altura_m || 0);
+              zone.height = h < 1 ? '<1m' : h <= 2 ? '1-2m' : '>2m';
+              zone.access = (t.dificultad_acceso === 3 ? 'dificil' : t.dificultad_acceso === 2 ? 'medio' : 'normal') as 'normal' | 'medio' | 'dificil';
+              zone.analysisLevel = t.nivel_analisis;
+              zone.observations = t.observaciones;
+          }
+          zones[idx] = zone;
+          setBookingData({ hedgeZones: zones });
+          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: zones });
+          saveProgress();
+      } catch (e) {
+          console.error(e);
+          alert('Error en el análisis');
+      } finally {
+          setAnalyzing(false);
+      }
+  };
+
+  // --- Tree Logic ---
+  const addTreeGroup = () => {
+    const newGroup = {
+        id: `tree-${Date.now()}`,
+        type: 'Decorativo',
+        height: '3-6m',
+        quantity: 1,
+        access: 'normal' as const,
+        wasteRemoval: true,
+        photoUrls: [] as string[],
+        files: [] as File[]
+    };
+    const newGroups = [...(bookingData.treeGroups || []), newGroup];
+    setBookingData({ treeGroups: newGroups });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: newGroups });
+    saveProgress();
+  };
+
+  const removeTreeGroup = (id: string) => {
+    if (!window.confirm('¿Eliminar este grupo?')) return;
+    const newGroups = (bookingData.treeGroups || []).filter(z => z.id !== id);
+    setBookingData({ treeGroups: newGroups });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: newGroups });
+    saveProgress();
+  };
+
+  const handleTreeFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    const groups = [...(bookingData.treeGroups || [])];
+    const idx = groups.findIndex(z => z.id === id);
+    if (idx === -1) return;
+
+    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
+    const urls = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
+    const validUrls = urls.filter((u): u is string => !!u);
+    
+    if (validUrls.length > 0) {
+        groups[idx].photoUrls = [...(groups[idx].photoUrls || []), ...validUrls];
+        setBookingData({ treeGroups: groups });
+        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups });
+    }
+  };
+
+  const analyzeTreeGroup = async (id: string) => {
+      const groups = [...(bookingData.treeGroups || [])];
+      const idx = groups.findIndex(z => z.id === id);
+      if (idx === -1) return;
+      const group = groups[idx];
+      
+      try {
+          setAnalyzing(true);
+          const res = await estimateWorkWithAI({
+             description: '',
+             photoCount: group.photoUrls?.length || 0,
+             selectedServiceIds: bookingData.serviceIds,
+             photoUrls: group.photoUrls || [],
+             serviceName: 'Poda de árboles',
+             model: aiModel
+          });
+          
+          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
+              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
+          }
+
+          if (res.tareas && res.tareas.length > 0) {
+              const t = res.tareas[0];
+              group.type = t.tipo_arbol || 'Decorativo';
+              group.quantity = Number(t.cantidad || 1);
+              const h = Number(t.altura_aprox_m || 0);
+              group.height = h < 3 ? '<3m' : h <= 6 ? '3-6m' : h <= 9 ? '6-9m' : '>9m';
+              group.analysisLevel = t.nivel_analisis;
+              group.observations = t.observaciones;
+          } else {
+             throw new Error('No se han detectado datos válidos en las imágenes.');
+          }
+
+          groups[idx] = group;
+          setBookingData({ treeGroups: groups });
+          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups });
+          saveProgress();
+      } catch (e: any) {
+          console.error(e);
+          alert(e.message || 'Error en el análisis');
+      } finally {
+          setAnalyzing(false);
+      }
+  };
+
+  // --- Shrub Logic ---
+  const addShrubGroup = () => {
+    const newGroup = {
+        id: `shrub-${Date.now()}`,
+        type: 'Arbustos ornamentales',
+        size: 'Pequeño (hasta 1m)',
+        state: 'normal',
+        quantity: 1,
+        wasteRemoval: true,
+        photoUrls: [] as string[],
+        files: [] as File[]
+    };
+    const newGroups = [...(bookingData.shrubGroups || []), newGroup];
+    setBookingData({ shrubGroups: newGroups });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups });
+    saveProgress();
+  };
+
+  const removeShrubGroup = (id: string) => {
+    if (!window.confirm('¿Eliminar este grupo?')) return;
+    const newGroups = (bookingData.shrubGroups || []).filter(z => z.id !== id);
+    setBookingData({ shrubGroups: newGroups });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups });
+    saveProgress();
+  };
+
+  const handleShrubFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    const groups = [...(bookingData.shrubGroups || [])];
+    const idx = groups.findIndex(z => z.id === id);
+    if (idx === -1) return;
+
+    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
+    const urls = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
+    const validUrls = urls.filter((u): u is string => !!u);
+    
+    if (validUrls.length > 0) {
+        groups[idx].photoUrls = [...(groups[idx].photoUrls || []), ...validUrls];
+        setBookingData({ shrubGroups: groups });
+        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+    }
+  };
+
+  const analyzeShrubGroup = async (id: string) => {
+      const groups = [...(bookingData.shrubGroups || [])];
+      const idx = groups.findIndex(z => z.id === id);
+      if (idx === -1) return;
+      const group = groups[idx];
+      
+      try {
+          setAnalyzing(true);
+          const res = await estimateWorkWithAI({
+             description: '',
+             photoCount: group.photoUrls?.length || 0,
+             selectedServiceIds: bookingData.serviceIds,
+             photoUrls: group.photoUrls || [],
+             serviceName: 'Poda de plantas',
+             model: aiModel
+          });
+          
+          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
+              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
+          }
+
+          if (res.tareas && res.tareas.length > 0) {
+              const t = res.tareas[0];
+              // Map legacy/AI types to new configuration
+              let mappedType = 'Arbustos ornamentales';
+              const aiType = t.tipo_plantacion || '';
+              if (aiType.includes('Rosal')) mappedType = 'Rosales y plantas florales';
+              else if (aiType.includes('Trepadora')) mappedType = 'Trepadoras';
+              else if (aiType.includes('Cactus') || aiType.includes('Suculenta')) mappedType = 'Cactus y suculentas grandes';
+              
+              let mappedSize = 'Pequeño (hasta 1m)';
+              const aiSize = t.tamano_promedio || '';
+              if (aiSize.includes('Grande')) mappedSize = 'Grande (>2.5m)';
+              else if (aiSize.includes('Mediano')) mappedSize = 'Mediano (1-2.5m)';
+
+              group.type = mappedType;
+              group.quantity = Number(t.cantidad_estimada || 1);
+              group.size = mappedSize;
+              group.state = (t.estado_jardin || 'normal').toLowerCase();
+              group.analysisLevel = t.nivel_analisis;
+              group.observations = t.observaciones;
+          } else {
+             throw new Error('No se han detectado datos válidos en las imágenes.');
+          }
+
+          groups[idx] = group;
+          setBookingData({ shrubGroups: groups });
+          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+          saveProgress();
+      } catch (e: any) {
+          console.error(e);
+          alert(e.message || 'Error en el análisis');
+      } finally {
+          setAnalyzing(false);
+      }
+  };
+
+  // --- Clearing Logic ---
+  const addClearingZone = () => {
+    const newZone = {
+        id: `clearing-${Date.now()}`,
+        type: 'Maleza ligera',
+        area: 0,
+        wasteRemoval: true,
+        photoUrls: [] as string[],
+        files: [] as File[]
+    };
+    const newZones = [...(bookingData.clearingZones || []), newZone];
+    setBookingData({ clearingZones: newZones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { clearingZones: newZones });
+    saveProgress();
+  };
+
+  const removeClearingZone = (id: string) => {
+    if (!window.confirm('¿Eliminar esta zona?')) return;
+    const newZones = (bookingData.clearingZones || []).filter(z => z.id !== id);
+    setBookingData({ clearingZones: newZones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { clearingZones: newZones });
+    saveProgress();
+  };
+
+  const handleClearingFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    const zones = [...(bookingData.clearingZones || [])];
+    const idx = zones.findIndex(z => z.id === id);
+    if (idx === -1) return;
+
+    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
+    const urls = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
+    const validUrls = urls.filter((u): u is string => !!u);
+    
+    if (validUrls.length > 0) {
+        zones[idx].photoUrls = [...(zones[idx].photoUrls || []), ...validUrls];
+        setBookingData({ clearingZones: zones });
+        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { clearingZones: zones });
+    }
+  };
+
+  const analyzeClearingZone = async (id: string) => {
+      const zones = [...(bookingData.clearingZones || [])];
+      const idx = zones.findIndex(z => z.id === id);
+      if (idx === -1) return;
+      const zone = zones[idx];
+      
+      try {
+          setAnalyzing(true);
+          const res = await estimateWorkWithAI({
+             description: '',
+             photoCount: zone.photoUrls?.length || 0,
+             selectedServiceIds: bookingData.serviceIds,
+             photoUrls: zone.photoUrls || [],
+             serviceName: 'Labrar y quitar malas hierbas a mano',
+             model: aiModel
+          });
+          
+          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
+              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
+          }
+
+          if (res.tareas && res.tareas.length > 0) {
+              const t = res.tareas[0];
+              zone.type = t.densidad_maleza === 'Alta' ? 'Cañaveral/Zarzas' : t.densidad_maleza === 'Baja' ? 'Maleza ligera' : 'Maleza densa';
+              zone.area = Number(t.superficie_m2 || 0);
+              zone.analysisLevel = t.nivel_analisis;
+              zone.observations = t.observaciones;
+          } else {
+             throw new Error('No se han detectado datos válidos en las imágenes.');
+          }
+
+          zones[idx] = zone;
+          setBookingData({ clearingZones: zones });
+          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { clearingZones: zones });
+          saveProgress();
+      } catch (e: any) {
+          console.error(e);
+          alert(e.message || 'Error en el análisis');
+      } finally {
+          setAnalyzing(false);
+      }
+  };
+
+  // --- Fumigation Logic ---
+  const addFumigationZone = () => {
+    const newZone = {
+        id: `fum-${Date.now()}`,
+        type: 'Preventivo',
+        area: 0,
+        wasteRemoval: true,
+        photoUrls: [] as string[],
+        files: [] as File[]
+    };
+    const newZones = [...(bookingData.fumigationZones || []), newZone];
+    setBookingData({ fumigationZones: newZones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: newZones });
+    saveProgress();
+  };
+
+  const removeFumigationZone = (id: string) => {
+    if (!window.confirm('¿Eliminar esta zona?')) return;
+    const newZones = (bookingData.fumigationZones || []).filter(z => z.id !== id);
+    setBookingData({ fumigationZones: newZones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: newZones });
+    saveProgress();
+  };
+
+  const handleFumigationFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return;
+    const zones = [...(bookingData.fumigationZones || [])];
+    const idx = zones.findIndex(z => z.id === id);
+    if (idx === -1) return;
+
+    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
+    const urls = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
+    const validUrls = urls.filter((u): u is string => !!u);
+    
+    if (validUrls.length > 0) {
+        zones[idx].photoUrls = [...(zones[idx].photoUrls || []), ...validUrls];
+        setBookingData({ fumigationZones: zones });
+        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: zones });
+    }
+  };
+
+  const analyzeFumigationZone = async (id: string) => {
+      const zones = [...(bookingData.fumigationZones || [])];
+      const idx = zones.findIndex(z => z.id === id);
+      if (idx === -1) return;
+      const zone = zones[idx];
+      
+      try {
+          setAnalyzing(true);
+          const res = await estimateWorkWithAI({
+             description: '',
+             photoCount: zone.photoUrls?.length || 0,
+             selectedServiceIds: bookingData.serviceIds,
+             photoUrls: zone.photoUrls || [],
+             serviceName: 'Fumigación de plantas',
+             model: aiModel
+          });
+          
+          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
+              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
+          }
+
+          if (res.tareas && res.tareas.length > 0) {
+              const t = res.tareas[0];
+              zone.type = t.nivel_plaga === 'Curativo' ? 'Plaga activa' : t.nivel_plaga === 'Herbicida' ? 'Herbicida' : 'Preventivo';
+              zone.area = Number(t.cantidad_o_superficie || 0);
+              zone.analysisLevel = t.nivel_analisis;
+              zone.observations = t.observaciones;
+          } else {
+             throw new Error('No se han detectado datos válidos en las imágenes.');
+          }
+
+          zones[idx] = zone;
+          setBookingData({ fumigationZones: zones });
+          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: zones });
+          saveProgress();
+      } catch (e: any) {
+          console.error(e);
+          alert(e.message || 'Error en el análisis');
+      } finally {
+          setAnalyzing(false);
+      }
+  };
+
   // --- End New Logic ---
 
   return (
@@ -796,6 +1956,11 @@ const DetailsPage: React.FC = () => {
              <div className="flex flex-col gap-4">
                {(() => {
                    const isLawnService = debugService.includes('Corte de césped') || debugService.includes('césped');
+                   const isHedgeService = debugService.includes('seto') || debugService.includes('Seto');
+                   const isTreeService = debugService.includes('árbol') || debugService.includes('arbol');
+                   const isShrubService = debugService.includes('poda de plantas') || (debugService.includes('poda') && !debugService.includes('árbol') && !debugService.includes('palmera'));
+                   const isClearingService = debugService.includes('limpieza') || debugService.includes('desbroce') || debugService.includes('hierbas') || debugService.includes('maleza');
+                   const isFumigationService = debugService.includes('fumig');
                    
                    if (isLawnService) {
                      return (
@@ -1018,232 +2183,572 @@ const DetailsPage: React.FC = () => {
                      );
                    }
 
+                   if (isHedgeService) {
+                     return (
+                         <div className="space-y-6">
+                             {(!bookingData.hedgeZones || bookingData.hedgeZones.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Scissors className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tu zona de setos</h3>
+                                     <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
+                                         Añade una zona por cada tramo de seto diferente.
+                                     </p>
+                                     <button 
+                                         onClick={addHedgeZone}
+                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                                     >
+                                         + Añadir primera zona
+                                     </button>
+                                 </div>
+                             )}
+
+                             {(bookingData.hedgeZones || []).map((zone, idx) => {
+                                 const isAnalyzed = zone.length > 0 || (zone.analysisLevel !== undefined);
+                                 const allPhotos = [...(zone.photoUrls || []), ...(zone.files || [])];
+                                 
+                                 return (
+                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <div className="flex items-center gap-2">
+                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">{idx + 1}</div>
+                                                 <h3 className="font-semibold text-gray-900">Seto {idx + 1}</h3>
+                                             </div>
+                                             <button onClick={() => removeHedgeZone(zone.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors">
+                                                 <Trash2 className="w-5 h-5" />
+                                             </button>
+                                         </div>
+
+                                         <div className="mb-4">
+                                             <div className="text-xs text-gray-500 mb-2">Fotos ({allPhotos.length})</div>
+                                             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                                 {allPhotos.map((p, i) => (
+                                                     <div key={i} className="relative aspect-square">
+                                                         <img src={typeof p === 'string' ? p : URL.createObjectURL(p)} alt="" className="w-full h-full object-cover rounded-lg border border-gray-200" />
+                                                     </div>
+                                                 ))}
+                                                 {!isAnalyzed && (
+                                                     <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 aspect-square transition-colors text-gray-400 hover:text-green-600 hover:border-green-300">
+                                                         <Camera className="w-6 h-6 mb-1" />
+                                                         <span className="text-[10px] font-medium">+ Foto</span>
+                                                         <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleHedgeFileSelect(zone.id, e)} />
+                                                     </label>
+                                                 )}
+                                             </div>
+                                         </div>
+
+                                         {!isAnalyzed ? (
+                                             <div className="mt-2">
+                                                 <button onClick={() => analyzeHedgeZone(zone.id)} disabled={analyzing || allPhotos.length === 0} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2">
+                                                     {analyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> Analizar este seto</>}
+                                                 </button>
+                                             </div>
+                                         ) : (
+                                             <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                                                 {/* Analysis Badge & Obs */}
+                                                 <div className="flex items-center justify-between mb-3">
+                                                     <div className="flex items-center gap-2 text-green-800 font-medium text-sm"><Sparkles className="w-4 h-4" /> Resultado</div>
+                                                     {zone.analysisLevel && (
+                                                         <div className={`px-2 py-0.5 rounded text-[10px] font-medium border ${zone.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' : zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                                             Calidad {zone.analysisLevel === 1 ? 'Alta' : zone.analysisLevel === 2 ? 'Media' : 'Baja'}
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                                 {zone.observations && zone.observations.length > 0 && (
+                                                     <div className="mb-3 p-2 rounded-lg text-xs border bg-yellow-50 border-yellow-200 text-yellow-800">
+                                                         <ul className="list-disc list-inside space-y-0.5 ml-1">{zone.observations.map((obs, k) => <li key={k}>{obs}</li>)}</ul>
+                                                     </div>
+                                                 )}
+
+                                                 <div className="grid grid-cols-2 gap-4">
+                                                     <div>
+                                                         <label className="text-xs text-gray-500 block mb-1">Longitud (m)</label>
+                                                         <input type="number" min="0" value={zone.length} onChange={(e) => {
+                                                             const newZones = [...(bookingData.hedgeZones || [])];
+                                                             const z = newZones.find(z => z.id === zone.id);
+                                                             if(z) { z.length = Number(e.target.value); setBookingData({ hedgeZones: newZones }); }
+                                                         }} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                                                     </div>
+                                                     <div>
+                                                         <label className="text-xs text-gray-500 block mb-1">Altura</label>
+                                                         <select value={zone.height} onChange={(e) => {
+                                                             const newZones = [...(bookingData.hedgeZones || [])];
+                                                             const z = newZones.find(z => z.id === zone.id);
+                                                             if(z) { z.height = e.target.value; setBookingData({ hedgeZones: newZones }); }
+                                                         }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                                             <option value="<1m">&lt;1m</option>
+                                                             <option value="1-2m">1-2m</option>
+                                                             <option value=">2m">&gt;2m</option>
+                                                         </select>
+                                                     </div>
+                                                     <div>
+                                                         <label className="text-xs text-gray-500 block mb-1">Tipo</label>
+                                                         <select value={zone.type} onChange={(e) => {
+                                                             const newZones = [...(bookingData.hedgeZones || [])];
+                                                             const z = newZones.find(z => z.id === zone.id);
+                                                             if(z) { z.type = e.target.value; setBookingData({ hedgeZones: newZones }); }
+                                                         }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                                             <option value="Seto Mixto/Otro">Seto Mixto/Otro</option>
+                                                             <option value="Conífera (Ciprés/Tuya)">Conífera</option>
+                                                             <option value="Laurel/Hoja ancha">Laurel/Hoja ancha</option>
+                                                             <option value="Hiedra/Trepandora">Hiedra/Trepandora</option>
+                                                         </select>
+                                                     </div>
+                                                     <div>
+                                                         <label className="text-xs text-gray-500 block mb-1">Acceso</label>
+                                                         <select value={zone.access} onChange={(e) => {
+                                                             const newZones = [...(bookingData.hedgeZones || [])];
+                                                             const z = newZones.find(z => z.id === zone.id);
+                                                             if(z) { z.access = e.target.value as 'normal' | 'medio' | 'dificil'; setBookingData({ hedgeZones: newZones }); }
+                                                         }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                                             <option value="normal">Fácil</option>
+                                                             <option value="medio">Medio</option>
+                                                             <option value="dificil">Difícil</option>
+                                                         </select>
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })}
+                             
+                             <button onClick={addHedgeZone} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2">
+                                 <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otro tramo
+                             </button>
+                         </div>
+                     );
+                   }
+
+                   if (false && isTreeService) {
+                     return (
+                         <div className="space-y-6">
+                             {((bookingData.treeGroups || []).length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Trees className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tus árboles</h3>
+                                     <button onClick={addTreeGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de árboles</button>
+                                 </div>
+                             )}
+                             {(bookingData.treeGroups || []).map((group, idx) => {
+                                 const isAnalyzed = group.quantity > 0 || (group.analysisLevel !== undefined);
+                                 const allPhotos = [...(group.photoUrls || []), ...(group.files || [])];
+                                 return (
+                                     <div key={group.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <h3 className="font-semibold text-gray-900">Grupo de Árboles {idx + 1}</h3>
+                                             <button onClick={() => removeTreeGroup(group.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+                                         </div>
+                                         <div className="mb-4 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                             {allPhotos.map((p, i) => (
+                                                 <div key={i} className="relative aspect-square"><img src={typeof p === 'string' ? p : URL.createObjectURL(p)} className="w-full h-full object-cover rounded-lg" /></div>
+                                             ))}
+                                             {!isAnalyzed && <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer aspect-square text-gray-400 hover:text-green-600"><Camera className="w-6 h-6" /><input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleTreeFileSelect(group.id, e)} /></label>}
+                                         </div>
+                                         {!isAnalyzed ? (
+                                             <button onClick={() => analyzeTreeGroup(group.id)} disabled={analyzing || allPhotos.length === 0} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">{analyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> Analizar</>}</button>
+                                         ) : (
+                                             <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2 text-green-800 font-medium text-sm"><Sparkles className="w-4 h-4" /> Resultado</div>
+                                                    {group.analysisLevel && (
+                                                        <div className={`px-2 py-0.5 rounded text-[10px] font-medium border ${group.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' : group.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                                            Calidad {group.analysisLevel === 1 ? 'Alta' : group.analysisLevel === 2 ? 'Media' : 'Baja'}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {group.observations && group.observations.length > 0 && (
+                                                    <div className="mb-3 p-2 rounded-lg text-xs border bg-yellow-50 border-yellow-200 text-yellow-800">
+                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">{group.observations.map((obs, k) => <li key={k}>{obs}</li>)}</ul>
+                                                    </div>
+                                                )}
+                                                <div className="grid grid-cols-2 gap-4">
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Cantidad</label><input type="number" min="1" value={group.quantity} onChange={(e) => { const n = [...(bookingData.treeGroups||[])]; const g = n.find(x => x.id === group.id); if(g) { g.quantity = Number(e.target.value); setBookingData({treeGroups:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm" /></div>
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Altura</label><select value={group.height} onChange={(e) => { const n = [...(bookingData.treeGroups||[])]; const g = n.find(x => x.id === group.id); if(g) { g.height = e.target.value; setBookingData({treeGroups:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="<3m">&lt;3m</option><option value="3-6m">3-6m</option><option value="6-9m">6-9m</option><option value=">9m">&gt;9m</option></select></div>
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={group.type} onChange={(e) => { const n = [...(bookingData.treeGroups||[])]; const g = n.find(x => x.id === group.id); if(g) { g.type = e.target.value; setBookingData({treeGroups:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Decorativo">Decorativo</option><option value="Frutal">Frutal</option><option value="Conífera">Conífera</option></select></div>
+                                                 </div>
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })}
+                             <button onClick={addTreeGroup} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otro grupo</button>
+                         </div>
+                     );
+                   }
+
+                   if (isShrubService) {
+                     return (
+                         <div className="space-y-6">
+                             {(!bookingData.shrubGroups || bookingData.shrubGroups.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Flower2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tus plantas</h3>
+                                     <button onClick={addShrubGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de plantas</button>
+                                 </div>
+                             )}
+                             {(bookingData.shrubGroups || []).map((group, idx) => {
+                                 const isAnalyzed = group.quantity > 0 || (group.analysisLevel !== undefined);
+                                 const allPhotos = [...(group.photoUrls || []), ...(group.files || [])];
+                                 return (
+                                     <div key={group.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <h3 className="font-semibold text-gray-900">Grupo de Plantas {idx + 1}</h3>
+                                             <button onClick={() => removeShrubGroup(group.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+                                         </div>
+                                         <div className="mb-4 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                             {allPhotos.map((p, i) => (<div key={i} className="relative aspect-square"><img src={typeof p === 'string' ? p : URL.createObjectURL(p)} className="w-full h-full object-cover rounded-lg" /></div>))}
+                                             {!isAnalyzed && <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer aspect-square text-gray-400 hover:text-green-600"><Camera className="w-6 h-6" /><input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleShrubFileSelect(group.id, e)} /></label>}
+                                         </div>
+                                         {!isAnalyzed ? (
+                                             <button onClick={() => analyzeShrubGroup(group.id)} disabled={analyzing || allPhotos.length === 0} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">{analyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> Analizar</>}</button>
+                                         ) : (
+                                             <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2 text-green-800 font-medium text-sm"><Sparkles className="w-4 h-4" /> Resultado</div>
+                                                    {group.analysisLevel && (
+                                                        <div className={`px-2 py-0.5 rounded text-[10px] font-medium border ${group.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' : group.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                                            Calidad {group.analysisLevel === 1 ? 'Alta' : group.analysisLevel === 2 ? 'Media' : 'Baja'}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {group.observations && group.observations.length > 0 && (
+                                                    <div className="mb-3 p-2 rounded-lg text-xs border bg-yellow-50 border-yellow-200 text-yellow-800">
+                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">{group.observations.map((obs, k) => <li key={k}>{obs}</li>)}</ul>
+                                                    </div>
+                                                )}
+                                                <div className="grid grid-cols-2 gap-4">
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Cantidad</label><input type="number" min="1" value={group.quantity} onChange={(e) => { const n = [...(bookingData.shrubGroups||[])]; const g = n.find(x => x.id === group.id); if(g) { g.quantity = Number(e.target.value); setBookingData({shrubGroups:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm" /></div>
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Tamaño</label><select value={group.size} onChange={(e) => { const n = [...(bookingData.shrubGroups||[])]; const g = n.find(x => x.id === group.id); if(g) { g.size = e.target.value; setBookingData({shrubGroups:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Pequeño (hasta 1m)">Pequeño (hasta 1m)</option><option value="Mediano (1-2.5m)">Mediano (1-2.5m)</option><option value="Grande (>2.5m)">Grande (&gt;2.5m)</option></select></div>
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={group.type} onChange={(e) => { const n = [...(bookingData.shrubGroups||[])]; const g = n.find(x => x.id === group.id); if(g) { g.type = e.target.value; setBookingData({shrubGroups:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Arbustos ornamentales">Arbustos ornamentales</option><option value="Rosales y plantas florales">Rosales y plantas florales</option><option value="Trepadoras">Trepadoras</option><option value="Cactus y suculentas grandes">Cactus y suculentas grandes</option></select></div>
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Estado</label><select value={group.state || 'normal'} onChange={(e) => { const n = [...(bookingData.shrubGroups||[])]; const g = n.find(x => x.id === group.id); if(g) { g.state = e.target.value; setBookingData({shrubGroups:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="normal">Normal</option><option value="descuidado">Descuidado</option><option value="muy descuidado">Muy descuidado</option></select></div>
+                                                 </div>
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })}
+                             <button onClick={addShrubGroup} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otro grupo</button>
+                         </div>
+                     );
+                   }
+
+                   if (isClearingService) {
+                     return (
+                         <div className="space-y-6">
+                             {(!bookingData.clearingZones || bookingData.clearingZones.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Shovel className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade zona a desbrozar</h3>
+                                     <button onClick={addClearingZone} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir zona</button>
+                                 </div>
+                             )}
+                             {(bookingData.clearingZones || []).map((zone, idx) => {
+                                 const isAnalyzed = zone.area > 0 || (zone.analysisLevel !== undefined);
+                                 const allPhotos = [...(zone.photoUrls || []), ...(zone.files || [])];
+                                 return (
+                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <h3 className="font-semibold text-gray-900">Zona de Desbroce {idx + 1}</h3>
+                                             <button onClick={() => removeClearingZone(zone.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+                                         </div>
+                                         <div className="mb-4 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                             {allPhotos.map((p, i) => (<div key={i} className="relative aspect-square"><img src={typeof p === 'string' ? p : URL.createObjectURL(p)} className="w-full h-full object-cover rounded-lg" /></div>))}
+                                             {!isAnalyzed && <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer aspect-square text-gray-400 hover:text-green-600"><Camera className="w-6 h-6" /><input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleClearingFileSelect(zone.id, e)} /></label>}
+                                         </div>
+                                         {!isAnalyzed ? (
+                                             <button onClick={() => analyzeClearingZone(zone.id)} disabled={analyzing || allPhotos.length === 0} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">{analyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> Analizar</>}</button>
+                                         ) : (
+                                             <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2 text-green-800 font-medium text-sm"><Sparkles className="w-4 h-4" /> Resultado</div>
+                                                    {zone.analysisLevel && (
+                                                        <div className={`px-2 py-0.5 rounded text-[10px] font-medium border ${zone.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' : zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                                            Calidad {zone.analysisLevel === 1 ? 'Alta' : zone.analysisLevel === 2 ? 'Media' : 'Baja'}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {zone.observations && zone.observations.length > 0 && (
+                                                    <div className="mb-3 p-2 rounded-lg text-xs border bg-yellow-50 border-yellow-200 text-yellow-800">
+                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">{zone.observations.map((obs, k) => <li key={k}>{obs}</li>)}</ul>
+                                                    </div>
+                                                )}
+                                                <div className="grid grid-cols-2 gap-4">
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Área (m²)</label><input type="number" min="1" value={zone.area} onChange={(e) => { const n = [...(bookingData.clearingZones||[])]; const z = n.find(x => x.id === zone.id); if(z) { z.area = Number(e.target.value); setBookingData({clearingZones:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm" /></div>
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={zone.type} onChange={(e) => { const n = [...(bookingData.clearingZones||[])]; const z = n.find(x => x.id === zone.id); if(z) { z.type = e.target.value; setBookingData({clearingZones:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Maleza ligera">Maleza ligera</option><option value="Maleza densa">Maleza densa</option><option value="Cañaveral/Zarzas">Cañaveral/Zarzas</option></select></div>
+                                                 </div>
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })}
+                             <button onClick={addClearingZone} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otra zona</button>
+                         </div>
+                     );
+                   }
+
+                   if (isFumigationService) {
+                     return (
+                         <div className="space-y-6">
+                             {(!bookingData.fumigationZones || bookingData.fumigationZones.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Bug className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade zona a fumigar</h3>
+                                     <button onClick={addFumigationZone} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir zona</button>
+                                 </div>
+                             )}
+                             {(bookingData.fumigationZones || []).map((zone, idx) => {
+                                 const isAnalyzed = zone.area > 0 || (zone.analysisLevel !== undefined);
+                                 const allPhotos = [...(zone.photoUrls || []), ...(zone.files || [])];
+                                 return (
+                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <h3 className="font-semibold text-gray-900">Zona Fumigación {idx + 1}</h3>
+                                             <button onClick={() => removeFumigationZone(zone.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+                                         </div>
+                                         <div className="mb-4 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                             {allPhotos.map((p, i) => (<div key={i} className="relative aspect-square"><img src={typeof p === 'string' ? p : URL.createObjectURL(p)} className="w-full h-full object-cover rounded-lg" /></div>))}
+                                             {!isAnalyzed && <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer aspect-square text-gray-400 hover:text-green-600"><Camera className="w-6 h-6" /><input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFumigationFileSelect(zone.id, e)} /></label>}
+                                         </div>
+                                         {!isAnalyzed ? (
+                                             <button onClick={() => analyzeFumigationZone(zone.id)} disabled={analyzing || allPhotos.length === 0} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">{analyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> Analizar</>}</button>
+                                         ) : (
+                                             <div className="bg-green-50 p-4 rounded-xl border border-green-100">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex items-center gap-2 text-green-800 font-medium text-sm"><Sparkles className="w-4 h-4" /> Resultado</div>
+                                                    {zone.analysisLevel && (
+                                                        <div className={`px-2 py-0.5 rounded text-[10px] font-medium border ${zone.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' : zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                                            Calidad {zone.analysisLevel === 1 ? 'Alta' : zone.analysisLevel === 2 ? 'Media' : 'Baja'}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {zone.observations && zone.observations.length > 0 && (
+                                                    <div className="mb-3 p-2 rounded-lg text-xs border bg-yellow-50 border-yellow-200 text-yellow-800">
+                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">{zone.observations.map((obs, k) => <li key={k}>{obs}</li>)}</ul>
+                                                    </div>
+                                                )}
+                                                <div className="grid grid-cols-2 gap-4">
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Área/Cant.</label><input type="number" min="1" value={zone.area} onChange={(e) => { const n = [...(bookingData.fumigationZones||[])]; const z = n.find(x => x.id === zone.id); if(z) { z.area = Number(e.target.value); setBookingData({fumigationZones:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm" /></div>
+                                                     <div><label className="text-xs text-gray-500 block mb-1">Tipo</label><select value={zone.type} onChange={(e) => { const n = [...(bookingData.fumigationZones||[])]; const z = n.find(x => x.id === zone.id); if(z) { z.type = e.target.value; setBookingData({fumigationZones:n}); } }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"><option value="Preventivo">Preventivo</option><option value="Plaga activa">Plaga activa</option><option value="Herbicida">Herbicida</option></select></div>
+                                                 </div>
+                                             </div>
+                                         )}
+                                     </div>
+                                 );
+                             })}
+                             <button onClick={addFumigationZone} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otra zona</button>
+                         </div>
+                     );
+                   }
+
                    // If lawn service and no photos but we have AI tasks (simulated), we need a placeholder
                    const displayItems = (photos.length === 0 && isLawnService && bookingData.aiTasks && bookingData.aiTasks.length > 0) 
                         ? [null] 
                         : photos;
 
-                   return displayItems.map((photo, index) => {
-                   // Logic for Palm Trees
-                   const palmGroup = debugService === 'Poda de palmeras' ? bookingData.palmGroups?.find(g => g.imageIndex === index) : null;
-                   
-                   // Logic for Lawn Mowing (Specialized Card)
-                   const lawnTask = isLawnService && bookingData.aiTasks && bookingData.aiTasks.length > 0 ? bookingData.aiTasks[0] : null;
-                   
-                   // Logic for Other Services (Generic)
-                   // We'll show the global AI result in the first slot for now, or per-item if implemented later
-                   const isGeneric = debugService !== 'Poda de palmeras' && !isLawnService;
-                   const showGenericResult = isGeneric && index === 0 && !bookingData.isAnalyzing && (bookingData.aiQuantity || bookingData.estimatedHours);
+                   // Stacked View for Analysis Complete
+                   if (isAnalysisComplete && !isImageStackExpanded && photos.length > 0) {
+                       return (
+                           <div 
+                               onClick={() => setIsImageStackExpanded(true)}
+                               className="relative h-40 w-full flex items-center justify-center cursor-pointer group py-4 transition-all duration-500 ease-in-out"
+                           >
+                               {photos.slice(0, 3).map((photo, i) => (
+                                   <div 
+                                       key={i}
+                                       className="absolute transition-all duration-500 ease-in-out shadow-lg rounded-xl overflow-hidden border-2 border-white bg-white"
+                                       style={{
+                                           width: '120px',
+                                           height: '120px',
+                                           transform: `translateX(${i * 15}px) rotate(${i * 4}deg)`,
+                                           zIndex: 10 - i,
+                                           opacity: 1 - (i * 0.1)
+                                       }}
+                                   >
+                                       {photo ? (
+                                           <img 
+                                               src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
+                                               className="w-full h-full object-cover" 
+                                               alt=""
+                                           />
+                                       ) : (
+                                            <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                                                <Image className="w-8 h-8 text-gray-400" />
+                                            </div>
+                                       )}
+                                   </div>
+                               ))}
+                               <div className="absolute bottom-0 bg-white/90 backdrop-blur-sm px-4 py-1.5 rounded-full text-xs font-medium text-gray-700 shadow-sm z-20 translate-y-1 group-hover:-translate-y-1 transition-transform border border-gray-100 flex items-center gap-2">
+                                   <Image className="w-3.5 h-3.5" />
+                                   Editar fotos
+                               </div>
+                           </div>
+                       );
+                   }
+
+                   // Analysis Loading Animation (Virtual Garden)
+                   if (analyzing) {
+                       return (
+                           <div className="relative h-48 w-full flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-100 overflow-hidden shadow-inner">
+                               
+                               {/* Background Grid */}
+                               <div className="absolute inset-0 z-0 opacity-20" 
+                                    style={{
+                                        backgroundImage: 'linear-gradient(#16a34a 1px, transparent 1px), linear-gradient(90deg, #16a34a 1px, transparent 1px)',
+                                        backgroundSize: '20px 20px',
+                                        transform: 'perspective(500px) rotateX(60deg) translateY(-50px) scale(1.5)',
+                                        animation: 'gridMove 4s linear infinite'
+                                    }} 
+                               />
+
+                               {/* Scanning Radar */}
+                               <div className="relative z-10 w-24 h-24 flex items-center justify-center mb-4">
+                                   <div className="absolute w-full h-full rounded-full border-2 border-green-500/30 animate-ping" />
+                                   <div className="absolute w-3/4 h-3/4 rounded-full border border-green-500/50 animate-ping delay-150" />
+                                   
+                                   {/* Central Icon */}
+                                   <div className="relative z-20 bg-white p-3 rounded-full shadow-lg border border-green-100">
+                                       <Sprout className="w-8 h-8 text-green-600 animate-pulse" />
+                                   </div>
+
+                                   {/* Spinner Ring */}
+                                   <div className="absolute w-full h-full rounded-full border-t-2 border-r-2 border-green-500 animate-spin" />
+                               </div>
+
+                               {/* Message */}
+                               <div className="relative z-10 text-center">
+                                   <p className="text-sm font-semibold text-gray-800 animate-pulse transition-all duration-300">
+                                       {loadingMessage}
+                                   </p>
+                                   <p className="text-xs text-gray-400 mt-1">Analizando estructura y vegetación...</p>
+                               </div>
+
+                               <style>{`
+                                   @keyframes gridMove {
+                                       0% { background-position: 0 0; }
+                                       100% { background-position: 0 20px; }
+                                   }
+                               `}</style>
+                           </div>
+                       );
+                   }
 
                    return (
-                     <div key={index} className="flex gap-4 p-3">
-                        {/* Photo Slot */}
-                        <div className="relative shrink-0">
-                           {photo ? (
-                               <img 
-                                 src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
-                                 alt={`Foto ${index + 1}`} 
-                                 className="w-24 h-24 object-cover rounded-lg border border-gray-200"
-                               />
-                           ) : (
-                               // Placeholder for simulated data without photo
-                               <div className="w-24 h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center">
-                                   <Image className="w-8 h-8 text-gray-400" />
-                               </div>
-                           )}
-                           
-                           {photo && (
-                               <button
-                                 onClick={(e) => { e.stopPropagation(); removePhoto(index); }}
-                                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors"
-                               >
-                                 <Trash2 className="w-3.5 h-3.5" />
-                               </button>
-                           )}
-                        </div>
-
-                        {/* Analysis Result / Info Slot */}
-                        <div className="flex-1 min-w-0 flex flex-col justify-center">
-                           {palmGroup ? (
-                               <div className="space-y-2 text-sm">
-                                   <div className="flex justify-between items-start">
-                                       <div>
-                                           <p className="font-semibold text-gray-900">{palmGroup.species}</p>
-                                           <p className="text-gray-500">Altura: {palmGroup.height}m - {palmGroup.state}</p>
-                                       </div>
-                                   </div>
-                                   
-                                   <div className="grid grid-cols-2 gap-3 mt-1">
-                                       <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Cantidad</label>
-                                            <input 
-                                                type="number" 
-                                                min={0} 
-                                                value={palmGroup.quantity === 0 ? '' : palmGroup.quantity}
-                                                onChange={(e) => {
-                                                    const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value));
-                                                    const newGroups = [...(bookingData.palmGroups || [])];
-                                                    const groupIndex = newGroups.findIndex(g => g.imageIndex === index);
-                                                    if (groupIndex !== -1) {
-                                                        newGroups[groupIndex] = { ...newGroups[groupIndex], quantity: val };
-                                                        const totalHours = newGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
-                                                        setBookingData({ palmGroups: newGroups, estimatedHours: totalHours });
-                                                        saveProgress();
-                                                    }
-                                                }}
-                                                placeholder="-"
-                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
-                                            />
-                                       </div>
-                                       <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Estado</label>
-                                            <div className="w-full px-2 py-1.5 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700 capitalize">
-                                                {palmGroup.state || 'normal'}
-                                            </div>
-                                       </div>
-                                   </div>
-                               </div>
-                           ) : lawnTask && (index === 0 || !photo) ? (
-                               // Specialized Lawn Mowing Card (Simulated or Real)
-                               <div className="space-y-2 text-sm">
-                                   <div className="flex justify-between items-start">
-                                       <div>
-                                           <p className="font-semibold text-gray-900">{bookingData.lawnSpecies || 'Especie desconocida'}</p>
-                                           <p className="text-gray-500 capitalize">{lawnTask.estado_jardin || 'normal'}</p>
-                                       </div>
-                                   </div>
-                                   
-                                   <div className="grid grid-cols-2 gap-3 mt-1">
-                                       <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Superficie (m²)</label>
-                                            <input 
-                                                type="number" 
-                                                min={0} 
-                                                value={bookingData.aiQuantity || ''}
-                                                onChange={(e) => {
-                                                    const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value));
-                                                    const diff = bookingData.aiDifficulty || 1;
-                                                    const mult = diff === 3 ? 1.6 : diff === 2 ? 1.3 : 1.0;
-                                                    const hours = (val / 150) * mult;
-                                                    
-                                                    // Update simulated task
-                                                    const newTasks = [...(bookingData.aiTasks || [])];
-                                                    if (newTasks.length > 0) {
-                                                        newTasks[0] = { ...newTasks[0], superficie_m2: val };
-                                                    }
-
-                                                    setBookingData({ 
-                                                        aiQuantity: val, 
-                                                        estimatedHours: Math.ceil(hours),
-                                                        aiTasks: newTasks 
-                                                    });
-                                                    saveProgress();
-                                                }}
-                                                placeholder="0"
-                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
-                                            />
-                                       </div>
-                                       <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Estado</label>
-                                            <select
-                                                value={bookingData.aiDifficulty === 3 ? 'muy descuidado' : bookingData.aiDifficulty === 2 ? 'descuidado' : 'normal'}
-                                                onChange={(e) => {
-                                                    const state = e.target.value;
-                                                    const diff = state === 'muy descuidado' ? 3 : state === 'descuidado' ? 2 : 1;
-                                                    const mult = diff === 3 ? 1.6 : diff === 2 ? 1.3 : 1.0;
-                                                    const qty = bookingData.aiQuantity || 0;
-                                                    const hours = (qty / 150) * mult;
-
-                                                    // Update simulated task
-                                                    const newTasks = [...(bookingData.aiTasks || [])];
-                                                    if (newTasks.length > 0) {
-                                                        newTasks[0] = { ...newTasks[0], estado_jardin: state };
-                                                    }
-
-                                                    setBookingData({ 
-                                                        aiDifficulty: diff,
-                                                        estimatedHours: Math.ceil(hours),
-                                                        aiTasks: newTasks
-                                                    });
-                                                    saveProgress();
-                                                }}
-                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
-                                            >
-                                                <option value="normal">Normal</option>
-                                                <option value="descuidado">Descuidado</option>
-                                                <option value="muy descuidado">Muy descuidado</option>
-                                            </select>
-                                       </div>
-                                   </div>
-                               </div>
-                           ) : showGenericResult ? (
-                               <div className="space-y-2 text-sm">
-                                   <div className="font-semibold text-gray-900">Análisis del servicio</div>
-                                   <div className="grid grid-cols-2 gap-3 mt-1">
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Cantidad ({bookingData.aiUnit || 'u'})</label>
-                                            <input 
-                                                type="number"
-                                                min={0}
-                                                value={bookingData.aiQuantity || ''}
-                                                onChange={(e) => {
-                                                    const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
-                                                    // Simple recalculation based on difficulty and unit
-                                                    // Note: This logic duplicates estimateWorkWithAI somewhat, but is needed for manual adjustment
-                                                    const unit = bookingData.aiUnit || 'm2';
-                                                    const diff = bookingData.aiDifficulty || 1;
-                                                    const mult = diff === 3 ? 1.6 : diff === 2 ? 1.3 : 1.0;
-                                                    let hours = 0;
-                                                    if (unit === 'm2') hours = (val / 150) * mult; // Example for grass
-                                                    else hours = val * 0.15 * mult; // Example for plants
-                                                    // Improve: Ideally we should store the factor/type to recalculate accurately
-                                                    setBookingData({ aiQuantity: val, estimatedHours: Math.ceil(hours) });
-                                                    saveProgress();
-                                                }}
-                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
-                                            />
-                                       </div>
-                                       <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Dificultad</label>
-                                            <select 
-                                                value={bookingData.aiDifficulty || 1}
-                                                onChange={(e) => {
-                                                    const val = Number(e.target.value);
-                                                    setBookingData({ aiDifficulty: val });
-                                                    saveProgress();
-                                                    // Trigger recalculation in effect or simple logic here
-                                                }}
-                                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
-                                            >
-                                                <option value={1}>Normal</option>
-                                                <option value={2}>Descuidado</option>
-                                                <option value={3}>Muy descuidado</option>
-                                            </select>
-                                       </div>
-                                   </div>
-                               </div>
-                           ) : (
-                               <div className="h-full flex items-center text-gray-400 italic text-sm border-l-2 border-gray-200 pl-4">
-                                   {analyzing ? 'Analizando...' : isGeneric ? (index === 0 ? 'Pendiente de análisis...' : 'Foto añadida') : 'Pendiente de análisis...'}
-                               </div>
-                           )}
-                        </div>
+                     <div className={`flex flex-col gap-2 transition-all duration-500 ease-in-out ${(!isAnalysisComplete || isImageStackExpanded) ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 hidden'}`}>
+                       <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide">
+                       {displayItems.map((photo, index) => {
+                         const isUploading = uploadingIndices.has(index);
+                         const isAnalyzed = analyzedPhotoIndices.has(index);
+                         const isPending = photosToAnalyze.has(index);
+                         
+                         return (
+                           <div 
+                                key={index} 
+                                className={`relative shrink-0 snap-start group cursor-pointer ${isPending ? 'p-0.5' : ''}`}
+                                onClick={(e) => togglePending(index, e)}
+                           >
+                             {photo ? (
+                                 <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isPending ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzed ? 'opacity-80' : 'opacity-100'}`}>
+                                     <img 
+                                       src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
+                                       alt={`Foto ${index + 1}`} 
+                                       className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${isUploading ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
+                                     />
+                                     {/* Uploading Overlay */}
+                                     {isUploading && (
+                                         <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
+                                             <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                         </div>
+                                     )}
+                                     
+                                     {/* Analyzed Overlay */}
+                                     {isAnalyzed && !isUploading && (
+                                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                             <button 
+                                                 onClick={(e) => {
+                                                     e.stopPropagation();
+                                                     setAnalyzedPhotoIndices(prev => {
+                                                         const next = new Set(prev);
+                                                         next.delete(index);
+                                                         return next;
+                                                     });
+                                                     setPhotosToAnalyze(prev => {
+                                                         const next = new Set(prev);
+                                                         next.add(index);
+                                                         return next;
+                                                     });
+                                                 }}
+                                                 className="px-2 py-1 bg-white text-gray-800 text-[10px] font-bold rounded-full shadow-lg hover:bg-gray-100 flex items-center gap-1"
+                                             >
+                                                 Re-analizar
+                                             </button>
+                                         </div>
+                                     )}
+                                     
+                                     {/* Analyzed Badge (Always Visible) */}
+                                     {isAnalyzed && !isUploading && (
+                                         <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
+                                             Analizada
+                                         </div>
+                                     )}
+                                     
+                                     {/* Selection Checkbox (Circle/Tick) */}
+                                    {!isAnalyzed && !isUploading && (
+                                        <div
+                                            className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${
+                                                isPending 
+                                                ? 'bg-green-500 border-green-500 scale-100' 
+                                                : 'bg-black/20 border-white/80 group-hover:bg-black/40 scale-90 group-hover:scale-100'
+                                            }`}
+                                        >
+                                            {isPending && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                                        </div>
+                                    )}
+                                 </div>
+                             ) : (
+                                  <div className="w-24 h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center">
+                                      <Image className="w-8 h-8 text-gray-400" />
+                                  </div>
+                              )}
+                              
+                              {photo && !analyzing && !isUploading && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); removePhoto(index); }}
+                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                              )}
+                           </div>
+                         );
+                       })}
+                       
+                       {/* Add Photo Slot */}
+                       {!analyzing && photos.length < 5 && (
+                         <div 
+                           className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start"
+                           onClick={() => fileInputRef.current?.click()}
+                         >
+                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
+                                <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
+                            </div>
+                            <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
+                         </div>
+                       )}
                      </div>
-                   );
-               });
-               })()}
 
-               {/* Add Photo Slot */}
-               {photos.length < 5 && (
-                 <div className="flex gap-4 p-3 transition-colors cursor-pointer group" onClick={() => fileInputRef.current?.click()}>
-                    <div className="w-24 h-24 flex items-center justify-center rounded-lg text-gray-400 border border-transparent bg-gray-200 group-hover:bg-gray-300">
-                        <Image className="w-8 h-8 text-gray-500 group-hover:text-gray-700 transition-colors" />
-                    </div>
-                    <div className="flex-1 flex items-center text-gray-500 font-medium group-hover:text-green-700 transition-colors">
-                        Haz clic para añadir otra foto...
-                    </div>
-                 </div>
-               )}
+                     {isAnalysisComplete && (
+                         <div className="flex justify-center">
+                             <button
+                                 onClick={() => setIsImageStackExpanded(false)}
+                                 className="text-xs flex items-center gap-1 text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors"
+                             >
+                                 <ChevronLeft className="w-3 h-3 rotate-90" />
+                             </button>
+                         </div>
+                     )}
+                   </div>
+                   );
+               })()}
                
                 <input
                   ref={fileInputRef}
@@ -1256,59 +2761,452 @@ const DetailsPage: React.FC = () => {
              </div>
         </div>
 
-          <div className="flex flex-col gap-4 mb-4">
-            <div className="flex items-center justify-end gap-3">
+          {/* Analysis Error Banner */}
+          {analysisError && (
+              <div className={`mx-4 mt-4 p-4 rounded-xl border flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-300 shadow-sm ${
+                  analysisError.type === 'error' ? 'bg-red-50 border-red-100 text-red-900' : 
+                  'bg-amber-50 border-amber-100 text-amber-900'
+              }`}>
+                  <div className={`p-2 rounded-full shrink-0 ${
+                      analysisError.type === 'error' ? 'bg-red-100 text-red-600' : 
+                      'bg-amber-100 text-amber-600'
+                  }`}>
+                      <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm mb-1 leading-tight">{analysisError.title}</h3>
+                      {analysisError.message && (
+                          <p className="text-xs opacity-90 leading-relaxed">
+                              {analysisError.message}
+                          </p>
+                      )}
+                  </div>
+                  <button 
+                      onClick={() => setAnalysisError(null)}
+                      className="p-1.5 -mr-1 -mt-1 hover:bg-black/5 rounded-full transition-colors shrink-0"
+                  >
+                      <XCircle className="w-5 h-5 opacity-40" />
+                  </button>
+              </div>
+          )}
+
+          <div className="flex flex-col gap-4 mb-4 mt-4 px-4 sm:px-0">
+            <div className="flex items-center justify-end sm:justify-end justify-center w-full gap-3">
               <button
-                onClick={runAIAnalysis}
-                disabled={analyzing || photos.length === 0 || bookingData.serviceIds.length === 0}
-                className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 shadow-sm font-medium"
+                onClick={() => {
+                    if (photosToAnalyze.size > 0) {
+                        runAIAnalysis();
+                    }
+                }}
+                disabled={analyzing || photosToAnalyze.size === 0}
+                className={`w-full sm:w-auto px-6 py-2.5 rounded-lg shadow-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                    analyzing || photosToAnalyze.size === 0
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none border border-gray-200'
+                    : 'bg-green-600 hover:bg-green-700 text-white shadow-green-200'
+                }`}
               >
-                Analizar
+                {analyzing ? (
+                    'Analizando...'
+                ) : (
+                    <>
+                        {photosToAnalyze.size > 0 ? `Analizar (${photosToAnalyze.size})` : 'Analizar'}
+                    </>
+                )}
               </button>
             </div>
             
-            {/* Waste Removal Switch - Only shown after analysis */}
-            {((bookingData.palmGroups && bookingData.palmGroups.length > 0) || (bookingData.aiQuantity && bookingData.aiQuantity > 0)) && (
-                <div className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-                    <span className="text-gray-700 font-medium text-sm">Incluir retirada de restos</span>
-                    <button 
-                        onClick={() => {
-                            if (bookingData.wasteRemoval) {
-                                setShowWasteModal(true);
-                            } else {
-                                setBookingData({ wasteRemoval: true });
-                                saveProgress();
-                            }
-                        }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${bookingData.wasteRemoval ? 'bg-green-600' : 'bg-gray-200'}`}
-                    >
-                        <span
-                            className={`${
-                                bookingData.wasteRemoval ? 'translate-x-6' : 'translate-x-1'
-                            } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-                        />
-                    </button>
-                </div>
-            )}
           </div>
 
-        <div className="mb-4">
-          <h2 className="text-lg font-bold text-gray-900 mb-2">Nota para el jardinero (opcional)</h2>
-          <div className="relative">
-             <div className="absolute -top-10 right-0 text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-100 hidden sm:block">
-               No se envía a la IA
-             </div>
-          </div>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej: Cuidado con el perro, entrar por la puerta lateral..."
-            className="w-full p-4 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
-            rows={4}
-          />
-      </div>
 
-        {bookingData.aiTasks && bookingData.aiTasks.length > 0 && !debugService.includes('césped') && !debugService.includes('Corte de césped') && (
+
+      {/* --- Shrub Analysis Results (Poda de plantas) --- */}
+      {bookingData.shrubGroups && bookingData.shrubGroups.length > 0 && (
+        <div className="space-y-4 mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Sprout className="w-5 h-5 text-green-600" />
+                Plantas detectadas
+            </h3>
+            <div className="grid grid-cols-1 gap-3">
+                {bookingData.shrubGroups.map((group, idx) => (
+                    <div key={group.id || idx} className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
+                        <div className="flex justify-between items-start gap-3">
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center flex-wrap gap-2 mb-1">
+                                    <h4 className="font-semibold text-gray-900 text-sm">{group.type}</h4>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                        x{group.quantity}
+                                    </span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                                        {group.size}
+                                    </span>
+                                </div>
+                                {group.observations && group.observations.length > 0 && (
+                                    <p className="text-[10px] text-gray-500 italic mt-1 truncate">
+                                        {group.observations.join(', ')}
+                                    </p>
+                                )}
+                            </div>
+                            
+                            <div className="shrink-0">
+                                <select 
+                                    value={group.state || 'normal'} 
+                                    onChange={(e) => { 
+                                        const n = [...(bookingData.shrubGroups||[])]; 
+                                        const g = n.find(x => x.id === group.id); 
+                                        if(g) { 
+                                            g.state = e.target.value; 
+                                            setBookingData({shrubGroups:n});
+                                            if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: n });
+                                        } 
+                                    }} 
+                                    className="py-1 px-2 border border-gray-300 rounded text-xs bg-white text-gray-700 focus:outline-none focus:border-green-500"
+                                >
+                                    <option value="normal">Normal</option>
+                                    <option value="descuidado">Descuidado</option>
+                                    <option value="muy descuidado">Muy descuidado</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-center justify-between">
+                <span>Tiempo estimado de trabajo:</span>
+                <span className="font-bold text-lg">{bookingData.estimatedHours} h</span>
+            </div>
+        </div>
+      )}
+
+      {/* --- Palm Analysis Results (Poda de palmeras) --- */}
+      {bookingData.palmGroups && bookingData.palmGroups.length > 0 && (
+        <div className="space-y-4 mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Trees className="w-5 h-5 text-green-600" />
+                Palmeras detectadas
+            </h3>
+            <div className="grid grid-cols-1 gap-3">
+                {bookingData.palmGroups.map((group, idx) => {
+                    // Check if this item is a failure case
+                    const isFailed = (group as any).isFailed === true || group.analysisLevel === 3;
+                    
+                    if (isFailed) {
+                        return (
+                            <div key={group.id || idx} className="bg-white rounded-lg border border-red-200 p-3 shadow-sm relative overflow-hidden flex items-center gap-3">
+                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                                
+                                {/* Photo Thumbnail */}
+                                {group.photoUrl && (
+                                    <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-gray-100 border border-red-100 opacity-80">
+                                        <img 
+                                            src={group.photoUrl} 
+                                            alt="Análisis fallido" 
+                                            className="w-full h-full object-cover grayscale-[0.3]"
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                                        <h4 className="font-semibold text-sm text-red-700">No se pudo analizar</h4>
+                                    </div>
+                                    <p className="text-xs text-red-600 truncate">
+                                        {group.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'}
+                                    </p>
+                                </div>
+
+                                {/* Close Button (Bidirectional Delete) */}
+                                <button 
+                                    onClick={() => {
+                                        const url = group.photoUrl;
+                                        if (url && bookingData.uploadedPhotoUrls) {
+                                            const photoIndex = bookingData.uploadedPhotoUrls.indexOf(url);
+                                            if (photoIndex !== -1) {
+                                                removePhoto(photoIndex);
+                                                return;
+                                            }
+                                        }
+                                        const n = (bookingData.palmGroups || []).filter(g => g.id !== group.id);
+                                        setBookingData({palmGroups: n});
+                                        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
+                                    }}
+                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                                    title="Eliminar foto y resultado"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        );
+                    }
+
+                    return (
+                    <div key={group.id || idx} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm relative overflow-hidden transition-all">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
+                        
+                        <div className="flex flex-row items-center gap-4">
+                            {/* Photo (if available) */}
+                            {group.photoUrl && (
+                                <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                                    <img 
+                                        src={group.photoUrl} 
+                                        alt={group.species} 
+                                        className="w-full h-full object-cover"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                                {/* Line 1: Species + Delete */}
+                                <div className="flex items-center justify-between">
+                                    <h4 className="font-semibold text-sm text-gray-900">
+                                        {group.species}
+                                    </h4>
+                                    
+                                    <button 
+                                         onClick={() => {
+                                             const url = group.photoUrl;
+                                             if (url && bookingData.uploadedPhotoUrls) {
+                                                 const photoIndex = bookingData.uploadedPhotoUrls.indexOf(url);
+                                                 if (photoIndex !== -1) {
+                                                     removePhoto(photoIndex);
+                                                     return;
+                                                 }
+                                             }
+                                             // Fallback delete
+                                             const n = (bookingData.palmGroups || []).filter(g => g.id !== group.id);
+                                             setBookingData({palmGroups: n});
+                                             if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
+                                         }}
+                                         className="text-gray-400 hover:text-red-500 transition-colors"
+                                         title="Eliminar"
+                                    >
+                                         <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                {/* Line 2: Height + State + Quality */}
+                                <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                                    <span>Altura: <span className="font-medium text-gray-900">{group.height}</span></span>
+                                    <span className="text-gray-300">|</span>
+                                    <span>Estado: <span className="font-medium text-gray-900">{group.state}</span></span>
+                                    {group.analysisLevel && (
+                                        <>
+                                            <span className="text-gray-300">|</span>
+                                            <span className={`font-medium ${group.analysisLevel === 1 ? 'text-green-700' : 'text-amber-700'}`}>
+                                                {group.analysisLevel === 1 ? 'Análisis fiable' : 'Revisión manual'}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                                
+                                {/* Observations (New) */}
+                                {group.observations && group.observations.length > 0 && (
+                                    <div className="mt-1 text-xs text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-100">
+                                        <ul className="list-disc list-inside">
+                                            {group.observations.map((obs, i) => <li key={i}>{obs}</li>)}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {/* Line 3: Quantity (Editable) */}
+                                <div className="text-xs text-gray-600 flex items-center gap-2 mt-1">
+                                    <span className="font-medium text-gray-700">Cantidad:</span>
+                                    <div className="flex items-center border border-gray-300 rounded-md bg-white">
+                                        <button 
+                                            className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-r border-gray-200"
+                                            onClick={() => {
+                                                const newQuantity = Math.max(1, (group.quantity || 1) - 1);
+                                                const n = [...(bookingData.palmGroups || [])];
+                                                const g = n.find(x => x.id === group.id);
+                                                if(g) { 
+                                                    g.quantity = newQuantity; 
+                                                    setBookingData({palmGroups: n});
+                                                    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
+                                                }
+                                            }}
+                                        >
+                                            -
+                                        </button>
+                                        <input 
+                                            type="number" 
+                                            min="1" 
+                                            value={group.quantity} 
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value) || 1;
+                                                const n = [...(bookingData.palmGroups || [])];
+                                                const g = n.find(x => x.id === group.id);
+                                                if(g) { 
+                                                    g.quantity = Math.max(1, val); 
+                                                    setBookingData({palmGroups: n});
+                                                    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
+                                                }
+                                            }}
+                                            className="w-10 text-center text-sm py-0.5 focus:outline-none"
+                                        />
+                                        <button 
+                                            className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
+                                            onClick={() => {
+                                                const newQuantity = (group.quantity || 1) + 1;
+                                                const n = [...(bookingData.palmGroups || [])];
+                                                const g = n.find(x => x.id === group.id);
+                                                if(g) { 
+                                                    g.quantity = newQuantity; 
+                                                    setBookingData({palmGroups: n});
+                                                    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
+                                                }
+                                            }}
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )})}
+            </div>
+            <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-center justify-between">
+                <span>Tiempo estimado de trabajo:</span>
+                <span className="font-bold text-lg">{bookingData.estimatedHours} h</span>
+            </div>
+        </div>
+      )}
+
+      {/* --- Tree Analysis Results (Poda de árboles) --- */}
+      {bookingData.treeGroups && bookingData.treeGroups.length > 0 && (
+        <div className="space-y-4 mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Trees className="w-5 h-5 text-green-600" />
+                Árboles detectados
+            </h3>
+            <div className="grid grid-cols-1 gap-3">
+                {bookingData.treeGroups.map((group, idx) => {
+                    // Check if this item is a failure case
+                    const isFailed = (group as any).isFailed === true || group.analysisLevel === 3;
+                    
+                    if (isFailed) {
+                        return (
+                            <div key={group.id || idx} className="bg-white rounded-lg border border-red-200 p-3 shadow-sm relative overflow-hidden flex items-center gap-3">
+                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                                
+                                {/* Photo Thumbnail */}
+                                {group.photoUrls && group.photoUrls.length > 0 && (
+                                    <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-gray-100 border border-red-100 opacity-80">
+                                        <img 
+                                            src={group.photoUrls[0]} 
+                                            alt="Análisis fallido" 
+                                            className="w-full h-full object-cover grayscale-[0.3]"
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                                        <h4 className="font-semibold text-sm text-red-700">No se pudo analizar</h4>
+                                    </div>
+                                    <p className="text-xs text-red-600 truncate">
+                                        {group.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'}
+                                    </p>
+                                </div>
+
+                                {/* Close Button (Bidirectional Delete) */}
+                                <button 
+                                    onClick={() => {
+                                        // 1. Find photo index by URL
+                                        const url = group.photoUrls?.[0];
+                                        if (url && bookingData.uploadedPhotoUrls) {
+                                            const photoIndex = bookingData.uploadedPhotoUrls.indexOf(url);
+                                            if (photoIndex !== -1) {
+                                                removePhoto(photoIndex);
+                                                return;
+                                            }
+                                        }
+                                        // Fallback: Just remove the group if photo not found
+                                        const n = (bookingData.treeGroups || []).filter(g => g.id !== group.id);
+                                            const newHours = calculateTotalTreeHours(n);
+                                            setBookingData({treeGroups: n, estimatedHours: newHours});
+                                            if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: n, estimatedHours: newHours });
+                                    }}
+                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                                    title="Eliminar foto y resultado"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        );
+                    }
+
+                    return (
+                    <div key={group.id || idx} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm relative overflow-hidden transition-all">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
+                        
+                        <div className="flex flex-row items-center gap-4">
+                            {/* Photo (if available) */}
+                            {group.photoUrls && group.photoUrls.length > 0 && (
+                                <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                                    <img 
+                                        src={group.photoUrls[0]} 
+                                        alt={group.type} 
+                                        className="w-full h-full object-cover"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+                                {/* Line 1: Type + Delete */}
+                                <div className="flex items-center justify-between">
+                                    <h4 className="font-semibold text-sm text-gray-900">
+                                        {group.pruningType === 'shaping' ? 'Poda de Formación' : 'Poda Estructural'}
+                                    </h4>
+                                    
+                                    <button 
+                                         onClick={() => {
+                                             const url = group.photoUrls?.[0];
+                                             if (url && bookingData.uploadedPhotoUrls) {
+                                                 const photoIndex = bookingData.uploadedPhotoUrls.indexOf(url);
+                                                 if (photoIndex !== -1) {
+                                                     removePhoto(photoIndex);
+                                                     return;
+                                                 }
+                                             }
+                                             const n = (bookingData.treeGroups || []).filter(g => g.id !== group.id);
+                                             const newHours = calculateTotalTreeHours(n);
+                                             setBookingData({treeGroups: n, estimatedHours: newHours});
+                                             if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: n, estimatedHours: newHours });
+                                         }}
+                                         className="text-gray-400 hover:text-red-500 transition-colors"
+                                         title="Eliminar"
+                                    >
+                                         <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                {/* Line 2: Height + Confidence */}
+                                <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                                    <span>Altura est: <span className="font-medium text-gray-900">{group.aiHeightRange || group.height}</span></span>
+                                    <span className="text-gray-300">|</span>
+                                    <span className={`font-medium ${group.analysisLevel === 1 ? 'text-green-700' : 'text-amber-700'}`}>
+                                        {group.analysisLevel === 1 ? 'Análisis fiable' : 'Revisión manual'}
+                                    </span>
+                                </div>
+
+                                {/* Line 3: Access */}
+                                <div className="text-xs text-gray-600">
+                                    Acceso: <span className="font-medium text-gray-900">{group.access === 'medio' ? 'Escalera' : group.access === 'dificil' ? 'Trepa' : 'Suelo'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )})}
+            </div>
+        </div>
+      )}
+
+        {bookingData.aiTasks && bookingData.aiTasks.length > 0 && !debugService.includes('césped') && !debugService.includes('Corte de césped') && !debugService.includes('planta') && !debugService.includes('Poda de plantas') && !debugService.includes('árbol') && !debugService.includes('Poda de árboles') && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-4">
             <h3 className="text-green-800 font-semibold mb-3">Resultado IA</h3>
             <ul className="space-y-2">
@@ -1332,7 +3230,48 @@ const DetailsPage: React.FC = () => {
           </div>
         )}
 
-      {/* Palm Pruning Manual Input Section - Removed (Integrated into Photo Upload) */}
+      {/* --- Waste Removal Switch --- */}
+      {/* Show only if there are valid results for Trees or Palms or Shrubs */}
+      {((bookingData.treeGroups && bookingData.treeGroups.filter(g => !((g as any).isFailed === true || g.analysisLevel === 3)).length > 0) || 
+        (bookingData.palmGroups && bookingData.palmGroups.length > 0) || 
+        (bookingData.shrubGroups && bookingData.shrubGroups.length > 0) ||
+        ((bookingData.aiQuantity || 0) > 0)) && (
+          <div className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+              <span className="text-gray-700 font-medium text-sm">Incluir retirada de restos</span>
+              <button 
+                  onClick={() => {
+                      const newValue = !bookingData.wasteRemoval;
+                      setBookingData({ wasteRemoval: newValue });
+                      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { wasteRemoval: newValue });
+                      saveProgress();
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${bookingData.wasteRemoval ? 'bg-green-600' : 'bg-gray-200'}`}
+              >
+                  <span
+                      className={`${
+                          bookingData.wasteRemoval ? 'translate-x-6' : 'translate-x-1'
+                      } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                  />
+              </button>
+          </div>
+      )}
+
+      {/* Gardener Note (Moved to bottom) */}
+      <div className="mb-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Nota para el jardinero (opcional)</h2>
+              <span className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                 No afecta al precio
+              </span>
+          </div>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Ej: Cuidado con el perro, entrar por la puerta lateral..."
+            className="w-full p-4 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm bg-gray-50"
+            rows={3}
+          />
+      </div>
 
       {/* Legacy single-group manual input - REMOVED/REPLACED by the above loop */}
 
@@ -1372,7 +3311,162 @@ const DetailsPage: React.FC = () => {
                 </select>
               </div>
             )}
-            {debugService !== 'Poda de palmeras' && (
+
+            {/* --- Hedges --- */}
+            {debugService === 'Corte de setos a máquina' && (
+                <>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Altura</label>
+                        <select
+                            value={debugHedgeHeight}
+                            onChange={(e) => setDebugHedgeHeight(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                        >
+                            <option value="">Selecciona...</option>
+                            <option value="<1m">&lt;1m</option>
+                            <option value="1-2m">1-2m</option>
+                            <option value=">2m">&gt;2m</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Tipo</label>
+                        <select
+                            value={debugHedgeType}
+                            onChange={(e) => setDebugHedgeType(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                        >
+                            <option value="">Selecciona...</option>
+                            <option value="Seto Mixto/Otro">Seto Mixto/Otro</option>
+                            <option value="Conífera (Ciprés/Tuya)">Conífera</option>
+                            <option value="Laurel/Hoja ancha">Laurel/Hoja ancha</option>
+                            <option value="Hiedra/Trepandora">Hiedra/Trepandora</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Acceso</label>
+                        <select
+                            value={debugHedgeAccess}
+                            onChange={(e) => setDebugHedgeAccess(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                        >
+                            <option value="normal">Normal / Fácil</option>
+                            <option value="medio">Medio (Escalera)</option>
+                            <option value="dificil">Difícil (Andamio/Pértiga)</option>
+                        </select>
+                    </div>
+                </>
+            )}
+
+            {/* --- Trees --- */}
+            {debugService === 'Poda de árboles' && (
+                <>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Tipo Poda</label>
+                        <select
+                            value={debugTreePruningType}
+                            onChange={(e) => setDebugTreePruningType(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                        >
+                            <option value="structural">Estructural</option>
+                            <option value="shaping">Formación</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Acceso</label>
+                        <select
+                            value={debugTreeAccess}
+                            onChange={(e) => setDebugTreeAccess(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                        >
+                            <option value="normal">Suelo (Normal)</option>
+                            <option value="medio">Escalera (Medio)</option>
+                            <option value="dificil">Trepa/Altura (Difícil)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Horas Estimadas</label>
+                        <input
+                            type="number"
+                            min="1"
+                            step="0.5"
+                            value={debugTreeHours}
+                            onChange={(e) => setDebugTreeHours(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                            placeholder="Ej: 3"
+                        />
+                    </div>
+                </>
+            )}
+
+            {/* --- Shrubs --- */}
+            {debugService === 'Poda de plantas' && (
+                <>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Tamaño</label>
+                        <select
+                            value={debugShrubSize}
+                            onChange={(e) => setDebugShrubSize(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                        >
+                            <option value="">Selecciona...</option>
+                            <option value="Pequeño (hasta 1m)">Pequeño (hasta 1m)</option>
+                            <option value="Mediano (1-2.5m)">Mediano (1-2.5m)</option>
+                            <option value="Grande (>2.5m)">Grande (&gt;2.5m)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Tipo</label>
+                        <select
+                            value={debugShrubType}
+                            onChange={(e) => setDebugShrubType(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                        >
+                            <option value="">Selecciona...</option>
+                            <option value="Arbustos ornamentales">Arbustos ornamentales</option>
+                            <option value="Rosales y plantas florales">Rosales y plantas florales</option>
+                            <option value="Trepadoras">Trepadoras</option>
+                            <option value="Cactus y suculentas grandes">Cactus y suculentas grandes</option>
+                        </select>
+                    </div>
+                </>
+            )}
+
+            {/* --- Clearing --- */}
+            {debugService === 'Labrar y quitar malas hierbas a mano' && (
+                <div>
+                    <label className="block text-sm font-medium text-gray-800 mb-1">Densidad/Tipo</label>
+                    <select
+                        value={debugClearingType}
+                        onChange={(e) => setDebugClearingType(e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                    >
+                        <option value="">Selecciona...</option>
+                        <option value="Maleza ligera">Maleza ligera</option>
+                        <option value="Maleza densa">Maleza densa</option>
+                        <option value="Cañaveral/Zarzas">Cañaveral/Zarzas</option>
+                        <option value="Terreno pedregoso">Terreno pedregoso</option>
+                    </select>
+                </div>
+            )}
+
+            {/* --- Fumigation --- */}
+            {debugService === 'Fumigación de plantas' && (
+                <div>
+                    <label className="block text-sm font-medium text-gray-800 mb-1">Tipo tratamiento</label>
+                    <select
+                        value={debugFumigationType}
+                        onChange={(e) => setDebugFumigationType(e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
+                    >
+                        <option value="">Selecciona...</option>
+                        <option value="Insecticida">Insecticida</option>
+                        <option value="Fungicida">Fungicida</option>
+                        <option value="Herbicida">Herbicida</option>
+                    </select>
+                </div>
+            )}
+
+            {debugService !== 'Poda de palmeras' && debugService !== 'Corte de setos a máquina' && debugService !== 'Poda de árboles' && (
               <div>
                 <label className="block text-sm font-medium text-gray-800 mb-1">Estado del jardín</label>
                 <select
@@ -1380,10 +3474,17 @@ const DetailsPage: React.FC = () => {
                   onChange={(e) => setDebugState(e.target.value)}
                   className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                 >
-                  <option value="normal">normal</option>
-                  <option value="descuidado">descuidado</option>
-                  <option value="muy descuidado">muy descuidado</option>
+                  <option value="normal">Normal</option>
+                  <option value="descuidado">Descuidado</option>
+                  <option value="muy descuidado">Muy descuidado</option>
                 </select>
+                {debugService === 'Poda de plantas' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                     {debugState === 'normal' && 'planta saludable, pocas ramas secas'}
+                     {debugState === 'descuidado' && 'follaje denso, algunas ramas secas'}
+                     {debugState === 'muy descuidado' && 'crecimiento descontrolado, muchas ramas secas'}
+                  </p>
+                )}
               </div>
             )}
             
@@ -1500,7 +3601,7 @@ const DetailsPage: React.FC = () => {
               </div>
             )}
 
-            {debugService !== 'Poda de palmeras' && (
+            {debugService !== 'Poda de palmeras' && debugService !== 'Poda de árboles' && (
               <div>
                 <label className="block text-sm font-medium text-gray-800 mb-1">Cantidad</label>
                 <input
@@ -1526,7 +3627,6 @@ const DetailsPage: React.FC = () => {
                       }
 
                       // Convert simulated groups to context structure
-                      // Note: We use a placeholder ID and assume no photo for debug simulation
                       const groups = debugPalmGroups.map((g, i) => ({
                           id: `debug-${Date.now()}-${i}`,
                           species: g.species,
@@ -1539,54 +3639,150 @@ const DetailsPage: React.FC = () => {
 
                       const totalHours = groups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
 
-                      setBookingData({ 
+                      const updatePayload = { 
                         palmGroups: groups,
                         estimatedHours: totalHours,
-                        // Clear single fields just in case
                         palmSpecies: undefined,
                         palmHeight: undefined,
                         palmState: undefined,
-                      });
+                      };
+
+                      setBookingData(updatePayload);
+                      if (bookingData.serviceIds?.[0]) {
+                           updateServiceData(bookingData.serviceIds[0], updatePayload);
+                      }
                   } else {
                       const qty = debugQuantity === '' ? 0 : Number(debugQuantity);
-                      const unit = debugService.includes('césped') || debugService.includes('setos') || debugService.includes('hierbas') || debugService.includes('labrar') ? 'm2' : 'plantas';
+                      const unit = debugService.includes('césped') || debugService.includes('setos') || debugService.includes('hierbas') || debugService.includes('labrar') || debugService.includes('fumig') ? 'm2' : 'plantas';
                       const diff = debugState.includes('muy') ? 3 : debugState.includes('descuidado') ? 2 : 1;
                       
-                      let hours = 0;
-                      if (unit === 'm2') {
-                          hours = Math.ceil(qty / 150);
-                      } else {
-                          hours = Math.ceil(qty * 0.15);
-                      }
-
                       // Create synthetic task for AI simulation
-                      const syntheticTask = {
+                      const syntheticTask: any = {
                         tipo_servicio: debugService,
                         estado_jardin: debugState,
+                        nivel_analisis: 1, 
+                        observaciones: ['Simulación manual'],
+                        // Lawn
+                        especie_cesped: debugLawnSpecies,
                         superficie_m2: unit === 'm2' ? qty : null,
                         numero_plantas: unit === 'plantas' ? qty : null,
-                        tamaño_plantas: null
+                        // Hedge
+                        longitud_m: debugService.includes('seto') ? qty : null,
+                        altura_m: debugService.includes('seto') ? (debugHedgeHeight === '<1m' ? 0.5 : debugHedgeHeight === '1-2m' ? 1.5 : 2.5) : null,
+                        tipo_seto: debugHedgeType,
+                        dificultad_acceso: debugHedgeAccess === 'dificil' ? 3 : debugHedgeAccess === 'medio' ? 2 : 1,
+                        // Tree
+                        cantidad: debugService.includes('árbol') ? 1 : null,
+                        altura_aprox_m: debugService.includes('árbol') ? 3 : null, // Default
+                        tipo_arbol: 'Generico', // Default
+                        // Shrub
+                        cantidad_estimada: debugService.includes('planta') && !debugService.includes('fumig') ? qty : null,
+                        tamano_promedio: debugShrubSize,
+                        tipo_plantacion: debugShrubType,
+                        // Clearing
+                        densidad_maleza: debugClearingType,
+                        // Fumigation
+                        cantidad_o_superficie: qty,
+                        unidad: debugService.includes('fumig') ? 'm2' : null,
+                        nivel_plaga: debugFumigationType
                        };
  
                        console.log('[Debug] Simulating AI Result:', { 
                            aiQuantity: qty, 
-                           aiTasks: [syntheticTask], 
-                           lawnSpecies: debugLawnSpecies 
+                           aiTasks: [syntheticTask]
                        });
 
-                       setBookingData({ 
+                       const updatePayload: any = {
                          aiQuantity: qty, 
-                        aiUnit: unit, 
-                        aiDifficulty: diff, 
-                        estimatedHours: hours,
-                        aiTasks: [syntheticTask], // Simulate AI task detection
-                        // Limpiamos datos de palmeras si cambiamos a otro servicio
-                        palmSpecies: undefined,
-                        palmHeight: undefined,
-                        palmState: undefined,
-                        palmWasteRemoval: undefined,
-                        lawnSpecies: debugLawnSpecies
-                      });
+                         aiUnit: unit, 
+                         aiDifficulty: diff, 
+                         aiTasks: [syntheticTask],
+                         isAnalyzing: false
+                       };
+                       
+                       if (debugService === 'Corte de césped') {
+                           updatePayload.lawnZones = [{
+                               id: `debug-lawn-${Date.now()}`,
+                               species: debugLawnSpecies || 'Césped estándar',
+                               state: debugState,
+                               quantity: qty,
+                               wasteRemoval: true,
+                               photoUrls: [],
+                               imageIndices: [],
+                               analysisLevel: 1,
+                               observations: ['Simulación manual']
+                           }];
+                           updatePayload.estimatedHours = Math.ceil(qty / 150);
+                       } else if (debugService === 'Corte de setos a máquina') {
+                           updatePayload.hedgeZones = [{
+                               id: `debug-hedge-${Date.now()}`,
+                               type: debugHedgeType || 'Seto Mixto/Otro',
+                               height: debugHedgeHeight || '1-2m',
+                               length: qty,
+                               access: debugHedgeAccess as 'normal' | 'medio' | 'dificil',
+                               wasteRemoval: true,
+                               photoUrls: [],
+                               analysisLevel: 1,
+                               observations: ['Simulación manual']
+                           }];
+                           updatePayload.estimatedHours = Math.ceil(qty / 10);
+                       } else if (debugService === 'Poda de árboles') {
+                          const h = debugTreeHours ? Number(debugTreeHours) : 3;
+                          updatePayload.treeGroups = [{
+                              id: `debug-tree-${Date.now()}`,
+                              type: 'Generico', // Default for legacy compatibility
+                              height: 'N/A',   // Default for legacy compatibility
+                              pruningType: debugTreePruningType as 'structural' | 'shaping',
+                              quantity: 1,     // Placeholder quantity
+                              access: debugTreeAccess as 'normal' | 'medio' | 'dificil',
+                              wasteRemoval: true,
+                              photoUrls: [],
+                              analysisLevel: 1,
+                              observations: ['Simulación manual']
+                          }];
+                          updatePayload.estimatedHours = h;
+                       } else if (debugService === 'Poda de plantas') {
+                            updatePayload.shrubGroups = [{
+                                id: `debug-shrub-${Date.now()}`,
+                                type: debugShrubType || 'Arbustos ornamentales',
+                                size: debugShrubSize || 'Pequeño (hasta 1m)',
+                                state: debugState,
+                                quantity: qty,
+                                wasteRemoval: true,
+                                photoUrls: [],
+                                analysisLevel: 1,
+                                observations: ['Simulación manual'],
+                                imageIndices: []
+                            }];
+                            updatePayload.estimatedHours = Math.ceil(qty * 0.15);
+                       } else if (debugService === 'Labrar y quitar malas hierbas a mano') {
+                           updatePayload.clearingZones = [{
+                               id: `debug-clear-${Date.now()}`,
+                               type: debugClearingType || 'Maleza ligera',
+                               area: qty,
+                               wasteRemoval: true,
+                               photoUrls: [],
+                               analysisLevel: 1,
+                               observations: ['Simulación manual']
+                           }];
+                           updatePayload.estimatedHours = Math.ceil(qty / 20);
+                       } else if (debugService === 'Fumigación de plantas') {
+                           updatePayload.fumigationZones = [{
+                               id: `debug-fum-${Date.now()}`,
+                               type: debugFumigationType || 'Insecticida',
+                               area: qty,
+                               wasteRemoval: true,
+                               photoUrls: [],
+                               analysisLevel: 1,
+                               observations: ['Simulación manual']
+                           }];
+                           updatePayload.estimatedHours = Math.ceil(qty / 100);
+                       }
+
+                       setBookingData(updatePayload);
+                       if (bookingData.serviceIds?.[0]) {
+                           updateServiceData(bookingData.serviceIds[0], updatePayload);
+                       }
                   }
                   saveProgress();
                 }}
@@ -1614,6 +3810,40 @@ const DetailsPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Retry Modal */}
+      {showRetryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
+                <div className="flex flex-col items-center text-center mb-6">
+                    <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+                        <Wand2 className="w-6 h-6 text-amber-600" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">¿Reintentar análisis?</h3>
+                    <p className="text-sm text-gray-600">
+                        Sentimos que el análisis no haya salido como esperabas. Puedes reintentarlo para comprobar si el nuevo resultado se ajusta mejor.
+                    </p>
+                </div>
+                <div className="flex flex-col gap-3">
+                    <button 
+                        onClick={() => {
+                            setShowRetryModal(false);
+                            runAIAnalysis();
+                        }}
+                        className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium transition-colors"
+                    >
+                        Reintentar análisis
+                    </button>
+                    <button 
+                        onClick={() => setShowRetryModal(false)}
+                        className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Waste Removal Warning Modal */}
       {showWasteModal && (
@@ -1652,10 +3882,159 @@ const DetailsPage: React.FC = () => {
             onClick={handleContinue}
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200"
           >
-            Continuar
+            {(() => {
+                const validTreeCount = (bookingData.treeGroups || []).filter(g => !((g as any).isFailed === true || g.analysisLevel === 3)).length;
+                return validTreeCount > 0 ? `Continuar con ${validTreeCount} árboles` : 'Continuar';
+            })()}
           </button>
         </div>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* DEBUG TOOL UI                                                      */}
+      {/* ------------------------------------------------------------------ */}
+      
+      {/* Toggle Button */}
+      <button 
+        onClick={() => setShowDebugPanel(!showDebugPanel)}
+        className="fixed bottom-24 right-4 bg-gray-800 text-white p-3 rounded-full shadow-lg opacity-75 hover:opacity-100 transition-opacity z-50 hover:scale-110 transform duration-200 border-2 border-green-500"
+        title="Toggle AI Debugger"
+      >
+        <Bug className="w-6 h-6" />
+      </button>
+
+      {/* Debug Panel Overlay */}
+      {showDebugPanel && (
+        <div className="fixed bottom-0 left-0 right-0 h-[60vh] bg-gray-900 text-gray-200 border-t-4 border-green-500 z-[100] shadow-2xl flex flex-col font-mono text-xs animate-in slide-in-from-bottom-10">
+           {/* Header */}
+           <div className="flex items-center justify-between px-4 py-3 bg-gray-800 border-b border-gray-700 shadow-md">
+              <div className="flex items-center gap-3">
+                  <div className="bg-green-900/50 p-1.5 rounded text-green-400 border border-green-800">
+                      <Bug className="w-4 h-4" />
+                  </div>
+                  <div>
+                      <span className="font-bold text-white text-sm block">AI Analysis Debugger</span>
+                      <span className="text-gray-500 text-[10px]">
+                          {debugLogs?.timestamp ? new Date(debugLogs.timestamp).toLocaleTimeString() : 'Esperando...'}
+                      </span>
+                  </div>
+              </div>
+              <div className="flex gap-3">
+                  <button 
+                     onClick={() => {
+                         if (!debugLogs) return;
+                         const data = JSON.stringify(debugLogs, null, 2);
+                         navigator.clipboard.writeText(data);
+                         alert('Datos técnicos copiados al portapapeles');
+                     }}
+                     disabled={!debugLogs}
+                     className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                     <span className="text-lg">📋</span> Copiar Datos
+                  </button>
+                  <button 
+                      onClick={() => setShowDebugPanel(false)} 
+                      className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                      <ChevronLeft className="w-6 h-6 rotate-[270deg]" />
+                  </button>
+              </div>
+           </div>
+           
+           {/* Main Content Area */}
+           <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-gray-900">
+               {!debugLogs ? (
+                   <div className="h-full flex flex-col items-center justify-center text-gray-600 gap-4">
+                       <Wand2 className="w-12 h-12 opacity-20" />
+                       <p className="text-sm">Ejecuta un análisis ("Analizar") para capturar datos...</p>
+                   </div>
+               ) : (
+                   <>
+                       {/* 0. Summary Cards */}
+                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                           <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700">
+                               <div className="text-gray-500 mb-1 text-[10px] uppercase tracking-wider">Servicio Detectado</div>
+                               <div className="text-green-400 font-bold text-sm truncate">{debugLogs.service || 'N/A'}</div>
+                           </div>
+                           <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700">
+                               <div className="text-gray-500 mb-1 text-[10px] uppercase tracking-wider">Modelo IA</div>
+                               <div className="text-blue-400 font-bold text-sm">{debugLogs.model}</div>
+                           </div>
+                           <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700">
+                               <div className="text-gray-500 mb-1 text-[10px] uppercase tracking-wider">Estado</div>
+                               <div className={`font-bold text-sm ${debugLogs.errors?.length ? 'text-red-400' : 'text-green-400'}`}>
+                                   {debugLogs.errors?.length ? 'Fallido' : 'Exitoso'}
+                               </div>
+                           </div>
+                       </div>
+
+                       {/* 1. Errors Section (High Priority) */}
+                       {debugLogs.errors && debugLogs.errors.length > 0 && (
+                           <div className="p-4 bg-red-900/10 border border-red-500/30 rounded-xl">
+                               <div className="text-red-400 font-bold mb-3 flex items-center gap-2">
+                                   <AlertTriangle className="w-4 h-4" />
+                                   Errores Detectados
+                               </div>
+                               {debugLogs.errors.map((e, i) => (
+                                   <pre key={i} className="text-red-300 text-[10px] whitespace-pre-wrap bg-red-950/30 p-2 rounded border border-red-900/50">
+                                       {typeof e === 'string' ? e : JSON.stringify(e, null, 2)}
+                                   </pre>
+                               ))}
+                           </div>
+                       )}
+
+                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                           {/* 2. Raw Response */}
+                           <div className="space-y-2">
+                               <div className="flex items-center gap-2 text-yellow-500 font-bold text-sm border-b border-gray-800 pb-2">
+                                   <span>📥 Respuesta Raw (JSON)</span>
+                               </div>
+                               <div className="relative group">
+                                   <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-yellow-100/80 h-64 text-[10px] leading-relaxed border border-gray-700">
+                                       {JSON.stringify(debugLogs.rawResponse, null, 2)}
+                                   </pre>
+                               </div>
+                           </div>
+
+                           {/* 3. Parsed Data */}
+                           <div className="space-y-2">
+                               <div className="flex items-center gap-2 text-blue-400 font-bold text-sm border-b border-gray-800 pb-2">
+                                   <span>🔄 Datos Procesados</span>
+                               </div>
+                               <div className="relative group">
+                                   <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-blue-100/80 h-64 text-[10px] leading-relaxed border border-gray-700">
+                                       {JSON.stringify(debugLogs.parsedResponse, null, 2)}
+                                   </pre>
+                               </div>
+                           </div>
+                       </div>
+
+                       {/* 4. Inputs & Final State */}
+                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                           <div className="space-y-2">
+                               <div className="flex items-center gap-2 text-gray-400 font-bold text-sm border-b border-gray-800 pb-2">
+                                   <span>📤 Inputs Enviados</span>
+                               </div>
+                               <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-gray-300 h-48 text-[10px] leading-relaxed border border-gray-700">
+                                   {JSON.stringify(debugLogs.promptInputs, null, 2)}
+                               </pre>
+                           </div>
+
+                           <div className="space-y-2">
+                               <div className="flex items-center gap-2 text-purple-400 font-bold text-sm border-b border-gray-800 pb-2">
+                                   <span>🚀 Estado Final (App)</span>
+                               </div>
+                               <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-purple-200 h-48 text-[10px] leading-relaxed border border-gray-700">
+                                   {JSON.stringify(debugLogs.finalAnalysisData, null, 2)}
+                               </pre>
+                           </div>
+                       </div>
+                   </>
+               )}
+           </div>
+        </div>
+      )}
+
     </div>
   );
 };

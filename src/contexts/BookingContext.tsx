@@ -52,6 +52,70 @@ export interface BookingData {
     analysisLevel?: number;
     observations?: string[];
   }>;
+  // New Service-Specific Fields
+  hedgeZones?: Array<{
+    id: string;
+    type: string;
+    height: string; // '<1m', '1-2m', '>2m'
+    length: number; // meters
+    access: 'normal' | 'medio' | 'dificil';
+    wasteRemoval: boolean;
+    photoUrls?: string[];
+    files?: File[];
+    analysisLevel?: number;
+    observations?: string[];
+  }>;
+  treeGroups?: Array<{
+    id: string;
+    type: string; // 'Frutal', 'Decorativo', 'Conífera'
+    height: string; // '<3m', '3-6m', '6-9m', '>9m'
+    aiHeightRange?: string;
+    size?: string;
+    pruningType?: 'structural' | 'shaping'; // New field for pruning type
+    quantity: number;
+    state?: string;
+    access: 'normal' | 'medio' | 'dificil';
+    wasteRemoval: boolean;
+    photoUrls?: string[];
+    files?: File[];
+    analysisLevel?: number;
+    observations?: string[];
+    imageIndices?: number[];
+    estimatedHours?: number; // AI estimated hours per tree
+  }>;
+  shrubGroups?: Array<{
+    id: string;
+    type: string;
+    size: string; // 'Pequeño', 'Mediano', 'Grande'
+    quantity: number;
+    state?: string;
+    wasteRemoval: boolean;
+    photoUrls?: string[];
+    files?: File[];
+    analysisLevel?: number;
+    observations?: string[];
+    imageIndices?: number[];
+  }>;
+  clearingZones?: Array<{
+    id: string;
+    type: string;
+    area: number; // m2
+    wasteRemoval: boolean;
+    photoUrls?: string[];
+    files?: File[];
+    analysisLevel?: number;
+    observations?: string[];
+  }>;
+  fumigationZones?: Array<{
+    id: string;
+    type: string;
+    area: number; // m2
+    wasteRemoval: boolean;
+    photoUrls?: string[];
+    files?: File[];
+    analysisLevel?: number;
+    observations?: string[];
+  }>;
   // Per-service isolated state storage
   servicesData?: Record<string, {
     photos?: File[];
@@ -62,6 +126,11 @@ export interface BookingData {
     // Specific fields per service type
     lawnZones?: any[];
     palmGroups?: any[];
+    hedgeZones?: any[];
+    treeGroups?: any[];
+    shrubGroups?: any[];
+    clearingZones?: any[];
+    fumigationZones?: any[];
     lawnSpecies?: string;
     palmSpecies?: string;
     palmHeight?: string;
@@ -77,7 +146,7 @@ interface BookingContextType {
   bookingData: BookingData;
   currentStep: number;
   isLoading: boolean; // Estado de carga para evitar renderizar el paso 0 prematuramente
-  setBookingData: (data: Partial<BookingData>) => void;
+  setBookingData: (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => void;
   setCurrentStep: (step: number) => void;
   nextStep: () => void;
   prevStep: () => void;
@@ -127,16 +196,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [currentStep, setCurrentStepState] = useState(0);
   const [isLoading, setIsLoading] = useState(true); // Inicialmente cargando
 
-  const setBookingData = (data: Partial<BookingData>) => {
+  const setBookingData = (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => {
     setBookingDataState(prev => {
-        const newData = { ...prev, ...data };
-        
-        // Auto-persist to service isolation if we have a current service context
-        // This is a heuristic: if we are updating fields that are service-specific
-        // and we have a single selected service ID (common in flow), save to that bucket.
-        // However, explicit saving is better controlled by the UI. 
-        // For now, we just update the main state. The UI will handle "switching" contexts.
-        
+        const updates = typeof data === 'function' ? data(prev) : data;
+        const newData = { ...prev, ...updates };
         return newData;
     });
   };
@@ -169,6 +232,11 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               estimatedHours: 0,
               lawnZones: [],
               palmGroups: [],
+              hedgeZones: [],
+              treeGroups: [],
+              shrubGroups: [],
+              clearingZones: [],
+              fumigationZones: [],
               aiQuantity: 0,
               aiDifficulty: 1,
               // Apply saved

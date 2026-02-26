@@ -1,10 +1,41 @@
 export interface AITask {
   tipo_servicio: string;
-  especie_cesped?: string; // "Bermuda...", "Gramón...", "Dichondra...", "Césped Mixto..."
-  estado_jardin: string; // "normal" | "descuidado" | "muy descuidado"
-  superficie_m2: number | null;
-  numero_plantas: number | null;
-  tamaño_plantas: string | null; // "pequeñas" | "medianas" | "grandes" | "muy grandes"
+  // Lawn
+  especie_cesped?: string; 
+  estado_jardin?: string; 
+  superficie_m2?: number | null;
+  
+  // Generic / Legacy
+  numero_plantas?: number | null;
+  tamaño_plantas?: string | null; 
+  
+  // Hedges
+  longitud_m?: number | null;
+  altura_m?: number | null;
+  tipo_seto?: string | null;
+  dificultad_acceso?: 1 | 2 | 3 | null;
+
+  // Trees
+  cantidad?: number | null;
+  altura_aprox_m?: number | null;
+  tipo_arbol?: string | null;
+
+  // Shrubs
+  cantidad_estimada?: number | null;
+  tamano_promedio?: string | null;
+  tamaño_promedio?: string | null; // Legacy/Compat
+  tipo_plantacion?: string | null;
+  indices_imagenes?: number[]; // Added for multi-image tracking
+
+  // Clearing
+  densidad_maleza?: string | null;
+
+  // Fumigation
+  cantidad_o_superficie?: number | null;
+  unidad?: string | null;
+  nivel_plaga?: string | null;
+
+  // Common
   nivel_analisis?: number; // 1, 2, 3
   observaciones?: string[];
 }
@@ -18,15 +49,28 @@ interface EstimationInput {
   model?: 'gpt-4o-mini' | 'gemini-2.0-flash'; // Nuevo selector de modelo
 }
 
-interface EstimationResult {
+export interface EstimationResult {
   tareas: AITask[];
   palmas?: Array<{
     indice_imagen: number;
     especie: string;
     altura: string;
     estado?: string;
+    nivel_analisis?: number;
+    observaciones?: string[];
+  }>;
+  arboles?: Array<{
+    indice_imagen: number;
+    especie: string;
+    altura: string;
+    tipo_acceso?: string;
+    tipo_poda?: string;
+    horas_estimadas?: number;
+    nivel_analisis?: number;
+    observaciones?: string[];
   }>;
   reasons?: string[];
+  rawResponse?: any; // New field for debug
 }
 
 // Eliminar fallback: solo OpenAI
@@ -41,20 +85,21 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
         photo_urls: input.photoUrls,
         photo_count: input.photoCount,
         service_name: input.serviceName,
-        model: input.model || 'gpt-4o-mini',
+        model: input.model || 'gemini-2.0-flash',
       },
     });
     if (error) {
       console.warn('[AI] Edge Function error:', error);
-      return { tareas: [] };
+      return { tareas: [], rawResponse: { error } };
     }
     const tareas = Array.isArray((data as any)?.tareas) ? (data as any).tareas : [];
     const palmas = Array.isArray((data as any)?.palmas) ? (data as any).palmas : undefined;
+    const arboles = Array.isArray((data as any)?.arboles) ? (data as any).arboles : undefined;
     const reasons = Array.isArray((data as any)?.reasons) ? (data as any).reasons : undefined;
-    return { tareas, palmas, reasons };
+    return { tareas, palmas, arboles, reasons, rawResponse: data };
   } catch (e) {
     console.warn('[AI] Fallo invocando Edge Function:', e);
-    return { tareas: [] };
+    return { tareas: [], rawResponse: { exception: e } };
   }
 }
 
@@ -81,7 +126,7 @@ export async function estimateServiceAutoQuote(params: { service: string; imageU
         service: params.service,
         image_url: params.imageUrl,
         description: '',
-        model: params.model || 'gpt-4o-mini',
+        model: params.model || 'gemini-2.0-flash',
       },
     });
     if (error) {
@@ -134,6 +179,8 @@ VARIABLES TO EXTRACT:
 - superficie_m2 (Visual estimation of the total lawn area)
 - numero_plantas (Always null for this service)
 - tamaño_plantas (Always null for this service)
+- nivel_analisis (1=Clear/High Confidence, 2=Partial/Blurry/Medium Confidence, 3=Unusable/Fail)
+- observaciones (List of specific visual observations, issues, or warnings)
 
 CLASSIFICATION RULES (estado_jardin):
 
@@ -173,16 +220,162 @@ RESPONSE FORMAT (STRICT):
       "estado_jardin": "normal" | "descuidado" | "muy descuidado",
       "superficie_m2": number,
       "numero_plantas": null,
-      "tamaño_plantas": null
+      "tamaño_plantas": null,
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": string[]
     }
   ]
 }
 ---`,
-  'Corte de setos': "Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta la superficie total de setos (largo × altura) en m².\n2. Analiza densidad, grosor de ramas y uniformidad.\n3. Evalúa accesibilidad frontal y trasera, necesidad de escalera o pértiga.\n4. Detecta obstáculos cercanos (macetas, vallas) y terreno irregular.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Altura ≤1,5 m, ramas finas, accesible desde el suelo.\n- Nivel 2: Altura 1,5–2,5 m, ramas medianas, obstáculos moderados.\n- Nivel 3: Altura >2,5 m, ramas gruesas o densas, acceso limitado, requiere poda fuerte.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Corte de setos\",\n  \"cantidad\": [número estimado de m2],\n  \"unidad\": \"m2\",\n  \"dificultad\": [1, 2 o 3]\n}",
-  'Fumigación': "Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar fumigación.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta plantas afectadas por plagas o áreas continuas.\n2. IMPORTANTE: Para calcular la cantidad, convierte las plantas reales a \"plantas equivalentes\" usando esta fórmula mental:\n   Plantas_equivalentes = (altura_real_cm / 40) × (diametro_real_cm / 35)\n3. Detecta densidad de plaga y gravedad de daños.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Plaga leve, <20% afectación, plantas ≤2 equivalentes.\n- Nivel 2: Afectación 20–60%, plantas 2–5 equivalentes, acceso parcial.\n- Nivel 3: >60% afectación, plantas >5 equivalentes, acceso difícil, plaga severa.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Fumigación\",\n  \"cantidad\": [número de plantas equivalentes],\n  \"unidad\": \"plantas\",\n  \"dificultad\": [1, 2 o 3]\n}",
-  'Poda de plantas': "Eres una IA especializada en análisis de jardines llamada 'PlantShapeAI'. Tu objetivo es analizar arbustos, rosales u ornamentales (excluye árboles grandes).\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta plantas que requieren poda.\n2. IMPORTANTE: Convierte cada planta a \"plantas equivalentes\" usando esta fórmula:\n   Plantas_equivalentes = (altura_real_cm / 40) × (diametro_real_cm / 35)\n3. Evalúa densidad de ramas y dureza aparente.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Plantas ≤1 m (≤2,5 equivalentes), ramas finas, accesibles, poda ligera.\n- Nivel 2: Plantas 1–1,8 m (2,5–4,5 equivalentes), ramas medianas, acceso parcial.\n- Nivel 3: Plantas >1,8 m (>4,5 equivalentes), ramas gruesas, densas, espacios reducidos, poda fuerte.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Poda de plantas\",\n  \"cantidad\": [número de plantas equivalentes],\n  \"unidad\": \"plantas\",\n  \"dificultad\": [1, 2 o 3]\n}",
-  'Poda de árboles': "Eres una IA especializada en análisis de jardines llamada 'TreeScale'. Tu objetivo es analizar árboles para poda.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta árboles que requieren poda.\n2. IMPORTANTE: Convierte a \"árboles equivalentes\" usando esta fórmula:\n   Árbol_equivalente = (altura_real_m / 3) × (diametro_copa_real_m / 2)\n3. Determina si se necesita escalera, pértiga o trabajo en altura.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Árboles <3 m (≤1 equivalente), ramas finas, acceso fácil.\n- Nivel 2: Árboles 3–5 m (1–3 equivalentes), escalera o pértiga, obstáculos moderados.\n- Nivel 3: Árboles >5 m (>3 equivalentes), ramas gruesas, acceso difícil, trabajo en altura.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Poda de árboles\",\n  \"cantidad\": [número de árboles equivalentes],\n  \"unidad\": \"árboles\",\n  \"dificultad\": [1, 2 o 3]\n}",
-  'Labrar y quitar malas hierbas': "Eres una IA especializada en análisis de jardines llamada 'SoilSense'. Tu objetivo es analizar terreno para deshierbe manual y labrado.\n\nINSTRUCCIONES DE ANÁLISIS:\n1. Detecta zonas con malas hierbas y calcula superficie en m².\n2. Evalúa densidad, tamaño de hierbas, dureza del suelo y piedras/raíces.\n\nDETERMINACIÓN DE DIFICULTAD (Elige 1, 2 o 3):\n- Nivel 1: Hierbas pequeñas, poco densas, terreno suelto y llano.\n- Nivel 2: Hierbas medianas, densidad moderada, tierra parcialmente compacta.\n- Nivel 3: Hierbas grandes, densas, raíces profundas, terreno duro, acceso difícil.\n\nFORMATO DE SALIDA (JSON ÚNICAMENTE):\n{\n  \"servicio\": \"Labrar y quitar malas hierbas\",\n  \"cantidad\": [número estimado de m2],\n  \"unidad\": \"m2\",\n  \"dificultad\": [1, 2 o 3]\n}",
+  'Corte de setos': `---
+Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.
+
+INSTRUCCIONES DE ANÁLISIS:
+1. Detecta la longitud total de setos en metros lineales.
+2. Estima la altura promedio.
+3. Clasifica el tipo de seto.
+4. Evalúa la dificultad de acceso (obstáculos, altura, densidad).
+
+VARIABLES A EXTRAER:
+- tipo_servicio: "Corte de setos"
+- longitud_m: Longitud estimada en metros.
+- altura_m: Altura estimada en metros.
+- tipo_seto: "Conífera (Ciprés/Tuya)", "Laurel/Hoja ancha", "Hiedra/Trepandora", "Seto Mixto/Otro".
+- dificultad_acceso: 1 (Fácil), 2 (Medio/Escalera), 3 (Difícil/Andamio/Pértiga).
+- nivel_analisis: 1 (Claro), 2 (Parcial/Borroso), 3 (Inutilizable).
+- observaciones: Lista de observaciones visuales (ej. "Seto muy denso", "Requiere escalera alta").
+
+FORMATO DE SALIDA (JSON ÚNICAMENTE):
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Corte de setos",
+      "longitud_m": number,
+      "altura_m": number,
+      "tipo_seto": string,
+      "dificultad_acceso": 1 | 2 | 3,
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": string[]
+    }
+  ]
+}
+---`,
+  'Poda de árboles': `---
+Eres una IA especializada en análisis de jardines llamada 'TreeScale'. Tu objetivo es analizar árboles para poda.
+
+INSTRUCCIONES DE ANÁLISIS:
+1. Cuenta el número de árboles a podar.
+2. Estima la altura promedio.
+3. Clasifica el tipo de árbol.
+
+VARIABLES A EXTRAER:
+- tipo_servicio: "Poda de árboles"
+- cantidad: Número de árboles.
+- altura_aprox_m: Altura aproximada en metros.
+- tipo_arbol: "Frutal", "Decorativo", "Conífera".
+- nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
+- observaciones: Lista de detalles (ej. "Ramas cerca de cables", "Árbol muy alto").
+
+FORMATO DE SALIDA (JSON ÚNICAMENTE):
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Poda de árboles",
+      "cantidad": number,
+      "altura_aprox_m": number,
+      "tipo_arbol": string,
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": string[]
+    }
+  ]
+}
+---`,
+  'Poda de plantas': `---
+Eres una IA especializada en análisis de jardines llamada 'PlantShapeAI'. Tu objetivo es analizar arbustos, rosales u ornamentales.
+
+INSTRUCCIONES DE ANÁLISIS:
+1. Estima la cantidad de plantas (o plantas equivalentes si son setos bajos).
+2. Determina el tamaño promedio.
+3. Clasifica el tipo de plantación.
+
+VARIABLES A EXTRAER:
+- tipo_servicio: "Poda de plantas"
+- cantidad_estimada: Número estimado de plantas.
+- tamano_promedio: "Pequeño (hasta 1m)", "Mediano (1-2.5m)", "Grande (>2.5m)".
+- tipo_plantacion: "Arbustos ornamentales", "Rosales y plantas florales", "Trepadoras", "Cactus y suculentas grandes".
+- nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
+- observaciones: Lista de detalles.
+
+FORMATO DE SALIDA (JSON ÚNICAMENTE):
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Poda de plantas",
+      "cantidad_estimada": number,
+      "tamano_promedio": string,
+      "tipo_plantacion": string,
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": string[]
+    }
+  ]
+}
+---`,
+  'Labrar y quitar malas hierbas': `---
+Eres una IA especializada en análisis de jardines llamada 'SoilSense'. Tu objetivo es analizar terreno para deshierbe manual y labrado.
+
+INSTRUCCIONES DE ANÁLISIS:
+1. Estima la superficie afectada en m2.
+2. Evalúa la densidad de la maleza.
+
+VARIABLES A EXTRAER:
+- tipo_servicio: "Labrar y quitar malas hierbas"
+- superficie_m2: Área estimada en m2.
+- densidad_maleza: "Baja" (Maleza ligera), "Media" (Maleza densa), "Alta" (Cañaveral/Zarzas).
+- nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
+- observaciones: Lista de detalles (ej. "Terreno pedregoso", "Raíces profundas").
+
+FORMATO DE SALIDA (JSON ÚNICAMENTE):
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Labrar y quitar malas hierbas",
+      "superficie_m2": number,
+      "densidad_maleza": string,
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": string[]
+    }
+  ]
+}
+---`,
+  'Fumigación': `---
+Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar fumigación.
+
+INSTRUCCIONES DE ANÁLISIS:
+1. Estima la cantidad o superficie afectada.
+2. Determina el tipo de tratamiento necesario (Preventivo o Curativo).
+
+VARIABLES A EXTRAER:
+- tipo_servicio: "Fumigación"
+- cantidad_o_superficie: Número (si son plantas) o m2 (si es área).
+- unidad: "plantas" o "m2".
+- nivel_plaga: "Insecticida" (Insectos/Preventivo), "Fungicida" (Hongos/Manchas), "Herbicida" (Malas hierbas en superficie dura).
+- nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
+- observaciones: Lista de detalles (ej. "Pulgón visible", "Hojas comidas").
+
+FORMATO DE SALIDA (JSON ÚNICAMENTE):
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Fumigación",
+      "cantidad_o_superficie": number,
+      "unidad": string,
+      "nivel_plaga": string,
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": string[]
+    }
+  ]
+}
+---`
 };
 
 async function estimateServiceAutoQuoteLocal(): Promise<AutoQuoteResponse | null> { return null; }

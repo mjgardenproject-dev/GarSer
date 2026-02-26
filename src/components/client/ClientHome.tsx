@@ -88,7 +88,7 @@ const ClientHome: React.FC = () => {
 
   // Estimación IA y precio
   const [analyzing, setAnalyzing] = useState(false);
-  const [aiModel, setAiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gpt-4o-mini');
+  const [aiModel, setAiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gemini-2.0-flash');
   const [estimatedHours, setEstimatedHours] = useState<number>(0);
   const [aiTasks, setAiTasks] = useState<AITask[]>([]);
   const [aiAutoAnalysis, setAiAutoAnalysis] = useState<AutoQuoteAnalysis | null>(null);

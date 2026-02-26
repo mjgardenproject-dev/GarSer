@@ -20,6 +20,60 @@ const ConfirmationPage: React.FC = () => {
   const [authError, setAuthError] = useState('');
   const [authInfo, setAuthInfo] = useState('');
   const [showOtpOption, setShowOtpOption] = useState(false);
+  const [breakdown, setBreakdown] = useState<Array<{ desc: string; price: number }>>([]);
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
+  useEffect(() => {
+    if (!bookingData.providerId || !bookingData.serviceIds?.[0]) return;
+    const fetchConfig = async () => {
+      try {
+        const { data } = await supabase
+            .from('gardener_service_prices')
+            .select('additional_config')
+            .eq('gardener_id', bookingData.providerId)
+            .eq('service_id', bookingData.serviceIds![0])
+            .eq('active', true)
+            .single();
+        
+        if (data?.additional_config) {
+            const config = data.additional_config;
+            const items: Array<{ desc: string; price: number }> = [];
+
+            // Shrubs Breakdown
+            if (bookingData.shrubGroups) {
+                const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+                bookingData.shrubGroups.forEach(group => {
+                    const { type, size, quantity, state } = group;
+                    const base = config.species_prices?.[type]?.[size] || 0;
+                    
+                    const surcharges = config.condition_multipliers || { normal: 0, neglected: 15, overgrown: 30 };
+                    let conditionPercent = 0;
+                    const s = (state || 'normal').toLowerCase();
+                    if (s.includes('muy') && s.includes('descuidado')) conditionPercent = surcharges.overgrown;
+                    else if (s.includes('descuidado')) conditionPercent = surcharges.neglected;
+                    else conditionPercent = surcharges.normal;
+                    const conditionMult = 1 + (conditionPercent / 100);
+
+                    let wasteMult = 1;
+                    if (globalWaste) {
+                        wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+                    }
+
+                    if (base > 0) {
+                        const total = Math.ceil(base * quantity * conditionMult * wasteMult);
+                        items.push({
+                            desc: `${quantity}x ${type} (${size}, ${state})`,
+                            price: total
+                        });
+                    }
+                });
+            }
+            setBreakdown(items);
+        }
+      } catch (e) { console.error('Error fetching breakdown config', e); }
+    };
+    fetchConfig();
+  }, [bookingData.providerId, bookingData.serviceIds]);
 
   const handleConfirmBooking = async () => {
     setIsProcessing(true);
@@ -353,6 +407,28 @@ const ConfirmationPage: React.FC = () => {
                 <p className="text-sm text-gray-600">{bookingData.description}</p>
               </div>
             </div>
+          )}
+
+          {/* Breakdown Toggle */}
+          {breakdown.length > 0 && (
+             <div className="mb-4">
+                 <button
+                     onClick={() => setShowBreakdown(!showBreakdown)}
+                     className="text-xs font-medium text-green-600 underline hover:text-green-700 flex items-center"
+                 >
+                     {showBreakdown ? 'Ocultar desglose' : 'Ver desglose detallado'}
+                 </button>
+                 {showBreakdown && (
+                     <div className="mt-2 bg-gray-50 rounded-lg p-3 space-y-2 border border-gray-100">
+                         {breakdown.map((item, i) => (
+                             <div key={i} className="flex justify-between text-xs">
+                                 <span className="text-gray-600 truncate mr-2">{item.desc}</span>
+                                 <span className="font-medium text-gray-900 whitespace-nowrap">€{item.price}</span>
+                             </div>
+                         ))}
+                     </div>
+                 )}
+             </div>
           )}
 
           {/* Divider */}

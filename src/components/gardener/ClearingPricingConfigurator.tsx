@@ -1,47 +1,42 @@
-import React, { useState, useEffect } from 'react';
-import { Info, AlertCircle, Trash2, Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { Info, AlertCircle, Trash2 } from 'lucide-react';
 
-export type LawnSpecies = 
-  | 'Bermuda (fina o gramilla)' 
-  | 'Gramón (Kikuyu, San Agustín o similares)' 
-  | 'Dichondra (oreja de ratón o similares)' 
-  | 'Césped Mixto (Festuca/Raygrass)';
+export type ClearingType = 
+  | 'Maleza ligera' 
+  | 'Maleza densa' 
+  | 'Cañaveral/Zarzas'
+  | 'Terreno pedregoso';
 
-export type LawnRange = '0-50' | '50-200' | '200+';
+export type ClearingRange = '0-50' | '50-200' | '200+';
 
-export interface LawnPricingConfig {
-  species_prices: Record<string, Partial<Record<LawnRange, number>>>; 
-  condition_surcharges: {
-      descuidado: number;
-      muy_descuidado: number;
-  };
+export interface ClearingPricingConfig {
+  type_prices: Record<string, Partial<Record<ClearingRange, number>>>; 
   waste_removal: {
       percentage: number;
   };
-  selected_species?: LawnSpecies[];
+  selected_types?: ClearingType[];
 }
 
-const LAWN_SPECIES: LawnSpecies[] = [
-  'Bermuda (fina o gramilla)',
-  'Gramón (Kikuyu, San Agustín o similares)',
-  'Dichondra (oreja de ratón o similares)',
-  'Césped Mixto (Festuca/Raygrass)'
+const CLEARING_TYPES: ClearingType[] = [
+  'Maleza ligera',
+  'Maleza densa',
+  'Cañaveral/Zarzas',
+  'Terreno pedregoso'
 ];
 
-const EMPTY_CONFIG: LawnPricingConfig = {
-  species_prices: {},
-  condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
+const EMPTY_CONFIG: ClearingPricingConfig = {
+  type_prices: {},
   waste_removal: { percentage: 0 },
-  selected_species: []
+  selected_types: []
 };
 
 interface Props {
-  value?: LawnPricingConfig;
-  onChange: (config: LawnPricingConfig) => void;
-  onSave?: (config: LawnPricingConfig) => Promise<void>;
+  value?: ClearingPricingConfig;
+  onChange: (config: ClearingPricingConfig) => void;
+  onSave?: (config: ClearingPricingConfig) => Promise<void>;
 }
 
-const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) => {
+const ClearingPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -53,63 +48,50 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
     return {
         ...EMPTY_CONFIG,
         ...value,
-        species_prices: { ...EMPTY_CONFIG.species_prices, ...value.species_prices },
-        condition_surcharges: { ...EMPTY_CONFIG.condition_surcharges, ...value.condition_surcharges },
+        type_prices: { ...EMPTY_CONFIG.type_prices, ...value.type_prices },
         waste_removal: { ...EMPTY_CONFIG.waste_removal, ...value.waste_removal },
-        selected_species: value.selected_species || []
+        selected_types: value.selected_types || []
     };
   }, [value]);
 
-  const activeSpecies = LAWN_SPECIES.filter(s => config.selected_species?.includes(s));
-  const availableSpecies = LAWN_SPECIES.filter(s => !config.selected_species?.includes(s));
+  const activeTypes = CLEARING_TYPES.filter(s => config.selected_types?.includes(s));
+  const availableTypes = CLEARING_TYPES.filter(s => !config.selected_types?.includes(s));
 
-  const addSpecies = (species: LawnSpecies) => {
-    const currentSelected = config.selected_species || [];
-    if (!currentSelected.includes(species)) {
+  const addType = (type: ClearingType) => {
+    const currentSelected = config.selected_types || [];
+    if (!currentSelected.includes(type)) {
         onChange({
             ...config,
-            selected_species: [...currentSelected, species]
+            selected_types: [...currentSelected, type]
         });
     }
   };
 
-  const removeSpecies = (species: LawnSpecies) => {
-      const currentSelected = config.selected_species || [];
-      
-      // Create fresh copy of prices
-      const newSpeciesPrices = { ...config.species_prices };
-      
-      // Delete prices for this species
-      if (newSpeciesPrices[species] !== undefined) delete newSpeciesPrices[species];
+  const removeType = (type: ClearingType) => {
+      const currentSelected = config.selected_types || [];
+      const newTypePrices = { ...config.type_prices };
+      if (newTypePrices[type]) {
+          delete newTypePrices[type];
+      }
 
       onChange({
           ...config,
-          selected_species: currentSelected.filter(s => s !== species),
-          species_prices: newSpeciesPrices
+          selected_types: currentSelected.filter(s => s !== type),
+          type_prices: newTypePrices
       });
   };
 
-  const handlePriceChange = (species: LawnSpecies, range: LawnRange, newPrice: number) => {
-    const currentPrices = { ...(config.species_prices[species] || {}) };
+  const handlePriceChange = (type: ClearingType, range: ClearingRange, newPrice: number) => {
+    const currentPrices = { ...(config.type_prices[type] || {}) };
     currentPrices[range] = newPrice;
     
     onChange({
       ...config,
-      species_prices: {
-        ...config.species_prices,
-        [species]: currentPrices
+      type_prices: {
+        ...config.type_prices,
+        [type]: currentPrices
       }
     });
-  };
-
-  const handleSurchargeChange = (type: 'descuidado' | 'muy_descuidado', val: number) => {
-      onChange({
-          ...config,
-          condition_surcharges: {
-              ...config.condition_surcharges,
-              [type]: val
-          }
-      });
   };
 
   const handleWasteChange = (val: number) => {
@@ -126,14 +108,14 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
     
     // Validations
     const errors: string[] = [];
-    const selected = config.selected_species || [];
+    const selected = config.selected_types || [];
     
-    selected.forEach(species => {
-        const ranges: LawnRange[] = ['0-50', '50-200', '200+'];
+    selected.forEach(type => {
+        const ranges: ClearingRange[] = ['0-50', '50-200', '200+'];
         ranges.forEach(r => {
              // @ts-ignore
-            if (!config.species_prices[species]?.[r] || config.species_prices[species]?.[r] <= 0) {
-                errors.push(`${species}-${r}`);
+            if (!config.type_prices[type]?.[r] || config.type_prices[type]?.[r] <= 0) {
+                errors.push(`${type}-${r}`);
             }
         });
     });
@@ -152,17 +134,17 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
         setIsSaving(true);
         await onSave(config);
       } catch (error) {
-        console.error('Error saving lawn config:', error);
+        console.error('Error saving clearing config:', error);
       } finally {
         setIsSaving(false);
       }
     }
   };
 
-  const renderPriceInput = (species: LawnSpecies, range: LawnRange, placeholder: string) => {
+  const renderPriceInput = (type: ClearingType, range: ClearingRange, placeholder: string) => {
      // @ts-ignore
-     const val = config.species_prices[species]?.[range] ?? 0;
-     const hasError = validationErrors.includes(`${species}-${range}`);
+     const val = config.type_prices[type]?.[range] ?? 0;
+     const hasError = validationErrors.includes(`${type}-${range}`);
 
      return (
          <div className="relative w-full h-full">
@@ -174,9 +156,9 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
                 value={val === 0 ? '' : val}
                 placeholder={val === 0 ? '-' : ''}
                 onChange={(e) => {
-                    handlePriceChange(species, range, parseFloat(e.target.value) || 0);
+                    handlePriceChange(type, range, parseFloat(e.target.value) || 0);
                     if (hasError) {
-                        setValidationErrors(prev => prev.filter(err => err !== `${species}-${range}`));
+                        setValidationErrors(prev => prev.filter(err => err !== `${type}-${range}`));
                     }
                 }}
               />
@@ -191,7 +173,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div className="flex items-center gap-2">
             <h3 className="font-semibold text-gray-900 text-lg">
-                Configuración de tarifas por especie (IVA incluido)
+                Configuración de desbroce (IVA incluido)
             </h3>
             <div className="relative">
                 <button 
@@ -206,8 +188,8 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
                         <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
                         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:left-0 md:translate-x-0 md:translate-y-0 md:w-64 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
                             <ul className="list-disc pl-4 space-y-2">
-                                <li>Los precios son por m² (excepto rango 0-50m² que puede ser fijo).</li>
-                                <li>Los precios <strong>no incluyen la retirada de restos</strong> (se configura abajo).</li>
+                                <li>Precios por <strong>m²</strong>.</li>
+                                <li>El rango 0-50 m² es precio mínimo/fijo.</li>
                                 <li>El <strong>IVA está incluido</strong>.</li>
                             </ul>
                         </div>
@@ -217,13 +199,13 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
         </div>
       </div>
 
-      {/* Selector de Especies */}
+      {/* Selector de Tipos */}
       <div className="flex flex-col gap-1 mb-4">
          <div className="flex items-center gap-2">
-            <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Especies de Césped</h4>
+            <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Tipos de Vegetación</h4>
          </div>
          <p className="text-sm text-gray-500 italic">
-            Selecciona las variedades con las que trabajas habitualmente.
+            Selecciona los tipos que trabajas.
          </p>
          
          <div className="mt-2 flex items-center gap-2">
@@ -232,14 +214,14 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
                     className="w-full h-10 pl-3 pr-8 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
                     onChange={(e) => {
                         if (e.target.value) {
-                            addSpecies(e.target.value as LawnSpecies);
+                            addType(e.target.value as ClearingType);
                             e.target.value = '';
                         }
                     }}
                     defaultValue=""
                 >
-                    <option value="" disabled>Añadir especie...</option>
-                    {availableSpecies.map(s => (
+                    <option value="" disabled>Añadir tipo...</option>
+                    {availableTypes.map(s => (
                         <option key={s} value={s}>{s}</option>
                     ))}
                 </select>
@@ -249,58 +231,56 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
 
       {/* Tabla de Precios */}
       <div className="-mx-4 md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white border-y border-gray-200">
-        {/* Desktop Header - Visible only on md+ */}
+        {/* Desktop Header */}
         <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
-            <div className="md:col-span-3">Especie</div>
-            <div className="md:col-span-3 text-center">0–50 m² <span className="text-xs font-normal text-gray-500 block">(Precio Fijo/Min)</span></div>
-            <div className="md:col-span-3 text-center">50–200 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
-            <div className="md:col-span-2 text-center">&gt;200 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
+            <div className="md:col-span-3">Tipo</div>
+            <div className="md:col-span-3 text-center">0–50 m² <span className="text-xs font-normal text-gray-500 block">(Precio Fijo)</span></div>
+            <div className="md:col-span-3 text-center">50–200 m² <span className="text-xs font-normal text-gray-500 block">(€ / m²)</span></div>
+            <div className="md:col-span-2 text-center">&gt;200 m² <span className="text-xs font-normal text-gray-500 block">(€ / m²)</span></div>
             <div className="md:col-span-1"></div>
         </div>
 
         {/* Content */}
-        {activeSpecies.length > 0 ? (
+        {activeTypes.length > 0 ? (
             <div className="divide-y divide-gray-100">
-                {activeSpecies.map((species) => (
-                    <div key={species} className="pt-4 pb-0 px-0 md:p-4 hover:bg-gray-50 transition-colors">
+                {activeTypes.map((type) => (
+                    <div key={type} className="pt-4 pb-0 px-0 md:p-4 hover:bg-gray-50 transition-colors">
                       <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
                         
-                        {/* Species Name Row (Mobile: Top, Desktop: Left) */}
+                        {/* Type Name */}
                         <div className="flex justify-between items-start md:items-center mb-3 px-4 md:mb-0 md:px-0 md:col-span-3">
-                            <span className="font-bold text-gray-800 text-sm md:text-sm md:font-medium md:text-gray-700 flex-1 pr-4">{species}</span>
+                            <span className="font-bold text-gray-800 text-sm md:text-sm md:font-medium md:text-gray-700 flex-1 pr-4">{type}</span>
                             <button
                               type="button"
-                              onClick={() => removeSpecies(species)}
+                              onClick={() => removeType(type)}
                               className="text-red-500 p-2 bg-red-50 rounded-lg md:hidden flex-shrink-0"
-                              title="Eliminar especie"
                             >
                                 <Trash2 className="w-4 h-4" />
                             </button>
                         </div>
 
-                        {/* Inputs Grid (Mobile: 3 cols below name, Desktop: Inline) */}
+                        {/* Inputs Grid */}
                         <div className="grid grid-cols-3 md:grid-cols-8 md:col-span-8 gap-0 md:gap-4 border-t border-gray-100 md:border-t-0">
                             <div className="space-y-1 md:space-y-0 md:col-span-3 border-r border-gray-200">
                                 <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">0-50 m²</label>
-                                {renderPriceInput(species, '0-50', 'Fijo')}
+                                {renderPriceInput(type, '0-50', 'Fijo')}
                             </div>
                             <div className="space-y-1 md:space-y-0 md:col-span-3 border-r border-gray-200">
                                 <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">50-200 m²</label>
-                                {renderPriceInput(species, '50-200', '/m²')}
+                                {renderPriceInput(type, '50-200', '/m²')}
                             </div>
                             <div className="space-y-1 md:space-y-0 md:col-span-2">
                                 <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">&gt;200 m²</label>
-                                {renderPriceInput(species, '200+', '/m²')}
+                                {renderPriceInput(type, '200+', '/m²')}
                             </div>
                         </div>
 
-                        {/* Desktop Delete Action */}
+                        {/* Desktop Delete */}
                         <div className="hidden md:flex md:col-span-1 justify-center">
                             <button
                               type="button"
-                              onClick={() => removeSpecies(species)}
+                              onClick={() => removeType(type)}
                               className="text-gray-400 hover:text-red-500 transition-colors"
-                              title="Eliminar especie"
                             >
                                 <Trash2 className="w-4 h-4" />
                             </button>
@@ -311,53 +291,16 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
             </div>
         ) : (
             <div className="p-8 text-center text-gray-500 bg-gray-50">
-                <p className="mb-2 font-medium">No hay especies seleccionadas.</p>
-                <p className="text-sm">Usa el desplegable de arriba para añadir una.</p>
+                <p className="mb-2 font-medium">No hay tipos seleccionados.</p>
+                <p className="text-sm">Añade uno para empezar.</p>
             </div>
         )}
       </div>
 
-      {/* Surcharges Section (Copied style from StandardServiceConfig/PalmPricingConfigurator) */}
+      {/* Surcharges Section */}
       <div className="border-t border-gray-200 pt-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Condition Surcharges */}
-            <div>
-              <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Suplementos por estado</h4>
-              <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700 text-sm font-medium">Descuidado</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.condition_surcharges.descuidado === 0 ? '' : config.condition_surcharges.descuidado}
-                      placeholder={config.condition_surcharges.descuidado === 0 ? '-' : ''}
-                      onChange={(e) => handleSurchargeChange('descuidado', parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700 text-sm font-medium">Muy Descuidado</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.condition_surcharges.muy_descuidado === 0 ? '' : config.condition_surcharges.muy_descuidado}
-                      placeholder={config.condition_surcharges.muy_descuidado === 0 ? '-' : ''}
-                      onChange={(e) => handleSurchargeChange('muy_descuidado', parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Waste Removal */}
+            {/* Waste Removal Only */}
             <div>
               <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Recargo por retirada</h4>
               <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100 h-full">
@@ -391,8 +334,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
             <div>
                 <h4 className="text-sm font-semibold text-red-800">Faltan precios por configurar</h4>
                 <p className="text-sm text-red-600 mt-1">
-                    Asegúrate de rellenar todos los campos de precio para las especies seleccionadas. 
-                    Los precios deben ser mayores a 0.
+                    Asegúrate de rellenar todos los campos de precio para los tipos seleccionados.
                 </p>
             </div>
         </div>
@@ -420,4 +362,4 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
   );
 };
 
-export default LawnPricingConfigurator;
+export default ClearingPricingConfigurator;

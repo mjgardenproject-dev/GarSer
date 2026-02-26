@@ -11,6 +11,11 @@ import AddressAutocomplete from '../common/AddressAutocomplete';
 import DistanceMapSelector from '../common/DistanceMapSelector';
 import PalmPricingConfigurator, { PalmPricingConfig } from './PalmPricingConfigurator';
 import LawnPricingConfigurator, { LawnPricingConfig } from './LawnPricingConfigurator';
+import HedgePricingConfigurator, { HedgePricingConfig } from './HedgePricingConfigurator';
+import TreePricingConfigurator, { TreePricingConfig } from './TreePricingConfigurator';
+import ShrubPricingConfigurator, { ShrubPricingConfig } from './ShrubPricingConfigurator';
+import ClearingPricingConfigurator, { ClearingPricingConfig } from './ClearingPricingConfigurator';
+import FumigationPricingConfigurator, { FumigationPricingConfig } from './FumigationPricingConfigurator';
 import StandardServiceConfig, { StandardPricingConfig } from './StandardServiceConfig';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
@@ -61,6 +66,11 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
   const [palmConfig, setPalmConfig] = useState<PalmPricingConfig | undefined>(undefined);
   const [lawnConfig, setLawnConfig] = useState<LawnPricingConfig | undefined>(undefined);
+  const [hedgeConfig, setHedgeConfig] = useState<HedgePricingConfig | undefined>(undefined);
+  const [treeConfig, setTreeConfig] = useState<TreePricingConfig | undefined>(undefined);
+  const [shrubConfig, setShrubConfig] = useState<ShrubPricingConfig | undefined>(undefined);
+  const [clearingConfig, setClearingConfig] = useState<ClearingPricingConfig | undefined>(undefined);
+  const [fumigationConfig, setFumigationConfig] = useState<FumigationPricingConfig | undefined>(undefined);
   const [standardConfigs, setStandardConfigs] = useState<Record<string, StandardPricingConfig>>({});
   const [highlightPalmError, setHighlightPalmError] = useState(false);
 
@@ -117,48 +127,34 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     }
   };
 
-  // Cargar configuración de palmeras específicamente cuando tengamos servicios y precios
+  // Cargar todas las configuraciones especializadas
   useEffect(() => {
-    const loadPalmConfig = async () => {
+    const loadConfigs = async () => {
       if (!user?.id || services.length === 0) return;
       
-      const palmService = services.find(s => s.name === 'Poda de palmeras');
-      if (!palmService) return;
-
       const { data } = await supabase
         .from('gardener_service_prices')
-        .select('additional_config')
-        .eq('gardener_id', user.id)
-        .eq('service_id', palmService.id)
-        .single();
+        .select('service_id, additional_config')
+        .eq('gardener_id', user.id);
         
-      if (data?.additional_config) {
-        setPalmConfig(data.additional_config as PalmPricingConfig);
+      if (data) {
+        data.forEach((row: any) => {
+          const service = services.find(s => s.id === row.service_id);
+          if (!service || !row.additional_config) return;
+
+          switch(service.name) {
+            case 'Poda de palmeras': setPalmConfig(row.additional_config as PalmPricingConfig); break;
+            case 'Corte de césped': setLawnConfig(row.additional_config as LawnPricingConfig); break;
+            case 'Corte de setos a máquina': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
+            case 'Poda de árboles': setTreeConfig(row.additional_config as TreePricingConfig); break;
+            case 'Poda de plantas': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
+            case 'Labrar y quitar malas hierbas a mano': setClearingConfig(row.additional_config as ClearingPricingConfig); break;
+            case 'Fumigación de plantas': setFumigationConfig(row.additional_config as FumigationPricingConfig); break;
+          }
+        });
       }
     };
-    loadPalmConfig();
-  }, [user?.id, services]);
-
-  // Cargar configuración de césped
-  useEffect(() => {
-    const loadLawnConfig = async () => {
-      if (!user?.id || services.length === 0) return;
-      
-      const lawnService = services.find(s => s.name === 'Corte de césped');
-      if (!lawnService) return;
-
-      const { data } = await supabase
-        .from('gardener_service_prices')
-        .select('additional_config')
-        .eq('gardener_id', user.id)
-        .eq('service_id', lawnService.id)
-        .single();
-        
-      if (data?.additional_config) {
-        setLawnConfig(data.additional_config as LawnPricingConfig);
-      }
-    };
-    loadLawnConfig();
+    loadConfigs();
   }, [user?.id, services]);
 
   const fetchServices = async () => {
@@ -297,27 +293,86 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
       console.log('Successfully saved to gardener_profiles');
 
-      // Update gardener service prices
-      const servicePriceUpdates = watchedServices.map(serviceId => {
-        const service = services.find(s => s.id === serviceId);
-        const price = servicePrices[serviceId];
-        if (service && price !== undefined) {
-          // Si es "Poda de palmeras" o "Corte de césped", incluir la configuración adicional específica
-          const isPalmService = service.name === 'Poda de palmeras';
-          const isLawnService = service.name === 'Corte de césped';
-          
+      // Update gardener service prices - FIX: Process ALL services to handle deactivation and cleanup
+      const servicePriceUpdates = services.map(service => {
+        const isSelected = watchedServices.includes(service.id);
+        const price = servicePrices[service.id];
+        
+        // If not selected, mark as inactive
+        if (!isSelected) {
+            return {
+                gardener_id: user.id,
+                service_id: service.id,
+                unit_type: (service as any).measurement || 'area',
+                price_per_unit: price || 0, // Keep old price or 0
+                currency: 'EUR',
+                active: false, // EXPLICITLY INACTIVE
+                additional_config: undefined // Optional: clear config or keep it
+            };
+        }
+
+        // If selected, prepare active payload with sanitized config
+        if (isSelected && price !== undefined) {
+          const sName = service.name;
           let additionalConfig;
-          if (isPalmService) {
-              additionalConfig = palmConfig || undefined;
-          } else if (isLawnService) {
-              additionalConfig = lawnConfig || undefined;
-          } else {
-              additionalConfig = standardConfigs[serviceId] || undefined;
+          
+          if (sName === 'Poda de palmeras') {
+              // Sanitize Palm Config
+              if (palmConfig) {
+                  const cleanConfig = { ...palmConfig };
+                  const selected = cleanConfig.selected_species || [];
+                  
+                  // Clean species_prices
+                  const cleanSpeciesPrices: Record<string, number> = {};
+                  Object.keys(cleanConfig.species_prices).forEach(key => {
+                      if (selected.includes(key as any)) {
+                          cleanSpeciesPrices[key] = (cleanConfig.species_prices as any)[key];
+                      }
+                  });
+                  cleanConfig.species_prices = cleanSpeciesPrices as any;
+
+                  // Clean height_prices
+                  const cleanHeightPrices: Record<string, any> = {};
+                  Object.keys(cleanConfig.height_prices).forEach(key => {
+                       if (selected.includes(key as any)) {
+                           cleanHeightPrices[key] = (cleanConfig.height_prices as any)[key];
+                       }
+                  });
+                  cleanConfig.height_prices = cleanHeightPrices as any;
+                  
+                  additionalConfig = cleanConfig;
+              }
           }
+          else if (sName === 'Corte de césped') {
+              // Sanitize Lawn Config
+              if (lawnConfig) {
+                  const cleanConfig = { ...lawnConfig };
+                  const selected = cleanConfig.selected_species || [];
+                  
+                  // Clean species_prices
+                  const cleanSpeciesPrices: Record<string, any> = {};
+                  Object.keys(cleanConfig.species_prices).forEach(key => {
+                      if (selected.includes(key as any)) {
+                          cleanSpeciesPrices[key] = cleanConfig.species_prices[key];
+                      }
+                  });
+                  cleanConfig.species_prices = cleanSpeciesPrices;
+                  
+                  additionalConfig = cleanConfig;
+              }
+          }
+          else if (sName === 'Corte de setos a máquina') additionalConfig = hedgeConfig;
+          else if (sName === 'Poda de árboles') additionalConfig = treeConfig;
+          else if (sName === 'Poda de plantas') additionalConfig = shrubConfig;
+          else if (sName === 'Labrar y quitar malas hierbas a mano') additionalConfig = clearingConfig;
+          else if (sName === 'Fumigación de plantas') additionalConfig = fumigationConfig;
+          else additionalConfig = standardConfigs[service.id];
+
+          additionalConfig = additionalConfig || undefined;
 
           return {
             gardener_id: user.id,
-            service_id: serviceId,
+            service_id: service.id,
             unit_type: (service as any).measurement || 'area',
             price_per_unit: price,
             currency: 'EUR',
@@ -366,69 +421,50 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     }
   };
 
-  const handleSavePalmConfig = async (config: PalmPricingConfig) => {
+  const handleSaveConfig = async (serviceName: string, config: any, setConfig: (c: any) => void, successMsg: string) => {
     if (!user) return;
-    const palmService = services.find(s => s.name === 'Poda de palmeras');
-    if (!palmService) return;
+    const service = services.find(s => s.name === serviceName);
+    if (!service) return;
 
-    // Actualizamos el estado local por si acaso
-    setPalmConfig(config);
+    setConfig(config);
 
-    // Guardado específico solo para el servicio de palmeras
     const payload = {
       gardener_id: user.id,
-      service_id: palmService.id,
-      unit_type: (palmService as any).measurement || 'area', // Debería ser 'count' o 'area' según servicio
-      price_per_unit: servicePrices[palmService.id] || 0, // Mantenemos el precio base actual
+      service_id: service.id,
+      unit_type: (service as any).measurement || 'area',
+      price_per_unit: servicePrices[service.id] || 0,
       currency: 'EUR',
       active: true,
       additional_config: config
     };
 
     try {
-      const { error } = await supabase
-        .from('gardener_service_prices')
-        .upsert(payload);
-
+      const { error } = await supabase.from('gardener_service_prices').upsert(payload);
       if (error) throw error;
-      toast.success('Tus precios para el servicio poda de palmeras han sido guardados correctamente');
+      toast.success(successMsg);
     } catch (error) {
-      console.error('Error saving palm prices:', error);
-      toast.error('Error al guardar los precios de palmeras');
-      throw error; // Re-lanzar para que el componente hijo sepa que falló
+      console.error(`Error saving ${serviceName} config:`, error);
+      toast.error(`Error al guardar configuración de ${serviceName}`);
+      throw error;
     }
   };
 
+  const handleSavePalmConfig = async (config: PalmPricingConfig) => {
+    await handleSaveConfig(
+        'Poda de palmeras', 
+        config, 
+        setPalmConfig, 
+        'Precios de palmeras guardados correctamente'
+    );
+  };
+
   const handleSaveLawnConfig = async (config: LawnPricingConfig) => {
-    if (!user) return;
-    const lawnService = services.find(s => s.name === 'Corte de césped');
-    if (!lawnService) return;
-
-    // Actualizamos el estado local
-    setLawnConfig(config);
-
-    const payload = {
-      gardener_id: user.id,
-      service_id: lawnService.id,
-      unit_type: (lawnService as any).measurement || 'area',
-      price_per_unit: servicePrices[lawnService.id] || 0,
-      currency: 'EUR',
-      active: true,
-      additional_config: config
-    };
-
-    try {
-      const { error } = await supabase
-        .from('gardener_service_prices')
-        .upsert(payload);
-
-      if (error) throw error;
-      toast.success('Configuración de césped guardada correctamente');
-    } catch (error) {
-      console.error('Error saving lawn prices:', error);
-      toast.error('Error al guardar configuración de césped');
-      throw error;
-    }
+    await handleSaveConfig(
+        'Corte de césped', 
+        config, 
+        setLawnConfig, 
+        'Configuración de césped guardada correctamente'
+    );
   };
 
   const handleSaveStandardConfig = async (serviceId: string, config: StandardPricingConfig) => {
@@ -601,9 +637,15 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               const measurement = (service as any).measurement === 'count' ? 'unidad' : 'm²';
               const isPalm = service.name === 'Poda de palmeras';
               const isLawn = service.name === 'Corte de césped';
+              const isHedge = service.name === 'Corte de setos a máquina';
+              const isTree = service.name === 'Poda de árboles';
+              const isShrub = service.name === 'Poda de plantas';
+              const isClearing = service.name === 'Labrar y quitar malas hierbas a mano';
+              const isFumigation = service.name === 'Fumigación de plantas';
+
               const hasError = isPalm && highlightPalmError;
 
-              const isSpecialService = isPalm || isLawn;
+              const isSpecialService = isPalm || isLawn || isHedge || isTree || isShrub || isClearing || isFumigation;
 
               return (
                 <div key={service.id} className={`border-2 rounded-lg transition-colors ${
@@ -672,10 +714,63 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                           <div className="cursor-default bg-white p-4">
                             <LawnPricingConfigurator 
                               value={lawnConfig} 
-                              onChange={(newConfig) => {
-                                  setLawnConfig(newConfig);
-                              }}
+                              onChange={(newConfig) => setLawnConfig(newConfig)}
                               onSave={handleSaveLawnConfig} 
+                            />
+                          </div>
+                        )}
+
+                        {/* Configuración de setos */}
+                        {isHedge && (
+                          <div className="cursor-default bg-white p-4">
+                            <HedgePricingConfigurator 
+                              value={hedgeConfig} 
+                              onChange={setHedgeConfig}
+                              onSave={(c) => handleSaveConfig('Corte de setos a máquina', c, setHedgeConfig, 'Configuración de setos guardada')} 
+                            />
+                          </div>
+                        )}
+
+                        {/* Configuración de árboles */}
+                        {isTree && (
+                          <div className="cursor-default bg-white p-4">
+                            <TreePricingConfigurator 
+                              value={treeConfig} 
+                              onChange={setTreeConfig}
+                              onSave={(c) => handleSaveConfig('Poda de árboles', c, setTreeConfig, 'Configuración de árboles guardada')} 
+                            />
+                          </div>
+                        )}
+
+                        {/* Configuración de plantas/arbustos */}
+                        {isShrub && (
+                          <div className="cursor-default bg-white p-4">
+                            <ShrubPricingConfigurator 
+                              value={shrubConfig} 
+                              onChange={setShrubConfig}
+                              onSave={(c) => handleSaveConfig('Poda de plantas', c, setShrubConfig, 'Configuración de plantas guardada')} 
+                            />
+                          </div>
+                        )}
+
+                        {/* Configuración de desbroce */}
+                        {isClearing && (
+                          <div className="cursor-default bg-white p-4">
+                            <ClearingPricingConfigurator 
+                              value={clearingConfig} 
+                              onChange={setClearingConfig}
+                              onSave={(c) => handleSaveConfig('Labrar y quitar malas hierbas a mano', c, setClearingConfig, 'Configuración de desbroce guardada')} 
+                            />
+                          </div>
+                        )}
+
+                        {/* Configuración de fumigación */}
+                        {isFumigation && (
+                          <div className="cursor-default bg-white p-4">
+                            <FumigationPricingConfigurator 
+                              value={fumigationConfig} 
+                              onChange={setFumigationConfig}
+                              onSave={(c) => handleSaveConfig('Fumigación de plantas', c, setFumigationConfig, 'Configuración de fumigación guardada')} 
                             />
                           </div>
                         )}

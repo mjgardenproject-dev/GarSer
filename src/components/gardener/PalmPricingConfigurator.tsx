@@ -147,10 +147,20 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
 
   const removeSpecies = (species: PalmSpecies) => {
       const currentSelected = config.selected_species || [];
+      
+      // Create fresh copies of price objects
+      const newSpeciesPrices = { ...config.species_prices };
+      const newHeightPrices = { ...config.height_prices };
+      
+      // Delete prices for this species
+      if (newSpeciesPrices[species] !== undefined) delete newSpeciesPrices[species];
+      if (newHeightPrices[species] !== undefined) delete newHeightPrices[species];
+
       onChange({
           ...config,
           selected_species: currentSelected.filter(s => s !== species),
-          // Opcional: Resetear precios al eliminar? Mejor no, por si fue error.
+          species_prices: newSpeciesPrices,
+          height_prices: newHeightPrices
       });
   };
 

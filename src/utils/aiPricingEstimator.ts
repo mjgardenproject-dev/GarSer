@@ -13,7 +13,8 @@ export interface AITask {
   longitud_m?: number | null;
   altura_m?: number | null;
   tipo_seto?: string | null;
-  dificultad_acceso?: 1 | 2 | 3 | null;
+  estado_seto?: string | null;
+  dificultad_acceso?: 1 | 2 | 3 | null; // Legacy
 
   // Trees
   cantidad?: number | null;

@@ -66,6 +66,9 @@ function calculatePalmEstimation(palms: any[]) {
   let maxSetupTier = 0; 
 
   palms.forEach(p => {
+      // Skip failed or undetected palms
+      if (p.nivel_analisis === 3 || p.especie === 'No detectada') return;
+
       const species = normalizeStr(p.especie);
       const height = p.altura;
       const state = normalizeStr(p.estado || 'normal');
@@ -105,10 +108,11 @@ function calculatePalmEstimation(palms: any[]) {
   
   // Calculate Final Setup Time
   let tiempoPreparacion = 0;
-  if (palms.length > 0) {
-      if (maxSetupTier === 3) tiempoPreparacion = 2.0;
-      else if (maxSetupTier === 2) tiempoPreparacion = 1.5;
-      else tiempoPreparacion = 1.0;
+  // Count valid palms (not failed, not undetected)
+  const validPalmsCount = palms.filter(p => p.nivel_analisis !== 3 && p.especie !== 'No detectada').length;
+  
+  if (validPalmsCount > 0) {
+      tiempoPreparacion = 0.5;
   }
   
   // Efficiency Factor
@@ -137,15 +141,14 @@ const PROMPTS: Record<string, string> = {
   0. DETECTION VALIDATION (MANDATORY FIRST STEP): 
   - Scan the image for TRUE palms (Arecaceae family: unbranched trunks with a tuft of large leaves/fronds at the top). 
   - IGNORE: Broadleaf trees, conifers, shrubs, bushes, potted indoor plants, and background forests not part of the garden. 
-  - IF NO VALID PRUNABLE PALM IS FOUND: Return "palmeras":[] immediately. Do NOT hallucinate palms. 
+  - IF NO VALID PRUNABLE PALM IS FOUND IN AN IMAGE: You MUST return an entry for that image with "nivel_analisis": 3, "observaciones": ["No se detectó ninguna palmera"], "especie": "No detectada" and "altura": "0-0".
   - IF UNCLEAR: Better to return empty than false positives. 
   
- 1. MULTI-PHOTO DEDUPLICATION, GROUPING & COUNTING (CRITICAL): 
- 	 • 	 Carefully cross-reference all images. Analyze background, trunk shape, crown structure, height, and surrounding elements. 
- 	 • 	 If multiple images show the same palm from different angles, merge them into one single entity. 
- 	 • 	 Detect and count all distinct target palms clearly in focus for pruning (do not limit the analysis to one palm per image). 
- 	 • 	 If multiple palms belong to the same species, have a similar height range, and share a similar health/pruning condition, DO NOT create separate JSON objects for each one. Instead, create a single JSON entry and indicate the total quantity of identical palms detected. 
- 	 • 	 Only create separate JSON objects when there are clear differences in species, height category, structure, or pruning condition. 
+  1. MULTI-PHOTO DEDUPLICATION & COUNTING (CRITICAL): 
+ 	 • 	 Carefully cross-reference all images. If multiple images show the same palm from different angles, merge them into one single entity. 
+ 	 • 	 Only count distinct target palms clearly in focus for pruning. 
+ 	 • 	 For "indice_imagen", use the index of the photo where the palm is most clearly visible. 
+ 	 • 	 DO NOT group multiple distinct palms into a single entry. Create one JSON object for EACH distinct palm found. 
   
   2. SPECIES CLASSIFICATION (STRICT): 
   You must classify each palm into EXACTLY ONE of these species: 
@@ -185,7 +188,7 @@ const PROMPTS: Record<string, string> = {
   Return ONLY a valid JSON object. No markdown blocks. No explanations. 
   
   { 
-    "palmeras":[ 
+    "palmas":[ 
       { 
         "indice_imagen": integer, 
         "especie": "string", 
@@ -271,74 +274,59 @@ RESPONSE FORMAT (JSON Schema):
   ].join('\n'),
   'Corte de setos': [
     `---
-You are an expert image analysis AI for a gardening marketplace. Your task is to objectively analyze hedge areas visible in images to extract structured data.
+Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.
 
-CORE RULES:
-1. OUTPUT MUST BE VALID JSON ONLY. No markdown (json), no conversational text.
-2. DO NOT infer hidden areas. Analyze ONLY what is strictly visible.
-3. DO NOT calculate prices.
-4. Accuracy is priority over completeness. If unsure, declare lower reliability.
+INSTRUCCIONES DE ANÁLISIS:
+1. Detecta la longitud total de setos en metros lineales.
+2. Estima la altura promedio.
+3. Clasifica el tipo de seto.
+4. Evalúa el ESTADO DEL SETO basándote en su nivel de crecimiento y mantenimiento.
 
-SERVICE CONTEXT:
-Service Type: "Corte de setos"
+VARIABLES A EXTRAER:
+- tipo_servicio: "Corte de setos"
+- longitud_m: Longitud estimada en metros.
+- altura_m: Altura estimada en metros.
+- tipo_seto: "Conífera (Ciprés/Tuya)", "Laurel/Hoja ancha", "Hiedra/Trepandora", "Seto Mixto/Otro".
+- estado_seto: "normal" | "descuidado" | "muy descuidado".
+- nivel_analisis: 1 (Claro), 2 (Parcial/Borroso), 3 (Inutilizable).
+- observaciones: Lista de observaciones visuales (ej. "Seto muy denso", "Requiere escalera alta").
 
----------------------------------------------------------------------
-ANALYSIS LOGIC & RELIABILITY LEVELS (nivel_analisis):
+PAUTAS PARA CLASIFICACIÓN DE ESTADO (estado_seto):
 
-Determine the level based on visibility, lighting, and scale references.
+1. "normal"
+   - Apariencia cuidada, forma geométrica definida.
+   - Brotes nuevos cortos (< 10 cm).
+   - No hay huecos grandes ni ramas secas evidentes.
+   - Mantenimiento reciente visible.
 
-LEVEL 1 (High Confidence):
-- Criteria: Entire hedge visible (start to end), perfect lighting, clear scale references (fence, wall, person).
-- Output: All fields populated. observaciones = null.
+2. "descuidado"
+   - Pérdida parcial de la forma geométrica.
+   - Brotes nuevos largos (10-30 cm) que sobresalen desordenadamente.
+   - Aspecto "peludo" o ligeramente salvaje.
+   - Necesita un recorte correctivo moderado.
 
-LEVEL 2 (Moderate Limitations):
-- Criteria: Partial visibility (ends cut off), shadows, awkward angles, or lack of scale references.
-- Output: All fields populated (best estimate). observaciones = ARRAY with specific allowed notes.
+3. "muy descuidado"
+   - Pérdida total de la forma original.
+   - Brotes muy largos (> 30 cm) o ramas leñosas invasivas.
+   - Invasión de caminos, aceras u otras plantas.
+   - Densidad extrema o partes secas/muertas visibles.
+   - Requiere poda drástica o de renovación.
 
-LEVEL 3 (Failed/Unusable):
-- Criteria: Hedge not detectable, extreme blur, pitch black, or not a garden.
-- Output: longitud_m = 0, altura_m = 0, tipo_seto = null. observaciones = ARRAY with failure notes.
-
----------------------------------------------------------------------
-DATA EXTRACTION RULES:
-
-A) DIMENSIONS (longitud_m, altura_m, profundidad_m):
-- Estimate visible length and height in meters.
-- Profundidad (depth/width) is optional but helpful if visible.
-- USE REFERENCES: Standard fence height (~2m), wall blocks (~20cm), doors (~2m).
-
-B) SPECIES (tipo_seto):
-- "Conífera (Ciprés/Tuya)" -> Needle-like leaves, dense, classic hedge.
-- "Laurel/Hoja ancha" -> Broad shiny leaves (Prunus laurocerasus).
-- "Hiedra/Trepandora" -> Climbing vines covering a fence.
-- "Seto Mixto/Otro" -> DEFAULT.
-
-C) ACCESS DIFFICULTY (dificultad_acceso):
-- 1 (Fácil): Accessible from ground, no obstacles, height < 2m.
-- 2 (Medio): Height 2-3m, or minor obstacles (flower beds).
-- 3 (Difícil): Height > 3m (needs ladder/scaffold), or blocked access (behind fence/ditch).
-
-D) OBSERVACIONES (Allowed values ONLY):
-- Level 2: "mala luz", "extremos no visibles", "altura difícil de estimar", "obstáculos visuales", "perspectiva forzada".
-- Level 3: "no es un seto", "foto borrosa", "demasiado oscuro", "objeto bloqueando vista".
-
----------------------------------------------------------------------
-RESPONSE FORMAT (JSON Schema):
-
+FORMATO DE SALIDA (JSON ÚNICAMENTE):
 {
   "tareas": [
     {
       "tipo_servicio": "Corte de setos",
-      "tipo_seto": "string OR null",
       "longitud_m": number,
       "altura_m": number,
-      "profundidad_m": number OR null,
-      "dificultad_acceso": integer (1, 2, or 3),
-      "nivel_analisis": integer (1, 2, or 3),
-      "observaciones": ["string"] OR null
+      "tipo_seto": string,
+      "estado_seto": "normal" | "descuidado" | "muy descuidado",
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": string[]
     }
   ]
-}`
+}
+---`
   ].join('\n'),
   'Poda de árboles': [
     `---
@@ -348,8 +336,8 @@ Your goal is conservative, highly reproducible accuracy. NEVER overestimate size
 0. DETECTION VALIDATION (MANDATORY FIRST STEP):
 - Scan the image for TRUE trees (woody perennial plants with a single main stem or trunk).
 - IGNORE: Shrubs, bushes, hedges, potted plants, small saplings (<2m), and background forests.
-- IF NO VALID PRUNABLE TREE IS FOUND: Return "arboles": [] immediately.
-- IF UNCLEAR: Better to return empty than false positives.
+- IF NO VALID PRUNABLE TREE IS FOUND IN AN IMAGE: You MUST return an entry for that image with "nivel_analisis": 3, "observaciones": ["No se detectó ningún árbol válido"], "altura_m": 0, "tipo_poda": "structural", "tipo_acceso": "Poda desde el suelo" and "horas_estimadas": 0.
+  - IF UNCLEAR: Better to return empty than false positives.
 
 1. MULTI-PHOTO DEDUPLICATION & COUNTING (CRITICAL):
 - Carefully cross-reference all images. If multiple images show the same tree, merge them.

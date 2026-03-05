@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Info, AlertCircle, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { Info, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { deepEqual } from '../../utils/deepEqual';
+import ServiceConfigFooter from './ServiceConfigFooter';
 
 export type HedgeType = 
   | 'Conífera (Ciprés/Tuya)' 
@@ -11,9 +14,9 @@ export type HedgeHeight = '<1m' | '1-2m' | '>2m';
 
 export interface HedgePricingConfig {
   species_prices: Record<string, Partial<Record<HedgeHeight, number>>>; 
-  access_surcharges: {
-      medio: number; // Dificultad 2
-      dificil: number; // Dificultad 3
+  condition_surcharges: {
+      descuidado: number;
+      muy_descuidado: number;
   };
   waste_removal: {
       percentage: number;
@@ -30,22 +33,24 @@ const HEDGE_TYPES: HedgeType[] = [
 
 const EMPTY_CONFIG: HedgePricingConfig = {
   species_prices: {},
-  access_surcharges: { medio: 20, dificil: 50 },
+  condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
   waste_removal: { percentage: 0 },
   selected_types: []
 };
 
 interface Props {
   value?: HedgePricingConfig;
+  initialConfig?: HedgePricingConfig;
   onChange: (config: HedgePricingConfig) => void;
   onSave?: (config: HedgePricingConfig) => Promise<void>;
 }
 
-const HedgePricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) => {
+const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showGlobalError, setShowGlobalError] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   // Initialize config
   const config = React.useMemo(() => {
@@ -54,11 +59,57 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) 
         ...EMPTY_CONFIG,
         ...value,
         species_prices: { ...EMPTY_CONFIG.species_prices, ...value.species_prices },
-        access_surcharges: { ...EMPTY_CONFIG.access_surcharges, ...value.access_surcharges },
+        condition_surcharges: { 
+            ...EMPTY_CONFIG.condition_surcharges, 
+            ...(value.condition_surcharges || {})
+        },
         waste_removal: { ...EMPTY_CONFIG.waste_removal, ...value.waste_removal },
         selected_types: value.selected_types || []
     };
   }, [value]);
+
+  // Determine if dirty
+  const isDirty = useMemo(() => {
+    const baseToCompare = initialConfig || EMPTY_CONFIG;
+    const processedBase = {
+        ...EMPTY_CONFIG,
+        ...baseToCompare,
+        species_prices: { ...EMPTY_CONFIG.species_prices, ...baseToCompare.species_prices },
+        condition_surcharges: { 
+            ...EMPTY_CONFIG.condition_surcharges, 
+            ...(baseToCompare.condition_surcharges || {})
+        },
+        waste_removal: { ...EMPTY_CONFIG.waste_removal, ...baseToCompare.waste_removal },
+        selected_types: baseToCompare.selected_types || []
+    };
+    return !deepEqual(config, processedBase);
+  }, [config, initialConfig]);
+
+  const handleReset = () => {
+    setShowResetModal(true);
+  };
+
+  const confirmReset = async () => {
+    setShowResetModal(false);
+    onChange(EMPTY_CONFIG);
+    setValidationErrors([]);
+    setShowGlobalError(false);
+    
+    if (onSave) {
+      try {
+        setIsSaving(true);
+        await onSave(EMPTY_CONFIG);
+      } catch (error) {
+        console.error('Error resetting hedge config:', error);
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  };
+
+  const cancelReset = () => {
+    setShowResetModal(false);
+  };
 
   const activeTypes = HEDGE_TYPES.filter(s => config.selected_types?.includes(s));
   const availableTypes = HEDGE_TYPES.filter(s => !config.selected_types?.includes(s));
@@ -100,11 +151,11 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) 
     });
   };
 
-  const handleSurchargeChange = (type: 'medio' | 'dificil', val: number) => {
+  const handleSurchargeChange = (type: 'descuidado' | 'muy_descuidado', val: number) => {
       onChange({
           ...config,
-          access_surcharges: {
-              ...config.access_surcharges,
+          condition_surcharges: {
+              ...config.condition_surcharges,
               [type]: val
           }
       });
@@ -119,8 +170,8 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) 
       });
   };
 
-  const handleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleSave = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     
     // Validations
     const errors: string[] = [];
@@ -298,7 +349,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) 
                               onClick={() => removeType(type)}
                               className="text-gray-400 hover:text-red-500 transition-colors"
                             >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-5 h-5" />
                             </button>
                         </div>
                       </div>
@@ -306,111 +357,155 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) 
                 ))}
             </div>
         ) : (
-            <div className="p-8 text-center text-gray-500 bg-gray-50">
-                <p className="mb-2 font-medium">No hay tipos seleccionados.</p>
-                <p className="text-sm">Añade uno para empezar.</p>
+            <div className="p-8 text-center text-gray-500">
+                Selecciona los tipos de setos que trabajas arriba.
             </div>
         )}
       </div>
 
-      {/* Surcharges Section */}
-      <div className="border-t border-gray-200 pt-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Access Difficulty Surcharges */}
+      {/* Sección Suplementos por Estado */}
+      <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-gray-100 bg-gray-50">
+          <h4 className="font-semibold text-gray-900">Suplementos por Estado</h4>
+          <p className="text-xs text-gray-500 mt-1">
+            Incremento porcentual según el estado de conservación del seto.
+          </p>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {/* Normal */}
+          <div className="p-4 flex items-center justify-between">
             <div>
-              <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Suplementos por acceso</h4>
-              <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700 text-sm font-medium">Acceso Medio / Altura</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.access_surcharges.medio === 0 ? '' : config.access_surcharges.medio}
-                      placeholder={config.access_surcharges.medio === 0 ? '-' : ''}
-                      onChange={(e) => handleSurchargeChange('medio', parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700 text-sm font-medium">Acceso Difícil / Escalera</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.access_surcharges.dificil === 0 ? '' : config.access_surcharges.dificil}
-                      placeholder={config.access_surcharges.dificil === 0 ? '-' : ''}
-                      onChange={(e) => handleSurchargeChange('dificil', parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
-                  </div>
-                </div>
-              </div>
+              <span className="block text-sm font-medium text-gray-900">Normal</span>
+              <span className="text-xs text-gray-500">Mantenimiento regular, forma definida.</span>
             </div>
+            <div className="text-sm font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full">
+              Sin recargo
+            </div>
+          </div>
 
-            {/* Waste Removal */}
+          {/* Descuidado */}
+          <div className="p-4 flex items-center justify-between">
             <div>
-              <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Recargo por retirada</h4>
-              <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100 h-full">
-                <div className="flex items-center justify-between h-full">
-                  <div className="pr-2">
-                    <span className="text-gray-700 text-sm font-medium block">Retirada de restos</span>
-                    <p className="text-xs text-gray-500 mt-1">Incremento si el cliente lo solicita</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.waste_removal.percentage === 0 ? '' : config.waste_removal.percentage}
-                      placeholder={config.waste_removal.percentage === 0 ? '-' : ''}
-                      onChange={(e) => handleWasteChange(parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
-                  </div>
-                </div>
+              <span className="block text-sm font-medium text-gray-900">Descuidado</span>
+              <span className="text-xs text-gray-500">Pérdida de forma, brotes largos.</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-gray-400 font-medium">+</span>
+              <div className="relative w-24">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={config.condition_surcharges?.descuidado || 0}
+                  onChange={(e) => handleSurchargeChange('descuidado', parseFloat(e.target.value) || 0)}
+                  className="w-full pl-3 pr-8 py-1.5 border border-gray-300 rounded-lg text-right focus:ring-2 focus:ring-green-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">%</span>
               </div>
             </div>
           </div>
-      </div>
 
-      {/* Global Error */}
-      {showGlobalError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+          {/* Muy Descuidado */}
+          <div className="p-4 flex items-center justify-between">
             <div>
-                <h4 className="text-sm font-semibold text-red-800">Faltan precios por configurar</h4>
-                <p className="text-sm text-red-600 mt-1">
-                    Asegúrate de rellenar todos los campos de precio para los tipos seleccionados.
-                </p>
+              <span className="block text-sm font-medium text-gray-900">Muy Descuidado</span>
+              <span className="text-xs text-gray-500">Deformado, invasivo, ramas gruesas.</span>
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-gray-400 font-medium">+</span>
+              <div className="relative w-24">
+                <input
+                  type="number"
+                  min="0"
+                  max="200"
+                  value={config.condition_surcharges?.muy_descuidado || 0}
+                  onChange={(e) => handleSurchargeChange('muy_descuidado', parseFloat(e.target.value) || 0)}
+                  className="w-full pl-3 pr-8 py-1.5 border border-gray-300 rounded-lg text-right focus:ring-2 focus:ring-green-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">%</span>
+              </div>
+            </div>
+          </div>
         </div>
+      </section>
+
+      {/* Sección Gestión de Residuos */}
+      <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-gray-100 bg-gray-50">
+          <h4 className="font-semibold text-gray-900">Gestión de Residuos</h4>
+          <p className="text-xs text-gray-500 mt-1">
+            Recargo opcional si el cliente solicita la retirada de restos.
+          </p>
+        </div>
+        <div className="p-5 flex items-center justify-between">
+          <label className="text-sm font-medium text-gray-700">
+            Recargo por retirada
+          </label>
+          <div className="relative w-32">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={config.waste_removal?.percentage || 0}
+              onChange={(e) => handleWasteChange(parseFloat(e.target.value) || 0)}
+              className="w-full pl-3 pr-8 py-2 border border-gray-300 rounded-lg text-right focus:ring-2 focus:ring-green-500"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">%</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Global Error Banner */}
+      {showGlobalError && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-red-50 text-red-700 px-6 py-3 rounded-full shadow-xl border border-red-200 flex items-center gap-3 animate-bounce-short">
+              <AlertCircle className="w-5 h-5" />
+              <span className="font-medium">
+                  Revisa los campos marcados en rojo.
+              </span>
+          </div>
       )}
 
       {/* Save Button */}
-      <div className="flex justify-end pt-4 border-t border-gray-100">
-        <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm disabled:opacity-50 transition-colors font-medium text-sm"
-        >
-            {isSaving ? (
-                <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                    Guardando...
-                </>
-            ) : (
-                'Guardar configuración'
-            )}
-        </button>
-      </div>
+      <ServiceConfigFooter 
+        onSave={() => handleSave()} 
+        onReset={handleReset} 
+        isDirty={isDirty} 
+        isSaving={isSaving} 
+      />
+
+      {/* Reset Confirmation Modal */}
+      {showResetModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                <AlertTriangle className="w-6 h-6 text-yellow-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">
+                ¿Restablecer configuración?
+              </h3>
+              <p className="text-gray-500 text-center mb-6 text-sm">
+                Se eliminarán todos los precios, tipos y recargos configurados para el corte de setos. Esta acción es irreversible.
+              </p>
+              <div className="flex flex-col gap-3 w-full">
+                <button
+                  onClick={confirmReset}
+                  className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-red-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
+                >
+                  Confirmar
+                </button>
+                <button
+                  onClick={cancelReset}
+                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

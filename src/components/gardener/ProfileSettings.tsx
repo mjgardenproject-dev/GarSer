@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -17,6 +17,17 @@ import ShrubPricingConfigurator, { ShrubPricingConfig } from './ShrubPricingConf
 import ClearingPricingConfigurator, { ClearingPricingConfig } from './ClearingPricingConfigurator';
 import FumigationPricingConfigurator, { FumigationPricingConfig } from './FumigationPricingConfigurator';
 import StandardServiceConfig, { StandardPricingConfig } from './StandardServiceConfig';
+import ServiceItem from './ServiceItem';
+import UnsavedChangesModal from '../common/UnsavedChangesModal';
+import { 
+  isLawnConfigValid, 
+  isPalmConfigValid, 
+  isHedgeConfigValid, 
+  isTreeConfigValid, 
+  isShrubConfigValid, 
+  isClearingConfigValid, 
+  isFumigationConfigValid 
+} from '../../utils/serviceValidation';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
 const ALLOWED_SERVICE_NAMES = [
@@ -39,7 +50,6 @@ const ALLOWED_NORMALIZED = ALLOWED_SERVICE_NAMES.map(normalizeText);
 const isAllowedServiceName = (name?: string) => {
   const n = normalizeText(name || '');
   if (!n) return false;
-  // Coincidencia estricta por nombre normalizado (evita coincidencias parciales/sinónimos)
   return ALLOWED_NORMALIZED.includes(n);
 };
 
@@ -49,7 +59,7 @@ const schema = yup.object({
   address: yup.string().required('Dirección requerida'),
   description: yup.string().required('Descripción requerida'),
   max_distance: yup.number().min(1, 'Mínimo 1 km').max(100, 'Máximo 100 km').required('Distancia requerida'),
-  services: yup.array().min(1, 'Selecciona al menos un servicio').required('Servicios requeridos')
+  services: yup.array() // We keep this for form state, but validation is handled per-service
 });
 
 type FormData = yup.InferType<typeof schema>;
@@ -63,7 +73,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
-  const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
+  
+  // Configurations State
   const [palmConfig, setPalmConfig] = useState<PalmPricingConfig | undefined>(undefined);
   const [lawnConfig, setLawnConfig] = useState<LawnPricingConfig | undefined>(undefined);
   const [hedgeConfig, setHedgeConfig] = useState<HedgePricingConfig | undefined>(undefined);
@@ -72,10 +83,90 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [clearingConfig, setClearingConfig] = useState<ClearingPricingConfig | undefined>(undefined);
   const [fumigationConfig, setFumigationConfig] = useState<FumigationPricingConfig | undefined>(undefined);
   const [standardConfigs, setStandardConfigs] = useState<Record<string, StandardPricingConfig>>({});
-  const [highlightPalmError, setHighlightPalmError] = useState(false);
+  const [servicePrices, setServicePrices] = useState<Record<string, number>>({}); // Base prices for standard services
+
+  // Refactor State
+  const [expandedServiceId, setExpandedServiceId] = useState<string | null>(() => {
+      // Try to restore from local storage if available
+      return localStorage.getItem('gardener_profile_expanded_service') || null;
+  });
+  const [savedConfigs, setSavedConfigs] = useState<Record<string, any>>({});
+  const [dirtyServices, setDirtyServices] = useState<Record<string, boolean>>({});
+  const [isRestoringScroll, setIsRestoringScroll] = useState(() => {
+    // Start true only if we have a saved position
+    return !!localStorage.getItem('gardener_profile_scroll_pos');
+  });
+  
+  // Persist expanded service ID
+  useEffect(() => {
+    if (expandedServiceId) {
+        localStorage.setItem('gardener_profile_expanded_service', expandedServiceId);
+    } else {
+        localStorage.removeItem('gardener_profile_expanded_service');
+    }
+  }, [expandedServiceId]);
+
+  // Scroll Restoration Logic
+  useEffect(() => {
+      const handleScroll = () => {
+          if (window.scrollY > 0) {
+            localStorage.setItem('gardener_profile_scroll_pos', window.scrollY.toString());
+          }
+      };
+
+      // Debounce scroll event slightly to avoid excessive writes
+      let timeoutId: any;
+      const debouncedScroll = () => {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(handleScroll, 100);
+      };
+
+      window.addEventListener('scroll', debouncedScroll);
+      return () => {
+          window.removeEventListener('scroll', debouncedScroll);
+          clearTimeout(timeoutId);
+      };
+  }, []);
+
+  // Restore scroll position after services are loaded
+  useEffect(() => {
+      if (services.length > 0) {
+          const savedScroll = localStorage.getItem('gardener_profile_scroll_pos');
+          if (savedScroll) {
+              const scrollPos = parseInt(savedScroll, 10);
+              // Wait for render cycle to stabilize height
+              setTimeout(() => {
+                  window.scrollTo({
+                      top: scrollPos,
+                      behavior: 'auto' // Instant jump, no smooth scroll
+                  });
+                  // Mark restoration as done
+                  setIsRestoringScroll(false);
+              }, 100); 
+              
+              // A second attempt for slower renders (e.g. images or sub-components)
+              setTimeout(() => {
+                  if (Math.abs(window.scrollY - scrollPos) > 50) {
+                      window.scrollTo({ top: scrollPos, behavior: 'auto' });
+                  }
+                  // Ensure visibility eventually
+                  setIsRestoringScroll(false);
+              }, 500);
+          } else {
+              setIsRestoringScroll(false);
+          }
+      }
+  }, [services]);
+
+  // Modal State
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    pendingServiceId: string | null; // The service user wanted to open/close
+    action: 'expand' | 'collapse' | 'toggle';
+  }>({ isOpen: false, pendingServiceId: null, action: 'collapse' });
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
-    resolver: yupResolver(schema),
+    resolver: yupResolver(schema) as any,
     defaultValues: {
       full_name: '',
       phone: '',
@@ -94,6 +185,54 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     fetchServicePrices();
   }, [user]);
 
+  // Deep comparison helper (simple JSON based for this use case)
+  const isDifferent = (obj1: any, obj2: any) => {
+    return JSON.stringify(obj1) !== JSON.stringify(obj2);
+  };
+
+  const updateDirtyState = (serviceName: string, currentConfig: any) => {
+    // Find saved config for this service
+    const saved = savedConfigs[serviceName];
+    // If no saved config (new service setup), compare with undefined or empty default
+    const isDirty = isDifferent(currentConfig, saved);
+    
+    setDirtyServices(prev => ({
+        ...prev,
+        [serviceName]: isDirty
+    }));
+  };
+
+  // Effect to track dirty state when configs change
+  // We need to map service Name to the config state variable
+  useEffect(() => {
+     updateDirtyState('Poda de palmeras', palmConfig);
+  }, [palmConfig, savedConfigs]);
+
+  useEffect(() => {
+      updateDirtyState('Corte de césped', lawnConfig);
+  }, [lawnConfig, savedConfigs]);
+
+  useEffect(() => {
+      updateDirtyState('Corte de setos a máquina', hedgeConfig);
+  }, [hedgeConfig, savedConfigs]);
+  
+  useEffect(() => {
+      updateDirtyState('Poda de árboles', treeConfig);
+  }, [treeConfig, savedConfigs]);
+
+  useEffect(() => {
+      updateDirtyState('Poda de plantas', shrubConfig);
+  }, [shrubConfig, savedConfigs]);
+
+  useEffect(() => {
+      updateDirtyState('Labrar y quitar malas hierbas a mano', clearingConfig);
+  }, [clearingConfig, savedConfigs]);
+
+  useEffect(() => {
+      updateDirtyState('Fumigación de plantas', fumigationConfig);
+  }, [fumigationConfig, savedConfigs]);
+
+
   const fetchServicePrices = async () => {
     if (!user?.id) return;
     try {
@@ -102,56 +241,68 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         .select('service_id, price_per_unit, additional_config')
         .eq('gardener_id', user.id);
       if (error) throw error;
+      
       const prices: Record<string, number> = {};
       const configs: Record<string, StandardPricingConfig> = {};
+      const saved: Record<string, any> = {};
+
+      // Need to map service_id to service_name to store in savedConfigs by name (or by ID)
+      // Since services might not be loaded yet, we'll store by ID first or wait.
+      // Better to store by ID in savedConfigs to avoid name lookup issues.
+      // BUT our updateDirtyState uses names because switch(service.name) is easier.
+      // Let's use ID for savedConfigs to be safe, but we need service list to map ID->Name for the effect hooks?
+      // Actually, let's wait for services to be loaded.
+      // fetchServicePrices depends on services? No.
+      // But loadConfigs DOES.
       
-      data?.forEach((row: any) => {
-        prices[row.service_id] = row.price_per_unit;
-        // Cargar configuración adicional si existe
-        if (row.additional_config && Object.keys(row.additional_config).length > 0) {
-            // Guardamos la config en el estado genérico.
-            // Para palmeras se sobrescribirá/gestionará con el efecto específico loadPalmConfig,
-            // pero para el resto lo necesitamos aquí.
-            configs[row.service_id] = row.additional_config;
-        }
-      });
-      setServicePrices(prices);
-      setStandardConfigs(configs);
-      
-      // Intentar cargar la configuración específica de palmeras
-      // Primero necesitamos saber cuál es el ID del servicio "Poda de palmeras"
-      // Lo haremos en un efecto separado o aquí si ya tenemos los servicios cargados.
-      // Como fetchServices es asíncrono, lo mejor es hacerlo después o buscar el ID.
+      // Let's store raw data and process it in loadConfigs
     } catch (e) {
       console.error('Error fetching service prices:', e);
     }
   };
 
-  // Cargar todas las configuraciones especializadas
+  // Combined loader for configs
   useEffect(() => {
     const loadConfigs = async () => {
       if (!user?.id || services.length === 0) return;
       
       const { data } = await supabase
         .from('gardener_service_prices')
-        .select('service_id, additional_config')
+        .select('service_id, additional_config, price_per_unit')
         .eq('gardener_id', user.id);
         
       if (data) {
+        const newSavedConfigs: Record<string, any> = {};
+        const newPrices: Record<string, number> = {};
+
         data.forEach((row: any) => {
           const service = services.find(s => s.id === row.service_id);
-          if (!service || !row.additional_config) return;
+          if (!service) return;
 
-          switch(service.name) {
-            case 'Poda de palmeras': setPalmConfig(row.additional_config as PalmPricingConfig); break;
-            case 'Corte de césped': setLawnConfig(row.additional_config as LawnPricingConfig); break;
-            case 'Corte de setos a máquina': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
-            case 'Poda de árboles': setTreeConfig(row.additional_config as TreePricingConfig); break;
-            case 'Poda de plantas': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
-            case 'Labrar y quitar malas hierbas a mano': setClearingConfig(row.additional_config as ClearingPricingConfig); break;
-            case 'Fumigación de plantas': setFumigationConfig(row.additional_config as FumigationPricingConfig); break;
+          newPrices[service.id] = row.price_per_unit;
+
+          // Store saved config by Service Name for easier mapping with the effects above
+          // Or keep using ID. Let's use Service Name for consistency with the switch below.
+          newSavedConfigs[service.name] = row.additional_config;
+
+          if (row.additional_config) {
+            switch(service.name) {
+                case 'Poda de palmeras': setPalmConfig(row.additional_config as PalmPricingConfig); break;
+                case 'Corte de césped': setLawnConfig(row.additional_config as LawnPricingConfig); break;
+                case 'Corte de setos a máquina': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
+                case 'Poda de árboles': setTreeConfig(row.additional_config as TreePricingConfig); break;
+                case 'Poda de plantas': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
+                case 'Labrar y quitar malas hierbas a mano': setClearingConfig(row.additional_config as ClearingPricingConfig); break;
+                case 'Fumigación de plantas': setFumigationConfig(row.additional_config as FumigationPricingConfig); break;
+                default: 
+                    setStandardConfigs(prev => ({ ...prev, [service.id]: row.additional_config }));
+                    // For standard configs, we might need a different dirty tracking mechanism or ignore it for now as they are deprecated/unused for main services
+                    break;
+            }
           }
         });
+        setSavedConfigs(newSavedConfigs);
+        setServicePrices(newPrices);
       }
     };
     loadConfigs();
@@ -174,13 +325,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   };
 
   const fetchGardenerProfile = async () => {
-    if (!user) {
-      console.error('No user found when trying to fetch profile');
-      return;
-    }
-
-    console.log('Starting to fetch gardener profile for user:', user.id);
-
+    if (!user) return;
     try {
       const { data, error } = await supabase
         .from('gardener_profiles')
@@ -188,346 +333,387 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (error) {
-        console.error('Error fetching gardener profile:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('Fetched gardener profile data:', data);
-      
       if (data) {
         setGardenerProfile(data);
-        console.log('Setting form values with profile data');
         setValue('full_name', data.full_name);
         setValue('phone', data.phone);
         setValue('address', data.address);
         setValue('description', data.description);
         setValue('max_distance', data.max_distance);
-        setValue('services', data.services);
-        console.log('Form values set successfully');
-      } else {
-        console.log('No profile data found');
+        setValue('services', data.services || []);
       }
     } catch (error) {
       console.error('Error fetching gardener profile:', error);
     }
   };
 
+  // --- Accordion Logic ---
 
+  const handleExpand = (serviceId: string) => {
+    // If clicking the already expanded service, collapse it
+    if (expandedServiceId === serviceId) {
+        checkUnsavedAndAction(null, 'collapse');
+    } else {
+        // Switching to another service
+        checkUnsavedAndAction(serviceId, 'expand');
+    }
+  };
+
+  const checkUnsavedAndAction = (targetServiceId: string | null, action: 'expand' | 'collapse' | 'toggle') => {
+    // Identify currently expanded service
+    if (!expandedServiceId) {
+        // Nothing open, safe to proceed
+        if (action === 'expand' && targetServiceId) setExpandedServiceId(targetServiceId);
+        if (action === 'collapse') setExpandedServiceId(null);
+        return;
+    }
+
+    const currentService = services.find(s => s.id === expandedServiceId);
+    if (!currentService) {
+        setExpandedServiceId(targetServiceId);
+        return;
+    }
+
+    // Check if dirty
+    const isDirty = dirtyServices[currentService.name];
+
+    if (isDirty) {
+        setModalState({
+            isOpen: true,
+            pendingServiceId: targetServiceId,
+            action
+        });
+    } else {
+        // Safe to switch
+        setExpandedServiceId(targetServiceId);
+    }
+  };
+
+  const handleModalSave = async () => {
+      // Find the currently expanded service (the one we are closing)
+      if (!expandedServiceId) return;
+      const service = services.find(s => s.id === expandedServiceId);
+      if (!service) return;
+
+      // Trigger save for that service
+      // We need a mapping to call the specific save function
+      // Or we can manually call the save logic here since we have the state
+      const success = await saveServiceConfigInternal(service);
+      
+      if (success) {
+          closeModalAndProceed();
+      }
+  };
+
+  const handleModalDiscard = () => {
+      // Revert changes for currently expanded service
+      if (expandedServiceId) {
+          const service = services.find(s => s.id === expandedServiceId);
+          if (service) {
+              const saved = savedConfigs[service.name];
+              // Restore state
+              switch(service.name) {
+                case 'Poda de palmeras': setPalmConfig(saved); break;
+                case 'Corte de césped': setLawnConfig(saved); break;
+                case 'Corte de setos a máquina': setHedgeConfig(saved); break;
+                case 'Poda de árboles': setTreeConfig(saved); break;
+                case 'Poda de plantas': setShrubConfig(saved); break;
+                case 'Labrar y quitar malas hierbas a mano': setClearingConfig(saved); break;
+                case 'Fumigación de plantas': setFumigationConfig(saved); break;
+              }
+          }
+      }
+      closeModalAndProceed();
+  };
+
+  const closeModalAndProceed = () => {
+      setExpandedServiceId(modalState.pendingServiceId);
+      setModalState({ isOpen: false, pendingServiceId: null, action: 'collapse' });
+  };
+
+  // --- Toggle Logic ---
+
+  const handleToggleService = async (serviceId: string) => {
+    const currentServices = watchedServices || [];
+    const isActive = currentServices.includes(serviceId);
+    const service = services.find(s => s.id === serviceId);
+    
+    if (!service || !user) return;
+
+    if (isActive) {
+        // Deactivating
+        // Update DB immediately
+        const newServices = currentServices.filter(id => id !== serviceId);
+        
+        try {
+            const { error } = await supabase
+                .from('gardener_profiles')
+                .update({ services: newServices })
+                .eq('user_id', user.id);
+            
+            if (error) throw error;
+            
+            setValue('services', newServices);
+            toast.success(`Servicio "${service.name}" desactivado`);
+        } catch (e) {
+            console.error(e);
+            toast.error("Error al desactivar servicio");
+        }
+    } else {
+        // Activating - Check Validation First
+        let isValid = false;
+        
+        switch(service.name) {
+            case 'Poda de palmeras': isValid = isPalmConfigValid(palmConfig); break;
+            case 'Corte de césped': isValid = isLawnConfigValid(lawnConfig); break;
+            case 'Corte de setos a máquina': isValid = isHedgeConfigValid(hedgeConfig); break;
+            case 'Poda de árboles': isValid = isTreeConfigValid(treeConfig); break;
+            case 'Poda de plantas': isValid = isShrubConfigValid(shrubConfig); break;
+            case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(clearingConfig); break;
+            case 'Fumigación de plantas': isValid = isFumigationConfigValid(fumigationConfig); break;
+            default: isValid = true; // Fallback for standard
+        }
+
+        if (isValid) {
+            // Update DB immediately
+            const newServices = [...currentServices, serviceId];
+            try {
+                const { error } = await supabase
+                    .from('gardener_profiles')
+                    .update({ services: newServices })
+                    .eq('user_id', user.id);
+                
+                if (error) throw error;
+                
+                setValue('services', newServices);
+                toast.success(`Servicio "${service.name}" activado`);
+            } catch (e) {
+                console.error(e);
+                toast.error("Error al activar servicio");
+            }
+        } else {
+            // Invalid: Expand and show error
+            // If another service is open and dirty, we might trigger the modal?
+            // "Despliega la configuración automáticamente"
+            checkUnsavedAndAction(serviceId, 'expand');
+            toast.error(`Configuración incompleta para ${service.name}`);
+        }
+    }
+  };
+
+  // --- Save Logic ---
+
+  const saveServiceConfigInternal = async (service: Service): Promise<boolean> => {
+      if (!user) return false;
+      
+      let configToSave;
+      let setConfigFunc;
+      
+      switch(service.name) {
+        case 'Poda de palmeras': configToSave = palmConfig; setConfigFunc = setPalmConfig; break;
+        case 'Corte de césped': configToSave = lawnConfig; setConfigFunc = setLawnConfig; break;
+        case 'Corte de setos a máquina': configToSave = hedgeConfig; setConfigFunc = setHedgeConfig; break;
+        case 'Poda de árboles': configToSave = treeConfig; setConfigFunc = setTreeConfig; break;
+        case 'Poda de plantas': configToSave = shrubConfig; setConfigFunc = setShrubConfig; break;
+        case 'Labrar y quitar malas hierbas a mano': configToSave = clearingConfig; setConfigFunc = setClearingConfig; break;
+        case 'Fumigación de plantas': configToSave = fumigationConfig; setConfigFunc = setFumigationConfig; break;
+        default: return false;
+      }
+
+      const payload = {
+        gardener_id: user.id,
+        service_id: service.id,
+        unit_type: (service as any).measurement || 'area',
+        price_per_unit: 0, // Ignored for specialized services
+        currency: 'EUR',
+        active: true, // Always mark as active in prices table (doesn't mean active in profile)
+        additional_config: configToSave
+      };
+
+      try {
+        const { error } = await supabase.from('gardener_service_prices').upsert(payload);
+        if (error) throw error;
+        
+        // Update Saved Configs
+        setSavedConfigs(prev => ({ ...prev, [service.name]: configToSave }));
+        toast.success(`Configuración guardada`);
+        
+        // Auto-Activate if Valid
+        // Check if currently active
+        const currentServices = watchedServices || [];
+        if (!currentServices.includes(service.id)) {
+            // Check validity again
+            let isValid = false;
+            switch(service.name) {
+                case 'Poda de palmeras': isValid = isPalmConfigValid(configToSave as PalmPricingConfig); break;
+                case 'Corte de césped': isValid = isLawnConfigValid(configToSave as LawnPricingConfig); break;
+                case 'Corte de setos a máquina': isValid = isHedgeConfigValid(configToSave as HedgePricingConfig); break;
+                case 'Poda de árboles': isValid = isTreeConfigValid(configToSave as TreePricingConfig); break;
+                case 'Poda de plantas': isValid = isShrubConfigValid(configToSave as ShrubPricingConfig); break;
+                case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(configToSave as ClearingPricingConfig); break;
+                case 'Fumigación de plantas': isValid = isFumigationConfigValid(configToSave as FumigationPricingConfig); break;
+            }
+
+            if (isValid) {
+                 const newServices = [...currentServices, service.id];
+                 await supabase.from('gardener_profiles').update({ services: newServices }).eq('user_id', user.id);
+                 setValue('services', newServices);
+                 toast.success("Servicio activado automáticamente");
+            }
+        }
+
+        return true;
+      } catch (error) {
+        console.error(`Error saving ${service.name}:`, error);
+        toast.error(`Error al guardar`);
+        return false;
+      }
+  };
+
+  const handleWrapperSave = async (serviceName: string, config: any) => {
+      const service = services.find(s => s.name === serviceName);
+      if (service) {
+          // Update local state first to ensure it matches what is being saved
+           switch(serviceName) {
+                case 'Poda de palmeras': setPalmConfig(config); break;
+                case 'Corte de césped': setLawnConfig(config); break;
+                case 'Corte de setos a máquina': setHedgeConfig(config); break;
+                case 'Poda de árboles': setTreeConfig(config); break;
+                case 'Poda de plantas': setShrubConfig(config); break;
+                case 'Labrar y quitar malas hierbas a mano': setClearingConfig(config); break;
+                case 'Fumigación de plantas': setFumigationConfig(config); break;
+           }
+          // Small delay to ensure state update propagates? 
+          // Actually, passing 'config' directly to save function is safer than relying on state
+          // But saveServiceConfigInternal uses state.
+          // Let's modify saveServiceConfigInternal to accept config optionally or just update state before calling.
+          // Since React state updates are async, we should use the config passed in arg.
+          
+          // Re-implementing specific save logic here to use the ARGUMENT config
+          if (!user) return;
+          const payload = {
+            gardener_id: user.id,
+            service_id: service.id,
+            unit_type: (service as any).measurement || 'area',
+            price_per_unit: 0,
+            currency: 'EUR',
+            active: true,
+            additional_config: config
+          };
+          
+          try {
+             const { error } = await supabase.from('gardener_service_prices').upsert(payload);
+             if (error) throw error;
+             
+             setSavedConfigs(prev => ({ ...prev, [serviceName]: config }));
+             toast.success(`Configuración guardada`);
+
+             // Auto activate check logic...
+             const currentServices = watchedServices || [];
+             if (!currentServices.includes(service.id)) {
+                 let isValid = false;
+                 switch(serviceName) {
+                    case 'Poda de palmeras': isValid = isPalmConfigValid(config); break;
+                    case 'Corte de césped': isValid = isLawnConfigValid(config); break;
+                    case 'Corte de setos a máquina': isValid = isHedgeConfigValid(config); break;
+                    case 'Poda de árboles': isValid = isTreeConfigValid(config); break;
+                    case 'Poda de plantas': isValid = isShrubConfigValid(config); break;
+                    case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(config); break;
+                    case 'Fumigación de plantas': isValid = isFumigationConfigValid(config); break;
+                 }
+                 if (isValid) {
+                     const newServices = [...currentServices, service.id];
+                     await supabase.from('gardener_profiles').update({ services: newServices }).eq('user_id', user.id);
+                     setValue('services', newServices);
+                     toast.success("Servicio activado automáticamente");
+                 }
+             }
+          } catch(e) {
+              console.error(e);
+              toast.error("Error al guardar");
+          }
+      }
+  };
+
+  // --- Profile Info Save ---
 
   const onError = (errors: any) => {
     toast.error('Por favor, completa todos los campos requeridos marcados en rojo.');
     console.log('Validation errors:', errors);
   };
 
-  const onSubmit = async (data: FormData) => {
-    if (!user) {
-      console.error('No user found when trying to save profile');
-      return;
-    }
-
-    console.log('Starting to save profile for user:', user.id);
-    console.log('Profile data to save:', data);
-
-    // Validación específica para Poda de palmeras
-    const palmService = services.find(s => s.name === 'Poda de palmeras');
-    if (palmService && data.services.includes(palmService.id)) {
-        // Si el servicio está seleccionado, debe tener al menos una especie configurada
-        if (!palmConfig?.selected_species || palmConfig.selected_species.length === 0) {
-            toast.error('El servicio "Poda de palmeras" está seleccionado pero no tiene especies configuradas. Por favor, selecciona al menos una especie o desactiva el servicio.');
-            setHighlightPalmError(true);
-            return;
-        }
-    }
-
+  const onSaveProfileInfo = async (data: any) => {
+    if (!user) return;
     setLoading(true);
     try {
-      // Update or create gardener profile
-      const profileData = {
-        user_id: user.id,
-        full_name: data.full_name,
-        phone: data.phone,
-        address: data.address,
-        description: data.description,
-        max_distance: data.max_distance,
-        services: data.services,
-        is_available: true,
-        rating: gardenerProfile?.rating || 5.0,
-        total_reviews: gardenerProfile?.total_reviews || 0
-      };
+        const profileData = {
+            user_id: user.id,
+            full_name: data.full_name,
+            phone: data.phone,
+            address: data.address,
+            description: data.description,
+            max_distance: data.max_distance,
+            // We DO NOT update services list here, we preserve existing or current form state
+            // But actually services are in 'data' from useForm
+            services: watchedServices, // Preserve current state
+            is_available: true,
+            rating: gardenerProfile?.rating || 5.0,
+            total_reviews: gardenerProfile?.total_reviews || 0
+        };
 
-      const payload = { ...profileData } as any;
-
-      console.log('Saving to gardener_profiles table:', payload);
-
-      // Check if gardener profile already exists
-      const { data: existingProfile } = await supabase
-        .from('gardener_profiles')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      let profileError;
-      
-      if (existingProfile) {
-        // Profile exists, update it
-        console.log('Profile exists, updating...');
-        const { error } = await supabase
-          .from('gardener_profiles')
-          .update(payload)
-          .eq('user_id', user.id);
-        profileError = error;
-      } else {
-        // Profile doesn't exist, create it
-        console.log('Profile does not exist, creating...');
-        const { error } = await supabase
-          .from('gardener_profiles')
-          .insert(payload);
-        profileError = error;
-      }
-
-      if (profileError) {
-        console.error('Error saving to gardener_profiles:', profileError);
-        throw profileError;
-      }
-
-      console.log('Successfully saved to gardener_profiles');
-
-      // Update gardener service prices - FIX: Process ALL services to handle deactivation and cleanup
-      const servicePriceUpdates = services.map(service => {
-        const isSelected = watchedServices.includes(service.id);
-        const price = servicePrices[service.id];
+        const { error } = await supabase.from('gardener_profiles').upsert(profileData, { onConflict: 'user_id' });
+        if (error) throw error;
         
-        // If not selected, mark as inactive
-        if (!isSelected) {
-            return {
-                gardener_id: user.id,
-                service_id: service.id,
-                unit_type: (service as any).measurement || 'area',
-                price_per_unit: price || 0, // Keep old price or 0
-                currency: 'EUR',
-                active: false, // EXPLICITLY INACTIVE
-                additional_config: undefined // Optional: clear config or keep it
-            };
-        }
-
-        // If selected, prepare active payload with sanitized config
-        if (isSelected && price !== undefined) {
-          const sName = service.name;
-          let additionalConfig;
-          
-          if (sName === 'Poda de palmeras') {
-              // Sanitize Palm Config
-              if (palmConfig) {
-                  const cleanConfig = { ...palmConfig };
-                  const selected = cleanConfig.selected_species || [];
-                  
-                  // Clean species_prices
-                  const cleanSpeciesPrices: Record<string, number> = {};
-                  Object.keys(cleanConfig.species_prices).forEach(key => {
-                      if (selected.includes(key as any)) {
-                          cleanSpeciesPrices[key] = (cleanConfig.species_prices as any)[key];
-                      }
-                  });
-                  cleanConfig.species_prices = cleanSpeciesPrices as any;
-
-                  // Clean height_prices
-                  const cleanHeightPrices: Record<string, any> = {};
-                  Object.keys(cleanConfig.height_prices).forEach(key => {
-                       if (selected.includes(key as any)) {
-                           cleanHeightPrices[key] = (cleanConfig.height_prices as any)[key];
-                       }
-                  });
-                  cleanConfig.height_prices = cleanHeightPrices as any;
-                  
-                  additionalConfig = cleanConfig;
-              }
-          }
-          else if (sName === 'Corte de césped') {
-              // Sanitize Lawn Config
-              if (lawnConfig) {
-                  const cleanConfig = { ...lawnConfig };
-                  const selected = cleanConfig.selected_species || [];
-                  
-                  // Clean species_prices
-                  const cleanSpeciesPrices: Record<string, any> = {};
-                  Object.keys(cleanConfig.species_prices).forEach(key => {
-                      if (selected.includes(key as any)) {
-                          cleanSpeciesPrices[key] = cleanConfig.species_prices[key];
-                      }
-                  });
-                  cleanConfig.species_prices = cleanSpeciesPrices;
-                  
-                  additionalConfig = cleanConfig;
-              }
-          }
-          else if (sName === 'Corte de setos a máquina') additionalConfig = hedgeConfig;
-          else if (sName === 'Poda de árboles') additionalConfig = treeConfig;
-          else if (sName === 'Poda de plantas') additionalConfig = shrubConfig;
-          else if (sName === 'Labrar y quitar malas hierbas a mano') additionalConfig = clearingConfig;
-          else if (sName === 'Fumigación de plantas') additionalConfig = fumigationConfig;
-          else additionalConfig = standardConfigs[service.id];
-
-          additionalConfig = additionalConfig || undefined;
-
-          return {
-            gardener_id: user.id,
-            service_id: service.id,
-            unit_type: (service as any).measurement || 'area',
-            price_per_unit: price,
-            currency: 'EUR',
-            active: true,
-            additional_config: additionalConfig // Guardar JSONB
-          };
-        }
-        return null;
-      }).filter(Boolean);
-
-      if (servicePriceUpdates.length > 0) {
-        const { error: priceError } = await supabase
-          .from('gardener_service_prices')
-          .upsert(servicePriceUpdates);
-        if (priceError) console.error('Error updating prices:', priceError);
-      }
-
-      // Also update the main profiles table
-      const mainProfileData = {
-        full_name: data.full_name,
-        phone: data.phone,
-        address: data.address
-      };
-
-      console.log('Updating main profiles table:', mainProfileData);
-
-      const { error: mainProfileError } = await supabase
-        .from('profiles')
-        .update(mainProfileData)
-        .eq('user_id', user.id);
-
-      if (mainProfileError) {
-        console.error('Error updating main profiles:', mainProfileError);
-        throw mainProfileError;
-      }
-
-      console.log('Successfully updated main profiles');
-
-      toast.success('Perfil actualizado correctamente');
-      fetchGardenerProfile();
-    } catch (error: any) {
-      console.error('Error in profile submission:', error);
-      toast.error(error.message || 'Error al actualizar el perfil');
+        const mainProfileData = {
+            full_name: data.full_name,
+            phone: data.phone,
+            address: data.address
+        };
+        await supabase.from('profiles').update(mainProfileData).eq('user_id', user.id);
+        
+        toast.success("Información personal guardada");
+        fetchGardenerProfile();
+    } catch (e: any) {
+        console.error(e);
+        toast.error("Error al guardar perfil");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
-  const handleSaveConfig = async (serviceName: string, config: any, setConfig: (c: any) => void, successMsg: string) => {
-    if (!user) return;
-    const service = services.find(s => s.name === serviceName);
-    if (!service) return;
-
-    setConfig(config);
-
-    const payload = {
-      gardener_id: user.id,
-      service_id: service.id,
-      unit_type: (service as any).measurement || 'area',
-      price_per_unit: servicePrices[service.id] || 0,
-      currency: 'EUR',
-      active: true,
-      additional_config: config
-    };
-
-    try {
-      const { error } = await supabase.from('gardener_service_prices').upsert(payload);
-      if (error) throw error;
-      toast.success(successMsg);
-    } catch (error) {
-      console.error(`Error saving ${serviceName} config:`, error);
-      toast.error(`Error al guardar configuración de ${serviceName}`);
-      throw error;
-    }
-  };
-
-  const handleSavePalmConfig = async (config: PalmPricingConfig) => {
-    await handleSaveConfig(
-        'Poda de palmeras', 
-        config, 
-        setPalmConfig, 
-        'Precios de palmeras guardados correctamente'
-    );
-  };
-
-  const handleSaveLawnConfig = async (config: LawnPricingConfig) => {
-    await handleSaveConfig(
-        'Corte de césped', 
-        config, 
-        setLawnConfig, 
-        'Configuración de césped guardada correctamente'
-    );
-  };
-
-  const handleSaveStandardConfig = async (serviceId: string, config: StandardPricingConfig) => {
-    if (!user) return;
-    const service = services.find(s => s.id === serviceId);
-    if (!service) return;
-
-    // Update local state
-    setStandardConfigs(prev => ({ ...prev, [serviceId]: config }));
-
-    const payload = {
-      gardener_id: user.id,
-      service_id: service.id,
-      unit_type: (service as any).measurement || 'area',
-      price_per_unit: servicePrices[service.id] || 0,
-      currency: 'EUR',
-      active: true,
-      additional_config: config
-    };
-
-    try {
-      const { error } = await supabase
-        .from('gardener_service_prices')
-        .upsert(payload);
-
-      if (error) throw error;
-      toast.success(`Configuración guardada para ${service.name}`);
-    } catch (error) {
-      console.error('Error saving standard config:', error);
-      toast.error('Error al guardar la configuración');
-      throw error;
-    }
-  };
-
-  const handleServiceToggle = (serviceId: string) => {
-    const currentServices = watchedServices || [];
-    const updatedServices = currentServices.includes(serviceId)
-      ? currentServices.filter(id => id !== serviceId)
-      : [...currentServices, serviceId];
-    
-    // Si deseleccionamos palmeras, quitamos el error
-    const palmService = services.find(s => s.name === 'Poda de palmeras');
-    if (palmService && serviceId === palmService.id && currentServices.includes(serviceId)) {
-        setHighlightPalmError(false);
-    }
-    
-    setValue('services', updatedServices);
-  };
-
-
+  // Sort services: Active first, then inactive
+  // We use useMemo with gardenerProfile dependency to ensure sorting only happens on load/refresh
+  // and NOT when user toggles checkboxes (watchedServices changes).
+  const sortedServices = useMemo(() => {
+      return [...services].sort((a, b) => {
+          const initialServices = gardenerProfile?.services || [];
+          const aActive = initialServices.includes(a.id);
+          const bActive = initialServices.includes(b.id);
+          
+          if (aActive && !bActive) return -1;
+          if (!aActive && bActive) return 1;
+          
+          return a.name.localeCompare(b.name); // Keep alphabetical within groups
+      });
+  }, [services, gardenerProfile]);
 
   return (
-    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
+    <div 
+        className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6 transition-opacity duration-300"
+        style={{ opacity: isRestoringScroll ? 0 : 1 }}
+    >
       {onBack && (
         <button
           onClick={onBack}
           className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
-          aria-label="Volver al Panel"
         >
           <ArrowLeft className="w-4 h-4" />
           Volver al Panel
         </button>
       )}
+      
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center">
           <User className="w-6 h-6 sm:w-8 sm:h-8 mr-3 text-green-600" />
@@ -535,305 +721,155 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </h2>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit, onError)} className="space-y-6">
-        {/* Personal Information */}
-        <div className="">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Información Personal</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Nombre completo
-              </label>
-              <input
-                {...register('full_name')}
-                type="text"
-                className="w-full p-3 text-base sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Tu nombre completo"
-              />
-              {errors.full_name && (
-                <p className="mt-1 text-sm text-red-600">{errors.full_name.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Teléfono
-              </label>
-              <input
-                {...register('phone')}
-                type="tel"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
-                placeholder="+34 600 000 000"
-              />
-              {errors.phone && (
-                <p className="mt-1 text-sm text-red-600">{errors.phone.message}</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Address and Coverage */}
-        <div className="">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <MapPin className="w-5 h-5 mr-2" />
-            Ubicación y Cobertura
-          </h3>
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Dirección base
-              </label>
-              <AddressAutocomplete
-                value={watch('address') || ''}
-                onChange={(address) => setValue('address', address)}
-                placeholder="Tu dirección de trabajo"
-              />
-              {errors.address && (
-                <p className="mt-1 text-sm text-red-600">{errors.address.message}</p>
-              )}
-            </div>
-
-            <div className="">
-              <DistanceMapSelector
-                address={watch('address') || ''}
-                distance={watch('max_distance') || 25}
-                onDistanceChange={(distance) => {
-                  console.log('max_distance changed:', distance);
-                  setValue('max_distance', distance);
-                }}
-              />
-              {errors.max_distance && (
-                <p className="mt-1 text-sm text-red-600">{errors.max_distance.message}</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Description */}
-        <div className="">
-          <label className="block text-lg font-semibold text-gray-900 mb-4">
-            Descripción profesional
-          </label>
-          <textarea
-            {...register('description')}
-            rows={4}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
-            placeholder="Describe tu experiencia, especialidades y lo que te diferencia como jardinero profesional..."
-          />
-          {errors.description && (
-            <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>
-          )}
-        </div>
-
-        {/* Services */}
-        <div className="">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <Briefcase className="w-5 h-5 mr-2" />
-            Servicios que ofreces
-          </h3>
-          <div className="grid grid-cols-1 gap-4">
-            {services.map((service) => {
-              const isSelected = watchedServices.includes(service.id);
-              const measurement = (service as any).measurement === 'count' ? 'unidad' : 'm²';
-              const isPalm = service.name === 'Poda de palmeras';
-              const isLawn = service.name === 'Corte de césped';
-              const isHedge = service.name === 'Corte de setos a máquina';
-              const isTree = service.name === 'Poda de árboles';
-              const isShrub = service.name === 'Poda de plantas';
-              const isClearing = service.name === 'Labrar y quitar malas hierbas a mano';
-              const isFumigation = service.name === 'Fumigación de plantas';
-
-              const hasError = isPalm && highlightPalmError;
-
-              const isSpecialService = isPalm || isLawn || isHedge || isTree || isShrub || isClearing || isFumigation;
-
-              return (
-                <div key={service.id} className={`border-2 rounded-lg transition-colors ${
-                  hasError ? 'border-red-500 bg-red-50' : (isSelected ? 'border-green-500' : 'border-gray-200 hover:border-green-300')
-                } ${isSpecialService && isSelected ? 'p-0 overflow-hidden bg-white' : (isSelected ? 'bg-green-50 p-4' : 'p-4')}`}>
-                  <div className={isSpecialService && isSelected ? 'bg-green-50 p-4' : ''}>
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => handleServiceToggle(service.id)}
-                      className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
-                    />
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900">{service.name}</h4>
-                      <p className="text-sm text-gray-600 mb-2">{service.description}</p>
-                    </div>
-                  </label>
-                  </div>
-
-                  {isSelected && (
-                    <>
-                      <div className={`${isSpecialService ? 'border-t border-gray-100 p-4' : 'mt-3 pl-7'}`}>
-                        {!isSpecialService && (
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-gray-700">Precio por {measurement}:</label>
-                            <div className="relative w-32">
-                              <span className="absolute left-3 top-2 text-gray-500">€</span>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={servicePrices[service.id] || ''}
-                                onChange={(e) => {
-                                  const val = parseFloat(e.target.value);
-                                  setServicePrices(prev => ({
-                                    ...prev,
-                                    [service.id]: isNaN(val) ? 0 : val
-                                  }));
-                                }}
-                                className="w-full pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm"
-                                placeholder="0.00"
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Configuración avanzada de palmeras */}
-                        {isPalm && (
-                          <div className="cursor-default bg-white p-4">
-                            <PalmPricingConfigurator 
-                              value={palmConfig} 
-                              onChange={(newConfig) => {
-                                  setPalmConfig(newConfig);
-                                  if (newConfig.selected_species && newConfig.selected_species.length > 0) {
-                                      setHighlightPalmError(false);
-                                  }
-                              }}
-                              onSave={handleSavePalmConfig} 
-                            />
-                          </div>
-                        )}
-
-                        {/* Configuración avanzada de césped */}
-                        {isLawn && (
-                          <div className="cursor-default bg-white p-4">
-                            <LawnPricingConfigurator 
-                              value={lawnConfig} 
-                              onChange={(newConfig) => setLawnConfig(newConfig)}
-                              onSave={handleSaveLawnConfig} 
-                            />
-                          </div>
-                        )}
-
-                        {/* Configuración de setos */}
-                        {isHedge && (
-                          <div className="cursor-default bg-white p-4">
-                            <HedgePricingConfigurator 
-                              value={hedgeConfig} 
-                              onChange={setHedgeConfig}
-                              onSave={(c) => handleSaveConfig('Corte de setos a máquina', c, setHedgeConfig, 'Configuración de setos guardada')} 
-                            />
-                          </div>
-                        )}
-
-                        {/* Configuración de árboles */}
-                        {isTree && (
-                          <div className="cursor-default bg-white p-4">
-                            <TreePricingConfigurator 
-                              value={treeConfig} 
-                              onChange={setTreeConfig}
-                              onSave={(c) => handleSaveConfig('Poda de árboles', c, setTreeConfig, 'Configuración de árboles guardada')} 
-                            />
-                          </div>
-                        )}
-
-                        {/* Configuración de plantas/arbustos */}
-                        {isShrub && (
-                          <div className="cursor-default bg-white p-4">
-                            <ShrubPricingConfigurator 
-                              value={shrubConfig} 
-                              onChange={setShrubConfig}
-                              onSave={(c) => handleSaveConfig('Poda de plantas', c, setShrubConfig, 'Configuración de plantas guardada')} 
-                            />
-                          </div>
-                        )}
-
-                        {/* Configuración de desbroce */}
-                        {isClearing && (
-                          <div className="cursor-default bg-white p-4">
-                            <ClearingPricingConfigurator 
-                              value={clearingConfig} 
-                              onChange={setClearingConfig}
-                              onSave={(c) => handleSaveConfig('Labrar y quitar malas hierbas a mano', c, setClearingConfig, 'Configuración de desbroce guardada')} 
-                            />
-                          </div>
-                        )}
-
-                        {/* Configuración de fumigación */}
-                        {isFumigation && (
-                          <div className="cursor-default bg-white p-4">
-                            <FumigationPricingConfigurator 
-                              value={fumigationConfig} 
-                              onChange={setFumigationConfig}
-                              onSave={(c) => handleSaveConfig('Fumigación de plantas', c, setFumigationConfig, 'Configuración de fumigación guardada')} 
-                            />
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* Configuración estándar para otros servicios */}
-                      {!isSpecialService && (
-                          <div className="mt-4 border-t border-gray-100 pt-4 cursor-default bg-white -mx-4 -mb-4 px-4 pb-4">
-                              <StandardServiceConfig
-                                  value={standardConfigs[service.id]}
-                                  onChange={(newConfig) => setStandardConfigs(prev => ({ ...prev, [service.id]: newConfig }))}
-                                  onSave={(config) => handleSaveStandardConfig(service.id, config)}
-                              />
-                          </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {errors.services && (
-            <p className="mt-2 text-sm text-red-600">{errors.services.message}</p>
-          )}
-        </div>
-
-        {/* Statistics */}
-        {gardenerProfile && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <Star className="w-5 h-5 mr-2" />
-              Estadísticas
+      <form onSubmit={handleSubmit(onSaveProfileInfo, onError)} className="space-y-8">
+        
+        {/* SECTION 1: Personal Info */}
+        <div className="space-y-6">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center border-b pb-4">
+                <User className="w-5 h-5 mr-2 text-green-600" />
+                Información Personal
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{gardenerProfile.rating.toFixed(1)}</div>
-                <div className="text-sm text-gray-600">Calificación promedio</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">{gardenerProfile.total_reviews}</div>
-                <div className="text-sm text-gray-600">Reseñas totales</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-900">
-                  {gardenerProfile.is_available ? 'Activo' : 'Inactivo'}
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Nombre completo</label>
+                    <input {...register('full_name')} type="text" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Tu nombre completo" />
+                    {errors.full_name && <p className="mt-1 text-sm text-red-600">{errors.full_name.message}</p>}
                 </div>
-                <div className="text-sm text-gray-600">Estado actual</div>
-              </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
+                    <input {...register('phone')} type="tel" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="+34 600 000 000" />
+                    {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone.message}</p>}
+                </div>
             </div>
-          </div>
-        )}
 
+            <div className="space-y-6">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Dirección base</label>
+                    <AddressAutocomplete value={watch('address') || ''} onChange={(address) => setValue('address', address)} placeholder="Tu dirección de trabajo" />
+                    {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address.message}</p>}
+                </div>
+                <div>
+                    <DistanceMapSelector address={watch('address') || ''} distance={watch('max_distance') || 25} onDistanceChange={(d) => setValue('max_distance', d)} />
+                    {errors.max_distance && <p className="mt-1 text-sm text-red-600">{errors.max_distance.message}</p>}
+                </div>
+            </div>
 
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Descripción profesional</label>
+                <textarea {...register('description')} rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Describe tu experiencia..." />
+                {errors.description && <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>}
+            </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 font-semibold"
-        >
-          <Save className="w-5 h-5 mr-2" />
-          {loading ? 'Guardando...' : 'Guardar Configuración'}
-        </button>
+            <button type="submit" disabled={loading} className="w-full md:w-auto px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 font-semibold flex items-center justify-center">
+                <Save className="w-5 h-5 mr-2" />
+                {loading ? 'Guardando...' : 'Guardar Información Personal'}
+            </button>
+        </div>
+
+        {/* SECTION 2: Services */}
+        <div className="space-y-4">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                <Briefcase className="w-5 h-5 mr-2 text-green-600" />
+                Servicios que ofreces
+            </h3>
+            
+            <div className="grid grid-cols-1 gap-4">
+                {sortedServices.map(service => {
+                    const isSelected = watchedServices.includes(service.id);
+                    const isExpanded = expandedServiceId === service.id;
+                    
+                    // Determine if has error
+                    let hasError = false;
+                    // We can check validity on render, but maybe expensive?
+                    // Let's check simply if we have config loaded but it's invalid AND it's not selected?
+                    // No, requirements say: "Si el jardinero intenta marcar el checkbox y hay campos inválidos: ... Resalta en rojo"
+                    // So we need a way to know if validation failed during toggle attempt.
+                    // But we can also check validity "live" to show status.
+                    // Let's rely on simple checks.
+                    
+                    return (
+                        <ServiceItem
+                            key={service.id}
+                            service={service}
+                            isActive={isSelected}
+                            isExpanded={isExpanded}
+                            hasError={false} // We handle error toast/expansion on interaction, not persistent state yet
+                            onToggle={() => handleToggleService(service.id)}
+                            onExpand={() => handleExpand(service.id)}
+                        >
+                            {/* Render Configurator based on Name */}
+                            {service.name === 'Poda de palmeras' && (
+                                <PalmPricingConfigurator 
+                                    value={palmConfig} 
+                                    initialConfig={savedConfigs['Poda de palmeras']}
+                                    onChange={setPalmConfig} 
+                                    onSave={(c) => handleWrapperSave('Poda de palmeras', c)} 
+                                />
+                            )}
+                            {service.name === 'Corte de césped' && (
+                                <LawnPricingConfigurator 
+                                    value={lawnConfig} 
+                                    initialConfig={savedConfigs['Corte de césped']}
+                                    onChange={setLawnConfig} 
+                                    onSave={(c) => handleWrapperSave('Corte de césped', c)} 
+                                />
+                            )}
+                            {service.name === 'Corte de setos a máquina' && (
+                                <HedgePricingConfigurator 
+                                    value={hedgeConfig} 
+                                    initialConfig={savedConfigs['Corte de setos a máquina']}
+                                    onChange={setHedgeConfig} 
+                                    onSave={(c) => handleWrapperSave('Corte de setos a máquina', c)} 
+                                />
+                            )}
+                            {service.name === 'Poda de árboles' && (
+                                <TreePricingConfigurator 
+                                    value={treeConfig} 
+                                    initialConfig={savedConfigs['Poda de árboles']}
+                                    onChange={setTreeConfig} 
+                                    onSave={(c) => handleWrapperSave('Poda de árboles', c)} 
+                                />
+                            )}
+                            {service.name === 'Poda de plantas' && (
+                                <ShrubPricingConfigurator 
+                                    value={shrubConfig} 
+                                    initialConfig={savedConfigs['Poda de plantas']}
+                                    onChange={setShrubConfig} 
+                                    onSave={(c) => handleWrapperSave('Poda de plantas', c)} 
+                                />
+                            )}
+                            {service.name === 'Labrar y quitar malas hierbas a mano' && (
+                                <ClearingPricingConfigurator 
+                                    value={clearingConfig} 
+                                    initialConfig={savedConfigs['Labrar y quitar malas hierbas a mano']}
+                                    onChange={setClearingConfig} 
+                                    onSave={(c) => handleWrapperSave('Labrar y quitar malas hierbas a mano', c)} 
+                                />
+                            )}
+                            {service.name === 'Fumigación de plantas' && (
+                                <FumigationPricingConfigurator 
+                                    value={fumigationConfig} 
+                                    initialConfig={savedConfigs['Fumigación de plantas']}
+                                    onChange={setFumigationConfig} 
+                                    onSave={(c) => handleWrapperSave('Fumigación de plantas', c)} 
+                                />
+                            )}
+                        </ServiceItem>
+                    );
+                })}
+            </div>
+        </div>
+
       </form>
+
+      <UnsavedChangesModal 
+        isOpen={modalState.isOpen}
+        serviceName={services.find(s => s.id === expandedServiceId)?.name || 'Servicio'}
+        onSave={handleModalSave}
+        onDiscard={handleModalDiscard}
+        onCancel={() => setModalState({ isOpen: false, pendingServiceId: null, action: 'collapse' })}
+      />
     </div>
   );
 };

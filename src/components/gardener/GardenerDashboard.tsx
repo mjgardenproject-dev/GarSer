@@ -23,7 +23,15 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   // Evitar bloquear toda la UI: estado de carga sólo para reservas
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const isFetchingRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile'>(() => {
+    const savedTab = localStorage.getItem('gardener_active_tab');
+    return (savedTab as 'dashboard' | 'requests' | 'availability' | 'profile') || 'dashboard';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('gardener_active_tab', activeTab);
+  }, [activeTab]);
+
   const [selectedChat, setSelectedChat] = useState<{
     bookingId: string;
     clientName: string;

@@ -393,6 +393,40 @@ const ProvidersPage: React.FC = () => {
         setConfigs(configMap);
         setPalmCoverageMap(coverageMap);
 
+        // Strict Filtering for Tree Pruning (Poda de árboles)
+        // Rule 4: Gardener Availability Logic
+        const { data: serviceInfo } = await supabase
+            .from('services')
+            .select('name')
+            .eq('id', primaryServiceId)
+            .single();
+
+        if (serviceInfo?.name === 'Poda de árboles') {
+            list = list.filter(p => {
+                const c = configMap[p.user_id];
+                if (!c) return false;
+
+                // 1. Check Mandatory Fields Presence (must not be null/undefined)
+                if (c.structuralHourlyRate == null) return false;
+                if (c.shapingHourlyRate == null) return false;
+                if (c.ladderModifier == null) return false;
+                if (c.climbingModifier == null) return false;
+                if (c.wasteRemovalModifier == null) return false;
+
+                // 2. Check Values Validity
+                // Hourly rates MUST be > 0
+                if (c.structuralHourlyRate <= 0) return false;
+                if (c.shapingHourlyRate <= 0) return false;
+
+                // Modifiers MUST be >= 0 (0% is valid, negative is not)
+                if (c.ladderModifier < 0) return false;
+                if (c.climbingModifier < 0) return false;
+                if (c.wasteRemovalModifier < 0) return false;
+
+                return true;
+            });
+        }
+
         // Filter list: Remove gardeners with 0 coverage for palms
         if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
              list = list.filter(p => coverageMap[p.user_id]?.coveredCount > 0);
@@ -636,13 +670,18 @@ const ProvidersPage: React.FC = () => {
                 continue;
             }
             
-            // Access Surcharge
-            const surcharges = config.access_surcharges || {};
-            let accessPercent = 0;
-            if (access === 'dificil') accessPercent = surcharges.dificil || 0;
-            else if (access === 'medio') accessPercent = surcharges.medio || 0;
+            // Condition Surcharge
+            const surcharges = config.condition_surcharges || { descuidado: 20, muy_descuidado: 50 };
+            let statePercent = 0;
+            const s = (zone.state || 'normal').toLowerCase();
             
-            const accessMult = 1 + (accessPercent / 100);
+            if (s.includes('muy') && s.includes('descuidado')) {
+                statePercent = surcharges.muy_descuidado || 0;
+            } else if (s.includes('descuidado')) {
+                statePercent = surcharges.descuidado || 0;
+            }
+            
+            const stateMult = 1 + (statePercent / 100);
             
             // Waste
             let wasteMult = 1;
@@ -650,8 +689,8 @@ const ProvidersPage: React.FC = () => {
                 wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
             }
             
-            const lineTotal = base * length * accessMult * wasteMult;
-            console.log(`[ComputePrice] Line Total: ${lineTotal} (Base: ${base}, Length: ${length}, AccessMult: ${accessMult}, WasteMult: ${wasteMult})`);
+            const lineTotal = base * length * stateMult * wasteMult;
+            console.log(`[ComputePrice] Line Total: ${lineTotal} (Base: ${base}, Length: ${length}, StateMult: ${stateMult}, WasteMult: ${wasteMult})`);
             
             total += lineTotal;
         }
@@ -668,8 +707,14 @@ const ProvidersPage: React.FC = () => {
         
         // Iterate over EACH tree group (individual tree from AI)
         for (const group of bookingData.treeGroups) {
-            // Use per-tree estimated hours from AI, fallback to average if missing
-            const treeHours = group.estimatedHours || (Number(bookingData.estimatedHours || 0) / bookingData.treeGroups.length) || 1.5;
+            // SKIP FAILED ANALYSIS (Level 3)
+            if ((group as any).isFailed || group.analysisLevel === 3) continue;
+
+            // Use per-tree estimated hours from AI, NO FALLBACK
+            const treeHours = group.estimatedHours;
+            
+            // If no hours, treat as failed (skip)
+            if (!treeHours || treeHours <= 0) continue;
             
             const pruningType = group.pruningType || 'structural';
             const access = group.access || 'normal';
@@ -677,21 +722,24 @@ const ProvidersPage: React.FC = () => {
             // Hourly Rate based on Type
             let hourlyRate = 0;
             if (pruningType === 'shaping') {
-                hourlyRate = config.shapingHourlyRate || 30;
+                hourlyRate = config.shapingHourlyRate;
             } else {
-                hourlyRate = config.structuralHourlyRate || 40;
+                hourlyRate = config.structuralHourlyRate;
             }
+
+            // Validacion estricta: Si no hay precio o es <= 0, no calcular
+            if (!hourlyRate || hourlyRate <= 0) continue;
 
             // Access Surcharge
             let accessPercent = 0;
             const legacySurcharges = config.access_surcharges || {};
             
             if (access === 'medio') { // Escalera
-                accessPercent = config.ladderModifier !== undefined 
+                accessPercent = config.ladderModifier != null 
                     ? config.ladderModifier 
                     : (legacySurcharges.medio || 0);
             } else if (access === 'dificil') { // Trepa
-                accessPercent = config.climbingModifier !== undefined 
+                accessPercent = config.climbingModifier != null 
                     ? config.climbingModifier 
                     : (legacySurcharges.dificil || 0);
             }
@@ -699,7 +747,7 @@ const ProvidersPage: React.FC = () => {
             // Waste Removal Surcharge
             let wastePercent = 0;
             if (globalWaste) {
-                wastePercent = config.wasteRemovalModifier !== undefined 
+                wastePercent = config.wasteRemovalModifier != null 
                     ? config.wasteRemovalModifier 
                     : (config.waste_removal?.percentage || 0);
             }

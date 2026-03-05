@@ -137,7 +137,8 @@ const DetailsPage: React.FC = () => {
   // New Debug States for specific services
   const [debugHedgeHeight, setDebugHedgeHeight] = useState<string>('');
   const [debugHedgeType, setDebugHedgeType] = useState<string>('');
-  const [debugHedgeAccess, setDebugHedgeAccess] = useState<string>('normal');
+  const [debugHedgeState, setDebugHedgeState] = useState<string>('normal');
+  const [debugHedgeAccess, setDebugHedgeAccess] = useState<string>('normal'); // Legacy?
   const [debugTreePruningType, setDebugTreePruningType] = useState<string>('structural');
   const [debugTreeAccess, setDebugTreeAccess] = useState<string>('normal');
   const [debugTreeHours, setDebugTreeHours] = useState<string>('');
@@ -150,7 +151,10 @@ const DetailsPage: React.FC = () => {
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [isImageStackExpanded, setIsImageStackExpanded] = useState(false);
+  const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(new Set());
   const [loadingMessage, setLoadingMessage] = useState('Escaneando terreno...');
+  const [analyzingZoneId, setAnalyzingZoneId] = useState<string | null>(null);
+  const [lawnUploads, setLawnUploads] = useState<Record<string, Set<number>>>({});
 
   useEffect(() => {
     if (analyzing) {
@@ -543,16 +547,66 @@ const DetailsPage: React.FC = () => {
     });
   };
 
+  const roundToHalfHour = (hours: number) => {
+    return Math.round(hours * 2) / 2;
+  };
+
   const calculateTotalTreeHours = (groups: any[]) => {
-    const total = groups.reduce((acc: number, t: any) => {
+    // Filter out failed analysis (Level 3)
+    const validGroups = groups.filter((t: any) => !(t.isFailed || t.analysisLevel === 3));
+    
+    if (validGroups.length === 0) return 0;
+
+    const total = validGroups.reduce((acc: number, t: any) => {
       // Use the AI estimated hours stored in the group, fallback to 1.5 if missing
       const h = Number(t.estimatedHours || t._estimatedHours || 1.5);
       return acc + h;
     }, 0);
-    return Math.max(1, Math.ceil(total));
+    return Math.max(0, Math.ceil(total));
   };
 
-  const removePhoto = (indexToRemove: number) => {
+  const updatePalmPricing = async (groups: any[]) => {
+      // Flatten groups based on quantity for accurate backend calculation
+      const flatPalms: any[] = [];
+      groups.forEach(g => {
+          // Skip failed analysis from pricing calculation
+          if (g.analysisLevel === 3 || (g as any).isFailed) return;
+
+          const qty = g.quantity || 1;
+          for (let k = 0; k < qty; k++) {
+              flatPalms.push({
+                  especie: g.species,
+                  altura: g.height,
+                  estado: g.state || 'normal'
+              });
+          }
+      });
+
+      let totalHours = 0;
+      try {
+          const estimation = await calculatePalmHours(flatPalms);
+          totalHours = roundToHalfHour(estimation.tiempoTotalEstimado);
+      } catch (e) {
+          console.error("Pricing error", e);
+      }
+      
+      const payload = { palmGroups: groups, estimatedHours: totalHours, isAnalyzing: false };
+      setBookingData(prev => ({ ...prev, ...payload }));
+      if (bookingData.serviceIds?.[0]) {
+          updateServiceData(bookingData.serviceIds[0], payload);
+      }
+  };
+
+  const handlePalmQuantityChange = (groupId: string, newQuantity: number) => {
+      const n = [...(bookingData.palmGroups || [])];
+      const g = n.find(x => x.id === groupId);
+      if (g) {
+          g.quantity = Math.max(1, newQuantity);
+          updatePalmPricing(n);
+      }
+  };
+
+  const removePhoto = async (indexToRemove: number) => {
     // 1. Remove from 'photos' array
     const newPhotos = photos.filter((_, i) => i !== indexToRemove);
     setPhotos(newPhotos);
@@ -616,15 +670,8 @@ const DetailsPage: React.FC = () => {
                 imageIndex: (g.imageIndex !== undefined && g.imageIndex > indexToRemove) ? g.imageIndex - 1 : g.imageIndex
             }));
         
-        const totalHours = newGroups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
-        setBookingData({ palmGroups: newGroups, estimatedHours: totalHours });
-        
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], {
-                 palmGroups: newGroups,
-                 estimatedHours: totalHours
-             });
-        }
+        // Recalculate using Backend (Global Recalculation on Remove)
+        await updatePalmPricing(newGroups);
     }
 
     // Update shrubGroups (Advanced Deletion)
@@ -819,69 +866,59 @@ const DetailsPage: React.FC = () => {
       // ---------------------------------------------------------
 
       // Handle Palm Analysis Results
-      if (res.palmas && res.palmas.length > 0) {
-        const newGroups = res.palmas.map((p, idx) => {
-             // Map AI relative index back to global index
-             const globalIndex = indexMap[p.indice_imagen];
-             const originalUrl = photoUrls[globalIndex];
+      if (debugService === 'Poda de palmeras') {
+          if (res.palmas && res.palmas.length > 0) {
+            const newGroups = res.palmas.map((p, idx) => {
+                 // Map AI relative index back to global index
+                 const globalIndex = indexMap[p.indice_imagen];
+                 const originalUrl = photoUrls[globalIndex];
+                 
+                 return {
+                    id: `ai-${Date.now()}-${idx}`,
+                    species: p.especie,
+                    height: p.altura,
+                    quantity: 1, // Default to 1, user must confirm
+                    state: p.estado || 'normal',
+                    wasteRemoval: true,
+                    photoUrl: originalUrl || undefined,
+                    imageIndex: globalIndex,
+                    analysisLevel: p.nivel_analisis,
+                    observations: p.observaciones
+                };
+            });
+            
+            // Merge with existing palms not in current analysis batch
+            const oldGroups = (bookingData.palmGroups || []).filter(g => {
+                // Keep if imageIndex is NOT in indicesToProcess
+                return g.imageIndex !== undefined && !indicesToProcess.includes(g.imageIndex);
+            });
+            
+            const mergedGroups = [...oldGroups, ...newGroups];
+            
+            // Calculate estimated hours via Backend (Strict requirement)
+            await updatePalmPricing(mergedGroups);
+            
+            // DEBUG: Update Final Data
+            // currentDebugInfo.finalAnalysisData = palmPayload; // palmPayload is not available here anymore
+            setDebugLogs({...currentDebugInfo}); // Force update
+
+            saveProgress();
+            setAnalyzing(false);
+            return;
+          } else {
+             // Explicit "No Palms Found" handling
+             setAnalyzing(false);
+             setAnalysisError({
+                 title: 'No se han detectado palmeras',
+                 message: 'La inteligencia artificial no ha encontrado palmeras claras en las imágenes. Por favor, añádelas manualmente o prueba con fotos más cercanas.',
+                 type: 'warning'
+             });
              
-             return {
-                id: `ai-${Date.now()}-${idx}`,
-                species: p.especie,
-                height: p.altura,
-                quantity: 1, // Default to 1, user must confirm
-                state: p.estado || 'normal',
-                wasteRemoval: true,
-                photoUrl: originalUrl || undefined,
-                imageIndex: globalIndex,
-                analysisLevel: p.nivel_analisis,
-                observations: p.observaciones
-            };
-        });
-        
-        // Merge with existing palms not in current analysis batch
-        const oldGroups = (bookingData.palmGroups || []).filter(g => {
-            // Keep if imageIndex is NOT in indicesToProcess
-            return g.imageIndex !== undefined && !indicesToProcess.includes(g.imageIndex);
-        });
-        
-        const mergedGroups = [...oldGroups, ...newGroups];
-        
-        // Calculate estimated hours via Backend (Strict requirement)
-        let totalHours = 0;
-        try {
-             // Map to backend expected format
-             const pricingInput = mergedGroups.map(g => ({
-                 especie: g.species,
-                 altura: g.height,
-                 estado: g.state || 'normal'
-             }));
-             const estimation = await calculatePalmHours(pricingInput);
-             totalHours = estimation.tiempoTotalEstimado;
-        } catch (e) {
-             console.error('Error calculating palm pricing:', e);
-             toast.error('Error calculando precio. Verifica tu conexión.');
-        }
-        
-        const palmPayload = {  
-            palmGroups: mergedGroups,
-            estimatedHours: totalHours,
-            isAnalyzing: false
-        };
-
-        setBookingData(palmPayload);
-        
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], palmPayload);
-        }
-        
-        // DEBUG: Update Final Data
-        currentDebugInfo.finalAnalysisData = palmPayload;
-        setDebugLogs({...currentDebugInfo}); // Force update
-
-        saveProgress();
-        setAnalyzing(false);
-        return;
+             // DEBUG: Update Final Data with error
+             currentDebugInfo.errors.push('No palms detected (AI returned empty list)');
+             setDebugLogs({...currentDebugInfo});
+             return;
+          }
       }
 
       // Handle Tree Analysis Results
@@ -918,7 +955,7 @@ const DetailsPage: React.FC = () => {
             else standardHeight = '>9m';
 
             // Detect failure
-            const isFailed = t.nivel_analisis === 3 || t.horas_estimadas === 0;
+            const isFailed = t.nivel_analisis === 3 || t.horas_estimadas === 0 || !t.horas_estimadas;
 
             // Map AI relative index back to global index
             const globalIndex = indexMap[t.indice_imagen];
@@ -952,8 +989,8 @@ const DetailsPage: React.FC = () => {
                 analysisLevel: t.nivel_analisis,
                 observations: t.observaciones,
                 isFailed: isFailed, // Mark as failed
-                estimatedHours: Number(t.horas_estimadas) || 1.5, // Store explicit AI hours
-                _estimatedHours: Number(t.horas_estimadas) || 1.5 // Keep internal backup
+                estimatedHours: Number(t.horas_estimadas) || 0, // Store explicit AI hours only
+                _estimatedHours: Number(t.horas_estimadas) || 0 // Keep internal backup
             };
         });
         
@@ -971,7 +1008,7 @@ const DetailsPage: React.FC = () => {
         // Ensure old groups have estimatedHours (fallback if missing)
         const mergedGroupsWithHours = mergedGroups.map(g => ({
             ...g,
-            estimatedHours: (g as any).estimatedHours || (g as any)._estimatedHours || 1.5
+            estimatedHours: (g as any).estimatedHours || (g as any)._estimatedHours || 0
         }));
         
         const validTrees = mergedGroupsWithHours.filter((t: any) => !t.isFailed);
@@ -1054,11 +1091,13 @@ const DetailsPage: React.FC = () => {
                 const len = Number(t.longitud_m || 0);
                 const height = Number(t.altura_m || 0);
                 const hCat = height < 1 ? '<1m' : height <= 2 ? '1-2m' : '>2m';
-                const diff = t.dificultad_acceso === 3 ? 'dificil' : t.dificultad_acceso === 2 ? 'medio' : 'normal';
+                const state = t.estado_seto || 'normal';
                 
                 const hMod = height > 2 ? 1.5 : 1;
-                const dMod = diff === 'dificil' ? 1.5 : diff === 'medio' ? 1.2 : 1;
-                totalHours += Math.ceil((len / 10) * hMod * dMod) || 1;
+                // State multiplier estimation for UI hours (real calc in ProvidersPage)
+                const sMod = state === 'muy descuidado' ? 1.5 : state === 'descuidado' ? 1.2 : 1;
+                
+                totalHours += Math.ceil((len / 10) * hMod * sMod) || 1;
                 totalAiQty += len;
 
                 newHedgeZones.push({
@@ -1066,7 +1105,7 @@ const DetailsPage: React.FC = () => {
                     type: t.tipo_seto || 'Seto Mixto/Otro',
                     height: hCat,
                     length: len,
-                    access: diff,
+                    state: state,
                     wasteRemoval: true,
                     photoUrls: validUrls,
                     analysisLevel: t.nivel_analisis,
@@ -1228,6 +1267,22 @@ const DetailsPage: React.FC = () => {
         currentDebugInfo.finalAnalysisData = { ...noTasksPayload, message: 'No tasks detected by AI' };
         setDebugLogs({...currentDebugInfo}); // Force update
         
+        // Explicit UI Feedback for "No Tasks" (Lawn, etc)
+        if (debugService.toLowerCase().includes('césped') || debugService.toLowerCase().includes('cesped')) {
+             setAnalysisError({
+                 title: 'No se ha detectado césped',
+                 message: 'No hemos podido delimitar una zona de césped clara. Por favor, añade la zona manualmente.',
+                 type: 'warning'
+             });
+        } else {
+             // Generic fallback
+             setAnalysisError({
+                 title: 'No se detectaron elementos',
+                 message: 'No hemos podido identificar elementos del servicio solicitado. Por favor, añádelos manualmente.',
+                 type: 'warning'
+             });
+        }
+
         saveProgress();
       }
     } catch (e) {
@@ -1305,6 +1360,12 @@ const DetailsPage: React.FC = () => {
 
   // --- NEW: Lawn Zone Logic ---
   const addLawnZone = () => {
+    // Check max zones
+    if ((bookingData.lawnZones || []).length >= 4) {
+        toast.error('Máximo 4 zonas permitidas');
+        return;
+    }
+
     // Clear analysis error when user interacts
     setAnalysisError(null);
     const newZone = {
@@ -1315,7 +1376,9 @@ const DetailsPage: React.FC = () => {
         wasteRemoval: true,
         photoUrls: [],
         imageIndices: [],
-        files: [] 
+        files: [],
+        selectedIndices: [],
+        analyzedIndices: []
     };
     const newZones = [...(bookingData.lawnZones || []), newZone];
     setBookingData({ 
@@ -1334,17 +1397,72 @@ const DetailsPage: React.FC = () => {
   };
 
   const removeLawnZone = (zoneId: string) => {
-    if (!window.confirm('¿Estás seguro de eliminar esta zona y sus fotos?')) return;
-    const newZones = (bookingData.lawnZones || []).filter(z => z.id !== zoneId);
-    setBookingData({ lawnZones: newZones });
+    const zones = [...(bookingData.lawnZones || [])];
+    const idx = zones.findIndex(z => z.id === zoneId);
+    if (idx === -1) return;
+    const zone = zones[idx];
     
-    if (bookingData.serviceIds?.[0]) {
-         updateServiceData(bookingData.serviceIds[0], {
-             lawnZones: newZones
-         });
+    // Check if zone has analysis data
+    const isAnalyzed = zone.quantity > 0 || (zone.analysisLevel !== undefined);
+
+    if (isAnalyzed) {
+        if (!window.confirm('¿Eliminar el resultado del análisis? (Las fotos se mantendrán)')) return;
+        
+        // Clear analysis data but keep photos and zone
+        const updatedZone = { 
+            ...zone,
+            quantity: 0,
+            species: '',
+            state: 'normal',
+            analysisLevel: undefined,
+            observations: []
+        };
+        zones[idx] = updatedZone;
+        
+        setBookingData({ lawnZones: zones });
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], { lawnZones: zones });
+        }
+    } else {
+        // Fully remove zone if no analysis or user wants to delete empty zone
+        if (!window.confirm('¿Estás seguro de eliminar esta zona y sus fotos?')) return;
+        const newZones = zones.filter(z => z.id !== zoneId);
+        setBookingData({ lawnZones: newZones });
+        if (bookingData.serviceIds?.[0]) {
+             updateServiceData(bookingData.serviceIds[0], { lawnZones: newZones });
+        }
     }
     
     saveProgress(); // Ensure persistence
+  };
+
+  const toggleLawnPhotoSelection = (zoneId: string, photoIndex: number) => {
+      const zones = [...(bookingData.lawnZones || [])];
+      const idx = zones.findIndex(z => z.id === zoneId);
+      if (idx === -1) return;
+      
+      const zone = { ...zones[idx] };
+      // If undefined, initialize with all selected (matching UI default)
+      let currentSelected = zone.selectedIndices;
+      if (!currentSelected) {
+          currentSelected = zone.photoUrls.map((_, i) => i);
+      }
+
+      const selected = new Set(currentSelected);
+      
+      if (selected.has(photoIndex)) {
+          selected.delete(photoIndex);
+      } else {
+          selected.add(photoIndex);
+      }
+      
+      zone.selectedIndices = Array.from(selected);
+      zones[idx] = zone;
+      
+      setBookingData({ lawnZones: zones });
+      if (bookingData.serviceIds?.[0]) {
+           updateServiceData(bookingData.serviceIds[0], { lawnZones: zones });
+      }
   };
 
   const handleLawnFileSelect = async (zoneId: string, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1355,23 +1473,86 @@ const DetailsPage: React.FC = () => {
     const idx = zones.findIndex(z => z.id === zoneId);
     if (idx === -1) return;
 
-    // Upload immediately
-    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now(); // Ensure uniqueness
-    const uploadPromises = files.map((file, i) => uploadFile(file, startIdx + i));
+    // Check max photos per zone
+    if (zones[idx].photoUrls.length + files.length > 5) {
+        toast.error('Máximo 5 fotos por zona');
+        return;
+    }
+
+    // 1. Create temporary object URLs and add to zone immediately
+    const tempUrls = files.map(f => URL.createObjectURL(f));
+    const currentLen = zones[idx].photoUrls.length;
     
-    // We could show a loading state here if needed
-    const urls = await Promise.all(uploadPromises);
-    const validUrls = urls.filter((u): u is string => !!u);
+    // Add temp URLs to photoUrls
+    zones[idx].photoUrls = [...zones[idx].photoUrls, ...tempUrls];
     
-    if (validUrls.length > 0) {
-        zones[idx].photoUrls = [...zones[idx].photoUrls, ...validUrls];
-        setBookingData({ lawnZones: zones });
+    // Auto-select new photos
+    const newIndices = tempUrls.map((_, i) => currentLen + i);
+    zones[idx].selectedIndices = [...(zones[idx].selectedIndices || []), ...newIndices];
+
+    // Mark as uploading in local state
+    setLawnUploads(prev => {
+        const zoneUploads = new Set(prev[zoneId] || []);
+        newIndices.forEach(i => zoneUploads.add(i));
+        return { ...prev, [zoneId]: zoneUploads };
+    });
+
+    // Update UI immediately
+    setBookingData({ lawnZones: zones });
+
+    // 2. Upload in background
+    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now(); 
+    
+    try {
+        const uploadResults = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
+        
+        // 3. Update with real URLs
+        // We need to fetch the latest state to avoid race conditions (though here we are inside the function closure)
+        // Ideally we should use functional state updates, but bookingData is complex.
+        // We'll re-read bookingData in the next render cycle effectively by creating a new object here.
+        
+        // Note: We need to update the SAME zone object instance we modified earlier? 
+        // No, we need to create a new one based on the current state.
+        // But since we are in an async function, bookingData might have changed?
+        // For now, let's assume single-user interaction flow.
+        
+        const updatedZones = [...(bookingData.lawnZones || [])];
+        // Re-find index in case zones changed (unlikely in this short time but possible)
+        const updatedIdx = updatedZones.findIndex(z => z.id === zoneId);
+        if (updatedIdx === -1) return;
+        
+        const updatedZone = { ...updatedZones[updatedIdx] };
+        const finalUrls = [...updatedZone.photoUrls];
+        
+        uploadResults.forEach((url, i) => {
+            const targetIdx = currentLen + i;
+            if (url && targetIdx < finalUrls.length) {
+                finalUrls[targetIdx] = url;
+            }
+        });
+        
+        updatedZone.photoUrls = finalUrls;
+        updatedZones[updatedIdx] = updatedZone;
+        
+        setBookingData({ lawnZones: updatedZones });
         
         if (bookingData.serviceIds?.[0]) {
              updateServiceData(bookingData.serviceIds[0], {
-                 lawnZones: zones
+                 lawnZones: updatedZones
              });
         }
+    } catch (error) {
+        console.error("Upload failed", error);
+        toast.error("Error al subir algunas imágenes");
+    } finally {
+        // Clear uploading state
+        setLawnUploads(prev => {
+            const next = { ...prev };
+            const zoneUploads = new Set(next[zoneId] || []);
+            newIndices.forEach(i => zoneUploads.delete(i));
+            next[zoneId] = zoneUploads;
+            return next;
+        });
     }
   };
 
@@ -1381,30 +1562,30 @@ const DetailsPage: React.FC = () => {
       if (idx === -1) return;
       
       const zone = { ...zones[idx] };
-      // Can only remove if not analyzed (handled by UI, but double check)
-      if (zone.quantity > 0 || zone.analysisLevel !== undefined) {
-          // It's analyzed. User should not be able to do this.
-          // But maybe they want to reset analysis?
-          // User said: "Si el usuario quiere borrar algo, debe eliminarse el conjunto completo"
-          // So we simply block this.
-          return; 
-      }
       
-      if (zone.files && zone.files[photoIndex]) {
-          zone.files = zone.files.filter((_, i) => i !== photoIndex);
+      // Update photos
+      const urlCount = zone.photoUrls.length;
+      if (photoIndex < urlCount) {
+          zone.photoUrls = zone.photoUrls.filter((_, i) => i !== photoIndex);
       } else {
-          // It's a URL
-          // If we mix files and URLs, index management is tricky.
-          // Let's assume files are appended after URLs?
-          // Simpler: Just reconstruct arrays.
-          const urlCount = zone.photoUrls.length;
-          if (photoIndex < urlCount) {
-              zone.photoUrls = zone.photoUrls.filter((_, i) => i !== photoIndex);
-          } else {
-              const fileIdx = photoIndex - urlCount;
-              if (zone.files) zone.files = zone.files.filter((_, i) => i !== fileIdx);
-          }
+          const fileIdx = photoIndex - urlCount;
+          if (zone.files) zone.files = zone.files.filter((_, i) => i !== fileIdx);
       }
+
+      // Update indices (selectedIndices)
+      if (zone.selectedIndices) {
+          zone.selectedIndices = zone.selectedIndices
+              .filter(i => i !== photoIndex) // Remove the deleted index
+              .map(i => i > photoIndex ? i - 1 : i); // Shift subsequent indices
+      }
+
+      // Update analyzedIndices
+      if (zone.analyzedIndices) {
+          zone.analyzedIndices = zone.analyzedIndices
+              .filter(i => i !== photoIndex)
+              .map(i => i > photoIndex ? i - 1 : i);
+      }
+
       zones[idx] = zone;
       setBookingData({ lawnZones: zones });
       
@@ -1423,41 +1604,65 @@ const DetailsPage: React.FC = () => {
 
       try {
           setAnalyzing(true);
+          setAnalyzingZoneId(zoneId);
           
-          // Files are already uploaded
-          const finalUrls = zone.photoUrls;
+          // Files are already uploaded (urls)
+          const allUrls = zone.photoUrls;
+          
+          // Use selectedIndices if available, otherwise default to all (safety fallback)
+          // Note: In UI, new photos are auto-added to selectedIndices
+          const indicesToAnalyze = zone.selectedIndices ?? allUrls.map((_, i) => i);
+          const finalUrls = indicesToAnalyze.map(i => allUrls[i]).filter(u => u !== undefined);
           
           if (finalUrls.length === 0) {
-              alert('Añade fotos primero');
+              alert('Selecciona al menos una foto para analizar');
               setAnalyzing(false);
               return;
           }
 
-          // 2. Call AI
-          const res = await estimateWorkWithAI({
+          // Debug Info Prep
+          const debugInputs = {
              description: '',
              photoCount: finalUrls.length,
              selectedServiceIds: bookingData.serviceIds,
              photoUrls: finalUrls,
              serviceName: 'Corte de césped',
              model: aiModel
-          });
+          };
+
+          // 2. Call AI
+          const res = await estimateWorkWithAI(debugInputs);
           
+          // Initialize Debug Info
+          const currentDebugInfo: AnalysisDebugInfo = {
+              service: 'Corte de césped',
+              model: aiModel,
+              promptInputs: debugInputs,
+              rawResponse: res.rawResponse,
+              parsedResponse: res.tareas,
+              finalAnalysisData: {},
+              errors: [],
+              timestamp: new Date().toISOString()
+          };
+          setDebugLogs(currentDebugInfo);
+
+          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
+              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
+          }
+
           // 3. Process Result
-          // Expected: tareas[0] with superficie_m2, estado_jardin
           if (res.tareas && res.tareas.length > 0) {
               const t = res.tareas[0];
-              zone.species = t.especie_cesped || 'Césped estándar'; // AI might not return species for lawn sometimes
+              zone.species = t.especie_cesped || 'Césped estándar';
               zone.state = t.estado_jardin || 'normal';
               zone.quantity = Number(t.superficie_m2 || 0);
               
               // New Analysis Fields
               zone.analysisLevel = t.nivel_analisis;
               zone.observations = t.observaciones;
+              zone.analyzedIndices = indicesToAnalyze; // Mark which ones were used
           } else {
-              // Fallback or error
-              zone.state = 'normal';
-              zone.quantity = 0;
+              throw new Error('No se han detectado datos válidos en las imágenes.');
           }
           
           zones[idx] = zone;
@@ -1469,13 +1674,29 @@ const DetailsPage: React.FC = () => {
                });
           }
           
+          // Update Final Debug Data
+          currentDebugInfo.finalAnalysisData = { lawnZones: zones };
+          setDebugLogs({...currentDebugInfo});
+          
           saveProgress();
 
-      } catch (e) {
+      } catch (e: any) {
           console.error(e);
-          alert('Error en el análisis');
+          // Capture Error in Debug Logs
+          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
+              service: 'Corte de césped',
+              model: aiModel,
+              promptInputs: {},
+              rawResponse: {},
+              parsedResponse: {},
+              finalAnalysisData: {},
+              errors: [e],
+              timestamp: new Date().toISOString()
+          });
+          alert(e.message || 'Error en el análisis');
       } finally {
           setAnalyzing(false);
+          setAnalyzingZoneId(null);
       }
   };
 
@@ -1486,7 +1707,8 @@ const DetailsPage: React.FC = () => {
         type: 'Seto Mixto/Otro',
         height: '1-2m',
         length: 0,
-        access: 'normal' as const,
+        state: 'normal',
+        access: 'normal' as const, // Legacy
         wasteRemoval: true,
         photoUrls: [] as string[],
         files: [] as File[]
@@ -1531,31 +1753,68 @@ const DetailsPage: React.FC = () => {
       
       try {
           setAnalyzing(true);
-          const res = await estimateWorkWithAI({
-             description: '',
-             photoCount: zone.photoUrls?.length || 0,
-             selectedServiceIds: bookingData.serviceIds,
-             photoUrls: zone.photoUrls || [],
-             serviceName: 'Corte de setos a máquina',
-             model: aiModel
-          });
           
+          // Debug Info Prep
+          const debugInputs = {
+              description: '',
+              photoCount: zone.photoUrls?.length || 0,
+              selectedServiceIds: bookingData.serviceIds,
+              photoUrls: zone.photoUrls || [],
+              serviceName: 'Corte de setos a máquina',
+              model: aiModel
+          };
+
+          const res = await estimateWorkWithAI(debugInputs);
+          
+          // Initialize Debug Info
+          const currentDebugInfo: AnalysisDebugInfo = {
+              service: 'Corte de setos a máquina',
+              model: aiModel,
+              promptInputs: debugInputs,
+              rawResponse: res.rawResponse,
+              parsedResponse: res.tareas,
+              finalAnalysisData: {},
+              errors: [],
+              timestamp: new Date().toISOString()
+          };
+          setDebugLogs(currentDebugInfo);
+
           if (res.tareas && res.tareas.length > 0) {
               const t = res.tareas[0];
               zone.type = t.tipo_seto || 'Seto Mixto/Otro';
               zone.length = Number(t.longitud_m || 0);
               const h = Number(t.altura_m || 0);
               zone.height = h < 1 ? '<1m' : h <= 2 ? '1-2m' : '>2m';
-              zone.access = (t.dificultad_acceso === 3 ? 'dificil' : t.dificultad_acceso === 2 ? 'medio' : 'normal') as 'normal' | 'medio' | 'dificil';
+              zone.state = t.estado_seto || 'normal';
+              zone.access = 'normal'; // Legacy
               zone.analysisLevel = t.nivel_analisis;
               zone.observations = t.observaciones;
           }
+          
           zones[idx] = zone;
           setBookingData({ hedgeZones: zones });
           if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: zones });
+          
+          // Update Final Debug Data
+          currentDebugInfo.finalAnalysisData = { hedgeZones: zones };
+          setDebugLogs({...currentDebugInfo});
+          
           saveProgress();
-      } catch (e) {
+      } catch (e: any) {
           console.error(e);
+          
+          // Capture Error in Debug Logs
+          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
+              service: 'Corte de setos a máquina',
+              model: aiModel,
+              promptInputs: {},
+              rawResponse: {},
+              parsedResponse: {},
+              finalAnalysisData: {},
+              errors: [e],
+              timestamp: new Date().toISOString()
+          });
+          
           alert('Error en el análisis');
       } finally {
           setAnalyzing(false);
@@ -1583,8 +1842,9 @@ const DetailsPage: React.FC = () => {
   const removeTreeGroup = (id: string) => {
     if (!window.confirm('¿Eliminar este grupo?')) return;
     const newGroups = (bookingData.treeGroups || []).filter(z => z.id !== id);
-    setBookingData({ treeGroups: newGroups });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: newGroups });
+    const newHours = calculateTotalTreeHours(newGroups);
+    setBookingData({ treeGroups: newGroups, estimatedHours: newHours });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: newGroups, estimatedHours: newHours });
     saveProgress();
   };
 
@@ -1614,15 +1874,32 @@ const DetailsPage: React.FC = () => {
       
       try {
           setAnalyzing(true);
-          const res = await estimateWorkWithAI({
+          
+          // Debug Info Prep
+          const debugInputs = {
              description: '',
              photoCount: group.photoUrls?.length || 0,
              selectedServiceIds: bookingData.serviceIds,
              photoUrls: group.photoUrls || [],
              serviceName: 'Poda de árboles',
              model: aiModel
-          });
+          };
+
+          const res = await estimateWorkWithAI(debugInputs);
           
+          // Initialize Debug Info
+          const currentDebugInfo: AnalysisDebugInfo = {
+              service: 'Poda de árboles',
+              model: aiModel,
+              promptInputs: debugInputs,
+              rawResponse: res.rawResponse,
+              parsedResponse: res.tareas || res.arboles,
+              finalAnalysisData: {},
+              errors: [],
+              timestamp: new Date().toISOString()
+          };
+          setDebugLogs(currentDebugInfo);
+
           if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
               throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
           }
@@ -1642,9 +1919,27 @@ const DetailsPage: React.FC = () => {
           groups[idx] = group;
           setBookingData({ treeGroups: groups });
           if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups });
+          
+          // Update Final Debug Data
+          currentDebugInfo.finalAnalysisData = { treeGroups: groups };
+          setDebugLogs({...currentDebugInfo});
+          
           saveProgress();
       } catch (e: any) {
           console.error(e);
+          
+          // Capture Error in Debug Logs
+          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
+              service: 'Poda de árboles',
+              model: aiModel,
+              promptInputs: {},
+              rawResponse: {},
+              parsedResponse: {},
+              finalAnalysisData: {},
+              errors: [e],
+              timestamp: new Date().toISOString()
+          });
+          
           alert(e.message || 'Error en el análisis');
       } finally {
           setAnalyzing(false);
@@ -1703,15 +1998,32 @@ const DetailsPage: React.FC = () => {
       
       try {
           setAnalyzing(true);
-          const res = await estimateWorkWithAI({
+          
+          // Debug Info Prep
+          const debugInputs = {
              description: '',
              photoCount: group.photoUrls?.length || 0,
              selectedServiceIds: bookingData.serviceIds,
              photoUrls: group.photoUrls || [],
              serviceName: 'Poda de plantas',
              model: aiModel
-          });
+          };
+
+          const res = await estimateWorkWithAI(debugInputs);
           
+          // Initialize Debug Info
+          const currentDebugInfo: AnalysisDebugInfo = {
+              service: 'Poda de plantas',
+              model: aiModel,
+              promptInputs: debugInputs,
+              rawResponse: res.rawResponse,
+              parsedResponse: res.tareas,
+              finalAnalysisData: {},
+              errors: [],
+              timestamp: new Date().toISOString()
+          };
+          setDebugLogs(currentDebugInfo);
+
           if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
               throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
           }
@@ -1743,9 +2055,27 @@ const DetailsPage: React.FC = () => {
           groups[idx] = group;
           setBookingData({ shrubGroups: groups });
           if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+          
+          // Update Final Debug Data
+          currentDebugInfo.finalAnalysisData = { shrubGroups: groups };
+          setDebugLogs({...currentDebugInfo});
+          
           saveProgress();
       } catch (e: any) {
           console.error(e);
+          
+          // Capture Error in Debug Logs
+          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
+              service: 'Poda de plantas',
+              model: aiModel,
+              promptInputs: {},
+              rawResponse: {},
+              parsedResponse: {},
+              finalAnalysisData: {},
+              errors: [e],
+              timestamp: new Date().toISOString()
+          });
+          
           alert(e.message || 'Error en el análisis');
       } finally {
           setAnalyzing(false);
@@ -1802,15 +2132,32 @@ const DetailsPage: React.FC = () => {
       
       try {
           setAnalyzing(true);
-          const res = await estimateWorkWithAI({
+          
+          // Debug Info Prep
+          const debugInputs = {
              description: '',
              photoCount: zone.photoUrls?.length || 0,
              selectedServiceIds: bookingData.serviceIds,
              photoUrls: zone.photoUrls || [],
              serviceName: 'Labrar y quitar malas hierbas a mano',
              model: aiModel
-          });
+          };
+
+          const res = await estimateWorkWithAI(debugInputs);
           
+          // Initialize Debug Info
+          const currentDebugInfo: AnalysisDebugInfo = {
+              service: 'Labrar y quitar malas hierbas a mano',
+              model: aiModel,
+              promptInputs: debugInputs,
+              rawResponse: res.rawResponse,
+              parsedResponse: res.tareas,
+              finalAnalysisData: {},
+              errors: [],
+              timestamp: new Date().toISOString()
+          };
+          setDebugLogs(currentDebugInfo);
+
           if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
               throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
           }
@@ -1828,9 +2175,27 @@ const DetailsPage: React.FC = () => {
           zones[idx] = zone;
           setBookingData({ clearingZones: zones });
           if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { clearingZones: zones });
+          
+          // Update Final Debug Data
+          currentDebugInfo.finalAnalysisData = { clearingZones: zones };
+          setDebugLogs({...currentDebugInfo});
+          
           saveProgress();
       } catch (e: any) {
           console.error(e);
+          
+          // Capture Error in Debug Logs
+          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
+              service: 'Labrar y quitar malas hierbas a mano',
+              model: aiModel,
+              promptInputs: {},
+              rawResponse: {},
+              parsedResponse: {},
+              finalAnalysisData: {},
+              errors: [e],
+              timestamp: new Date().toISOString()
+          });
+          
           alert(e.message || 'Error en el análisis');
       } finally {
           setAnalyzing(false);
@@ -1960,7 +2325,9 @@ const DetailsPage: React.FC = () => {
             <h2 className="text-lg font-bold text-gray-900">
                 {serviceContent.title}
             </h2>
-            <span className="text-sm text-gray-500">{photos.length}/5</span>
+            {(!debugService.includes('Corte de césped') && !debugService.includes('césped')) && (
+                <span className="text-sm text-gray-500">{photos.length}/5</span>
+            )}
           </div>
           <p className="text-gray-600 text-sm mb-4">
             {serviceContent.description}
@@ -1997,9 +2364,44 @@ const DetailsPage: React.FC = () => {
 
                              {(bookingData.lawnZones || []).map((zone, idx) => {
                                  const isAnalyzed = zone.quantity > 0 || (zone.analysisLevel !== undefined);
-                                 const allPhotos = [...zone.photoUrls, ...(zone.files || [])];
-                                 
-                                 return (
+                                const allPhotos = [...zone.photoUrls, ...(zone.files || [])];
+                                
+                                if (analyzing && analyzingZoneId === zone.id) {
+                                    return (
+                                        <div key={zone.id} className="relative h-64 w-full flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-100 overflow-hidden shadow-inner mb-4">
+                                            <div className="absolute inset-0 z-0 opacity-20" 
+                                                 style={{
+                                                     backgroundImage: 'linear-gradient(#16a34a 1px, transparent 1px), linear-gradient(90deg, #16a34a 1px, transparent 1px)',
+                                                     backgroundSize: '20px 20px',
+                                                     transform: 'perspective(500px) rotateX(60deg) translateY(-50px) scale(1.5)',
+                                                     animation: 'gridMove 4s linear infinite'
+                                                 }} 
+                                            />
+                                            <div className="relative z-10 w-24 h-24 flex items-center justify-center mb-4">
+                                                <div className="absolute w-full h-full rounded-full border-2 border-green-500/30 animate-ping" />
+                                                <div className="absolute w-3/4 h-3/4 rounded-full border border-green-500/50 animate-ping delay-150" />
+                                                <div className="relative z-20 bg-white p-3 rounded-full shadow-lg border border-green-100">
+                                                    <Sprout className="w-8 h-8 text-green-600 animate-pulse" />
+                                                </div>
+                                                <div className="absolute w-full h-full rounded-full border-t-2 border-r-2 border-green-500 animate-spin" />
+                                            </div>
+                                            <div className="relative z-10 text-center">
+                                                <p className="text-sm font-semibold text-gray-800 animate-pulse transition-all duration-300">
+                                                    {loadingMessage}
+                                                </p>
+                                                <p className="text-xs text-gray-400 mt-1">Analizando estructura y vegetación...</p>
+                                            </div>
+                                            <style>{`
+                                                @keyframes gridMove {
+                                                    0% { background-position: 0 0; }
+                                                    100% { background-position: 0 20px; }
+                                                }
+                                            `}</style>
+                                        </div>
+                                    );
+                                }
+
+                                return (
                                      <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                                          {/* Header */}
                                          <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
@@ -2008,175 +2410,225 @@ const DetailsPage: React.FC = () => {
                                                      {idx + 1}
                                                  </div>
                                                  <h3 className="font-semibold text-gray-900">Zona de Césped {idx + 1}</h3>
-                                             </div>
-                                             <div className="flex gap-2">
+                                                <span className="text-xs text-gray-500 ml-1 font-normal">({allPhotos.length}/5 fotos)</span>
+                                            </div>
+                                            <div className="flex gap-2">
                                                  <button 
                                                      onClick={() => removeLawnZone(zone.id)}
                                                      className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"
-                                                     title={isAnalyzed ? "Eliminar zona y análisis" : "Eliminar zona"}
+                                                     title={isAnalyzed ? "Eliminar resultado de análisis" : "Eliminar zona"}
                                                  >
                                                      <Trash2 className="w-5 h-5" />
                                                  </button>
                                              </div>
                                          </div>
 
-                                         {/* Photos Grid for this Zone */}
+                                         {/* Photos Area for this Zone */}
                                          <div className="mb-4">
-                                             <div className="text-xs text-gray-500 mb-2">Fotos de esta zona ({allPhotos.length})</div>
-                                             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                                 {allPhotos.map((p, i) => (
-                                                     <div key={i} className="relative aspect-square group">
-                                                         <img 
-                                                             src={typeof p === 'string' ? p : URL.createObjectURL(p)} 
-                                                             alt={`Foto ${i}`}
-                                                             className="w-full h-full object-cover rounded-lg border border-gray-200"
-                                                         />
-                                                         {!isAnalyzed && (
-                                                             <button
-                                                                 onClick={() => removePhotoFromZone(zone.id, i)}
-                                                                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 w-6 h-6 flex items-center justify-center hover:bg-red-600 shadow-sm opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
-                                                             >
-                                                                 &times;
-                                                             </button>
-                                                         )}
-                                                     </div>
-                                                 ))}
-                                                 
-                                                 {/* Add Photo Button (Small) */}
-                                                 {!isAnalyzed && (
-                                                     <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 aspect-square transition-colors text-gray-400 hover:text-green-600 hover:border-green-300">
-                                                         <Camera className="w-6 h-6 mb-1" />
-                                                         <span className="text-[10px] font-medium">+ Foto</span>
-                                                         <input 
-                                                             type="file" 
-                                                             accept="image/*" 
-                                                             multiple 
-                                                             className="hidden" 
-                                                             onChange={(e) => handleLawnFileSelect(zone.id, e)}
-                                                         />
-                                                     </label>
+                                             <div className="text-xs text-gray-500 mb-2 flex justify-between items-center">
+                                                 <span>Fotos de esta zona ({allPhotos.length})</span>
+                                                 {isAnalyzed && expandedZoneIds.has(zone.id) && (
+                                                     <button 
+                                                         onClick={() => {
+                                                             const next = new Set(expandedZoneIds);
+                                                             next.delete(zone.id);
+                                                             setExpandedZoneIds(next);
+                                                         }}
+                                                         className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1"
+                                                     >
+                                                         <ChevronLeft className="w-3 h-3 rotate-90" />
+                                                         Ocultar fotos
+                                                     </button>
                                                  )}
                                              </div>
+
+                                             {/* Stack View (Only if analyzed and collapsed) */}
+                                             {isAnalyzed && !expandedZoneIds.has(zone.id) && allPhotos.length > 0 ? (
+                                                 <div 
+                                                     onClick={() => {
+                                                         const next = new Set(expandedZoneIds);
+                                                         next.add(zone.id);
+                                                         setExpandedZoneIds(next);
+                                                     }}
+                                                     className="relative h-32 w-full flex items-center justify-center cursor-pointer group py-4 transition-all duration-500 ease-in-out bg-gray-50/50 rounded-xl border border-dashed border-gray-200 hover:bg-green-50/30 hover:border-green-200"
+                                                 >
+                                                     {allPhotos.slice(0, 3).map((photo, i) => (
+                                                         <div 
+                                                             key={i}
+                                                             className="absolute transition-all duration-500 ease-in-out shadow-lg rounded-xl overflow-hidden border-2 border-white bg-white"
+                                                             style={{
+                                                                 width: '90px',
+                                                                 height: '90px',
+                                                                 transform: `translateX(${i * 12}px) rotate(${i * 3}deg)`,
+                                                                 zIndex: 10 - i,
+                                                                 opacity: 1 - (i * 0.1)
+                                                             }}
+                                                         >
+                                                             <img 
+                                                                 src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
+                                                                 className="w-full h-full object-cover" 
+                                                                 alt=""
+                                                             />
+                                                         </div>
+                                                     ))}
+                                                     <div className="absolute bottom-2 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-medium text-gray-700 shadow-sm z-20 translate-y-1 group-hover:-translate-y-1 transition-transform border border-gray-100 flex items-center gap-1.5">
+                                                         <Image className="w-3 h-3" />
+                                                         Editar fotos
+                                                     </div>
+                                                 </div>
+                                             ) : (
+                                                 /* List View */
+                                                 <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide min-h-[110px]">
+                                                     {allPhotos.map((p, i) => {
+                                                         const isSelected = zone.selectedIndices?.includes(i) ?? true;
+                                                         const isAnalyzedPhoto = zone.analyzedIndices?.includes(i);
+                                                         
+                                                         return (
+                                                             <div 
+                                                                 key={i} 
+                                                                 className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`}
+                                                                 onClick={() => toggleLawnPhotoSelection(zone.id, i)}
+                                                             >
+                                                                 <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzedPhoto ? 'opacity-80' : 'opacity-100'}`}>
+                                                                    <img 
+                                                                        src={typeof p === 'string' ? p : URL.createObjectURL(p)} 
+                                                                        alt={`Foto ${i}`}
+                                                                        className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${lawnUploads[zone.id]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
+                                                                    />
+                                                                    
+                                                                    {/* Uploading Overlay */}
+                                                                    {lawnUploads[zone.id]?.has(i) && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
+                                                                            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                        </div>
+                                                                    )}
+                                                                    
+                                                                    {/* Analyzed Badge */}
+                                                                     {isAnalyzedPhoto && (
+                                                                         <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
+                                                                             Analizada
+                                                                         </div>
+                                                                     )}
+                                                                     
+                                                                     {/* Selection Checkbox */}
+                                                                     <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500 scale-100' : 'bg-black/20 border-white/80 group-hover:bg-black/40 scale-90 group-hover:scale-100'}`}>
+                                                                         {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                                                                     </div>
+                                                                 </div>
+                                                                 
+                                                                 {!analyzing && (
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); removePhotoFromZone(zone.id, i); }}
+                                                                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                )}
+                                                             </div>
+                                                         );
+                                                     })}
+                                                     
+                                                     {/* Add Photo Button */}
+                                                    {!analyzing && allPhotos.length < 5 && (
+                                                        <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
+                                                             <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                                                                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
+                                                                     <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
+                                                                 </div>
+                                                                 <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
+                                                                 <input 
+                                                                     type="file" 
+                                                                     accept="image/*" 
+                                                                     multiple 
+                                                                     className="hidden" 
+                                                                     onChange={(e) => handleLawnFileSelect(zone.id, e)}
+                                                                 />
+                                                             </label>
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                             )}
                                          </div>
 
                                          {/* Actions / Results */}
-                                         {!isAnalyzed ? (
-                                             <div className="mt-2">
-                                                 <button
-                                                     onClick={() => analyzeLawnZone(zone.id)}
-                                                     disabled={analyzing || allPhotos.length === 0}
-                                                     className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
-                                                 >
-                                                     {analyzing ? (
-                                                         <>
-                                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                                                            Analizando...
-                                                         </>
-                                                     ) : (
-                                                         <>
-                                                            <Wand2 className="w-4 h-4" />
-                                                            Analizar esta zona
-                                                         </>
-                                                     )}
-                                                 </button>
-                                                 {allPhotos.length === 0 && (
-                                                     <p className="text-xs text-center text-amber-600 mt-2">
-                                                         Añade al menos una foto para analizar
-                                                     </p>
+                                         <div className="mt-2">
+                                             <button
+                                                 onClick={() => analyzeLawnZone(zone.id)}
+                                                 disabled={analyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0}
+                                                 className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3 transition-colors ${
+                                                     analyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0
+                                                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                                     : 'bg-green-600 text-white hover:bg-green-700'
+                                                 }`}
+                                             >
+                                                 {analyzing ? (
+                                                     <>
+                                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                        Analizando...
+                                                     </>
+                                                 ) : (
+                                                     <>
+                                                        <Wand2 className="w-4 h-4" />
+                                                        Analizar esta zona
+                                                     </>
                                                  )}
-                                             </div>
-                                         ) : (
-                                             <div className="bg-green-50 p-4 rounded-xl border border-green-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="flex items-center gap-2 text-green-800 font-medium text-sm">
-                                                        <Sparkles className="w-4 h-4" />
-                                                        Resultado del análisis
-                                                    </div>
-                                                    {zone.analysisLevel && (
-                                                         <div className={`px-2 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 ${
-                                                             zone.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' :
-                                                             zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' :
-                                                             'bg-red-50 border-red-200 text-red-800'
-                                                         }`}>
-                                                             {zone.analysisLevel === 1 ? 'Calidad Alta' : zone.analysisLevel === 2 ? 'Calidad Media' : 'Calidad Baja'}
-                                                         </div>
-                                                    )}
-                                                </div>
+                                             </button>
+                                             {allPhotos.length === 0 && (
+                                                 <p className="text-xs text-center text-amber-600 mt-2">
+                                                     Añade al menos una foto para analizar
+                                                 </p>
+                                             )}
+                                         </div>
 
-                                                {/* Observations / Warnings */}
-                                                {zone.analysisLevel && zone.analysisLevel > 1 && zone.observations && zone.observations.length > 0 && (
-                                                    <div className={`mb-3 p-2 rounded-lg text-xs border ${
-                                                        zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'
-                                                    }`}>
-                                                        <div className="flex items-center gap-1 font-semibold mb-1">
-                                                             {zone.analysisLevel === 2 ? <AlertTriangle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                                             Observaciones:
+                                         {isAnalyzed && (
+                                             <div className="mt-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 relative overflow-hidden">
+                                                <div className={`absolute top-0 left-0 w-1 h-full ${
+                                                    zone.analysisLevel === 3 ? 'bg-red-500' :
+                                                    zone.analysisLevel === 2 ? 'bg-amber-500' : 'bg-green-500'
+                                                }`}></div>
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h4 className="font-semibold text-gray-900 text-sm">
+                                                            {zone.species || 'Césped Mixto (Festuca/Raygrass)'}
+                                                        </h4>
+                                                        <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                                                            <span>
+                                                                Superficie: <span className="font-medium text-gray-900">{zone.quantity} m²</span>
+                                                            </span>
+                                                            <span className="text-gray-300">|</span>
+                                                            <span>
+                                                                Estado: <span className="font-medium text-gray-900 capitalize">{zone.state}</span>
+                                                            </span>
                                                         </div>
-                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">
-                                                            {zone.observations.map((obs, k) => (
-                                                                <li key={k}>{obs}</li>
-                                                            ))}
-                                                        </ul>
+                                                        
+                                                        <div className={`mt-2 text-xs font-medium ${
+                                                            zone.analysisLevel === 1 ? 'text-green-600' : 
+                                                            zone.analysisLevel === 2 ? 'text-amber-600' : 'text-red-600'
+                                                        }`}>
+                                                            {zone.analysisLevel === 1 ? 'Análisis fiable' : 
+                                                             zone.analysisLevel === 2 ? 'Análisis con observaciones' : 'Análisis fallido'}
+                                                        </div>
                                                     </div>
+                                                    <button 
+                                                        onClick={() => removeLawnZone(zone.id)}
+                                                        className="text-gray-400 hover:text-red-500 transition-colors"
+                                                        title="Eliminar resultado"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+            
+                                                {/* Observations */}
+                                                {zone.observations && zone.observations.length > 0 && (
+                                                   <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-100">
+                                                       <div className="font-medium mb-1 text-gray-700">Observaciones:</div>
+                                                       <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                                           {zone.observations.map((obs, k) => (
+                                                               <li key={k}>{obs}</li>
+                                                           ))}
+                                                       </ul>
+                                                   </div>
                                                 )}
-
-                                                <div className="grid grid-cols-2 gap-4">
-                                                     <div>
-                                                         <label className="text-xs text-gray-500 block mb-1">Superficie (m²)</label>
-                                                         <input 
-                                                             type="number" 
-                                                             min="0"
-                                                             value={zone.quantity}
-                                                             onChange={(e) => {
-                                                                 const val = Number(e.target.value);
-                                                                 const newZones = [...(bookingData.lawnZones || [])];
-                                                                 const z = newZones.find(z => z.id === zone.id);
-                                                                 if (z) { 
-        z.quantity = val; 
-        setBookingData({ lawnZones: newZones }); 
-        
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], {
-                 lawnZones: newZones
-             });
-        }
-    }
-                                                             }}
-                                                             className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                                                         />
-                                                     </div>
-                                                     <div>
-                                                         <label className="text-xs text-gray-500 block mb-1">Estado</label>
-                                                         <select 
-                                                             value={zone.state}
-                                                             onChange={(e) => {
-                                                                 const val = e.target.value;
-                                                                 const newZones = [...(bookingData.lawnZones || [])];
-                                                                 const z = newZones.find(z => z.id === zone.id);
-                                                                 if (z) { 
-        z.state = val; 
-        setBookingData({ lawnZones: newZones }); 
-        
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], {
-                 lawnZones: newZones
-             });
-        }
-    }
-                                                             }}
-                                                             className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                                                         >
-                                                             <option value="normal">Normal</option>
-                                                             <option value="descuidado">Descuidado</option>
-                                                             <option value="muy descuidado">Muy descuidado</option>
-                                                         </select>
-                                                     </div>
-                                                 </div>
-                                                 {zone.species && (
-                                                     <div className="mt-2 text-xs text-gray-500">
-                                                         Especie detectada: <span className="font-medium text-gray-700">{zone.species}</span>
-                                                     </div>
-                                                 )}
                                              </div>
                                          )}
                                      </div>
@@ -2307,23 +2759,23 @@ const DetailsPage: React.FC = () => {
                                                          </select>
                                                      </div>
                                                      <div>
-                                                         <label className="text-xs text-gray-500 block mb-1">Acceso</label>
-                                                         <select value={zone.access} onChange={(e) => {
-                                                             const newZones = [...(bookingData.hedgeZones || [])];
-                                                             const z = newZones.find(z => z.id === zone.id);
-                                                             if(z) { z.access = e.target.value as 'normal' | 'medio' | 'dificil'; setBookingData({ hedgeZones: newZones }); }
-                                                         }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
-                                                             <option value="normal">Fácil</option>
-                                                             <option value="medio">Medio</option>
-                                                             <option value="dificil">Difícil</option>
-                                                         </select>
-                                                     </div>
-                                                 </div>
-                                             </div>
-                                         )}
-                                     </div>
-                                 );
-                             })}
+                                                        <label className="text-xs text-gray-500 block mb-1">Estado</label>
+                                                        <select value={zone.state || 'normal'} onChange={(e) => {
+                                                            const newZones = [...(bookingData.hedgeZones || [])];
+                                                            const z = newZones.find(z => z.id === zone.id);
+                                                            if(z) { z.state = e.target.value; setBookingData({ hedgeZones: newZones }); }
+                                                        }} className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white">
+                                                            <option value="normal">Normal</option>
+                                                            <option value="descuidado">Descuidado</option>
+                                                            <option value="muy descuidado">Muy descuidado</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                              
                              <button onClick={addHedgeZone} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2">
                                  <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otro tramo
@@ -2923,10 +3375,10 @@ const DetailsPage: React.FC = () => {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                         <AlertTriangle className="w-4 h-4 text-red-600" />
-                                        <h4 className="font-semibold text-sm text-red-700">No se pudo analizar</h4>
+                                        <h4 className="font-semibold text-sm text-red-700">Análisis fallido</h4>
                                     </div>
                                     <p className="text-xs text-red-600 truncate">
-                                        {group.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'}
+                                        {(group.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.')} <span className="opacity-80">(No afectará al precio)</span>
                                     </p>
                                 </div>
 
@@ -3008,7 +3460,7 @@ const DetailsPage: React.FC = () => {
                                         <>
                                             <span className="text-gray-300">|</span>
                                             <span className={`font-medium ${group.analysisLevel === 1 ? 'text-green-700' : 'text-amber-700'}`}>
-                                                {group.analysisLevel === 1 ? 'Análisis fiable' : 'Revisión manual'}
+                                                {group.analysisLevel === 1 ? 'Análisis fiable' : 'Análisis con posible error'}
                                             </span>
                                         </>
                                     )}
@@ -3029,16 +3481,7 @@ const DetailsPage: React.FC = () => {
                                     <div className="flex items-center border border-gray-300 rounded-md bg-white">
                                         <button 
                                             className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-r border-gray-200"
-                                            onClick={() => {
-                                                const newQuantity = Math.max(1, (group.quantity || 1) - 1);
-                                                const n = [...(bookingData.palmGroups || [])];
-                                                const g = n.find(x => x.id === group.id);
-                                                if(g) { 
-                                                    g.quantity = newQuantity; 
-                                                    setBookingData({palmGroups: n});
-                                                    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
-                                                }
-                                            }}
+                                            onClick={() => handlePalmQuantityChange(group.id, (group.quantity || 1) - 1)}
                                         >
                                             -
                                         </button>
@@ -3046,30 +3489,12 @@ const DetailsPage: React.FC = () => {
                                             type="number" 
                                             min="1" 
                                             value={group.quantity} 
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value) || 1;
-                                                const n = [...(bookingData.palmGroups || [])];
-                                                const g = n.find(x => x.id === group.id);
-                                                if(g) { 
-                                                    g.quantity = Math.max(1, val); 
-                                                    setBookingData({palmGroups: n});
-                                                    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
-                                                }
-                                            }}
+                                            onChange={(e) => handlePalmQuantityChange(group.id, parseInt(e.target.value) || 1)}
                                             className="w-10 text-center text-sm py-0.5 focus:outline-none"
                                         />
                                         <button 
                                             className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
-                                            onClick={() => {
-                                                const newQuantity = (group.quantity || 1) + 1;
-                                                const n = [...(bookingData.palmGroups || [])];
-                                                const g = n.find(x => x.id === group.id);
-                                                if(g) { 
-                                                    g.quantity = newQuantity; 
-                                                    setBookingData({palmGroups: n});
-                                                    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: n });
-                                                }
-                                            }}
+                                            onClick={() => handlePalmQuantityChange(group.id, (group.quantity || 1) + 1)}
                                         >
                                             +
                                         </button>
@@ -3122,7 +3547,7 @@ const DetailsPage: React.FC = () => {
                                         <h4 className="font-semibold text-sm text-red-700">No se pudo analizar</h4>
                                     </div>
                                     <p className="text-xs text-red-600 truncate">
-                                        {group.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'}
+                                        {(group.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.')} <span className="opacity-80">(No afectará al precio)</span>
                                     </p>
                                 </div>
 
@@ -3215,6 +3640,11 @@ const DetailsPage: React.FC = () => {
                         </div>
                     </div>
                 )})}
+            </div>
+            
+            <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-center justify-between mt-3">
+                <span>Horas totales estimadas:</span>
+                <span className="font-bold text-lg">{bookingData.estimatedHours} h</span>
             </div>
         </div>
       )}
@@ -3356,15 +3786,15 @@ const DetailsPage: React.FC = () => {
                         </select>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-800 mb-1">Acceso</label>
+                        <label className="block text-sm font-medium text-gray-800 mb-1">Estado</label>
                         <select
-                            value={debugHedgeAccess}
-                            onChange={(e) => setDebugHedgeAccess(e.target.value)}
+                            value={debugHedgeState}
+                            onChange={(e) => setDebugHedgeState(e.target.value)}
                             className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                         >
-                            <option value="normal">Normal / Fácil</option>
-                            <option value="medio">Medio (Escalera)</option>
-                            <option value="dificil">Difícil (Andamio/Pértiga)</option>
+                            <option value="normal">Normal</option>
+                            <option value="descuidado">Descuidado</option>
+                            <option value="muy descuidado">Muy descuidado</option>
                         </select>
                     </div>
                 </>
@@ -3732,7 +4162,8 @@ const DetailsPage: React.FC = () => {
                                type: debugHedgeType || 'Seto Mixto/Otro',
                                height: debugHedgeHeight || '1-2m',
                                length: qty,
-                               access: debugHedgeAccess as 'normal' | 'medio' | 'dificil',
+                               state: debugHedgeState || 'normal',
+                               access: 'normal', // Legacy
                                wasteRemoval: true,
                                photoUrls: [],
                                analysisLevel: 1,
@@ -3893,7 +4324,8 @@ const DetailsPage: React.FC = () => {
         <div className="max-w-md mx-auto">
           <button
             onClick={handleContinue}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200"
+            disabled={debugService === 'Poda de palmeras' && (!bookingData.estimatedHours || bookingData.estimatedHours <= 0)}
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
             {(() => {
                 const validTreeCount = (bookingData.treeGroups || []).filter(g => !((g as any).isFailed === true || g.analysisLevel === 3)).length;

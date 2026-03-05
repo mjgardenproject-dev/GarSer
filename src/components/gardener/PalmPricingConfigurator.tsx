@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Save, Check, Plus, Trash2, RefreshCw, AlertTriangle, Info, ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info, Check, Trash2 } from 'lucide-react';
+import { deepEqual } from '../../utils/deepEqual';
+import ServiceConfigFooter from './ServiceConfigFooter';
 
 // Tipos para la configuración de palmeras
 export type PalmSpecies = 
@@ -76,11 +78,12 @@ const SMALL_PALMS: PalmSpecies[] = [
 
 interface Props {
   value?: PalmPricingConfig;
+  initialConfig?: PalmPricingConfig;
   onChange: (config: PalmPricingConfig) => void;
   onSave?: (config: PalmPricingConfig) => Promise<void>;
 }
 
-const PalmPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) => {
+const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
@@ -262,8 +265,40 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
     setShowResetModal(false);
   };
 
-  const handleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Determine if dirty
+  const isDirty = useMemo(() => {
+    // Si no hay configuración inicial guardada, comparamos con la vacía
+    // Pero si initialConfig es undefined, puede significar que no se ha cargado aún o que no existe.
+    // Asumiremos que si se pasa initialConfig, se usa. Si es undefined, se asume EMPTY.
+    const baseToCompare = initialConfig || EMPTY_CONFIG;
+
+    // Procesar igual que config para normalizar
+    const processedBase = {
+        ...EMPTY_CONFIG,
+        ...baseToCompare,
+        species_prices: { ...EMPTY_CONFIG.species_prices, ...baseToCompare.species_prices },
+        height_prices: { ...EMPTY_CONFIG.height_prices, ...baseToCompare.height_prices },
+        condition_surcharges: { ...EMPTY_CONFIG.condition_surcharges, ...baseToCompare.condition_surcharges },
+        waste_removal: { ...EMPTY_CONFIG.waste_removal, ...baseToCompare.waste_removal },
+        selected_species: baseToCompare.selected_species || []
+    };
+    
+    // Misma lógica de migración para selected_species
+    if (baseToCompare.selected_species === undefined) {
+        const detectedSpecies: PalmSpecies[] = [];
+        Object.entries(processedBase.species_prices).forEach(([species, price]) => {
+            if (price > 0) detectedSpecies.push(species as PalmSpecies);
+        });
+        if (detectedSpecies.length > 0) {
+            processedBase.selected_species = detectedSpecies;
+        }
+    }
+
+    return !deepEqual(config, processedBase);
+  }, [config, initialConfig]);
+
+  const handleSave = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     
     // Validación: Todos los campos de especies seleccionadas deben tener precio > 0
     const errors: string[] = [];
@@ -781,25 +816,12 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) =
         </div>
       )}
 
-      <div className="flex flex-col-reverse sm:flex-row sm:justify-end pt-4 border-t border-gray-100 gap-3">
-        <button
-          type="button"
-          onClick={handleReset}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors shadow-sm text-sm font-medium w-full sm:w-auto"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Restablecer datos
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm text-sm font-medium w-full sm:w-auto ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
-        >
-          <Save className="w-4 h-4" />
-          {isSaving ? 'Guardando...' : 'Guardar configuración de palmeras'}
-        </button>
-      </div>
+      <ServiceConfigFooter 
+        onSave={() => handleSave()} 
+        onReset={handleReset} 
+        isDirty={isDirty} 
+        isSaving={isSaving} 
+      />
       {/* Modal de confirmación de restablecimiento */}
       {showResetModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">

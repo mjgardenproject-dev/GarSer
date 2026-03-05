@@ -37,6 +37,8 @@ export interface BookingData {
     wasteRemoval?: boolean;
     photoUrl?: string;
     imageIndex?: number;
+    analysisLevel?: number;
+    observations?: string[];
   }>;
   uploadedPhotoUrls?: string[];
   isAnalyzing?: boolean;
@@ -51,6 +53,8 @@ export interface BookingData {
     files?: File[]; // Local files pending upload
     analysisLevel?: number;
     observations?: string[];
+    selectedIndices?: number[];
+    analyzedIndices?: number[];
   }>;
   // New Service-Specific Fields
   hedgeZones?: Array<{
@@ -59,6 +63,7 @@ export interface BookingData {
     height: string; // '<1m', '1-2m', '>2m'
     length: number; // meters
     access: 'normal' | 'medio' | 'dificil';
+    state?: string;
     wasteRemoval: boolean;
     photoUrls?: string[];
     files?: File[];

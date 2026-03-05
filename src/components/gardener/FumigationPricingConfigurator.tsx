@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { Info, AlertCircle, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { Info, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
+import { deepEqual } from '../../utils/deepEqual';
+import ServiceConfigFooter from './ServiceConfigFooter';
 
 export type FumigationType = 
   | 'Insecticida' 
@@ -30,15 +33,17 @@ const EMPTY_CONFIG: FumigationPricingConfig = {
 
 interface Props {
   value?: FumigationPricingConfig;
+  initialConfig?: FumigationPricingConfig;
   onChange: (config: FumigationPricingConfig) => void;
   onSave?: (config: FumigationPricingConfig) => Promise<void>;
 }
 
-const FumigationPricingConfigurator: React.FC<Props> = ({ value, onChange, onSave }) => {
+const FumigationPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showGlobalError, setShowGlobalError] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   // Initialize config
   const config = React.useMemo(() => {
@@ -51,6 +56,45 @@ const FumigationPricingConfigurator: React.FC<Props> = ({ value, onChange, onSav
         selected_types: value.selected_types || []
     };
   }, [value]);
+
+  // Determine if dirty
+  const isDirty = useMemo(() => {
+    const baseToCompare = initialConfig || EMPTY_CONFIG;
+    const processedBase = {
+        ...EMPTY_CONFIG,
+        ...baseToCompare,
+        type_prices: { ...EMPTY_CONFIG.type_prices, ...baseToCompare.type_prices },
+        waste_removal: { ...EMPTY_CONFIG.waste_removal, ...baseToCompare.waste_removal },
+        selected_types: baseToCompare.selected_types || []
+    };
+    return !deepEqual(config, processedBase);
+  }, [config, initialConfig]);
+
+  const handleReset = () => {
+    setShowResetModal(true);
+  };
+
+  const confirmReset = async () => {
+    setShowResetModal(false);
+    onChange(EMPTY_CONFIG);
+    setValidationErrors([]);
+    setShowGlobalError(false);
+    
+    if (onSave) {
+      try {
+        setIsSaving(true);
+        await onSave(EMPTY_CONFIG);
+      } catch (error) {
+        console.error('Error resetting fumigation config:', error);
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  };
+
+  const cancelReset = () => {
+    setShowResetModal(false);
+  };
 
   const activeTypes = FUMIGATION_TYPES.filter(s => config.selected_types?.includes(s));
   const availableTypes = FUMIGATION_TYPES.filter(s => !config.selected_types?.includes(s));
@@ -101,8 +145,8 @@ const FumigationPricingConfigurator: React.FC<Props> = ({ value, onChange, onSav
       });
   };
 
-  const handleSave = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleSave = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     
     // Validations
     const errors: string[] = [];
@@ -339,23 +383,46 @@ const FumigationPricingConfigurator: React.FC<Props> = ({ value, onChange, onSav
       )}
 
       {/* Save Button */}
-      <div className="flex justify-end pt-4 border-t border-gray-100">
-        <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm disabled:opacity-50 transition-colors font-medium text-sm"
-        >
-            {isSaving ? (
-                <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                    Guardando...
-                </>
-            ) : (
-                'Guardar configuración'
-            )}
-        </button>
-      </div>
+      <ServiceConfigFooter 
+        onSave={() => handleSave()} 
+        onReset={handleReset} 
+        isDirty={isDirty} 
+        isSaving={isSaving} 
+      />
+
+      {/* Reset Confirmation Modal */}
+      {showResetModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
+                <AlertTriangle className="w-6 h-6 text-yellow-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">
+                ¿Restablecer configuración?
+              </h3>
+              <p className="text-gray-500 text-center mb-6 text-sm">
+                Se eliminarán todos los precios, tipos y recargos configurados para la fumigación. Esta acción es irreversible.
+              </p>
+              <div className="flex flex-col gap-3 w-full">
+                <button
+                  onClick={confirmReset}
+                  className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-red-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
+                >
+                  Confirmar
+                </button>
+                <button
+                  onClick={cancelReset}
+                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

@@ -21,6 +21,7 @@ export interface LawnPricingConfig {
   waste_removal: {
       percentage: number;
   };
+  minimum_price: number;
   selected_species?: LawnSpecies[];
 }
 
@@ -35,6 +36,7 @@ const EMPTY_CONFIG: LawnPricingConfig = {
   species_prices: {},
   condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
   waste_removal: { percentage: 0 },
+  minimum_price: 0,
   selected_species: []
 };
 
@@ -166,6 +168,13 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
       });
   };
 
+  const handleMinimumPriceChange = (val: number) => {
+      onChange({
+          ...config,
+          minimum_price: val
+      });
+  };
+
   const handleSave = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     
@@ -185,6 +194,11 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
     if (errors.length > 0) {
         setValidationErrors(errors);
+        setShowGlobalError(true);
+        return;
+    }
+
+    if (!config.minimum_price || config.minimum_price <= 0) {
         setShowGlobalError(true);
         return;
     }
@@ -210,12 +224,12 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
      const hasError = validationErrors.includes(`${species}-${range}`);
 
      return (
-         <div className="relative w-full h-full">
+        <div className="relative w-full">
              <input
                 type="number"
                 min="0"
                 step="0.01"
-                className={`w-full h-10 md:h-10 pl-3 pr-8 text-right text-base sm:text-sm transition-all md:border md:rounded-lg md:shadow-sm border-0 rounded-none focus:ring-2 focus:ring-green-500 focus:ring-inset focus:border-green-500 ${hasError ? 'md:border-red-500 bg-red-50' : (val > 0 ? 'bg-white md:border-gray-300' : 'bg-gray-50 md:border-gray-200')}`}
+              className={`w-full h-11 md:h-10 pl-[1px] pr-6 text-right text-[17px] md:text-sm transition-all border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 ${hasError ? 'border-red-400 bg-red-50 md:border-red-500' : (val > 0 ? 'border-slate-200 bg-white md:border-gray-300' : 'border-slate-200 bg-slate-50 md:border-gray-200')}`}
                 value={val === 0 ? '' : val}
                 placeholder={val === 0 ? '-' : ''}
                 onChange={(e) => {
@@ -225,7 +239,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                     }
                 }}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">€</span>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 leading-none text-gray-400 text-sm font-medium">€</span>
          </div>
      );
   };
@@ -251,7 +265,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                         <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
                         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:left-0 md:translate-x-0 md:translate-y-0 md:w-64 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
                             <ul className="list-disc pl-4 space-y-2">
-                                <li>Los precios son por m² (excepto rango 0-50m² que puede ser fijo).</li>
+                                <li>Los precios son por m² en todos los rangos.</li>
                                 <li>Los precios <strong>no incluyen la retirada de restos</strong> (se configura abajo).</li>
                                 <li>El <strong>IVA está incluido</strong>.</li>
                             </ul>
@@ -259,6 +273,30 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                     </>
                 )}
             </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="pr-2">
+              <span className="text-gray-700 text-sm font-medium block">Importe mínimo del servicio</span>
+              <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+            </div>
+            <div className="relative w-24">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={`w-full h-9 pl-3 pr-7 border rounded-lg text-right text-[17px] md:text-sm focus:ring-2 focus:ring-green-500 ${config.minimum_price > 0 ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                value={config.minimum_price === 0 ? '' : config.minimum_price}
+                placeholder={config.minimum_price === 0 ? '-' : ''}
+                onChange={(e) => handleMinimumPriceChange(parseFloat(e.target.value) || 0)}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">€</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -293,11 +331,11 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
       </div>
 
       {/* Tabla de Precios */}
-      <div className="-mx-4 md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white border-y border-gray-200">
+      <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
         {/* Desktop Header - Visible only on md+ */}
         <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
             <div className="md:col-span-3">Especie</div>
-            <div className="md:col-span-3 text-center">0–50 m² <span className="text-xs font-normal text-gray-500 block">(Precio Fijo/Min)</span></div>
+            <div className="md:col-span-3 text-center">0–50 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
             <div className="md:col-span-3 text-center">50–200 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
             <div className="md:col-span-2 text-center">&gt;200 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
             <div className="md:col-span-1"></div>
@@ -305,9 +343,9 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
         {/* Content */}
         {activeSpecies.length > 0 ? (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-slate-100">
                 {activeSpecies.map((species) => (
-                    <div key={species} className="pt-4 pb-0 px-0 md:p-4 hover:bg-gray-50 transition-colors">
+                    <div key={species} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
                       <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
                         
                         {/* Species Name Row (Mobile: Top, Desktop: Left) */}
@@ -324,17 +362,26 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                         </div>
 
                         {/* Inputs Grid (Mobile: 3 cols below name, Desktop: Inline) */}
-                        <div className="grid grid-cols-3 md:grid-cols-8 md:col-span-8 gap-0 md:gap-4 border-t border-gray-100 md:border-t-0">
-                            <div className="space-y-1 md:space-y-0 md:col-span-3 border-r border-gray-200">
-                                <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">0-50 m²</label>
-                                {renderPriceInput(species, '0-50', 'Fijo')}
+                        <div className="grid grid-cols-3 md:grid-cols-8 md:col-span-8 gap-1 px-1 pb-1 border-t border-slate-100 md:gap-4 md:px-0 md:pb-0 md:border-t-0">
+                            <div className="space-y-1 md:space-y-0 md:col-span-3 md:border-r md:border-gray-200">
+                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                  <span className="block">0-50 m²</span>
+                                  <span className="block text-[10px] text-gray-400">€/m²</span>
+                                </label>
+                                {renderPriceInput(species, '0-50', '/m²')}
                             </div>
-                            <div className="space-y-1 md:space-y-0 md:col-span-3 border-r border-gray-200">
-                                <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">50-200 m²</label>
+                            <div className="space-y-1 md:space-y-0 md:col-span-3 md:border-r md:border-gray-200">
+                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                  <span className="block">50-200 m²</span>
+                                  <span className="block text-[10px] text-gray-400">€/m²</span>
+                                </label>
                                 {renderPriceInput(species, '50-200', '/m²')}
                             </div>
                             <div className="space-y-1 md:space-y-0 md:col-span-2">
-                                <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">&gt;200 m²</label>
+                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                  <span className="block">&gt;200 m²</span>
+                                  <span className="block text-[10px] text-gray-400">€/m²</span>
+                                </label>
                                 {renderPriceInput(species, '200+', '/m²')}
                             </div>
                         </div>

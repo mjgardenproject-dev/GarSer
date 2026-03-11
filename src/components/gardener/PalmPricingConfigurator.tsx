@@ -29,6 +29,7 @@ export interface PalmPricingConfig {
     fixed_price?: number; // Deprecated in favor of percentage, but kept for type safety
     percentage?: number; // New field for percentage surcharge
   };
+  minimum_price: number;
   selected_species?: PalmSpecies[]; // New field to track user selection
 }
 
@@ -58,6 +59,7 @@ const EMPTY_CONFIG: PalmPricingConfig = {
   },
   condition_surcharges: { 'normal': 0, 'descuidada': 20, 'muy_descuidada': 50 },
   waste_removal: { option: 'not_included', percentage: 0 }, // Default changed to not_included as requested "Eliminar opción Incluida en precio base" logic
+  minimum_price: 0,
   selected_species: [] // Default empty
 };
 
@@ -355,6 +357,11 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         setShowGlobalError(true);
         return;
     }
+
+    if (!config.minimum_price || config.minimum_price <= 0) {
+        setShowGlobalError(true);
+        return;
+    }
     
     // Limpiar errores si pasa validación
     setValidationErrors([]);
@@ -388,9 +395,9 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
      if (suggestion && suggestion > 0) {
          return (
-             <div className={`relative flex items-center justify-between md:justify-center w-full h-11 px-3 bg-blue-50/50 md:border md:rounded-lg border-0 rounded-none ${hasError ? 'ring-2 ring-red-500' : 'md:border-blue-100'}`}>
+             <div className={`relative flex items-center justify-between md:justify-center w-full h-11 rounded-lg border border-blue-200 bg-blue-50/70 px-3 ${hasError ? 'ring-2 ring-red-500' : 'md:border-blue-100'}`}>
                  <span 
-                    className="text-blue-600 font-medium cursor-pointer hover:text-blue-800 text-base sm:text-sm"
+                    className="text-blue-600 font-medium cursor-pointer hover:text-blue-800 text-[17px] md:text-sm"
                     onClick={(e) => {
                         e.stopPropagation();
                         handlePriceChange(species, height, suggestion);
@@ -410,11 +417,11 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
          );
      }
      return (
-         <div className="relative w-full h-full">
+        <div className="relative w-full">
              <input
                 type="number"
                 min="0"
-                className={`w-full h-full md:h-11 pl-3 pr-8 text-right text-base sm:text-sm transition-all md:border md:rounded-lg md:shadow-sm border-0 rounded-none focus:ring-2 focus:ring-green-500 focus:ring-inset focus:border-green-500 ${hasError ? 'md:border-red-500 bg-red-50' : (value > 0 ? 'bg-white md:border-gray-300' : 'bg-gray-50 md:border-gray-200')}`}
+            className={`w-full h-11 md:h-11 pl-[1px] pr-6 text-right text-[17px] md:text-sm transition-all border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 ${hasError ? 'border-red-400 bg-red-50 md:border-red-500' : (value > 0 ? 'border-slate-200 bg-white md:border-gray-300' : 'border-slate-200 bg-slate-50 md:border-gray-200')}`}
                 value={value === 0 ? '' : value}
                 placeholder={value === 0 ? '-' : ''}
                 onChange={(e) => {
@@ -424,7 +431,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                     }
                 }}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">€</span>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 leading-none text-gray-400 text-sm font-medium">€</span>
          </div>
      );
   };
@@ -477,6 +484,30 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         </div>
       </div>
 
+      <div>
+        <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="pr-2">
+              <span className="text-gray-700 text-sm font-medium block">Importe mínimo del servicio</span>
+              <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+            </div>
+            <div className="relative w-24">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={`w-full h-9 pl-3 pr-7 border rounded-lg text-right text-[17px] md:text-sm focus:ring-2 focus:ring-green-500 ${config.minimum_price > 0 ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                value={config.minimum_price === 0 ? '' : config.minimum_price}
+                placeholder={config.minimum_price === 0 ? '-' : ''}
+                onChange={(e) => onChange({ ...config, minimum_price: parseFloat(e.target.value) || 0 })}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">€</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* 1. Precios Base por Especie y Altura */}
       <div className="space-y-8">
         {/* Tabla de Especies Grandes */}
@@ -515,7 +546,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
              </div>
           </div>
           
-          <div className="-mx-4 md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white border-y border-gray-200">
+          <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
             {/* Desktop Header - Visible only on md+ */}
             <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
                 <div className="md:col-span-3">Especie</div>
@@ -528,11 +559,11 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
             {/* Content */}
             {activeLargePalms.length > 0 ? (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-slate-100">
                     {activeLargePalms.map((species) => {
                        const p0_5 = config.height_prices[species]?.['0-5'] ?? 0;
                        return (
-                        <div key={species} className="pt-4 pb-0 px-0 md:p-4 hover:bg-gray-50 transition-colors">
+                        <div key={species} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
                           <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
                             
                             {/* Species Name Row (Mobile: Top, Desktop: Left) */}
@@ -549,21 +580,33 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                             </div>
 
                             {/* Inputs Grid (Mobile: 4 cols below name, Desktop: Inline) */}
-                            <div className="grid grid-cols-4 md:grid-cols-8 md:col-span-8 gap-0 md:gap-4 border-t border-gray-100 md:border-t-0">
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 border-r border-gray-200">
-                                    <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">0-5m</label>
+                            <div className="grid grid-cols-4 md:grid-cols-8 md:col-span-8 gap-1 px-1 pb-1 border-t border-slate-100 md:gap-4 md:px-0 md:pb-0 md:border-t-0">
+                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
+                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                      <span className="block">0-5m</span>
+                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
+                                    </label>
                                     {renderCell(species, '0-5', 0)}
                                 </div>
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 border-r border-gray-200">
-                                    <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">5-12m</label>
+                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
+                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                      <span className="block">5-12m</span>
+                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
+                                    </label>
                                     {renderCell(species, '5-12', p0_5)}
                                 </div>
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 border-r border-gray-200">
-                                    <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">12-20m</label>
+                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
+                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                      <span className="block">12-20m</span>
+                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
+                                    </label>
                                     {renderCell(species, '12-20', p0_5)}
                                 </div>
                                 <div className="space-y-1 md:space-y-0 md:col-span-2">
-                                    <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">&gt;20m</label>
+                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                      <span className="block">&gt;20m</span>
+                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
+                                    </label>
                                     {renderCell(species, '20+', p0_5)}
                                 </div>
                             </div>
@@ -623,7 +666,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
           </div>
 
-          <div className="-mx-4 md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white border-y border-gray-200">
+          <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
              {/* Desktop Header - Visible only on md+ */}
              <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
                 <div className="md:col-span-6">Especie</div>
@@ -634,13 +677,13 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
              {/* Content */}
              {activeSmallPalms.length > 0 ? (
-                 <div className="divide-y divide-gray-100">
+                 <div className="divide-y divide-slate-100">
                     {activeSmallPalms.map((species) => {
                        const p0_2 = config.height_prices[species]?.['0-2'] ?? 0;
                        const isCycas = species === 'cycas revoluta (falsa palmera)';
 
                        return (
-                        <div key={species} className="pt-4 pb-0 px-0 md:p-4 hover:bg-gray-50 transition-colors">
+                        <div key={species} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
                           <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
                             
                             {/* Species Row (Mobile: Top, Desktop: Left) */}
@@ -657,13 +700,19 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                             </div>
 
                             {/* Inputs Grid (Mobile: 2 cols, Desktop: Inline) */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 md:col-span-4 gap-0 md:gap-4 border-t border-gray-100 md:border-t-0">
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 border-r border-gray-200">
-                                    <label className="block text-xs text-center font-medium text-gray-500 md:hidden">0-2m</label>
+                            <div className="grid grid-cols-2 md:grid-cols-4 md:col-span-4 gap-1 px-1 pb-1 border-t border-slate-100 md:gap-4 md:px-0 md:pb-0 md:border-t-0">
+                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
+                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                      <span className="block">0-2m</span>
+                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
+                                    </label>
                                     {renderCell(species, '0-2', 0)}
                                 </div>
                                 <div className="space-y-1 md:space-y-0 md:col-span-2">
-                                    <label className="block text-xs text-center font-medium text-gray-500 md:hidden">&gt;2m</label>
+                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                      <span className="block">&gt;2m</span>
+                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
+                                    </label>
                                     {isCycas ? (
                                         <div className="h-full md:h-11 flex items-center justify-center bg-gray-50 md:rounded-lg md:border border-0 md:border-gray-200 text-gray-400 text-sm italic">
                                             N/A

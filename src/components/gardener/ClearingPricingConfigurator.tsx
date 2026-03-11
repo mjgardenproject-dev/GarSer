@@ -17,6 +17,7 @@ export interface ClearingPricingConfig {
   waste_removal: {
       percentage: number;
   };
+  minimum_price: number;
   selected_types?: ClearingType[];
 }
 
@@ -30,6 +31,7 @@ const CLEARING_TYPES: ClearingType[] = [
 const EMPTY_CONFIG: ClearingPricingConfig = {
   type_prices: {},
   waste_removal: { percentage: 0 },
+  minimum_price: 0,
   selected_types: []
 };
 
@@ -147,6 +149,13 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
       });
   };
 
+  const handleMinimumPriceChange = (val: number) => {
+      onChange({
+          ...config,
+          minimum_price: val
+      });
+  };
+
   const handleSave = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     
@@ -166,6 +175,11 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
 
     if (errors.length > 0) {
         setValidationErrors(errors);
+        setShowGlobalError(true);
+        return;
+    }
+
+    if (!config.minimum_price || config.minimum_price <= 0) {
         setShowGlobalError(true);
         return;
     }
@@ -191,12 +205,12 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
      const hasError = validationErrors.includes(`${type}-${range}`);
 
      return (
-         <div className="relative w-full h-full">
+        <div className="relative w-full">
              <input
                 type="number"
                 min="0"
                 step="0.01"
-                className={`w-full h-10 md:h-10 pl-3 pr-8 text-right text-base sm:text-sm transition-all md:border md:rounded-lg md:shadow-sm border-0 rounded-none focus:ring-2 focus:ring-green-500 focus:ring-inset focus:border-green-500 ${hasError ? 'md:border-red-500 bg-red-50' : (val > 0 ? 'bg-white md:border-gray-300' : 'bg-gray-50 md:border-gray-200')}`}
+              className={`w-full h-11 md:h-10 pl-[1px] pr-6 text-right text-[17px] md:text-sm transition-all border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 ${hasError ? 'border-red-400 bg-red-50 md:border-red-500' : (val > 0 ? 'border-slate-200 bg-white md:border-gray-300' : 'border-slate-200 bg-slate-50 md:border-gray-200')}`}
                 value={val === 0 ? '' : val}
                 placeholder={val === 0 ? '-' : ''}
                 onChange={(e) => {
@@ -206,7 +220,7 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
                     }
                 }}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">€</span>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 leading-none text-gray-400 text-sm font-medium">€</span>
          </div>
      );
   };
@@ -243,6 +257,30 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
         </div>
       </div>
 
+      <div>
+        <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="pr-2">
+              <span className="text-gray-700 text-sm font-medium block">Importe mínimo del servicio</span>
+              <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+            </div>
+            <div className="relative w-24">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={`w-full h-9 pl-3 pr-7 border rounded-lg text-right text-[17px] md:text-sm focus:ring-2 focus:ring-green-500 ${config.minimum_price > 0 ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                value={config.minimum_price === 0 ? '' : config.minimum_price}
+                placeholder={config.minimum_price === 0 ? '-' : ''}
+                onChange={(e) => handleMinimumPriceChange(parseFloat(e.target.value) || 0)}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">€</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Selector de Tipos */}
       <div className="flex flex-col gap-1 mb-4">
          <div className="flex items-center gap-2">
@@ -274,7 +312,7 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
       </div>
 
       {/* Tabla de Precios */}
-      <div className="-mx-4 md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white border-y border-gray-200">
+      <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
         {/* Desktop Header */}
         <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
             <div className="md:col-span-3">Tipo</div>
@@ -286,9 +324,9 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
 
         {/* Content */}
         {activeTypes.length > 0 ? (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-slate-100">
                 {activeTypes.map((type) => (
-                    <div key={type} className="pt-4 pb-0 px-0 md:p-4 hover:bg-gray-50 transition-colors">
+                    <div key={type} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
                       <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
                         
                         {/* Type Name */}
@@ -304,17 +342,26 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
                         </div>
 
                         {/* Inputs Grid */}
-                        <div className="grid grid-cols-3 md:grid-cols-8 md:col-span-8 gap-0 md:gap-4 border-t border-gray-100 md:border-t-0">
-                            <div className="space-y-1 md:space-y-0 md:col-span-3 border-r border-gray-200">
-                                <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">0-50 m²</label>
+                        <div className="grid grid-cols-3 md:grid-cols-8 md:col-span-8 gap-1 px-1 pb-1 border-t border-slate-100 md:gap-4 md:px-0 md:pb-0 md:border-t-0">
+                            <div className="space-y-1 md:space-y-0 md:col-span-3 md:border-r md:border-gray-200">
+                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                  <span className="block">0-50 m²</span>
+                                  <span className="block text-[10px] text-gray-400">Precio fijo</span>
+                                </label>
                                 {renderPriceInput(type, '0-50', 'Fijo')}
                             </div>
-                            <div className="space-y-1 md:space-y-0 md:col-span-3 border-r border-gray-200">
-                                <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">50-200 m²</label>
+                            <div className="space-y-1 md:space-y-0 md:col-span-3 md:border-r md:border-gray-200">
+                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                  <span className="block">50-200 m²</span>
+                                  <span className="block text-[10px] text-gray-400">€/m²</span>
+                                </label>
                                 {renderPriceInput(type, '50-200', '/m²')}
                             </div>
                             <div className="space-y-1 md:space-y-0 md:col-span-2">
-                                <label className="block text-[10px] text-center font-medium text-gray-500 md:hidden truncate">&gt;200 m²</label>
+                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
+                                  <span className="block">&gt;200 m²</span>
+                                  <span className="block text-[10px] text-gray-400">€/m²</span>
+                                </label>
                                 {renderPriceInput(type, '200+', '/m²')}
                             </div>
                         </div>

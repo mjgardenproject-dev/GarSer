@@ -1,43 +1,41 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, AlertCircle, AlertTriangle, Trash2, Check } from 'lucide-react';
+import { Info, AlertCircle, AlertTriangle } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
 import ServiceConfigFooter from './ServiceConfigFooter';
 
 export type LawnSpecies = 
   | 'Bermuda (fina o gramilla)' 
   | 'Gramón (Kikuyu, San Agustín o similares)' 
-  | 'Dichondra (oreja de ratón o similares)' 
+  | 'Dichondra (oreja de ratón o similares)'
   | 'Césped Mixto (Festuca/Raygrass)';
 
-export type LawnRange = '0-50' | '50-200' | '200+';
+export type LawnRange = '0-50' | '51-150' | '151-400' | '400+';
+type LegacyLawnRange = '0-50' | '50-200' | '200+';
 
 export interface LawnPricingConfig {
-  species_prices: Record<string, Partial<Record<LawnRange, number>>>; 
+  surface_prices: Partial<Record<LawnRange, number>>;
   condition_surcharges: {
-      descuidado: number;
-      muy_descuidado: number;
+    descuidado: number;
+    muy_descuidado: number;
   };
   waste_removal: {
-      percentage: number;
+    percentage: number;
   };
   minimum_price: number;
   selected_species?: LawnSpecies[];
+  species_prices?: Record<string, Partial<Record<LegacyLawnRange, number>>>;
 }
 
-const LAWN_SPECIES: LawnSpecies[] = [
-  'Bermuda (fina o gramilla)',
-  'Gramón (Kikuyu, San Agustín o similares)',
-  'Dichondra (oreja de ratón o similares)',
-  'Césped Mixto (Festuca/Raygrass)'
-];
+const SURFACE_RANGES: LawnRange[] = ['0-50', '51-150', '151-400', '400+'];
 
 const EMPTY_CONFIG: LawnPricingConfig = {
-  species_prices: {},
+  surface_prices: { '0-50': 0, '51-150': 0, '151-400': 0, '400+': 0 },
   condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
   waste_removal: { percentage: 0 },
   minimum_price: 0,
-  selected_species: []
+  selected_species: [],
+  species_prices: {}
 };
 
 interface Props {
@@ -54,31 +52,60 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   const [showGlobalError, setShowGlobalError] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
 
-  // Initialize config
-  const config = React.useMemo(() => {
-    if (!value) return EMPTY_CONFIG;
-    return {
-        ...EMPTY_CONFIG,
-        ...value,
-        species_prices: { ...EMPTY_CONFIG.species_prices, ...value.species_prices },
-        condition_surcharges: { ...EMPTY_CONFIG.condition_surcharges, ...value.condition_surcharges },
-        waste_removal: { ...EMPTY_CONFIG.waste_removal, ...value.waste_removal },
-        selected_species: value.selected_species || []
-    };
-  }, [value]);
+  const normalizeConfig = (incoming?: LawnPricingConfig): LawnPricingConfig => {
+    if (!incoming) return EMPTY_CONFIG;
 
-  // Determine if dirty
-  const isDirty = useMemo(() => {
-    const baseToCompare = initialConfig || EMPTY_CONFIG;
-    const processedBase = {
-        ...EMPTY_CONFIG,
-        ...baseToCompare,
-        species_prices: { ...EMPTY_CONFIG.species_prices, ...baseToCompare.species_prices },
-        condition_surcharges: { ...EMPTY_CONFIG.condition_surcharges, ...baseToCompare.condition_surcharges },
-        waste_removal: { ...EMPTY_CONFIG.waste_removal, ...baseToCompare.waste_removal },
-        selected_species: baseToCompare.selected_species || []
+    const next: LawnPricingConfig = {
+      ...EMPTY_CONFIG,
+      ...incoming,
+      surface_prices: {
+        ...EMPTY_CONFIG.surface_prices,
+        ...(incoming.surface_prices || {})
+      },
+      condition_surcharges: {
+        ...EMPTY_CONFIG.condition_surcharges,
+        ...(incoming.condition_surcharges || {})
+      },
+      waste_removal: {
+        ...EMPTY_CONFIG.waste_removal,
+        ...(incoming.waste_removal || {})
+      },
+      selected_species: incoming.selected_species || [],
+      species_prices: incoming.species_prices || {}
     };
-    return !deepEqual(config, processedBase);
+
+    const hasNewPrices = SURFACE_RANGES.some(r => Number(next.surface_prices?.[r] || 0) > 0);
+    if (!hasNewPrices && next.species_prices) {
+      const candidateFromSelected = (next.selected_species || []).find(s => next.species_prices?.[s]);
+      const candidateFallback = Object.keys(next.species_prices)[0];
+      const legacyKey = candidateFromSelected || candidateFallback;
+      const legacy = legacyKey ? next.species_prices?.[legacyKey] : undefined;
+      if (legacy) {
+        next.surface_prices = {
+          '0-50': Number(legacy['0-50'] || 0),
+          '51-150': Number(legacy['50-200'] || 0),
+          '151-400': Number(legacy['200+'] || 0),
+          '400+': Number(legacy['200+'] || 0)
+        };
+      }
+    }
+
+    return {
+      ...next,
+      surface_prices: {
+        '0-50': Number(next.surface_prices?.['0-50'] || 0),
+        '51-150': Number(next.surface_prices?.['51-150'] || 0),
+        '151-400': Number(next.surface_prices?.['151-400'] || 0),
+        '400+': Number(next.surface_prices?.['400+'] || 0)
+      }
+    };
+  };
+
+  const config = useMemo(() => normalizeConfig(value), [value]);
+
+  const isDirty = useMemo(() => {
+    const baseToCompare = normalizeConfig(initialConfig || EMPTY_CONFIG);
+    return !deepEqual(config, baseToCompare);
   }, [config, initialConfig]);
 
   const handleReset = () => {
@@ -107,44 +134,12 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     setShowResetModal(false);
   };
 
-  const activeSpecies = LAWN_SPECIES.filter(s => config.selected_species?.includes(s));
-  const availableSpecies = LAWN_SPECIES.filter(s => !config.selected_species?.includes(s));
-
-  const addSpecies = (species: LawnSpecies) => {
-    const currentSelected = config.selected_species || [];
-    if (!currentSelected.includes(species)) {
-        onChange({
-            ...config,
-            selected_species: [...currentSelected, species]
-        });
-    }
-  };
-
-  const removeSpecies = (species: LawnSpecies) => {
-      const currentSelected = config.selected_species || [];
-      
-      // Create fresh copy of prices
-      const newSpeciesPrices = { ...config.species_prices };
-      
-      // Delete prices for this species
-      if (newSpeciesPrices[species] !== undefined) delete newSpeciesPrices[species];
-
-      onChange({
-          ...config,
-          selected_species: currentSelected.filter(s => s !== species),
-          species_prices: newSpeciesPrices
-      });
-  };
-
-  const handlePriceChange = (species: LawnSpecies, range: LawnRange, newPrice: number) => {
-    const currentPrices = { ...(config.species_prices[species] || {}) };
-    currentPrices[range] = newPrice;
-    
+  const handlePriceChange = (range: LawnRange, newPrice: number) => {
     onChange({
       ...config,
-      species_prices: {
-        ...config.species_prices,
-        [species]: currentPrices
+      surface_prices: {
+        ...config.surface_prices,
+        [range]: newPrice
       }
     });
   };
@@ -177,32 +172,25 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
   const handleSave = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    
-    // Validations
+
     const errors: string[] = [];
-    const selected = config.selected_species || [];
-    
-    selected.forEach(species => {
-        const ranges: LawnRange[] = ['0-50', '50-200', '200+'];
-        ranges.forEach(r => {
-             // @ts-ignore
-            if (!config.species_prices[species]?.[r] || config.species_prices[species]?.[r] <= 0) {
-                errors.push(`${species}-${r}`);
-            }
-        });
+    SURFACE_RANGES.forEach(r => {
+      if (!config.surface_prices?.[r] || Number(config.surface_prices[r]) <= 0) {
+        errors.push(r);
+      }
     });
 
     if (errors.length > 0) {
-        setValidationErrors(errors);
-        setShowGlobalError(true);
-        return;
+      setValidationErrors(errors);
+      setShowGlobalError(true);
+      return;
     }
 
     if (!config.minimum_price || config.minimum_price <= 0) {
-        setShowGlobalError(true);
-        return;
+      setShowGlobalError(true);
+      return;
     }
-    
+
     setValidationErrors([]);
     setShowGlobalError(false);
 
@@ -218,10 +206,9 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     }
   };
 
-  const renderPriceInput = (species: LawnSpecies, range: LawnRange, placeholder: string) => {
-     // @ts-ignore
-     const val = config.species_prices[species]?.[range] ?? 0;
-     const hasError = validationErrors.includes(`${species}-${range}`);
+  const renderPriceInput = (range: LawnRange) => {
+     const val = Number(config.surface_prices?.[range] || 0);
+     const hasError = validationErrors.includes(range);
 
      return (
         <div className="relative w-full">
@@ -233,9 +220,9 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                 value={val === 0 ? '' : val}
                 placeholder={val === 0 ? '-' : ''}
                 onChange={(e) => {
-                    handlePriceChange(species, range, parseFloat(e.target.value) || 0);
+                    handlePriceChange(range, parseFloat(e.target.value) || 0);
                     if (hasError) {
-                        setValidationErrors(prev => prev.filter(err => err !== `${species}-${range}`));
+                        setValidationErrors(prev => prev.filter(err => err !== range));
                     }
                 }}
               />
@@ -250,7 +237,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div className="flex items-center gap-2">
             <h3 className="font-semibold text-gray-900 text-lg">
-                Configuración de tarifas por especie (IVA incluido)
+                Configuración de tarifas por superficie (IVA incluido)
             </h3>
             <div className="relative">
                 <button 
@@ -300,113 +287,28 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         </div>
       </div>
 
-      {/* Selector de Especies */}
-      <div className="flex flex-col gap-1 mb-4">
-         <div className="flex items-center gap-2">
-            <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Especies de Césped</h4>
-         </div>
-         <p className="text-sm text-gray-500 italic">
-            Selecciona las variedades con las que trabajas habitualmente.
-         </p>
-         
-         <div className="mt-2 flex items-center gap-2">
-            <div className="relative inline-block w-full sm:w-64">
-                <select
-                    className="w-full h-10 pl-3 pr-8 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
-                    onChange={(e) => {
-                        if (e.target.value) {
-                            addSpecies(e.target.value as LawnSpecies);
-                            e.target.value = '';
-                        }
-                    }}
-                    defaultValue=""
-                >
-                    <option value="" disabled>Añadir especie...</option>
-                    {availableSpecies.map(s => (
-                        <option key={s} value={s}>{s}</option>
-                    ))}
-                </select>
-            </div>
-         </div>
-      </div>
-
-      {/* Tabla de Precios */}
       <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
-        {/* Desktop Header - Visible only on md+ */}
         <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
-            <div className="md:col-span-3">Especie</div>
-            <div className="md:col-span-3 text-center">0–50 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
-            <div className="md:col-span-3 text-center">50–200 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
-            <div className="md:col-span-2 text-center">&gt;200 m² <span className="text-xs font-normal text-gray-500 block">(Precio / m²)</span></div>
-            <div className="md:col-span-1"></div>
+            <div className="md:col-span-3">Tramo</div>
+            <div className="md:col-span-9 text-center">Precio por m²</div>
         </div>
 
-        {/* Content */}
-        {activeSpecies.length > 0 ? (
-            <div className="divide-y divide-slate-100">
-                {activeSpecies.map((species) => (
-                    <div key={species} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
-                      <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
-                        
-                        {/* Species Name Row (Mobile: Top, Desktop: Left) */}
-                        <div className="flex justify-between items-start md:items-center mb-3 px-4 md:mb-0 md:px-0 md:col-span-3">
-                            <span className="font-bold text-gray-800 text-sm md:text-sm md:font-medium md:text-gray-700 flex-1 pr-4">{species}</span>
-                            <button
-                              type="button"
-                              onClick={() => removeSpecies(species)}
-                              className="text-red-500 p-2 bg-red-50 rounded-lg md:hidden flex-shrink-0"
-                              title="Eliminar especie"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </button>
-                        </div>
-
-                        {/* Inputs Grid (Mobile: 3 cols below name, Desktop: Inline) */}
-                        <div className="grid grid-cols-3 md:grid-cols-8 md:col-span-8 gap-1 px-1 pb-1 border-t border-slate-100 md:gap-4 md:px-0 md:pb-0 md:border-t-0">
-                            <div className="space-y-1 md:space-y-0 md:col-span-3 md:border-r md:border-gray-200">
-                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                  <span className="block">0-50 m²</span>
-                                  <span className="block text-[10px] text-gray-400">€/m²</span>
-                                </label>
-                                {renderPriceInput(species, '0-50', '/m²')}
-                            </div>
-                            <div className="space-y-1 md:space-y-0 md:col-span-3 md:border-r md:border-gray-200">
-                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                  <span className="block">50-200 m²</span>
-                                  <span className="block text-[10px] text-gray-400">€/m²</span>
-                                </label>
-                                {renderPriceInput(species, '50-200', '/m²')}
-                            </div>
-                            <div className="space-y-1 md:space-y-0 md:col-span-2">
-                                <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                  <span className="block">&gt;200 m²</span>
-                                  <span className="block text-[10px] text-gray-400">€/m²</span>
-                                </label>
-                                {renderPriceInput(species, '200+', '/m²')}
-                            </div>
-                        </div>
-
-                        {/* Desktop Delete Action */}
-                        <div className="hidden md:flex md:col-span-1 justify-center">
-                            <button
-                              type="button"
-                              onClick={() => removeSpecies(species)}
-                              className="text-gray-400 hover:text-red-500 transition-colors"
-                              title="Eliminar especie"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </button>
-                        </div>
-                      </div>
-                    </div>
-                ))}
+        <div className="divide-y divide-slate-100">
+          {SURFACE_RANGES.map((range) => (
+            <div key={range} className="p-4 hover:bg-gray-50 transition-colors">
+              <div className="grid grid-cols-1 md:grid-cols-12 md:gap-4 md:items-center gap-2">
+                <div className="md:col-span-3">
+                  <span className="font-medium text-gray-800">
+                    {range === '0-50' ? '0–50 m²' : range === '51-150' ? '51–150 m²' : range === '151-400' ? '151–400 m²' : '>400 m²'}
+                  </span>
+                </div>
+                <div className="md:col-span-9">
+                  {renderPriceInput(range)}
+                </div>
+              </div>
             </div>
-        ) : (
-            <div className="p-8 text-center text-gray-500 bg-gray-50">
-                <p className="mb-2 font-medium">No hay especies seleccionadas.</p>
-                <p className="text-sm">Usa el desplegable de arriba para añadir una.</p>
-            </div>
-        )}
+          ))}
+        </div>
       </div>
 
       {/* Surcharges Section (Copied style from StandardServiceConfig/PalmPricingConfigurator) */}
@@ -483,7 +385,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             <div>
                 <h4 className="text-sm font-semibold text-red-800">Faltan precios por configurar</h4>
                 <p className="text-sm text-red-600 mt-1">
-                    Asegúrate de rellenar todos los campos de precio para las especies seleccionadas. 
+                    Asegúrate de rellenar todos los tramos de superficie.
                     Los precios deben ser mayores a 0.
                 </p>
             </div>
@@ -510,7 +412,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                 ¿Restablecer configuración?
               </h3>
               <p className="text-gray-500 text-center mb-6 text-sm">
-                Se eliminarán todos los precios, especies y recargos configurados para el corte de césped. Esta acción es irreversible.
+                Se eliminarán todos los precios y recargos configurados para el corte de césped. Esta acción es irreversible.
               </p>
               <div className="flex flex-col gap-3 w-full">
                 <button

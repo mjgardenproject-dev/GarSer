@@ -17,7 +17,7 @@ const ServiceCatalog = () => {
     'Corte de setos a máquina',
     'Poda de árboles',
     'Labrar y quitar malas hierbas a mano',
-    'Fumigación de plantas',
+    'Servicios fitosanitarios',
     'Poda de palmeras'
   ];
   const normalizeText = (s: string) => (s || '')
@@ -46,7 +46,13 @@ const ServiceCatalog = () => {
         .order('name');
 
       if (error) throw error;
-      const all = data || [];
+      const all = (data || []).map((s: any) => {
+        let updatedName = s.name;
+        if (updatedName.toLowerCase().includes('fumigación') || updatedName.toLowerCase().includes('fumigacion') || updatedName.toLowerCase().includes('tratamientos fitosanitarios')) {
+          updatedName = 'Servicios fitosanitarios';
+        }
+        return { ...s, name: updatedName };
+      });
       const filtered = all.filter((s: Service) => isAllowedServiceName(s.name));
       setServices(filtered);
     } catch (error) {

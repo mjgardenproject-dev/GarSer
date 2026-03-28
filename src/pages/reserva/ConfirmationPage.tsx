@@ -5,6 +5,7 @@ import { MapPin, Calendar, Clock, User, CreditCard } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import * as availCompat from '../../utils/availabilityServiceCompat';
+import { calculatePhytosanitaryQuote } from '../../utils/serviceValidation';
 
 const ConfirmationPage: React.FC = () => {
   const navigate = useNavigate();
@@ -22,9 +23,21 @@ const ConfirmationPage: React.FC = () => {
   const [showOtpOption, setShowOtpOption] = useState(false);
   const [breakdown, setBreakdown] = useState<Array<{ desc: string; price: number }>>([]);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const mapPhytosanitaryZonesForQuote = () => (bookingData.phytosanitaryZones || []).map((zone) => ({
+    area: Number(zone.area || 0),
+    type: zone.type,
+    affectedType: (zone as any).affectedType,
+    aboveTwoMeters: (zone as any).aboveTwoMeters,
+    aboveThreeMeters: (zone as any).aboveThreeMeters,
+    analysisMetrics: (zone as any).analysisMetrics
+  }));
 
   useEffect(() => {
     if (!bookingData.providerId || !bookingData.serviceIds?.[0]) return;
+    if (Array.isArray(bookingData.priceBreakdown) && bookingData.priceBreakdown.length > 0) {
+      setBreakdown(bookingData.priceBreakdown);
+      return;
+    }
     const fetchConfig = async () => {
       try {
         const { data } = await supabase
@@ -68,12 +81,40 @@ const ConfirmationPage: React.FC = () => {
                     }
                 });
             }
+
+            if (bookingData.phytosanitaryZones && bookingData.phytosanitaryZones.length > 0) {
+                const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+                const quote = calculatePhytosanitaryQuote({
+                    zones: mapPhytosanitaryZonesForQuote(),
+                    config,
+                    globalWaste
+                });
+                quote.breakdown.forEach((item) => {
+                    const treatmentLabel = item.appliedTreatments?.length
+                        ? item.appliedTreatments.join(' + ')
+                        : 'sin tratamiento';
+                    items.push({
+                        desc: item.reason
+                            ? `Zona ${item.zoneIndex + 1}: ${item.affectedType} · ${item.quantity}${item.unitLabel} · ${treatmentLabel} · ${item.reason}`
+                            : `Zona ${item.zoneIndex + 1}: ${item.affectedType} · ${item.quantity}${item.unitLabel} · ${treatmentLabel}`,
+                        price: Math.ceil(Number(item.lineTotal || 0))
+                    });
+                });
+                if (quote.minimumFeeApplied) {
+                    items.push({
+                        desc: `Ajuste por importe mínimo (${Math.ceil(quote.minimumFee)}€)`,
+                        price: Math.ceil(quote.minimumFee)
+                    });
+                }
+            }
             setBreakdown(items);
+        } else {
+            setBreakdown([]);
         }
       } catch (e) { console.error('Error fetching breakdown config', e); }
     };
     fetchConfig();
-  }, [bookingData.providerId, bookingData.serviceIds]);
+  }, [bookingData.providerId, bookingData.serviceIds, bookingData.priceBreakdown, bookingData.phytosanitaryZones, bookingData.shrubGroups, bookingData.wasteRemoval]);
 
   const handleConfirmBooking = async () => {
     setIsProcessing(true);
@@ -183,7 +224,12 @@ const ConfirmationPage: React.FC = () => {
             .from('services')
             .select('id,name')
             .in('id', bookingData.serviceIds);
-          setServiceNames((data || []).map((s: any) => s.name));
+          setServiceNames((data || []).map((s: any) => {
+            if (s.name.toLowerCase().includes('fumigación') || s.name.toLowerCase().includes('fumigacion') || s.name.toLowerCase().includes('tratamientos fitosanitarios')) {
+              return 'Servicios fitosanitarios';
+            }
+            return s.name;
+          }));
         } else {
           setServiceNames([]);
         }
@@ -223,7 +269,8 @@ const ConfirmationPage: React.FC = () => {
       providerId: bookingData.providerId,
       estimatedHours: bookingData.estimatedHours,
       totalPrice: bookingData.totalPrice,
-      palmSpecies: bookingData.palmSpecies
+      palmSpecies: bookingData.palmSpecies,
+      priceBreakdown: bookingData.priceBreakdown
     };
     try { return encodeURIComponent(btoa(JSON.stringify(snapshot))); } catch { return ''; }
   };

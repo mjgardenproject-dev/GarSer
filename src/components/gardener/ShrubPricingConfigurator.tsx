@@ -188,9 +188,9 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     
     activeTypesToValidate.forEach(type => {
         const sizes: ShrubSize[] = ['Pequeño (hasta 1m)', 'Mediano (1-2.5m)', 'Grande (>2.5m)'];
+        const typePrices = config.species_prices[type] as Partial<Record<ShrubSize, number>> | undefined;
         sizes.forEach(s => {
-             // @ts-ignore
-            if (!config.species_prices[type]?.[s] || config.species_prices[type]?.[s] <= 0) {
+            if (!typePrices?.[s] || typePrices[s] <= 0) {
                 errors.push(`${type}-${s}`);
             }
         });
@@ -228,8 +228,8 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
   };
 
   const renderPriceInput = (type: ShrubType, size: ShrubSize) => {
-     // @ts-ignore
-     const val = config.species_prices[type]?.[size] ?? 0;
+     const typePrices = config.species_prices[type] as Partial<Record<ShrubSize, number>> | undefined;
+     const val = typePrices?.[size] ?? 0;
      const hasError = validationErrors.includes(`${type}-${size}`);
 
      return (

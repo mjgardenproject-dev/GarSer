@@ -161,7 +161,13 @@ const ServiceBooking = () => {
         .order('name');
 
       if (error) throw error;
-      setServices(data || []);
+      const mapped = (data || []).map((s: any) => {
+        if (s.name.toLowerCase().includes('fumigación') || s.name.toLowerCase().includes('fumigacion') || s.name.toLowerCase().includes('tratamientos fitosanitarios')) {
+          return { ...s, name: 'Servicios fitosanitarios' };
+        }
+        return s;
+      });
+      setServices(mapped);
     } catch (error) {
       console.error('Error fetching services:', error);
     }
@@ -310,7 +316,7 @@ const ServiceBooking = () => {
 
   const getServiceIcon = (serviceName: string) => {
     switch (serviceName.toLowerCase()) {
-      case 'fumigación':
+      case 'servicios fitosanitarios':
         return <Spray className="w-6 h-6" />;
       case 'corte de setos':
         return <Scissors className="w-6 h-6" />;

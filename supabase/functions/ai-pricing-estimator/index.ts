@@ -13,6 +13,10 @@ interface Payload {
   description: string;
   service_ids?: string[];
   photo_urls?: string[];
+  hedge_faces?: {
+    face_a_urls: string[];
+    face_b_urls?: string[];
+  };
   photo_count?: number;
   service_name?: string; // Nombre del servicio (opcional, para lógica específica)
   // Nuevo modo de auto‑presupuesto por servicio
@@ -21,6 +25,163 @@ interface Payload {
   image_url?: string; // http(s) o dataURL
   model?: 'gpt-4o-mini' | 'gemini-2.0-flash';
   palms?: any[]; // Array for palm pricing calculation
+  phytosanitary_scopes?: string[]; // Array of selected scopes for Fitosanitarios
+}
+
+type PhytosanitaryTreatment = 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia' | 'inconclusive';
+
+const PHYTOSANITARY_TREATMENTS: PhytosanitaryTreatment[] = [
+  'insecticida',
+  'fungicida',
+  'herbicida',
+  'ecologico_preventivo',
+  'endoterapia',
+  'inconclusive',
+];
+
+const PHYTOSANITARY_SERVICE_KEYS = ['fitosanit', 'fitosanit'];
+
+function isPhytosanitaryService(serviceName?: string) {
+  const lower = String(serviceName || '').toLowerCase();
+  if (!lower) return false;
+  return PHYTOSANITARY_SERVICE_KEYS.some((k) => lower.includes(k));
+}
+
+function getPhytosanitaryScope(payload: Payload): string[] {
+  if (payload.phytosanitary_scopes && payload.phytosanitary_scopes.length > 0) {
+    return payload.phytosanitary_scopes;
+  }
+  
+  // Fallback for older clients parsing description
+  const text = String(payload.description || '').toLowerCase();
+  const scopes: string[] = [];
+  if (text.includes('solo_palmeras') || text.includes('palmeras')) scopes.push('palmeras');
+  if (text.includes('solo_arboles') || text.includes('solo_árboles') || text.includes('arboles') || text.includes('árboles')) scopes.push('arboles');
+  if (text.includes('solo_setos') || text.includes('setos')) scopes.push('setos');
+  if (text.includes('solo_cesped') || text.includes('solo_césped') || text.includes('cesped') || text.includes('césped')) scopes.push('cesped');
+  if (text.includes('solo_malas_hierbas') || text.includes('malas hierbas')) scopes.push('quitar malas hierbas');
+  if (text.includes('plantas')) scopes.push('plantas');
+  
+  if (scopes.length === 0 || text.includes('todo el jardin') || text.includes('todo_jardin')) {
+    return ['todo el jardin'];
+  }
+  return scopes;
+}
+
+function buildPhytosanitarySystemPrompt(payload: Payload) {
+  const scopes = getPhytosanitaryScope(payload);
+  const scopeStr = scopes.join(', ').toUpperCase();
+
+  const systemPrompt = [
+    'You are a strict, deterministic vision-analysis engine for a gardening marketplace specializing in phytosanitary treatments.',
+    'Your ONLY goal is to quantify visible vegetation into specific UI buckets based on scale references. DO NOT guess hidden areas.',
+    '',
+    `### CRITICAL SCOPE RESTRICTION ###`,
+    `The user has explicitly restricted the analysis to: [${scopeStr}].`,
+    `You MUST ONLY analyze and count elements that belong to this scope.`,
+    `Any other element outside this scope MUST BE STRICTLY 0, even if it is clearly visible in the image.`,
+    '',
+    '### MANDATORY CHAIN OF THOUGHT (CoT) ###',
+    'You must populate the "razonamiento_cot" object FIRST:',
+    '1. "identificacion_escalas": Identify visual anchors (doors ~2m, fences ~2m).',
+    '2. "analisis_deduplicacion": Explain how you ensure elements across multiple photos are counted only once.',
+    '',
+    '### EXACT BUSINESS THRESHOLDS (MATCH UI STRICLY) ###',
+    'Aggregate counts/measurements into these exact keys in "metricas_fitosanitarias":',
+    '- HEDGES (ml): "seto_bajo_medio_ml" (< 2.5m) vs "seto_alto_ml" (2.5m - 5m).',
+    '- TREES (units): "arboles_peq_ud" (low canopy, < 3m), "arboles_med_ud" (medium canopy, 3m - 6m), "arboles_gran_ud" (large canopy, > 6m).',
+    '- PALMS (units): "palmeras_ducha_peq_ud" (< 3.5m), "palmeras_ducha_med_ud" (3.5m - 8m), "palmeras_ducha_alta_ud" (> 8m).',
+    '- PALM SURGERY: "palmeras_cirugia_ud" (Count ONLY if severe crown collapse or trunk holes are visible. Otherwise 0).',
+    '- SURFACES (m2): "cesped_m2" (Lawn) vs "herbicida_poca_densidad_m2" / "herbicida_mucha_densidad_m2" (Weeds depending on height/thickness).',
+    '',
+    '### OUTPUT RULES ###',
+    '1. Return ONLY valid JSON.',
+    '2. "observaciones_ia" should only contain operational risks in Spanish. No pest diagnoses.',
+    '3. If a category is not present in the images or not requested in the scope, output 0.',
+    '',
+    '### JSON SCHEMA ###',
+    '{',
+    '  "razonamiento_cot": {',
+    '    "identificacion_escalas": "string",',
+    '    "analisis_deduplicacion": "string",',
+    '    "evaluacion_riesgos_acceso": "string"',
+    '  },',
+    '  "metricas_fitosanitarias": {',
+    '    "cesped_m2": number,',
+    '    "seto_bajo_medio_ml": number,',
+    '    "seto_alto_ml": number,',
+    '    "palmeras_ducha_peq_ud": number,',
+    '    "palmeras_ducha_med_ud": number,',
+    '    "palmeras_ducha_alta_ud": number,',
+    '    "palmeras_cirugia_ud": number,',
+    '    "arboles_peq_ud": number,',
+    '    "arboles_med_ud": number,',
+    '    "arboles_gran_ud": number,',
+    '    "herbicida_poca_densidad_m2": number,',
+    '    "herbicida_mucha_densidad_m2": number',
+    '  },',
+    '  "observaciones_ia": ["string"]',
+    '}'
+  ];
+
+  return systemPrompt.join('\n');
+}
+
+function buildPhytosanitaryUserContent(payload: Payload) {
+  const { photo_urls = [], description } = payload;
+  const scopes = getPhytosanitaryScope(payload);
+  const userContent: any[] = [
+    { type: 'text', text: `Customer notes: ${String(description || '').trim() || 'none'}` },
+    { type: 'text', text: `Scope: ${scopes.join(', ')}` },
+    { type: 'text', text: 'INSTRUCTIONS: 1. Identify scale anchors. 2. Map objects to landmarks for deduplication. 3. Assess spraying risks. 4. Output JSON.' },
+  ];
+  photo_urls.slice(0, 6).forEach((url, idx) => {
+    userContent.push({ type: 'text', text: `--- Image Index ${idx} ---` });
+    userContent.push({
+      type: 'image_url',
+      image_url: { url, detail: 'high' },
+    });
+  });
+  return userContent;
+}
+
+function filterPhytosanitaryMetricsByScope(metrics: any, scopes: string[]) {
+  if (!metrics) return metrics;
+  
+  const isTodoJardin = scopes.includes('todo el jardin') || scopes.includes('todo_jardin');
+  if (isTodoJardin) return metrics; 
+  
+  const filtered = { ...metrics };
+  
+  const hasCesped = scopes.some(s => s.includes('cesped') || s.includes('césped'));
+  const hasSetos = scopes.some(s => s.includes('setos'));
+  const hasArboles = scopes.some(s => s.includes('arboles') || s.includes('árboles'));
+  const hasPalmeras = scopes.some(s => s.includes('palmeras'));
+  const hasMalasHierbas = scopes.some(s => s.includes('malas hierbas') || s.includes('malas_hierbas'));
+  
+  if (!hasCesped) filtered.cesped_m2 = 0;
+  if (!hasSetos) {
+    filtered.seto_bajo_medio_ml = 0;
+    filtered.seto_alto_ml = 0;
+  }
+  if (!hasArboles) {
+    filtered.arboles_peq_ud = 0;
+    filtered.arboles_med_ud = 0;
+    filtered.arboles_gran_ud = 0;
+  }
+  if (!hasPalmeras) {
+    filtered.palmeras_ducha_peq_ud = 0;
+    filtered.palmeras_ducha_med_ud = 0;
+    filtered.palmeras_ducha_alta_ud = 0;
+    filtered.palmeras_cirugia_ud = 0;
+    filtered.palmeras_endoterapia_troncos_ud = 0;
+  }
+  if (!hasMalasHierbas) {
+    filtered.herbicida_poca_densidad_m2 = 0;
+    filtered.herbicida_mucha_densidad_m2 = 0;
+  }
+  
+  return filtered;
 }
 
 // --- PALM PRICING LOGIC ---
@@ -229,7 +390,7 @@ LEVEL 2 (Moderate Limitations):
 
 LEVEL 3 (Failed/Unusable):
 - Criteria: Lawn not detectable, extreme blur, pitch black, or not a garden.
-- Output: superficie_m2 = 0, especie_cesped = null, estado_jardin = null. observaciones = ARRAY with failure notes.
+- Output: superficie_m2 = 0, estado_jardin = null. observaciones = ARRAY with failure notes.
 
 ---------------------------------------------------------------------
 DATA EXTRACTION RULES:
@@ -239,18 +400,12 @@ A) SURFACE AREA (superficie_m2):
 - USE REFERENCES: Look for standard objects (doors ~0.9m wide, cars ~4.5m long, standard tiles) to calibrate scale.
 - If scale is impossible to determine (no references), set nivel_analisis = 2 and add "pocas referencias de escala".
 
-B) SPECIES (especie_cesped):
-- "Dichondra (oreja de ratón o similares)" -> Round leaves.
-- "Gramón (Kikuyu, San Agustín o similares)" -> Very wide blades, creeping runners.
-- "Bermuda (fina o gramilla)" -> Very fine, dense needle-like blades.
-- "Césped Mixto (Festuca/Raygrass)" -> DEFAULT. Use this if distance prevents blade analysis.
-
-C) CONDITION (estado_jardin):
+B) CONDITION (estado_jardin):
 - "normal" -> Even surface, defined edges.
 - "descuidado" -> Uneven height, invading edges.
 - "muy descuidado" -> High weeds, undefined edges, wild appearance.
 
-D) OBSERVACIONES (Allowed values ONLY):
+C) OBSERVACIONES (Allowed values ONLY):
 - Level 2: "mala luz", "zonas no visibles", "foto de baja calidad", "pocas referencias de escala", "ángulo limitado", "parte del jardín fuera de encuadre", "posible solapamiento entre imágenes".
 - Level 3: "muy mala luz", "foto extremadamente borrosa", "césped no detectable", "imagen no corresponde a un jardín", "superficie completamente fuera de encuadre", "imagen obstruida".
 
@@ -261,7 +416,6 @@ RESPONSE FORMAT (JSON Schema):
   "tareas": [
     {
       "tipo_servicio": "Corte de césped",
-      "especie_cesped": "string OR null",
       "estado_jardin": "string OR null",
       "superficie_m2": number,
       "numero_plantas": null,
@@ -274,53 +428,113 @@ RESPONSE FORMAT (JSON Schema):
   ].join('\n'),
   'Corte de setos': [
     `---
-Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.
+SYSTEM ROLE:
+You are 'HedgeMap', an expert AI specialized in landscape analysis and estimating hedge trimming jobs.
 
-INSTRUCCIONES DE ANÁLISIS:
-1. Detecta la longitud total de setos en metros lineales.
-2. Estima la altura promedio.
-3. Clasifica el tipo de seto.
-4. Evalúa el ESTADO DEL SETO basándote en su nivel de crecimiento y mantenimiento.
+INPUT CONTEXT:
+You will receive one or multiple images in a single request. ALL provided images belong to the EXACT SAME HEDGE (same zone).
+Images are grouped by explicit labels:
+- FACE_A: front/main side (always present)
+- FACE_B: back/opposite side (optional)
+You must never infer or invent additional faces. Use only the provided groups.
 
-VARIABLES A EXTRAER:
-- tipo_servicio: "Corte de setos"
-- longitud_m: Longitud estimada en metros.
-- altura_m: Altura estimada en metros.
-- tipo_seto: "Conífera (Ciprés/Tuya)", "Laurel/Hoja ancha", "Hiedra/Trepandora", "Seto Mixto/Otro".
-- estado_seto: "normal" | "descuidado" | "muy descuidado".
-- nivel_analisis: 1 (Claro), 2 (Parcial/Borroso), 3 (Inutilizable).
-- observaciones: Lista de observaciones visuales (ej. "Seto muy denso", "Requiere escalera alta").
+CORE MEASUREMENT RULES (STRICT STRICT STRICT):
+1. HEIGHT EXCLUSION RULE (altura_m):
+   - Measure strictly the FOLIAGE/PLANT height.
+   - If the hedge is growing on top of a wall, fence, planter, or slope, DO NOT include the height of the wall/structure.
+   - Example: A 1.5m hedge sitting on a 1m brick wall has an altura_m of 1.5, NOT 2.5.
 
-PAUTAS PARA CLASIFICACIÓN DE ESTADO (estado_seto):
+2. LENGTH & SHAPE RULE (longitud_m):
+   - Estimate the linear length of the hedge.
+   - L-Shape / U-Shape Handling: If the hedge turns a corner, sum the lengths of all visible sections (e.g., a 5m section + a 3m section = 8m base length).
 
-1. "normal"
-   - Apariencia cuidada, forma geométrica definida.
-   - Brotes nuevos cortos (< 10 cm).
-   - No hay huecos grandes ni ramas secas evidentes.
-   - Mantenimiento reciente visible.
+3. FACE-BASED CALCULATION (CRITICAL):
+   - Measure FACE_A and FACE_B independently if both are provided.
+   - Determine base_longitud_m and base_altura_m using:
+     a) Average of both faces when both are reliable (nivel_analisis 1 or 2),
+     b) Otherwise, the most reliable face.
+   - Determine caras_recortar:
+     - 1 if only FACE_A is provided,
+     - 2 if FACE_B is provided.
+   - Compute:
+     - longitud_calculo_m = base_longitud_m * caras_recortar
+     - altura_calculo_m = base_altura_m * caras_recortar
+   - Also return longitud_m as base_longitud_m for backward compatibility.
+   - Also return altura_m as base_altura_m for backward compatibility.
 
-2. "descuidado"
-   - Pérdida parcial de la forma geométrica.
-   - Brotes nuevos largos (10-30 cm) que sobresalen desordenadamente.
-   - Aspecto "peludo" o ligeramente salvaje.
-   - Necesita un recorte correctivo moderado.
+CLASSIFICATION & STATE RULES:
+Translate your visual findings into the exact following Spanish categories.
 
-3. "muy descuidado"
-   - Pérdida total de la forma original.
-   - Brotes muy largos (> 30 cm) o ramas leñosas invasivas.
-   - Invasión de caminos, aceras u otras plantas.
-   - Densidad extrema o partes secas/muertas visibles.
-   - Requiere poda drástica o de renovación.
+A. Operational Height Band (tipo_seto) - Choose EXACTLY ONE:
+   - "0-1m": Use when base_altura_m <= 1.0m.
+   - "1-2m": Use when base_altura_m is >1.0m and <=2.0m.
+   - "2-4m": Use when base_altura_m is >2.0m and <=4.0m.
+   - "4-6m": Use when base_altura_m is >4.0m.
 
-FORMATO DE SALIDA (JSON ÚNICAMENTE):
+A2. Height band guidance:
+   - Keep numeric altura_m as your measured foliage height.
+   - tipo_seto must follow the 4 bands above.
+   - If estimated base_altura_m exceeds 6m, keep numeric altura_m as estimated and add an observation indicating manual safety review is required.
+
+B. Hedge Condition (estado_seto) - Choose EXACTLY ONE:
+   - "normal": Well-kept geometric shape, short new shoots (<10cm), recent maintenance visible.
+   - "descuidado": Any relevant overgrowth or loss of geometry. If it looks very neglected, still use "descuidado".
+
+C. Image Quality (nivel_analisis):
+   - 1: Clear, fully usable for 3D estimation.
+   - 2: Partially blurry or obstructed, but estimation is possible.
+   - 3: Unusable, too dark, or doesn't show the hedge.
+
+D. PRESET OBSERVATIONS (STRICT):
+Use ONLY these exact Spanish phrases:
+- "vista parcial por ángulo"
+- "zona con sombras"
+- "vegetación tapa parte del seto"
+- "parte del seto fuera de encuadre"
+- "imagen con enfoque limitado"
+- "foto borrosa"
+- "foto oscura"
+- "seto no visible con claridad"
+
+Rules:
+- nivel_analisis = 1 -> "observaciones": []
+- nivel_analisis = 2 -> include 1-2 phrases from the list
+- nivel_analisis = 3 -> include 1-2 phrases from the list
+
+OUTPUT FORMAT:
+You must output ONLY a valid JSON object. No markdown formatting (json), no introductory text, no explanations outside the JSON.
+
 {
-  "tareas": [
+  "tareas":[
     {
       "tipo_servicio": "Corte de setos",
       "longitud_m": number,
       "altura_m": number,
-      "tipo_seto": string,
-      "estado_seto": "normal" | "descuidado" | "muy descuidado",
+      "tipo_seto": "0-1m" | "1-2m" | "2-4m" | "4-6m",
+      "estado_seto": "normal" | "descuidado",
+      "caras": 1 | 2,
+      "detalle_caras": {
+        "cara_a": {
+          "longitud_m": number,
+          "altura_m": number,
+          "nivel_analisis": 1 | 2 | 3,
+          "observaciones": string[]
+        },
+        "cara_b": {
+          "longitud_m": number,
+          "altura_m": number,
+          "nivel_analisis": 1 | 2 | 3,
+          "observaciones": string[]
+        }
+      },
+      "resumen_medicion": {
+        "base_longitud_m": number,
+        "base_altura_m": number,
+        "caras_recortar": 1 | 2,
+        "longitud_calculo_m": number,
+        "altura_calculo_m": number,
+        "metodo": "media_caras" | "cara_mas_fiable"
+      },
       "nivel_analisis": 1 | 2 | 3,
       "observaciones": string[]
     }
@@ -526,57 +740,10 @@ RESPONSE FORMAT (JSON Schema):
   ]
 }`
   ].join('\n'),
-  'Fumigación de plantas': [
-    `---
-You are an expert image analysis AI for a gardening marketplace. Your task is to objectively analyze plants for fumigation needs.
-
-CORE RULES:
-1. OUTPUT MUST BE VALID JSON ONLY. No markdown (json), no conversational text.
-2. Analyze ONLY what is strictly visible.
-
-SERVICE CONTEXT:
-Service Type: "Fumigación de plantas"
-
----------------------------------------------------------------------
-ANALYSIS LOGIC & RELIABILITY LEVELS (nivel_analisis):
-
-LEVEL 1: Clear view of affected plants.
-LEVEL 2: General view of garden, specific pest not visible but area is.
-LEVEL 3: Unclear.
-
----------------------------------------------------------------------
-DATA EXTRACTION RULES:
-
-A) TARGET DETAILS:
-- tipo_afectado: "Césped", "Árboles", "Setos", "Plantas bajas".
-- cantidad_o_superficie: Number (Count for trees/plants, m2 for lawn/hedges).
-- unidad: "unidades" or "m2".
-- nivel_plaga: "Preventivo" (no visible damage), "Curativo" (visible damage/bugs).
-
-B) OBSERVACIONES:
-- Level 2: "plaga no visible (asumido preventivo)", "vista general".
-
----------------------------------------------------------------------
-RESPONSE FORMAT (JSON Schema):
-
-{
-  "tareas": [
-    {
-      "tipo_servicio": "Fumigación de plantas",
-      "tipo_afectado": "string",
-      "cantidad_o_superficie": number,
-      "unidad": "string",
-      "nivel_plaga": "string",
-      "nivel_analisis": integer (1, 2, or 3),
-      "observaciones": ["string"] OR null
-    }
-  ]
-}`
-  ].join('\n'),
 };
 
 function buildMessages(payload: Payload) {
-  const { description, service_ids = [], photo_urls = [], service_name } = payload;
+  const { description, service_ids = [], photo_urls = [], service_name, hedge_faces } = payload;
 
   // Lógica específica para Poda de Palmeras
   if (service_name === 'Poda de palmeras') {
@@ -619,6 +786,13 @@ function buildMessages(payload: Payload) {
     return [
         { role: 'system', content: PROMPTS['Corte de césped'] },
         { role: 'user', content: userContent },
+    ];
+  }
+
+  if (isPhytosanitaryService(service_name)) {
+    return [
+      { role: 'system', content: buildPhytosanitarySystemPrompt(payload) },
+      { role: 'user', content: buildPhytosanitaryUserContent(payload) },
     ];
   }
 
@@ -671,20 +845,52 @@ function buildMessages(payload: Payload) {
   }
 
   // Lógica genérica para otros servicios con prompts específicos
-  // (Corte de setos, Poda de árboles, Poda de plantas, Desbroce, Fumigación)
+  // (Corte de setos, Poda de árboles, Poda de plantas, Desbroce, Servicios fitosanitarios)
   const exactServicePrompt = PROMPTS[service_name || ''];
   if (exactServicePrompt) {
+      const isHedgeService = (service_name || '').toLowerCase().includes('seto');
       const userContent: any[] = [
           { type: 'text', text: `Descripción del cliente: ${description || ''}` },
           { type: 'text', text: `Analiza las imágenes para el servicio: ${service_name}` }
       ];
-
-      photo_urls.slice(0, 5).forEach((url) => {
-          userContent.push({
+      if (isHedgeService) {
+        const faceAUrls = (hedge_faces?.face_a_urls || []).filter(Boolean).slice(0, 4);
+        const faceBUrls = (hedge_faces?.face_b_urls || []).filter(Boolean).slice(0, 4);
+        userContent.push({ type: 'text', text: 'Todas las imágenes corresponden al mismo seto/zona. Debes cruzar todas las vistas para una única estimación consolidada.' });
+        if (faceAUrls.length > 0) {
+          userContent.push({ type: 'text', text: 'FACE_A (cara delantera/principal):' });
+          faceAUrls.forEach((url) => {
+            userContent.push({
               type: 'image_url',
               image_url: { url, detail: 'auto' },
+            });
           });
-      });
+        }
+        if (faceBUrls.length > 0) {
+          userContent.push({ type: 'text', text: 'FACE_B (cara trasera/opcional):' });
+          faceBUrls.forEach((url) => {
+            userContent.push({
+              type: 'image_url',
+              image_url: { url, detail: 'auto' },
+            });
+          });
+        }
+        if (faceAUrls.length === 0 && faceBUrls.length === 0) {
+          photo_urls.slice(0, 5).forEach((url) => {
+            userContent.push({
+              type: 'image_url',
+              image_url: { url, detail: 'auto' },
+            });
+          });
+        }
+      } else {
+        photo_urls.slice(0, 5).forEach((url) => {
+          userContent.push({
+            type: 'image_url',
+            image_url: { url, detail: 'auto' },
+          });
+        });
+      }
 
       return [
           { role: 'system', content: exactServicePrompt },
@@ -700,23 +906,55 @@ function buildMessages(payload: Payload) {
       'poda de plantas': 'Poda de plantas',
       'malas hierbas': 'Labrar y quitar malas hierbas',
       'labrar': 'Labrar y quitar malas hierbas',
-      'fumiga': 'Fumigación de plantas'
+      'fitosanitarios': 'Servicios fitosanitarios'
   };
   
   const lowerName = (service_name || '').toLowerCase();
   for (const [key, promptKey] of Object.entries(flexibleMap)) {
       if (lowerName.includes(key) && PROMPTS[promptKey]) {
+          const isHedgeService = promptKey === 'Corte de setos';
           const userContent: any[] = [
             { type: 'text', text: `Descripción del cliente: ${description || ''}` },
             { type: 'text', text: `Analiza las imágenes para el servicio: ${promptKey}` }
           ];
-
-          photo_urls.slice(0, 5).forEach((url) => {
-            userContent.push({
-                type: 'image_url',
-                image_url: { url, detail: 'auto' },
+          if (isHedgeService) {
+            const faceAUrls = (hedge_faces?.face_a_urls || []).filter(Boolean).slice(0, 4);
+            const faceBUrls = (hedge_faces?.face_b_urls || []).filter(Boolean).slice(0, 4);
+            userContent.push({ type: 'text', text: 'Todas las imágenes corresponden al mismo seto/zona. Debes cruzar todas las vistas para una única estimación consolidada.' });
+            if (faceAUrls.length > 0) {
+              userContent.push({ type: 'text', text: 'FACE_A (cara delantera/principal):' });
+              faceAUrls.forEach((url) => {
+                userContent.push({
+                  type: 'image_url',
+                  image_url: { url, detail: 'auto' },
+                });
+              });
+            }
+            if (faceBUrls.length > 0) {
+              userContent.push({ type: 'text', text: 'FACE_B (cara trasera/opcional):' });
+              faceBUrls.forEach((url) => {
+                userContent.push({
+                  type: 'image_url',
+                  image_url: { url, detail: 'auto' },
+                });
+              });
+            }
+            if (faceAUrls.length === 0 && faceBUrls.length === 0) {
+              photo_urls.slice(0, 5).forEach((url) => {
+                userContent.push({
+                  type: 'image_url',
+                  image_url: { url, detail: 'auto' },
+                });
+              });
+            }
+          } else {
+            photo_urls.slice(0, 5).forEach((url) => {
+              userContent.push({
+                  type: 'image_url',
+                  image_url: { url, detail: 'auto' },
+              });
             });
-          });
+          }
 
           return [
             { role: 'system', content: PROMPTS[promptKey] },
@@ -750,7 +988,7 @@ function buildMessages(payload: Payload) {
     'Corte de setos a máquina',
     'Poda de árboles',
     'Labrar y quitar malas hierbas a mano',
-    'Fumigación de plantas',
+    'Servicios fitosanitarios',
     '',
     '2️⃣ VARIABLES A DETECTAR',
     'Para cada servicio identificado, devuelve:',
@@ -761,7 +999,7 @@ function buildMessages(payload: Payload) {
     ' - Corte de setos a máquina',
     ' - Labrar y quitar malas hierbas',
     'numero_plantas: número aproximado solo para:',
-    ' - Fumigación',
+    ' - Servicios fitosanitarios',
     ' - Poda de plantas',
     ' - Poda de árboles',
     'tamaño_plantas: “pequeñas” (<0,5 m), “medianas” (0,5–1 m), “grandes” (1–1,5 m), “muy grandes” (1,5–2 m).',
@@ -776,7 +1014,7 @@ function buildMessages(payload: Payload) {
     '5️⃣ NORMALIZACIÓN DE UNIDADES',
     'Devuelve siempre solo una unidad válida según el tipo de servicio:',
     'Césped, setos, labrado o malas hierbas → superficie_m2',
-    'Poda o fumigación → numero_plantas + tamaño_plantas',
+    'Poda o servicios fitosanitarios → numero_plantas + tamaño_plantas',
     'No mezcles unidades dentro de una misma tarea.',
     '',
     '6️⃣ ESTRUCTURA DE RESPUESTA',
@@ -848,6 +1086,288 @@ function heuristicTasks(payload: Payload) {
   };
 }
 
+function normalizePhytosanitaryTreatment(value: unknown): PhytosanitaryTreatment {
+  const lower = String(value || '').toLowerCase();
+  if (PHYTOSANITARY_TREATMENTS.includes(lower as PhytosanitaryTreatment)) return lower as PhytosanitaryTreatment;
+  if (lower.includes('endo')) return 'endoterapia';
+  if (lower.includes('ecol') || lower.includes('prevent')) return 'ecologico_preventivo';
+  if (lower.includes('herb')) return 'herbicida';
+  if (lower.includes('fung')) return 'fungicida';
+  if (lower.includes('insect') || lower.includes('curativ') || lower.includes('plaga')) return 'insecticida';
+  return 'inconclusive';
+}
+
+function normalizePhytosanitaryAffectedType(value: unknown): 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras' {
+  const lower = String(value || '').toLowerCase();
+  if (lower.includes('palm')) return 'Palmeras';
+  if (lower.includes('árbol') || lower.includes('arbol') || lower.includes('tree')) return 'Árboles';
+  if (lower.includes('seto') || lower.includes('hedge')) return 'Setos';
+  if (lower.includes('césped') || lower.includes('cesped') || lower.includes('lawn')) return 'Césped';
+  return 'Plantas bajas';
+}
+
+function normalizePhytosanitaryHeightBand(value: unknown): 'hasta_2m' | 'mas_de_2m' | 'hasta_3m' | 'mas_de_3m' | null {
+  const lower = String(value || '').toLowerCase();
+  if (!lower || lower === 'null' || lower === 'none') return null;
+  if (lower.includes('mas_de_2m') || lower.includes('>2')) return 'mas_de_2m';
+  if (lower.includes('hasta_2m') || lower.includes('2m')) return 'hasta_2m';
+  if (lower.includes('mas_de_3m') || lower.includes('>3')) return 'mas_de_3m';
+  if (lower.includes('hasta_3m') || lower.includes('3m')) return 'hasta_3m';
+  return null;
+}
+
+function toNonNegativeNumber(value: unknown, fallback = 0): number {
+  const num = Number(value);
+  if (!Number.isFinite(num) || Number.isNaN(num)) return fallback;
+  return Math.max(0, num);
+}
+
+function toBoundedConfidence(value: unknown, fallback = 0.5): number {
+  const num = Number(value);
+  if (!Number.isFinite(num) || Number.isNaN(num)) return fallback;
+  return Math.min(1, Math.max(0, num));
+}
+
+function toUniqueStrings(values: unknown[]): string[] {
+  const normalized = values
+    .flatMap((v) => (Array.isArray(v) ? v : [v]))
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+}
+
+function mapSeverityToArea(severity: string): number {
+  const lower = String(severity || '').toLowerCase();
+  if (lower === 'high') return 120;
+  if (lower === 'medium') return 60;
+  if (lower === 'low') return 25;
+  return 40;
+}
+
+function inferPhytosanitaryAnalysisLevel(confidence: number, visibilityLimitations: string[], riskFlags: string[]): 1 | 2 | 3 {
+  const text = `${visibilityLimitations.join(' ')} ${riskFlags.join(' ')}`.toLowerCase();
+  if (confidence < 0.35 || text.includes('dark') || text.includes('blurry') || text.includes('not visible')) return 3;
+  if (confidence < 0.7 || visibilityLimitations.length > 0 || riskFlags.length > 0) return 2;
+  return 1;
+}
+
+function dedupePhytosanitaryTasks(tasks: any[]): any[] {
+  const map = new Map<string, any>();
+  tasks.forEach((task) => {
+    // If it has an ai_ref_id, it is unique and should not be grouped with others
+    const refId = task.ai_ref_id || 'no_ref';
+    const key = [
+      String(task.tipo_servicio || ''),
+      String(task.tipo_afectado || ''),
+      String(task.unidad || ''),
+      String(task.altura_tramo || ''),
+      refId,
+    ].join('|');
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...task });
+      return;
+    }
+    existing.cantidad_o_superficie = Math.round((toNonNegativeNumber(existing.cantidad_o_superficie) + toNonNegativeNumber(task.cantidad_o_superficie)) * 100) / 100;
+    existing.confidence = Math.max(toBoundedConfidence(existing.confidence, 0), toBoundedConfidence(task.confidence, 0));
+    existing.nivel_analisis = Math.max(Number(existing.nivel_analisis || 1), Number(task.nivel_analisis || 1));
+    existing.observaciones = toUniqueStrings([existing.observaciones || [], task.observaciones || []]);
+  });
+  return Array.from(map.values()).filter((task) => toNonNegativeNumber(task.cantidad_o_superficie) > 0);
+}
+
+function buildPhytosanitaryTasksFromDetectedElements(ai: any, payload: Payload): any[] {
+  const detected = ai?.detected_elements || {};
+  
+  // Extract standardized observations
+  let rawObs = [];
+  if (Array.isArray(ai?.standardized_observations)) {
+    rawObs = ai.standardized_observations;
+  } else if (ai?.standardized_observations) {
+    rawObs = [ai.standardized_observations];
+  }
+  
+  const baseObservaciones = toUniqueStrings(
+    rawObs.filter((o: any) => typeof o === 'string' && o.toLowerCase() !== 'none')
+  );
+
+  const riskFlags = toUniqueStrings([
+    Array.isArray(ai?.risk_flags) ? ai.risk_flags : [],
+    Array.isArray(ai?.phytosanitary_context?.spraying_risks) ? ai.phytosanitary_context.spraying_risks : [],
+  ]);
+  const visibilityLimitations = Array.isArray(ai?.notes_for_calculation?.visibility_limitations) ? ai.notes_for_calculation.visibility_limitations : [];
+  const confidence = toBoundedConfidence(ai?.confidence ?? ai?.confidence_score, 0.5);
+  const nivelAnalisis = inferPhytosanitaryAnalysisLevel(confidence, visibilityLimitations, riskFlags);
+  const tasks: any[] = [];
+
+  const pushTask = (task: any) => {
+    if (toNonNegativeNumber(task.cantidad_o_superficie) <= 0) return;
+    tasks.push({
+      tipo_servicio: 'Servicios fitosanitarios',
+      confidence,
+      nivel_analisis: nivelAnalisis,
+      observaciones: baseObservaciones,
+      ...task,
+    });
+  };
+
+  // Surfaces / Lawns
+  const surfacesArr = Array.isArray(detected?.surfaces_plants) ? detected.surfaces_plants : (detected?.surfaces_plants ? [detected.surfaces_plants] : []);
+  surfacesArr.forEach((surface: any) => {
+    const area = Number.isFinite(Number(surface?.estimated_area_m2))
+      ? Math.max(0, Number(surface.estimated_area_m2))
+      : mapSeverityToArea(String(surface?.estimated_severity || 'unknown'));
+    if (area > 0) {
+      pushTask({
+        ai_ref_id: surface.ai_ref_id || `surface_${Math.random().toString(36).substring(7)}`,
+        tipo_afectado: 'Plantas bajas',
+        cantidad_o_superficie: area,
+        unidad: 'm2',
+        altura_tramo: null,
+        supera_2m: false,
+        supera_3m: false,
+      });
+    }
+  });
+
+  // Hedges
+  const hedgesArr = Array.isArray(detected?.hedges) ? detected.hedges : [];
+  hedgesArr.forEach((hedge: any) => {
+    const ml = Math.round(toNonNegativeNumber(hedge.ml));
+    const band = String(hedge.size_band || 'bajos_medios').toLowerCase();
+    if (ml > 0) {
+      pushTask({
+        ai_ref_id: hedge.ai_ref_id || `hedge_${Math.random().toString(36).substring(7)}`,
+        tipo_afectado: 'Setos',
+        cantidad_o_superficie: ml,
+        unidad: 'ml',
+        altura_tramo: band === 'altos' ? 'altos' : 'bajos_medios',
+        supera_2m: band === 'altos',
+        supera_3m: false,
+      });
+    }
+  });
+
+  // Trees
+  const treesArr = Array.isArray(detected?.trees) ? detected.trees : [];
+  treesArr.forEach((tree: any) => {
+    const band = String(tree.size_band || 'pequenos').toLowerCase();
+    pushTask({
+      ai_ref_id: tree.ai_ref_id || `tree_${Math.random().toString(36).substring(7)}`,
+      tipo_afectado: 'Árboles',
+      cantidad_o_superficie: 1,
+      unidad: 'unidades',
+      altura_tramo: ['pequenos', 'medianos', 'grandes'].includes(band) ? band : 'pequenos',
+      supera_2m: false,
+      supera_3m: band === 'medianos' || band === 'grandes',
+    });
+  });
+
+  // Palms
+  const palmsArr = Array.isArray(detected?.palms) ? detected.palms : [];
+  palmsArr.forEach((palm: any) => {
+    const band = String(palm.size_band || 'pequenas').toLowerCase();
+    const palmSurgery = Boolean(palm.surgery_recommended);
+    pushTask({
+      ai_ref_id: palm.ai_ref_id || `palm_${Math.random().toString(36).substring(7)}`,
+      tipo_afectado: 'Palmeras',
+      cantidad_o_superficie: 1,
+      unidad: 'unidades',
+      altura_tramo: ['pequenas', 'medianas', 'altas'].includes(band) ? band : 'pequenas',
+      supera_2m: false,
+      supera_3m: band === 'medianas' || band === 'altas',
+      palmeras_cirugia: palmSurgery,
+    });
+  });
+
+  if (tasks.length === 0) {
+    const fallbackLevel = confidence < 0.4 ? 3 : 2;
+    tasks.push({
+      ai_ref_id: 'fallback_1',
+      tipo_servicio: 'Servicios fitosanitarios',
+      tipo_afectado: 'Plantas bajas',
+      cantidad_o_superficie: Math.max(1, Math.round(Number(payload.photo_count || 1))),
+      unidad: 'unidades',
+      altura_tramo: null,
+      supera_2m: false,
+      supera_3m: false,
+      confidence,
+      nivel_analisis: fallbackLevel,
+      observaciones: baseObservaciones.length > 0 ? baseObservaciones : ['insufficient_visual_evidence'],
+    });
+  }
+
+  return dedupePhytosanitaryTasks(tasks);
+}
+
+function normalizePhytosanitaryTask(task: any, ai: any): any {
+  // Extract standardized observations
+  let rawObs = [];
+  if (Array.isArray(ai?.standardized_observations)) {
+    rawObs = ai.standardized_observations;
+  } else if (ai?.standardized_observations) {
+    rawObs = [ai.standardized_observations];
+  }
+  
+  const baseObservaciones = toUniqueStrings(
+    rawObs.filter((o: any) => typeof o === 'string' && o.toLowerCase() !== 'none')
+  );
+
+  const riskFlags = toUniqueStrings([
+    Array.isArray(ai?.risk_flags) ? ai.risk_flags : [],
+    Array.isArray(ai?.phytosanitary_context?.spraying_risks) ? ai.phytosanitary_context.spraying_risks : [],
+  ]);
+  const visibilityLimitations = Array.isArray(ai?.notes_for_calculation?.visibility_limitations) ? ai.notes_for_calculation.visibility_limitations : [];
+  const topConfidence = toBoundedConfidence(ai?.confidence ?? ai?.confidence_score, 0.5);
+  const taskConfidence = toBoundedConfidence(task?.confidence ?? task?.confidence_score, topConfidence);
+  const tipoAfectado = normalizePhytosanitaryAffectedType(task?.tipo_afectado);
+  const alturaRaw = String(task?.altura_tramo || '').toLowerCase();
+  let altura: any = null;
+  if (tipoAfectado === 'Setos' && (alturaRaw === 'bajos_medios' || alturaRaw === 'altos')) {
+    altura = alturaRaw;
+  } else if (tipoAfectado === 'Árboles' && (alturaRaw === 'pequenos' || alturaRaw === 'medianos' || alturaRaw === 'grandes')) {
+    altura = alturaRaw;
+  } else if (tipoAfectado === 'Palmeras' && (alturaRaw === 'pequenas' || alturaRaw === 'medianas' || alturaRaw === 'altas')) {
+    altura = alturaRaw;
+  } else {
+    altura = normalizePhytosanitaryHeightBand(task?.altura_tramo);
+  }
+  const cantidad = toNonNegativeNumber(task?.cantidad_o_superficie);
+  const unidad = String(task?.unidad || '').toLowerCase() === 'm2' ? 'm2' : (String(task?.unidad || '').toLowerCase() === 'ml' ? 'ml' : 'unidades');
+  const observaciones = toUniqueStrings([
+    task?.observaciones || [],
+    baseObservaciones,
+  ]);
+  const nivel = Number(task?.nivel_analisis || inferPhytosanitaryAnalysisLevel(taskConfidence, visibilityLimitations, riskFlags));
+  const palmSurgery = Boolean(task?.palmeras_cirugia) || (Array.isArray(ai?.detected_elements?.palms) && ai.detected_elements.palms.some((p: any) => p.surgery_recommended));
+  return {
+    ai_ref_id: task?.ai_ref_id || undefined,
+    tipo_servicio: 'Servicios fitosanitarios',
+    tipo_afectado: tipoAfectado,
+    cantidad_o_superficie: cantidad,
+    unidad,
+    altura_tramo: altura,
+    supera_2m: altura === 'mas_de_2m',
+    supera_3m: altura === 'mas_de_3m',
+    palmeras_cirugia: tipoAfectado === 'Palmeras' ? palmSurgery : undefined,
+    confidence: taskConfidence,
+    nivel_analisis: Math.min(3, Math.max(1, Number.isFinite(nivel) ? Math.round(nivel) : 2)),
+    observaciones,
+    elementos_detectados: ai?.detected_elements || undefined,
+  };
+}
+
+function normalizePhytosanitaryTasks(ai: any, payload: Payload): any[] {
+  const aiTasks = Array.isArray(ai?.tareas) ? ai.tareas : [];
+  const normalized = aiTasks
+    .map((task: any) => normalizePhytosanitaryTask(task, ai))
+    .filter((task: any) => toNonNegativeNumber(task?.cantidad_o_superficie) > 0);
+  if (normalized.length > 0) {
+    return dedupePhytosanitaryTasks(normalized);
+  }
+  return buildPhytosanitaryTasksFromDetectedElements(ai, payload);
+}
+
 async function fetchImageAsBase64(url: string): Promise<string | null> {
   try {
     const resp = await fetch(url);
@@ -871,7 +1391,7 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
-async function callGemini(messages: any[]) {
+async function callGemini(messages: any[], temperature?: number) {
   const apiKey = Deno.env.get('GOOGLE_API_KEY');
   if (!apiKey) {
     return { tareas: [], reasons: ['Falta GOOGLE_API_KEY'] };
@@ -923,12 +1443,17 @@ async function callGemini(messages: any[]) {
     }
   }
 
+  const generationConfig: any = {
+    response_mime_type: "application/json"
+  };
+  if (typeof temperature === 'number') {
+    generationConfig.temperature = temperature;
+  }
+
   const body = {
     contents,
     system_instruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: {
-      response_mime_type: "application/json"
-    }
+    generationConfig
   };
 
   const MODEL_NAME = 'gemini-2.0-flash';
@@ -1061,7 +1586,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const usedPrompt = systemMsg ? systemMsg.content : '';
     
     // SOLO GEMINI
-    const ai = await callGemini(messages);
+    let ai;
+    if (isPhytosanitaryService(payload.service_name)) {
+      ai = await callGemini(messages, 0.0);
+    } else {
+      ai = await callGemini(messages);
+    }
+
+    if (isPhytosanitaryService(payload.service_name)) {
+      // Devolver la respuesta limpia, ya agregada por Gemini, pero con el middleware de filtrado de scopes
+      if (ai.metricas_fitosanitarias) {
+        const scopes = getPhytosanitaryScope(payload);
+        ai.metricas_fitosanitarias = filterPhytosanitaryMetricsByScope(ai.metricas_fitosanitarias, scopes);
+      }
+      return new Response(JSON.stringify(ai), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // Support for Palm Analysis Response
     // Handle both 'palmas' (legacy/code) and 'palmeras' (prompt standard)

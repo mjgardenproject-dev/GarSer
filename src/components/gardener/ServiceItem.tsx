@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Circle } from 'lucide-react';
 import { Service } from '../../types';
 
@@ -21,9 +21,38 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
   onExpand,
   children
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const prevExpanded = useRef(isExpanded);
+
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    // Only auto-scroll if we are transitioning from collapsed to expanded
+    // This prevents unwanted scrolling on page load if the item is already expanded
+    const wasCollapsed = !prevExpanded.current;
+    
+    if (isExpanded && wasCollapsed && containerRef.current) {
+      // Wait for the collapse animation of other items to start/progress
+      // 300ms matches the duration-300 transition class
+      timeoutId = setTimeout(() => {
+        containerRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start' 
+        });
+      }, 350); // Slightly longer than transition to ensure layout is stable
+    }
+
+    prevExpanded.current = isExpanded;
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isExpanded]);
+
   return (
     <div 
-      className={`border-2 rounded-xl transition-all duration-300 overflow-hidden ${
+      ref={containerRef}
+      className={`border-2 rounded-xl transition-colors duration-300 overflow-hidden ${
         hasError 
           ? 'border-red-300 bg-red-50 shadow-sm' 
           : isActive 
@@ -38,15 +67,16 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
           <button
             type="button"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               onToggle();
             }}
-            className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+            className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
               isActive 
-                ? 'bg-green-500 border-green-500 text-white focus:ring-green-500' 
+                ? 'bg-green-500 border-green-500 text-white focus-visible:ring-green-500' 
                 : hasError
-                  ? 'bg-white border-red-400 text-red-500 focus:ring-red-500'
-                  : 'bg-white border-gray-300 text-transparent hover:border-gray-400 focus:ring-gray-400'
+                  ? 'bg-white border-red-400 text-red-500 focus-visible:ring-red-500'
+                  : 'bg-white border-gray-300 text-transparent hover:border-gray-400 focus-visible:ring-gray-400'
             }`}
             aria-label={`Activar servicio ${service.name}`}
           >
@@ -78,6 +108,7 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
         <button
           type="button"
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
             onExpand();
           }}
@@ -94,7 +125,7 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
 
       {/* Accordion Content */}
       <div 
-        className={`transition-all duration-300 ease-in-out border-t border-gray-100 bg-white ${
+        className={`transition-[max-height,opacity] duration-300 ease-in-out border-t border-gray-100 bg-white ${
           isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0 overflow-hidden'
         }`}
       >

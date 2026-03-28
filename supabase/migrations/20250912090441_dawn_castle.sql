@@ -113,7 +113,7 @@ INSERT INTO services (name, description, base_price, image_id) VALUES
 ('Arreglo general del jardín', 'Labores de labranza, poda básica y puesta a punto de las zonas verdes. Servicio integral de mantenimiento.', 45.00, '1301856'),
 ('Poda de árboles y arbustos', 'Poda profesional para favorecer el crecimiento y mantener la estética del jardín. Incluye limpieza de ramas.', 40.00, '1301856'),
 ('Recorte de setos', 'Diseño y mantenimiento de setos con un acabado limpio y cuidado. Formas geométricas y naturales.', 35.00, '1301856'),
-('Fumigación y control de plagas', 'Tratamientos específicos para proteger plantas y césped. El coste de los productos no está incluido.', 50.00, '416978'),
+('Servicios fitosanitarios y control de plagas', 'Tratamientos específicos para proteger plantas y césped. El coste de los productos no está incluido.', 50.00, '416978'),
 ('Plantación de nuevas especies', 'Incorporación y añadido de plantas al gusto del cliente. El coste de las plantas no está incluido.', 40.00, '1301856'),
 ('Instalación de sistemas de riego automático', 'Optimización del consumo de agua y comodidad en el riego. El coste del material no está incluido.', 80.00, '416978'),
 ('Fertilización y abonado', 'Aplicación de nutrientes para mejorar la salud y desarrollo de las plantas. El coste de productos no está incluido.', 35.00, '1301856');

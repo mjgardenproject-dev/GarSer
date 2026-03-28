@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { Save, User, MapPin, Phone, Briefcase, Star, ArrowLeft } from 'lucide-react';
-import { Service, GardenerProfile } from '../../types';
+import { Service, GardenerProfile, PhytosanitaryPricingConfig } from '../../types';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import AddressAutocomplete from '../common/AddressAutocomplete';
@@ -15,9 +15,10 @@ import HedgePricingConfigurator, { HedgePricingConfig } from './HedgePricingConf
 import TreePricingConfigurator, { TreePricingConfig } from './TreePricingConfigurator';
 import ShrubPricingConfigurator, { ShrubPricingConfig } from './ShrubPricingConfigurator';
 import ClearingPricingConfigurator, { ClearingPricingConfig } from './ClearingPricingConfigurator';
-import FumigationPricingConfigurator, { FumigationPricingConfig } from './FumigationPricingConfigurator';
+import PhytosanitaryPricingConfigurator from './PhytosanitaryPricingConfigurator';
 import StandardServiceConfig, { StandardPricingConfig } from './StandardServiceConfig';
 import ServiceItem from './ServiceItem';
+import PriceSimulator from './PriceSimulator';
 import UnsavedChangesModal from '../common/UnsavedChangesModal';
 import { 
   isLawnConfigValid, 
@@ -26,8 +27,9 @@ import {
   isTreeConfigValid, 
   isShrubConfigValid, 
   isClearingConfigValid, 
-  isFumigationConfigValid 
+  isPhytosanitaryConfigValid
 } from '../../utils/serviceValidation';
+import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
 const ALLOWED_SERVICE_NAMES = [
@@ -36,7 +38,7 @@ const ALLOWED_SERVICE_NAMES = [
   'Corte de setos a máquina',
   'Poda de árboles',
   'Labrar y quitar malas hierbas a mano',
-  'Fumigación de plantas',
+  'Servicios fitosanitarios',
   'Poda de palmeras'
 ];
 const normalizeText = (s: string) => (s || '')
@@ -47,9 +49,18 @@ const normalizeText = (s: string) => (s || '')
   .replace(/\s+/g, ' ')
   .trim();
 const ALLOWED_NORMALIZED = ALLOWED_SERVICE_NAMES.map(normalizeText);
+const toCanonicalServiceName = (name?: string) => {
+  const n = normalizeText(name || '');
+  if (!n) return name || '';
+  if (n.includes('fitosanit') || n.includes('fumig')) return 'Servicios fitosanitarios';
+  // Attempt to map correctly based on ALLOWED_SERVICE_NAMES for perfect casing
+  const match = ALLOWED_SERVICE_NAMES.find(a => normalizeText(a) === n);
+  return match || name || '';
+};
 const isAllowedServiceName = (name?: string) => {
   const n = normalizeText(name || '');
   if (!n) return false;
+  if (n.includes('fitosanit') || n.includes('fumig')) return true;
   return ALLOWED_NORMALIZED.includes(n);
 };
 
@@ -81,7 +92,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [treeConfig, setTreeConfig] = useState<TreePricingConfig | undefined>(undefined);
   const [shrubConfig, setShrubConfig] = useState<ShrubPricingConfig | undefined>(undefined);
   const [clearingConfig, setClearingConfig] = useState<ClearingPricingConfig | undefined>(undefined);
-  const [fumigationConfig, setFumigationConfig] = useState<FumigationPricingConfig | undefined>(undefined);
+  const [phytosanitaryConfig, setPhytosanitaryConfig] = useState<PhytosanitaryPricingConfig | undefined>(undefined);
   const [standardConfigs, setStandardConfigs] = useState<Record<string, StandardPricingConfig>>({});
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({}); // Base prices for standard services
 
@@ -109,9 +120,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   // Scroll Restoration Logic
   useEffect(() => {
       const handleScroll = () => {
-          if (window.scrollY > 0) {
-            localStorage.setItem('gardener_profile_scroll_pos', window.scrollY.toString());
-          }
+          if (isRestoringScroll) return;
+          localStorage.setItem('gardener_profile_scroll_pos', window.scrollY.toString());
       };
 
       // Debounce scroll event slightly to avoid excessive writes
@@ -126,7 +136,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
           window.removeEventListener('scroll', debouncedScroll);
           clearTimeout(timeoutId);
       };
-  }, []);
+  }, [isRestoringScroll]);
 
   // Restore scroll position after services are loaded
   useEffect(() => {
@@ -134,19 +144,27 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
           const savedScroll = localStorage.getItem('gardener_profile_scroll_pos');
           if (savedScroll) {
               const scrollPos = parseInt(savedScroll, 10);
+              
+              if (scrollPos === 0) {
+                  setIsRestoringScroll(false);
+                  return;
+              }
+
               // Wait for render cycle to stabilize height
               setTimeout(() => {
-                  window.scrollTo({
-                      top: scrollPos,
-                      behavior: 'auto' // Instant jump, no smooth scroll
-                  });
+                  if (Math.abs(window.scrollY - scrollPos) > 10) {
+                      window.scrollTo({
+                          top: scrollPos,
+                          behavior: 'auto' // Instant jump, no smooth scroll
+                      });
+                  }
                   // Mark restoration as done
                   setIsRestoringScroll(false);
               }, 100); 
               
               // A second attempt for slower renders (e.g. images or sub-components)
               setTimeout(() => {
-                  if (Math.abs(window.scrollY - scrollPos) > 50) {
+                  if (Math.abs(window.scrollY - scrollPos) > 10) {
                       window.scrollTo({ top: scrollPos, behavior: 'auto' });
                   }
                   // Ensure visibility eventually
@@ -229,8 +247,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   }, [clearingConfig, savedConfigs]);
 
   useEffect(() => {
-      updateDirtyState('Fumigación de plantas', fumigationConfig);
-  }, [fumigationConfig, savedConfigs]);
+      updateDirtyState('Servicios fitosanitarios', phytosanitaryConfig);
+  }, [phytosanitaryConfig, savedConfigs]);
 
 
   const fetchServicePrices = async () => {
@@ -283,22 +301,26 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
           // Store saved config by Service Name for easier mapping with the effects above
           // Or keep using ID. Let's use Service Name for consistency with the switch below.
-          newSavedConfigs[service.name] = row.additional_config;
+          if (service.name === 'Servicios fitosanitarios') {
+            const normalized = normalizePhytosanitaryPricingConfig(row.additional_config as PhytosanitaryPricingConfig | undefined);
+            const persisted = ensurePhytosanitaryPersistedConfig(normalized);
+            newSavedConfigs[service.name] = persisted;
+            setPhytosanitaryConfig(persisted);
+            return;
+          }
 
-          if (row.additional_config) {
-            switch(service.name) {
-                case 'Poda de palmeras': setPalmConfig(row.additional_config as PalmPricingConfig); break;
-                case 'Corte de césped': setLawnConfig(row.additional_config as LawnPricingConfig); break;
-                case 'Corte de setos a máquina': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
-                case 'Poda de árboles': setTreeConfig(row.additional_config as TreePricingConfig); break;
-                case 'Poda de plantas': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
-                case 'Labrar y quitar malas hierbas a mano': setClearingConfig(row.additional_config as ClearingPricingConfig); break;
-                case 'Fumigación de plantas': setFumigationConfig(row.additional_config as FumigationPricingConfig); break;
-                default: 
-                    setStandardConfigs(prev => ({ ...prev, [service.id]: row.additional_config }));
-                    // For standard configs, we might need a different dirty tracking mechanism or ignore it for now as they are deprecated/unused for main services
-                    break;
-            }
+          newSavedConfigs[service.name] = row.additional_config;
+          if (!row.additional_config) return;
+          switch(service.name) {
+              case 'Poda de palmeras': setPalmConfig(row.additional_config as PalmPricingConfig); break;
+              case 'Corte de césped': setLawnConfig(row.additional_config as LawnPricingConfig); break;
+              case 'Corte de setos a máquina': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
+              case 'Poda de árboles': setTreeConfig(row.additional_config as TreePricingConfig); break;
+              case 'Poda de plantas': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
+              case 'Labrar y quitar malas hierbas a mano': setClearingConfig(row.additional_config as ClearingPricingConfig); break;
+              default: 
+                  setStandardConfigs(prev => ({ ...prev, [service.id]: row.additional_config }));
+                  break;
           }
         });
         setSavedConfigs(newSavedConfigs);
@@ -317,7 +339,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
       if (error) throw error;
       const all = data || [];
-      const filtered = all.filter((s: Service) => isAllowedServiceName(s.name));
+      const filtered = all
+        .map((s: Service) => ({ ...s, name: toCanonicalServiceName(s.name) }))
+        .filter((s: Service) => isAllowedServiceName(s.name));
       setServices(filtered);
     } catch (error) {
       console.error('Error fetching services:', error);
@@ -421,7 +445,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Poda de árboles': setTreeConfig(saved); break;
                 case 'Poda de plantas': setShrubConfig(saved); break;
                 case 'Labrar y quitar malas hierbas a mano': setClearingConfig(saved); break;
-                case 'Fumigación de plantas': setFumigationConfig(saved); break;
+                case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(saved)); break;
               }
           }
       }
@@ -472,7 +496,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             case 'Poda de árboles': isValid = isTreeConfigValid(treeConfig); break;
             case 'Poda de plantas': isValid = isShrubConfigValid(shrubConfig); break;
             case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(clearingConfig); break;
-            case 'Fumigación de plantas': isValid = isFumigationConfigValid(fumigationConfig); break;
+            case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(phytosanitaryConfig); break;
             default: isValid = true; // Fallback for standard
         }
 
@@ -518,7 +542,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         case 'Poda de árboles': configToSave = treeConfig; setConfigFunc = setTreeConfig; break;
         case 'Poda de plantas': configToSave = shrubConfig; setConfigFunc = setShrubConfig; break;
         case 'Labrar y quitar malas hierbas a mano': configToSave = clearingConfig; setConfigFunc = setClearingConfig; break;
-        case 'Fumigación de plantas': configToSave = fumigationConfig; setConfigFunc = setFumigationConfig; break;
+        case 'Servicios fitosanitarios': configToSave = ensurePhytosanitaryPersistedConfig(phytosanitaryConfig); setConfigFunc = setPhytosanitaryConfig; break;
         default: return false;
       }
 
@@ -553,7 +577,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Poda de árboles': isValid = isTreeConfigValid(configToSave as TreePricingConfig); break;
                 case 'Poda de plantas': isValid = isShrubConfigValid(configToSave as ShrubPricingConfig); break;
                 case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(configToSave as ClearingPricingConfig); break;
-                case 'Fumigación de plantas': isValid = isFumigationConfigValid(configToSave as FumigationPricingConfig); break;
+                case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(configToSave as PhytosanitaryPricingConfig); break;
             }
 
             if (isValid) {
@@ -583,7 +607,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Poda de árboles': setTreeConfig(config); break;
                 case 'Poda de plantas': setShrubConfig(config); break;
                 case 'Labrar y quitar malas hierbas a mano': setClearingConfig(config); break;
-                case 'Fumigación de plantas': setFumigationConfig(config); break;
+            case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(config)); break;
            }
           // Small delay to ensure state update propagates? 
           // Actually, passing 'config' directly to save function is safer than relying on state
@@ -600,14 +624,14 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             price_per_unit: 0,
             currency: 'EUR',
             active: true,
-            additional_config: config
+            additional_config: serviceName === 'Servicios fitosanitarios' ? ensurePhytosanitaryPersistedConfig(config) : config
           };
           
           try {
              const { error } = await supabase.from('gardener_service_prices').upsert(payload);
              if (error) throw error;
              
-             setSavedConfigs(prev => ({ ...prev, [serviceName]: config }));
+             setSavedConfigs(prev => ({ ...prev, [serviceName]: payload.additional_config }));
              toast.success(`Configuración guardada`);
 
              // Auto activate check logic...
@@ -621,7 +645,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     case 'Poda de árboles': isValid = isTreeConfigValid(config); break;
                     case 'Poda de plantas': isValid = isShrubConfigValid(config); break;
                     case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(config); break;
-                    case 'Fumigación de plantas': isValid = isFumigationConfigValid(config); break;
+                    case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(config); break;
                  }
                  if (isValid) {
                      const newServices = [...currentServices, service.id];
@@ -779,15 +803,6 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     const isSelected = watchedServices.includes(service.id);
                     const isExpanded = expandedServiceId === service.id;
                     
-                    // Determine if has error
-                    let hasError = false;
-                    // We can check validity on render, but maybe expensive?
-                    // Let's check simply if we have config loaded but it's invalid AND it's not selected?
-                    // No, requirements say: "Si el jardinero intenta marcar el checkbox y hay campos inválidos: ... Resalta en rojo"
-                    // So we need a way to know if validation failed during toggle attempt.
-                    // But we can also check validity "live" to show status.
-                    // Let's rely on simple checks.
-                    
                     return (
                         <ServiceItem
                             key={service.id}
@@ -847,12 +862,12 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                                     onSave={(c) => handleWrapperSave('Labrar y quitar malas hierbas a mano', c)} 
                                 />
                             )}
-                            {service.name === 'Fumigación de plantas' && (
-                                <FumigationPricingConfigurator 
-                                    value={fumigationConfig} 
-                                    initialConfig={savedConfigs['Fumigación de plantas']}
-                                    onChange={setFumigationConfig} 
-                                    onSave={(c) => handleWrapperSave('Fumigación de plantas', c)} 
+                            {service.name === 'Servicios fitosanitarios' && (
+                                <PhytosanitaryPricingConfigurator 
+                                    value={phytosanitaryConfig} 
+                                    initialConfig={savedConfigs['Servicios fitosanitarios']}
+                                    onChange={setPhytosanitaryConfig} 
+                                    onSave={(c: PhytosanitaryPricingConfig) => handleWrapperSave('Servicios fitosanitarios', c)} 
                                 />
                             )}
                         </ServiceItem>
@@ -862,6 +877,21 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </div>
 
       </form>
+
+      <div className="mt-8">
+        <PriceSimulator
+          services={sortedServices}
+          configs={{
+            palmConfig,
+            lawnConfig,
+            hedgeConfig,
+            treeConfig,
+            shrubConfig,
+            clearingConfig,
+            phytosanitaryConfig
+          }}
+        />
+      </div>
 
       <UnsavedChangesModal 
         isOpen={modalState.isOpen}

@@ -189,3 +189,94 @@ export interface PriceCalculation {
   totalHours: number;
   totalPrice: number;
 }
+
+export type PhytosanitaryType = 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia';
+export type LegacyPhytosanitaryType = 'Insecticida' | 'Fungicida' | 'Herbicida';
+export type LegacyPhytosanitaryRange = '0-50' | '50-200' | '200+';
+export type PhytosanitaryMatrixBase = Record<'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo', number>;
+export type PhytosanitaryMatrixNoHerb = Record<'insecticida' | 'fungicida' | 'ecologico_preventivo', number>;
+export type PhytosanitaryDetailedCategoryKey = 'cesped' | 'setos' | 'palmeras' | 'arboles' | 'malas_hierbas';
+
+export interface PhytosanitaryPricingModifiers {
+  eco?: {
+    percentage: number;
+  };
+  combo?: {
+    two_treatments_percentage: number;
+    three_plus_treatments_percentage: number;
+  };
+  severe_infestation?: {
+    percentage: number;
+  };
+}
+
+export interface PhytosanitaryDetailedPricing {
+  cesped: {
+    minimo: number;
+    preventivo: number;
+    curativo: number;
+  };
+  setos: {
+    minimo: number;
+    bajos_preventivo: number;
+    bajos_curativo: number;
+    altos_preventivo: number;
+    altos_curativo: number;
+  };
+  palmeras: {
+    minimo: number;
+    pequenas_preventivo: number;
+    pequenas_curativo: number;
+    pequenas_cirugia: number;
+    medianas_preventivo: number;
+    medianas_curativo: number;
+    medianas_cirugia: number;
+    altas_preventivo: number;
+    altas_curativo: number;
+    altas_cirugia: number;
+  };
+  arboles: {
+    minimo: number;
+    pequenos_preventivo: number;
+    pequenos_curativo: number;
+    medianos_preventivo: number;
+    medianos_curativo: number;
+    grandes_preventivo: number;
+    grandes_curativo: number;
+  };
+  malas_hierbas: {
+    minimo: number;
+    preventivo: number;
+    curativo: number;
+  };
+}
+
+export interface PhytosanitaryPricingConfig {
+  version?: 'phytosanitary_v2';
+  importe_minimo?: number;
+  tratamientos_activos?: PhytosanitaryType[];
+  superficies_plantas?: {
+    hasta_100m2: PhytosanitaryMatrixBase;
+    mas_de_100m2: PhytosanitaryMatrixBase;
+  };
+  setos?: {
+    hasta_2m: PhytosanitaryMatrixNoHerb;
+    mas_de_2m: PhytosanitaryMatrixNoHerb;
+  };
+  arboles?: {
+    hasta_3m: PhytosanitaryMatrixNoHerb;
+    mas_de_3m: PhytosanitaryMatrixNoHerb;
+  };
+  palmeras?: {
+    tradicional: { hasta_3m: number; mas_de_3m: number };
+    endoterapia: { precio_unico: number };
+  };
+  recargo_retirada?: { percentage: number };
+  type_prices?: Record<string, Partial<Record<LegacyPhytosanitaryRange, number>>>;
+  waste_removal?: { percentage: number };
+  minimum_price?: number;
+  minimum_fee?: number;
+  pricing_modifiers?: PhytosanitaryPricingModifiers;
+  selected_types?: LegacyPhytosanitaryType[];
+  detailed_pricing?: PhytosanitaryDetailedPricing;
+}

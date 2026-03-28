@@ -165,9 +165,9 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
     
     selected.forEach(type => {
         const ranges: ClearingRange[] = ['0-50', '50-200', '200+'];
+        const typePrices = config.type_prices[type] as Partial<Record<ClearingRange, number>> | undefined;
         ranges.forEach(r => {
-             // @ts-ignore
-            if (!config.type_prices[type]?.[r] || config.type_prices[type]?.[r] <= 0) {
+            if (!typePrices?.[r] || typePrices[r] <= 0) {
                 errors.push(`${type}-${r}`);
             }
         });
@@ -200,8 +200,8 @@ const ClearingPricingConfigurator: React.FC<Props> = ({ value, initialConfig, on
   };
 
   const renderPriceInput = (type: ClearingType, range: ClearingRange, placeholder: string) => {
-     // @ts-ignore
-     const val = config.type_prices[type]?.[range] ?? 0;
+     const typePrices = config.type_prices[type] as Partial<Record<ClearingRange, number>> | undefined;
+     const val = typePrices?.[range] ?? 0;
      const hasError = validationErrors.includes(`${type}-${range}`);
 
      return (

@@ -71,7 +71,7 @@ const canonical = [
     price_per_hour: 25,
   },
   {
-    name: 'Fumigación de plantas',
+    name: 'Tratamientos fitosanitarios',
     description: 'Tratamientos específicos para proteger plantas y césped. El coste de los productos no está incluido.',
     base_price: 50,
     price_per_hour: 30,

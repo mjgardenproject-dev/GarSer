@@ -10,6 +10,10 @@ export interface BookingData {
   providerId: string;
   estimatedHours: number;
   totalPrice: number;
+  priceBreakdown?: Array<{
+    desc: string;
+    price: number;
+  }>;
   aiQuantity?: number;
   aiUnit?: string;
   aiDifficulty?: number;
@@ -57,10 +61,39 @@ export interface BookingData {
     analyzedIndices?: number[];
   }>;
   // New Service-Specific Fields
+  hedgeFaces?: {
+    face_a_urls: string[];
+    face_b_urls?: string[];
+  };
   hedgeZones?: Array<{
+    faceA?: {
+      photoUrls?: string[];
+      files?: File[];
+      selectedIndices?: number[];
+      analyzedIndices?: number[];
+      analysisLevel?: number;
+      observations?: string[];
+      longitud_m?: number;
+      altura_m?: number;
+    };
+    faceB?: {
+      photoUrls?: string[];
+      files?: File[];
+      selectedIndices?: number[];
+      analyzedIndices?: number[];
+      analysisLevel?: number;
+      observations?: string[];
+      longitud_m?: number;
+      altura_m?: number;
+    };
+    hasBackFaceTrim?: boolean;
+    faces_to_trim?: 1 | 2;
+    length_pricing_m?: number;
+    height_pricing_m?: number;
     id: string;
+    category?: string;
     type: string;
-    height: string; // '<1m', '1-2m', '>2m'
+    height: string;
     length: number; // meters
     access: 'normal' | 'medio' | 'dificil';
     state?: string;
@@ -69,6 +102,9 @@ export interface BookingData {
     files?: File[];
     analysisLevel?: number;
     observations?: string[];
+    imageIndices?: number[];
+    selectedIndices?: number[];
+    analyzedIndices?: number[];
   }>;
   treeGroups?: Array<{
     id: string;
@@ -111,13 +147,37 @@ export interface BookingData {
     analysisLevel?: number;
     observations?: string[];
   }>;
-  fumigationZones?: Array<{
+  phytosanitaryZones?: Array<{
     id: string;
     type: string;
     area: number; // m2
+    scope?: string[] | string;
+    requestedTreatment?: 'insecticida' | 'fungicida' | 'combo' | 'herbicida';
+    wantsEco?: boolean;
+    affectedType?: 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
+    aboveTwoMeters?: boolean;
+    aboveThreeMeters?: boolean;
+    analysisMetrics?: {
+      cesped_m2: number;
+      seto_bajo_medio_ml: number;
+      seto_alto_ml: number;
+      palmeras_ducha_peq_ud: number;
+      palmeras_ducha_med_ud: number;
+      palmeras_ducha_alta_ud: number;
+      palmeras_cirugia_ud: number;
+      palmeras_endoterapia_troncos_ud: number;
+      arboles_peq_ud: number;
+      arboles_med_ud: number;
+      arboles_gran_ud: number;
+      herbicida_poca_densidad_m2: number;
+      herbicida_mucha_densidad_m2: number;
+      observaciones_ia: string[];
+    };
     wasteRemoval: boolean;
     photoUrls?: string[];
     files?: File[];
+    selectedIndices?: number[];
+    analyzedIndices?: number[];
     analysisLevel?: number;
     observations?: string[];
   }>;
@@ -135,7 +195,7 @@ export interface BookingData {
     treeGroups?: any[];
     shrubGroups?: any[];
     clearingZones?: any[];
-    fumigationZones?: any[];
+    phytosanitaryZones?: any[];
     lawnSpecies?: string;
     palmSpecies?: string;
     palmHeight?: string;
@@ -172,6 +232,7 @@ const initialBookingData: BookingData = {
   providerId: '',
   estimatedHours: 0,
   totalPrice: 0,
+  priceBreakdown: [],
   aiQuantity: 0,
   aiUnit: '',
   aiDifficulty: 1,
@@ -241,7 +302,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               treeGroups: [],
               shrubGroups: [],
               clearingZones: [],
-              fumigationZones: [],
+              phytosanitaryZones: [],
               aiQuantity: 0,
               aiDifficulty: 1,
               // Apply saved

@@ -170,7 +170,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   };
 
   // Helper to identify groups
-  const getMultipliers = (species: PalmSpecies) => {
+  const getMultipliers = (species: PalmSpecies): Partial<Record<PalmHeight, number>> => {
     // Large Palms
     if (['Phoenix (datilera o canaria)', 'Washingtonia', 'Roystonea regia (cubana)', 'Trachycarpus fortunei'].includes(species)) {
       return { '5-12': 1.30, '12-20': 1.70, '20+': 2.00 }; // +30%, +70%, +100% sobre base (0-5)
@@ -191,7 +191,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   const calculateSuggestion = (species: PalmSpecies, height: PalmHeight, basePrice: number) => {
     if (!basePrice || basePrice <= 0) return 0;
     const m = getMultipliers(species);
-    // @ts-ignore
     const multiplier = m[height] || 1;
     if (multiplier === 1) return 0; // Si no hay multiplicador definido, no sugerir nada
     return Math.round(basePrice * multiplier);
@@ -318,20 +317,19 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             // Check base prices or specific heights
             if (isLarge) {
                 const heights: PalmHeight[] = ['0-5', '5-12', '12-20', '20+'];
+                const speciesHeights = config.height_prices[species] as Partial<Record<PalmHeight, number>> | undefined;
                 heights.forEach(h => {
-                    // @ts-ignore
-                    if (!config.height_prices[species]?.[h] || config.height_prices[species]?.[h] <= 0) {
+                    if (!speciesHeights?.[h] || speciesHeights[h] <= 0) {
                         errors.push(`${species}-${h}`);
                     }
                 });
             } else if (isSmall) {
-                 // @ts-ignore
-                if (!config.height_prices[species]?.['0-2'] || config.height_prices[species]?.['0-2'] <= 0) {
+                const speciesHeights = config.height_prices[species] as Partial<Record<PalmHeight, number>> | undefined;
+                if (!speciesHeights?.['0-2'] || speciesHeights['0-2'] <= 0) {
                      errors.push(`${species}-0-2`);
                 }
                 if (!isCycas) {
-                    // @ts-ignore
-                    if (!config.height_prices[species]?.['2+'] || config.height_prices[species]?.['2+'] <= 0) {
+                    if (!speciesHeights?.['2+'] || speciesHeights['2+'] <= 0) {
                         errors.push(`${species}-2+`);
                     }
                 }
@@ -382,8 +380,8 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
   const renderCell = (species: PalmSpecies, height: PalmHeight, basePrice: number) => {
      // Get current value
-     // @ts-ignore
-     const value = config.height_prices[species]?.[height] ?? 0;
+     const speciesHeights = config.height_prices[species] as Partial<Record<PalmHeight, number>> | undefined;
+     const value = speciesHeights?.[height] ?? 0;
      const hasError = validationErrors.includes(`${species}-${height}`);
      
      // Calculate suggestion

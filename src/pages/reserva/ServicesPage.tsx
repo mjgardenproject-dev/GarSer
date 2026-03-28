@@ -19,7 +19,7 @@ const serviceIcons = {
   'Poda de plantas': Sprout,
   'Poda de árboles': TreePine,
   'Labrar y quitar malas hierbas a mano': Leaf,
-  'Fumigación de plantas': Sparkles,
+  'Servicios fitosanitarios': Sparkles,
   'Poda de palmeras': Sprout,
 };
 
@@ -46,7 +46,7 @@ const ServicesPage: React.FC = () => {
         .order('name');
       
       if (!error && data) {
-        let imageMap: Record<string, string> = {};
+        const imageMap: Record<string, string> = {};
         try {
           const { data: images } = await supabase
             .from('service_images')
@@ -57,7 +57,17 @@ const ServicesPage: React.FC = () => {
             }
           });
         } catch {}
-        const merged = (data as any[]).map(s => ({ ...s, image_url: imageMap[s.id] || s.image_url }));
+        const merged = (data as any[]).map(s => {
+          let updatedName = s.name;
+          if (updatedName.toLowerCase().includes('fumigación') || updatedName.toLowerCase().includes('fumigacion') || updatedName.toLowerCase().includes('tratamientos fitosanitarios')) {
+            updatedName = 'Servicios fitosanitarios';
+          }
+          return {
+            ...s,
+            name: updatedName,
+            image_url: imageMap[s.id] || s.image_url
+          };
+        });
         setServices(merged as Service[]);
       }
     } catch (error) {
@@ -139,7 +149,7 @@ const ServicesPage: React.FC = () => {
               'Poda de plantas': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20trimming%20ornamental%20flowering%20plants%20with%20hand%20pruners%20in%20a%20garden%2C%20focus%20on%20the%20cut%20and%20healthy%20stems%2C%20natural%20soft%20lighting%2C%20realistic%20photography%2C%20detailed&image_size=landscape_4_3',
               'Poda de árboles': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Professional%20pruning%20of%20a%20small%20residential%20tree%2C%20focus%20on%20a%20branch%20being%20cut%20with%20pruning%20shears%2C%20soft%20sunlight%20filtering%20through%20leaves%2C%20realistic%20photography%2C%20garden%20maintenance&image_size=landscape_4_3',
               'Labrar y quitar malas hierbas a mano': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Hands%20with%20gardening%20gloves%20removing%20weeds%20from%20soil%20in%20a%20residential%20garden%2C%20showing%20tilled%20earth%20and%20small%20hand%20tools%2C%20close-up%20shot%2C%20natural%20daylight%2C%20realistic%20photography&image_size=landscape_4_3',
-              'Fumigación de plantas': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20a%20person%20spraying%20ornamental%20plants%20in%20a%20home%20garden%20with%20a%20manual%20sprayer%2C%20focus%20on%20the%20mist%20and%20green%20leaves%2C%20soft%20natural%20light%2C%20realistic%20photography%2C%20gardening%20care&image_size=landscape_4_3'
+              'Servicios fitosanitarios': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20a%20person%20spraying%20ornamental%20plants%20in%20a%20home%20garden%20with%20a%20manual%20sprayer%2C%20focus%20on%20the%20mist%20and%20green%20leaves%2C%20soft%20natural%20light%2C%20realistic%20photography%2C%20gardening%20care&image_size=landscape_4_3'
             };
             const imageUrl = (service as any)?.image_url || images[service.name] || 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?q=80&w=600&auto=format&fit=crop';
             const isSelected = selectedServices.includes(service.id);

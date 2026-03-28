@@ -19,11 +19,11 @@ SELECT id, 'https://hleqspdnjfswrmozjkai.supabase.co/storage/v1/object/public/se
 FROM public.services 
 WHERE name ILIKE '%Corte de setos%';
 
--- Fumigación de plantas
+-- Tratamientos fitosanitarios
 INSERT INTO public.service_images (service_id, image_url)
 SELECT id, 'https://hleqspdnjfswrmozjkai.supabase.co/storage/v1/object/public/service-backgrounds/fumigacion.jpeg'
 FROM public.services 
-WHERE name ILIKE '%Fumigación%' OR name ILIKE '%Fumigacion%';
+WHERE name ILIKE '%Tratamientos fitosanitarios%';
 
 -- Labrar y quitar malas hierbas a mano
 INSERT INTO public.service_images (service_id, image_url)

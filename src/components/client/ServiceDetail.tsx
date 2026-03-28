@@ -25,7 +25,11 @@ const ServiceDetail = () => {
         .single();
 
       if (error) throw error;
-      setService(data);
+      let s = data;
+      if (s && (s.name.toLowerCase().includes('fumigación') || s.name.toLowerCase().includes('fumigacion') || s.name.toLowerCase().includes('tratamientos fitosanitarios'))) {
+        s = { ...s, name: 'Servicios fitosanitarios' };
+      }
+      setService(s);
     } catch (error) {
       console.error('Error fetching service:', error);
     } finally {
@@ -138,7 +142,7 @@ const ServiceDetail = () => {
               </ul>
 
               {/* Important Notes */}
-              {(service.name.includes('Fumigación') || 
+              {(service.name.includes('Servicios fitosanitarios') || 
                 service.name.includes('Plantación') || 
                 service.name.includes('Instalación') || 
                 service.name.includes('Fertilización')) && (

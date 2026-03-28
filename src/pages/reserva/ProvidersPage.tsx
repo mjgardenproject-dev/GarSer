@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import * as availCompat from '../../utils/availabilityServiceCompat';
 import { canBookSequence } from '../../utils/bufferService';
+import { calculatePhytosanitaryQuote } from '../../utils/serviceValidation';
 
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number }
 
@@ -36,6 +37,21 @@ const ProvidersPage: React.FC = () => {
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
   const chips: string[] = [];
+  const mapPhytosanitaryZonesForQuote = () => (bookingData.phytosanitaryZones || []).map((zone) => ({
+    area: Number(zone.area || 0),
+    type: zone.type,
+    affectedType: (zone as any).affectedType,
+    aboveTwoMeters: (zone as any).aboveTwoMeters,
+    aboveThreeMeters: (zone as any).aboveThreeMeters,
+    analysisMetrics: (zone as any).analysisMetrics
+  }));
+  const formatPhytosanitaryLabel = (item: any) => {
+    if (item.quantity === 1 && item.unitLabel === 'ud' && typeof item.subtotal === 'number') {
+      return `Zona ${item.zoneIndex + 1}: desglose detallado · base ${Math.ceil(item.subtotal)}€`;
+    }
+    const treatmentLabel = item.appliedTreatments?.length ? item.appliedTreatments.join(' + ') : 'sin tratamiento';
+    return `Zona ${item.zoneIndex + 1}: ${item.affectedType} · ${item.quantity}${item.unitLabel} · ${treatmentLabel}`;
+  };
 
   // Helper function to robustly find palm price
   const findPalmPrice = (config: any, species: string, height: string): number => {
@@ -328,7 +344,7 @@ const ProvidersPage: React.FC = () => {
       try {
         const primaryServiceId = bookingData.serviceIds[0];
         
-        let query = supabase
+        const query = supabase
           .from('gardener_service_prices')
           .select('gardener_id, service_id, price_per_unit, additional_config')
           .eq('service_id', primaryServiceId)
@@ -340,13 +356,6 @@ const ProvidersPage: React.FC = () => {
           // to calculate partial coverage later.
           // query = query.contains('additional_config', { selected_species: [bookingData.palmSpecies] });
           // Instead of filtering in DB, we fetch all palm service providers and filter in JS
-        } else if (bookingData.lawnZones && bookingData.lawnZones.length > 0) {
-          // Filter by ALL unique species in zones
-          const speciesList = Array.from(new Set(bookingData.lawnZones.map(z => z.species)));
-          query = query.contains('additional_config', { selected_species: speciesList });
-        } else if (bookingData.lawnSpecies) {
-          // Filter by lawn species
-          query = query.contains('additional_config', { selected_species: [bookingData.lawnSpecies] });
         }
 
         const { data: priceRows } = await query;
@@ -524,12 +533,20 @@ const ProvidersPage: React.FC = () => {
         treeGroups: bookingData.treeGroups,
         shrubGroups: bookingData.shrubGroups,
         clearingZones: bookingData.clearingZones,
-        fumigationZones: bookingData.fumigationZones,
+        phytosanitaryZones: bookingData.phytosanitaryZones,
         lawnZones: bookingData.lawnZones
     }, null, 2));
 
     const config = configs[gardenerId];
     console.log(`[ComputePrice] Config found:`, config);
+    const applyMinimumPrice = (calculatedPrice: number) => {
+        const rounded = Math.ceil(calculatedPrice);
+        const minimumPrice = Number(config?.minimum_price || 0);
+        if (minimumPrice > 0 && rounded > 0 && rounded < minimumPrice) {
+            return Math.ceil(minimumPrice);
+        }
+        return rounded;
+    };
 
     if (!config) {
         console.warn(`[ComputePrice] No config for gardener ${gardenerId}`);
@@ -591,7 +608,7 @@ const ProvidersPage: React.FC = () => {
             total += basePrice * quantity * stateMult * wasteMult;
         }
         
-        return Math.ceil(total);
+        return applyMinimumPrice(total);
     }
     
     // Fallback: Legacy single-group logic (for backward compatibility or if groups are empty but fields exist)
@@ -638,7 +655,7 @@ const ProvidersPage: React.FC = () => {
 
         if (base > 0 && qty > 0) {
             // Formula: Base * StateMult * WasteMult * Qty
-            return Math.ceil(base * stateMult * wasteMult * qty);
+            return applyMinimumPrice(base * stateMult * wasteMult * qty);
         }
         return 0;
     }
@@ -647,8 +664,8 @@ const ProvidersPage: React.FC = () => {
 
     // Hedges
     if (bookingData.hedgeZones && bookingData.hedgeZones.length > 0) {
-        if (!config || !config.species_prices) {
-            console.warn('[ComputePrice] Hedges: Missing config or species_prices', config);
+        if (!config) {
+            console.warn('[ComputePrice] Hedges: Missing config', config);
             return 0;
         }
         
@@ -658,28 +675,76 @@ const ProvidersPage: React.FC = () => {
         console.log('[ComputePrice] Starting Hedge Calculation...');
         let total = 0;
         for (const zone of bookingData.hedgeZones) {
-            const { type, height, length, access } = zone;
+            const { type, height } = zone;
+            const lengthForPricing = Number((zone as any).length_pricing_m ?? zone.length ?? 0);
+            const lengthRange = lengthForPricing <= 25 ? '0-25m (Estándar)' : '>25m (Gran Volumen)';
+            const faces = Number((zone as any).faces_to_trim ?? ((zone as any).hasBackFaceTrim ? 2 : 1)) >= 2 ? 2 : 1;
+            const allowedHeights = ['0-1m', '1-2m', '2-4m', '4-6m'];
+            const numericHeightRaw = Number((zone as any).height_pricing_m ?? 0);
+            const numericHeight = numericHeightRaw > 0 ? numericHeightRaw / faces : 0;
+            const inferHeightBandFromValue = (h: number) => {
+                if (h <= 0) return '';
+                if (h <= 1) return '0-1m';
+                if (h <= 2) return '1-2m';
+                if (h <= 4) return '2-4m';
+                return '4-6m';
+            };
+            const inferredFromValue = inferHeightBandFromValue(numericHeight);
+            const normalizedHeightText = String(height || '').toLowerCase();
+            const normalizedHeight = allowedHeights.includes(height)
+                ? height
+                : (normalizedHeightText === '<1m' || normalizedHeightText === '0-1m'
+                    ? '0-1m'
+                    : (normalizedHeightText === '1-2m' || normalizedHeightText === '>1-2m' || normalizedHeightText === 'hasta 2m'
+                        ? '1-2m'
+                        : (normalizedHeightText === '>2m' || normalizedHeightText === '>2-3m' || normalizedHeightText === '3-4.5m'
+                            ? '2-4m'
+                            : inferredFromValue)));
+            const specialistEnabled = config.specialist_enabled !== false;
+            if (!specialistEnabled && normalizedHeight === '4-6m') {
+                console.warn('[ComputePrice] Specialist level disabled. Skipping zone:', zone);
+                continue;
+            }
             console.log(`[ComputePrice] Processing Zone:`, zone);
             
-            // Config keys match the values stored in bookingData (verified in Configurator)
-            const base = config.species_prices[type]?.[height] || 0;
-            console.log(`[ComputePrice] Base price lookup for type='${type}', height='${height}':`, base);
+            const matrixBase = Number(config.pricing_matrix?.[normalizedHeight]?.[lengthRange] || 0);
+            const legacyRanges = lengthRange === '0-25m (Estándar)' ? ['0-10m', '11-25m'] : ['26-50m', '>50m'];
+            const legacyPairs =
+              normalizedHeight === '0-1m'
+                ? [{ category: 'Setos Estándar (≤3m)', height: '0-1m' }]
+                : normalizedHeight === '1-2m'
+                ? [{ category: 'Setos Estándar (≤3m)', height: '>1-2m' }]
+                : normalizedHeight === '2-4m'
+                ? [
+                    { category: 'Setos Estándar (≤3m)', height: '>2-3m' },
+                    { category: 'Setos Gran Altura (>3m)', height: '3-4.5m' }
+                  ]
+                : [
+                    { category: 'Setos Gran Altura (>3m)', height: '>4.5-6m' },
+                    { category: 'Setos Gran Altura (>3m)', height: '>6-7.5m' }
+                  ];
+            const legacyCandidates: number[] = [];
+            legacyPairs.forEach(({ category, height: legacyHeight }) => {
+                legacyRanges.forEach((legacyRange) => {
+                    const v = Number(config.category_prices?.[category]?.[legacyHeight]?.[legacyRange] || 0);
+                    if (v > 0) legacyCandidates.push(v);
+                });
+            });
+            const legacyMatrixBase = legacyCandidates.length > 0
+                ? (legacyCandidates.reduce((acc, v) => acc + v, 0) / legacyCandidates.length)
+                : 0;
+            const legacyBase = Number(config.species_prices?.[type]?.[height] || 0) || legacyMatrixBase;
+            const base = matrixBase || legacyBase;
+            console.log(`[ComputePrice] Base price lookup for height='${normalizedHeight}', range='${lengthRange}':`, base);
             
             if (base <= 0) {
-                console.warn(`[ComputePrice] Invalid base price (${base}) for type='${type}', height='${height}'`);
+                console.warn(`[ComputePrice] Invalid base price (${base}) for height='${normalizedHeight}', range='${lengthRange}'`);
                 continue;
             }
             
-            // Condition Surcharge
-            const surcharges = config.condition_surcharges || { descuidado: 20, muy_descuidado: 50 };
-            let statePercent = 0;
+            const surcharges = config.condition_surcharges || { descuidado: 25 };
             const s = (zone.state || 'normal').toLowerCase();
-            
-            if (s.includes('muy') && s.includes('descuidado')) {
-                statePercent = surcharges.muy_descuidado || 0;
-            } else if (s.includes('descuidado')) {
-                statePercent = surcharges.descuidado || 0;
-            }
+            const statePercent = s.includes('descuidado') ? Number(surcharges.descuidado || 0) : 0;
             
             const stateMult = 1 + (statePercent / 100);
             
@@ -689,13 +754,13 @@ const ProvidersPage: React.FC = () => {
                 wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
             }
             
-            const lineTotal = base * length * stateMult * wasteMult;
-            console.log(`[ComputePrice] Line Total: ${lineTotal} (Base: ${base}, Length: ${length}, StateMult: ${stateMult}, WasteMult: ${wasteMult})`);
+            const lineTotal = base * lengthForPricing * stateMult * wasteMult;
+            console.log(`[ComputePrice] Line Total: ${lineTotal} (Base: ${base}, Length: ${lengthForPricing}, StateMult: ${stateMult}, WasteMult: ${wasteMult})`);
             
             total += lineTotal;
         }
         console.log(`[ComputePrice] Final Hedge Total: ${Math.ceil(total)}`);
-        return Math.ceil(total);
+        return applyMinimumPrice(total);
     }
 
     // Trees
@@ -757,7 +822,7 @@ const ProvidersPage: React.FC = () => {
             total += treeHours * hourlyRate * totalMultiplier;
         }
         
-        return Math.ceil(total);
+        return applyMinimumPrice(total);
     }
 
     // Shrubs
@@ -789,7 +854,7 @@ const ProvidersPage: React.FC = () => {
             
             total += base * quantity * conditionMult * wasteMult;
         }
-        return Math.ceil(total);
+        return applyMinimumPrice(total);
     }
 
     // Clearing
@@ -818,152 +883,100 @@ const ProvidersPage: React.FC = () => {
             
             total += subtotal * wasteMult;
         }
-        return Math.ceil(total);
+        return applyMinimumPrice(total);
     }
 
-    // Fumigation
-    if (bookingData.fumigationZones && bookingData.fumigationZones.length > 0 && config && config.type_prices) {
-        // GLOBAL OVERRIDE
+    // Phytosanitary
+    if (bookingData.phytosanitaryZones && bookingData.phytosanitaryZones.length > 0) {
+        if (!config) return 0;
         const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-
-        const totalArea = bookingData.fumigationZones.reduce((acc, z) => acc + (z.area || 0), 0);
-        let range = '0-50';
-        if (totalArea > 200) range = '200+';
-        else if (totalArea > 50) range = '50-200';
-        
-        let total = 0;
-        for (const zone of bookingData.fumigationZones) {
-            const { type, area } = zone;
-            const baseRate = config.type_prices[type]?.[range] || 0;
-            
-            let subtotal = 0;
-            if (range === '0-50') subtotal = baseRate; // Fixed price
-            else subtotal = baseRate * area;
-            
-            let wasteMult = 1;
-            if (globalWaste) {
-                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
-            }
-            
-            total += subtotal * wasteMult;
-        }
-        return Math.ceil(total);
+        const quote = calculatePhytosanitaryQuote({
+            zones: mapPhytosanitaryZonesForQuote(),
+            config,
+            globalWaste
+        });
+        return quote.final_price;
     }
 
-    // 2. Lógica para Corte de Césped (Lawn Service)
-    // Detectamos si es césped por la presencia de lawnSpecies o lawnZones y la estructura de la config
-    if ((bookingData.lawnSpecies || (bookingData.lawnZones && bookingData.lawnZones.length > 0)) && config && config.species_prices && !config.height_prices) {
-        
-        // Unificar zonas (Legacy + New Model)
-        let zones: Array<{ species: string; state: string; quantity: number; wasteRemoval: boolean }> = [];
-        
-        // GLOBAL OVERRIDE: La retirada de restos es una configuración global.
-        // Si el usuario la desactiva en DetailsPage, aplica a todas las zonas.
+    if ((bookingData.lawnSpecies || (bookingData.lawnZones && bookingData.lawnZones.length > 0)) && config && !config.height_prices) {
+        let zones: Array<{ state: string; quantity: number }> = [];
         const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
 
         if (bookingData.lawnZones && bookingData.lawnZones.length > 0) {
             zones = bookingData.lawnZones.map(z => ({
-                species: z.species,
                 state: z.state,
-                quantity: z.quantity,
-                wasteRemoval: globalWaste
+                quantity: z.quantity
             }));
         } else if (bookingData.lawnSpecies) {
-            // Fallback Legacy
             let state = 'normal';
             if (bookingData.aiDifficulty === 2) state = 'descuidado';
             if (bookingData.aiDifficulty === 3) state = 'muy_descuidado';
-            
+
             zones.push({
-                species: bookingData.lawnSpecies,
-                state: state,
-                quantity: bookingData.aiQuantity || 0,
-                wasteRemoval: globalWaste
+                state,
+                quantity: bookingData.aiQuantity || 0
             });
         }
 
-        // 1. Calcular superficie total
         const totalArea = zones.reduce((acc, z) => acc + (z.quantity || 0), 0);
-        
-        // 2. Determinar rango de superficie basado en el TOTAL
-        let range = '0-50';
-        if (totalArea > 200) range = '200+';
-        else if (totalArea > 50) range = '50-200';
+        let range: '0-50' | '51-150' | '151-400' | '400+' = '0-50';
+        if (totalArea > 400) range = '400+';
+        else if (totalArea > 150) range = '151-400';
+        else if (totalArea > 50) range = '51-150';
 
-        // 3. Agrupar zonas por Especie + Estado + WasteRemoval (para sumar superficies)
-        const groups: Record<string, { species: string; state: string; wasteRemoval: boolean; quantity: number }> = {};
-        
-        for (const z of zones) {
-            if (z.quantity <= 0) continue;
-            // Clave única para agrupación
-            const key = `${z.species}|${z.state}|${z.wasteRemoval}`;
-            
-            if (!groups[key]) {
-                groups[key] = { 
-                    species: z.species, 
-                    state: z.state, 
-                    wasteRemoval: z.wasteRemoval, 
-                    quantity: 0 
-                };
-            }
-            groups[key].quantity += z.quantity;
-        }
+        const getLawnSurfacePrices = () => {
+            const parsed = {
+                '0-50': Number(config.surface_prices?.['0-50'] || 0),
+                '51-150': Number(config.surface_prices?.['51-150'] || 0),
+                '151-400': Number(config.surface_prices?.['151-400'] || 0),
+                '400+': Number(config.surface_prices?.['400+'] || 0)
+            };
+            const hasNew = Object.values(parsed).some(v => v > 0);
+            if (hasNew) return parsed;
 
-        // 4. Calcular precio para cada grupo usando el rango TOTAL
+            const selectedSpecies = Array.isArray(config.selected_species) ? config.selected_species : [];
+            const legacySpeciesKey = selectedSpecies.find((s: string) => config.species_prices?.[s]) || Object.keys(config.species_prices || {})[0];
+            const legacyPrices = legacySpeciesKey ? config.species_prices?.[legacySpeciesKey] : null;
+            if (!legacyPrices) return parsed;
+
+            return {
+                '0-50': Number(legacyPrices['0-50'] || 0),
+                '51-150': Number(legacyPrices['50-200'] || 0),
+                '151-400': Number(legacyPrices['200+'] || 0),
+                '400+': Number(legacyPrices['200+'] || 0)
+            };
+        };
+
+        const surfacePrices = getLawnSurfacePrices();
+        const baseRate = Number(surfacePrices[range] || 0);
+        if (baseRate <= 0) return 0;
+
         let totalCost = 0;
-        
-        for (const key in groups) {
-            const group = groups[key];
-            const baseRate = config.species_prices[group.species]?.[range] || 0;
-            
-            // Calcular subtotal del grupo
-            let subtotal = 0;
-            if (range === '0-50') {
-                // Si es rango fijo (0-50), ¿se aplica por grupo o se prorratea?
-                // Interpretación: "Cada combinación especie + estado se calcula de forma independiente."
-                // Si el rango es 0-50, asumimos que el precio base es el coste mínimo para ese servicio.
-                subtotal = baseRate;
-                
-                // AJUSTE: Si tenemos múltiples grupos en rango 0-50 (ej: 10m2 A + 10m2 B = 20m2 Total),
-                // aplicar el precio fijo completo a cada uno podría duplicar costes excesivamente si es "visita mínima".
-                // Sin embargo, si son especies distintas, son trabajos distintos.
-                // Si es la misma especie y estado, ya están agrupados.
-                // Por tanto, aplicamos el precio base al grupo.
-            } else {
-                subtotal = baseRate * group.quantity;
-            }
-            
+        for (const zone of zones) {
+            const subtotal = baseRate * zone.quantity;
             if (subtotal <= 0) continue;
 
-            // Surcharges
-            // State
             const surcharges = config.condition_surcharges || {};
             let stateSurchargePercent = 0;
-            
-            // Normalizar keys de estado para coincidir con config
-            // Config keys: 'descuidado', 'muy_descuidado'
-            // Zone state: 'normal', 'descuidado', 'muy_descuidado' (o 'descuidada'?)
-            // Mapeamos variaciones comunes
-            const s = (group.state || 'normal').toLowerCase();
+            const s = (zone.state || 'normal').toLowerCase();
             if (s.includes('muy') && s.includes('descuidad')) {
                 stateSurchargePercent = surcharges.muy_descuidado || 0;
             } else if (s.includes('descuidad') && !s.includes('muy')) {
-                 stateSurchargePercent = surcharges.descuidado || 0;
+                stateSurchargePercent = surcharges.descuidado || 0;
             }
-            
             const stateMult = 1 + (stateSurchargePercent / 100);
 
-            // Waste
             let wasteMult = 1;
             if (globalWaste) {
-                const wastePercent = config.waste_removal?.percentage || 0;
-                wasteMult = 1 + (wastePercent / 100);
+                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
             }
 
             totalCost += subtotal * stateMult * wasteMult;
         }
 
-        return Math.ceil(totalCost);
+        const lawnMinimumPrice = Number(config.minimum_price || 0);
+        const finalLawnCost = lawnMinimumPrice > 0 ? Math.max(totalCost, lawnMinimumPrice) : totalCost;
+        return Math.ceil(finalLawnCost);
     }
 
     // 3. Lógica por defecto (otros servicios)
@@ -1001,7 +1014,7 @@ const ProvidersPage: React.FC = () => {
         // We leave it as is for backward compatibility if no config exists
     }
 
-    if (unitPrice > 0 && qty > 0) return Math.ceil(qty * unitPrice * mult);
+    if (unitPrice > 0 && qty > 0) return applyMinimumPrice(qty * unitPrice * mult);
     return 0;
   };
 
@@ -1009,11 +1022,37 @@ const ProvidersPage: React.FC = () => {
 
   const handleContinue = () => { 
     if (selectedProvider) { 
+      const isPhytosanitary = Array.isArray(bookingData.phytosanitaryZones) && bookingData.phytosanitaryZones.length > 0;
+      const selectedConfig = configs[selectedProvider];
+      const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+      const phytosanitaryQuote = (isPhytosanitary && selectedConfig)
+        ? calculatePhytosanitaryQuote({
+            zones: mapPhytosanitaryZonesForQuote(),
+            config: selectedConfig,
+            globalWaste
+          })
+        : null;
+      const phytosanitaryBreakdown = phytosanitaryQuote
+        ? phytosanitaryQuote.breakdown
+            .map((item) => ({
+              desc: item.reason
+                ? `${formatPhytosanitaryLabel(item)} · ${item.reason}`
+                : formatPhytosanitaryLabel(item),
+              price: Math.ceil(Number(item.lineTotal || 0))
+            }))
+        : [];
+      if (phytosanitaryQuote && phytosanitaryQuote.minimumFeeApplied) {
+        phytosanitaryBreakdown.push({
+          desc: `Ajuste por importe mínimo (${Math.ceil(phytosanitaryQuote.minimumFee)}€)`,
+          price: Math.ceil(phytosanitaryQuote.minimumFee)
+        });
+      }
       // Aseguramos que se guarde la fecha seleccionada y el proveedor
       setBookingData({ 
         providerId: selectedProvider, 
-        totalPrice: computePrice(selectedProvider),
-        preferredDate: selectedDate 
+        totalPrice: phytosanitaryQuote ? phytosanitaryQuote.final_price : computePrice(selectedProvider),
+        preferredDate: selectedDate,
+        priceBreakdown: phytosanitaryBreakdown
       }); 
       setCurrentStep(4); 
     } 

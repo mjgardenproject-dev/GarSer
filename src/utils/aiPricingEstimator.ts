@@ -15,6 +15,42 @@ export interface AITask {
   tipo_seto?: string | null;
   estado_seto?: string | null;
   dificultad_acceso?: 1 | 2 | 3 | null; // Legacy
+  caras?: number | {
+    cara_a?: {
+      longitud_m?: number;
+      altura_m?: number;
+      nivel_analisis?: number;
+      observaciones?: string[];
+    };
+    cara_b?: {
+      longitud_m?: number;
+      altura_m?: number;
+      nivel_analisis?: number;
+      observaciones?: string[];
+    };
+  };
+  detalle_caras?: {
+    cara_a?: {
+      longitud_m?: number;
+      altura_m?: number;
+      nivel_analisis?: number;
+      observaciones?: string[];
+    };
+    cara_b?: {
+      longitud_m?: number;
+      altura_m?: number;
+      nivel_analisis?: number;
+      observaciones?: string[];
+    };
+  };
+  resumen_medicion?: {
+    base_longitud_m?: number;
+    base_altura_m?: number;
+    caras_recortar?: number;
+    longitud_calculo_m?: number;
+    altura_calculo_m?: number;
+    metodo?: string;
+  };
 
   // Trees
   cantidad?: number | null;
@@ -31,10 +67,40 @@ export interface AITask {
   // Clearing
   densidad_maleza?: string | null;
 
-  // Fumigation
+  // Phytosanitary
   cantidad_o_superficie?: number | null;
   unidad?: string | null;
   nivel_plaga?: string | null;
+  tipo_afectado?: 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras' | null;
+  tratamiento_recomendado?: 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia' | 'inconclusive' | null;
+  confidence?: number | null;
+  altura_tramo?: 'bajos_medios' | 'altos' | 'pequenos' | 'medianos' | 'grandes' | 'pequenas' | 'medianas' | 'altas' | null;
+  supera_2m?: boolean | null;
+  supera_3m?: boolean | null;
+  palmeras_cirugia?: boolean | null;
+  elementos_detectados?: {
+    setos?: {
+      ml_bands?: {
+        bajos_medios?: number;
+        altos?: number;
+      };
+    };
+    arboles?: {
+      size_bands?: {
+        pequenos?: number;
+        medianos?: number;
+        grandes?: number;
+      };
+    };
+    palmeras?: {
+      size_bands?: {
+        pequenas?: number;
+        medianas?: number;
+        altas?: number;
+      };
+      surgery_recommended?: boolean;
+    };
+  };
 
   // Common
   nivel_analisis?: number; // 1, 2, 3
@@ -46,8 +112,13 @@ interface EstimationInput {
   photoCount: number;
   selectedServiceIds: string[];
   photoUrls?: string[]; // URLs de las fotos para análisis IA
+  hedgeFaces?: {
+    face_a_urls: string[];
+    face_b_urls?: string[];
+  };
   serviceName?: string; // Optional: Name of the primary service for specific prompting
   model?: 'gpt-4o-mini' | 'gemini-2.0-flash'; // Nuevo selector de modelo
+  phytosanitary_scopes?: string[];
 }
 
 export interface EstimationResult {
@@ -70,6 +141,7 @@ export interface EstimationResult {
     nivel_analisis?: number;
     observaciones?: string[];
   }>;
+  metricas_fitosanitarias?: any;
   reasons?: string[];
   rawResponse?: any; // New field for debug
 }
@@ -81,12 +153,14 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
   try {
     const { data, error } = await supabase.functions.invoke('ai-pricing-estimator', {
       body: {
-        description: '',
+        description: input.serviceName === 'Servicios fitosanitarios' ? input.description : '',
         service_ids: input.selectedServiceIds,
         photo_urls: input.photoUrls,
+        hedge_faces: input.hedgeFaces,
         photo_count: input.photoCount,
         service_name: input.serviceName,
         model: input.model || 'gemini-2.0-flash',
+        phytosanitary_scopes: input.phytosanitary_scopes,
       },
     });
     if (error) {
@@ -97,7 +171,8 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
     const palmas = Array.isArray((data as any)?.palmas) ? (data as any).palmas : undefined;
     const arboles = Array.isArray((data as any)?.arboles) ? (data as any).arboles : undefined;
     const reasons = Array.isArray((data as any)?.reasons) ? (data as any).reasons : undefined;
-    return { tareas, palmas, arboles, reasons, rawResponse: data };
+    const metricas_fitosanitarias = (data as any)?.metricas_fitosanitarias;
+    return { tareas, palmas, arboles, reasons, metricas_fitosanitarias, rawResponse: data };
   } catch (e) {
     console.warn('[AI] Fallo invocando Edge Function:', e);
     return { tareas: [], rawResponse: { exception: e } };
@@ -171,7 +246,7 @@ const LOCAL_DIFFICULTY: Record<1 | 2 | 3, number> = { 1: 1.0, 2: 1.3, 3: 1.7 };
 const LOCAL_PERF: Record<string, { performance: number; pricePerUnit: number }> = {
   'Corte de césped': { performance: 100, pricePerUnit: 0.30 },
   'Corte de setos': { performance: 25, pricePerUnit: 3.50 },
-  'Fumigación': { performance: 40, pricePerUnit: 2.50 },
+  'Servicios fitosanitarios': { performance: 40, pricePerUnit: 2.50 },
   'Poda de plantas': { performance: 8, pricePerUnit: 6.00 },
   'Poda de árboles': { performance: 0.8, pricePerUnit: 45.00 },
   'Labrar y quitar malas hierbas': { performance: 15, pricePerUnit: 10.00 },
@@ -250,32 +325,113 @@ RESPONSE FORMAT (STRICT):
 }
 ---`,
   'Corte de setos': `---
-Eres una IA especializada en análisis de jardines llamada 'HedgeMap'. Tu objetivo es analizar imágenes para presupuestar recorte de setos.
+SYSTEM ROLE:
+You are 'HedgeMap', an expert AI specialized in landscape analysis and estimating hedge trimming jobs.
 
-INSTRUCCIONES DE ANÁLISIS:
-1. Detecta la longitud total de setos en metros lineales.
-2. Estima la altura promedio.
-3. Clasifica el tipo de seto.
-4. Evalúa la dificultad de acceso (obstáculos, altura, densidad).
+INPUT CONTEXT:
+You will receive one or multiple images in a single request. ALL provided images belong to the EXACT SAME HEDGE (same zone).
+Images are grouped by explicit labels:
+- FACE_A: front/main side (always present)
+- FACE_B: back/opposite side (optional)
+You must never infer or invent additional faces. Use only the provided groups.
 
-VARIABLES A EXTRAER:
-- tipo_servicio: "Corte de setos"
-- longitud_m: Longitud estimada en metros.
-- altura_m: Altura estimada en metros.
-- tipo_seto: "Conífera (Ciprés/Tuya)", "Laurel/Hoja ancha", "Hiedra/Trepandora", "Seto Mixto/Otro".
-- dificultad_acceso: 1 (Fácil), 2 (Medio/Escalera), 3 (Difícil/Andamio/Pértiga).
-- nivel_analisis: 1 (Claro), 2 (Parcial/Borroso), 3 (Inutilizable).
-- observaciones: Lista de observaciones visuales (ej. "Seto muy denso", "Requiere escalera alta").
+CORE MEASUREMENT RULES (STRICT STRICT STRICT):
+1. HEIGHT EXCLUSION RULE (altura_m):
+   - Measure strictly the FOLIAGE/PLANT height.
+   - If the hedge is growing on top of a wall, fence, planter, or slope, DO NOT include the height of the wall/structure.
+   - Example: A 1.5m hedge sitting on a 1m brick wall has an altura_m of 1.5, NOT 2.5.
 
-FORMATO DE SALIDA (JSON ÚNICAMENTE):
+2. LENGTH & SHAPE RULE (longitud_m):
+   - Estimate the linear length of the hedge.
+   - L-Shape / U-Shape Handling: If the hedge turns a corner, sum the lengths of all visible sections (e.g., a 5m section + a 3m section = 8m base length).
+
+3. FACE-BASED CALCULATION (CRITICAL):
+   - Measure FACE_A and FACE_B independently if both are provided.
+   - Determine base_longitud_m and base_altura_m using:
+     a) Average of both faces when both are reliable (nivel_analisis 1 or 2),
+     b) Otherwise, the most reliable face.
+   - Determine caras_recortar:
+     - 1 if only FACE_A is provided,
+     - 2 if FACE_B is provided.
+   - Compute:
+     - longitud_calculo_m = base_longitud_m * caras_recortar
+     - altura_calculo_m = base_altura_m * caras_recortar
+   - Also return longitud_m as base_longitud_m for backward compatibility.
+   - Also return altura_m as base_altura_m for backward compatibility.
+
+CLASSIFICATION & STATE RULES:
+Translate your visual findings into the exact following Spanish categories.
+
+A. Operational Height Band (tipo_seto) - Choose EXACTLY ONE:
+   - "0-1m": Use when base_altura_m <= 1.0m.
+   - "1-2m": Use when base_altura_m is >1.0m and <=2.0m.
+   - "2-4m": Use when base_altura_m is >2.0m and <=4.0m.
+   - "4-6m": Use when base_altura_m is >4.0m.
+
+A2. Height band guidance:
+   - Keep numeric altura_m as your measured foliage height.
+   - tipo_seto must follow the 4 bands above.
+   - If estimated base_altura_m exceeds 6m, keep numeric altura_m as estimated and add an observation indicating manual safety review is required.
+
+B. Hedge Condition (estado_seto) - Choose EXACTLY ONE:
+   - "normal": Well-kept geometric shape, short new shoots (<10cm), recent maintenance visible.
+   - "descuidado": Any relevant overgrowth or loss of geometry. If it looks very neglected, still use "descuidado".
+
+C. Image Quality (nivel_analisis):
+   - 1: Clear, fully usable for 3D estimation.
+   - 2: Partially blurry or obstructed, but estimation is possible.
+   - 3: Unusable, too dark, or doesn't show the hedge.
+
+D. PRESET OBSERVATIONS (STRICT):
+Use ONLY these exact Spanish phrases:
+- "vista parcial por ángulo"
+- "zona con sombras"
+- "vegetación tapa parte del seto"
+- "parte del seto fuera de encuadre"
+- "imagen con enfoque limitado"
+- "foto borrosa"
+- "foto oscura"
+- "seto no visible con claridad"
+
+Rules:
+- nivel_analisis = 1 -> "observaciones": []
+- nivel_analisis = 2 -> include 1-2 phrases from the list
+- nivel_analisis = 3 -> include 1-2 phrases from the list
+
+OUTPUT FORMAT:
+You must output ONLY a valid JSON object. No markdown formatting (json), no introductory text, no explanations outside the JSON.
+
 {
-  "tareas": [
+  "tareas":[
     {
       "tipo_servicio": "Corte de setos",
       "longitud_m": number,
       "altura_m": number,
-      "tipo_seto": string,
-      "dificultad_acceso": 1 | 2 | 3,
+      "tipo_seto": "0-1m" | "1-2m" | "2-4m" | "4-6m",
+      "estado_seto": "normal" | "descuidado",
+      "caras": 1 | 2,
+      "detalle_caras": {
+        "cara_a": {
+          "longitud_m": number,
+          "altura_m": number,
+          "nivel_analisis": 1 | 2 | 3,
+          "observaciones": string[]
+        },
+        "cara_b": {
+          "longitud_m": number,
+          "altura_m": number,
+          "nivel_analisis": 1 | 2 | 3,
+          "observaciones": string[]
+        }
+      },
+      "resumen_medicion": {
+        "base_longitud_m": number,
+        "base_altura_m": number,
+        "caras_recortar": 1 | 2,
+        "longitud_calculo_m": number,
+        "altura_calculo_m": number,
+        "metodo": "media_caras" | "cara_mas_fiable"
+      },
       "nivel_analisis": 1 | 2 | 3,
       "observaciones": string[]
     }
@@ -369,29 +525,45 @@ FORMATO DE SALIDA (JSON ÚNICAMENTE):
   ]
 }
 ---`,
-  'Fumigación': `---
-Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar fumigación.
+  'Servicios fitosanitarios': `---
+Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar tratamientos fitosanitarios.
 
 INSTRUCCIONES DE ANÁLISIS:
 1. Estima la cantidad o superficie afectada.
 2. Determina el tipo de tratamiento necesario (Preventivo o Curativo).
 
 VARIABLES A EXTRAER:
-- tipo_servicio: "Fumigación"
+- tipo_servicio: "Servicios fitosanitarios"
+- tipo_afectado: "Césped" | "Árboles" | "Setos" | "Plantas bajas" | "Palmeras".
 - cantidad_o_superficie: Número (si son plantas) o m2 (si es área).
-- unidad: "plantas" o "m2".
-- nivel_plaga: "Insecticida" (Insectos/Preventivo), "Fungicida" (Hongos/Manchas), "Herbicida" (Malas hierbas en superficie dura).
+- unidad: "unidades" o "m2".
+- tratamiento_recomendado: "insecticida" | "fungicida" | "herbicida" | "ecologico_preventivo" | "endoterapia" | "inconclusive".
+- altura_tramo: "bajos_medios" | "altos" | "pequenos" | "medianos" | "grandes" | "pequenas" | "medianas" | "altas" | null.
+- palmeras_cirugia: boolean | null.
+- confidence: número entre 0 y 1.
+- nivel_plaga: etiqueta corta alineada con el tratamiento.
 - nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
 - observaciones: Lista de detalles (ej. "Pulgón visible", "Hojas comidas").
+- elementos_detectados:
+  - setos.ml_bands.bajos_medios | altos
+  - arboles.size_bands.pequenos | medianos | grandes
+  - palmeras.size_bands.pequenas | medianas | altas
+  - palmeras.surgery_recommended
 
 FORMATO DE SALIDA (JSON ÚNICAMENTE):
 {
   "tareas": [
     {
-      "tipo_servicio": "Fumigación",
+      "tipo_servicio": "Servicios fitosanitarios",
+      "tipo_afectado": string,
       "cantidad_o_superficie": number,
       "unidad": string,
+      "tratamiento_recomendado": string,
       "nivel_plaga": string,
+      "altura_tramo": string | null,
+      "palmeras_cirugia": boolean | null,
+      "confidence": number,
+      "elementos_detectados": object,
       "nivel_analisis": 1 | 2 | 3,
       "observaciones": string[]
     }

@@ -155,7 +155,7 @@ const ClientHome: React.FC = () => {
           h = (t.superficie_m2 / 20) * factor; // 20 m²/h
           p = h * 20;
         }
-      } else if (tipo.includes('fumig')) {
+      } else if (tipo.includes('fitosanit')) {
         if (t.numero_plantas != null) {
           h = (t.numero_plantas * 0.05) * factor; // 0.05 h/planta
           p = h * 35;
@@ -263,7 +263,14 @@ const ClientHome: React.FC = () => {
     const fetchServices = async () => {
       const { data, error } = await supabase.from('services').select('*').order('name');
       if (!error && data) {
-        setServices(data);
+        const mappedData = data.map((s: any) => {
+          let updatedName = s.name;
+          if (updatedName.toLowerCase().includes('fumigación') || updatedName.toLowerCase().includes('fumigacion') || updatedName.toLowerCase().includes('tratamientos fitosanitarios')) {
+            updatedName = 'Servicios fitosanitarios';
+          }
+          return { ...s, name: updatedName };
+        });
+        setServices(mappedData);
         // Diagnóstico: comprobar presencia de los 6 servicios canónicos IA
         const required = [
           'corte de cesped',
@@ -271,9 +278,9 @@ const ClientHome: React.FC = () => {
           'corte de setos a maquina',
           'poda de arboles',
           'labrar y quitar malas hierbas a mano',
-          'fumigacion de plantas',
+          'servicios fitosanitarios',
         ];
-        const present = new Set((data || []).map((s: Service) => normalizeText(s.name)));
+        const present = new Set((mappedData || []).map((s: Service) => normalizeText(s.name)));
         const missing = required.filter(r => !present.has(r));
         if (missing.length > 0) {
           console.warn('[catalog] Faltan servicios canónicos en tabla services', { missing });
@@ -607,45 +614,47 @@ const ClientHome: React.FC = () => {
                  
                  // --- LOGICA DE PRECIOS ---
                  
-                 if (isLawn && config && debugLawnSpecies) {
-                    // 1. Filtrado por especie (estricto)
-                    // Si el jardinero no tiene la especie seleccionada en su lista, precio = 0 (o excluir jardinero)
-                    const gardenerSpecies = config.selected_species || [];
-                    if (!gardenerSpecies.includes(debugLawnSpecies)) {
-                        finalPrice = 0; // Se filtrará abajo si precio es 0? O mejor marcar como no disponible.
-                        // Para este caso, retornaremos 0 y luego filtraremos.
-                    } else {
-                        // 2. Cálculo de precio base por rangos
-                        let basePrice = 0;
-                        const speciesPrices = config.species_prices?.[debugLawnSpecies] || {};
-                        
-                        if (quantity < 50) {
-                            basePrice = speciesPrices['0-50'] || 0; // Precio fijo
-                        } else if (quantity <= 200) {
-                             const p = speciesPrices['50-200'] || 0;
-                             basePrice = quantity * p;
-                        } else {
-                             const p = speciesPrices['200+'] || 0;
-                             basePrice = quantity * p;
-                        }
-                        
-                        // 3. Recargo por Estado (Global Rule Step 1)
-                        // Precio_Intermedio = Precio_Base + (Precio_Base * %_Recargo_Estado)
-                        const surcharges = config.condition_surcharges || {};
-                        let stateSurcharge = 0;
-                        if (state === 'descuidado') stateSurcharge = surcharges.descuidado || 20; // Default 20%
-                        if (state === 'muy descuidado') stateSurcharge = surcharges.muy_descuidado || 50; // Default 50%
-                        
-                        const intermediatePrice = basePrice * (1 + (stateSurcharge / 100));
-                        
-                        // 4. Recargo por Retirada de Restos (Global Rule Step 2)
-                        // Precio_Final = Precio_Intermedio + (Precio_Intermedio * %_Recargo_Retirada)
-                        // Asumimos siempre seleccionada en debug
-                        const wasteSurcharge = config.waste_removal?.percentage || 0;
-                        finalPrice = intermediatePrice * (1 + (wasteSurcharge / 100));
-                        
-                        breakdown = `Base: €${basePrice.toFixed(2)} (Especie: ${debugLawnSpecies}) + Estado: ${stateSurcharge}% + Retirada: ${wasteSurcharge}%`;
+                 if (isLawn && config) {
+                    const parsedSurfacePrices = {
+                      '0-50': Number(config.surface_prices?.['0-50'] || 0),
+                      '51-150': Number(config.surface_prices?.['51-150'] || 0),
+                      '151-400': Number(config.surface_prices?.['151-400'] || 0),
+                      '400+': Number(config.surface_prices?.['400+'] || 0)
+                    };
+                    const hasNewModel = Object.values(parsedSurfacePrices).some(v => v > 0);
+                    let activeSurfacePrices = parsedSurfacePrices;
+                    if (!hasNewModel) {
+                      const selectedSpecies = Array.isArray(config.selected_species) ? config.selected_species : [];
+                      const legacySpeciesKey = selectedSpecies.find((s: string) => config.species_prices?.[s]) || Object.keys(config.species_prices || {})[0];
+                      const legacyPrices = legacySpeciesKey ? config.species_prices?.[legacySpeciesKey] : null;
+                      if (legacyPrices) {
+                        activeSurfacePrices = {
+                          '0-50': Number(legacyPrices['0-50'] || 0),
+                          '51-150': Number(legacyPrices['50-200'] || 0),
+                          '151-400': Number(legacyPrices['200+'] || 0),
+                          '400+': Number(legacyPrices['200+'] || 0)
+                        };
+                      }
                     }
+
+                    let range: '0-50' | '51-150' | '151-400' | '400+' = '0-50';
+                    if (quantity > 400) range = '400+';
+                    else if (quantity > 150) range = '151-400';
+                    else if (quantity > 50) range = '51-150';
+
+                    const baseRate = Number(activeSurfacePrices[range] || 0);
+                    const basePrice = quantity * baseRate;
+
+                    const surcharges = config.condition_surcharges || {};
+                    let stateSurcharge = 0;
+                    if (state === 'descuidado') stateSurcharge = surcharges.descuidado || 20;
+                    if (state === 'muy descuidado') stateSurcharge = surcharges.muy_descuidado || 50;
+
+                    const intermediatePrice = basePrice * (1 + (stateSurcharge / 100));
+                    const wasteSurcharge = config.waste_removal?.percentage || 0;
+                    finalPrice = intermediatePrice * (1 + (wasteSurcharge / 100));
+
+                    breakdown = `Base: €${basePrice.toFixed(2)} (rango: ${range}) + Estado: ${stateSurcharge}% + Retirada: ${wasteSurcharge}%`;
                  } else {
                     // Lógica Genérica (otros servicios)
                     // Aplicar regla global de recargos si existe config, sino usar dificultad simple
@@ -671,6 +680,11 @@ const ClientHome: React.FC = () => {
                         finalPrice = basePrice * difficultyMult;
                         breakdown = `${quantity} ud × €${priceData.price} × ${difficultyMult} (Legacy)`;
                     }
+                 }
+
+                 const minimumPrice = Number(config?.minimum_price || 0);
+                 if (minimumPrice > 0 && finalPrice > 0 && finalPrice < minimumPrice) {
+                    finalPrice = minimumPrice;
                  }
               }
             }
@@ -1890,7 +1904,7 @@ const ClientHome: React.FC = () => {
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-2">A qué nos dedicamos</h2>
             <p className="text-gray-700 text-sm">
-              Corte de césped, poda de setos y árboles, limpieza de malas hierbas, fumigación de plantas y mantenimiento general del jardín.
+              Corte de césped, poda de setos y árboles, limpieza de malas hierbas, tratamientos fitosanitarios y mantenimiento general del jardín.
             </p>
           </div>
           <div className="bg-white border border-gray-200 rounded-2xl p-6">

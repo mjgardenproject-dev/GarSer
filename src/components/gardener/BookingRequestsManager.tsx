@@ -126,6 +126,15 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         servicesResult = { data, error } as any;
       }
 
+      if (servicesResult.data) {
+        servicesResult.data = servicesResult.data.map(s => {
+          if (s.name.toLowerCase().includes('fumigación') || s.name.toLowerCase().includes('fumigacion') || s.name.toLowerCase().includes('tratamientos fitosanitarios')) {
+            return { ...s, name: 'Servicios fitosanitarios' };
+          }
+          return s;
+        });
+      }
+
       if (clientsResult.error) {
         console.warn('Error fetching client profiles for requests:', clientsResult.error);
       }

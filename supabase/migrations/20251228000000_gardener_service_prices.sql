@@ -18,7 +18,7 @@ BEGIN
 END $$;
 
 UPDATE public.services SET measurement = 'area' WHERE name ILIKE '%cesped%' OR name ILIKE '%césped%' OR name ILIKE '%seto%' OR name ILIKE '%hierba%' OR name ILIKE '%maleza%' OR name ILIKE '%labrado%';
-UPDATE public.services SET measurement = 'count' WHERE name ILIKE '%poda%' OR name ILIKE '%arbol%' OR name ILIKE '%árbol%' OR name ILIKE '%planta%' OR name ILIKE '%fumig%';
+UPDATE public.services SET measurement = 'count' WHERE name ILIKE '%poda%' OR name ILIKE '%arbol%' OR name ILIKE '%árbol%' OR name ILIKE '%planta%' OR name ILIKE '%fitosanit%';
 
 ALTER TABLE public.gardener_service_prices ENABLE ROW LEVEL SECURITY;
 

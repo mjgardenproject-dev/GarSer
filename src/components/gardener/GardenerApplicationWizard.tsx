@@ -14,7 +14,7 @@ const SERVICES = [
   'Poda de plantas',
   'Poda de árboles',
   'Labrar y quitar malas hierbas a mano',
-  'Fumigación de plantas',
+  'Servicios fitosanitarios',
   'Poda de palmeras'
 ];
 

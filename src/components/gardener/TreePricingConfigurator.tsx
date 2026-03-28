@@ -11,6 +11,7 @@ export interface TreePricingConfig {
   ladderModifier: number | null;
   climbingModifier: number | null;
   wasteRemovalModifier: number | null;
+  minimum_price: number | null;
 }
 
 const DEFAULT_CONFIG: TreePricingConfig = {
@@ -18,7 +19,8 @@ const DEFAULT_CONFIG: TreePricingConfig = {
   shapingHourlyRate: null,
   ladderModifier: null,
   climbingModifier: null,
-  wasteRemovalModifier: null
+  wasteRemovalModifier: null,
+  minimum_price: null
 };
 
 interface Props {
@@ -43,8 +45,7 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
     // Fallback for legacy data migration
     if ('hourlyRate' in val) {
-        // @ts-ignore - legacy field
-        const legacyRate = (val as any).hourlyRate as number;
+        const legacyRate = Number((val as { hourlyRate?: number }).hourlyRate || 0);
         return {
             ...DEFAULT_CONFIG,
             ...(val as any),
@@ -115,7 +116,8 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             'shapingHourlyRate', 
             'ladderModifier', 
             'climbingModifier', 
-            'wasteRemovalModifier'
+            'wasteRemovalModifier',
+            'minimum_price'
         ];
 
         const missingFields = requiredFields.filter(field => config[field] === null || config[field] === undefined);
@@ -129,6 +131,11 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         // Regla usuario: "El precio no puede ser 0. Introduce un valor válido mayor que 0."
         // Asumimos que esto aplica a las tarifas por hora.
         if ((config.structuralHourlyRate || 0) <= 0 || (config.shapingHourlyRate || 0) <= 0) {
+             toast.error('El precio no puede ser 0. Introduce un valor válido mayor que 0.');
+             return;
+        }
+
+        if ((config.minimum_price || 0) <= 0) {
              toast.error('El precio no puede ser 0. Introduce un valor válido mayor que 0.');
              return;
         }
@@ -169,6 +176,29 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         
         {/* Left Column: Inputs */}
         <div className="space-y-8">
+
+          <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-gray-100 bg-gray-50">
+              <h4 className="font-semibold text-gray-900">Precio mínimo</h4>
+              <p className="text-xs text-gray-500 mt-1">
+                Importe mínimo aplicado al final del cálculo.
+              </p>
+            </div>
+            <div className="p-5">
+              <div className="relative max-w-xs">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={config.minimum_price ?? ''}
+                  onChange={(e) => handleChange('minimum_price', e.target.value)}
+                  className="w-full pl-4 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-lg font-semibold text-gray-900"
+                  placeholder="-"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">€</span>
+              </div>
+            </div>
+          </section>
           
           {/* Section A: Base Rates */}
           <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">

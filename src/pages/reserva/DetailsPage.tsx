@@ -6,6 +6,183 @@ import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, Camera, Upload, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Shovel, Bug, Eye, EyeOff, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, estimateServiceAutoQuote, calculatePalmHours } from '../../utils/aiPricingEstimator';
+import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
+
+type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
+type PhytosanitaryTreatmentValue = 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia';
+type PhytosanitaryScope = 'todo_jardin' | 'palmeras' | 'arboles' | 'cesped' | 'malas_hierbas' | 'setos' | 'plantas';
+type PhytosanitaryRequestTreatment = 'insecticida' | 'fungicida' | 'combo' | 'herbicida';
+
+type PhytosanitaryAnalysisMetrics = {
+  cesped_m2: number;
+  seto_bajo_medio_ml: number;
+  seto_alto_ml: number;
+  palmeras_ducha_peq_ud: number;
+  palmeras_ducha_med_ud: number;
+  palmeras_ducha_alta_ud: number;
+  palmeras_cirugia_ud: number;
+  palmeras_endoterapia_troncos_ud: number;
+  arboles_peq_ud: number;
+  arboles_med_ud: number;
+  arboles_gran_ud: number;
+  herbicida_poca_densidad_m2: number;
+  herbicida_mucha_densidad_m2: number;
+  observaciones_ia: string[];
+};
+type PhytosanitaryMetricKey = Exclude<keyof PhytosanitaryAnalysisMetrics, 'observaciones_ia'>;
+
+const PHYTOSANITARY_SCOPE_OPTIONS: Array<{ value: PhytosanitaryScope; label: string; affectedType: PhytosanitaryAffectedType }> = [
+  { value: 'setos', label: 'Setos', affectedType: 'Setos' },
+  { value: 'cesped', label: 'Césped', affectedType: 'Césped' },
+  { value: 'plantas', label: 'Plantas', affectedType: 'Plantas bajas' },
+  { value: 'palmeras', label: 'Palmeras', affectedType: 'Palmeras' },
+  { value: 'malas_hierbas', label: 'Quitar malas hierbas', affectedType: 'Plantas bajas' },
+  { value: 'arboles', label: 'Árboles', affectedType: 'Árboles' },
+  { value: 'todo_jardin', label: 'Todo el jardín', affectedType: 'Plantas bajas' }
+];
+
+const PHYTOSANITARY_REQUEST_TREATMENT_OPTIONS: Array<{ value: PhytosanitaryRequestTreatment; label: string }> = [
+  { value: 'insecticida', label: 'Insecticida' },
+  { value: 'fungicida', label: 'Fungicida' },
+  { value: 'combo', label: 'Combo insecticida + fungicida' }
+];
+
+const EMPTY_PHYTOSANITARY_ANALYSIS_METRICS: PhytosanitaryAnalysisMetrics = {
+  cesped_m2: 0,
+  seto_bajo_medio_ml: 0,
+  seto_alto_ml: 0,
+  palmeras_ducha_peq_ud: 0,
+  palmeras_ducha_med_ud: 0,
+  palmeras_ducha_alta_ud: 0,
+  palmeras_cirugia_ud: 0,
+  palmeras_endoterapia_troncos_ud: 0,
+  arboles_peq_ud: 0,
+  arboles_med_ud: 0,
+  arboles_gran_ud: 0,
+  herbicida_poca_densidad_m2: 0,
+  herbicida_mucha_densidad_m2: 0,
+  observaciones_ia: []
+};
+
+const getAllowedPhytosanitaryTreatments = (affectedType?: PhytosanitaryAffectedType): PhytosanitaryTreatmentValue[] => {
+  if (affectedType === 'Palmeras') return ['insecticida', 'fungicida', 'ecologico_preventivo', 'endoterapia'];
+  if (affectedType === 'Árboles' || affectedType === 'Setos') return ['insecticida', 'fungicida', 'ecologico_preventivo'];
+  return ['insecticida', 'fungicida', 'herbicida', 'ecologico_preventivo'];
+};
+
+const buildPhytosanitaryZoneType = (
+  scope: string | string[] | undefined,
+  requested: PhytosanitaryRequestTreatment | undefined,
+  wantsEco: boolean | undefined
+) => {
+  const scopeArray = Array.isArray(scope) ? scope : [scope].filter(Boolean) as string[];
+  if (scopeArray.length === 1 && scopeArray[0] === 'malas_hierbas') return 'herbicida';
+  if (!requested) return '';
+  if (requested === 'combo') {
+    return wantsEco ? 'insecticida+fungicida+ecologico_preventivo' : 'insecticida+fungicida';
+  }
+  if (requested === 'herbicida') return 'herbicida';
+  return wantsEco ? `${requested}+ecologico_preventivo` : requested;
+};
+
+const toPhytosanitaryMetricNumber = (value: unknown) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || Number.isNaN(parsed)) return 0;
+  return Math.max(0, parsed);
+};
+
+const getDefaultPhytosanitaryScope = (
+  affectedType?: PhytosanitaryAffectedType,
+  treatmentType?: string
+): PhytosanitaryScope[] => {
+  const normalizedType = String(treatmentType || '').toLowerCase();
+  if (normalizedType.includes('herbicida')) return ['malas_hierbas'];
+  if (affectedType === 'Palmeras') return ['palmeras'];
+  if (affectedType === 'Árboles') return ['arboles'];
+  if (affectedType === 'Setos') return ['setos'];
+  if (affectedType === 'Césped') return ['cesped'];
+  return ['todo_jardin'];
+};
+
+const getPhytosanitaryRequestedTreatment = (treatmentType?: string): PhytosanitaryRequestTreatment | undefined => {
+  const normalizedType = String(treatmentType || '').toLowerCase();
+  if (!normalizedType) return undefined;
+  if (normalizedType.includes('herbicida')) return 'herbicida';
+  if (normalizedType.includes('insecticida') && normalizedType.includes('fungicida')) return 'combo';
+  if (normalizedType.includes('fungicida')) return 'fungicida';
+  if (normalizedType.includes('insecticida') || normalizedType.includes('ecologico') || normalizedType.includes('endoterapia')) return 'insecticida';
+  return undefined;
+};
+
+// Deprecated normalizer - removed
+
+
+const sumPhytosanitaryMetrics = (metrics: PhytosanitaryAnalysisMetrics) => {
+  return Number(metrics.cesped_m2 || 0)
+    + Number(metrics.seto_bajo_medio_ml || 0)
+    + Number(metrics.seto_alto_ml || 0)
+    + Number(metrics.palmeras_ducha_peq_ud || 0)
+    + Number(metrics.palmeras_ducha_med_ud || 0)
+    + Number(metrics.palmeras_ducha_alta_ud || 0)
+    + Number(metrics.palmeras_cirugia_ud || 0)
+    + Number(metrics.palmeras_endoterapia_troncos_ud || 0)
+    + Number(metrics.arboles_peq_ud || 0)
+    + Number(metrics.arboles_med_ud || 0)
+    + Number(metrics.arboles_gran_ud || 0)
+    + Number(metrics.herbicida_poca_densidad_m2 || 0)
+    + Number(metrics.herbicida_mucha_densidad_m2 || 0);
+};
+
+// Observation Translations
+const OBS_TRANSLATIONS: Record<string, string> = {
+  'duplicate_views': 'Posible duplicación de elementos en las fotos.',
+  'poor_visibility': 'Mala iluminación o resolución que dificulta el análisis.',
+  'risk_environment': 'Riesgo cercano detectado (ej: piscina, mascotas, ventanas).',
+  'disease_detected': 'Posibles signos de plaga o enfermedad visibles.',
+  'none': 'Análisis completado sin observaciones adicionales.'
+};
+
+const PHYTOSANITARY_GROUPED_FIELDS = {
+  'Palmeras': [
+    { key: 'palmeras_ducha_peq_ud', label: 'Ducha foliar: pequeña', unit: 'ud' },
+    { key: 'palmeras_ducha_med_ud', label: 'Ducha foliar: mediana', unit: 'ud' },
+    { key: 'palmeras_ducha_alta_ud', label: 'Ducha foliar: alta', unit: 'ud' },
+    { key: 'palmeras_cirugia_ud', label: 'Cirugía por picudo rojo', unit: 'ud' },
+    { key: 'palmeras_endoterapia_troncos_ud', label: 'Endoterapia preventiva', unit: 'ud' }
+  ],
+  'Árboles': [
+    { key: 'arboles_peq_ud', label: 'Tratamiento estándar: pequeño', unit: 'ud' },
+    { key: 'arboles_med_ud', label: 'Tratamiento estándar: mediano', unit: 'ud' },
+    { key: 'arboles_gran_ud', label: 'Tratamiento estándar: grande', unit: 'ud' }
+  ],
+  'Setos': [
+    { key: 'seto_bajo_medio_ml', label: 'Tratamiento lineal: bajo/medio', unit: 'ml' },
+    { key: 'seto_alto_ml', label: 'Tratamiento lineal: alto', unit: 'ml' }
+  ],
+  'Césped y Plantas Bajas': [
+    { key: 'cesped_m2', label: 'Tratamiento de superficie', unit: 'm²' }
+  ],
+  'Control de Malas Hierbas': [
+    { key: 'herbicida_poca_densidad_m2', label: 'Aplicación de herbicida: densidad baja', unit: 'm²' },
+    { key: 'herbicida_mucha_densidad_m2', label: 'Aplicación de herbicida: densidad alta', unit: 'm²' }
+  ]
+} as const;
+
+const PHYTOSANITARY_RESULT_FIELDS: Array<{ key: PhytosanitaryMetricKey; label: string; unit: string }> = [
+  { key: 'cesped_m2', label: 'Césped', unit: 'm²' },
+  { key: 'seto_bajo_medio_ml', label: 'Seto bajo/medio', unit: 'ml' },
+  { key: 'seto_alto_ml', label: 'Seto alto', unit: 'ml' },
+  { key: 'palmeras_ducha_peq_ud', label: 'Palmeras ducha pequeñas', unit: 'ud' },
+  { key: 'palmeras_ducha_med_ud', label: 'Palmeras ducha medianas', unit: 'ud' },
+  { key: 'palmeras_ducha_alta_ud', label: 'Palmeras ducha altas', unit: 'ud' },
+  { key: 'palmeras_cirugia_ud', label: 'Palmeras cirugía', unit: 'ud' },
+  { key: 'palmeras_endoterapia_troncos_ud', label: 'Palmeras endoterapia troncos', unit: 'ud' },
+  { key: 'arboles_peq_ud', label: 'Árboles pequeños', unit: 'ud' },
+  { key: 'arboles_med_ud', label: 'Árboles medianos', unit: 'ud' },
+  { key: 'arboles_gran_ud', label: 'Árboles grandes', unit: 'ud' },
+  { key: 'herbicida_poca_densidad_m2', label: 'Herbicida poca densidad', unit: 'm²' },
+  { key: 'herbicida_mucha_densidad_m2', label: 'Herbicida mucha densidad', unit: 'm²' }
+];
 
 const PALM_SPECIES = [
   'Phoenix (datilera o canaria)',
@@ -145,7 +322,7 @@ const DetailsPage: React.FC = () => {
   const [debugShrubType, setDebugShrubType] = useState<string>('');
   const [debugShrubSize, setDebugShrubSize] = useState<string>('');
   const [debugClearingType, setDebugClearingType] = useState<string>('');
-  const [debugFumigationType, setDebugFumigationType] = useState<string>('');
+  const [debugPhytosanitaryType, setDebugPhytosanitaryType] = useState<string>('');
 
   const [debugPalmGroups, setDebugPalmGroups] = useState<Array<{species: string, height: string, quantity: number, state: string}>>([]);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -174,13 +351,17 @@ const DetailsPage: React.FC = () => {
   const [lawnUploads, setLawnUploads] = useState<Record<string, Set<number>>>({});
   const [hedgeUploads, setHedgeUploads] = useState<Record<string, Set<number>>>({});
   const [hedgeAnalyzingZoneIds, setHedgeAnalyzingZoneIds] = useState<Set<string>>(new Set());
-  const [fumigationUploads, setFumigationUploads] = useState<Record<string, Set<number>>>({});
-  const [fumigationAnalyzingZoneIds, setFumigationAnalyzingZoneIds] = useState<Set<string>>(new Set());
+  const [phytosanitaryUploads, setPhytosanitaryUploads] = useState<Record<string, Set<number>>>({});
+  const [phytosanitaryAnalyzingZoneIds, setPhytosanitaryAnalyzingZoneIds] = useState<Set<string>>(new Set());
   const isAnyLawnZoneAnalyzing = lawnAnalyzingZoneIds.size > 0;
-  const isAnyFumigationZoneAnalyzing = fumigationAnalyzingZoneIds.size > 0;
+  const isAnyPhytosanitaryZoneAnalyzing = phytosanitaryAnalyzingZoneIds.size > 0;
 
   useEffect(() => {
-    if (analyzing || isAnyLawnZoneAnalyzing || isAnyFumigationZoneAnalyzing) {
+    if (isAnyPhytosanitaryZoneAnalyzing) {
+      setLoadingMessage('La IA está analizando las dimensiones de tu jardín...');
+      return;
+    }
+    if (analyzing || isAnyLawnZoneAnalyzing) {
       const messages = [
         "Escaneando terreno...",
         "Detectando plantas...",
@@ -196,7 +377,7 @@ const DetailsPage: React.FC = () => {
       }, 2000);
       return () => clearInterval(interval);
     }
-  }, [analyzing, isAnyLawnZoneAnalyzing, isAnyFumigationZoneAnalyzing]);
+  }, [analyzing, isAnyLawnZoneAnalyzing, isAnyPhytosanitaryZoneAnalyzing]);
 
   const openConfirm = (config: {
     title: string;
@@ -237,9 +418,9 @@ const DetailsPage: React.FC = () => {
     const hasTreeGroups = bookingData.treeGroups && bookingData.treeGroups.some(z => z.id.startsWith('ai-'));
     const hasShrubGroups = bookingData.shrubGroups && bookingData.shrubGroups.some(z => z.id.startsWith('ai-'));
     const hasClearingZones = bookingData.clearingZones && bookingData.clearingZones.some(z => z.id.startsWith('ai-'));
-    const hasFumigationZones = bookingData.fumigationZones && bookingData.fumigationZones.some(z => z.id.startsWith('ai-'));
+    const hasPhytosanitaryZones = bookingData.phytosanitaryZones && bookingData.phytosanitaryZones.some(z => z.id.startsWith('ai-'));
 
-    return hasAiTasks || hasPalmGroups || hasLawnZones || hasHedgeZones || hasTreeGroups || hasShrubGroups || hasClearingZones || hasFumigationZones;
+    return hasAiTasks || hasPalmGroups || hasLawnZones || hasHedgeZones || hasTreeGroups || hasShrubGroups || hasClearingZones || hasPhytosanitaryZones;
   }, [bookingData]);
 
   const resetAnalysis = () => {
@@ -250,7 +431,7 @@ const DetailsPage: React.FC = () => {
           treeGroups: [],
           shrubGroups: [],
           clearingZones: [],
-          fumigationZones: [],
+          phytosanitaryZones: [],
           palmGroups: [],
           estimatedHours: 0,
           aiQuantity: 0,
@@ -278,6 +459,17 @@ const DetailsPage: React.FC = () => {
 
   const [debugLogs, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState(import.meta.env.DEV || false);
+
+  const createDebugInfo = (overrides: Partial<AnalysisDebugInfo> & Pick<AnalysisDebugInfo, 'service' | 'model' | 'promptInputs'>): AnalysisDebugInfo => ({
+    service: overrides.service,
+    model: overrides.model,
+    promptInputs: overrides.promptInputs,
+    rawResponse: overrides.rawResponse ?? null,
+    parsedResponse: overrides.parsedResponse ?? null,
+    finalAnalysisData: overrides.finalAnalysisData ?? {},
+    errors: overrides.errors ?? [],
+    timestamp: overrides.timestamp ?? new Date().toISOString()
+  });
   // -----------------------
 
   // Auto-resume analysis if needed
@@ -293,7 +485,13 @@ const DetailsPage: React.FC = () => {
     const fetchServiceName = async () => {
       if (bookingData.serviceIds?.[0]) {
         const { data } = await supabase.from('services').select('name').eq('id', bookingData.serviceIds[0]).single();
-        if (data) setDebugService(data.name);
+        if (data) {
+          let sn = data.name;
+          if (sn.toLowerCase().includes('fumigación') || sn.toLowerCase().includes('fumigacion') || sn.toLowerCase().includes('tratamientos fitosanitarios')) {
+            sn = 'Servicios fitosanitarios';
+          }
+          setDebugService(sn);
+        }
       }
     };
     fetchServiceName();
@@ -847,6 +1045,24 @@ const DetailsPage: React.FC = () => {
   };
 
   const handleContinue = () => {
+    const isPhytosanitaryService = debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit');
+    if (isPhytosanitaryService) {
+      const zones = bookingData.phytosanitaryZones || [];
+      if (zones.length === 0) {
+        alert('Añade al menos una zona para continuar.');
+        return;
+      }
+      const firstInvalidZone = zones.find((zone) => getPhytosanitaryValidation(zone as any).issues.length > 0);
+      if (firstInvalidZone) {
+        alert(getPhytosanitaryValidation(firstInvalidZone as any).issues[0]);
+        return;
+      }
+      if (zones.some((zone) => !isPhytosanitaryZoneAnalyzed(zone as any))) {
+        alert('Completa el análisis de todas las zonas antes de continuar.');
+        return;
+      }
+    }
+
     if (debugService === 'Poda de palmeras') {
         if (!bookingData.palmGroups || bookingData.palmGroups.length === 0) {
              alert('Por favor, asegúrate de tener al menos un grupo de palmeras configurado.');
@@ -873,6 +1089,7 @@ const DetailsPage: React.FC = () => {
             estimatedHours: bookingData.estimatedHours,
             lawnZones: bookingData.lawnZones,
             palmGroups: bookingData.palmGroups,
+            phytosanitaryZones: bookingData.phytosanitaryZones,
             aiQuantity: bookingData.aiQuantity,
             aiDifficulty: bookingData.aiDifficulty
         });
@@ -1197,7 +1414,7 @@ const DetailsPage: React.FC = () => {
       const tareas = Array.isArray(res.tareas) ? res.tareas : [];
       if (tareas.length > 0) {
         let totalHours = 0;
-        let updatePayload: any = { isAnalyzing: false };
+        const updatePayload: any = { isAnalyzing: false };
         
         // Initialize accumulator arrays
         const newLawnZones: any[] = [];
@@ -1205,7 +1422,7 @@ const DetailsPage: React.FC = () => {
         const newTreeGroups: any[] = [];
         const newShrubGroups: any[] = [];
         const newClearingZones: any[] = [];
-        const newFumigationZones: any[] = [];
+        const newPhytosanitaryZones: any[] = [];
         
         let totalAiQty = 0;
 
@@ -1366,7 +1583,7 @@ const DetailsPage: React.FC = () => {
                     observations: t.observaciones
                 });
             }
-            else if (normService.includes('fumiga')) {
+            else if (normService.includes('fitosanitarios')) {
                 const qty = Number(t.cantidad_o_superficie || 0);
                 const unit = t.unidad || 'm2';
                 const rawAffectedType = String(t.tipo_afectado || '').toLowerCase();
@@ -1382,25 +1599,49 @@ const DetailsPage: React.FC = () => {
                 const rawBand = String((t as any).altura_tramo || '').toLowerCase();
                 const aboveTwoMeters = typeof (t as any).supera_2m === 'boolean'
                   ? Boolean((t as any).supera_2m)
-                  : rawBand === 'mas_de_2m';
+                  : rawBand === 'altos';
                 const aboveThreeMeters = typeof (t as any).supera_3m === 'boolean'
                   ? Boolean((t as any).supera_3m)
-                  : rawBand === 'mas_de_3m';
+                  : ['medianos', 'grandes', 'medianas', 'altas'].includes(rawBand);
                 const recommended = String(t.tratamiento_recomendado || '').toLowerCase();
                 const pestLevel = String(t.nivel_plaga || '').toLowerCase();
                 const mappedTreatment = recommended || (pestLevel.includes('curativo') || pestLevel.includes('activa') ? 'insecticida' : (pestLevel.includes('fung') ? 'fungicida' : (pestLevel.includes('herbi') ? 'herbicida' : 'ecologico_preventivo')));
+                
+                // Directly use metricas_fitosanitarias from task (or fallback to empty if old format)
+                const rawMetrics = (t as any).metricas_fitosanitarias || (res as any)?.metricas_fitosanitarias || {};
+                const analysisMetrics: PhytosanitaryAnalysisMetrics = {
+                  ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS,
+                  cesped_m2: Number(rawMetrics.cesped_m2 || 0),
+                  seto_bajo_medio_ml: Number(rawMetrics.seto_bajo_medio_ml || 0),
+                  seto_alto_ml: Number(rawMetrics.seto_alto_ml || 0),
+                  palmeras_ducha_peq_ud: Number(rawMetrics.palmeras_ducha_peq_ud || 0),
+                  palmeras_ducha_med_ud: Number(rawMetrics.palmeras_ducha_med_ud || 0),
+                  palmeras_ducha_alta_ud: Number(rawMetrics.palmeras_ducha_alta_ud || 0),
+                  palmeras_cirugia_ud: Number(rawMetrics.palmeras_cirugia_ud || 0),
+                  palmeras_endoterapia_troncos_ud: Number(rawMetrics.palmeras_endoterapia_troncos_ud || 0),
+                  arboles_peq_ud: Number(rawMetrics.arboles_peq_ud || 0),
+                  arboles_med_ud: Number(rawMetrics.arboles_med_ud || 0),
+                  arboles_gran_ud: Number(rawMetrics.arboles_gran_ud || 0),
+                  herbicida_poca_densidad_m2: Number(rawMetrics.herbicida_poca_densidad_m2 || 0),
+                  herbicida_mucha_densidad_m2: Number(rawMetrics.herbicida_mucha_densidad_m2 || 0),
+                  observaciones_ia: Array.isArray(rawMetrics.observaciones_ia) ? rawMetrics.observaciones_ia : []
+                };
                 
                 if (unit === 'm2') totalHours += Math.ceil(qty / 100) || 1;
                 else totalHours += Math.ceil(qty * 0.1) || 1;
                 totalAiQty += qty;
 
-                newFumigationZones.push({
+                newPhytosanitaryZones.push({
                     id: `ai-fum-${Date.now()}-${idx}`,
                     type: mappedTreatment,
-                    area: qty,
+                    area: Math.max(qty, sumPhytosanitaryMetrics(analysisMetrics)),
+                    scope: getDefaultPhytosanitaryScope(affectedType, mappedTreatment),
+                    requestedTreatment: getPhytosanitaryRequestedTreatment(mappedTreatment),
+                    wantsEco: mappedTreatment.includes('ecologico_preventivo'),
                     affectedType,
                     aboveTwoMeters,
                     aboveThreeMeters,
+                    analysisMetrics,
                     wasteRemoval: true,
                     photoUrls: validUrls,
                     analysisLevel: t.nivel_analisis,
@@ -1435,8 +1676,8 @@ const DetailsPage: React.FC = () => {
             updatePayload.clearingZones = newClearingZones;
             if (!updatePayload.aiUnit) updatePayload.aiUnit = 'm2';
         }
-        if (newFumigationZones.length > 0) {
-            updatePayload.fumigationZones = newFumigationZones;
+        if (newPhytosanitaryZones.length > 0) {
+            updatePayload.phytosanitaryZones = newPhytosanitaryZones;
             if (!updatePayload.aiUnit) updatePayload.aiUnit = 'u'; // Default to unit if mixed
         }
         
@@ -1559,9 +1800,9 @@ const DetailsPage: React.FC = () => {
             description: 'Sube fotos que muestren la densidad de la vegetación a limpiar.'
         };
     }
-    if (lower.includes('fumig')) {
+    if (lower.includes('fitosanit')) {
         return {
-            title: 'Tratamientos fitosanitarios',
+            title: 'Servicios fitosanitarios',
             description: 'Configura cada zona con tipo de vegetación + tratamiento y sube fotos claras para analizar.'
         };
     }
@@ -2973,28 +3214,34 @@ const DetailsPage: React.FC = () => {
       }
   };
 
-  // --- Fumigation Logic ---
-  const addFumigationZone = () => {
+  // --- Phytosanitary Logic ---
+
+
+  const addPhytosanitaryZone = () => {
     const newZone = {
         id: `fum-${Date.now()}`,
         type: '',
         area: 0,
+        scope: undefined as PhytosanitaryScope | undefined,
+        requestedTreatment: undefined as PhytosanitaryRequestTreatment | undefined,
+        wantsEco: false,
         affectedType: undefined as 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras' | undefined,
         aboveTwoMeters: undefined as boolean | undefined,
         aboveThreeMeters: undefined as boolean | undefined,
+        analysisMetrics: { ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS },
         wasteRemoval: true,
         photoUrls: [] as string[],
         files: [] as File[],
         selectedIndices: [] as number[],
         analyzedIndices: [] as number[]
     };
-    const newZones = [...(bookingData.fumigationZones || []), newZone];
-    setBookingData({ fumigationZones: newZones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: newZones });
+    const newZones = [...(bookingData.phytosanitaryZones || []), newZone];
+    setBookingData({ phytosanitaryZones: newZones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: newZones });
     saveProgress();
   };
 
-  const removeFumigationZone = (id: string) => {
+  const removePhytosanitaryZone = (id: string) => {
     openConfirm({
       title: 'Eliminar zona',
       message: 'Se eliminará esta zona del análisis.',
@@ -3002,18 +3249,18 @@ const DetailsPage: React.FC = () => {
       cancelLabel: 'Cancelar',
       tone: 'danger',
       onConfirm: () => {
-        const newZones = (bookingData.fumigationZones || []).filter(z => z.id !== id);
-        setBookingData({ fumigationZones: newZones });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: newZones });
+        const newZones = (bookingData.phytosanitaryZones || []).filter(z => z.id !== id);
+        setBookingData({ phytosanitaryZones: newZones });
+        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: newZones });
         saveProgress();
       }
     });
   };
 
-  const handleFumigationFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhytosanitaryFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
-    const zones = [...(bookingData.fumigationZones || [])];
+    const zones = [...(bookingData.phytosanitaryZones || [])];
     const idx = zones.findIndex(z => z.id === id);
     if (idx === -1) return;
     if ((zones[idx].photoUrls?.length || 0) + files.length > 5) {
@@ -3026,17 +3273,17 @@ const DetailsPage: React.FC = () => {
     const newIndices = tempUrls.map((_, i) => currentLen + i);
     zones[idx].photoUrls = [...(zones[idx].photoUrls || []), ...tempUrls];
     zones[idx].selectedIndices = [...(zones[idx].selectedIndices || []), ...newIndices];
-    setFumigationUploads(prev => {
+    setPhytosanitaryUploads(prev => {
       const zoneUploads = new Set(prev[id] || []);
       newIndices.forEach(i => zoneUploads.add(i));
       return { ...prev, [id]: zoneUploads };
     });
-    setBookingData({ fumigationZones: zones });
+    setBookingData({ phytosanitaryZones: zones });
 
     const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
     try {
       const uploadResults = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
-      const updatedZones = [...(bookingData.fumigationZones || [])];
+      const updatedZones = [...(bookingData.phytosanitaryZones || [])];
       const updatedIdx = updatedZones.findIndex(z => z.id === id);
       if (updatedIdx === -1) return;
       const updatedZone = { ...updatedZones[updatedIdx] };
@@ -3049,13 +3296,13 @@ const DetailsPage: React.FC = () => {
       });
       updatedZone.photoUrls = finalUrls;
       updatedZones[updatedIdx] = updatedZone;
-      setBookingData({ fumigationZones: updatedZones });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: updatedZones });
+      setBookingData({ phytosanitaryZones: updatedZones });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: updatedZones });
     } catch (error) {
       console.error(error);
       toast.error('Error al subir algunas imágenes');
     } finally {
-      setFumigationUploads(prev => {
+      setPhytosanitaryUploads(prev => {
         const next = { ...prev };
         const zoneUploads = new Set(next[id] || []);
         newIndices.forEach(i => zoneUploads.delete(i));
@@ -3065,8 +3312,8 @@ const DetailsPage: React.FC = () => {
     }
   };
 
-  const toggleFumigationPhotoSelection = (zoneId: string, photoIndex: number) => {
-    const zones = [...(bookingData.fumigationZones || [])];
+  const togglePhytosanitaryPhotoSelection = (zoneId: string, photoIndex: number) => {
+    const zones = [...(bookingData.phytosanitaryZones || [])];
     const idx = zones.findIndex(z => z.id === zoneId);
     if (idx === -1) return;
     const zone = { ...zones[idx] };
@@ -3075,28 +3322,147 @@ const DetailsPage: React.FC = () => {
     else selected.add(photoIndex);
     zone.selectedIndices = Array.from(selected);
     zones[idx] = zone;
-    setBookingData({ fumigationZones: zones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: zones });
+    setBookingData({ phytosanitaryZones: zones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
   };
 
-  const removeFumigationPhoto = (zoneId: string, photoIndex: number) => {
-    const zones = [...(bookingData.fumigationZones || [])];
+  const removePhytosanitaryPhoto = (zoneId: string, photoIndex: number, skipConfirm = false) => {
+    const zones = [...(bookingData.phytosanitaryZones || [])];
     const idx = zones.findIndex(z => z.id === zoneId);
     if (idx === -1) return;
     const zone = { ...zones[idx] };
-    const photoUrls = [...(zone.photoUrls || [])];
-    zone.photoUrls = photoUrls.filter((_, i) => i !== photoIndex);
-    zone.selectedIndices = (zone.selectedIndices || []).filter(i => i !== photoIndex).map(i => (i > photoIndex ? i - 1 : i));
-    zone.analyzedIndices = (zone.analyzedIndices || []).filter(i => i !== photoIndex).map(i => (i > photoIndex ? i - 1 : i));
-    zones[idx] = zone;
-    setBookingData({ fumigationZones: zones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: zones });
+
+    const doRemove = () => {
+      const photoUrls = [...(zone.photoUrls || [])];
+      zone.photoUrls = photoUrls.filter((_, i) => i !== photoIndex);
+      zone.selectedIndices = (zone.selectedIndices || []).filter(i => i !== photoIndex).map(i => (i > photoIndex ? i - 1 : i));
+      zone.analyzedIndices = (zone.analyzedIndices || []).filter(i => i !== photoIndex).map(i => (i > photoIndex ? i - 1 : i));
+      
+      if (isPhytosanitaryZoneAnalyzed(zone)) {
+        zone.analysisMetrics = undefined;
+        zone.area = 0;
+        zone.analysisLevel = undefined;
+        zone.observations = [];
+        zone.analyzedIndices = [];
+      }
+
+      zones[idx] = zone;
+      setBookingData({ phytosanitaryZones: zones });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+    };
+
+    if (!skipConfirm && isPhytosanitaryZoneAnalyzed(zone)) {
+      openConfirm({
+        title: 'Eliminar foto analizada',
+        message: 'Esta foto forma parte de un análisis completado. Si la eliminas, se borrarán los resultados actuales de esta zona y tendrás que volver a analizarla.',
+        confirmLabel: 'Eliminar y resetear',
+        cancelLabel: 'Cancelar',
+        tone: 'danger',
+        onConfirm: doRemove
+      });
+      return;
+    }
+
+    doRemove();
   };
 
-  const isFumigationZoneAnalyzed = (zone: { area?: number; analysisLevel?: number }) => Number(zone.area || 0) > 0 || zone.analysisLevel !== undefined;
+  const isPhytosanitaryZoneAnalyzed = (zone: { area?: number; analysisLevel?: number }) => Number(zone.area || 0) > 0 || zone.analysisLevel !== undefined;
 
-  const analyzeFumigationZone = async (id: string, options?: { silent?: boolean }) => {
-      const zones = [...(bookingData.fumigationZones || [])];
+  const getPhytosanitarySelectedPhotoCount = (zone: { photoUrls?: string[]; selectedIndices?: number[] }) => {
+    const total = zone.photoUrls?.length || 0;
+    const selected = zone.selectedIndices ?? Array.from({ length: total }, (_, i) => i);
+    return selected.length;
+  };
+
+  const getPhytosanitaryValidation = (zone: {
+    scope?: string | string[];
+    requestedTreatment?: PhytosanitaryRequestTreatment;
+    wantsEco?: boolean;
+    affectedType?: PhytosanitaryAffectedType;
+    type?: string;
+    area?: number;
+    photoUrls?: string[];
+    selectedIndices?: number[];
+    aboveTwoMeters?: boolean;
+    aboveThreeMeters?: boolean;
+  }) => {
+    const issues: string[] = [];
+    const warnings: string[] = [];
+    const selectedPhotoCount = getPhytosanitarySelectedPhotoCount(zone);
+    const normalizedTreatment = normalizePhytosanitaryTreatment(zone.type || '');
+    const allowedTreatments = getAllowedPhytosanitaryTreatments(zone.affectedType);
+
+    const scopeArray = Array.isArray(zone.scope) ? zone.scope : [zone.scope].filter(Boolean) as string[];
+    const isMalasHierbasOnly = scopeArray.length === 1 && (scopeArray[0] === 'malas_hierbas' || scopeArray[0] === 'solo_malas_hierbas');
+
+    if (scopeArray.length === 0) issues.push('Selecciona el alcance del tratamiento.');
+    if (!isMalasHierbasOnly && !zone.requestedTreatment) {
+      issues.push('Selecciona el tipo de tratamiento contextual.');
+    }
+    if (!zone.affectedType) issues.push('Selecciona la vegetación afectada.');
+    if (!zone.type) issues.push('Selecciona el tratamiento solicitado.');
+    if (selectedPhotoCount < 2) issues.push('Selecciona al menos 2 fotos para analizar esta zona.');
+    if (selectedPhotoCount > 5) issues.push('No puedes analizar más de 5 fotos por zona.');
+    if (zone.type && zone.affectedType && !allowedTreatments.includes(normalizedTreatment as PhytosanitaryTreatmentValue)) {
+      issues.push('El tratamiento no es compatible con la vegetación seleccionada.');
+    }
+    if (isMalasHierbasOnly && zone.type !== 'herbicida') {
+      issues.push('En “solo malas hierbas” el tratamiento se fuerza a herbicida.');
+    }
+    if ((zone.type || '').includes('endoterapia') && zone.wantsEco) {
+      warnings.push('La opción ecológica no aplica cuando se solicita endoterapia.');
+    }
+
+    return { issues, warnings };
+  };
+
+  const removePhytosanitaryMetricItem = (zoneId: string, metricKey: PhytosanitaryMetricKey) => {
+    const zones = [...(bookingData.phytosanitaryZones || [])];
+    const idx = zones.findIndex(z => z.id === zoneId);
+    if (idx === -1) return;
+    const zone = { ...zones[idx] };
+    const metrics = { ...((zone as any).analysisMetrics || EMPTY_PHYTOSANITARY_ANALYSIS_METRICS) } as PhytosanitaryAnalysisMetrics;
+    metrics[metricKey] = 0;
+    (zone as any).analysisMetrics = metrics;
+    zone.area = Math.max(0, sumPhytosanitaryMetrics(metrics));
+
+    if (zone.area === 0 && (!metrics.observaciones_ia || metrics.observaciones_ia.length === 0)) {
+      (zone as any).analysisMetrics = undefined;
+      zone.analysisLevel = undefined;
+      zone.observations = [];
+      zone.analyzedIndices = [];
+    }
+
+    zones[idx] = zone;
+    setBookingData({ phytosanitaryZones: zones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+  };
+
+  const removePhytosanitaryObservation = (zoneId: string, observationIndex: number) => {
+    const zones = [...(bookingData.phytosanitaryZones || [])];
+    const idx = zones.findIndex(z => z.id === zoneId);
+    if (idx === -1) return;
+    const zone = { ...zones[idx] };
+    const metrics = { ...((zone as any).analysisMetrics || EMPTY_PHYTOSANITARY_ANALYSIS_METRICS) } as PhytosanitaryAnalysisMetrics;
+    const observations = Array.isArray(metrics.observaciones_ia) ? [...metrics.observaciones_ia] : [];
+    metrics.observaciones_ia = observations.filter((_, i) => i !== observationIndex);
+    (zone as any).analysisMetrics = metrics;
+    zone.observations = metrics.observaciones_ia;
+
+    if (zone.area === 0 && (!metrics.observaciones_ia || metrics.observaciones_ia.length === 0)) {
+      (zone as any).analysisMetrics = undefined;
+      zone.analysisLevel = undefined;
+      zone.observations = [];
+      zone.analyzedIndices = [];
+    }
+
+    zones[idx] = zone;
+    setBookingData({ phytosanitaryZones: zones });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+  };
+
+  const analyzePhytosanitaryZone = async (id: string, options?: { silent?: boolean }) => {
+      const zones = [...(bookingData.phytosanitaryZones || [])];
       const idx = zones.findIndex(z => z.id === id);
       if (idx === -1) return false;
       const zone = zones[idx];
@@ -3107,60 +3473,179 @@ const DetailsPage: React.FC = () => {
           if (!options?.silent) alert('Selecciona al menos una foto para analizar.');
           return false;
       }
-      if (!zone.affectedType) {
-          if (!options?.silent) alert('Selecciona el tipo de vegetación a tratar.');
-          return false;
-      }
-      if (!zone.type) {
-          if (!options?.silent) alert('Selecciona el tipo de tratamiento.');
+      const validation = getPhytosanitaryValidation(zone);
+      if (validation.issues.length > 0) {
+          if (!options?.silent) alert(validation.issues[0]);
           return false;
       }
       
-      setFumigationAnalyzingZoneIds(prev => {
+      setPhytosanitaryAnalyzingZoneIds(prev => {
         const next = new Set(prev);
         next.add(id);
         return next;
       });
 
+      const currentScope = Array.isArray(zone.scope) ? zone.scope : [zone.scope || 'todo_jardin'];
+      
+      const scaleHints = [
+        `tipo_afectado=${zone.affectedType || 'Plantas bajas'}`,
+        `tratamiento_contextual=${zone.requestedTreatment || 'insecticida'}`,
+        `tratamiento_solicitado=${zone.type || 'ecologico_preventivo'}`,
+        `wants_eco=${zone.wantsEco ? 'true' : 'false'}`,
+        zone.aboveTwoMeters !== undefined ? `seto_supera_2m=${zone.aboveTwoMeters}` : '',
+        zone.aboveThreeMeters !== undefined ? `vegetacion_supera_3m=${zone.aboveThreeMeters}` : ''
+      ].filter(Boolean).join('; ');
+      
+      const currentDebugInfo = createDebugInfo({
+        service: 'Servicios fitosanitarios',
+        model: aiModel,
+        promptInputs: {
+          description: scaleHints,
+          photoCount: finalUrls.length,
+          selectedServiceIds: bookingData.serviceIds,
+          photoUrls: finalUrls,
+          serviceName: 'Servicios fitosanitarios',
+          zoneId: zone.id,
+          phytosanitary_scopes: currentScope,
+          zoneContext: {
+            scope: currentScope,
+            affectedType: zone.affectedType,
+            requestedTreatment: zone.requestedTreatment,
+            type: zone.type,
+            wantsEco: zone.wantsEco,
+            selectedIndices: indicesToAnalyze
+          }
+        },
+        finalAnalysisData: {
+          zoneId: zone.id,
+          before: {
+            area: zone.area,
+            analysisLevel: zone.analysisLevel,
+            observations: zone.observations,
+            analysisMetrics: zone.analysisMetrics
+          }
+        }
+      });
+      setDebugLogs(currentDebugInfo);
+
       try {
-          const scaleHints = [
-            `tipo_afectado=${zone.affectedType || 'Plantas bajas'}`,
-            `tratamiento_solicitado=${zone.type || 'ecologico_preventivo'}`
-          ].join('; ');
           const res = await estimateWorkWithAI({
              description: scaleHints,
              photoCount: finalUrls.length,
              selectedServiceIds: bookingData.serviceIds,
              photoUrls: finalUrls,
-             serviceName: 'Tratamientos fitosanitarios',
-             model: aiModel
+             serviceName: 'Servicios fitosanitarios',
+             model: aiModel,
+             phytosanitary_scopes: currentScope
           });
+          
+          const resData = res as any;
+
+          currentDebugInfo.rawResponse = res.rawResponse;
+          currentDebugInfo.parsedResponse = {
+            tareas: res.tareas || [],
+            reasons: res.reasons || [],
+            metricas_fitosanitarias: resData.metricas_fitosanitarias
+          };
+          setDebugLogs({ ...currentDebugInfo });
           
           if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
               throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
           }
 
-          if (res.tareas && res.tareas.length > 0) {
+          if (resData.metricas_fitosanitarias) {
+              const rawMetrics = resData.metricas_fitosanitarias;
+              const metrics: PhytosanitaryAnalysisMetrics = {
+                ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS,
+                cesped_m2: Number(rawMetrics.cesped_m2 || 0),
+                seto_bajo_medio_ml: Number(rawMetrics.seto_bajo_medio_ml || 0),
+                seto_alto_ml: Number(rawMetrics.seto_alto_ml || 0),
+                palmeras_ducha_peq_ud: Number(rawMetrics.palmeras_ducha_peq_ud || 0),
+                palmeras_ducha_med_ud: Number(rawMetrics.palmeras_ducha_med_ud || 0),
+                palmeras_ducha_alta_ud: Number(rawMetrics.palmeras_ducha_alta_ud || 0),
+                palmeras_cirugia_ud: Number(rawMetrics.palmeras_cirugia_ud || 0),
+                palmeras_endoterapia_troncos_ud: Number(rawMetrics.palmeras_endoterapia_troncos_ud || 0),
+                arboles_peq_ud: Number(rawMetrics.arboles_peq_ud || 0),
+                arboles_med_ud: Number(rawMetrics.arboles_med_ud || 0),
+                arboles_gran_ud: Number(rawMetrics.arboles_gran_ud || 0),
+                herbicida_poca_densidad_m2: Number(rawMetrics.herbicida_poca_densidad_m2 || 0),
+                herbicida_mucha_densidad_m2: Number(rawMetrics.herbicida_mucha_densidad_m2 || 0),
+                observaciones_ia: Array.isArray(rawMetrics.observaciones_ia) ? rawMetrics.observaciones_ia : []
+              };
+              zone.analysisMetrics = metrics;
+              zone.area = Math.max(0, sumPhytosanitaryMetrics(metrics));
+              zone.analysisLevel = 1; // Or infer from confidence if we add it back
+              zone.observations = resData.observaciones_ia || [];
+              zone.analyzedIndices = indicesToAnalyze;
+              currentDebugInfo.finalAnalysisData = {
+                zoneId: zone.id,
+                after: {
+                  area: zone.area,
+                  analysisLevel: zone.analysisLevel,
+                  observations: zone.observations,
+                  analyzedIndices: zone.analyzedIndices,
+                  analysisMetrics: zone.analysisMetrics
+                }
+              };
+          } else if (res.tareas && res.tareas.length > 0) {
+              // Legacy support just in case
               const t = res.tareas[0];
-              zone.area = Number(t.cantidad_o_superficie || 0);
+              const rawMetrics = (t as any).metricas_fitosanitarias || resData.metricas_fitosanitarias || {};
+              const metrics: PhytosanitaryAnalysisMetrics = {
+                ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS,
+                cesped_m2: Number(rawMetrics.cesped_m2 || 0),
+                seto_bajo_medio_ml: Number(rawMetrics.seto_bajo_medio_ml || 0),
+                seto_alto_ml: Number(rawMetrics.seto_alto_ml || 0),
+                palmeras_ducha_peq_ud: Number(rawMetrics.palmeras_ducha_peq_ud || 0),
+                palmeras_ducha_med_ud: Number(rawMetrics.palmeras_ducha_med_ud || 0),
+                palmeras_ducha_alta_ud: Number(rawMetrics.palmeras_ducha_alta_ud || 0),
+                palmeras_cirugia_ud: Number(rawMetrics.palmeras_cirugia_ud || 0),
+                palmeras_endoterapia_troncos_ud: Number(rawMetrics.palmeras_endoterapia_troncos_ud || 0),
+                arboles_peq_ud: Number(rawMetrics.arboles_peq_ud || 0),
+                arboles_med_ud: Number(rawMetrics.arboles_med_ud || 0),
+                arboles_gran_ud: Number(rawMetrics.arboles_gran_ud || 0),
+                herbicida_poca_densidad_m2: Number(rawMetrics.herbicida_poca_densidad_m2 || 0),
+                herbicida_mucha_densidad_m2: Number(rawMetrics.herbicida_mucha_densidad_m2 || 0),
+                observaciones_ia: Array.isArray(rawMetrics.observaciones_ia) ? rawMetrics.observaciones_ia : []
+              };
+              zone.analysisMetrics = metrics;
+              zone.area = Math.max(Number(t.cantidad_o_superficie || 0), sumPhytosanitaryMetrics(metrics));
               zone.analysisLevel = t.nivel_analisis;
               zone.observations = t.observaciones;
               zone.analyzedIndices = indicesToAnalyze;
+              currentDebugInfo.finalAnalysisData = {
+                zoneId: zone.id,
+                after: {
+                  area: zone.area,
+                  analysisLevel: zone.analysisLevel,
+                  observations: zone.observations,
+                  analyzedIndices: zone.analyzedIndices,
+                  analysisMetrics: zone.analysisMetrics
+                }
+              };
           } else {
              throw new Error('No se han detectado datos válidos en las imágenes.');
           }
 
           zones[idx] = zone;
-          setBookingData({ fumigationZones: zones });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: zones });
+          setBookingData({ phytosanitaryZones: zones });
+          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+          setDebugLogs({ ...currentDebugInfo });
           saveProgress();
           return true;
       } catch (e: any) {
           console.error(e);
+          currentDebugInfo.errors.push(e?.message || String(e));
+          currentDebugInfo.finalAnalysisData = {
+            ...(currentDebugInfo.finalAnalysisData || {}),
+            zoneId: zone.id,
+            failed: true
+          };
+          setDebugLogs({ ...currentDebugInfo });
           if (!options?.silent) alert(e.message || 'Error en el análisis');
           return false;
       } finally {
-          setFumigationAnalyzingZoneIds(prev => {
+          setPhytosanitaryAnalyzingZoneIds(prev => {
             const next = new Set(prev);
             next.delete(id);
             return next;
@@ -3168,23 +3653,21 @@ const DetailsPage: React.FC = () => {
       }
   };
 
-  const analyzeAllFumigationZones = async () => {
-    const zones = bookingData.fumigationZones || [];
-    const pending = zones.filter(zone => !isFumigationZoneAnalyzed(zone) && !fumigationAnalyzingZoneIds.has(zone.id));
+  const analyzeAllPhytosanitaryZones = async () => {
+    const zones = bookingData.phytosanitaryZones || [];
+    const pending = zones.filter(zone => !isPhytosanitaryZoneAnalyzed(zone) && !phytosanitaryAnalyzingZoneIds.has(zone.id));
     if (pending.length === 0) return;
 
     const analyzable = pending.filter(zone => {
-      const allUrls = zone.photoUrls || [];
-      const selected = zone.selectedIndices ?? allUrls.map((_, i) => i);
-      const selectedUrls = selected.map(i => allUrls[i]).filter((u): u is string => u !== undefined);
-      return selectedUrls.length > 0 && !!zone.affectedType && !!zone.type;
+      const validation = getPhytosanitaryValidation(zone);
+      return validation.issues.length === 0;
     });
     if (analyzable.length === 0) {
-      toast.error('Completa vegetación, tratamiento y fotos en las zonas pendientes');
+      toast.error('Completa vegetación, altura contextual y 2-5 fotos en las zonas pendientes');
       return;
     }
 
-    const results = await Promise.allSettled(analyzable.map(zone => analyzeFumigationZone(zone.id, { silent: true })));
+    const results = await Promise.allSettled(analyzable.map(zone => analyzePhytosanitaryZone(zone.id, { silent: true })));
     const successCount = results.filter(result => result.status === 'fulfilled' && result.value).length;
     const failedCount = analyzable.length - successCount;
     const skippedCount = pending.length - analyzable.length;
@@ -3246,7 +3729,7 @@ const DetailsPage: React.FC = () => {
                    const isTreeService = debugService.includes('árbol') || debugService.includes('arbol');
                    const isShrubService = debugService.includes('poda de plantas') || (debugService.includes('poda') && !debugService.includes('árbol') && !debugService.includes('palmera'));
                    const isClearingService = debugService.includes('limpieza') || debugService.includes('desbroce') || debugService.includes('hierbas') || debugService.includes('maleza');
-                  const isFumigationService = debugService.toLowerCase().includes('fumig') || debugService.toLowerCase().includes('fitosanit');
+                  const isPhytosanitaryService = debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit');
                    
                    if (isLawnService) {
                      return (
@@ -3885,7 +4368,7 @@ const DetailsPage: React.FC = () => {
                      );
                    }
 
-                   if (false && isTreeService) {
+                   if (isTreeService) {
                      return (
                          <div className="space-y-6">
                              {((bookingData.treeGroups || []).length === 0) && (
@@ -4052,212 +4535,311 @@ const DetailsPage: React.FC = () => {
                      );
                    }
 
-                   if (isFumigationService) {
-                     return (
-                         <div className="space-y-6">
-                           <div className="bg-green-50 border border-green-100 rounded-xl p-4">
-                               <h4 className="text-sm font-semibold text-green-900 mb-2">Guía rápida de tratamientos fitosanitarios</h4>
-                               <div className="text-xs text-green-800 space-y-1">
-                                   <p>1) En cada zona selecciona solo 2 campos: vegetación y tratamiento.</p>
-                                   <p>2) Sube fotos claras para que la IA estime superficie y complejidad.</p>
-                                   <p>3) Puedes analizar varias zonas en paralelo.</p>
-                               </div>
-                           </div>
-                             {(!bookingData.fumigationZones || bookingData.fumigationZones.length === 0) && (
-                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
-                                     <Bug className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                                    <h3 className="text-lg font-medium text-gray-900 mb-1">Añade zona a tratar</h3>
-                                     <button onClick={addFumigationZone} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir zona</button>
-                                 </div>
-                             )}
-                             {(bookingData.fumigationZones || []).map((zone, idx) => {
-                                const isAnalyzed = isFumigationZoneAnalyzed(zone);
-                                const allPhotos = zone.photoUrls || [];
-                                const isZoneAnalyzing = fumigationAnalyzingZoneIds.has(zone.id);
+                   if (isPhytosanitaryService) {
+                    return (
+                     <div className="space-y-6">
+                        {(!bookingData.phytosanitaryZones || bookingData.phytosanitaryZones.length === 0) && (
+                          <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                            <Bug className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                            <h3 className="text-lg font-medium text-gray-900 mb-1">Añade zona a tratar</h3>
+                            <button onClick={addPhytosanitaryZone} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir zona</button>
+                          </div>
+                        )}
+                        {(bookingData.phytosanitaryZones || []).map((zone, idx) => {
+                          const isAnalyzed = isPhytosanitaryZoneAnalyzed(zone);
+                          const allPhotos = zone.photoUrls || [];
+                          const isZoneAnalyzing = phytosanitaryAnalyzingZoneIds.has(zone.id);
+                          const validation = getPhytosanitaryValidation(zone as any);
+                          const selectedPhotoCount = getPhytosanitarySelectedPhotoCount(zone);
+                          const metrics = (zone as any).analysisMetrics || { ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS };
+                          const zoneScopeArray = Array.isArray((zone as any).scope) ? (zone as any).scope : [(zone as any).scope].filter(Boolean);
+                          const shouldHideContextTreatment = zoneScopeArray.length === 1 && (zoneScopeArray[0] === 'malas_hierbas' || zoneScopeArray[0] === 'solo_malas_hierbas');
+                          const detectedItems = PHYTOSANITARY_RESULT_FIELDS
+                            .map((item) => ({
+                              ...item,
+                              value: Number((metrics as any)[item.key] || 0)
+                            }))
+                            .filter((item) => item.value > 0);
+                          const aiObservations = Array.isArray(metrics.observaciones_ia) ? metrics.observaciones_ia : [];
+                          const hasAiAlerts = Number(zone.analysisLevel || 0) >= 3 || aiObservations.length > 0;
 
-                                if (isZoneAnalyzing) {
-                                  return (
-                                    <div key={zone.id} className="relative h-64 w-full flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-100 overflow-hidden shadow-inner">
-                                      <div className="absolute inset-0 z-0 opacity-20"
-                                           style={{
-                                             backgroundImage: 'linear-gradient(#16a34a 1px, transparent 1px), linear-gradient(90deg, #16a34a 1px, transparent 1px)',
-                                             backgroundSize: '20px 20px',
-                                             transform: 'perspective(500px) rotateX(60deg) translateY(-50px) scale(1.5)',
-                                             animation: 'gridMove 4s linear infinite'
-                                           }}
-                                      />
-                                      <div className="relative z-10 w-24 h-24 flex items-center justify-center mb-4">
-                                        <div className="absolute w-full h-full rounded-full border-2 border-green-500/30 animate-ping" />
-                                        <div className="absolute w-3/4 h-3/4 rounded-full border border-green-500/50 animate-ping delay-150" />
-                                        <div className="relative z-20 bg-white p-3 rounded-full shadow-lg border border-green-100">
-                                          <Bug className="w-8 h-8 text-green-600 animate-pulse" />
-                                        </div>
-                                        <div className="absolute w-full h-full rounded-full border-t-2 border-r-2 border-green-500 animate-spin" />
-                                      </div>
-                                      <div className="relative z-10 text-center">
-                                        <p className="text-sm font-semibold text-gray-800 animate-pulse">{loadingMessage}</p>
-                                        <p className="text-xs text-gray-400 mt-1">Analizando zona fitosanitaria...</p>
-                                      </div>
-                                      <style>{`
-                                        @keyframes gridMove {
-                                          0% { background-position: 0 0; }
-                                          100% { background-position: 0 20px; }
-                                        }
-                                      `}</style>
+                          return (
+                            <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                              <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-semibold text-gray-900">Zona {idx + 1}</h3>
+                                  <span className="text-xs text-gray-500">({allPhotos.length}/5 fotos)</span>
+                                </div>
+                                <button onClick={() => removePhytosanitaryZone(zone.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+                              </div>
+
+                              <div className="space-y-5">
+                                <div className="space-y-3">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Contexto del tratamiento</div>
+                                  <div>
+                                    <label className="text-xs text-gray-500 block mb-2">Alcance del tratamiento</label>
+                                    <div className="flex flex-wrap gap-2">
+                                      {PHYTOSANITARY_SCOPE_OPTIONS.map((option) => {
+                                        const currentScope = Array.isArray((zone as any).scope) ? (zone as any).scope : [(zone as any).scope].filter(Boolean);
+                                        const isSelected = currentScope.includes(option.value) || currentScope.includes(`solo_${option.value}`);
+                                        return (
+                                          <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => {
+                                              const next = [...(bookingData.phytosanitaryZones || [])];
+                                              const z = next.find(x => x.id === zone.id);
+                                              if (!z) return;
+                                              
+                                              // Normalize current scope to remove 'solo_'
+                                              let nextScope = currentScope.map((s: string) => s.replace('solo_', ''));
+                                              
+                                              if (option.value === 'todo_jardin') {
+                                                nextScope = isSelected ? [] : ['todo_jardin'];
+                                              } else {
+                                                nextScope = nextScope.filter((s: string) => s !== 'todo_jardin');
+                                                if (isSelected) {
+                                                  nextScope = nextScope.filter((s: string) => s !== option.value);
+                                                } else {
+                                                  nextScope.push(option.value);
+                                                }
+                                              }
+                                              
+                                              (z as any).scope = nextScope;
+                                              
+                                              const firstScopeOption = PHYTOSANITARY_SCOPE_OPTIONS.find(o => nextScope.includes(o.value));
+                                              z.affectedType = firstScopeOption?.affectedType;
+                                              
+                                              if (nextScope.length === 1 && nextScope[0] === 'malas_hierbas') {
+                                                (z as any).requestedTreatment = 'herbicida';
+                                                (z as any).wantsEco = false;
+                                              }
+                                              z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
+                                              
+                                              if (isPhytosanitaryZoneAnalyzed(z)) {
+                                                (z as any).analysisMetrics = undefined;
+                                                z.area = 0;
+                                                z.analysisLevel = undefined;
+                                                z.observations = [];
+                                                z.analyzedIndices = [];
+                                              }
+
+                                              setBookingData({ phytosanitaryZones: next });
+                                              if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                            }}
+                                            className={`px-3 py-1.5 text-sm rounded-full border transition-colors flex items-center gap-1.5 ${isSelected ? 'bg-green-100 border-green-500 text-green-800' : 'bg-white border-gray-300 text-gray-700 hover:border-green-300 hover:bg-green-50'}`}
+                                          >
+                                            {isSelected && <CheckCircle className="w-3.5 h-3.5" />}
+                                            {option.label}
+                                          </button>
+                                        );
+                                      })}
                                     </div>
-                                  );
-                                }
+                                  </div>
+                                  {!shouldHideContextTreatment && (
+                                    <div>
+                                      <label className="text-xs text-gray-500 block mb-1">Tipo de tratamiento contextual</label>
+                                      <select
+                                        value={(zone as any).requestedTreatment || ''}
+                                        onChange={(e) => {
+                                          const next = [...(bookingData.phytosanitaryZones || [])];
+                                          const z = next.find(x => x.id === zone.id);
+                                          if (!z) return;
+                                          (z as any).requestedTreatment = e.target.value as PhytosanitaryRequestTreatment;
+                                          z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
+                                          
+                                          if (isPhytosanitaryZoneAnalyzed(z)) {
+                                            (z as any).analysisMetrics = undefined;
+                                            z.area = 0;
+                                            z.analysisLevel = undefined;
+                                            z.observations = [];
+                                            z.analyzedIndices = [];
+                                          }
 
-                                 return (
-                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
-                                            <div className="flex items-center gap-2">
-                                              <h3 className="font-semibold text-gray-900">Zona {idx + 1}</h3>
-                                              <span className="text-xs text-gray-500">({allPhotos.length}/5 fotos)</span>
+                                          setBookingData({ phytosanitaryZones: next });
+                                          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                        }}
+                                        className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
+                                      >
+                                        <option value="">Seleccionar</option>
+                                        {PHYTOSANITARY_REQUEST_TREATMENT_OPTIONS.map((option) => (
+                                          <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                  <label className={`flex items-center justify-between p-3 rounded-lg border ${(zone as any).type?.includes('endoterapia') ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-white border-gray-300'}`}>
+                                    <span className="text-sm">Quiero opción ecológica</span>
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean((zone as any).wantsEco)}
+                                      disabled={(zone as any).type?.includes('endoterapia')}
+                                      onChange={(e) => {
+                                        const next = [...(bookingData.phytosanitaryZones || [])];
+                                        const z = next.find(x => x.id === zone.id);
+                                        if (!z) return;
+                                        (z as any).wantsEco = e.target.checked;
+                                        z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
+                                        
+                                        if (isPhytosanitaryZoneAnalyzed(z)) {
+                                          (z as any).analysisMetrics = undefined;
+                                          z.area = 0;
+                                          z.analysisLevel = undefined;
+                                          z.observations = [];
+                                          z.analyzedIndices = [];
+                                        }
+
+                                        setBookingData({ phytosanitaryZones: next });
+                                        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="pt-3 border-t border-gray-100">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700 mb-2">Fotos de la zona</div>
+                                  <div className="text-xs text-gray-500 mb-2">Fotos de esta zona ({allPhotos.length}/5, seleccionadas: {selectedPhotoCount})</div>
+                                  <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide min-h-[110px]">
+                                    {allPhotos.map((photo, i) => {
+                                      const isSelected = zone.selectedIndices?.includes(i) ?? true;
+                                      return (
+                                        <div key={i} className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`} onClick={() => togglePhytosanitaryPhotoSelection(zone.id, i)}>
+                                          <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'}`}>
+                                            <img src={photo} alt={`Foto ${i + 1}`} className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${phytosanitaryUploads[zone.id]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`} />
+                                            <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500' : 'bg-black/20 border-white/80 group-hover:bg-black/40'}`}>
+                                              {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
                                             </div>
-                                             <button onClick={() => removeFumigationZone(zone.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
-                                         </div>
-                                        <div className="mb-4 grid grid-cols-2 gap-3">
-                                          <div>
-                                            <label className="text-xs text-gray-500 block mb-1">Vegetación a tratar</label>
-                                            <select
-                                              value={zone.affectedType || ''}
-                                              onChange={(e) => {
-                                                const next = [...(bookingData.fumigationZones || [])];
-                                                const z = next.find(x => x.id === zone.id);
-                                                if (!z) return;
-                                                z.affectedType = e.target.value as any;
-                                                setBookingData({ fumigationZones: next });
-                                                if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: next });
-                                              }}
-                                              className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
-                                            >
-                                              <option value="">Seleccionar</option>
-                                              <option value="Palmeras">Palmeras</option>
-                                              <option value="Árboles">Árboles</option>
-                                              <option value="Setos">Setos</option>
-                                              <option value="Plantas bajas">Plantas</option>
-                                              <option value="Césped">Césped</option>
-                                            </select>
                                           </div>
-                                          <div>
-                                            <label className="text-xs text-gray-500 block mb-1">Tipo de tratamiento</label>
-                                            <select
-                                              value={zone.type || ''}
-                                              onChange={(e) => {
-                                                const next = [...(bookingData.fumigationZones || [])];
-                                                const z = next.find(x => x.id === zone.id);
-                                                if (!z) return;
-                                                z.type = e.target.value;
-                                                setBookingData({ fumigationZones: next });
-                                                if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { fumigationZones: next });
-                                              }}
-                                              className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
-                                            >
-                                              <option value="">Seleccionar</option>
-                                              <option value="insecticida">Insecticida</option>
-                                              <option value="fungicida">Fungicida</option>
-                                              <option value="herbicida">Herbicida</option>
-                                              <option value="ecologico_preventivo">Ecológico preventivo</option>
-                                              <option value="endoterapia">Endoterapia</option>
-                                            </select>
-                                          </div>
+                                          <button onClick={(e) => { e.stopPropagation(); removePhytosanitaryPhoto(zone.id, i); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
                                         </div>
+                                      );
+                                    })}
+                                    {allPhotos.length < 5 && (
+                                      <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
+                                        <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
+                                            <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
+                                          </div>
+                                          <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
+                                          <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handlePhytosanitaryFileSelect(zone.id, e)} />
+                                        </label>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
 
-                                        <div className="mb-4">
-                                          <div className="text-xs text-gray-500 mb-2">Fotos de esta zona ({allPhotos.length})</div>
-                                          <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide min-h-[110px]">
-                                            {allPhotos.map((photo, i) => {
-                                              const isSelected = zone.selectedIndices?.includes(i) ?? true;
-                                              const isAnalyzedPhoto = zone.analyzedIndices?.includes(i);
+                                <div className="space-y-3 pt-3 border-t border-gray-100">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Análisis IA</div>
+                                  {isZoneAnalyzing ? (
+                                    <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                                      <p className="text-sm font-semibold text-green-800">{loadingMessage}</p>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => analyzePhytosanitaryZone(zone.id)}
+                                      disabled={validation.issues.length > 0}
+                                      className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${validation.issues.length > 0 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                                    >
+                                      <Wand2 className="w-4 h-4" />
+                                      {isAnalyzed ? (
+                                        (zone.analyzedIndices && (zone.analyzedIndices.length !== selectedPhotoCount || !zone.analyzedIndices.every(i => zone.selectedIndices?.includes(i)))) 
+                                          ? 'Reanalizar (hay cambios)' 
+                                          : `Reanalizar ${selectedPhotoCount} foto${selectedPhotoCount === 1 ? '' : 's'}`
+                                      ) : `Analizar ${selectedPhotoCount} foto${selectedPhotoCount === 1 ? '' : 's'}`}
+                                    </button>
+                                  )}
+                                  {(validation.issues.length > 0 || validation.warnings.length > 0) && (
+                                    <div className="p-3 rounded-lg border border-yellow-200 bg-yellow-50 text-yellow-800 text-xs space-y-1">
+                                      {validation.issues.map((issue, issueIndex) => <p key={`issue-${issueIndex}`}>{issue}</p>)}
+                                      {validation.warnings.map((warning, warningIndex) => <p key={`warning-${warningIndex}`}>{warning}</p>)}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="space-y-3 pt-3 border-t border-gray-100">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Resultados de la IA</div>
+                                  {!isAnalyzed ? (
+                                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                                      Un espacio reservado para mostrar el análisis una vez completado.
+                                    </div>
+                                  ) : (
+                                    <div className={`relative overflow-hidden rounded-xl border ${hasAiAlerts ? 'border-red-200 bg-red-50/40' : 'border-green-200 bg-green-50/40'}`}>
+                                      <div className={`absolute inset-y-0 left-0 w-1.5 ${hasAiAlerts ? 'bg-red-500' : 'bg-green-500'}`} />
+                                      <div className="pl-5 pr-3 py-3 space-y-2">
+                                        {detectedItems.length === 0 && aiObservations.length === 0 ? (
+                                          <div className="text-sm text-gray-600">La IA no detectó elementos con cantidad.</div>
+                                        ) : (
+                                          <>
+                                            {Object.entries(PHYTOSANITARY_GROUPED_FIELDS).map(([familyName, fields]) => {
+                                              const familyItems = detectedItems.filter(item => fields.some(f => f.key === item.key));
+                                              if (familyItems.length === 0) return null;
                                               return (
-                                                <div key={i} className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`} onClick={() => toggleFumigationPhotoSelection(zone.id, i)}>
-                                                  <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzedPhoto ? 'opacity-80' : 'opacity-100'}`}>
-                                                    <img src={photo} alt={`Foto ${i + 1}`} className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${fumigationUploads[zone.id]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`} />
-                                                    {fumigationUploads[zone.id]?.has(i) && (
-                                                      <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
-                                                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                      </div>
-                                                    )}
-                                                    {isAnalyzedPhoto && (
-                                                      <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">Analizada</div>
-                                                    )}
-                                                    <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500' : 'bg-black/20 border-white/80 group-hover:bg-black/40'}`}>
-                                                      {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-                                                    </div>
+                                                <div key={familyName} className="mb-4 last:mb-0">
+                                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-700 mb-2">{familyName}</div>
+                                                  <div className="space-y-2 pl-2 border-l-2 border-green-200">
+                                                    {familyItems.map((item) => {
+                                                      const fieldDef = fields.find(f => f.key === item.key);
+                                                      return (
+                                                        <div key={item.key} className="flex items-center justify-between gap-3 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
+                                                          <div className="text-sm text-gray-800">
+                                                            {fieldDef?.label || item.label}: <span className="font-semibold">{item.value} {fieldDef?.unit || item.unit}</span>
+                                                          </div>
+                                                          <button
+                                                            onClick={() => removePhytosanitaryMetricItem(zone.id, item.key)}
+                                                            className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
+                                                          >
+                                                            <Trash2 className="w-4 h-4" />
+                                                          </button>
+                                                        </div>
+                                                      );
+                                                    })}
                                                   </div>
-                                                  <button onClick={(e) => { e.stopPropagation(); removeFumigationPhoto(zone.id, i); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10">
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                  </button>
                                                 </div>
                                               );
                                             })}
-                                            {!isZoneAnalyzing && allPhotos.length < 5 && (
-                                              <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
-                                                <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                                                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
-                                                    <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
-                                                  </div>
-                                                  <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
-                                                  <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFumigationFileSelect(zone.id, e)} />
-                                                </label>
+                                            {aiObservations.length > 0 && !aiObservations.includes('none') && (
+                                              <div className={`space-y-2 ${detectedItems.length > 0 ? 'mt-3 pt-3 border-t border-gray-200/50' : ''}`}>
+                                                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Observaciones</div>
+                                                {aiObservations.map((observation: string, observationIndex: number) => {
+                                                  if (observation === 'none') return null;
+                                                  return (
+                                                    <div key={`${observation}-${observationIndex}`} className="flex items-center justify-between gap-3 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
+                                                      <div className="text-sm text-gray-800">{OBS_TRANSLATIONS[observation] || observation}</div>
+                                                      <button
+                                                        onClick={() => removePhytosanitaryObservation(zone.id, observationIndex)}
+                                                        className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
+                                                      >
+                                                        <Trash2 className="w-4 h-4" />
+                                                      </button>
+                                                    </div>
+                                                  );
+                                                })}
                                               </div>
                                             )}
-                                          </div>
-                                        </div>
-
-                                        <button
-                                          onClick={() => analyzeFumigationZone(zone.id)}
-                                          disabled={isZoneAnalyzing || allPhotos.length === 0 || !zone.affectedType || !zone.type || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0)}
-                                          className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                                            isZoneAnalyzing || allPhotos.length === 0 || !zone.affectedType || !zone.type || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0)
-                                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                              : 'bg-green-600 text-white hover:bg-green-700'
-                                          }`}
-                                        >
-                                          <Wand2 className="w-4 h-4" />
-                                          {isAnalyzed ? 'Reanalizar esta zona' : 'Analizar esta zona'}
-                                        </button>
-
-                                        {isAnalyzed && (
-                                          <div className="mt-4 bg-green-50 p-4 rounded-xl border border-green-100">
-                                            <div className="flex items-center justify-between mb-3">
-                                              <div className="flex items-center gap-2 text-green-800 font-medium text-sm"><Sparkles className="w-4 h-4" /> Resultado</div>
-                                              {zone.analysisLevel && (
-                                                <div className={`px-2 py-0.5 rounded text-[10px] font-medium border ${zone.analysisLevel === 1 ? 'bg-green-100 border-green-200 text-green-800' : zone.analysisLevel === 2 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-                                                  Calidad {zone.analysisLevel === 1 ? 'Alta' : zone.analysisLevel === 2 ? 'Media' : 'Baja'}
-                                                </div>
-                                              )}
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4 text-sm text-gray-700 mb-3">
-                                              <div><span className="text-xs text-gray-500 block">Vegetación</span>{zone.affectedType || '-'}</div>
-                                              <div><span className="text-xs text-gray-500 block">Tratamiento</span>{zone.type || '-'}</div>
-                                              <div><span className="text-xs text-gray-500 block">Superficie IA</span>{zone.area > 0 ? `${zone.area} m²` : 'Sin estimar'}</div>
-                                            </div>
-                                            {zone.observations && zone.observations.length > 0 && (
-                                              <div className="p-2 rounded-lg text-xs border bg-yellow-50 border-yellow-200 text-yellow-800">
-                                                <ul className="list-disc list-inside space-y-0.5 ml-1">{zone.observations.map((obs, k) => <li key={k}>{obs}</li>)}</ul>
-                                              </div>
-                                            )}
-                                          </div>
+                                          </>
                                         )}
-                                     </div>
-                                 );
-                             })}
-                            {(bookingData.fumigationZones || []).some(zone => !isFumigationZoneAnalyzed(zone)) && (
-                              <button
-                                onClick={analyzeAllFumigationZones}
-                                disabled={isAnyFumigationZoneAnalyzing}
-                                className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors ${
-                                  isAnyFumigationZoneAnalyzing ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-100 text-green-800 hover:bg-green-200'
-                                }`}
-                              >
-                                <Sparkles className="w-4 h-4" />
-                                Analizar todas las zonas pendientes
-                              </button>
-                            )}
-                             <button onClick={addFumigationZone} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otra zona</button>
-                         </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {(bookingData.phytosanitaryZones || []).some(zone => !isPhytosanitaryZoneAnalyzed(zone)) && (
+                          <button
+                            onClick={analyzeAllPhytosanitaryZones}
+                            disabled={isAnyPhytosanitaryZoneAnalyzing}
+                            className={`w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors ${isAnyPhytosanitaryZoneAnalyzing ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-100 text-green-800 hover:bg-green-200'}`}
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            Analizar todas las zonas pendientes
+                          </button>
+                        )}
+                        <button onClick={addPhytosanitaryZone} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otra zona</button>
+                      </div>
                      );
                    }
 
@@ -4967,7 +5549,7 @@ const DetailsPage: React.FC = () => {
                 <option value="Poda de plantas">Poda de plantas</option>
                 <option value="Poda de árboles">Poda de árboles</option>
                 <option value="Labrar y quitar malas hierbas a mano">Labrar y quitar malas hierbas a mano</option>
-                <option value="Tratamientos fitosanitarios">Tratamientos fitosanitarios</option>
+                <option value="Servicios fitosanitarios">Servicios fitosanitarios</option>
                 <option value="Poda de palmeras">Poda de palmeras</option>
               </select>
             </div>
@@ -5111,13 +5693,13 @@ const DetailsPage: React.FC = () => {
                 </div>
             )}
 
-            {/* --- Fumigation --- */}
-            {((debugService || '').toLowerCase().includes('fitosanit') || (debugService || '').toLowerCase().includes('fumig')) && (
+            {/* --- Phytosanitary --- */}
+            {((debugService || '').toLowerCase().includes('fitosanit') || (debugService || '').toLowerCase().includes('fitosanit')) && (
                 <div>
                     <label className="block text-sm font-medium text-gray-800 mb-1">Tipo tratamiento</label>
                     <select
-                        value={debugFumigationType}
-                        onChange={(e) => setDebugFumigationType(e.target.value)}
+                        value={debugPhytosanitaryType}
+                        onChange={(e) => setDebugPhytosanitaryType(e.target.value)}
                         className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
                     >
                         <option value="">Selecciona...</option>
@@ -5316,7 +5898,7 @@ const DetailsPage: React.FC = () => {
                   } else {
                       const qty = debugQuantity === '' ? 0 : Number(debugQuantity);
                       const lowerDebugService = debugService.toLowerCase();
-                      const unit = lowerDebugService.includes('césped') || lowerDebugService.includes('setos') || lowerDebugService.includes('hierbas') || lowerDebugService.includes('labrar') || lowerDebugService.includes('fumig') || lowerDebugService.includes('fitosanit') ? 'm2' : 'plantas';
+                      const unit = lowerDebugService.includes('césped') || lowerDebugService.includes('setos') || lowerDebugService.includes('hierbas') || lowerDebugService.includes('labrar') || lowerDebugService.includes('fitosanit') || lowerDebugService.includes('fitosanit') ? 'm2' : 'plantas';
                       const effectiveDebugState = debugService.includes('seto') ? debugHedgeState : debugState;
                       const diff = effectiveDebugState.includes('muy') ? 3 : effectiveDebugState.includes('descuidado') ? 2 : 1;
                       const debugHedgeHeightMeters = hedgeHeightBandToMeters(debugHedgeHeight);
@@ -5342,15 +5924,15 @@ const DetailsPage: React.FC = () => {
                         altura_aprox_m: debugService.includes('árbol') ? 3 : null, // Default
                         tipo_arbol: 'Generico', // Default
                         // Shrub
-                        cantidad_estimada: debugService.toLowerCase().includes('planta') && !debugService.toLowerCase().includes('fumig') && !debugService.toLowerCase().includes('fitosanit') ? qty : null,
+                        cantidad_estimada: debugService.toLowerCase().includes('planta') && !debugService.toLowerCase().includes('fitosanit') && !debugService.toLowerCase().includes('fitosanit') ? qty : null,
                         tamano_promedio: debugShrubSize,
                         tipo_plantacion: debugShrubType,
                         // Clearing
                         densidad_maleza: debugClearingType,
-                        // Fumigation
+                        // Phytosanitary
                         cantidad_o_superficie: qty,
-                        unidad: (debugService.toLowerCase().includes('fumig') || debugService.toLowerCase().includes('fitosanit')) ? 'm2' : null,
-                        nivel_plaga: debugFumigationType
+                        unidad: (debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit')) ? 'm2' : null,
+                        nivel_plaga: debugPhytosanitaryType
                        };
  
                        console.log('[Debug] Simulating AI Result:', { 
@@ -5438,10 +6020,10 @@ const DetailsPage: React.FC = () => {
                                observations: ['Simulación manual']
                            }];
                            updatePayload.estimatedHours = Math.ceil(qty / 20);
-                       } else if ((debugService || '').toLowerCase().includes('fitosanit') || (debugService || '').toLowerCase().includes('fumig')) {
-                           updatePayload.fumigationZones = [{
+                       } else if ((debugService || '').toLowerCase().includes('fitosanit') || (debugService || '').toLowerCase().includes('fitosanit')) {
+                           updatePayload.phytosanitaryZones = [{
                                id: `debug-fum-${Date.now()}`,
-                               type: debugFumigationType || 'Insecticida',
+                               type: debugPhytosanitaryType || 'Insecticida',
                                area: qty,
                                wasteRemoval: true,
                                photoUrls: [],
@@ -5585,13 +6167,27 @@ const DetailsPage: React.FC = () => {
         <div className="max-w-md mx-auto">
           <button
             onClick={handleContinue}
-            disabled={debugService === 'Poda de palmeras' && (!bookingData.estimatedHours || bookingData.estimatedHours <= 0)}
+            disabled={
+              (debugService === 'Poda de palmeras' && (!bookingData.estimatedHours || bookingData.estimatedHours <= 0))
+              || (
+                (debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit'))
+                && (
+                  (bookingData.phytosanitaryZones || []).length === 0
+                  || (bookingData.phytosanitaryZones || []).some((zone) => getPhytosanitaryValidation(zone as any).issues.length > 0 || !isPhytosanitaryZoneAnalyzed(zone as any))
+                )
+              )
+            }
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
             {(() => {
                 const lowerService = (debugService || '').toLowerCase();
                 const isLawn = lowerService.includes('césped') || lowerService.includes('cesped');
                 const isHedge = lowerService.includes('seto');
+                const isPhytosanitary = lowerService.includes('fitosanit') || lowerService.includes('fitosanit');
+                if (isPhytosanitary) {
+                    const analyzedZones = (bookingData.phytosanitaryZones || []).filter((zone) => isPhytosanitaryZoneAnalyzed(zone as any)).length;
+                    return analyzedZones > 0 ? `Continuar con ${analyzedZones} zona${analyzedZones === 1 ? '' : 's'}` : 'Continuar';
+                }
                 if (isLawn || isHedge) {
                     const zoneCount = isLawn
                         ? (bookingData.lawnZones || []).filter((zone: any) => zone.analysisLevel === 1 || zone.analysisLevel === 2).length

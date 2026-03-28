@@ -79,7 +79,7 @@ const computeTaskPrice = (task: any) => {
   } else if (tipo.includes('malas hierbas') || tipo.includes('hierbas') || tipo.includes('maleza') || tipo.includes('labrado')) {
     const m2 = task?.superficie_m2;
     if (m2 != null) price = ((Number(m2) / 20) * factor) * 20;
-  } else if (tipo.includes('fumig')) {
+  } else if (tipo.includes('fitosanit')) {
     const plants = task?.numero_plantas;
     if (plants != null) price = ((Number(plants) * 0.05) * factor) * 35;
   } else if (tipo.includes('poda') && (tipo.includes('arbol') || tipo.includes('árbol'))) {
@@ -152,7 +152,13 @@ const BookingCheckout: React.FC = () => {
           .select('*')
           .in('id', payload.selectedServiceIds);
         if (error) throw error;
-        setServices((data as Service[]) || []);
+        const mapped = (data || []).map((s: any) => {
+          if (s.name.toLowerCase().includes('fumigación') || s.name.toLowerCase().includes('fumigacion') || s.name.toLowerCase().includes('tratamientos fitosanitarios')) {
+            return { ...s, name: 'Servicios fitosanitarios' };
+          }
+          return s;
+        });
+        setServices((mapped as Service[]) || []);
       } catch (e) {
         console.error('Error loading services for checkout:', e);
       } finally {

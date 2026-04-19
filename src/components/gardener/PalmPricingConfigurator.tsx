@@ -6,76 +6,75 @@ import ServiceConfigFooter from './ServiceConfigFooter';
 
 // Tipos para la configuración de palmeras
 export type PalmSpecies = 
-  | 'Phoenix (datilera o canaria)' 
-  | 'Washingtonia' 
-  | 'Roystonea regia (cubana)' 
-  | 'Syagrus romanzoffiana (cocotera)' 
+  | 'Phoenix canariensis'
+  | 'Phoenix dactylifera'
+  | 'Washingtonia robusta/filifera'
+  | 'Syagrus romanzoffiana'
   | 'Trachycarpus fortunei'
-  | 'Livistona' 
-  | 'Kentia (palmito)'
-  | 'Phoenix roebelenii(pigmea)'
-  | 'cycas revoluta (falsa palmera)';
+  | 'Roystonea regia';
 
-export type PalmHeight = '0-4' | '4-8' | '8-12' | '12+' | '0-5' | '5-12' | '12-20' | '20+' | '0-2' | '2+';
-export type PalmCondition = 'normal' | 'descuidada' | 'muy_descuidada';
-export type WasteRemovalOption = 'included' | 'extra_percentage' | 'not_included' | 'extra_fixed'; // Kept extra_fixed for backward compatibility just in case
+export type PalmHeight = string;
+export type PalmCondition = 'normal' | 'descuidado' | 'muy_descuidado';
+export type WasteRemovalOption = 'included' | 'extra_percentage' | 'not_included' | 'extra_fixed';
 
 export interface PalmPricingConfig {
   species_prices: Record<PalmSpecies, number>; 
-  height_prices: Record<PalmSpecies, Partial<Record<PalmHeight, number>>>; 
+  height_prices: Record<PalmSpecies, Record<string, number>>; 
   condition_surcharges: Record<PalmCondition, number>; 
+  access_difficulty: number;
+  phytosanitary: number;
+  trunk_finish: number;
   waste_removal: {
     option: WasteRemovalOption;
-    fixed_price?: number; // Deprecated in favor of percentage, but kept for type safety
-    percentage?: number; // New field for percentage surcharge
+    fixed_price?: number;
+    percentage?: number;
   };
   minimum_price: number;
-  selected_species?: PalmSpecies[]; // New field to track user selection
+  selected_species?: PalmSpecies[];
 }
 
-// Valores por defecto SOLO para inicializar estructura, NO para mostrar valores si no existen
-const EMPTY_CONFIG: PalmPricingConfig = {
-  species_prices: {
-    'Phoenix (datilera o canaria)': 0, 
-    'Washingtonia': 0, 
-    'Roystonea regia (cubana)': 0, 
-    'Syagrus romanzoffiana (cocotera)': 0, 
-    'Trachycarpus fortunei': 0,
-    'Livistona': 0, 
-    'Kentia (palmito)': 0,
-    'Phoenix roebelenii(pigmea)': 0,
-    'cycas revoluta (falsa palmera)': 0
-  },
-  height_prices: {
-    'Phoenix (datilera o canaria)': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
-    'Washingtonia': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
-    'Roystonea regia (cubana)': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
-    'Syagrus romanzoffiana (cocotera)': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
-    'Trachycarpus fortunei': { '0-5': 0, '5-12': 0, '12-20': 0, '20+': 0 },
-    'Livistona': { '0-2': 0, '2+': 0 },
-    'Kentia (palmito)': { '0-2': 0, '2+': 0 },
-    'Phoenix roebelenii(pigmea)': { '0-2': 0, '2+': 0 },
-    'cycas revoluta (falsa palmera)': { '0-2': 0 }
-  },
-  condition_surcharges: { 'normal': 0, 'descuidada': 20, 'muy_descuidada': 50 },
-  waste_removal: { option: 'not_included', percentage: 0 }, // Default changed to not_included as requested "Eliminar opción Incluida en precio base" logic
-  minimum_price: 0,
-  selected_species: [] // Default empty
+export const SPECIES_RANGES: Record<PalmSpecies, string[]> = {
+  'Phoenix canariensis': ['0-4', '4-10', '>10'],
+  'Phoenix dactylifera': ['0-5', '5-10', '10-15', '>15'],
+  'Washingtonia robusta/filifera': ['0-4', '4-12', '12-20', '>20'],
+  'Syagrus romanzoffiana': ['0-5', '5-10', '>10'],
+  'Trachycarpus fortunei': ['0-3', '3-6', '>6'],
+  'Roystonea regia': ['0-6', '>6']
 };
 
-const LARGE_PALMS: PalmSpecies[] = [
-  'Phoenix (datilera o canaria)',
-  'Washingtonia',
-  'Roystonea regia (cubana)',
-  'Syagrus romanzoffiana (cocotera)',
-  'Trachycarpus fortunei'
-];
+const EMPTY_CONFIG: PalmPricingConfig = {
+  species_prices: {
+    'Phoenix canariensis': 0,
+    'Phoenix dactylifera': 0,
+    'Washingtonia robusta/filifera': 0,
+    'Syagrus romanzoffiana': 0,
+    'Trachycarpus fortunei': 0,
+    'Roystonea regia': 0
+  },
+  height_prices: {
+    'Phoenix canariensis': { '0-4': 0, '4-10': 0, '>10': 0 },
+    'Phoenix dactylifera': { '0-5': 0, '5-10': 0, '10-15': 0, '>15': 0 },
+    'Washingtonia robusta/filifera': { '0-4': 0, '4-12': 0, '12-20': 0, '>20': 0 },
+    'Syagrus romanzoffiana': { '0-5': 0, '5-10': 0, '>10': 0 },
+    'Trachycarpus fortunei': { '0-3': 0, '3-6': 0, '>6': 0 },
+    'Roystonea regia': { '0-6': 0, '>6': 0 }
+  },
+  condition_surcharges: { 'normal': 0, 'descuidado': 20, 'muy_descuidado': 50 },
+  access_difficulty: 0,
+  phytosanitary: 0,
+  trunk_finish: 0,
+  waste_removal: { option: 'not_included', percentage: 0 },
+  minimum_price: 0,
+  selected_species: []
+};
 
-const SMALL_PALMS: PalmSpecies[] = [
-  'Livistona',
-  'Kentia (palmito)',
-  'Phoenix roebelenii(pigmea)',
-  'cycas revoluta (falsa palmera)'
+const PALM_SPECIES: PalmSpecies[] = [
+  'Phoenix canariensis',
+  'Phoenix dactylifera',
+  'Washingtonia robusta/filifera',
+  'Syagrus romanzoffiana',
+  'Trachycarpus fortunei',
+  'Roystonea regia'
 ];
 
 interface Props {
@@ -113,8 +112,22 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         height_prices: { ...EMPTY_CONFIG.height_prices, ...value.height_prices },
         condition_surcharges: { ...EMPTY_CONFIG.condition_surcharges, ...value.condition_surcharges },
         waste_removal: { ...EMPTY_CONFIG.waste_removal, ...value.waste_removal },
+        access_difficulty: value.access_difficulty ?? EMPTY_CONFIG.access_difficulty,
+        phytosanitary: value.phytosanitary ?? EMPTY_CONFIG.phytosanitary,
+        trunk_finish: value.trunk_finish ?? EMPTY_CONFIG.trunk_finish,
         selected_species: value.selected_species || []
     };
+    
+    // Migración de datos legados para condition_surcharges
+    if (value && (value as any).condition_surcharges) {
+        const legacySurcharges = (value as any).condition_surcharges;
+        if ('descuidada' in legacySurcharges) {
+            merged.condition_surcharges.descuidado = legacySurcharges['descuidada'];
+        }
+        if ('muy_descuidada' in legacySurcharges) {
+            merged.condition_surcharges.muy_descuidado = legacySurcharges['muy_descuidada'];
+        }
+    }
     
     // Si selected_species es undefined (no existe en la config entrante), intentamos poblarlo
     // Solo para migración de datos antiguos que no tengan este campo.
@@ -122,7 +135,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     if (value && value.selected_species === undefined) {
         const detectedSpecies: PalmSpecies[] = [];
         Object.entries(merged.species_prices).forEach(([species, price]) => {
-            if (price > 0) detectedSpecies.push(species as PalmSpecies);
+            if ((price as number) > 0) detectedSpecies.push(species as PalmSpecies);
         });
         if (detectedSpecies.length > 0) {
             merged.selected_species = detectedSpecies;
@@ -133,19 +146,25 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   }, [value]);
 
   // Derived state for active species in each category
-  const activeLargePalms = LARGE_PALMS.filter(s => config.selected_species?.includes(s));
-  const activeSmallPalms = SMALL_PALMS.filter(s => config.selected_species?.includes(s));
+  const activePalms = PALM_SPECIES.filter(s => config.selected_species?.includes(s));
   
   // Available species to add
-  const availableLargePalms = LARGE_PALMS.filter(s => !config.selected_species?.includes(s));
-  const availableSmallPalms = SMALL_PALMS.filter(s => !config.selected_species?.includes(s));
+  const availablePalms = PALM_SPECIES.filter(s => !config.selected_species?.includes(s));
 
   const addSpecies = (species: PalmSpecies) => {
     const currentSelected = config.selected_species || [];
     if (!currentSelected.includes(species)) {
         onChange({
             ...config,
-            selected_species: [...currentSelected, species]
+            selected_species: [...currentSelected, species],
+            species_prices: {
+                ...config.species_prices,
+                [species]: 0
+            },
+            height_prices: {
+                ...config.height_prices,
+                [species]: {}
+            }
         });
     }
   };
@@ -170,19 +189,13 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   };
 
   // Helper to identify groups
-  const getMultipliers = (species: PalmSpecies): Partial<Record<PalmHeight, number>> => {
-    // Large Palms
-    if (['Phoenix (datilera o canaria)', 'Washingtonia', 'Roystonea regia (cubana)', 'Trachycarpus fortunei'].includes(species)) {
+  const getMultipliers = (species: PalmSpecies): Record<string, number> => {
+    // Palms
+    if (['Phoenix canariensis', 'Phoenix dactylifera', 'Washingtonia robusta/filifera', 'Roystonea regia', 'Trachycarpus fortunei'].includes(species)) {
       return { '5-12': 1.30, '12-20': 1.70, '20+': 2.00 }; // +30%, +70%, +100% sobre base (0-5)
     }
-    if (species === 'Syagrus romanzoffiana (cocotera)') {
+    if (species === 'Syagrus romanzoffiana') {
       return { '5-12': 1.25, '12-20': 1.60, '20+': 2.00 }; // +25%, +60%, +100%
-    }
-    
-    // Small Palms
-    // Livistona, Kentia, Phoenix roebelenii
-    if (['Livistona', 'Kentia (palmito)', 'Phoenix roebelenii(pigmea)'].includes(species)) {
-        return { '2+': 1.30 }; // +30%
     }
     
     return {};
@@ -202,7 +215,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     
     // Si editamos el base, actualizamos species_prices también
     const newSpeciesPrices = { ...config.species_prices };
-    const isBase = height === '0-5' || height === '0-2';
+    const isBase = SPECIES_RANGES[species] && height === SPECIES_RANGES[species][0];
     
     if (isBase) {
         newSpeciesPrices[species] = newPrice;
@@ -281,6 +294,9 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         height_prices: { ...EMPTY_CONFIG.height_prices, ...baseToCompare.height_prices },
         condition_surcharges: { ...EMPTY_CONFIG.condition_surcharges, ...baseToCompare.condition_surcharges },
         waste_removal: { ...EMPTY_CONFIG.waste_removal, ...baseToCompare.waste_removal },
+        access_difficulty: baseToCompare.access_difficulty ?? EMPTY_CONFIG.access_difficulty,
+        phytosanitary: baseToCompare.phytosanitary ?? EMPTY_CONFIG.phytosanitary,
+        trunk_finish: baseToCompare.trunk_finish ?? EMPTY_CONFIG.trunk_finish,
         selected_species: baseToCompare.selected_species || []
     };
     
@@ -288,7 +304,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     if (baseToCompare.selected_species === undefined) {
         const detectedSpecies: PalmSpecies[] = [];
         Object.entries(processedBase.species_prices).forEach(([species, price]) => {
-            if (price > 0) detectedSpecies.push(species as PalmSpecies);
+            if ((price as number) > 0) detectedSpecies.push(species as PalmSpecies);
         });
         if (detectedSpecies.length > 0) {
             processedBase.selected_species = detectedSpecies;
@@ -310,38 +326,26 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         // Asumiremos que si no hay especies, está ok (servicio sin configurar detalles)
     } else {
         selected.forEach(species => {
-            const isLarge = LARGE_PALMS.includes(species);
-            const isSmall = SMALL_PALMS.includes(species);
-            const isCycas = species === 'cycas revoluta (falsa palmera)';
+            const isPalm = PALM_SPECIES.includes(species);
             
             // Check base prices or specific heights
-            if (isLarge) {
-                const heights: PalmHeight[] = ['0-5', '5-12', '12-20', '20+'];
-                const speciesHeights = config.height_prices[species] as Partial<Record<PalmHeight, number>> | undefined;
+            if (isPalm) {
+                const heights = SPECIES_RANGES[species] || [];
+                const speciesHeights = config.height_prices[species];
                 heights.forEach(h => {
                     if (!speciesHeights?.[h] || speciesHeights[h] <= 0) {
                         errors.push(`${species}-${h}`);
                     }
                 });
-            } else if (isSmall) {
-                const speciesHeights = config.height_prices[species] as Partial<Record<PalmHeight, number>> | undefined;
-                if (!speciesHeights?.['0-2'] || speciesHeights['0-2'] <= 0) {
-                     errors.push(`${species}-0-2`);
-                }
-                if (!isCycas) {
-                    if (!speciesHeights?.['2+'] || speciesHeights['2+'] <= 0) {
-                        errors.push(`${species}-2+`);
-                    }
-                }
             }
         });
 
         // Validate surcharges
-        if (config.condition_surcharges['descuidada'] <= 0) {
-            errors.push('surcharge-descuidada');
+        if (config.condition_surcharges['descuidado'] <= 0) {
+            errors.push('surcharge-descuidado');
         }
-        if (config.condition_surcharges['muy_descuidada'] <= 0) {
-            errors.push('surcharge-muy_descuidada');
+        if (config.condition_surcharges['muy_descuidado'] <= 0) {
+            errors.push('surcharge-muy_descuidado');
         }
 
         // Validate waste removal
@@ -380,7 +384,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
   const renderCell = (species: PalmSpecies, height: PalmHeight, basePrice: number) => {
      // Get current value
-     const speciesHeights = config.height_prices[species] as Partial<Record<PalmHeight, number>> | undefined;
+     const speciesHeights = config.height_prices[species];
      const value = speciesHeights?.[height] ?? 0;
      const hasError = validationErrors.includes(`${species}-${height}`);
      
@@ -508,11 +512,11 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
       {/* 1. Precios Base por Especie y Altura */}
       <div className="space-y-8">
-        {/* Tabla de Especies Grandes */}
+        {/* Tabla de Especies */}
         <div>
           <div className="flex flex-col gap-1 mb-4">
              <div className="flex items-center gap-2">
-                <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Especies Grandes</h4>
+                <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Especies de palmeras</h4>
                 <span className="flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200 font-semibold">
                     <AlertCircle className="w-3 h-3" />
                     Solo profesionales
@@ -535,8 +539,8 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                         }}
                         defaultValue=""
                     >
-                        <option value="" disabled>Añadir especie grande...</option>
-                        {availableLargePalms.map(s => (
+                        <option value="" disabled>Añadir especie...</option>
+                        {availablePalms.map(s => (
                             <option key={s} value={s}>{s}</option>
                         ))}
                     </select>
@@ -545,80 +549,47 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
           </div>
           
           <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
-            {/* Desktop Header - Visible only on md+ */}
-            <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
-                <div className="md:col-span-3">Especie</div>
-                <div className="md:col-span-2 text-center">0–5 m</div>
-                <div className="md:col-span-2 text-center">&gt;5–12 m</div>
-                <div className="md:col-span-2 text-center">&gt;12–20 m</div>
-                <div className="md:col-span-2 text-center">&gt;20 m</div>
-                <div className="md:col-span-1"></div>
-            </div>
-
             {/* Content */}
-            {activeLargePalms.length > 0 ? (
+            {activePalms.length > 0 ? (
                 <div className="divide-y divide-slate-100">
-                    {activeLargePalms.map((species) => {
-                       const p0_5 = config.height_prices[species]?.['0-5'] ?? 0;
+                    {activePalms.map((species) => {
+                       const speciesRanges = SPECIES_RANGES[species] || [];
+                       const p0_5 = config.height_prices[species]?.[speciesRanges[0]] ?? 0;
                        return (
                         <div key={species} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
-                          <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
+                          <div className="flex flex-col md:gap-4">
                             
-                            {/* Species Name Row (Mobile: Top, Desktop: Left) */}
-                            <div className="flex justify-between items-center mb-3 px-4 md:mb-0 md:px-0 md:col-span-3">
-                                <span className="font-bold text-gray-800 text-sm md:text-sm md:font-medium md:text-gray-700">{species}</span>
+                            {/* Species Name Row */}
+                            <div className="flex justify-between items-center mb-3 px-4 md:mb-0 md:px-0">
+                                <div className="flex flex-col">
+                                    <span className="font-bold text-gray-800 text-sm md:text-sm md:font-medium md:text-gray-700">{species}</span>
+                                    {species === 'Roystonea regia' && (
+                                        <span className="text-xs text-amber-600 mt-0.5">
+                                            Especie de tronco liso (prohibido uso de espuelas). Su precio suele calcularse en base al alquiler de plataforma elevadora.
+                                        </span>
+                                    )}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => removeSpecies(species)}
-                                  className="text-red-500 p-2 bg-red-50 rounded-lg md:hidden"
+                                  className="text-red-500 p-2 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
                                   title="Eliminar especie"
                                 >
                                     <Trash2 className="w-4 h-4" />
                                 </button>
                             </div>
 
-                            {/* Inputs Grid (Mobile: 4 cols below name, Desktop: Inline) */}
-                            <div className="grid grid-cols-4 md:grid-cols-8 md:col-span-8 gap-1 px-1 pb-1 border-t border-slate-100 md:gap-4 md:px-0 md:pb-0 md:border-t-0">
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
-                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                      <span className="block">0-5m</span>
-                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
-                                    </label>
-                                    {renderCell(species, '0-5', 0)}
-                                </div>
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
-                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                      <span className="block">5-12m</span>
-                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
-                                    </label>
-                                    {renderCell(species, '5-12', p0_5)}
-                                </div>
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
-                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                      <span className="block">12-20m</span>
-                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
-                                    </label>
-                                    {renderCell(species, '12-20', p0_5)}
-                                </div>
-                                <div className="space-y-1 md:space-y-0 md:col-span-2">
-                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                      <span className="block">&gt;20m</span>
-                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
-                                    </label>
-                                    {renderCell(species, '20+', p0_5)}
-                                </div>
-                            </div>
-
-                            {/* Desktop Delete Action */}
-                            <div className="hidden md:flex md:col-span-1 justify-center">
-                                <button
-                                  type="button"
-                                  onClick={() => removeSpecies(species)}
-                                  className="text-gray-400 hover:text-red-500 transition-colors"
-                                  title="Eliminar especie"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                            {/* Inputs Grid */}
+                            <div className="grid gap-1 px-1 pb-1 border-t border-slate-100 pt-2 md:pt-0 md:gap-4 md:px-0 md:pb-0 md:border-t-0" style={{ gridTemplateColumns: `repeat(${speciesRanges.length}, minmax(0, 1fr))` }}>
+                                {speciesRanges.map((range, idx) => (
+                                    <div key={range} className={`space-y-1 md:space-y-2 ${idx < speciesRanges.length - 1 ? 'md:border-r md:border-gray-200 pr-2' : ''}`}>
+                                        <label className="block text-[11px] md:text-[13px] leading-[1.15] text-center font-medium text-gray-500">
+                                          <span className="block">{range}m</span>
+                                          <span className="block text-[10px] md:text-[11px] text-gray-400">€/palmera</span>
+                                        </label>
+                                        {renderCell(species, range, idx === 0 ? 0 : p0_5)}
+                                    </div>
+                                ))}
                             </div>
                           </div>
                         </div>
@@ -627,122 +598,10 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                 </div>
             ) : (
                 <div className="p-8 text-center text-gray-500 bg-gray-50">
-                    <p className="mb-2 font-medium">No hay especies grandes seleccionadas.</p>
+                    <p className="mb-2 font-medium">No hay especies de palmeras seleccionadas.</p>
                     <p className="text-sm">Usa el desplegable de arriba para añadir una.</p>
                 </div>
             )}
-          </div>
-        </div>
-
-        {/* Tabla de Especies Pequeñas */}
-        <div>
-          <div className="mb-3">
-              <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wide">Especies Pequeñas</h4>
-              <p className="text-sm text-gray-500 italic">
-                Son palmeras o plantas grandes que se trabajan desde suelo o escalera.
-              </p>
-              
-              {/* Selector para añadir especie */}
-              <div className="mt-2 flex items-center gap-2">
-                 <div className="relative inline-block w-full sm:w-64">
-                     <select
-                         className="w-full h-10 pl-3 pr-8 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
-                         onChange={(e) => {
-                             if (e.target.value) {
-                                 addSpecies(e.target.value as PalmSpecies);
-                                 e.target.value = ''; // Reset select
-                             }
-                         }}
-                         defaultValue=""
-                     >
-                         <option value="" disabled>Añadir especie pequeña...</option>
-                         {availableSmallPalms.map(s => (
-                             <option key={s} value={s}>{s}</option>
-                         ))}
-                     </select>
-                 </div>
-              </div>
-          </div>
-
-          <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
-             {/* Desktop Header - Visible only on md+ */}
-             <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
-                <div className="md:col-span-6">Especie</div>
-                <div className="md:col-span-2 text-center">0–2 m</div>
-                <div className="md:col-span-2 text-center">&gt;2 m</div>
-                <div className="md:col-span-2"></div>
-             </div>
-
-             {/* Content */}
-             {activeSmallPalms.length > 0 ? (
-                 <div className="divide-y divide-slate-100">
-                    {activeSmallPalms.map((species) => {
-                       const p0_2 = config.height_prices[species]?.['0-2'] ?? 0;
-                       const isCycas = species === 'cycas revoluta (falsa palmera)';
-
-                       return (
-                        <div key={species} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
-                          <div className="flex flex-col md:grid md:grid-cols-12 md:gap-4 md:items-center">
-                            
-                            {/* Species Row (Mobile: Top, Desktop: Left) */}
-                            <div className="flex justify-between items-center mb-3 px-4 md:mb-0 md:px-0 md:col-span-6">
-                                <span className="font-bold text-gray-800 text-sm md:text-sm md:font-medium md:text-gray-700">{species}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => removeSpecies(species)}
-                                  className="text-red-500 p-2 bg-red-50 rounded-lg md:hidden"
-                                  title="Eliminar especie"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            </div>
-
-                            {/* Inputs Grid (Mobile: 2 cols, Desktop: Inline) */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 md:col-span-4 gap-1 px-1 pb-1 border-t border-slate-100 md:gap-4 md:px-0 md:pb-0 md:border-t-0">
-                                <div className="space-y-1 md:space-y-0 md:col-span-2 md:border-r md:border-gray-200">
-                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                      <span className="block">0-2m</span>
-                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
-                                    </label>
-                                    {renderCell(species, '0-2', 0)}
-                                </div>
-                                <div className="space-y-1 md:space-y-0 md:col-span-2">
-                                    <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 md:hidden">
-                                      <span className="block">&gt;2m</span>
-                                      <span className="block text-[10px] text-gray-400">€/palmera</span>
-                                    </label>
-                                    {isCycas ? (
-                                        <div className="h-full md:h-11 flex items-center justify-center bg-gray-50 md:rounded-lg md:border border-0 md:border-gray-200 text-gray-400 text-sm italic">
-                                            N/A
-                                        </div>
-                                    ) : (
-                                        renderCell(species, '2+', p0_2)
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Desktop Delete */}
-                            <div className="hidden md:flex md:col-span-2 justify-center">
-                                <button
-                                  type="button"
-                                  onClick={() => removeSpecies(species)}
-                                  className="text-gray-400 hover:text-red-500 transition-colors"
-                                  title="Eliminar especie"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                 </div>
-             ) : (
-                <div className="p-8 text-center text-gray-500 bg-gray-50">
-                    <p className="mb-2 font-medium">No hay especies pequeñas seleccionadas.</p>
-                    <p className="text-sm">Usa el desplegable de arriba para añadir una.</p>
-                </div>
-             )}
           </div>
         </div>
         
@@ -757,24 +616,38 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
           </h4>
           <div className="space-y-1 divide-y divide-gray-100">
             <div className="flex items-center justify-between py-3">
-              <span className="text-gray-700 font-medium">Normal</span>
+              <div className="flex items-center gap-2 group relative">
+                <span className="text-gray-700 font-medium">Normal</span>
+                <Info className="w-4 h-4 text-gray-400 cursor-help group-hover:text-blue-500 transition-colors" />
+                <div className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 bottom-full mb-2 w-[250px] sm:w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 text-left sm:text-center pointer-events-none">
+                  Palmera con mantenimiento regular. Presenta hojas secas habituales pero no acumulación. Es una poda estándar que no requiere tiempo ni esfuerzo adicional.
+                  <div className="absolute -bottom-1 left-12 sm:left-1/2 sm:-translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                </div>
+              </div>
               <span className="text-gray-500 text-sm bg-gray-50 px-3 py-1 rounded-full border border-gray-100">Sin recargo</span>
             </div>
             <div className="flex items-center justify-between py-3">
-              <span className="text-gray-700 font-medium">Descuidada</span>
+              <div className="flex items-center gap-2 group relative">
+                <span className="text-gray-700 font-medium">Descuidado</span>
+                <Info className="w-4 h-4 text-gray-400 cursor-help group-hover:text-blue-500 transition-colors" />
+                <div className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 bottom-full mb-2 w-[250px] sm:w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 text-left sm:text-center pointer-events-none">
+                  Palmera con una falda (acumulación de hojas secas) de tamaño moderado. Implica una dificultad técnica y un tiempo de ejecución superiores a la poda estándar.
+                  <div className="absolute -bottom-1 left-12 sm:left-1/2 sm:-translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-sm font-medium">+</span>
                 <input
                   type="number"
                   min="0"
                   max="100"
-                  className={`w-20 h-10 px-3 border rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('surcharge-descuidada') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
-                  value={config.condition_surcharges['descuidada'] === 0 ? '' : config.condition_surcharges['descuidada']}
+                  className={`w-20 h-10 px-3 border rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('surcharge-descuidado') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                  value={config.condition_surcharges['descuidado'] === 0 ? '' : config.condition_surcharges['descuidado']}
                   placeholder="-"
                   onChange={(e) => {
-                      handleConditionSurchargeChange('descuidada', Number(e.target.value));
-                      if (validationErrors.includes('surcharge-descuidada')) {
-                          setValidationErrors(prev => prev.filter(err => err !== 'surcharge-descuidada'));
+                      handleConditionSurchargeChange('descuidado', Number(e.target.value));
+                      if (validationErrors.includes('surcharge-descuidado')) {
+                          setValidationErrors(prev => prev.filter(err => err !== 'surcharge-descuidado'));
                       }
                   }}
                 />
@@ -782,20 +655,27 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
             </div>
             <div className="flex items-center justify-between py-3">
-              <span className="text-gray-700 font-medium">Muy Descuidada</span>
+              <div className="flex items-center gap-2 group relative">
+                <span className="text-gray-700 font-medium">Muy descuidado</span>
+                <Info className="w-4 h-4 text-gray-400 cursor-help group-hover:text-blue-500 transition-colors" />
+                <div className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 bottom-full mb-2 w-[250px] sm:w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 text-left sm:text-center pointer-events-none">
+                  Palmera en estado de abandono notable. Presenta una falda grande y densa. Exige al podador el nivel máximo de esfuerzo y tiempo para su limpieza y preparación.
+                  <div className="absolute -bottom-1 left-12 sm:left-1/2 sm:-translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-sm font-medium">+</span>
                 <input
                   type="number"
                   min="0"
                   max="100"
-                  className={`w-20 h-10 px-3 border rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('surcharge-muy_descuidada') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
-                  value={config.condition_surcharges['muy_descuidada'] === 0 ? '' : config.condition_surcharges['muy_descuidada']}
+                  className={`w-20 h-10 px-3 border rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('surcharge-muy_descuidado') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                  value={config.condition_surcharges['muy_descuidado'] === 0 ? '' : config.condition_surcharges['muy_descuidado']}
                   placeholder="-"
                   onChange={(e) => {
-                      handleConditionSurchargeChange('muy_descuidada', Number(e.target.value));
-                      if (validationErrors.includes('surcharge-muy_descuidada')) {
-                          setValidationErrors(prev => prev.filter(err => err !== 'surcharge-muy_descuidada'));
+                      handleConditionSurchargeChange('muy_descuidado', Number(e.target.value));
+                      if (validationErrors.includes('surcharge-muy_descuidado')) {
+                          setValidationErrors(prev => prev.filter(err => err !== 'surcharge-muy_descuidado'));
                       }
                   }}
                 />
@@ -805,7 +685,72 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
           </div>
         </div>
 
-        {/* 3. Retirada de Restos */}
+        {/* 3. Suplementos Adicionales */}
+        <div className="pt-6 border-t border-gray-100">
+          <h4 className="font-bold text-gray-900 mb-4 text-lg">Suplementos adicionales</h4>
+          <div className="space-y-1 divide-y divide-gray-100">
+            <div className="flex items-center justify-between py-3 gap-3">
+              <div className="min-w-0 pr-4">
+                <span className="block text-sm font-medium text-gray-900">Dificultad de acceso</span>
+                <span className="text-xs text-gray-500">Recargo por acceso bloqueado o uso necesario de grúa.</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-gray-400 text-sm font-medium">+</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  className="w-20 h-10 px-3 border border-gray-300 rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
+                  value={config.access_difficulty === 0 ? '' : config.access_difficulty}
+                  placeholder="-"
+                  onChange={(e) => onChange({ ...config, access_difficulty: Number(e.target.value) })}
+                />
+                <span className="text-gray-500 text-sm font-medium w-4">%</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between py-3 gap-3">
+              <div className="min-w-0 pr-4">
+                <span className="block text-sm font-medium text-gray-900">Tratamiento fitosanitario</span>
+                <span className="text-xs text-gray-500">Precio fijo por palmera (ej. contra Picudo Rojo).</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-gray-400 text-sm font-medium">+</span>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-20 h-10 px-3 border border-gray-300 rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
+                  value={config.phytosanitary === 0 ? '' : config.phytosanitary}
+                  placeholder="-"
+                  onChange={(e) => onChange({ ...config, phytosanitary: Number(e.target.value) })}
+                />
+                <span className="text-gray-500 text-sm font-medium w-4">€</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between py-3 gap-3">
+              <div className="min-w-0 pr-4">
+                <span className="block text-sm font-medium text-gray-900">Acabado de tronco</span>
+                <span className="text-xs text-gray-500">Incremento porcentual sobre el valor actual por cepillado o acabado estético.</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-gray-400 text-sm font-medium">+</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  className="w-20 h-10 px-3 border border-gray-300 rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
+                  value={config.trunk_finish === 0 ? '' : config.trunk_finish}
+                  placeholder="-"
+                  onChange={(e) => onChange({ ...config, trunk_finish: Number(e.target.value) })}
+                />
+                <span className="text-gray-500 text-sm font-medium w-4">%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Retirada de Restos */}
         <div className="pt-6 border-t border-gray-100">
           <h4 className="font-bold text-gray-900 mb-4 text-lg">Retirada de restos</h4>
           <div className="space-y-1">

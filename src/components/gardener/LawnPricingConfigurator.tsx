@@ -14,7 +14,8 @@ export type LawnRange = '0-50' | '51-150' | '151-400' | '400+';
 type LegacyLawnRange = '0-50' | '50-200' | '200+';
 
 export interface LawnPricingConfig {
-  surface_prices: Partial<Record<LawnRange, number>>;
+  price_per_m2: number;
+  surface_prices?: Partial<Record<LawnRange, number>>;
   condition_surcharges: {
     descuidado: number;
     muy_descuidado: number;
@@ -27,10 +28,8 @@ export interface LawnPricingConfig {
   species_prices?: Record<string, Partial<Record<LegacyLawnRange, number>>>;
 }
 
-const SURFACE_RANGES: LawnRange[] = ['0-50', '51-150', '151-400', '400+'];
-
 const EMPTY_CONFIG: LawnPricingConfig = {
-  surface_prices: { '0-50': 0, '51-150': 0, '151-400': 0, '400+': 0 },
+  price_per_m2: 0,
   condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
   waste_removal: { percentage: 0 },
   minimum_price: 0,
@@ -58,10 +57,6 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     const next: LawnPricingConfig = {
       ...EMPTY_CONFIG,
       ...incoming,
-      surface_prices: {
-        ...EMPTY_CONFIG.surface_prices,
-        ...(incoming.surface_prices || {})
-      },
       condition_surcharges: {
         ...EMPTY_CONFIG.condition_surcharges,
         ...(incoming.condition_surcharges || {})
@@ -74,30 +69,26 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
       species_prices: incoming.species_prices || {}
     };
 
-    const hasNewPrices = SURFACE_RANGES.some(r => Number(next.surface_prices?.[r] || 0) > 0);
-    if (!hasNewPrices && next.species_prices) {
+    let price_per_m2 = incoming.price_per_m2 || 0;
+
+    if (!price_per_m2 && incoming.surface_prices) {
+      const legacyPrice = incoming.surface_prices['0-50'] || incoming.surface_prices['51-150'] || incoming.surface_prices['151-400'] || incoming.surface_prices['400+'] || 0;
+      price_per_m2 = Number(legacyPrice);
+    }
+
+    if (!price_per_m2 && next.species_prices) {
       const candidateFromSelected = (next.selected_species || []).find(s => next.species_prices?.[s]);
       const candidateFallback = Object.keys(next.species_prices)[0];
       const legacyKey = candidateFromSelected || candidateFallback;
       const legacy = legacyKey ? next.species_prices?.[legacyKey] : undefined;
       if (legacy) {
-        next.surface_prices = {
-          '0-50': Number(legacy['0-50'] || 0),
-          '51-150': Number(legacy['50-200'] || 0),
-          '151-400': Number(legacy['200+'] || 0),
-          '400+': Number(legacy['200+'] || 0)
-        };
+        price_per_m2 = Number(legacy['0-50'] || legacy['50-200'] || legacy['200+'] || 0);
       }
     }
 
     return {
       ...next,
-      surface_prices: {
-        '0-50': Number(next.surface_prices?.['0-50'] || 0),
-        '51-150': Number(next.surface_prices?.['51-150'] || 0),
-        '151-400': Number(next.surface_prices?.['151-400'] || 0),
-        '400+': Number(next.surface_prices?.['400+'] || 0)
-      }
+      price_per_m2: Number(price_per_m2 || 0)
     };
   };
 
@@ -134,13 +125,10 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     setShowResetModal(false);
   };
 
-  const handlePriceChange = (range: LawnRange, newPrice: number) => {
+  const handlePriceChange = (newPrice: number) => {
     onChange({
       ...config,
-      surface_prices: {
-        ...config.surface_prices,
-        [range]: newPrice
-      }
+      price_per_m2: newPrice
     });
   };
 
@@ -174,11 +162,9 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     if (e) e.stopPropagation();
 
     const errors: string[] = [];
-    SURFACE_RANGES.forEach(r => {
-      if (!config.surface_prices?.[r] || Number(config.surface_prices[r]) <= 0) {
-        errors.push(r);
-      }
-    });
+    if (!config.price_per_m2 || config.price_per_m2 <= 0) {
+      errors.push('price_per_m2');
+    }
 
     if (errors.length > 0) {
       setValidationErrors(errors);
@@ -206,9 +192,9 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     }
   };
 
-  const renderPriceInput = (range: LawnRange) => {
-     const val = Number(config.surface_prices?.[range] || 0);
-     const hasError = validationErrors.includes(range);
+  const renderPriceInput = () => {
+     const val = Number(config.price_per_m2 || 0);
+     const hasError = validationErrors.includes('price_per_m2');
 
      return (
         <div className="relative w-full">
@@ -220,9 +206,9 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                 value={val === 0 ? '' : val}
                 placeholder={val === 0 ? '-' : ''}
                 onChange={(e) => {
-                    handlePriceChange(range, parseFloat(e.target.value) || 0);
+                    handlePriceChange(parseFloat(e.target.value) || 0);
                     if (hasError) {
-                        setValidationErrors(prev => prev.filter(err => err !== range));
+                        setValidationErrors(prev => prev.filter(err => err !== 'price_per_m2'));
                     }
                 }}
               />
@@ -289,25 +275,23 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
       <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
         <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
-            <div className="md:col-span-3">Tramo</div>
+            <div className="md:col-span-3">Concepto</div>
             <div className="md:col-span-9 text-center">Precio por m²</div>
         </div>
 
         <div className="divide-y divide-slate-100">
-          {SURFACE_RANGES.map((range) => (
-            <div key={range} className="p-4 hover:bg-gray-50 transition-colors">
+            <div className="p-4 hover:bg-gray-50 transition-colors">
               <div className="grid grid-cols-1 md:grid-cols-12 md:gap-4 md:items-center gap-2">
                 <div className="md:col-span-3">
                   <span className="font-medium text-gray-800">
-                    {range === '0-50' ? '0–50 m²' : range === '51-150' ? '51–150 m²' : range === '151-400' ? '151–400 m²' : '>400 m²'}
+                    Precio base (m²)
                   </span>
                 </div>
                 <div className="md:col-span-9">
-                  {renderPriceInput(range)}
+                  {renderPriceInput()}
                 </div>
               </div>
             </div>
-          ))}
         </div>
       </div>
 
@@ -385,7 +369,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             <div>
                 <h4 className="text-sm font-semibold text-red-800">Faltan precios por configurar</h4>
                 <p className="text-sm text-red-600 mt-1">
-                    Asegúrate de rellenar todos los tramos de superficie.
+                    Asegúrate de rellenar el precio por m² y el importe mínimo.
                     Los precios deben ser mayores a 0.
                 </p>
             </div>

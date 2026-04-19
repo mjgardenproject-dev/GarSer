@@ -5,6 +5,10 @@ export interface AITask {
   estado_jardin?: string; 
   superficie_m2?: number | null;
   
+  // Desbroce de malas hierbas
+  superficie_malas_hierbas_m2?: number | null;
+  estado_malas_hierbas?: 'normal' | 'dificultad_media' | 'dificultad_alta' | null;
+
   // Generic / Legacy
   numero_plantas?: number | null;
   tamaño_plantas?: string | null; 
@@ -58,21 +62,27 @@ export interface AITask {
   tipo_arbol?: string | null;
 
   // Shrubs
+  razonamiento_cot?: {
+    identificacion_escalas?: string;
+    calculo_area_total?: string;
+    calculo_area_plantas?: string;
+    derivacion_porcentaje?: string;
+  };
   cantidad_estimada?: number | null;
+  tamano_total_jardin_m2?: number | null;
+  porcentaje_superficie_plantas?: number | null;
   tamano_promedio?: string | null;
   tamaño_promedio?: string | null; // Legacy/Compat
   tipo_plantacion?: string | null;
   indices_imagenes?: number[]; // Added for multi-image tracking
-
-  // Clearing
-  densidad_maleza?: string | null;
+  tamano_dominante?: string | null;
 
   // Phytosanitary
   cantidad_o_superficie?: number | null;
   unidad?: string | null;
   nivel_plaga?: string | null;
   tipo_afectado?: 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras' | null;
-  tratamiento_recomendado?: 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia' | 'inconclusive' | null;
+  tratamiento_recomendado?: 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia' | 'inconclusive' | null;
   confidence?: number | null;
   altura_tramo?: 'bajos_medios' | 'altos' | 'pequenos' | 'medianos' | 'grandes' | 'pequenas' | 'medianas' | 'altas' | null;
   supera_2m?: boolean | null;
@@ -125,16 +135,25 @@ export interface EstimationResult {
   tareas: AITask[];
   palmas?: Array<{
     indice_imagen: number;
-    especie: string;
+    especie: 'Phoenix canariensis' | 'Phoenix dactylifera' | 'Washingtonia robusta/filifera' | 'Syagrus romanzoffiana' | 'Trachycarpus fortunei' | 'Roystonea regia';
     altura: string;
     estado?: string;
     nivel_analisis?: number;
     observaciones?: string[];
+    hasPhytosanitary?: boolean;
+    hasTrunkPeeling?: boolean;
+    lowestRangeThreshold?: string;
+    // Legacy compatibility
+    needsPhytosanitary?: boolean;
+    needsTrunkFinish?: boolean;
+    hasAccessDifficulty?: boolean;
   }>;
   arboles?: Array<{
     indice_imagen: number;
-    especie: string;
-    altura: string;
+    especie?: string;
+    altura?: string;
+    altura_m?: number;
+    dificultad_alta?: boolean;
     tipo_acceso?: string;
     tipo_poda?: string;
     horas_estimadas?: number;
@@ -247,9 +266,8 @@ const LOCAL_PERF: Record<string, { performance: number; pricePerUnit: number }> 
   'Corte de césped': { performance: 100, pricePerUnit: 0.30 },
   'Corte de setos': { performance: 25, pricePerUnit: 3.50 },
   'Servicios fitosanitarios': { performance: 40, pricePerUnit: 2.50 },
-  'Poda de plantas': { performance: 8, pricePerUnit: 6.00 },
+  'Poda de plantas y arbustos': { performance: 8, pricePerUnit: 6.00 },
   'Poda de árboles': { performance: 0.8, pricePerUnit: 45.00 },
-  'Labrar y quitar malas hierbas': { performance: 15, pricePerUnit: 10.00 },
 };
 
 const PROMPTS_MAP: Record<string, string> = {
@@ -336,10 +354,10 @@ Images are grouped by explicit labels:
 You must never infer or invent additional faces. Use only the provided groups.
 
 CORE MEASUREMENT RULES (STRICT STRICT STRICT):
-1. HEIGHT EXCLUSION RULE (altura_m):
-   - Measure strictly the FOLIAGE/PLANT height.
-   - If the hedge is growing on top of a wall, fence, planter, or slope, DO NOT include the height of the wall/structure.
-   - Example: A 1.5m hedge sitting on a 1m brick wall has an altura_m of 1.5, NOT 2.5.
+1. GROSS HEIGHT RULE (altura_m):
+   - Measure the GROSS height from the ground to the top of the foliage.
+   - If the hedge is growing on top of a wall, fence, planter, or slope, you MUST include the height of the wall/structure because the gardener must reach that total height from the ground.
+   - Example: A 1.5m hedge sitting on a 1m brick wall has an altura_m of 2.5.
 
 2. LENGTH & SHAPE RULE (longitud_m):
    - Estimate the linear length of the hedge.
@@ -363,19 +381,20 @@ CLASSIFICATION & STATE RULES:
 Translate your visual findings into the exact following Spanish categories.
 
 A. Operational Height Band (tipo_seto) - Choose EXACTLY ONE:
-   - "0-1m": Use when base_altura_m <= 1.0m.
-   - "1-2m": Use when base_altura_m is >1.0m and <=2.0m.
+   - "0-2m": Use when base_altura_m <= 2.0m.
    - "2-4m": Use when base_altura_m is >2.0m and <=4.0m.
    - "4-6m": Use when base_altura_m is >4.0m.
 
 A2. Height band guidance:
    - Keep numeric altura_m as your measured foliage height.
-   - tipo_seto must follow the 4 bands above.
+   - tipo_seto must follow the 3 bands above.
    - If estimated base_altura_m exceeds 6m, keep numeric altura_m as estimated and add an observation indicating manual safety review is required.
 
-B. Hedge Condition (estado_seto) - Choose EXACTLY ONE:
-   - "normal": Well-kept geometric shape, short new shoots (<10cm), recent maintenance visible.
-   - "descuidado": Any relevant overgrowth or loss of geometry. If it looks very neglected, still use "descuidado".
+B. Cutting Difficulty (estado_seto) - Choose EXACTLY ONE:
+   - "normal": Flat shape, preserves geometry, short new shoots. Easy to trim.
+   - "media": Loss of geometry, requires extra effort to recover straight lines, slightly thicker branches.
+   - "alta": Uncontrolled growth, very thick branches protruding, entangled vines, or requires heavy tools.
+   - DO NOT factor height into difficulty, as height is already priced separately.
 
 C. Image Quality (nivel_analisis):
    - 1: Clear, fully usable for 3D estimation.
@@ -407,8 +426,8 @@ You must output ONLY a valid JSON object. No markdown formatting (json), no intr
       "tipo_servicio": "Corte de setos",
       "longitud_m": number,
       "altura_m": number,
-      "tipo_seto": "0-1m" | "1-2m" | "2-4m" | "4-6m",
-      "estado_seto": "normal" | "descuidado",
+      "tipo_seto": "0-2m" | "2-4m" | "4-6m",
+      "estado_seto": "normal" | "media" | "alta",
       "caras": 1 | 2,
       "detalle_caras": {
         "cara_a": {
@@ -468,19 +487,27 @@ FORMATO DE SALIDA (JSON ÚNICAMENTE):
   ]
 }
 ---`,
-  'Poda de plantas': `---
-Eres una IA especializada en análisis de jardines llamada 'PlantShapeAI'. Tu objetivo es analizar arbustos, rosales u ornamentales.
+  'Poda de plantas y arbustos': `---
+Eres una IA especializada en análisis de jardines llamada 'PlantShapeAI'. Tu objetivo es analizar arbustos, rosales u ornamentales para el servicio de poda.
 
 INSTRUCCIONES DE ANÁLISIS:
-1. Estima la cantidad de plantas (o plantas equivalentes si son setos bajos).
-2. Determina el tamaño promedio.
-3. Clasifica el tipo de plantación.
+1. Estima el tamaño total del jardín visible en la imagen (m2).
+2. Determina el porcentaje de la superficie de ese jardín que está cubierta por las plantas a podar.
+3. Determina el tamaño dominante de las plantas.
+
+### MANDATORY CHAIN OF THOUGHT (CoT) ###
+Debes rellenar el objeto "razonamiento_cot" ANTES de dar los resultados numéricos:
+1. "identificacion_escalas": Explica qué objetos estándar usaste para calibrar los metros cuadrados (ej. puertas, vallas, coches).
+2. "calculo_area_total": Explica tu estimación matemática del ancho x fondo del jardín visible.
+3. "calculo_area_plantas": Explica tu estimación matemática del área cubierta solo por las plantas.
+4. "derivacion_porcentaje": El cálculo que te lleva a elegir obligatoriamente 10, 25, 50, 75 o 100.
 
 VARIABLES A EXTRAER:
-- tipo_servicio: "Poda de plantas"
-- cantidad_estimada: Número estimado de plantas.
-- tamano_promedio: "Pequeño (hasta 1m)", "Mediano (1-2.5m)", "Grande (>2.5m)".
-- tipo_plantacion: "Arbustos ornamentales", "Rosales y plantas florales", "Trepadoras", "Cactus y suculentas grandes".
+- tipo_servicio: "Poda de plantas y arbustos"
+- razonamiento_cot: Objeto con la explicación matemática de las áreas y porcentajes.
+- tamano_total_jardin_m2: Número entero con la estimación del área total del jardín visible.
+- porcentaje_superficie_plantas: Porcentaje del área cubierta por las plantas a podar. SOLO puede ser: 10, 25, 50, 75 o 100.
+- tamano_dominante: "pequeñas" (0-1m), "medianas" (1-2m), "grandes" (2-3m).
 - nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
 - observaciones: Lista de detalles.
 
@@ -488,37 +515,16 @@ FORMATO DE SALIDA (JSON ÚNICAMENTE):
 {
   "tareas": [
     {
-      "tipo_servicio": "Poda de plantas",
-      "cantidad_estimada": number,
-      "tamano_promedio": string,
-      "tipo_plantacion": string,
-      "nivel_analisis": 1 | 2 | 3,
-      "observaciones": string[]
-    }
-  ]
-}
----`,
-  'Labrar y quitar malas hierbas': `---
-Eres una IA especializada en análisis de jardines llamada 'SoilSense'. Tu objetivo es analizar terreno para deshierbe manual y labrado.
-
-INSTRUCCIONES DE ANÁLISIS:
-1. Estima la superficie afectada en m2.
-2. Evalúa la densidad de la maleza.
-
-VARIABLES A EXTRAER:
-- tipo_servicio: "Labrar y quitar malas hierbas"
-- superficie_m2: Área estimada en m2.
-- densidad_maleza: "Baja" (Maleza ligera), "Media" (Maleza densa), "Alta" (Cañaveral/Zarzas).
-- nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
-- observaciones: Lista de detalles (ej. "Terreno pedregoso", "Raíces profundas").
-
-FORMATO DE SALIDA (JSON ÚNICAMENTE):
-{
-  "tareas": [
-    {
-      "tipo_servicio": "Labrar y quitar malas hierbas",
-      "superficie_m2": number,
-      "densidad_maleza": string,
+      "tipo_servicio": "Poda de plantas y arbustos",
+      "razonamiento_cot": {
+        "identificacion_escalas": "string",
+        "calculo_area_total": "string",
+        "calculo_area_plantas": "string",
+        "derivacion_porcentaje": "string"
+      },
+      "tamano_total_jardin_m2": number,
+      "porcentaje_superficie_plantas": number,
+      "tamano_dominante": string,
       "nivel_analisis": 1 | 2 | 3,
       "observaciones": string[]
     }
@@ -537,7 +543,7 @@ VARIABLES A EXTRAER:
 - tipo_afectado: "Césped" | "Árboles" | "Setos" | "Plantas bajas" | "Palmeras".
 - cantidad_o_superficie: Número (si son plantas) o m2 (si es área).
 - unidad: "unidades" o "m2".
-- tratamiento_recomendado: "insecticida" | "fungicida" | "herbicida" | "ecologico_preventivo" | "endoterapia" | "inconclusive".
+- tratamiento_recomendado: "insecticida" | "fungicida" | "ecologico_preventivo" | "endoterapia" | "inconclusive".
 - altura_tramo: "bajos_medios" | "altos" | "pequenos" | "medianos" | "grandes" | "pequenas" | "medianas" | "altas" | null.
 - palmeras_cirugia: boolean | null.
 - confidence: número entre 0 y 1.

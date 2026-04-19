@@ -3,15 +3,14 @@ import { PalmPricingConfig } from '../components/gardener/PalmPricingConfigurato
 import { HedgePricingConfig } from '../components/gardener/HedgePricingConfigurator';
 import { TreePricingConfig } from '../components/gardener/TreePricingConfigurator';
 import { ShrubPricingConfig } from '../components/gardener/ShrubPricingConfigurator';
-import { ClearingPricingConfig } from '../components/gardener/ClearingPricingConfigurator';
 import { PhytosanitaryPricingConfig } from '../types';
 import { z } from 'zod';
 import { normalizePhytosanitaryPricingConfig, toPersistedPhytosanitaryConfig } from './phytosanitaryConfig';
 
-export const PHYTOSANITARY_TREATMENTS = ['insecticida', 'fungicida', 'herbicida', 'ecologico_preventivo', 'endoterapia'] as const;
+export const PHYTOSANITARY_TREATMENTS = ['insecticida', 'fungicida', 'ecologico_preventivo', 'endoterapia'] as const;
 export type PhytosanitaryTreatment = typeof PHYTOSANITARY_TREATMENTS[number];
 type PhytosanitaryBaseTreatment = Exclude<PhytosanitaryTreatment, 'endoterapia'>;
-type PhytosanitaryWithoutHerbicide = Exclude<PhytosanitaryBaseTreatment, 'herbicida'>;
+type PhytosanitaryWithoutHerbicide = PhytosanitaryBaseTreatment;
 
 export type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
 export type PhytosanitaryScaleBand = 'hasta_100m2' | 'mas_de_100m2';
@@ -60,9 +59,6 @@ export interface PhytosanitaryV2PricingConfig {
       two_treatments_percentage: number;
       three_plus_treatments_percentage: number;
     };
-    severe_infestation?: {
-      percentage: number;
-    };
   };
 }
 
@@ -74,13 +70,11 @@ export const phytosanitaryV2Schema = z.object({
     hasta_100m2: z.object({
       insecticida: z.number().nonnegative(),
       fungicida: z.number().nonnegative(),
-      herbicida: z.number().nonnegative(),
       ecologico_preventivo: z.number().nonnegative()
     }),
     mas_de_100m2: z.object({
       insecticida: z.number().nonnegative(),
       fungicida: z.number().nonnegative(),
-      herbicida: z.number().nonnegative(),
       ecologico_preventivo: z.number().nonnegative()
     })
   }),
@@ -125,9 +119,6 @@ export const phytosanitaryV2Schema = z.object({
     combo: z.object({
       two_treatments_percentage: z.number(),
       three_plus_treatments_percentage: z.number()
-    }).optional(),
-    severe_infestation: z.object({
-      percentage: z.number()
     }).optional()
   }).optional()
 });
@@ -136,7 +127,7 @@ export type PhytosanitaryV2RuntimeConfig = z.infer<typeof phytosanitaryV2Schema>
 
 type PhytosanitaryPricingBlock = 'superficies_plantas' | 'setos' | 'arboles' | 'palmeras_tradicional' | 'palmeras_endoterapia';
 const PHYTOSANITARY_COMPATIBILITY: Record<PhytosanitaryPricingBlock, PhytosanitaryTreatment[]> = {
-  superficies_plantas: ['insecticida', 'fungicida', 'herbicida', 'ecologico_preventivo'],
+  superficies_plantas: ['insecticida', 'fungicida', 'ecologico_preventivo'],
   setos: ['insecticida', 'fungicida', 'ecologico_preventivo'],
   arboles: ['insecticida', 'fungicida', 'ecologico_preventivo'],
   palmeras_tradicional: ['insecticida', 'fungicida', 'ecologico_preventivo'],
@@ -191,7 +182,6 @@ export const phytosanitaryAIResponseSchema = z.object({
 const buildBaseMatrix = (value: number): PhytosanitaryBasePriceMatrix => ({
   insecticida: value,
   fungicida: value,
-  herbicida: value,
   ecologico_preventivo: value
 });
 
@@ -207,7 +197,6 @@ export const mapLegacyPhytosanitaryConfigToV2 = (legacy: PhytosanitaryPricingCon
 
   if (selected.includes('Insecticida')) active.push('insecticida');
   if (selected.includes('Fungicida')) active.push('fungicida');
-  if (selected.includes('Herbicida')) active.push('herbicida');
   if (!active.includes('ecologico_preventivo')) active.push('ecologico_preventivo');
 
   const sampleType = selected[0];
@@ -278,18 +267,9 @@ export const normalizePhytosanitaryTreatment = (value: string | undefined | null
   const text = String(value || '').toLowerCase();
   if (text.includes('endo')) return 'endoterapia';
   if (text.includes('ecol')) return 'ecologico_preventivo';
-  if (text.includes('herb')) return 'herbicida';
   if (text.includes('fung')) return 'fungicida';
   if (text.includes('plaga activa') || text.includes('curativo') || text.includes('insect')) return 'insecticida';
   return 'ecologico_preventivo';
-};
-
-const extractTreatmentsFromZoneType = (value: string | undefined | null): PhytosanitaryTreatment[] => {
-  const text = String(value || '').toLowerCase().trim();
-  if (!text) return ['ecologico_preventivo'];
-  const chunks = text.split(/[,+;/|]/g).map((part) => part.trim()).filter(Boolean);
-  const normalized = (chunks.length > 0 ? chunks : [text]).map(normalizePhytosanitaryTreatment);
-  return Array.from(new Set(normalized));
 };
 
 export const normalizePhytosanitaryAffectedType = (value: string | undefined | null): PhytosanitaryAffectedType => {
@@ -302,7 +282,7 @@ export const normalizePhytosanitaryAffectedType = (value: string | undefined | n
 };
 
 const pickBaseTreatment = (treatment: PhytosanitaryTreatment): PhytosanitaryBaseTreatment => {
-  if (treatment === 'insecticida' || treatment === 'fungicida' || treatment === 'herbicida' || treatment === 'ecologico_preventivo') {
+  if (treatment === 'insecticida' || treatment === 'fungicida' || treatment === 'ecologico_preventivo') {
     return treatment;
   }
   return 'insecticida';
@@ -310,12 +290,19 @@ const pickBaseTreatment = (treatment: PhytosanitaryTreatment): PhytosanitaryBase
 
 export type PhytosanitaryQuoteZone = {
   area: number;
+  totalAreaM2?: number;
   type?: string;
   affectedType?: string;
   aboveTwoMeters?: boolean;
   aboveThreeMeters?: boolean;
+  intent?: 'preventive' | 'curative' | 'weed_control';
+  curativeTarget?: 'insects' | 'fungus' | 'both';
+  productPreference?: 'chemical' | 'ecological';
+  trunkSize?: 'small' | 'medium' | 'large';
   analysisMetrics?: {
     cesped_m2?: number;
+    plantas_superficie_calculada_m2?: number;
+    plantas_tamano_dominante?: 'pequenas' | 'medianas' | 'grandes';
     seto_bajo_medio_ml?: number;
     seto_alto_ml?: number;
     palmeras_ducha_peq_ud?: number;
@@ -378,19 +365,48 @@ export const calculatePhytosanitaryQuote = (params: {
   const ecoModifierPercent = Number(normalized.pricing_modifiers?.eco?.percentage || 0);
   const comboTwoTreatmentsPercent = Number(normalized.pricing_modifiers?.combo?.two_treatments_percentage || 0);
   const comboThreePlusTreatmentsPercent = Number(normalized.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
-  const severeInfestationPercent = Number(normalized.pricing_modifiers?.severe_infestation?.percentage || 0);
-  const wasteMult = params.globalWaste ? (1 + (wastePercentage / 100)) : 1;
+  const wasteMult = 1; // Fitosanitarios no generan restos verdes
   const breakdown: PhytosanitaryQuoteBreakdownItem[] = [];
   let totalBeforeMinimum = 0;
 
   params.zones.forEach((zone, index) => {
     const qty = Number(zone.area || 0);
     const affected = normalizePhytosanitaryAffectedType(zone.affectedType);
-    const requestedTreatments = extractTreatmentsFromZoneType(zone.type);
+    
+    const intent = zone.intent || 'preventive';
+    const isCurative = intent === 'curative';
+    const isWeedControl = intent === 'weed_control';
+    const isEco = zone.productPreference === 'ecological';
+    const isComboTreatment = zone.curativeTarget === 'both';
+
+    const requestedTreatments: PhytosanitaryTreatment[] = [];
+    if (isWeedControl) {
+      // Malas hierbas is handled by the Weeding service, not here.
+      // But if it slips through somehow, we just push a default or do nothing.
+      requestedTreatments.push('ecologico_preventivo');
+    } else {
+      if (isEco && !isCurative) {
+        requestedTreatments.push('ecologico_preventivo');
+      } else {
+        if (isCurative) {
+          if (zone.curativeTarget === 'insects' || isComboTreatment) requestedTreatments.push('insecticida');
+          if (zone.curativeTarget === 'fungus' || isComboTreatment) requestedTreatments.push('fungicida');
+        } else {
+          // Default preventive chemical
+          requestedTreatments.push('insecticida');
+        }
+      }
+    }
+    
+    if (affected === 'Palmeras' && (zone.analysisMetrics?.palmeras_cirugia_ud || zone.analysisMetrics?.palmeras_endoterapia_troncos_ud)) {
+        requestedTreatments.push('endoterapia');
+    }
+
     const unitLabel: 'm2' | 'ml' | 'ud' = affected === 'Palmeras' || affected === 'Árboles' ? 'ud' : (affected === 'Setos' ? 'ml' : 'm2');
     const metrics = zone.analysisMetrics || {};
     const hasDetailedMetrics = [
       metrics.cesped_m2,
+      metrics.plantas_superficie_calculada_m2,
       metrics.seto_bajo_medio_ml,
       metrics.seto_alto_ml,
       metrics.palmeras_ducha_peq_ud,
@@ -407,24 +423,31 @@ export const calculatePhytosanitaryQuote = (params: {
 
     if (hasDetailedMetrics) {
       const detailed = normalizedWithDetails.detailed_pricing;
+      const isCure = isCurative;
+      
+      const getPrice = (cat: any, prevField: string, curField: string) => {
+        return Number(cat?.[isCure ? curField : prevField] || 0);
+      };
+
+      const sizePlantas = metrics.plantas_tamano_dominante || 'pequenas';
+
       const base = {
-        cesped: Number(metrics.cesped_m2 || 0) * Math.max(Number(detailed?.cesped.curativo || 0), Number(detailed?.cesped.preventivo || 0)),
-        seto: (Number(metrics.seto_bajo_medio_ml || 0) * Math.max(Number(detailed?.setos.bajos_curativo || 0), Number(detailed?.setos.bajos_preventivo || 0)))
-          + (Number(metrics.seto_alto_ml || 0) * Math.max(Number(detailed?.setos.altos_curativo || 0), Number(detailed?.setos.altos_preventivo || 0))),
-        palmeraDucha: (Number(metrics.palmeras_ducha_peq_ud || 0) * Math.max(Number(detailed?.palmeras.pequenas_curativo || 0), Number(detailed?.palmeras.pequenas_preventivo || 0)))
-          + (Number(metrics.palmeras_ducha_med_ud || 0) * Math.max(Number(detailed?.palmeras.medianas_curativo || 0), Number(detailed?.palmeras.medianas_preventivo || 0)))
-          + (Number(metrics.palmeras_ducha_alta_ud || 0) * Math.max(Number(detailed?.palmeras.altas_curativo || 0), Number(detailed?.palmeras.altas_preventivo || 0))),
+        cesped: Number(metrics.cesped_m2 || 0) * getPrice(detailed?.cesped, 'preventivo', 'curativo'),
+        plantas: Number(metrics.plantas_superficie_calculada_m2 || 0) * getPrice(detailed?.plantas, `${sizePlantas}_preventivo`, `${sizePlantas}_curativo`),
+        seto: (Number(metrics.seto_bajo_medio_ml || 0) * getPrice(detailed?.setos, 'bajos_preventivo', 'bajos_curativo'))
+          + (Number(metrics.seto_alto_ml || 0) * getPrice(detailed?.setos, 'altos_preventivo', 'altos_curativo')),
+        palmeraDucha: (Number(metrics.palmeras_ducha_peq_ud || 0) * getPrice(detailed?.palmeras, 'pequenas_preventivo', 'pequenas_curativo'))
+          + (Number(metrics.palmeras_ducha_med_ud || 0) * getPrice(detailed?.palmeras, 'medianas_preventivo', 'medianas_curativo'))
+          + (Number(metrics.palmeras_ducha_alta_ud || 0) * getPrice(detailed?.palmeras, 'altas_preventivo', 'altas_curativo')),
         palmeraCirugia: Number(metrics.palmeras_cirugia_ud || 0) * Math.max(
           Number(detailed?.palmeras.pequenas_cirugia || 0),
           Number(detailed?.palmeras.medianas_cirugia || 0),
           Number(detailed?.palmeras.altas_cirugia || 0)
         ),
         palmeraEndoterapia: Number(metrics.palmeras_endoterapia_troncos_ud || 0) * Number(normalized.palmeras.endoterapia.precio_unico || 0),
-        arboles: (Number(metrics.arboles_peq_ud || 0) * Math.max(Number(detailed?.arboles.pequenos_curativo || 0), Number(detailed?.arboles.pequenos_preventivo || 0)))
-          + (Number(metrics.arboles_med_ud || 0) * Math.max(Number(detailed?.arboles.medianos_curativo || 0), Number(detailed?.arboles.medianos_preventivo || 0)))
-          + (Number(metrics.arboles_gran_ud || 0) * Math.max(Number(detailed?.arboles.grandes_curativo || 0), Number(detailed?.arboles.grandes_preventivo || 0))),
-        herbicida: (Number(metrics.herbicida_poca_densidad_m2 || 0) * Number(detailed?.malas_hierbas.preventivo || 0))
-          + (Number(metrics.herbicida_mucha_densidad_m2 || 0) * Number(detailed?.malas_hierbas.curativo || 0))
+        arboles: (Number(metrics.arboles_peq_ud || 0) * getPrice(detailed?.arboles, 'pequenos_preventivo', 'pequenos_curativo'))
+          + (Number(metrics.arboles_med_ud || 0) * getPrice(detailed?.arboles, 'medianos_preventivo', 'medianos_curativo'))
+          + (Number(metrics.arboles_gran_ud || 0) * getPrice(detailed?.arboles, 'grandes_preventivo', 'grandes_curativo'))
       };
       const subtotal = Object.values(base).reduce((sum, item) => sum + item, 0);
       const hasSevereInfestation = (metrics.observaciones_ia || []).some((item) => {
@@ -457,9 +480,7 @@ export const calculatePhytosanitaryQuote = (params: {
         ? comboThreePlusTreatmentsPercent
         : (requestedTreatments.length === 2 ? comboTwoTreatmentsPercent : 0);
       const comboMult = 1 + (comboPercent / 100);
-      const severePercent = hasSevereInfestation ? severeInfestationPercent : 0;
-      const severeMult = 1 + (severePercent / 100);
-      const lineTotal = subtotal * ecoMult * comboMult * severeMult * wasteMult;
+      const lineTotal = subtotal * ecoMult * comboMult * wasteMult;
       totalBeforeMinimum += lineTotal;
       breakdown.push({
         zoneIndex: index,
@@ -472,10 +493,10 @@ export const calculatePhytosanitaryQuote = (params: {
         subtotal,
         ecoModifierPercent: ecoApplied ? ecoModifierPercent : 0,
         comboModifierPercent: comboPercent,
-        severeModifierPercent: severePercent,
+        severeModifierPercent: 0,
         wasteModifierPercent: params.globalWaste ? wastePercentage : 0,
         lineTotal,
-        formula: `base(${subtotal.toFixed(2)}€) × eco(${ecoApplied ? ecoModifierPercent : 0}%) × combo(${comboPercent}%) × severa(${severePercent}%) × retirada(${params.globalWaste ? wastePercentage : 0}%)`
+        formula: `base(${subtotal.toFixed(2)}€) × eco(${ecoApplied ? ecoModifierPercent : 0}%) × combo(${comboPercent}%) × retirada(${params.globalWaste ? wastePercentage : 0}%)`
       });
       return;
     }
@@ -507,7 +528,7 @@ export const calculatePhytosanitaryQuote = (params: {
       if (affected === 'Palmeras') return isPhytosanitaryTreatmentCompatible('palmeras_tradicional', treatment);
       if (affected === 'Árboles') return isPhytosanitaryTreatmentCompatible('arboles', treatment);
       if (affected === 'Setos') return isPhytosanitaryTreatmentCompatible('setos', treatment);
-      return isPhytosanitaryTreatmentCompatible('superficies_plantas', treatment);
+      return isPhytosanitaryTreatmentCompatible('superficies_plantas', treatment); // Includes Plantas and Cesped
     });
 
     const fallbackTreatment = normalized.tratamientos_activos.find((treatment) => {
@@ -543,6 +564,9 @@ export const calculatePhytosanitaryQuote = (params: {
       return;
     }
 
+    const detailed = normalizedWithDetails.detailed_pricing;
+    const isCure = isCurative;
+
     let unitPrice = 0;
     effectiveTreatments.forEach((treatment) => {
       if (affected === 'Palmeras') {
@@ -550,29 +574,45 @@ export const calculatePhytosanitaryQuote = (params: {
           unitPrice += Number(normalized.palmeras.endoterapia.precio_unico || 0);
         } else {
           const band = zone.aboveThreeMeters ? 'mas_de_3m' : 'hasta_3m';
-          unitPrice += Number(normalized.palmeras.tradicional[band] || 0);
+          const fallbackPrice = isCure ? Number(detailed?.palmeras[band === 'mas_de_3m' ? 'medianas_curativo' : 'pequenas_curativo'] || 0)
+                                       : Number(detailed?.palmeras[band === 'mas_de_3m' ? 'medianas_preventivo' : 'pequenas_preventivo'] || 0);
+          unitPrice += fallbackPrice > 0 ? fallbackPrice : Number(normalized.palmeras.tradicional[band] || 0);
         }
         return;
       }
 
       if (affected === 'Árboles') {
         const band = zone.aboveThreeMeters ? 'mas_de_3m' : 'hasta_3m';
+        const fallbackPrice = isCure ? Number(detailed?.arboles[band === 'mas_de_3m' ? 'medianos_curativo' : 'pequenos_curativo'] || 0) 
+                                     : Number(detailed?.arboles[band === 'mas_de_3m' ? 'medianos_preventivo' : 'pequenos_preventivo'] || 0);
         const treatmentKey = pickBaseTreatment(treatment);
-        unitPrice += Number(normalized.arboles[band][treatmentKey as PhytosanitaryWithoutHerbicide] || 0);
+        unitPrice += fallbackPrice > 0 ? fallbackPrice : Number(normalized.arboles[band][treatmentKey as PhytosanitaryWithoutHerbicide] || 0);
         return;
       }
 
       if (affected === 'Setos') {
         const over2m = zone.aboveTwoMeters ?? zone.aboveThreeMeters ?? false;
         const band = over2m ? 'mas_de_2m' : 'hasta_2m';
+        const fallbackPrice = isCure ? Number(detailed?.setos[band === 'mas_de_2m' ? 'altos_curativo' : 'bajos_curativo'] || 0) 
+                                     : Number(detailed?.setos[band === 'mas_de_2m' ? 'altos_preventivo' : 'bajos_preventivo'] || 0);
         const treatmentKey = pickBaseTreatment(treatment);
-        unitPrice += Number(normalized.setos[band][treatmentKey as PhytosanitaryWithoutHerbicide] || 0);
+        unitPrice += fallbackPrice > 0 ? fallbackPrice : Number(normalized.setos[band][treatmentKey as PhytosanitaryWithoutHerbicide] || 0);
         return;
       }
 
       const areaBand = qty > 100 ? 'mas_de_100m2' : 'hasta_100m2';
       const treatmentKey = pickBaseTreatment(treatment);
-      unitPrice += Number(normalized.superficies_plantas[areaBand][treatmentKey] || 0);
+      const isPlantas = affected === 'Plantas bajas';
+      
+      let fallbackPrice = 0;
+      if (isPlantas) {
+        const sizePlantas = zone.analysisMetrics?.plantas_tamano_dominante || 'pequenas';
+        fallbackPrice = isCure ? Number(detailed?.plantas[`${sizePlantas}_curativo`] || 0) : Number(detailed?.plantas[`${sizePlantas}_preventivo`] || 0);
+      } else {
+        fallbackPrice = isCure ? Number(detailed?.cesped.curativo || 0) : Number(detailed?.cesped.preventivo || 0);
+      }
+
+      unitPrice += fallbackPrice > 0 ? fallbackPrice : Number(normalized.superficies_plantas[areaBand][treatmentKey] || 0);
     });
 
     if (unitPrice <= 0) {
@@ -603,13 +643,7 @@ export const calculatePhytosanitaryQuote = (params: {
       ? comboThreePlusTreatmentsPercent
       : (effectiveTreatments.length === 2 ? comboTwoTreatmentsPercent : 0);
     const comboMult = 1 + (comboPercent / 100);
-    const hasSevereInfestation = requestedTreatments.includes('insecticida') && qty > 0 && zone.analysisMetrics?.observaciones_ia?.some((item) => {
-      const text = String(item || '').toLowerCase();
-      return text.includes('sever') || text.includes('grave') || text.includes('alta infest') || text.includes('critical') || text.includes('riesgo alto');
-    });
-    const severePercent = hasSevereInfestation ? severeInfestationPercent : 0;
-    const severeMult = 1 + (severePercent / 100);
-    const lineTotal = subtotal * ecoMult * comboMult * severeMult * wasteMult;
+    const lineTotal = subtotal * ecoMult * comboMult * wasteMult;
     totalBeforeMinimum += lineTotal;
 
     breakdown.push({
@@ -623,14 +657,14 @@ export const calculatePhytosanitaryQuote = (params: {
       subtotal,
       ecoModifierPercent: ecoApplied ? ecoModifierPercent : 0,
       comboModifierPercent: comboPercent,
-      severeModifierPercent: severePercent,
+      severeModifierPercent: 0,
       wasteModifierPercent: params.globalWaste ? wastePercentage : 0,
       lineTotal,
-      formula: `${qty}${unitLabel} × ${unitPrice.toFixed(2)}€ × eco(${ecoApplied ? ecoModifierPercent : 0}%) × combo(${comboPercent}%) × severa(${severePercent}%) × retirada(${params.globalWaste ? wastePercentage : 0}%)`
+      formula: `${qty}${unitLabel} × ${unitPrice.toFixed(2)}€ × eco(${ecoApplied ? ecoModifierPercent : 0}%) × combo(${comboPercent}%) × retirada(${params.globalWaste ? wastePercentage : 0}%)`
     });
   });
 
-  const rounded = Math.ceil(totalBeforeMinimum);
+  const rounded = Math.ceil(Math.round(totalBeforeMinimum * 100) / 100);
   const minimumFee = Number(normalized.minimum_fee || normalized.importe_minimo || 0);
   const minimumFeeApplied = minimumFee > 0 && rounded > 0 && rounded < minimumFee;
   const total = minimumFeeApplied ? Math.ceil(minimumFee) : rounded;
@@ -649,12 +683,7 @@ export const calculatePhytosanitaryQuote = (params: {
 export const isLawnConfigValid = (config: LawnPricingConfig | undefined): boolean => {
   if (!config) return false;
   if ((config.minimum_price || 0) <= 0) return false;
-  const hasValidSurfacePrices =
-    Number(config.surface_prices?.['0-50'] || 0) > 0 &&
-    Number(config.surface_prices?.['51-150'] || 0) > 0 &&
-    Number(config.surface_prices?.['151-400'] || 0) > 0 &&
-    Number(config.surface_prices?.['400+'] || 0) > 0;
-  if (!hasValidSurfacePrices) return false;
+  if (!config.price_per_m2 || config.price_per_m2 <= 0) return false;
   return true;
 };
 
@@ -667,18 +696,13 @@ export const isPalmConfigValid = (config: PalmPricingConfig | undefined): boolea
   if (!config.selected_species || config.selected_species.length === 0) return false;
   if ((config.minimum_price || 0) <= 0) return false;
 
-  const SPECIES_LARGE = [
-      'Phoenix (datilera o canaria)', 
-      'Washingtonia', 
-      'Roystonea regia (cubana)', 
-      'Syagrus romanzoffiana (cocotera)',
-      'Trachycarpus fortunei'
-  ];
-  const SPECIES_SMALL = [
-      'Livistona', 
-      'Kentia (palmito)', 
-      'Phoenix roebelenii(pigmea)', 
-      'cycas revoluta (falsa palmera)'
+  const PALM_SPECIES = [
+      'Phoenix canariensis', 
+      'Phoenix dactylifera', 
+      'Washingtonia robusta/filifera', 
+      'Syagrus romanzoffiana',
+      'Trachycarpus fortunei',
+      'Roystonea regia'
   ];
 
   for (const species of config.selected_species) {
@@ -686,27 +710,21 @@ export const isPalmConfigValid = (config: PalmPricingConfig | undefined): boolea
       const heightPrices = config.height_prices?.[species];
       if (!heightPrices) return false;
 
-      if (SPECIES_LARGE.includes(species as any)) {
-          const heights = ['0-5', '5-12', '12-20', '20+'];
+      if (PALM_SPECIES.includes(species as any)) {
+          const heights = Object.keys(heightPrices || {});
+          if (heights.length === 0) return false;
           for (const h of heights) {
-              // @ts-expect-error dynamic range key
               if (!heightPrices[h] || heightPrices[h] <= 0) return false;
-          }
-      } else if (SPECIES_SMALL.includes(species as any)) {
-          // Check 0-2
-          if (!heightPrices['0-2'] || heightPrices['0-2'] <= 0) return false;
-          
-          // Check 2+ (except Cycas)
-          if (species !== 'cycas revoluta (falsa palmera)') {
-              if (!heightPrices['2+'] || heightPrices['2+'] <= 0) return false;
           }
       }
   }
 
   // Validate Surcharges
   if (!config.condition_surcharges) return false;
-  if ((config.condition_surcharges.descuidada || 0) <= 0) return false;
-  if ((config.condition_surcharges.muy_descuidada || 0) <= 0) return false;
+  const descSurcharge = config.condition_surcharges.descuidado ?? (config.condition_surcharges as any).descuidada ?? 0;
+  const muyDescSurcharge = config.condition_surcharges.muy_descuidado ?? (config.condition_surcharges as any).muy_descuidada ?? 0;
+  if (descSurcharge <= 0) return false;
+  if (muyDescSurcharge <= 0) return false;
 
   // Validate Waste Removal
   if (!config.waste_removal || (config.waste_removal.percentage || 0) <= 0) return false;
@@ -720,11 +738,11 @@ export const isHedgeConfigValid = (config: HedgePricingConfig | undefined): bool
   if ((config.minimum_price || 0) <= 0) return false;
 
   const activeHeights = config.specialist_enabled
-    ? ['0-1m', '1-2m', '2-4m', '4-6m']
-    : ['0-1m', '1-2m', '2-4m'];
-  const lengthRanges = ['0-25m (Estándar)', '>25m (Gran Volumen)'];
+    ? ['0-2m', '2-4m', '4-6m']
+    : ['0-2m', '2-4m'];
+  
   const hasMatrix = activeHeights.every((height) =>
-    lengthRanges.every((range) => Number((config as any).pricing_matrix?.[height]?.[range] || 0) > 0)
+    Number((config as any).pricing_matrix?.[height] || 0) > 0
   );
   if (hasMatrix) return true;
 
@@ -788,37 +806,49 @@ export const isTreeConfigValid = (config: TreePricingConfig | undefined): boolea
 // --- Shrub Validation ---
 export const isShrubConfigValid = (config: ShrubPricingConfig | undefined): boolean => {
   if (!config) return false;
-  if (!config.selected_types || config.selected_types.length === 0) return false;
+  if (!config.prices_per_m2) return false;
   if ((config.minimum_price || 0) <= 0) return false;
 
-  for (const type of config.selected_types) {
-    const prices = config.species_prices[type];
-    if (!prices) return false;
-    // Sizes: Pequeño (hasta 1m), Mediano (1-2.5m), Grande (>2.5m)
-    if (!prices['Pequeño (hasta 1m)'] || prices['Pequeño (hasta 1m)'] <= 0) return false;
-    if (!prices['Mediano (1-2.5m)'] || prices['Mediano (1-2.5m)'] <= 0) return false;
-    if (!prices['Grande (>2.5m)'] || prices['Grande (>2.5m)'] <= 0) return false;
-  }
+  const { pequeñas, medianas, grandes } = config.prices_per_m2;
+  if (!pequeñas || pequeñas <= 0) return false;
+  if (!medianas || medianas <= 0) return false;
+  if (!grandes || grandes <= 0) return false;
+
   return true;
 };
 
-// --- Clearing Validation ---
-export const isClearingConfigValid = (config: ClearingPricingConfig | undefined): boolean => {
-  if (!config) return false;
-  if (!config.selected_types || config.selected_types.length === 0) return false;
-  if ((config.minimum_price || 0) <= 0) return false;
-  const typePrices = config.type_prices;
-  if (!typePrices) return false;
+// --- Weeding Validation ---
+export const WEEDING_STATES = ['normal', 'dificultad_media', 'dificultad_alta'] as const;
+export type WeedingState = typeof WEEDING_STATES[number];
 
-  for (const type of config.selected_types) {
-    const prices = typePrices[type];
-    if (!prices) return false;
-    // Ranges: 0-50, 50-200, 200+
-    if (!prices['0-50'] || prices['0-50'] <= 0) return false;
-    if (!prices['50-200'] || prices['50-200'] <= 0) return false;
-    if (!prices['200+'] || prices['200+'] <= 0) return false;
-  }
-  return true;
+export interface WeedingPricingConfig {
+  version: 'weeding_v1';
+  importe_minimo: number;
+  precio_desbroce_m2: number;
+  precio_herbicida_m2?: number;
+  suplementos: {
+    dificultad_media: number;
+    dificultad_alta: number;
+    retirada_restos: number;
+  };
+}
+
+export const weedingV1Schema = z.object({
+  version: z.literal('weeding_v1'),
+  importe_minimo: z.number().nonnegative().min(1),
+  precio_desbroce_m2: z.number().nonnegative().min(0.01),
+  precio_herbicida_m2: z.number().nonnegative().optional(),
+  suplementos: z.object({
+    dificultad_media: z.number().nonnegative(),
+    dificultad_alta: z.number().nonnegative(),
+    retirada_restos: z.number().nonnegative(),
+  })
+});
+
+export const isWeedingConfigValid = (config: WeedingPricingConfig | undefined): boolean => {
+  if (!config) return false;
+  const parsed = weedingV1Schema.safeParse(config);
+  return parsed.success;
 };
 
 // --- Phytosanitary Validation ---
@@ -829,11 +859,6 @@ export const isPhytosanitaryConfigValid = (config: PhytosanitaryPricingConfig | 
   if (parsedV2 && parsedV2.version === 'phytosanitary_v2') {
     if (Number(parsedV2.importe_minimo || 0) <= 0) return false;
     if (!parsedV2.tratamientos_activos || parsedV2.tratamientos_activos.length === 0) return false;
-    if (parsedV2.tratamientos_activos.includes('herbicida')) {
-      const hasHerbicide = Number(parsedV2.superficies_plantas.hasta_100m2.herbicida || 0) > 0
-        && Number(parsedV2.superficies_plantas.mas_de_100m2.herbicida || 0) > 0;
-      if (!hasHerbicide) return false;
-    }
     const baseTreatments: PhytosanitaryBaseTreatment[] = ['insecticida', 'fungicida', 'ecologico_preventivo'];
     for (const t of baseTreatments) {
       if (parsedV2.tratamientos_activos.includes(t)) {

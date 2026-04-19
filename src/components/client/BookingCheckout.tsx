@@ -76,9 +76,6 @@ const computeTaskPrice = (task: any) => {
   } else if (tipo.includes('setos') || tipo.includes('seto')) {
     const m2 = task?.superficie_m2;
     if (m2 != null) price = ((Number(m2) / 8.4) * factor) * 25;
-  } else if (tipo.includes('malas hierbas') || tipo.includes('hierbas') || tipo.includes('maleza') || tipo.includes('labrado')) {
-    const m2 = task?.superficie_m2;
-    if (m2 != null) price = ((Number(m2) / 20) * factor) * 20;
   } else if (tipo.includes('fitosanit')) {
     const plants = task?.numero_plantas;
     if (plants != null) price = ((Number(plants) * 0.05) * factor) * 35;

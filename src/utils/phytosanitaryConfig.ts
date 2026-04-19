@@ -7,7 +7,7 @@ import {
   LegacyPhytosanitaryType
 } from '../types';
 
-const emptyBaseMatrix = (): PhytosanitaryMatrixBase => ({ insecticida: 0, fungicida: 0, herbicida: 0, ecologico_preventivo: 0 });
+const emptyBaseMatrix = (): PhytosanitaryMatrixBase => ({ insecticida: 0, fungicida: 0, ecologico_preventivo: 0 });
 const emptyNoHerbMatrix = (): PhytosanitaryMatrixNoHerb => ({ insecticida: 0, fungicida: 0, ecologico_preventivo: 0 });
 
 export const EMPTY_DETAILED_PHYTOSANITARY_PRICING: PhytosanitaryDetailedPricing = {
@@ -34,7 +34,15 @@ export const EMPTY_DETAILED_PHYTOSANITARY_PRICING: PhytosanitaryDetailedPricing 
     grandes_preventivo: 0,
     grandes_curativo: 0
   },
-  malas_hierbas: { minimo: 0, preventivo: 0, curativo: 0 }
+  plantas: {
+    minimo: 0,
+    pequenas_preventivo: 0,
+    pequenas_curativo: 0,
+    medianas_preventivo: 0,
+    medianas_curativo: 0,
+    grandes_preventivo: 0,
+    grandes_curativo: 0
+  }
 };
 
 export const EMPTY_PHYTOSANITARY_CONFIG: PhytosanitaryPricingConfig = {
@@ -63,8 +71,7 @@ export const EMPTY_PHYTOSANITARY_CONFIG: PhytosanitaryPricingConfig = {
   waste_removal: { percentage: 0 },
   pricing_modifiers: {
     eco: { percentage: 0 },
-    combo: { two_treatments_percentage: 0, three_plus_treatments_percentage: 0 },
-    severe_infestation: { percentage: 0 }
+    combo: { two_treatments_percentage: 0, three_plus_treatments_percentage: 0 }
   },
   selected_types: [],
   type_prices: {},
@@ -73,14 +80,12 @@ export const EMPTY_PHYTOSANITARY_CONFIG: PhytosanitaryPricingConfig = {
 
 const mapLegacyType = (type: LegacyPhytosanitaryType): PhytosanitaryType => {
   if (type === 'Insecticida') return 'insecticida';
-  if (type === 'Fungicida') return 'fungicida';
-  return 'herbicida';
+  return 'fungicida';
 };
 
 const toLegacyType = (type: PhytosanitaryType): LegacyPhytosanitaryType | null => {
   if (type === 'insecticida') return 'Insecticida';
   if (type === 'fungicida') return 'Fungicida';
-  if (type === 'herbicida') return 'Herbicida';
   return null;
 };
 
@@ -91,7 +96,7 @@ export const normalizeDetailedPhytosanitaryPricing = (raw?: PhytosanitaryDetaile
     setos: { ...EMPTY_DETAILED_PHYTOSANITARY_PRICING.setos, ...(raw.setos || {}) },
     palmeras: { ...EMPTY_DETAILED_PHYTOSANITARY_PRICING.palmeras, ...(raw.palmeras || {}) },
     arboles: { ...EMPTY_DETAILED_PHYTOSANITARY_PRICING.arboles, ...(raw.arboles || {}) },
-    malas_hierbas: { ...EMPTY_DETAILED_PHYTOSANITARY_PRICING.malas_hierbas, ...(raw.malas_hierbas || {}) }
+    plantas: { ...EMPTY_DETAILED_PHYTOSANITARY_PRICING.plantas, ...(raw.plantas || {}) }
   };
 };
 
@@ -132,10 +137,14 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
         grandes_preventivo: Number(raw.arboles?.mas_de_3m?.ecologico_preventivo || 0),
         grandes_curativo: Number(raw.arboles?.mas_de_3m?.insecticida || 0)
       },
-      malas_hierbas: {
+      plantas: {
         minimo: Number(raw.importe_minimo || raw.minimum_price || 0),
-        preventivo: Number(raw.superficies_plantas?.hasta_100m2?.herbicida || 0),
-        curativo: Number(raw.superficies_plantas?.hasta_100m2?.herbicida || 0)
+        pequenas_preventivo: Number(raw.superficies_plantas?.hasta_100m2?.ecologico_preventivo || 0),
+        pequenas_curativo: Number(raw.superficies_plantas?.hasta_100m2?.insecticida || 0),
+        medianas_preventivo: Number(raw.superficies_plantas?.hasta_100m2?.ecologico_preventivo || 0),
+        medianas_curativo: Number(raw.superficies_plantas?.hasta_100m2?.insecticida || 0),
+        grandes_preventivo: Number(raw.superficies_plantas?.hasta_100m2?.ecologico_preventivo || 0),
+        grandes_curativo: Number(raw.superficies_plantas?.hasta_100m2?.insecticida || 0)
       }
     };
 
@@ -146,7 +155,6 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
     const inferredEco = Number(raw.pricing_modifiers?.eco?.percentage || 0);
     const inferredComboTwo = Number(raw.pricing_modifiers?.combo?.two_treatments_percentage || 0);
     const inferredComboThreePlus = Number(raw.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
-    const inferredSevereInfestation = Number(raw.pricing_modifiers?.severe_infestation?.percentage || 0);
 
     return {
       ...EMPTY_PHYTOSANITARY_CONFIG,
@@ -183,8 +191,7 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
         combo: {
           two_treatments_percentage: inferredComboTwo,
           three_plus_treatments_percentage: inferredComboThreePlus
-        },
-        severe_infestation: { percentage: inferredSevereInfestation }
+        }
       },
       selected_types: legacyFromV2,
       detailed_pricing: inferredDetailed
@@ -212,10 +219,9 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
     waste_removal: { percentage: Number(raw.waste_removal?.percentage || 0) },
     pricing_modifiers: {
       eco: { percentage: 0 },
-      combo: { two_treatments_percentage: 0, three_plus_treatments_percentage: 0 },
-      severe_infestation: { percentage: 0 }
+      combo: { two_treatments_percentage: 0, three_plus_treatments_percentage: 0 }
     },
-    superficies_plantas: { hasta_100m2: { ...emptyBaseMatrix(), insecticida: base, fungicida: base, herbicida: base, ecologico_preventivo: base }, mas_de_100m2: { ...emptyBaseMatrix(), insecticida: highBase, fungicida: highBase, herbicida: highBase, ecologico_preventivo: highBase } },
+    superficies_plantas: { hasta_100m2: { ...emptyBaseMatrix(), insecticida: base, fungicida: base, ecologico_preventivo: base }, mas_de_100m2: { ...emptyBaseMatrix(), insecticida: highBase, fungicida: highBase, ecologico_preventivo: highBase } },
     setos: { hasta_2m: { ...emptyNoHerbMatrix(), insecticida: base, fungicida: base, ecologico_preventivo: base }, mas_de_2m: { ...emptyNoHerbMatrix(), insecticida: highBase, fungicida: highBase, ecologico_preventivo: highBase } },
     arboles: { hasta_3m: { ...emptyNoHerbMatrix(), insecticida: base, fungicida: base, ecologico_preventivo: base }, mas_de_3m: { ...emptyNoHerbMatrix(), insecticida: highBase, fungicida: highBase, ecologico_preventivo: highBase } },
     palmeras: { tradicional: { hasta_3m: base, mas_de_3m: highBase }, endoterapia: { precio_unico: 0 } },
@@ -230,9 +236,8 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
   const normalizedEcoModifier = Number(normalized.pricing_modifiers?.eco?.percentage || 0);
   const normalizedComboTwoModifier = Number(normalized.pricing_modifiers?.combo?.two_treatments_percentage || 0);
   const normalizedComboThreeModifier = Number(normalized.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
-  const normalizedSevereInfestationModifier = Number(normalized.pricing_modifiers?.severe_infestation?.percentage || 0);
   const hasAnyCirugia = [detailed.palmeras.pequenas_cirugia, detailed.palmeras.medianas_cirugia, detailed.palmeras.altas_cirugia].some((n) => Number(n || 0) > 0);
-  const tratamientos: PhytosanitaryType[] = ['insecticida', 'fungicida', 'herbicida', 'ecologico_preventivo'];
+  const tratamientos: PhytosanitaryType[] = ['insecticida', 'fungicida', 'ecologico_preventivo'];
   if (hasAnyCirugia) tratamientos.push('endoterapia');
   const selectedLegacy = tratamientos.map(toLegacyType).filter(Boolean) as LegacyPhytosanitaryType[];
   const palmHighTraditional = Math.max(Number(detailed.palmeras.medianas_curativo || 0), Number(detailed.palmeras.altas_curativo || 0));
@@ -252,8 +257,7 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
       combo: {
         two_treatments_percentage: normalizedComboTwoModifier,
         three_plus_treatments_percentage: normalizedComboThreeModifier
-      },
-      severe_infestation: { percentage: normalizedSevereInfestationModifier }
+      }
     },
     tratamientos_activos: tratamientos,
     selected_types: selectedLegacy,
@@ -261,13 +265,11 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
       hasta_100m2: {
         insecticida: Number(detailed.cesped.curativo || 0),
         fungicida: Number(detailed.cesped.curativo || 0),
-        herbicida: Number(detailed.malas_hierbas.curativo || 0),
         ecologico_preventivo: Number(detailed.cesped.preventivo || 0)
       },
       mas_de_100m2: {
         insecticida: Number(detailed.cesped.curativo || 0),
         fungicida: Number(detailed.cesped.curativo || 0),
-        herbicida: Number(detailed.malas_hierbas.preventivo || 0),
         ecologico_preventivo: Number(detailed.cesped.preventivo || 0)
       }
     },
@@ -305,8 +307,7 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
     detailed_pricing: detailed,
     type_prices: {
       Insecticida: { '0-50': Number(detailed.cesped.curativo || 0), '50-200': Number(detailed.cesped.curativo || 0), '200+': Number(detailed.cesped.curativo || 0) },
-      Fungicida: { '0-50': Number(detailed.cesped.curativo || 0), '50-200': Number(detailed.cesped.curativo || 0), '200+': Number(detailed.cesped.curativo || 0) },
-      Herbicida: { '0-50': Number(detailed.malas_hierbas.curativo || 0), '50-200': Number(detailed.malas_hierbas.curativo || 0), '200+': Number(detailed.malas_hierbas.curativo || 0) }
+      Fungicida: { '0-50': Number(detailed.cesped.curativo || 0), '50-200': Number(detailed.cesped.curativo || 0), '200+': Number(detailed.cesped.curativo || 0) }
     }
   };
 };

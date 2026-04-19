@@ -16,11 +16,11 @@ interface Service {
 const serviceIcons = {
   'Corte de césped': Scissors,
   'Corte de setos a máquina': TreePine,
-  'Poda de plantas': Sprout,
+  'Poda de plantas y arbustos': Sprout,
   'Poda de árboles': TreePine,
-  'Labrar y quitar malas hierbas a mano': Leaf,
   'Servicios fitosanitarios': Sparkles,
   'Poda de palmeras': Sprout,
+  'Desbroce de malas hierbas': Leaf,
 };
 
 const ServicesPage: React.FC = () => {
@@ -43,6 +43,7 @@ const ServicesPage: React.FC = () => {
       const { data, error } = await supabase
         .from('services')
         .select('*')
+        .eq('is_active', true)
         .order('name');
       
       if (!error && data) {
@@ -146,10 +147,10 @@ const ServicesPage: React.FC = () => {
             const images: Record<string, string> = {
               'Corte de césped': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20freshly%20cut%20green%20lawn%20in%20a%20sunny%20residential%20garden%2C%20with%20sharp%20cut%20lines%20visible%20and%20a%20lawnmower%20partially%20visible%20in%20the%20background%2C%20soft%20natural%20lighting%2C%20realistic%20photography%2C%20high%20detail&image_size=landscape_4_3',
               'Corte de setos a máquina': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Perfectly%20trimmed%20green%20hedges%20in%20a%20residential%20garden%2C%20showing%20a%20straight%20clean%20cut%2C%20with%20an%20electric%20hedge%20trimmer%20resting%20nearby%2C%20soft%20afternoon%20sunlight%2C%20realistic%20photography%2C%20professional%20gardening&image_size=landscape_4_3',
-              'Poda de plantas': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20trimming%20ornamental%20flowering%20plants%20with%20hand%20pruners%20in%20a%20garden%2C%20focus%20on%20the%20cut%20and%20healthy%20stems%2C%20natural%20soft%20lighting%2C%20realistic%20photography%2C%20detailed&image_size=landscape_4_3',
-              'Poda de árboles': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Professional%20pruning%20of%20a%20small%20residential%20tree%2C%20focus%20on%20a%20branch%20being%20cut%20with%20pruning%20shears%2C%20soft%20sunlight%20filtering%20through%20leaves%2C%20realistic%20photography%2C%20garden%20maintenance&image_size=landscape_4_3',
-              'Labrar y quitar malas hierbas a mano': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Hands%20with%20gardening%20gloves%20removing%20weeds%20from%20soil%20in%20a%20residential%20garden%2C%20showing%20tilled%20earth%20and%20small%20hand%20tools%2C%20close-up%20shot%2C%20natural%20daylight%2C%20realistic%20photography&image_size=landscape_4_3',
-              'Servicios fitosanitarios': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20a%20person%20spraying%20ornamental%20plants%20in%20a%20home%20garden%20with%20a%20manual%20sprayer%2C%20focus%20on%20the%20mist%20and%20green%20leaves%2C%20soft%20natural%20light%2C%20realistic%20photography%2C%20gardening%20care&image_size=landscape_4_3'
+              'Poda de plantas y arbustos': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Close-up%20of%20trimming%20ornamental%20flowering%20plants%20with%20hand%20pruners%20in%20a%20garden%2C%20focus%20on%20the%20cut%20and%20healthy%20stems%2C%20natural%20soft%20lighting%2C%20realistic%20photography%2C%20detailed&image_size=landscape_4_3',
+              'Poda de árboles': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Professional%20arborist%20in%20safety%20gear%20pruning%20high%20branches%20of%20a%20large%20tree%20using%20a%20telescopic%20saw%2C%20blue%20sky%20background%2C%20sunlight%20filtering%20through%20leaves%2C%20realistic%20photography&image_size=landscape_4_3',
+              'Servicios fitosanitarios': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Gardener%20in%20protective%20suit%20applying%20phytosanitary%20treatment%20to%20garden%20plants%20using%20a%20backpack%20sprayer%2C%20fine%20mist%20visible%20in%20air%2C%20lush%20green%20surroundings%2C%20realistic%20photography&image_size=landscape_4_3',
+              'Desbroce de malas hierbas': 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Overgrown%20garden%20with%20tall%20weeds%20being%20cleared%20by%20a%20professional%20gardener%20using%20a%20strimmer%2C%20sunlight%20filtering%20through%2C%20realistic%20photography&image_size=landscape_4_3'
             };
             const imageUrl = (service as any)?.image_url || images[service.name] || 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?q=80&w=600&auto=format&fit=crop';
             const isSelected = selectedServices.includes(service.id);

@@ -1,20 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, AlertTriangle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
 import ServiceConfigFooter from './ServiceConfigFooter';
 
-export type HedgeHeightBand = '0-1m' | '1-2m' | '2-4m' | '4-6m';
-export type HedgeLengthRange = '0-25m (Estándar)' | '>25m (Gran Volumen)';
+export type HedgeHeightBand = '0-2m' | '2-4m' | '4-6m';
 
-export const HEDGE_HEIGHT_BANDS: HedgeHeightBand[] = ['0-1m', '1-2m', '2-4m', '4-6m'];
-export const HEDGE_LENGTH_RANGES: HedgeLengthRange[] = ['0-25m (Estándar)', '>25m (Gran Volumen)'];
+export const HEDGE_HEIGHT_BANDS: HedgeHeightBand[] = ['0-2m', '2-4m', '4-6m'];
 
 export interface HedgePricingConfig {
-  pricing_matrix: Record<HedgeHeightBand, Partial<Record<HedgeLengthRange, number>>>;
+  pricing_matrix: Record<HedgeHeightBand, number>;
   specialist_enabled?: boolean;
   condition_surcharges: {
-    descuidado: number;
+    media: number;
+    alta: number;
+    descuidado?: number;
     muy_descuidado?: number;
   };
   waste_removal: {
@@ -29,13 +29,12 @@ export interface HedgePricingConfig {
 
 const EMPTY_CONFIG: HedgePricingConfig = {
   pricing_matrix: {
-    '0-1m': {},
-    '1-2m': {},
-    '2-4m': {},
-    '4-6m': {}
+    '0-2m': 0,
+    '2-4m': 0,
+    '4-6m': 0
   },
   specialist_enabled: false,
-  condition_surcharges: { descuidado: 25, muy_descuidado: 25 },
+  condition_surcharges: { media: 20, alta: 50 },
   waste_removal: { percentage: 0 },
   minimum_price: 0,
 };
@@ -46,17 +45,10 @@ const averagePositive = (values: number[]) => {
   return Number((valid.reduce((acc, v) => acc + v, 0) / valid.length).toFixed(2));
 };
 
-const toLegacyLengthRanges = (range: HedgeLengthRange) =>
-  range === '0-25m (Estándar)' ? ['0-10m', '11-25m'] : ['26-50m', '>50m'];
-
 const toLegacyHeightPairs = (height: HedgeHeightBand): Array<{ category: string; height: string }> => {
-  if (height === '0-1m') {
+  if (height === '0-2m') {
     return [
-      { category: 'Setos Estándar (≤3m)', height: '0-1m' }
-    ];
-  }
-  if (height === '1-2m') {
-    return [
+      { category: 'Setos Estándar (≤3m)', height: '0-1m' },
       { category: 'Setos Estándar (≤3m)', height: '>1-2m' }
     ];
   }
@@ -72,36 +64,57 @@ const toLegacyHeightPairs = (height: HedgeHeightBand): Array<{ category: string;
   ];
 };
 
-const deriveMatrixFromLegacy = (value?: HedgePricingConfig): Record<HedgeHeightBand, Partial<Record<HedgeLengthRange, number>>> => {
-  const matrix: Record<HedgeHeightBand, Partial<Record<HedgeLengthRange, number>>> = {
-    '0-1m': {},
-    '1-2m': {},
-    '2-4m': {},
-    '4-6m': {}
+const deriveMatrixFromLegacy = (value?: any): Record<HedgeHeightBand, number> => {
+  const matrix: Record<HedgeHeightBand, number> = {
+    '0-2m': 0,
+    '2-4m': 0,
+    '4-6m': 0
   };
+
+  if (value?.pricing_matrix && (value.pricing_matrix['0-1m'] || value.pricing_matrix['1-2m'] || typeof value.pricing_matrix['2-4m'] === 'object')) {
+    const pm = value.pricing_matrix;
+    const extractPrice = (entry: any) => {
+      if (!entry) return 0;
+      if (typeof entry === 'number') return entry;
+      const standard = Number(entry['0-25m (Estándar)'] || 0);
+      const volume = Number(entry['>25m (Gran Volumen)'] || 0);
+      const candidates = [standard, volume].filter(v => v > 0);
+      if (candidates.length === 0) return 0;
+      return candidates.reduce((a, b) => a + b, 0) / candidates.length;
+    };
+
+    const p0_1 = extractPrice(pm['0-1m']);
+    const p1_2 = extractPrice(pm['1-2m']);
+    const c0_2 = [p0_1, p1_2].filter(v => v > 0);
+    matrix['0-2m'] = c0_2.length > 0 ? c0_2.reduce((a, b) => a + b, 0) / c0_2.length : 0;
+    
+    matrix['2-4m'] = extractPrice(pm['2-4m']);
+    matrix['4-6m'] = extractPrice(pm['4-6m']);
+
+    return matrix;
+  }
+
   HEDGE_HEIGHT_BANDS.forEach((height) => {
-    HEDGE_LENGTH_RANGES.forEach((range) => {
-      const legacyRanges = toLegacyLengthRanges(range);
-      const legacyHeights = toLegacyHeightPairs(height);
-      const candidates: number[] = [];
-      legacyHeights.forEach(({ category, height: legacyHeight }) => {
-        legacyRanges.forEach((legacyRange) => {
-          const val = Number(value?.category_prices?.[category]?.[legacyHeight]?.[legacyRange] || 0);
-          if (val > 0) candidates.push(val);
-        });
+    const legacyRanges = ['0-10m', '11-25m', '26-50m', '>50m'];
+    const legacyHeights = toLegacyHeightPairs(height);
+    const candidates: number[] = [];
+    legacyHeights.forEach(({ category, height: legacyHeight }) => {
+      legacyRanges.forEach((legacyRange) => {
+        const val = Number(value?.category_prices?.[category]?.[legacyHeight]?.[legacyRange] || 0);
+        if (val > 0) candidates.push(val);
       });
-      const derived = averagePositive(candidates);
-      if (derived > 0) {
-        matrix[height][range] = derived;
-      }
     });
+    const derived = averagePositive(candidates);
+    if (derived > 0) {
+      matrix[height] = derived;
+    }
   });
   return matrix;
 };
 
-const hasAnyMatrixValue = (matrix?: Record<HedgeHeightBand, Partial<Record<HedgeLengthRange, number>>>) => {
+const hasAnyMatrixValue = (matrix?: Record<HedgeHeightBand, number>) => {
   if (!matrix) return false;
-  return HEDGE_HEIGHT_BANDS.some((h) => HEDGE_LENGTH_RANGES.some((r) => Number(matrix[h]?.[r] || 0) > 0));
+  return HEDGE_HEIGHT_BANDS.some((h) => Number(matrix[h] || 0) > 0);
 };
 
 interface Props {
@@ -116,6 +129,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
   const [showFormulaSheet, setShowFormulaSheet] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showGlobalError, setShowGlobalError] = useState(false);
+  const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [minimumPriceError, setMinimumPriceError] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
 
@@ -135,15 +149,22 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           ...EMPTY_CONFIG.pricing_matrix,
           ...legacyMatrix
         };
+    const conditionSurcharges = { ...EMPTY_CONFIG.condition_surcharges, ...(value.condition_surcharges || {}) };
+    if (value.condition_surcharges) {
+      if (value.condition_surcharges.descuidado !== undefined && conditionSurcharges.media === EMPTY_CONFIG.condition_surcharges.media) {
+        conditionSurcharges.media = value.condition_surcharges.descuidado;
+      }
+      if (value.condition_surcharges.muy_descuidado !== undefined && conditionSurcharges.alta === EMPTY_CONFIG.condition_surcharges.alta) {
+        conditionSurcharges.alta = value.condition_surcharges.muy_descuidado;
+      }
+    }
+
     return {
       ...EMPTY_CONFIG,
       ...value,
       specialist_enabled: legacySpecialist,
       pricing_matrix: mergedMatrix,
-      condition_surcharges: {
-        ...EMPTY_CONFIG.condition_surcharges,
-        ...(value.condition_surcharges || {})
-      },
+      condition_surcharges: conditionSurcharges,
       waste_removal: { ...EMPTY_CONFIG.waste_removal, ...(value.waste_removal || {}) },
     };
   }, [value]);
@@ -164,22 +185,29 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           ...EMPTY_CONFIG.pricing_matrix,
           ...legacyMatrix
         };
+    const conditionSurchargesBase = { ...EMPTY_CONFIG.condition_surcharges, ...(baseToCompare.condition_surcharges || {}) };
+    if (baseToCompare.condition_surcharges) {
+      if (baseToCompare.condition_surcharges.descuidado !== undefined && conditionSurchargesBase.media === EMPTY_CONFIG.condition_surcharges.media) {
+        conditionSurchargesBase.media = baseToCompare.condition_surcharges.descuidado;
+      }
+      if (baseToCompare.condition_surcharges.muy_descuidado !== undefined && conditionSurchargesBase.alta === EMPTY_CONFIG.condition_surcharges.alta) {
+        conditionSurchargesBase.alta = baseToCompare.condition_surcharges.muy_descuidado;
+      }
+    }
+
     const processedBase = {
       ...EMPTY_CONFIG,
       ...baseToCompare,
       specialist_enabled: legacySpecialist,
       pricing_matrix: mergedMatrix,
-      condition_surcharges: {
-        ...EMPTY_CONFIG.condition_surcharges,
-        ...(baseToCompare.condition_surcharges || {})
-      },
+      condition_surcharges: conditionSurchargesBase,
       waste_removal: { ...EMPTY_CONFIG.waste_removal, ...(baseToCompare.waste_removal || {}) },
     };
     return !deepEqual(config, processedBase);
   }, [config, initialConfig]);
 
   const activeHeightBands = useMemo(
-    () => (config.specialist_enabled ? HEDGE_HEIGHT_BANDS : HEDGE_HEIGHT_BANDS.slice(0, 3)),
+    () => (config.specialist_enabled ? HEDGE_HEIGHT_BANDS : HEDGE_HEIGHT_BANDS.slice(0, 2)),
     [config.specialist_enabled]
   );
 
@@ -205,25 +233,22 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
   const cancelReset = () => setShowResetModal(false);
 
-  const handlePriceChange = (height: HedgeHeightBand, range: HedgeLengthRange, newPrice: number) => {
-    const currentHeight = { ...(config.pricing_matrix?.[height] || {}) };
-    currentHeight[range] = newPrice;
+  const handlePriceChange = (height: HedgeHeightBand, newPrice: number) => {
     onChange({
       ...config,
       pricing_matrix: {
         ...(config.pricing_matrix || {}),
-        [height]: currentHeight
+        [height]: newPrice
       }
     });
   };
 
-  const handleSurchargeChange = (val: number) => {
+  const handleSurchargeChange = (level: 'media' | 'alta', value: number) => {
     onChange({
       ...config,
       condition_surcharges: {
-        ...config.condition_surcharges,
-        descuidado: val,
-        muy_descuidado: val
+        ...(config.condition_surcharges || {}),
+        [level]: value
       }
     });
   };
@@ -256,10 +281,8 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     if (e) e.stopPropagation();
     const errors: string[] = [];
     activeHeightBands.forEach((height) => {
-      HEDGE_LENGTH_RANGES.forEach((range) => {
-        const price = Number(config.pricing_matrix?.[height]?.[range] || 0);
-        if (price <= 0) errors.push(`${height}-${range}`);
-      });
+      const price = Number(config.pricing_matrix?.[height] || 0);
+      if (price <= 0) errors.push(height);
     });
 
     if (errors.length > 0) {
@@ -294,11 +317,10 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
   const renderPriceInput = (
     height: HedgeHeightBand,
-    range: HedgeLengthRange,
     options?: { inputId?: string; disabled?: boolean }
   ) => {
-    const val = Number(config.pricing_matrix?.[height]?.[range] || 0);
-    const hasError = validationErrors.includes(`${height}-${range}`);
+    const val = Number(config.pricing_matrix?.[height] || 0);
+    const hasError = validationErrors.includes(height);
     return (
       <div className="relative w-full">
         <input
@@ -308,25 +330,48 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           min="0"
           step="0.01"
           inputMode="decimal"
-          className={`w-full h-11 min-h-[44px] pl-3 pr-12 text-right text-[16px] transition-all border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${hasError ? 'border-red-400 bg-red-50 md:border-red-500' : val > 0 ? 'border-slate-200 bg-white md:border-gray-300' : 'border-slate-200 bg-slate-50 md:border-gray-200'}`}
+          className={`w-full h-11 min-h-[44px] pl-2 pr-7 text-right text-[15px] transition-all border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${hasError ? 'border-red-400 bg-red-50 md:border-red-500' : val > 0 ? 'border-slate-200 bg-white md:border-gray-300' : 'border-slate-200 bg-slate-50 md:border-gray-200'}`}
           value={val === 0 ? '' : val}
           placeholder={val === 0 ? '-' : ''}
           onChange={(e) => {
-            handlePriceChange(height, range, parseFloat(e.target.value) || 0);
+            handlePriceChange(height, parseFloat(e.target.value) || 0);
             if (hasError) {
-              setValidationErrors((prev) => prev.filter((err) => err !== `${height}-${range}`));
+              setValidationErrors((prev) => prev.filter((err) => err !== height));
             }
           }}
         />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 leading-none text-gray-400 text-xs font-semibold">€/m</span>
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 leading-none text-gray-400 text-[10px] sm:text-xs font-semibold">€/m</span>
       </div>
     );
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h3 className="font-semibold text-gray-900 text-lg">Configuración de setos (IVA incluido)</h3>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+        <div className="flex items-center gap-2">
+            <h3 className="text-lg font-bold text-gray-900">Tarifas de Setos y Vallas (IVA incluido)</h3>
+            <div className="relative">
+                <button 
+                    type="button"
+                    onClick={() => setShowGlobalInfo(!showGlobalInfo)}
+                    className="text-gray-400 hover:text-blue-500 transition-colors"
+                >
+                    <Info className="w-5 h-5" />
+                </button>
+                {showGlobalInfo && (
+                    <>
+                        <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
+                        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:left-0 md:translate-x-0 md:translate-y-0 md:w-64 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
+                            <ul className="list-disc pl-4 space-y-2">
+                                <li>El <strong>IVA está incluido</strong> en todos los precios mostrados.</li>
+                                <li>El precio base se aplica por metro lineal y puede multiplicarse por las caras a recortar.</li>
+                                <li>Los modificadores se aplican sobre el subtotal final.</li>
+                            </ul>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
         <button
           type="button"
           onClick={() => setShowFormulaSheet(true)}
@@ -381,57 +426,39 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         <div className="px-3 py-4 md:px-4 border-b border-gray-100 bg-gray-50">
           <h4 className="font-semibold text-gray-900">Tarifas por metro lineal (€/m)</h4>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px]">
-            <thead>
-              <tr className="bg-white text-left text-xs font-semibold text-gray-700">
-                <th className="px-2.5 md:px-4 py-3 border-b border-gray-100 w-[170px]">Longitud</th>
-                {activeHeightBands.map((height) => (
-                  <th key={`head-${height}`} className="px-2.5 md:px-4 py-3 border-b border-gray-100 text-center min-w-[120px]">
-                    {height}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {HEDGE_LENGTH_RANGES.map((range) => (
-                <tr key={`row-${range}`} className="border-b border-gray-50 last:border-b-0">
-                  <td className="px-2.5 md:px-4 py-3 align-top">
-                    <p className="text-sm font-medium text-gray-900">{range}</p>
-                  </td>
-                  {activeHeightBands.map((height) => {
-                    const rowKey = `${height}-${range}`;
-                    const hasError = validationErrors.includes(rowKey);
-                    return (
-                      <td key={rowKey} className="px-2.5 md:px-4 py-3 align-top">
-                        {renderPriceInput(height, range, { inputId: rowKey })}
-                        {hasError && <p className="text-[11px] text-red-600 mt-1">Completa esta casilla</p>}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="p-3 md:p-4">
+          <div className="flex w-full gap-2 md:gap-4">
+            {activeHeightBands.map((height) => {
+              const rowKey = height;
+              const hasError = validationErrors.includes(rowKey);
+              return (
+                <div key={rowKey} className="flex-1 flex flex-col min-w-0">
+                  <label className="text-xs font-semibold text-gray-700 mb-2 text-center truncate">{height}</label>
+                  {renderPriceInput(height, { inputId: rowKey })}
+                  {hasError && <p className="text-[10px] text-red-600 mt-1 text-center leading-tight">Completa</p>}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <h4 className="font-semibold text-gray-900">Suplemento por Estado</h4>
-          <p className="text-xs text-gray-500 mt-1">Recargo único global para setos en estado descuidado.</p>
+          <h4 className="font-semibold text-gray-900">Suplemento por Dificultad de Corte</h4>
+          <p className="text-xs text-gray-500 mt-1">Recargo único global sobre el subtotal de metros según la dificultad.</p>
           <div className="mt-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <span className="block text-sm font-medium text-gray-900">Normal</span>
-                <span className="text-xs text-gray-500">Sin recargo</span>
+                <span className="text-xs text-gray-500">Seto plano, conserva forma, brotes nuevos.</span>
               </div>
               <div className="text-sm font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full">Sin recargo</div>
             </div>
             <div className="flex items-center justify-between">
-              <div>
-                <span className="block text-sm font-medium text-gray-900">Descuidado</span>
-                <span className="text-xs text-gray-500">Recargo global sobre el subtotal de metros.</span>
+              <div className="flex-1 pr-4">
+                <span className="block text-sm font-medium text-gray-900">Media</span>
+                <span className="text-xs text-gray-500">Pérdida de geometría, esfuerzo extra para líneas rectas.</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 font-medium">+</span>
@@ -441,8 +468,29 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                     min="0"
                     max="200"
                     inputMode="decimal"
-                    value={config.condition_surcharges?.descuidado || 0}
-                    onChange={(e) => handleSurchargeChange(parseFloat(e.target.value) || 0)}
+                    value={config.condition_surcharges?.media || 0}
+                    onChange={(e) => handleSurchargeChange('media', parseFloat(e.target.value) || 0)}
+                    className="w-full h-11 min-h-[44px] pl-3 pr-8 border border-gray-300 rounded-lg text-right text-[16px] focus:ring-2 focus:ring-green-500"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">%</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex-1 pr-4">
+                <span className="block text-sm font-medium text-gray-900">Alta</span>
+                <span className="text-xs text-gray-500">Crecimiento descontrolado, ramas muy gruesas, uso de herramientas pesadas.</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 font-medium">+</span>
+                <div className="relative w-24">
+                  <input
+                    type="number"
+                    min="0"
+                    max="300"
+                    inputMode="decimal"
+                    value={config.condition_surcharges?.alta || 0}
+                    onChange={(e) => handleSurchargeChange('alta', parseFloat(e.target.value) || 0)}
                     className="w-full h-11 min-h-[44px] pl-3 pr-8 border border-gray-300 rounded-lg text-right text-[16px] focus:ring-2 focus:ring-green-500"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">%</span>

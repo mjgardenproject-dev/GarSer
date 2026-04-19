@@ -13,7 +13,7 @@ interface RoleInconsistency {
 }
 
 const RoleMonitor = () => {
-  const { user, syncUserRole } = useAuth();
+  const { user } = useAuth();
   const [inconsistencies, setInconsistencies] = useState<RoleInconsistency[]>([]);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({
@@ -45,10 +45,10 @@ const RoleMonitor = () => {
 
       if (gardenerError) throw gardenerError;
 
-      const gardenerUserIds = new Set(gardenerProfiles?.map(gp => gp.user_id) || []);
+      const gardenerUserIds = new Set(gardenerProfiles?.map((gp: any) => gp.user_id) || []);
       const foundInconsistencies: RoleInconsistency[] = [];
 
-      profiles?.forEach(profile => {
+      profiles?.forEach((profile: any) => {
         const hasGardenerProfile = gardenerUserIds.has(profile.id);
         const currentRole = profile.role;
         let expectedRole: 'client' | 'gardener' = 'client';
@@ -77,10 +77,8 @@ const RoleMonitor = () => {
 
       if (foundInconsistencies.length > 0) {
         console.warn(`🚨 Se encontraron ${foundInconsistencies.length} inconsistencias de roles`);
-        toast.error(`Se encontraron ${foundInconsistencies.length} inconsistencias de roles`);
       } else {
         console.log('✅ Todos los roles están consistentes');
-        toast.success('Todos los roles están consistentes');
       }
 
     } catch (error: any) {
@@ -107,9 +105,9 @@ const RoleMonitor = () => {
       // Refrescar la lista
       await checkAllRoles();
       
-      // Si es el usuario actual, sincronizar
+      // Si es el usuario actual, sincronizar (requeriría recargar o re-login)
       if (user?.id === inconsistency.user_id) {
-        await syncUserRole();
+        toast.success('Tu rol ha sido actualizado. Por favor recarga la página.');
       }
 
     } catch (error: any) {

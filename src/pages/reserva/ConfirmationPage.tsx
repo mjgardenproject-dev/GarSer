@@ -29,6 +29,9 @@ const ConfirmationPage: React.FC = () => {
     affectedType: (zone as any).affectedType,
     aboveTwoMeters: (zone as any).aboveTwoMeters,
     aboveThreeMeters: (zone as any).aboveThreeMeters,
+    intent: (zone as any).intent,
+    curativeTarget: (zone as any).curativeTarget,
+    productPreference: (zone as any).productPreference,
     analysisMetrics: (zone as any).analysisMetrics
   }));
 

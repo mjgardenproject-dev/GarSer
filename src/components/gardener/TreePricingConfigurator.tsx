@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { TreePine, AlertTriangle } from 'lucide-react';
+import { TreePine, AlertTriangle, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { deepEqual } from '../../utils/deepEqual';
 import ServiceConfigFooter from './ServiceConfigFooter';
@@ -33,6 +33,7 @@ interface Props {
 const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showGlobalInfo, setShowGlobalInfo] = useState(false);
 
   // Helper to normalize config (handle legacy data)
   const normalizeConfig = (val?: TreePricingConfig): TreePricingConfig => {
@@ -162,13 +163,38 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     <div className="space-y-8 text-gray-800">
       
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-gray-200 pb-4">
-        <div className="p-2 bg-green-100 rounded-lg">
-          <TreePine className="w-6 h-6 text-green-700" />
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-gray-200 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <TreePine className="w-6 h-6 text-green-700" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 flex items-center">
+                Configuración de Poda de Árboles (IVA incluido)
+            </h3>
+            <p className="text-sm text-gray-500">Define tu tarifa base y los suplementos por dificultad.</p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-xl font-bold text-gray-900">Configuración de Poda de Árboles</h3>
-          <p className="text-sm text-gray-500">Define tu tarifa base y los suplementos por dificultad.</p>
+        <div className="relative self-end md:self-center">
+            <button 
+                type="button"
+                onClick={() => setShowGlobalInfo(!showGlobalInfo)}
+                className="text-gray-400 hover:text-blue-500 transition-colors"
+            >
+                <Info className="w-5 h-5" />
+            </button>
+            {showGlobalInfo && (
+                <>
+                    <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
+                    <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:right-0 md:translate-x-0 md:translate-y-0 md:w-72 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
+                        <ul className="list-disc pl-4 space-y-2">
+                            <li>El <strong>IVA está incluido</strong> en todos los precios.</li>
+                            <li>El precio final se calcula multiplicando las horas estimadas por la IA por tu tarifa horaria, sumando los modificadores de acceso y retirada.</li>
+                            <li>La IA estimará la duración en base al tamaño, especie y cantidad de árboles.</li>
+                        </ul>
+                    </div>
+                </>
+            )}
         </div>
       </div>
 
@@ -217,7 +243,7 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                             Poda Estructural
                         </label>
                         <p className="text-xs text-gray-500 mt-1">
-                            Para reducciones de copa, ramas gruesas o podas drásticas. Requiere motosierra.
+                            Para ramas gruesas, reducción de copa, aclareo profundo o talas controladas.
                         </p>
                     </div>
                     <div className="relative max-w-xs mt-3">

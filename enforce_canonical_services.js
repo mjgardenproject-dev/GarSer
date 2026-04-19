@@ -10,10 +10,12 @@ if (!fs.existsSync(envPath)) {
 const envContent = fs.readFileSync(envPath, 'utf8');
 const envVars = {};
 envContent.split('\n').forEach(line => {
-  const [key, value] = line.split('=');
-  if (!key) return;
-  const v = (value || '').trim().replace(/^"|"$/g, '');
-  envVars[key.trim()] = v;
+  const separatorIndex = line.indexOf('=');
+  if (separatorIndex === -1) return;
+  const key = line.substring(0, separatorIndex).trim();
+  const value = line.substring(separatorIndex + 1).trim();
+  const v = value.replace(/^"|"$/g, '');
+  envVars[key] = v;
 });
 
 const supabaseUrl = envVars.VITE_SUPABASE_URL;
@@ -44,42 +46,36 @@ const canonical = [
     name: 'Corte de césped',
     description: 'Mantenimiento regular para un césped sano y uniforme. Incluye corte, perfilado y limpieza.',
     base_price: 30,
-    price_per_hour: 25,
   },
   {
-    name: 'Poda de plantas',
+    name: 'Poda de plantas y arbustos',
     description: 'Poda profesional de plantas para favorecer el crecimiento y mantener la estética del jardín.',
     base_price: 40,
-    price_per_hour: 28,
   },
   {
     name: 'Corte de setos a máquina',
     description: 'Diseño y mantenimiento de setos con un acabado limpio y cuidado usando maquinaria adecuada.',
     base_price: 35,
-    price_per_hour: 27,
   },
   {
     name: 'Poda de árboles',
     description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
     base_price: 55,
-    price_per_hour: 35,
   },
   {
-    name: 'Labrar y quitar malas hierbas a mano',
-    description: 'Labrado y eliminación manual de malas hierbas para limpiar y preparar el terreno.',
-    base_price: 30,
-    price_per_hour: 25,
-  },
-  {
-    name: 'Tratamientos fitosanitarios',
+    name: 'Servicios fitosanitarios',
     description: 'Tratamientos específicos para proteger plantas y césped. El coste de los productos no está incluido.',
     base_price: 50,
-    price_per_hour: 30,
   },
   {
     name: 'Poda de palmeras',
     description: 'Poda y limpieza de palmeras, retirada de hojas secas y frutos.',
     base_price: 60,
+  },
+  {
+    name: 'Desbroce de malas hierbas',
+    description: 'Limpieza y desbroce de terrenos con maleza, matorrales y malas hierbas.',
+    base_price: 45,
   },
 ];
 
@@ -108,7 +104,6 @@ async function enforceCanonicalServices() {
         name: newName,
         description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
         base_price: 55,
-        price_per_hour: 35,
       })
       .eq('id', oldExisting.id);
     if (updError) {
@@ -119,7 +114,7 @@ async function enforceCanonicalServices() {
     existingByNorm.set(newNorm, { ...oldExisting, name: newName });
   }
 
-  // Asegurar que los 6 canónicos existan; si falta alguno, insertarlo
+  // Asegurar que los 7 canónicos existan; si falta alguno, insertarlo
   const toInsert = canonical.filter(c => !existingByNorm.has(normalize(c.name)));
   if (toInsert.length > 0) {
     console.log(`➕ Insertando ${toInsert.length} servicio(s) canónicos faltantes...`);

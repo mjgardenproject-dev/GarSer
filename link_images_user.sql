@@ -25,12 +25,6 @@ SELECT id, 'https://hleqspdnjfswrmozjkai.supabase.co/storage/v1/object/public/se
 FROM public.services 
 WHERE name ILIKE '%Tratamientos fitosanitarios%';
 
--- Labrar y quitar malas hierbas a mano
-INSERT INTO public.service_images (service_id, image_url)
-SELECT id, 'https://hleqspdnjfswrmozjkai.supabase.co/storage/v1/object/public/service-backgrounds/labrar%20y%20quitar%20malas%20hierbas%20a%20mano.jpg'
-FROM public.services 
-WHERE name ILIKE '%Labrar%' AND name ILIKE '%malas hierbas%';
-
 -- Poda de árboles
 INSERT INTO public.service_images (service_id, image_url)
 SELECT id, 'https://hleqspdnjfswrmozjkai.supabase.co/storage/v1/object/public/service-backgrounds/poda%20de%20arboles.avif'

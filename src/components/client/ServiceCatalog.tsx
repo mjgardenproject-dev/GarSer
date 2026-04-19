@@ -13,12 +13,12 @@ const ServiceCatalog = () => {
   // Catálogo limitado a servicios canónicos de la IA
   const ALLOWED_SERVICE_NAMES = [
     'Corte de césped',
-    'Poda de plantas',
+    'Poda de plantas y arbustos',
     'Corte de setos a máquina',
     'Poda de árboles',
-    'Labrar y quitar malas hierbas a mano',
     'Servicios fitosanitarios',
-    'Poda de palmeras'
+    'Poda de palmeras',
+    'Desbroce de malas hierbas'
   ];
   const normalizeText = (s: string) => (s || '')
     .toLowerCase()
@@ -43,6 +43,7 @@ const ServiceCatalog = () => {
       const { data, error } = await supabase
         .from('services')
         .select('*')
+        .eq('is_active', true)
         .order('name');
 
       if (error) throw error;

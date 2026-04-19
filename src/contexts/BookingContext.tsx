@@ -43,6 +43,13 @@ export interface BookingData {
     imageIndex?: number;
     analysisLevel?: number;
     observations?: string[];
+    hasPhytosanitary?: boolean;
+    hasTrunkPeeling?: boolean;
+    lowestRangeThreshold?: string;
+    // Legacy compatibility
+    needsPhytosanitary?: boolean;
+    needsTrunkFinish?: boolean;
+    hasAccessDifficulty?: boolean;
   }>;
   uploadedPhotoUrls?: string[];
   isAnalyzing?: boolean;
@@ -108,51 +115,32 @@ export interface BookingData {
   }>;
   treeGroups?: Array<{
     id: string;
-    type: string; // 'Frutal', 'Decorativo', 'Conífera'
-    height: string; // '<3m', '3-6m', '6-9m', '>9m'
-    aiHeightRange?: string;
-    size?: string;
-    pruningType?: 'structural' | 'shaping'; // New field for pruning type
-    quantity: number;
-    state?: string;
-    access: 'normal' | 'medio' | 'dificil';
-    wasteRemoval: boolean;
-    photoUrls?: string[];
-    files?: File[];
+    pruningType: 'structural' | 'shaping';
+    photoUrls: string[];
+    aiHeightMeters?: number;
+    difficultyHigh?: boolean;
     analysisLevel?: number;
     observations?: string[];
-    imageIndices?: number[];
-    estimatedHours?: number; // AI estimated hours per tree
+    isFailed?: boolean;
+    estimatedHours?: number;
   }>;
   shrubGroups?: Array<{
     id: string;
-    type: string;
-    size: string; // 'Pequeño', 'Mediano', 'Grande'
-    quantity: number;
-    state?: string;
+    area: number; // m2
+    size: 'pequeñas' | 'medianas' | 'grandes';
     wasteRemoval: boolean;
     photoUrls?: string[];
     files?: File[];
     analysisLevel?: number;
     observations?: string[];
     imageIndices?: number[];
-  }>;
-  clearingZones?: Array<{
-    id: string;
-    type: string;
-    area: number; // m2
-    wasteRemoval: boolean;
-    photoUrls?: string[];
-    files?: File[];
-    analysisLevel?: number;
-    observations?: string[];
   }>;
   phytosanitaryZones?: Array<{
     id: string;
     type: string;
     area: number; // m2
     scope?: string[] | string;
-    requestedTreatment?: 'insecticida' | 'fungicida' | 'combo' | 'herbicida';
+    requestedTreatment?: 'insecticida' | 'fungicida' | 'combo';
     wantsEco?: boolean;
     affectedType?: 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
     aboveTwoMeters?: boolean;
@@ -169,10 +157,21 @@ export interface BookingData {
       arboles_peq_ud: number;
       arboles_med_ud: number;
       arboles_gran_ud: number;
-      herbicida_poca_densidad_m2: number;
-      herbicida_mucha_densidad_m2: number;
       observaciones_ia: string[];
     };
+    wasteRemoval: boolean;
+    photoUrls?: string[];
+    files?: File[];
+    selectedIndices?: number[];
+    analyzedIndices?: number[];
+    analysisLevel?: number;
+    observations?: string[];
+  }>;
+  weedingZones?: Array<{
+    id: string;
+    area: number; // m2
+    state: string; // "normal" | "dificultad_media" | "dificultad_alta"
+    applyHerbicide: boolean;
     wasteRemoval: boolean;
     photoUrls?: string[];
     files?: File[];
@@ -194,8 +193,8 @@ export interface BookingData {
     hedgeZones?: any[];
     treeGroups?: any[];
     shrubGroups?: any[];
-    clearingZones?: any[];
     phytosanitaryZones?: any[];
+    weedingZones?: any[];
     lawnSpecies?: string;
     palmSpecies?: string;
     palmHeight?: string;
@@ -301,8 +300,8 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               hedgeZones: [],
               treeGroups: [],
               shrubGroups: [],
-              clearingZones: [],
               phytosanitaryZones: [],
+              weedingZones: [],
               aiQuantity: 0,
               aiDifficulty: 1,
               // Apply saved

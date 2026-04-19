@@ -10,10 +10,9 @@ type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 const SERVICES = [
   'Corte de césped',
+  'Poda de plantas y arbustos',
   'Corte de setos a máquina',
-  'Poda de plantas',
   'Poda de árboles',
-  'Labrar y quitar malas hierbas a mano',
   'Servicios fitosanitarios',
   'Poda de palmeras'
 ];

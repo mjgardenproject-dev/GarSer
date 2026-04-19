@@ -32,22 +32,22 @@ const baseConfig = {
 describe('calculatePhytosanitaryQuote', () => {
   it('aplica fórmula eco/combo y minimum_fee', () => {
     const result = calculatePhytosanitaryQuote({
-      zones: [{ area: 10, type: 'ecologico_preventivo+insecticida', affectedType: 'Césped' }],
+      zones: [{ area: 10, intent: 'curative', curativeTarget: 'insects', productPreference: 'ecological', affectedType: 'Césped' }],
       config: baseConfig,
       globalWaste: true
     });
 
-    expect(result.totalBeforeMinimum).toBeCloseTo(62.7, 4);
+    expect(result.totalBeforeMinimum).toBeCloseTo(30, 4); // Without severe infestation
     expect(result.minimumFeeApplied).toBe(true);
     expect(result.minimumFee).toBe(100);
     expect(result.total).toBe(100);
-    expect(result.breakdown[0].subtotal).toBe(50);
-    expect(result.breakdown[0].lineTotal).toBeCloseTo(62.7, 4);
+    expect(result.breakdown[0].subtotal).toBe(30);
+    expect(result.breakdown[0].lineTotal).toBeCloseTo(30, 4);
   });
 
   it('devuelve subtotal nulo cuando no hay compatibilidad', () => {
     const result = calculatePhytosanitaryQuote({
-      zones: [{ area: 5, type: 'herbicida', affectedType: 'Setos', aboveTwoMeters: false }],
+      zones: [{ area: 5, intent: 'weed_control', productPreference: 'chemical', affectedType: 'Setos', aboveTwoMeters: false }],
       config: {
         ...baseConfig,
         tratamientos_activos: ['herbicida']
@@ -64,7 +64,9 @@ describe('calculatePhytosanitaryQuote', () => {
     const result = calculatePhytosanitaryQuote({
       zones: [{
         area: 2,
-        type: 'insecticida',
+        intent: 'curative',
+        curativeTarget: 'insects',
+        productPreference: 'chemical',
         affectedType: 'Palmeras',
         analysisMetrics: {
           palmeras_ducha_med_ud: 2,
@@ -79,9 +81,57 @@ describe('calculatePhytosanitaryQuote', () => {
     });
 
     expect(result.minimumFeeApplied).toBe(false);
-    expect(result.totalBeforeMinimum).toBeCloseTo(114, 4);
-    expect(result.total).toBeCloseTo(114, 4);
-    expect(result.breakdown[0].subtotal).toBeCloseTo(114, 4);
+    expect(result.totalBeforeMinimum).toBeCloseTo(108.3, 4);
+    expect(result.total).toBeCloseTo(109, 4);
+    expect(result.breakdown[0].subtotal).toBeCloseTo(114, 4); // Combo multiplier applied later (-5%)
     expect(result.breakdown[0].quantity).toBe(1);
+  });
+
+  it('redondea los m² de plantas calculados', () => {
+    const result = calculatePhytosanitaryQuote({
+      zones: [{
+        area: 10.7,
+        intent: 'curative',
+        curativeTarget: 'insects',
+        productPreference: 'chemical',
+        affectedType: 'Plantas bajas',
+        analysisMetrics: {
+          plantas_superficie_calculada_m2: 10.7,
+          plantas_tamano_dominante: 'grandes'
+        } as any
+      }],
+      config: {
+        ...baseConfig,
+        detailed_pricing: {
+          cesped: { minimo: 0, preventivo: 0, curativo: 0 },
+          setos: { minimo: 0, bajos_preventivo: 0, bajos_curativo: 0, altos_preventivo: 0, altos_curativo: 0 },
+          palmeras: {
+            minimo: 0, pequenas_preventivo: 0, pequenas_curativo: 0, pequenas_cirugia: 0,
+            medianas_preventivo: 0, medianas_curativo: 0, medianas_cirugia: 0,
+            altas_preventivo: 0, altas_curativo: 0, altas_cirugia: 0
+          },
+          arboles: {
+            minimo: 0, pequenos_preventivo: 0, pequenos_curativo: 0,
+            medianos_preventivo: 0, medianos_curativo: 0,
+            grandes_preventivo: 0, grandes_curativo: 0
+          },
+          plantas: {
+            minimo: 0,
+            pequenas_preventivo: 2,
+            pequenas_curativo: 3,
+            medianas_preventivo: 2,
+            medianas_curativo: 3,
+            grandes_preventivo: 2,
+            grandes_curativo: 3
+          }
+        },
+        tratamientos_activos: ['insecticida']
+      },
+      globalWaste: false
+    });
+
+    expect(result.breakdown[0].quantity).toBe(1); // M2 are bundled in unit for detailed metrics
+    expect(result.breakdown[0].subtotal).toBeCloseTo(32.1, 4);
+    expect(result.breakdown[0].formula).toContain('32.10');
   });
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -13,9 +13,12 @@ import PalmPricingConfigurator, { PalmPricingConfig } from './PalmPricingConfigu
 import LawnPricingConfigurator, { LawnPricingConfig } from './LawnPricingConfigurator';
 import HedgePricingConfigurator, { HedgePricingConfig } from './HedgePricingConfigurator';
 import TreePricingConfigurator, { TreePricingConfig } from './TreePricingConfigurator';
+import TreePruningConfigurator from './TreePruningConfigurator';
+import { TreePruningServiceConfig } from '../../types/treePruning';
 import ShrubPricingConfigurator, { ShrubPricingConfig } from './ShrubPricingConfigurator';
-import ClearingPricingConfigurator, { ClearingPricingConfig } from './ClearingPricingConfigurator';
 import PhytosanitaryPricingConfigurator from './PhytosanitaryPricingConfigurator';
+import WeedingPricingConfigurator from './WeedingPricingConfigurator';
+import PhytosanitaryLicenseUpload from './PhytosanitaryLicenseUpload';
 import StandardServiceConfig, { StandardPricingConfig } from './StandardServiceConfig';
 import ServiceItem from './ServiceItem';
 import PriceSimulator from './PriceSimulator';
@@ -24,22 +27,23 @@ import {
   isLawnConfigValid, 
   isPalmConfigValid, 
   isHedgeConfigValid, 
-  isTreeConfigValid, 
   isShrubConfigValid, 
-  isClearingConfigValid, 
-  isPhytosanitaryConfigValid
+  isPhytosanitaryConfigValid,
+  isWeedingConfigValid,
+  WeedingPricingConfig
 } from '../../utils/serviceValidation';
+// import { isTreePruningConfigValid } from '../../domain/treePruning';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
 const ALLOWED_SERVICE_NAMES = [
   'Corte de césped',
-  'Poda de plantas',
+  'Poda de plantas y arbustos',
   'Corte de setos a máquina',
   'Poda de árboles',
-  'Labrar y quitar malas hierbas a mano',
   'Servicios fitosanitarios',
-  'Poda de palmeras'
+  'Poda de palmeras',
+  'Desbroce de malas hierbas'
 ];
 const normalizeText = (s: string) => (s || '')
   .toLowerCase()
@@ -90,11 +94,13 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [lawnConfig, setLawnConfig] = useState<LawnPricingConfig | undefined>(undefined);
   const [hedgeConfig, setHedgeConfig] = useState<HedgePricingConfig | undefined>(undefined);
   const [treeConfig, setTreeConfig] = useState<TreePricingConfig | undefined>(undefined);
+    const [treePruningConfig, setTreePruningConfig] = useState<TreePruningServiceConfig | undefined>(undefined);
   const [shrubConfig, setShrubConfig] = useState<ShrubPricingConfig | undefined>(undefined);
-  const [clearingConfig, setClearingConfig] = useState<ClearingPricingConfig | undefined>(undefined);
   const [phytosanitaryConfig, setPhytosanitaryConfig] = useState<PhytosanitaryPricingConfig | undefined>(undefined);
+  const [weedingConfig, setWeedingConfig] = useState<WeedingPricingConfig | undefined>(undefined);
   const [standardConfigs, setStandardConfigs] = useState<Record<string, StandardPricingConfig>>({});
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({}); // Base prices for standard services
+  const [licenseStatus, setLicenseStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
 
   // Refactor State
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(() => {
@@ -235,20 +241,20 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   }, [hedgeConfig, savedConfigs]);
   
   useEffect(() => {
-      updateDirtyState('Poda de árboles', treeConfig);
-  }, [treeConfig, savedConfigs]);
+      updateDirtyState('Poda de árboles', treePruningConfig);
+  }, [treePruningConfig, savedConfigs]);
 
   useEffect(() => {
-      updateDirtyState('Poda de plantas', shrubConfig);
+      updateDirtyState('Poda de plantas y arbustos', shrubConfig);
   }, [shrubConfig, savedConfigs]);
-
-  useEffect(() => {
-      updateDirtyState('Labrar y quitar malas hierbas a mano', clearingConfig);
-  }, [clearingConfig, savedConfigs]);
 
   useEffect(() => {
       updateDirtyState('Servicios fitosanitarios', phytosanitaryConfig);
   }, [phytosanitaryConfig, savedConfigs]);
+
+  useEffect(() => {
+      updateDirtyState('Desbroce de malas hierbas', weedingConfig);
+  }, [weedingConfig, savedConfigs]);
 
 
   const fetchServicePrices = async () => {
@@ -315,9 +321,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               case 'Poda de palmeras': setPalmConfig(row.additional_config as PalmPricingConfig); break;
               case 'Corte de césped': setLawnConfig(row.additional_config as LawnPricingConfig); break;
               case 'Corte de setos a máquina': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
-              case 'Poda de árboles': setTreeConfig(row.additional_config as TreePricingConfig); break;
-              case 'Poda de plantas': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
-              case 'Labrar y quitar malas hierbas a mano': setClearingConfig(row.additional_config as ClearingPricingConfig); break;
+              case 'Poda de árboles': setTreePruningConfig(row.additional_config as TreePruningServiceConfig); break;
+              case 'Poda de plantas y arbustos': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
+              case 'Desbroce de malas hierbas': setWeedingConfig(row.additional_config as WeedingPricingConfig); break;
               default: 
                   setStandardConfigs(prev => ({ ...prev, [service.id]: row.additional_config }));
                   break;
@@ -442,10 +448,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Poda de palmeras': setPalmConfig(saved); break;
                 case 'Corte de césped': setLawnConfig(saved); break;
                 case 'Corte de setos a máquina': setHedgeConfig(saved); break;
-                case 'Poda de árboles': setTreeConfig(saved); break;
-                case 'Poda de plantas': setShrubConfig(saved); break;
-                case 'Labrar y quitar malas hierbas a mano': setClearingConfig(saved); break;
+                case 'Poda de árboles': setTreePruningConfig(saved); break;
+                case 'Poda de plantas y arbustos': setShrubConfig(saved); break;
                 case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(saved)); break;
+                case 'Desbroce de malas hierbas': setWeedingConfig(saved); break;
               }
           }
       }
@@ -493,10 +499,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             case 'Poda de palmeras': isValid = isPalmConfigValid(palmConfig); break;
             case 'Corte de césped': isValid = isLawnConfigValid(lawnConfig); break;
             case 'Corte de setos a máquina': isValid = isHedgeConfigValid(hedgeConfig); break;
-            case 'Poda de árboles': isValid = isTreeConfigValid(treeConfig); break;
-            case 'Poda de plantas': isValid = isShrubConfigValid(shrubConfig); break;
-            case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(clearingConfig); break;
+            case 'Poda de árboles': 
+                isValid = !!treePruningConfig && 
+                          (treePruningConfig.formacion?.small ?? 0) > 0 && 
+                          (treePruningConfig.formacion?.medium ?? 0) > 0 &&
+                          (treePruningConfig.estructural?.small ?? 0) > 0 && 
+                          (treePruningConfig.estructural?.medium ?? 0) > 0 &&
+                          (treePruningConfig.minimumPrice ?? 0) > 0;
+                break;
+            case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(shrubConfig); break;
             case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(phytosanitaryConfig); break;
+            case 'Desbroce de malas hierbas': isValid = isWeedingConfigValid(weedingConfig); break;
             default: isValid = true; // Fallback for standard
         }
 
@@ -539,10 +552,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         case 'Poda de palmeras': configToSave = palmConfig; setConfigFunc = setPalmConfig; break;
         case 'Corte de césped': configToSave = lawnConfig; setConfigFunc = setLawnConfig; break;
         case 'Corte de setos a máquina': configToSave = hedgeConfig; setConfigFunc = setHedgeConfig; break;
-        case 'Poda de árboles': configToSave = treeConfig; setConfigFunc = setTreeConfig; break;
-        case 'Poda de plantas': configToSave = shrubConfig; setConfigFunc = setShrubConfig; break;
-        case 'Labrar y quitar malas hierbas a mano': configToSave = clearingConfig; setConfigFunc = setClearingConfig; break;
+        case 'Poda de árboles': configToSave = treePruningConfig; setConfigFunc = setTreePruningConfig; break;
+        case 'Poda de plantas y arbustos': configToSave = shrubConfig; setConfigFunc = setShrubConfig; break;
         case 'Servicios fitosanitarios': configToSave = ensurePhytosanitaryPersistedConfig(phytosanitaryConfig); setConfigFunc = setPhytosanitaryConfig; break;
+        case 'Desbroce de malas hierbas': configToSave = weedingConfig; setConfigFunc = setWeedingConfig; break;
         default: return false;
       }
 
@@ -574,10 +587,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Poda de palmeras': isValid = isPalmConfigValid(configToSave as PalmPricingConfig); break;
                 case 'Corte de césped': isValid = isLawnConfigValid(configToSave as LawnPricingConfig); break;
                 case 'Corte de setos a máquina': isValid = isHedgeConfigValid(configToSave as HedgePricingConfig); break;
-                case 'Poda de árboles': isValid = isTreeConfigValid(configToSave as TreePricingConfig); break;
-                case 'Poda de plantas': isValid = isShrubConfigValid(configToSave as ShrubPricingConfig); break;
-                case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(configToSave as ClearingPricingConfig); break;
+                case 'Poda de árboles': 
+                isValid = !!treePruningConfig && 
+                          (treePruningConfig.formacion?.small ?? 0) > 0 && 
+                          (treePruningConfig.formacion?.medium ?? 0) > 0 &&
+                          (treePruningConfig.estructural?.small ?? 0) > 0 && 
+                          (treePruningConfig.estructural?.medium ?? 0) > 0 &&
+                          (treePruningConfig.minimumPrice ?? 0) > 0;
+                break;
+                case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(configToSave as ShrubPricingConfig); break;
                 case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(configToSave as PhytosanitaryPricingConfig); break;
+                case 'Desbroce de malas hierbas': isValid = isWeedingConfigValid(configToSave as WeedingPricingConfig); break;
             }
 
             if (isValid) {
@@ -604,9 +624,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Poda de palmeras': setPalmConfig(config); break;
                 case 'Corte de césped': setLawnConfig(config); break;
                 case 'Corte de setos a máquina': setHedgeConfig(config); break;
-                case 'Poda de árboles': setTreeConfig(config); break;
-                case 'Poda de plantas': setShrubConfig(config); break;
-                case 'Labrar y quitar malas hierbas a mano': setClearingConfig(config); break;
+                case 'Poda de árboles': setTreePruningConfig(config); break;
+                case 'Poda de plantas y arbustos': setShrubConfig(config); break;
+                case 'Desbroce de malas hierbas': setWeedingConfig(config); break;
             case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(config)); break;
            }
           // Small delay to ensure state update propagates? 
@@ -642,10 +662,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     case 'Poda de palmeras': isValid = isPalmConfigValid(config); break;
                     case 'Corte de césped': isValid = isLawnConfigValid(config); break;
                     case 'Corte de setos a máquina': isValid = isHedgeConfigValid(config); break;
-                    case 'Poda de árboles': isValid = isTreeConfigValid(config); break;
-                    case 'Poda de plantas': isValid = isShrubConfigValid(config); break;
-                    case 'Labrar y quitar malas hierbas a mano': isValid = isClearingConfigValid(config); break;
+                    case 'Poda de árboles': 
+                isValid = !!treePruningConfig && 
+                          (treePruningConfig.formacion?.small ?? 0) > 0 && 
+                          (treePruningConfig.formacion?.medium ?? 0) > 0 &&
+                          (treePruningConfig.estructural?.small ?? 0) > 0 && 
+                          (treePruningConfig.estructural?.medium ?? 0) > 0 &&
+                          (treePruningConfig.minimumPrice ?? 0) > 0;
+                break;
+                    case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(config); break;
                     case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(config); break;
+                    case 'Desbroce de malas hierbas': isValid = isWeedingConfigValid(config); break;
                  }
                  if (isValid) {
                      const newServices = [...currentServices, service.id];
@@ -791,6 +818,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             </button>
         </div>
 
+        {/* SECTION 1.5: Phytosanitary License */}
+        <PhytosanitaryLicenseUpload onStatusChange={setLicenseStatus} />
+
         {/* SECTION 2: Services */}
         <div className="space-y-4">
             <h3 className="text-lg font-bold text-gray-900 flex items-center">
@@ -839,27 +869,19 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                                 />
                             )}
                             {service.name === 'Poda de árboles' && (
-                                <TreePricingConfigurator 
-                                    value={treeConfig} 
-                                    initialConfig={savedConfigs['Poda de árboles']}
-                                    onChange={setTreeConfig} 
-                                    onSave={(c) => handleWrapperSave('Poda de árboles', c)} 
+                                <TreePruningConfigurator
+                                  value={treePruningConfig}
+                                  initialConfig={savedConfigs['Poda de árboles']}
+                                  onChange={setTreePruningConfig}
+                                  onSave={(c) => handleWrapperSave('Poda de árboles', c)}
                                 />
                             )}
-                            {service.name === 'Poda de plantas' && (
+                            {service.name === 'Poda de plantas y arbustos' && (
                                 <ShrubPricingConfigurator 
                                     value={shrubConfig} 
-                                    initialConfig={savedConfigs['Poda de plantas']}
+                                    initialConfig={savedConfigs['Poda de plantas y arbustos']}
                                     onChange={setShrubConfig} 
-                                    onSave={(c) => handleWrapperSave('Poda de plantas', c)} 
-                                />
-                            )}
-                            {service.name === 'Labrar y quitar malas hierbas a mano' && (
-                                <ClearingPricingConfigurator 
-                                    value={clearingConfig} 
-                                    initialConfig={savedConfigs['Labrar y quitar malas hierbas a mano']}
-                                    onChange={setClearingConfig} 
-                                    onSave={(c) => handleWrapperSave('Labrar y quitar malas hierbas a mano', c)} 
+                                    onSave={(c) => handleWrapperSave('Poda de plantas y arbustos', c)} 
                                 />
                             )}
                             {service.name === 'Servicios fitosanitarios' && (
@@ -867,7 +889,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                                     value={phytosanitaryConfig} 
                                     initialConfig={savedConfigs['Servicios fitosanitarios']}
                                     onChange={setPhytosanitaryConfig} 
-                                    onSave={(c: PhytosanitaryPricingConfig) => handleWrapperSave('Servicios fitosanitarios', c)} 
+                                    onSave={(c: PhytosanitaryPricingConfig) => handleWrapperSave('Servicios fitosanitarios', c)}
+                                    licenseStatus={licenseStatus} 
+                                />
+                            )}
+                            {service.name === 'Desbroce de malas hierbas' && (
+                                <WeedingPricingConfigurator 
+                                    value={weedingConfig} 
+                                    initialConfig={savedConfigs['Desbroce de malas hierbas']}
+                                    onChange={setWeedingConfig} 
+                                    onSave={(c: WeedingPricingConfig) => handleWrapperSave('Desbroce de malas hierbas', c)}
+                                    licenseStatus={licenseStatus} 
                                 />
                             )}
                         </ServiceItem>
@@ -887,8 +919,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             hedgeConfig,
             treeConfig,
             shrubConfig,
-            clearingConfig,
-            phytosanitaryConfig
+            phytosanitaryConfig,
+            weedingConfig
           }}
         />
       </div>

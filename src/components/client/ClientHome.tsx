@@ -111,7 +111,7 @@ const ClientHome: React.FC = () => {
     // Agregamos log para depuración
     console.log('[Debug] normalizeForPricing result:', n);
     
-    if (n.includes('cesped') || n.includes('setos') || n.includes('malas hierbas') || n.includes('labrar')) return 'm2' as const;
+    if (n.includes('cesped') || n.includes('setos') || n.includes('malas hierbas')) return 'm2' as const;
     return 'plantas' as const;
   }, [debugTaskDraft.tipo_servicio]);
   // Totales calculados desde las tareas IA
@@ -149,11 +149,6 @@ const ClientHome: React.FC = () => {
         if (t.numero_plantas != null) {
           h = (t.numero_plantas * 1.0) * factor;
           p = h * 30;
-        }
-      } else if (tipo.includes('malas hierbas') || tipo.includes('hierbas') || tipo.includes('maleza') || tipo.includes('labrado')) {
-        if (t.superficie_m2 != null) {
-          h = (t.superficie_m2 / 20) * factor; // 20 m²/h
-          p = h * 20;
         }
       } else if (tipo.includes('fitosanit')) {
         if (t.numero_plantas != null) {
@@ -261,7 +256,7 @@ const ClientHome: React.FC = () => {
 
   useEffect(() => {
     const fetchServices = async () => {
-      const { data, error } = await supabase.from('services').select('*').order('name');
+      const { data, error } = await supabase.from('services').select('*').eq('is_active', true).order('name');
       if (!error && data) {
         const mappedData = data.map((s: any) => {
           let updatedName = s.name;
@@ -277,7 +272,6 @@ const ClientHome: React.FC = () => {
           'poda de plantas',
           'corte de setos a maquina',
           'poda de arboles',
-          'labrar y quitar malas hierbas a mano',
           'servicios fitosanitarios',
         ];
         const present = new Set((mappedData || []).map((s: Service) => normalizeText(s.name)));
@@ -1904,7 +1898,7 @@ const ClientHome: React.FC = () => {
           <div className="bg-white border border-gray-200 rounded-2xl p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-2">A qué nos dedicamos</h2>
             <p className="text-gray-700 text-sm">
-              Corte de césped, poda de setos y árboles, limpieza de malas hierbas, tratamientos fitosanitarios y mantenimiento general del jardín.
+              Corte de césped, poda de setos y árboles, tratamientos fitosanitarios y mantenimiento general del jardín.
             </p>
           </div>
           <div className="bg-white border border-gray-200 rounded-2xl p-6">

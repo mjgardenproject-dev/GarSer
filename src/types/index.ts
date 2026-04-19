@@ -25,6 +25,22 @@ export interface GardenerProfile extends Profile {
   total_reviews: number;
   description: string;
   is_available: boolean;
+  has_phytosanitary_license?: boolean;
+  license_verification_status?: 'pending' | 'approved' | 'rejected' | null;
+  license_verified_at?: string | null;
+  license_expires_at?: string | null;
+}
+
+export interface GardenerLicense {
+  id: string;
+  gardener_id: string;
+  license_number?: string;
+  document_url: string;
+  status: 'pending' | 'approved' | 'rejected' | 'replaced';
+  reviewed_at?: string;
+  reviewed_by?: string;
+  expires_at?: string;
+  created_at: string;
 }
 
 export interface Service {
@@ -190,12 +206,12 @@ export interface PriceCalculation {
   totalPrice: number;
 }
 
-export type PhytosanitaryType = 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia';
-export type LegacyPhytosanitaryType = 'Insecticida' | 'Fungicida' | 'Herbicida';
+export type PhytosanitaryType = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
+export type LegacyPhytosanitaryType = 'Insecticida' | 'Fungicida';
 export type LegacyPhytosanitaryRange = '0-50' | '50-200' | '200+';
-export type PhytosanitaryMatrixBase = Record<'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo', number>;
+export type PhytosanitaryMatrixBase = Record<'insecticida' | 'fungicida' | 'ecologico_preventivo', number>;
 export type PhytosanitaryMatrixNoHerb = Record<'insecticida' | 'fungicida' | 'ecologico_preventivo', number>;
-export type PhytosanitaryDetailedCategoryKey = 'cesped' | 'setos' | 'palmeras' | 'arboles' | 'malas_hierbas';
+export type PhytosanitaryDetailedCategoryKey = 'cesped' | 'setos' | 'palmeras' | 'arboles' | 'plantas';
 
 export interface PhytosanitaryPricingModifiers {
   eco?: {
@@ -204,9 +220,6 @@ export interface PhytosanitaryPricingModifiers {
   combo?: {
     two_treatments_percentage: number;
     three_plus_treatments_percentage: number;
-  };
-  severe_infestation?: {
-    percentage: number;
   };
 }
 
@@ -244,10 +257,14 @@ export interface PhytosanitaryDetailedPricing {
     grandes_preventivo: number;
     grandes_curativo: number;
   };
-  malas_hierbas: {
+  plantas: {
     minimo: number;
-    preventivo: number;
-    curativo: number;
+    pequenas_preventivo: number;
+    pequenas_curativo: number;
+    medianas_preventivo: number;
+    medianas_curativo: number;
+    grandes_preventivo: number;
+    grandes_curativo: number;
   };
 }
 

@@ -7,6 +7,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import * as availCompat from '../../utils/availabilityServiceCompat';
 import { canBookSequence } from '../../utils/bufferService';
 import { calculatePhytosanitaryQuote } from '../../utils/serviceValidation';
+import { calculateWeedingQuote } from '../../utils/weedingPricing';
+import { calculateTreePruningQuoteForTrees } from '../../domain/pricing/treePruningPricing';
+import { TreePruningServiceConfig } from '../../types/treePruning';
+import { calculatePalmPriceEngine, findPalmPrice, PalmPricingGroup, calculatePalmHoursEngine } from '../../domain/pricingEngine';
+import { PartialServiceModal } from './PartialServiceModal';
 
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number }
 
@@ -34,6 +39,37 @@ const ProvidersPage: React.FC = () => {
   const hoursCacheRef = useRef<Map<string, number[]>>(new Map());
   const reqIdRef = useRef<number>(0);
 
+  const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
+
+  const getEstimatedHours = (providerId: string): number => {
+    let hours = Number(bookingData.estimatedHours || 0);
+    if (!providerId) return Math.max(1, hours);
+
+    const config = configs[providerId];
+    if (bookingData.palmGroups && bookingData.palmGroups.length > 0 && config) {
+      const coverage = palmCoverageMap[providerId];
+      if (coverage && !coverage.isFull) {
+        const coveredGroups = bookingData.palmGroups.filter(
+          (g) => findPalmPrice(config, g.species, g.height) > 0
+        );
+        const palms: any[] = [];
+        coveredGroups.forEach((g) => {
+          for (let i = 0; i < (g.quantity || 1); i++) {
+            palms.push({
+              especie: g.species,
+              altura: g.height,
+              estado: g.state || 'normal',
+              nivel_analisis: 1,
+            });
+          }
+        });
+        const result = calculatePalmHoursEngine(palms);
+        hours = result.tiempoTotalEstimado;
+      }
+    }
+    return Math.max(1, Math.ceil(hours));
+  };
+
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
   const chips: string[] = [];
@@ -43,6 +79,9 @@ const ProvidersPage: React.FC = () => {
     affectedType: (zone as any).affectedType,
     aboveTwoMeters: (zone as any).aboveTwoMeters,
     aboveThreeMeters: (zone as any).aboveThreeMeters,
+    intent: (zone as any).intent,
+    curativeTarget: (zone as any).curativeTarget,
+    productPreference: (zone as any).productPreference,
     analysisMetrics: (zone as any).analysisMetrics
   }));
   const formatPhytosanitaryLabel = (item: any) => {
@@ -53,133 +92,40 @@ const ProvidersPage: React.FC = () => {
     return `Zona ${item.zoneIndex + 1}: ${item.affectedType} · ${item.quantity}${item.unitLabel} · ${treatmentLabel}`;
   };
 
-  // Helper function to robustly find palm price
-  const findPalmPrice = (config: any, species: string, height: string): number => {
-    // 1. Check for valid configuration
-    if (!config || !config.height_prices) {
-        // Fallback: Check species_prices (legacy/base) if height_prices is missing
-        if (config?.species_prices?.[species] && typeof config.species_prices[species] === 'number') {
-            return config.species_prices[species];
-        }
-        return 0;
+  const isTreePruningConfig = (value: any): value is TreePruningServiceConfig => {
+    if (!value || typeof value !== 'object') return false;
+    if (!value.estructural || typeof value.estructural !== 'object') return false;
+    if (!value.formacion || typeof value.formacion !== 'object') return false;
+    if (typeof value.difficultyIncrease !== 'number') return false;
+    return true;
+  };
+
+  const mapTreePruningType = (value: any): 'estructural' | 'formacion' => {
+    const v = String(value || '').toLowerCase();
+    if (v.includes('shaping') || v.includes('form') || v.includes('formacion')) return 'formacion';
+    return 'estructural';
+  };
+
+  const getTreeOver9Notice = (gardenerId: string) => {
+    if (!bookingData.treeGroups || bookingData.treeGroups.length === 0) return null;
+    const c = configs[gardenerId];
+    if (!isTreePruningConfig(c)) return null;
+    const trees = (bookingData.treeGroups || [])
+      .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
+      .map((t: any) => ({
+        pruningType: mapTreePruningType(t.pruningType),
+        altura_m: Number(t.aiHeightMeters || 0)
+      }))
+      .filter((t: any) => Number.isFinite(t.altura_m) && t.altura_m > 9);
+    if (trees.length === 0) return null;
+
+    for (const tree of trees) {
+      const large = tree.pruningType === 'estructural' ? c.estructural.large : c.formacion.large;
+      if (typeof large === 'number' && large > 0) {
+        return 'El profesional tendrá que verificar el pago porque es un servicio muy complejo.';
+      }
     }
-
-    // 2. Try exact match in height_prices
-    if (config.height_prices[species]?.[height]) {
-        return config.height_prices[species][height];
-    }
-
-    // 3. Normalize species
-    let speciesKey = species;
-    const speciesLower = species.toLowerCase();
-    
-    // Map of common AI outputs/User inputs to Config Keys
-    const speciesMap: Record<string, string> = {
-        'phoenix': 'Phoenix (datilera o canaria)',
-        'datilera': 'Phoenix (datilera o canaria)',
-        'canaria': 'Phoenix (datilera o canaria)',
-        'washingtonia': 'Washingtonia',
-        'roystonea': 'Roystonea regia (cubana)',
-        'cubana': 'Roystonea regia (cubana)',
-        'syagrus': 'Syagrus romanzoffiana (cocotera)',
-        'cocotera': 'Syagrus romanzoffiana (cocotera)',
-        'trachycarpus': 'Trachycarpus fortunei',
-        'fortunei': 'Trachycarpus fortunei',
-        'livistona': 'Livistona',
-        'kentia': 'Kentia (palmito)',
-        'palmito': 'Kentia (palmito)',
-        'roebelenii': 'Phoenix roebelenii(pigmea)',
-        'pigmea': 'Phoenix roebelenii(pigmea)',
-        'cycas': 'cycas revoluta (falsa palmera)',
-        'revoluta': 'cycas revoluta (falsa palmera)',
-        'falsa': 'cycas revoluta (falsa palmera)'
-    };
-
-    // Find matching species key via map
-    let found = false;
-    for (const [key, val] of Object.entries(speciesMap)) {
-        if (speciesLower.includes(key)) {
-            speciesKey = val;
-            found = true;
-            break;
-        }
-    }
-
-    // If not found via map, try partial match against actual config keys (height_prices)
-    if (!found && !config.height_prices[speciesKey]) {
-        const configKeys = Object.keys(config.height_prices);
-        const match = configKeys.find(k => k.toLowerCase().includes(speciesLower) || speciesLower.includes(k.toLowerCase()));
-        if (match) {
-            speciesKey = match;
-            found = true;
-        }
-    }
-
-    // Check if species exists in config (height_prices)
-    if (!config.height_prices[speciesKey]) {
-        // Last resort: Check species_prices (base)
-        if (config.species_prices?.[speciesKey] && typeof config.species_prices[speciesKey] === 'number') {
-            return config.species_prices[speciesKey];
-        }
-        console.warn(`[findPalmPrice] Species not found in config: ${species} (mapped to ${speciesKey})`);
-        return 0;
-    }
-
-    // 4. Try normalized species with exact height
-    if (config.height_prices[speciesKey][height]) {
-        return config.height_prices[speciesKey][height];
-    }
-
-    // 5. Parse height number from string for range matching
-    // Handle "X-Y" format in input (e.g. "4-8m")
-    const matches = height.match(/(\d+(?:\.\d+)?)/g);
-    let heightNum = 0;
-    if (matches && matches.length > 0) {
-        if (matches.length === 1) {
-             heightNum = parseFloat(matches[0]);
-        } else {
-             // If range provided by AI (e.g. 4-8), take average
-             const v1 = parseFloat(matches[0]);
-             const v2 = parseFloat(matches[1]);
-             heightNum = (v1 + v2) / 2;
-        }
-    } else {
-         console.warn(`[findPalmPrice] Could not parse height: ${height}`);
-         // Fallback to base price if height parse fails
-         if (config.species_prices?.[speciesKey]) return config.species_prices[speciesKey];
-         return 0; 
-    }
-
-    // Find correct range in height_prices[speciesKey]
-    const ranges = Object.keys(config.height_prices[speciesKey]);
-    let bestRange = '';
-
-    for (const range of ranges) {
-        if (range.includes('+')) {
-            const min = parseFloat(range.replace('+', ''));
-            if (heightNum >= min) {
-                bestRange = range;
-            }
-        } else if (range.includes('-')) {
-            const [min, max] = range.split('-').map(Number);
-            if (heightNum >= min && heightNum < max) {
-                bestRange = range;
-                break; // Exact range found
-            }
-        }
-    }
-    
-    if (bestRange) {
-        return config.height_prices[speciesKey][bestRange] || 0;
-    }
-
-    // If no specific height found, try fallback to base (species_prices)
-    if (config.species_prices?.[speciesKey]) {
-        return config.species_prices[speciesKey];
-    }
-
-    console.warn(`[findPalmPrice] No matching height range for: ${height} (${heightNum}m) in species ${speciesKey}`);
-    return 0;
+    return null;
   };
 
   const findFirstAvailableDate = async (providerId: string, startDate: string, hoursNeeded: number) => {
@@ -191,7 +137,7 @@ const ProvidersPage: React.FC = () => {
       const set = new Set<number>(hours);
       for (const h of hours) {
         let fits = true;
-        const dur = Math.max(1, Number(bookingData.estimatedHours || 0));
+        const dur = getEstimatedHours(providerId);
         for (let k=0;k<dur;k++) { if (!set.has(h+k)) { fits = false; break; } }
         if (!fits) continue;
         const ok = await canBookSequence(providerId, dateStr, h, hoursNeeded, user?.id || 'anon');
@@ -208,13 +154,13 @@ const ProvidersPage: React.FC = () => {
     }
     setSelectedProvider(providerId);
   setCalendarMonthDate(new Date(Number(selectedDate.split('-')[0]), Number(selectedDate.split('-')[1]) - 1, Number(selectedDate.split('-')[2])));
-    const hoursNeeded = Math.max(1, Number(bookingData.estimatedHours || 0));
+    const hoursNeeded = getEstimatedHours(providerId);
     try {
       const blocks = await availCompat.getGardenerAvailability(providerId, selectedDate);
       const hours = ((blocks||[]) as any[]).filter((b:any)=>b.is_available).map((b:any)=>b.hour_block);
       const set = new Set<number>(hours);
       let hasValid = false;
-      const dur = Math.max(1, Number(bookingData.estimatedHours || 0));
+      const dur = getEstimatedHours(providerId);
       for (const h of hours) {
         let fits = true;
         for (let k=0;k<dur;k++) { if (!set.has(h+k)) { fits = false; break; } }
@@ -234,7 +180,7 @@ const ProvidersPage: React.FC = () => {
       const blocks = await availCompat.getGardenerAvailability(providerId, dateStr);
       const hours = ((blocks||[]) as any[]).filter((b:any)=>b.is_available).map((b:any)=>b.hour_block);
       const set = new Set<number>(hours);
-      const dur = Math.max(1, Number(bookingData.estimatedHours || 0));
+      const dur = getEstimatedHours(providerId);
       const out: number[] = [];
       for (const h of hours) {
         let fits = true;
@@ -256,7 +202,7 @@ const ProvidersPage: React.FC = () => {
     const m = monthStart.getMonth();
     const last = new Date(y, m + 1, 0);
     const todayStr = fmt(new Date());
-    const cacheKey = `${providerId}-${y}-${m}-${Math.max(1, Number(bookingData.estimatedHours || 0))}`;
+    const cacheKey = `${providerId}-${y}-${m}-${getEstimatedHours(providerId)}`;
     const cached = daysCacheRef.current.get(cacheKey);
     const rid = ++reqIdRef.current;
     if (cached) {
@@ -274,7 +220,7 @@ const ProvidersPage: React.FC = () => {
         if (!byDate[b.date]) byDate[b.date] = [];
         byDate[b.date].push(b.hour_block);
       });
-      const dur = Math.max(1, Number(bookingData.estimatedHours || 0));
+      const dur = getEstimatedHours(providerId);
       const items: Array<{ date: string; day: number; disabled: boolean; count: number }> = [];
       for (let d = 1; d <= last.getDate(); d++) {
         const dateStr = fmt(new Date(y, m, d));
@@ -323,7 +269,7 @@ const ProvidersPage: React.FC = () => {
     (async () => {
       if (!selectedProvider) return;
       setHoursLoading(true);
-      const cacheKey = `${selectedProvider}-${selectedDate}-${Math.max(1, Number(bookingData.estimatedHours || 0))}`;
+      const cacheKey = `${selectedProvider}-${selectedDate}-${getEstimatedHours(selectedProvider)}`;
       const cached = hoursCacheRef.current.get(cacheKey);
       let hrs: number[] = [];
       if (cached) {
@@ -361,14 +307,44 @@ const ProvidersPage: React.FC = () => {
         const { data: priceRows } = await query;
 
         const gardenerIds = Array.from(new Set((priceRows || []).map((p: any) => p.gardener_id)));
-        const { data: profiles } = await supabase
+        
+        // Determinar si se requiere licencia (Fitosanitarios químicos)
+        const { data: serviceInfoData } = await supabase
+            .from('services')
+            .select('name')
+            .eq('id', primaryServiceId)
+            .single();
+
+        setServiceName(serviceInfoData?.name || '');
+
+        const isPhytosanitaryChemical = serviceInfoData?.name === 'Servicios fitosanitarios' && 
+          (bookingData.phytosanitaryZones || []).some((z: any) => z.productPreference !== 'ecological');
+        const isWeedingHerbicide = serviceInfoData?.name === 'Desbroce de malas hierbas' &&
+          (bookingData.weedingZones || []).some((z: any) => z.applyHerbicide === true);
+
+        const requiresChemical = isPhytosanitaryChemical || isWeedingHerbicide;
+
+        let profilesQuery = supabase
           .from('gardener_profiles')
-          .select('user_id, full_name, avatar_url, rating_average, rating_count')
+          .select('user_id, full_name, avatar_url, rating_average, rating_count, has_phytosanitary_license')
           .in('user_id', gardenerIds);
+
+        // Filtro estricto en Backend (Capa 1)
+        if (requiresChemical) {
+          profilesQuery = profilesQuery.eq('has_phytosanitary_license', true);
+        }
+
+        const { data: profiles } = await profilesQuery;
+        
         let list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
         const map: Record<string, number> = {};
         const configMap: Record<string, any> = {};
         const coverageMap: Record<string, { isFull: boolean; coveredCount: number; totalCount: number; missingGroups: any[] }> = {};
+
+        // Filtro estricto en Frontend (Capa 2)
+        if (requiresChemical) {
+          list = list.filter(p => (p as any).has_phytosanitary_license === true);
+        }
 
         (priceRows || []).forEach((p: any) => { 
             map[p.gardener_id] = p.price_per_unit;
@@ -404,33 +380,39 @@ const ProvidersPage: React.FC = () => {
 
         // Strict Filtering for Tree Pruning (Poda de árboles)
         // Rule 4: Gardener Availability Logic
-        const { data: serviceInfo } = await supabase
+        const { data: treeServiceInfo } = await supabase
             .from('services')
             .select('name')
             .eq('id', primaryServiceId)
             .single();
 
-        if (serviceInfo?.name === 'Poda de árboles') {
+        if (treeServiceInfo?.name === 'Poda de árboles') {
             list = list.filter(p => {
                 const c = configMap[p.user_id];
                 if (!c) return false;
+                if (!isTreePruningConfig(c)) return false;
 
-                // 1. Check Mandatory Fields Presence (must not be null/undefined)
-                if (c.structuralHourlyRate == null) return false;
-                if (c.shapingHourlyRate == null) return false;
-                if (c.ladderModifier == null) return false;
-                if (c.climbingModifier == null) return false;
-                if (c.wasteRemovalModifier == null) return false;
+                const required =
+                  Number(c.estructural.small || 0) > 0 &&
+                  Number(c.estructural.medium || 0) > 0 &&
+                  Number(c.formacion.small || 0) > 0 &&
+                  Number(c.formacion.medium || 0) > 0;
+                if (!required) return false;
 
-                // 2. Check Values Validity
-                // Hourly rates MUST be > 0
-                if (c.structuralHourlyRate <= 0) return false;
-                if (c.shapingHourlyRate <= 0) return false;
+                const trees = (bookingData.treeGroups || [])
+                  .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
+                  .map((t: any) => ({
+                    pruningType: mapTreePruningType(t.pruningType),
+                    altura_m: Number(t.aiHeightMeters || 0),
+                  }))
+                  .filter((t: any) => Number.isFinite(t.altura_m) && t.altura_m > 0);
 
-                // Modifiers MUST be >= 0 (0% is valid, negative is not)
-                if (c.ladderModifier < 0) return false;
-                if (c.climbingModifier < 0) return false;
-                if (c.wasteRemovalModifier < 0) return false;
+                for (const tree of trees) {
+                  if (tree.altura_m > 5) {
+                    const large = tree.pruningType === 'estructural' ? c.estructural.large : c.formacion.large;
+                    if (!(typeof large === 'number' && large > 0)) return false;
+                  }
+                }
 
                 return true;
             });
@@ -442,12 +424,12 @@ const ProvidersPage: React.FC = () => {
         }
 
         // Ordenar por disponibilidad más próxima Y cobertura (Full coverage first)
-        const hoursNeeded = Math.max(1, Number(bookingData.estimatedHours || 0));
         const today = new Date();
         const addDaysLocal = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
         const windowDays = 14;
         const earliestMap: Record<string, number> = {};
         await Promise.all(list.map(async (p) => {
+          const hoursNeeded = getEstimatedHours(p.user_id);
           let bestTs = Number.POSITIVE_INFINITY;
           for (let i=0;i<windowDays;i++) {
             const dateStr = fmt(addDaysLocal(today, i));
@@ -504,6 +486,9 @@ const ProvidersPage: React.FC = () => {
     bookingData.aiQuantity,
     bookingData.aiDifficulty,
     bookingData.wasteRemoval,
+    bookingData.weedingZones
+      ? JSON.stringify(bookingData.weedingZones.map((z) => ({ id: z.id, a: z.area, s: z.state, h: z.applyHerbicide })))
+      : '',
     bookingData.palmGroups ? JSON.stringify(bookingData.palmGroups.map(g => g.species)) : '', // Detect species changes in groups
     bookingData.lawnZones ? JSON.stringify(bookingData.lawnZones.map(z => ({s: z.species, q: z.quantity, st: z.state}))) : ''
   ]);
@@ -532,7 +517,6 @@ const ProvidersPage: React.FC = () => {
         palmGroups: bookingData.palmGroups,
         treeGroups: bookingData.treeGroups,
         shrubGroups: bookingData.shrubGroups,
-        clearingZones: bookingData.clearingZones,
         phytosanitaryZones: bookingData.phytosanitaryZones,
         lawnZones: bookingData.lawnZones
     }, null, 2));
@@ -561,53 +545,20 @@ const ProvidersPage: React.FC = () => {
         // Ensure species_prices exists
         if (!config.species_prices) return 0;
 
-        let total = 0;
-        
-        for (const group of bookingData.palmGroups) {
-            // Price = Base Price (Species + Height) * Quantity * Multipliers
-            const species = group.species;
-            const height = group.height;
-            const quantity = group.quantity || 1;
-            
-            // Lookup base price
-            // Use robust helper function
-            const basePrice = findPalmPrice(config, species, height);
-            
-            if (basePrice <= 0) {
-                console.warn(`[ComputePrice] Base price 0 for ${species} / ${height}`);
-                continue;
-            }
+        const groups: PalmPricingGroup[] = bookingData.palmGroups.map(g => ({
+            species: g.species,
+            height: g.height,
+            quantity: g.quantity || 1,
+            state: g.state || 'normal',
+            hasPhytosanitary: g.hasPhytosanitary ?? g.needsPhytosanitary,
+            hasTrunkPeeling: g.hasTrunkPeeling ?? g.needsTrunkFinish,
+            lowestRangeThreshold: g.lowestRangeThreshold,
+            needsPhytosanitary: g.needsPhytosanitary,
+            needsTrunkFinish: g.needsTrunkFinish,
+            hasAccessDifficulty: g.hasAccessDifficulty
+        }));
 
-            // Condition Surcharge
-            const state = (group.state || 'normal').toLowerCase();
-            const surcharges = config.condition_surcharges || { normal: 0, neglected: 15, overgrown: 30 };
-            let statePercent = 0;
-            
-            // Map state strings to config keys
-            // Config keys usually: 'normal', 'descuidada', 'muy_descuidada' (feminine in config)
-            if (state.includes('muy') && (state.includes('descuidado') || state.includes('mal'))) {
-                statePercent = surcharges.muy_descuidado || surcharges.muy_descuidada || surcharges.overgrown || 0;
-            } else if (state.includes('descuidado') || state.includes('mal')) {
-                statePercent = surcharges.descuidado || surcharges.descuidada || surcharges.neglected || 0;
-            } else {
-                statePercent = surcharges.normal || 0;
-            }
-            
-            const stateMult = 1 + (statePercent / 100);
-
-            // Waste Removal Surcharge
-            let wastePercent = 0;
-            if (globalWaste) {
-                wastePercent = config.wasteRemovalModifier !== undefined 
-                    ? config.wasteRemovalModifier 
-                    : (config.waste_removal?.percentage || 0);
-            }
-            const wasteMult = 1 + (wastePercent / 100);
-            
-            // Final Calculation for this group
-            total += basePrice * quantity * stateMult * wasteMult;
-        }
-        
+        const total = calculatePalmPriceEngine(groups, config, globalWaste);
         return applyMinimumPrice(total);
     }
     
@@ -633,14 +584,14 @@ const ProvidersPage: React.FC = () => {
         let stateKey = state;
         const surcharges = config.condition_surcharges || {};
 
-        if (state === 'muy descuidado') {
-            if (surcharges['muy_descuidada'] !== undefined) stateKey = 'muy_descuidada';
-            else if (surcharges['muy_descuidado'] !== undefined) stateKey = 'muy_descuidado';
-            else stateKey = 'muy_descuidada';
-        } else if (state === 'descuidado') {
-            if (surcharges['descuidada'] !== undefined) stateKey = 'descuidada';
-            else if (surcharges['descuidado'] !== undefined) stateKey = 'descuidado';
-            else stateKey = 'descuidada';
+        if (state === 'muy descuidado' || state === 'muy_descuidado') {
+            if (surcharges['muy_descuidado'] !== undefined) stateKey = 'muy_descuidado';
+            else if (surcharges['muy_descuidada'] !== undefined) stateKey = 'muy_descuidada';
+            else stateKey = 'muy_descuidado';
+        } else if (state === 'descuidado' || state === 'descuidada') {
+            if (surcharges['descuidado'] !== undefined) stateKey = 'descuidado';
+            else if (surcharges['descuidada'] !== undefined) stateKey = 'descuidada';
+            else stateKey = 'descuidado';
         }
         
         const stateSurchargePercent = surcharges[stateKey] || 0;
@@ -677,15 +628,13 @@ const ProvidersPage: React.FC = () => {
         for (const zone of bookingData.hedgeZones) {
             const { type, height } = zone;
             const lengthForPricing = Number((zone as any).length_pricing_m ?? zone.length ?? 0);
-            const lengthRange = lengthForPricing <= 25 ? '0-25m (Estándar)' : '>25m (Gran Volumen)';
             const faces = Number((zone as any).faces_to_trim ?? ((zone as any).hasBackFaceTrim ? 2 : 1)) >= 2 ? 2 : 1;
-            const allowedHeights = ['0-1m', '1-2m', '2-4m', '4-6m'];
+            const allowedHeights = ['0-2m', '2-4m', '4-6m'];
             const numericHeightRaw = Number((zone as any).height_pricing_m ?? 0);
             const numericHeight = numericHeightRaw > 0 ? numericHeightRaw / faces : 0;
             const inferHeightBandFromValue = (h: number) => {
                 if (h <= 0) return '';
-                if (h <= 1) return '0-1m';
-                if (h <= 2) return '1-2m';
+                if (h <= 2) return '0-2m';
                 if (h <= 4) return '2-4m';
                 return '4-6m';
             };
@@ -693,13 +642,11 @@ const ProvidersPage: React.FC = () => {
             const normalizedHeightText = String(height || '').toLowerCase();
             const normalizedHeight = allowedHeights.includes(height)
                 ? height
-                : (normalizedHeightText === '<1m' || normalizedHeightText === '0-1m'
-                    ? '0-1m'
-                    : (normalizedHeightText === '1-2m' || normalizedHeightText === '>1-2m' || normalizedHeightText === 'hasta 2m'
-                        ? '1-2m'
-                        : (normalizedHeightText === '>2m' || normalizedHeightText === '>2-3m' || normalizedHeightText === '3-4.5m'
-                            ? '2-4m'
-                            : inferredFromValue)));
+                : (normalizedHeightText === '<1m' || normalizedHeightText === '0-1m' || normalizedHeightText === '1-2m' || normalizedHeightText === '>1-2m' || normalizedHeightText === 'hasta 2m' || normalizedHeightText === '<2m' || normalizedHeightText === '0-2m'
+                    ? '0-2m'
+                    : (normalizedHeightText === '>2m' || normalizedHeightText === '>2-3m' || normalizedHeightText === '3-4.5m'
+                        ? '2-4m'
+                        : inferredFromValue));
             const specialistEnabled = config.specialist_enabled !== false;
             if (!specialistEnabled && normalizedHeight === '4-6m') {
                 console.warn('[ComputePrice] Specialist level disabled. Skipping zone:', zone);
@@ -707,44 +654,78 @@ const ProvidersPage: React.FC = () => {
             }
             console.log(`[ComputePrice] Processing Zone:`, zone);
             
-            const matrixBase = Number(config.pricing_matrix?.[normalizedHeight]?.[lengthRange] || 0);
-            const legacyRanges = lengthRange === '0-25m (Estándar)' ? ['0-10m', '11-25m'] : ['26-50m', '>50m'];
-            const legacyPairs =
-              normalizedHeight === '0-1m'
-                ? [{ category: 'Setos Estándar (≤3m)', height: '0-1m' }]
-                : normalizedHeight === '1-2m'
-                ? [{ category: 'Setos Estándar (≤3m)', height: '>1-2m' }]
-                : normalizedHeight === '2-4m'
-                ? [
-                    { category: 'Setos Estándar (≤3m)', height: '>2-3m' },
-                    { category: 'Setos Gran Altura (>3m)', height: '3-4.5m' }
-                  ]
-                : [
-                    { category: 'Setos Gran Altura (>3m)', height: '>4.5-6m' },
-                    { category: 'Setos Gran Altura (>3m)', height: '>6-7.5m' }
-                  ];
-            const legacyCandidates: number[] = [];
-            legacyPairs.forEach(({ category, height: legacyHeight }) => {
-                legacyRanges.forEach((legacyRange) => {
-                    const v = Number(config.category_prices?.[category]?.[legacyHeight]?.[legacyRange] || 0);
-                    if (v > 0) legacyCandidates.push(v);
-                });
-            });
-            const legacyMatrixBase = legacyCandidates.length > 0
-                ? (legacyCandidates.reduce((acc, v) => acc + v, 0) / legacyCandidates.length)
-                : 0;
-            const legacyBase = Number(config.species_prices?.[type]?.[height] || 0) || legacyMatrixBase;
-            const base = matrixBase || legacyBase;
-            console.log(`[ComputePrice] Base price lookup for height='${normalizedHeight}', range='${lengthRange}':`, base);
+            let base = Number(config.pricing_matrix?.[normalizedHeight] || 0);
+
+            if (base <= 0 && config.pricing_matrix) {
+                // V2 Fallback (Intermediate 2D matrix)
+                const pm = config.pricing_matrix;
+                const extractPrice = (entry: any) => {
+                    if (!entry) return 0;
+                    if (typeof entry === 'number') return entry;
+                    const standard = Number(entry['0-25m (Estándar)'] || 0);
+                    const volume = Number(entry['>25m (Gran Volumen)'] || 0);
+                    const candidates = [standard, volume].filter(v => v > 0);
+                    return candidates.length > 0 ? candidates.reduce((a, b) => a + b, 0) / candidates.length : 0;
+                };
+
+                if (normalizedHeight === '0-2m') {
+                    const p0_1 = extractPrice(pm['0-1m']);
+                    const p1_2 = extractPrice(pm['1-2m']);
+                    const c0_2 = [p0_1, p1_2].filter(v => v > 0);
+                    if (c0_2.length > 0) base = c0_2.reduce((a, b) => a + b, 0) / c0_2.length;
+                } else if (normalizedHeight === '2-4m') {
+                    base = extractPrice(pm['2-4m']);
+                } else if (normalizedHeight === '4-6m') {
+                    base = extractPrice(pm['4-6m']);
+                }
+            }
             
             if (base <= 0) {
-                console.warn(`[ComputePrice] Invalid base price (${base}) for height='${normalizedHeight}', range='${lengthRange}'`);
+                // Legacy V1 fallback logic mapped to flat pricing_matrix
+                const legacyPairs =
+                  normalizedHeight === '0-2m'
+                    ? [
+                        { category: 'Setos Estándar (≤3m)', height: '0-1m' },
+                        { category: 'Setos Estándar (≤3m)', height: '>1-2m' }
+                      ]
+                    : normalizedHeight === '2-4m'
+                    ? [
+                        { category: 'Setos Estándar (≤3m)', height: '>2-3m' },
+                        { category: 'Setos Gran Altura (>3m)', height: '3-4.5m' }
+                      ]
+                    : [
+                        { category: 'Setos Gran Altura (>3m)', height: '>4.5-6m' },
+                        { category: 'Setos Gran Altura (>3m)', height: '>6-7.5m' }
+                      ];
+                const legacyCandidates: number[] = [];
+                legacyPairs.forEach(({ category, height: legacyHeight }) => {
+                    // Average across legacy length ranges if using legacy data
+                    ['0-10m', '11-25m', '26-50m', '>50m'].forEach((legacyRange) => {
+                        const v = Number(config.category_prices?.[category]?.[legacyHeight]?.[legacyRange] || 0);
+                        if (v > 0) legacyCandidates.push(v);
+                    });
+                });
+                const legacyMatrixBase = legacyCandidates.length > 0
+                    ? (legacyCandidates.reduce((acc, v) => acc + v, 0) / legacyCandidates.length)
+                    : 0;
+                base = Number(config.species_prices?.[type]?.[height] || 0) || legacyMatrixBase;
+            }
+            
+            console.log(`[ComputePrice] Base price lookup for height='${normalizedHeight}':`, base);
+            
+            if (base <= 0) {
+                console.warn(`[ComputePrice] Invalid base price (${base}) for height='${normalizedHeight}'`);
                 continue;
             }
             
-            const surcharges = config.condition_surcharges || { descuidado: 25 };
+            const surcharges = config.condition_surcharges || { media: 20, alta: 50 };
             const s = (zone.state || 'normal').toLowerCase();
-            const statePercent = s.includes('descuidado') ? Number(surcharges.descuidado || 0) : 0;
+            let statePercent = 0;
+            if (s.includes('alta') || s.includes('muy_descuidado') || s.includes('muy descuidado')) {
+                statePercent = Number(surcharges.alta || surcharges.muy_descuidado || surcharges.muy_descuidada || 0);
+            } else if (s.includes('media') || s.includes('descuidado')) {
+                statePercent = Number(surcharges.media || surcharges.descuidado || surcharges.descuidada || 0);
+            }
             
             const stateMult = 1 + (statePercent / 100);
             
@@ -764,126 +745,61 @@ const ProvidersPage: React.FC = () => {
     }
 
     // Trees
-    if (bookingData.treeGroups && bookingData.treeGroups.length > 0 && config) {
-        // GLOBAL OVERRIDE
+    if (bookingData.treeGroups && bookingData.treeGroups.length > 0) {
+        if (!isTreePruningConfig(config)) return 0;
+
+        const trees = (bookingData.treeGroups || [])
+          .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
+          .map((t: any) => ({
+            id: String(t.id),
+            pruningType: mapTreePruningType(t.pruningType),
+            altura_m: Number(t.aiHeightMeters || 0),
+            dificultad_alta: Boolean(t.difficultyHigh),
+            nivel_analisis: t.analysisLevel
+          }))
+          .filter((t: any) => Number.isFinite(t.altura_m) && t.altura_m > 0);
+
         const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-        
-        let total = 0;
-        
-        // Iterate over EACH tree group (individual tree from AI)
-        for (const group of bookingData.treeGroups) {
-            // SKIP FAILED ANALYSIS (Level 3)
-            if ((group as any).isFailed || group.analysisLevel === 3) continue;
-
-            // Use per-tree estimated hours from AI, NO FALLBACK
-            const treeHours = group.estimatedHours;
-            
-            // If no hours, treat as failed (skip)
-            if (!treeHours || treeHours <= 0) continue;
-            
-            const pruningType = group.pruningType || 'structural';
-            const access = group.access || 'normal';
-
-            // Hourly Rate based on Type
-            let hourlyRate = 0;
-            if (pruningType === 'shaping') {
-                hourlyRate = config.shapingHourlyRate;
-            } else {
-                hourlyRate = config.structuralHourlyRate;
-            }
-
-            // Validacion estricta: Si no hay precio o es <= 0, no calcular
-            if (!hourlyRate || hourlyRate <= 0) continue;
-
-            // Access Surcharge
-            let accessPercent = 0;
-            const legacySurcharges = config.access_surcharges || {};
-            
-            if (access === 'medio') { // Escalera
-                accessPercent = config.ladderModifier != null 
-                    ? config.ladderModifier 
-                    : (legacySurcharges.medio || 0);
-            } else if (access === 'dificil') { // Trepa
-                accessPercent = config.climbingModifier != null 
-                    ? config.climbingModifier 
-                    : (legacySurcharges.dificil || 0);
-            }
-            
-            // Waste Removal Surcharge
-            let wastePercent = 0;
-            if (globalWaste) {
-                wastePercent = config.wasteRemovalModifier != null 
-                    ? config.wasteRemovalModifier 
-                    : (config.waste_removal?.percentage || 0);
-            }
-            
-            const totalMultiplier = 1 + (accessPercent / 100) + (wastePercent / 100);
-            
-            total += treeHours * hourlyRate * totalMultiplier;
-        }
-        
-        return applyMinimumPrice(total);
+        const quote = calculateTreePruningQuoteForTrees(config, trees, globalWaste);
+        if (!quote.isProfessionalSuitable) return 0;
+        return applyMinimumPrice(quote.totalPrice);
     }
 
-    // Shrubs
-    if (bookingData.shrubGroups && bookingData.shrubGroups.length > 0 && config && config.species_prices) {
+    // Shrubs (Poda de plantas y arbustos)
+    if (bookingData.shrubGroups && bookingData.shrubGroups.length > 0 && config && config.prices_per_m2) {
         // GLOBAL OVERRIDE: La retirada de restos es una configuración global.
         const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
         
         let total = 0;
         for (const group of bookingData.shrubGroups) {
-            const { type, size, quantity, state } = group;
-            const base = config.species_prices[type]?.[size] || 0;
+            const { size, area } = group;
+            const base = config.prices_per_m2[size as 'pequeñas' | 'medianas' | 'grandes'] || 0;
             if (base <= 0) continue;
-            
-            // Condition Multiplier
-            const surcharges = config.condition_multipliers || { normal: 0, neglected: 15, overgrown: 30 };
-            let conditionPercent = 0;
-            const s = (state || 'normal').toLowerCase();
-            
-            if (s.includes('muy') && s.includes('descuidado')) conditionPercent = surcharges.overgrown;
-            else if (s.includes('descuidado')) conditionPercent = surcharges.neglected;
-            else conditionPercent = surcharges.normal;
-
-            const conditionMult = 1 + (conditionPercent / 100);
 
             let wasteMult = 1;
             if (globalWaste) {
                 wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
             }
             
-            total += base * quantity * conditionMult * wasteMult;
+            total += base * area * wasteMult;
         }
         return applyMinimumPrice(total);
     }
 
-    // Clearing
-    if (bookingData.clearingZones && bookingData.clearingZones.length > 0 && config && config.type_prices) {
-        // GLOBAL OVERRIDE
+    // Weeding (Desbroce)
+    if (bookingData.weedingZones && bookingData.weedingZones.length > 0 && config) {
         const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-        
-        const totalArea = bookingData.clearingZones.reduce((acc, z) => acc + (z.area || 0), 0);
-        let range = '0-50';
-        if (totalArea > 200) range = '200+';
-        else if (totalArea > 50) range = '50-200';
-        
-        let total = 0;
-        for (const zone of bookingData.clearingZones) {
-            const { type, area } = zone;
-            const baseRate = config.type_prices[type]?.[range] || 0;
-            
-            let subtotal = 0;
-            if (range === '0-50') subtotal = baseRate; // Fixed price
-            else subtotal = baseRate * area;
-            
-            let wasteMult = 1;
-            if (globalWaste) {
-                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
-            }
-            
-            total += subtotal * wasteMult;
-        }
-        return applyMinimumPrice(total);
+        const quote = calculateWeedingQuote({
+          zones: bookingData.weedingZones.map((zone) => ({
+            id: zone.id,
+            area: Number(zone.area || 0),
+            state: zone.state,
+            applyHerbicide: Boolean(zone.applyHerbicide)
+          })),
+          config,
+          globalWaste
+        });
+        return quote.finalPrice;
     }
 
     // Phytosanitary
@@ -919,12 +835,10 @@ const ProvidersPage: React.FC = () => {
         }
 
         const totalArea = zones.reduce((acc, z) => acc + (z.quantity || 0), 0);
-        let range: '0-50' | '51-150' | '151-400' | '400+' = '0-50';
-        if (totalArea > 400) range = '400+';
-        else if (totalArea > 150) range = '151-400';
-        else if (totalArea > 50) range = '51-150';
+        
+        const getLawnPricePerM2 = () => {
+            if (config.price_per_m2 > 0) return config.price_per_m2;
 
-        const getLawnSurfacePrices = () => {
             const parsed = {
                 '0-50': Number(config.surface_prices?.['0-50'] || 0),
                 '51-150': Number(config.surface_prices?.['51-150'] || 0),
@@ -932,23 +846,17 @@ const ProvidersPage: React.FC = () => {
                 '400+': Number(config.surface_prices?.['400+'] || 0)
             };
             const hasNew = Object.values(parsed).some(v => v > 0);
-            if (hasNew) return parsed;
+            if (hasNew) return parsed['0-50'] || parsed['51-150'] || parsed['151-400'] || parsed['400+'] || 0;
 
             const selectedSpecies = Array.isArray(config.selected_species) ? config.selected_species : [];
             const legacySpeciesKey = selectedSpecies.find((s: string) => config.species_prices?.[s]) || Object.keys(config.species_prices || {})[0];
             const legacyPrices = legacySpeciesKey ? config.species_prices?.[legacySpeciesKey] : null;
-            if (!legacyPrices) return parsed;
+            if (!legacyPrices) return 0;
 
-            return {
-                '0-50': Number(legacyPrices['0-50'] || 0),
-                '51-150': Number(legacyPrices['50-200'] || 0),
-                '151-400': Number(legacyPrices['200+'] || 0),
-                '400+': Number(legacyPrices['200+'] || 0)
-            };
+            return Number(legacyPrices['0-50'] || legacyPrices['50-200'] || legacyPrices['200+'] || 0);
         };
 
-        const surfacePrices = getLawnSurfacePrices();
-        const baseRate = Number(surfacePrices[range] || 0);
+        const baseRate = getLawnPricePerM2();
         if (baseRate <= 0) return 0;
 
         let totalCost = 0;
@@ -960,9 +868,9 @@ const ProvidersPage: React.FC = () => {
             let stateSurchargePercent = 0;
             const s = (zone.state || 'normal').toLowerCase();
             if (s.includes('muy') && s.includes('descuidad')) {
-                stateSurchargePercent = surcharges.muy_descuidado || 0;
+                stateSurchargePercent = surcharges.muy_descuidado || surcharges.muy_descuidada || 0;
             } else if (s.includes('descuidad') && !s.includes('muy')) {
-                stateSurchargePercent = surcharges.descuidado || 0;
+                stateSurchargePercent = surcharges.descuidado || surcharges.descuidada || 0;
             }
             const stateMult = 1 + (stateSurchargePercent / 100);
 
@@ -991,9 +899,9 @@ const ProvidersPage: React.FC = () => {
         
         let stateSurcharge = 0;
         if (difficulty === 3) { // Muy descuidado
-            stateSurcharge = surcharges.muy_descuidado !== undefined ? surcharges.muy_descuidado : 50;
+            stateSurcharge = surcharges.muy_descuidado ?? surcharges.muy_descuidada ?? 50;
         } else if (difficulty === 2) { // Descuidado
-            stateSurcharge = surcharges.descuidado !== undefined ? surcharges.descuidado : 20;
+            stateSurcharge = surcharges.descuidado ?? surcharges.descuidada ?? 20;
         }
         
         const stateMult = 1 + (stateSurcharge / 100);
@@ -1021,6 +929,29 @@ const ProvidersPage: React.FC = () => {
   const handleProviderSelect = (providerId: string) => { setSelectedProvider(providerId); };
 
   const handleContinue = () => { 
+    if (selectedProvider) { 
+      const coverage = palmCoverageMap[selectedProvider];
+      if (coverage && !coverage.isFull && coverage.missingGroups.length > 0) {
+        setIsPartialModalOpen(true);
+        return;
+      }
+      proceedWithBooking(bookingData.palmGroups || []);
+    } 
+  };
+
+  const handleConfirmPartialService = () => {
+    setIsPartialModalOpen(false);
+    if (!selectedProvider) return;
+    
+    const config = configs[selectedProvider];
+    const coveredGroups = (bookingData.palmGroups || []).filter(
+      (g) => findPalmPrice(config, g.species, g.height) > 0
+    );
+    
+    proceedWithBooking(coveredGroups);
+  };
+
+  const proceedWithBooking = (groupsToKeep: any[]) => {
     if (selectedProvider) { 
       const isPhytosanitary = Array.isArray(bookingData.phytosanitaryZones) && bookingData.phytosanitaryZones.length > 0;
       const selectedConfig = configs[selectedProvider];
@@ -1050,6 +981,8 @@ const ProvidersPage: React.FC = () => {
       // Aseguramos que se guarde la fecha seleccionada y el proveedor
       setBookingData({ 
         providerId: selectedProvider, 
+        palmGroups: groupsToKeep, // Sanitizar payload
+        estimatedHours: getEstimatedHours(selectedProvider), // Actualizar el estimatedHours
         totalPrice: phytosanitaryQuote ? phytosanitaryQuote.final_price : computePrice(selectedProvider),
         preferredDate: selectedDate,
         priceBreakdown: phytosanitaryBreakdown
@@ -1060,7 +993,7 @@ const ProvidersPage: React.FC = () => {
 
   const handleSelectStartHour = async (hour: number) => {
     if (!selectedProvider || !selectedDate) return;
-    const dur = Math.max(1, Number(bookingData.estimatedHours || 0));
+    const dur = getEstimatedHours(selectedProvider);
 
     const clientId = user?.id || 'anon';
     const ok = await canBookSequence(selectedProvider, selectedDate, hour, dur, clientId);
@@ -1137,10 +1070,10 @@ const ProvidersPage: React.FC = () => {
               <Sprout className="w-10 h-10 text-green-600" />
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-2">
-              No hay jardineros disponibles
+              No hay profesionales disponibles
             </h3>
             <p className="text-gray-600 mb-6 leading-relaxed">
-              Actualmente no hay ningún jardinero disponible para este servicio en tu zona. Por favor, intenta nuevamente más tarde.
+              Actualmente no hay ningún profesional cualificado disponible para este servicio en tu zona. Por favor, intenta nuevamente más tarde o prueba con otras opciones (ej. tratamientos ecológicos).
             </p>
           </div>
         ) : (
@@ -1149,32 +1082,33 @@ const ProvidersPage: React.FC = () => {
               const selected = selectedProvider === p.user_id;
               const coverage = palmCoverageMap[p.user_id];
               const isPartial = coverage && !coverage.isFull;
+              const treeOver9Notice = getTreeOver9Notice(p.user_id);
 
               return (
                 <button
                   key={p.user_id}
                   onClick={() => openAvailability(p.user_id)}
-                  className={`min-w-[240px] bg-white rounded-2xl shadow-sm p-3 border-2 text-left relative overflow-hidden transition-all ${
-                    selected ? 'border-green-600 bg-green-50' : isPartial ? 'border-amber-200 bg-amber-50/30 hover:border-amber-300' : 'border-gray-200 hover:border-gray-300'
+                  className={`min-w-[240px] bg-white rounded-2xl shadow-sm p-4 border-2 text-left relative transition-all flex flex-col gap-3 ${
+                    selected ? 'border-green-600 bg-green-50' : isPartial ? 'border-amber-300 bg-amber-50 hover:border-amber-400' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  {/* Partial Tag */}
+                  {/* Partial Tag - Repositioned inside the normal flow or top left with margin */}
                   {isPartial && (
-                      <div className="absolute top-0 right-0 bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-bl-lg border-b border-l border-amber-200">
+                      <div className="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-lg self-start border border-amber-200 mb-1">
                           PARCIAL ({coverage.coveredCount}/{coverage.totalCount})
                       </div>
                   )}
 
                   <div className="flex items-center gap-3">
                     {p.avatar_url ? (
-                      <img src={p.avatar_url} alt={p.full_name} className="w-12 h-12 rounded-full object-cover" />
+                      <img src={p.avatar_url} alt={p.full_name} className="w-12 h-12 rounded-full object-cover shrink-0" />
                     ) : (
-                      <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold">
+                      <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold shrink-0">
                         {p.full_name.charAt(0)}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 truncate pr-4">{p.full_name}</div>
+                      <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
                       <div className="text-sm text-gray-700 font-medium">
                         {(() => {
                             const price = computePrice(p.user_id);
@@ -1182,16 +1116,22 @@ const ProvidersPage: React.FC = () => {
                             return (
                               <div className="flex items-baseline gap-1">
                                   <span>€{price}</span>
-                                  {isPartial && <span className="text-[10px] text-amber-600 font-normal">(parcial)</span>}
+                                  {isPartial && <span className="text-xs text-amber-700 font-normal">(parcial)</span>}
                               </div>
                             );
                         })()}
                       </div>
                       
+                      {!isPartial && treeOver9Notice && (
+                          <div className="mt-2 text-xs text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 leading-tight">
+                              {treeOver9Notice}
+                          </div>
+                      )}
+
                       {/* Partial Coverage Details */}
                       {isPartial && coverage?.missingGroups.length > 0 && (
-                          <div className="mt-1.5 text-[10px] text-amber-700 bg-amber-100/50 p-1 rounded border border-amber-100 leading-tight">
-                              <span className="font-semibold block mb-0.5">No incluye:</span>
+                          <div className="mt-2 text-xs text-amber-800 bg-amber-100 p-2 rounded border border-amber-200 leading-tight">
+                              <span className="font-semibold block mb-1">No incluye:</span>
                               {coverage.missingGroups.slice(0, 2).map((g: any, i: number) => (
                                   <div key={i} className="truncate">• {g.species} {g.height}</div>
                               ))}
@@ -1223,7 +1163,7 @@ const ProvidersPage: React.FC = () => {
             <div className="text-sm font-semibold text-gray-900">
               Seleccionar fecha y hora 
               <span className="font-normal text-gray-500 ml-1">
-                (la duración del servicio es de {Math.max(1, Number(bookingData.estimatedHours || 0))} h)
+                (la duración del servicio es de {getEstimatedHours(selectedProvider)} h)
               </span>
             </div>
             <div className="flex items-center justify-between mt-2">
@@ -1315,7 +1255,7 @@ const ProvidersPage: React.FC = () => {
           {/* Rango horario seleccionado */}
           {selectedHour != null && (
             <div className="mt-3 text-sm text-green-700">
-              Horario del trabajo: {String(selectedHour).padStart(2,'0')}:00 – {String(selectedHour + Math.max(1, Number(bookingData.estimatedHours||0))).padStart(2,'0')}:00
+              Horario del trabajo: {String(selectedHour).padStart(2,'0')}:00 – {String(selectedHour + getEstimatedHours(selectedProvider)).padStart(2,'0')}:00
             </div>
           )}
         </div>
@@ -1338,6 +1278,24 @@ const ProvidersPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <PartialServiceModal
+        isOpen={isPartialModalOpen}
+        onClose={() => setIsPartialModalOpen(false)}
+        onConfirm={handleConfirmPartialService}
+        coveredGroups={
+          selectedProvider && configs[selectedProvider]
+            ? (bookingData.palmGroups || []).filter(
+                (g) => findPalmPrice(configs[selectedProvider], g.species, g.height) > 0
+              )
+            : []
+        }
+        missingGroups={
+          selectedProvider && palmCoverageMap[selectedProvider]
+            ? palmCoverageMap[selectedProvider].missingGroups
+            : []
+        }
+      />
     </div>
   );
 };

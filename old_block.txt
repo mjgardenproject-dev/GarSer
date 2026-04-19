@@ -1,0 +1,27 @@
+<div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                                 {photoUrls.map((url, i) => (
+                                                     <div key={i} className="relative aspect-square">
+                                                         <img src={url} className="w-full h-full object-cover rounded-lg" />
+                                                     </div>
+                                                 ))}
+                                                 <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer aspect-square text-gray-400 hover:text-green-600">
+                                                     <Camera className="w-6 h-6" />
+                                                     <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleTreeFileSelect(zone.id, e)} />
+                                                 </label>
+                                             </div>
+
+                                             <button
+                                                 onClick={() => analyzeTreeGroup(zone.id)}
+                                                 disabled={isZoneAnalyzing || photoUrls.length === 0}
+                                                 className={`w-full py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 ${
+                                                     isZoneAnalyzing || photoUrls.length === 0
+                                                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                       : 'bg-green-600 text-white hover:bg-green-700'
+                                                 }`}
+                                             >
+                                                 {isZoneAnalyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> Analizar</>}
+                                             </button>
+                                         </div>
+                                     </div>
+                                 );
+ 

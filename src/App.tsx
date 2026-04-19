@@ -29,9 +29,17 @@ import RoleMonitor from './components/admin/RoleMonitor';
 import GardenerApplicationWizard from './components/gardener/GardenerApplicationWizard';
 import GardenerStatusPage from './components/gardener/GardenerStatusPage';
 import ApplicationsAdmin from './components/admin/ApplicationsAdmin';
+import LicenseVerificationAdmin from './components/admin/LicenseVerificationAdmin';
 import BookingFlow from './pages/reserva/BookingFlow';
 import ConfirmationPage from './pages/reserva/ConfirmationPage';
 import { supabase } from './lib/supabase';
+
+import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import ServicesManagement from './pages/admin/ServicesManagement';
+import PhytosanitaryManagement from './pages/admin/PhytosanitaryManagement';
+import UserManagement from './pages/admin/UserManagement';
 
 const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   if (!db) return null;
@@ -49,6 +57,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const isAuthPage = location.pathname === '/auth';
     const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
     const isApplyPage = location.pathname === '/apply';
+    const isAdminPage = location.pathname.startsWith('/admin');
   
   // Debug logging
   useEffect(() => {
@@ -202,9 +211,24 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {!isAuthPage && <Navbar applicationStatus={applicationStatus} />}
-      <main className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-16 sm:pb-0">
+      {!isAuthPage && !isAdminPage && <Navbar applicationStatus={applicationStatus} />}
+      
+      {isAdminPage ? (
         <Routes>
+          <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="services" element={<ServicesManagement />} />
+            <Route path="phytosanitary" element={<PhytosanitaryManagement />} />
+            <Route path="users" element={<UserManagement />} />
+            <Route path="settings" element={<div className="p-8 text-center text-gray-500">Configuración en construcción</div>} />
+            <Route path="applications" element={<Navigate to="/admin/users" replace />} />
+            <Route path="licenses" element={<Navigate to="/admin/phytosanitary" replace />} />
+          </Route>
+        </Routes>
+      ) : (
+        <main className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-16 sm:pb-0">
+          <Routes>
         <Route
           path="/"
           element={
@@ -431,14 +455,6 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           } 
         />
         <Route 
-          path="/admin/applications" 
-          element={
-            <AdminRoute allowInDevelopment={true}>
-              <ApplicationsAdmin />
-            </AdminRoute>
-          } 
-        />
-        <Route 
           path="/account" 
           element={
             <ProtectedRoute>
@@ -452,8 +468,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/auth" element={<AuthForm />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         </Routes>
-      </main>
-      {!isAuthPage && !isBookingPage && !isApplyPage && user && <BottomNav />}
+        </main>
+      )}
+      {!isAuthPage && !isBookingPage && !isApplyPage && !isAdminPage && user && <BottomNav />}
     </div>
   );
 };

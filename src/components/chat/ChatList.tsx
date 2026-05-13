@@ -65,7 +65,7 @@ const ChatList: React.FC = () => {
           services(name)
         `)
         .or(`client_id.eq.${user.id},gardener_id.eq.${user.id}`)
-        .in('status', ['confirmed', 'in_progress', 'completed'])
+        .in('status', ['pending', 'confirmed', 'in_progress', 'completed'])
         .order('date', { ascending: false }) as { data: BookingWithProfiles[] | null; error: any };
 
       if (bookingsError) throw bookingsError;
@@ -101,7 +101,7 @@ const ChatList: React.FC = () => {
           // Obtener el último mensaje
           const { data: lastMessage } = await supabase
             .from('chat_messages')
-            .select('message, created_at, sender_id')
+            .select('message, image_url, created_at, sender_id')
             .eq('booking_id', booking.id)
             .order('created_at', { ascending: false })
             .limit(1)
@@ -112,7 +112,8 @@ const ChatList: React.FC = () => {
             .from('chat_messages')
             .select('*', { count: 'exact', head: true })
             .eq('booking_id', booking.id)
-            .neq('sender_id', user.id);
+            .neq('sender_id', user.id)
+            .is('read_at', null);
 
           return {
             booking_id: booking.id,
@@ -122,14 +123,19 @@ const ChatList: React.FC = () => {
             date: booking.date,
             start_time: booking.start_time,
             status: booking.status,
-            last_message: lastMessage?.message || undefined,
+            last_message: lastMessage?.message || (lastMessage?.image_url ? 'Imagen' : undefined),
             last_message_time: lastMessage?.created_at || undefined,
             unread_count: unreadCount || 0
           };
         })
       );
 
-      setChats(chatsWithMessages);
+      // Filtrar reservas pendientes que no tengan mensajes
+      const activeChats = chatsWithMessages.filter(chat => 
+        chat.status !== 'pending' || chat.last_message !== undefined
+      );
+
+      setChats(activeChats);
     } catch (error) {
       console.error('Error fetching chats:', error);
     } finally {

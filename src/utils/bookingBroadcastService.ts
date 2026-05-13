@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { persistBookingMedia } from './bookingMediaService';
 
 interface BroadcastParams {
   clientId: string;
@@ -19,6 +20,7 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
 
   // Subir fotos opcionalmente y añadir URLs a notas (con nombres sanitizados)
   let notesWithPhotos = params.notes || '';
+  let uploadedUrls: string[] = [];
   const bucket = (import.meta.env.VITE_BOOKING_PHOTOS_BUCKET as string | undefined) || 'booking-photos';
   const now = Date.now();
 
@@ -28,7 +30,7 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
   };
 
   if (params.photoFiles && params.photoFiles.length > 0) {
-    const uploadedUrls: string[] = [];
+    uploadedUrls = [];
     for (let i = 0; i < params.photoFiles.length; i++) {
       const file = params.photoFiles[i];
       try {
@@ -76,6 +78,21 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
     notes: notesWithPhotos,
   }));
 
-  const { error } = await supabase.from('bookings').insert(rows);
+  const { data: insertedRows, error } = await supabase
+    .from('bookings')
+    .insert(rows)
+    .select('id');
   if (error) throw error;
+
+  if (insertedRows && insertedRows.length > 0 && params.photoFiles && params.photoFiles.length > 0) {
+    await Promise.allSettled(
+      insertedRows.map((row: any) =>
+        persistBookingMedia({
+          bookingId: row.id,
+          uploaderId: params.clientId,
+          mediaUrls: uploadedUrls,
+        })
+      )
+    );
+  }
 }

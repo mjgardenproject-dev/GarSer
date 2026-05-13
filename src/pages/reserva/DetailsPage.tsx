@@ -8,9 +8,16 @@ import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, estimateServiceAutoQuote, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
 import { readWeedingHerbicideState, writeWeedingHerbicideState } from '../../utils/weedingPersistence';
+import { AnalysisLoadingAnimation } from '../../components/shared/AnalysisLoadingAnimation';
+import { AnalysisFailedCard } from '../../components/shared/AnalysisFailedCard';
+import { ZonePhotoGallery } from '../../components/shared/ZonePhotoGallery';
+import { ZoneActionButton } from '../../components/shared/ZoneActionButton';
+import { ServiceResultCard } from '../../components/shared/ServiceResultCard';
 import {
   PALM_CANONICAL_SPECIES,
+  getHighestOpenRangeThresholdForSpecies,
   getLowestRangeThresholdForSpecies,
+  isHighestOpenRangeForSpecies,
   isLowestRangeThresholdForSpecies,
   supportsPhytosanitaryForSpecies,
   supportsTrunkPeelingForSpecies
@@ -22,6 +29,7 @@ type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas baj
 type PhytosanitaryTreatmentValue = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
 type PhytosanitaryScope = 'todo_jardin' | 'palmeras' | 'arboles' | 'cesped' | 'setos' | 'plantas';
 type PhytosanitaryRequestTreatment = 'insecticida' | 'fungicida' | 'combo';
+type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
 
 type PhytosanitaryAnalysisMetrics = {
   cesped_m2: number;
@@ -93,6 +101,27 @@ const toPhytosanitaryMetricNumber = (value: unknown) => {
   return Math.max(0, parsed);
 };
 
+const normalizeTreeSizeBand = (value: unknown): TreeSizeBand | null => {
+  const v = String(value || '').toLowerCase().trim();
+  if (v === 'small' || v === 'medium' || v === 'large' || v === 'over_9') return v;
+  return null;
+};
+
+const treeSizeBandToLegacyMeters = (band: TreeSizeBand): number => {
+  if (band === 'small') return 2;
+  if (band === 'medium') return 4;
+  if (band === 'large') return 7;
+  return 9.5;
+};
+
+const treeBandLabel = (band?: TreeSizeBand | null): string => {
+  if (band === 'small') return 'Pequeño (0-3m)';
+  if (band === 'medium') return 'Mediano (3-5m)';
+  if (band === 'large') return 'Grande (5-9m)';
+  if (band === 'over_9') return 'Muy grande (>9m)';
+  return '-';
+};
+
 const getDefaultPhytosanitaryScope = (
   affectedType?: PhytosanitaryAffectedType,
   treatmentType?: string
@@ -119,6 +148,28 @@ const normalizeDetectedWeedingState = (value?: string | null): 'normal' | 'dific
   if (normalized.includes('media')) return 'dificultad_media';
   return 'normal';
 };
+
+const WEEDING_STATE_OPTIONS: Array<{
+  value: 'normal' | 'dificultad_media' | 'dificultad_alta';
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'normal',
+    label: 'Dificultad Normal',
+    description: 'Terreno regular, maleza ligera (< 30cm) y sin obstáculos relevantes.'
+  },
+  {
+    value: 'dificultad_media',
+    label: 'Dificultad Media',
+    description: 'Zonas con pendiente, terreno irregular o maleza herbácea densa (> 30cm).'
+  },
+  {
+    value: 'dificultad_alta',
+    label: 'Dificultad Alta',
+    description: 'Zonas de difícil acceso, maleza leñosa/zarzas, o presencia de piedras/escombros.'
+  }
+];
 
 // Deprecated normalizer - removed
 
@@ -208,19 +259,25 @@ const applyPalmSpeciesRules = (group: PalmGroup): PalmGroup => {
     ? Boolean(group.hasTrunkPeeling ?? group.needsTrunkFinish)
     : false;
   const lowestRangeThreshold = group.lowestRangeThreshold || getLowestRangeThresholdForSpecies(group.species);
+  const highestOpenRangeThreshold = group.highestOpenRangeThreshold || getHighestOpenRangeThresholdForSpecies(group.species) || undefined;
   const isLowestRangeThreshold = isLowestRangeThresholdForSpecies(group.species, group.height);
+  const isTerminalOpenRange = isHighestOpenRangeForSpecies(group.species, group.height);
   const hasUnits = hasPositiveUnits(group.quantity);
   const hasAccessDifficulty = !hasUnits
     ? undefined
     : isLowestRangeThreshold
       ? false
       : Boolean(group.hasAccessDifficulty);
+  const allowsPriceChange = isTerminalOpenRange;
 
   return {
     ...group,
     hasPhytosanitary,
     hasTrunkPeeling,
     lowestRangeThreshold,
+    highestOpenRangeThreshold,
+    isTerminalOpenRange,
+    allowsPriceChange,
     hasAccessDifficulty
   };
 };
@@ -323,6 +380,55 @@ function AccessDifficultyToggle({ group, isAccessDisabled, updatePalmGroup }: { 
     );
 }
 
+function TreeAccessDifficultyToggle({
+  group,
+  updateTreeGroup,
+}: {
+  group: any,
+  updateTreeGroup: (id: string, updates: any) => void
+}) {
+  const initialValue = typeof group.difficultyHigh === 'boolean' ? group.difficultyHigh : undefined;
+  const [localVal, setLocalVal] = useState<boolean | undefined>(initialValue);
+  useEffect(() => {
+    setLocalVal(typeof group.difficultyHigh === 'boolean' ? group.difficultyHigh : undefined);
+  }, [group.difficultyHigh]);
+
+  return (
+    <div className="flex gap-3">
+      <label className={`flex-1 flex items-center justify-center py-2.5 px-4 rounded-xl border cursor-pointer ${
+        localVal === false ? 'bg-green-50 border-green-500 text-green-700 font-medium shadow-sm ring-1 ring-green-500' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-green-300'
+      }`}>
+        <input
+          type="radio"
+          name={`tree-access-${group.id}`}
+          className="sr-only"
+          checked={localVal === false}
+          onChange={() => {
+            setLocalVal(false);
+            setTimeout(() => updateTreeGroup(group.id, { difficultyHigh: false }), 0);
+          }}
+        />
+        Sí
+      </label>
+      <label className={`flex-1 flex items-center justify-center py-2.5 px-4 rounded-xl border cursor-pointer ${
+        localVal === true ? 'bg-green-50 border-green-500 text-green-700 font-medium shadow-sm ring-1 ring-green-500' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-green-300'
+      }`}>
+        <input
+          type="radio"
+          name={`tree-access-${group.id}`}
+          className="sr-only"
+          checked={localVal === true}
+          onChange={() => {
+            setLocalVal(true);
+            setTimeout(() => updateTreeGroup(group.id, { difficultyHigh: true }), 0);
+          }}
+        />
+        No
+      </label>
+    </div>
+  );
+}
+
 const DetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const { bookingData, setBookingData, saveProgress, setCurrentStep, updateServiceData, switchToService } = useBooking();
@@ -410,10 +516,16 @@ const DetailsPage: React.FC = () => {
   const [hedgeAnalyzingZoneIds, setHedgeAnalyzingZoneIds] = useState<Set<string>>(new Set());
   const [treeUploads, setTreeUploads] = useState<Record<string, Set<number>>>({});
   const [treeAnalyzingZoneIds, setTreeAnalyzingZoneIds] = useState<Set<string>>(new Set());
+  const [palmUploads, setPalmUploads] = useState<Record<string, Set<number>>>({});
+  const [palmAnalyzingZoneIds, setPalmAnalyzingZoneIds] = useState<Set<string>>(new Set());
+
   const [phytosanitaryUploads, setPhytosanitaryUploads] = useState<Record<string, Set<number>>>({});
   const [phytosanitaryAnalyzingZoneIds, setPhytosanitaryAnalyzingZoneIds] = useState<Set<string>>(new Set());
   const isAnyLawnZoneAnalyzing = lawnAnalyzingZoneIds.size > 0;
   const isAnyTreeZoneAnalyzing = treeAnalyzingZoneIds.size > 0;
+  const [shrubAnalyzingZoneIds, setShrubAnalyzingZoneIds] = useState<Set<string>>(new Set());
+  const [shrubUploads, setShrubUploads] = useState<Record<string, Set<number>>>({});
+  const [weedingManualConfirmed, setWeedingManualConfirmed] = useState(false);
   const isAnyPhytosanitaryZoneAnalyzing = phytosanitaryAnalyzingZoneIds.size > 0;
 
   useEffect(() => {
@@ -584,6 +696,52 @@ const DetailsPage: React.FC = () => {
       : ''
   ]);
 
+  useEffect(() => {
+    if (!isWeedingServiceSelected) return;
+
+    const currentZones = bookingData.weedingZones || [];
+    const primary = currentZones[0];
+    const mustCreate = currentZones.length === 0;
+    const mustNormalizeToSingle = currentZones.length > 1;
+    const mustStripAiArtifacts = Boolean(
+      primary && (
+        (primary.photoUrls?.length || 0) > 0
+        || (primary.files?.length || 0) > 0
+        || (primary.selectedIndices?.length || 0) > 0
+        || (primary.analyzedIndices?.length || 0) > 0
+        || primary.analysisLevel !== undefined
+        || (primary.observations?.length || 0) > 0
+        || (primary as any).isFailed === true
+      )
+    );
+
+    if (!mustCreate && !mustNormalizeToSingle && !mustStripAiArtifacts) return;
+
+    const nextZone = primary
+      ? {
+          ...primary,
+          photoUrls: [],
+          files: [],
+          selectedIndices: [],
+          analyzedIndices: [],
+          analysisLevel: undefined,
+          observations: [],
+          isFailed: false
+        }
+      : createDefaultWeedingZone();
+    const nextZones = [nextZone];
+
+    setBookingData({ weedingZones: nextZones });
+    if (activeServiceId) updateServiceData(activeServiceId, { weedingZones: nextZones });
+    saveProgress();
+  }, [isWeedingServiceSelected, activeServiceId, bookingData.weedingZones]);
+
+  useEffect(() => {
+    if (!isWeedingServiceSelected) {
+      setWeedingManualConfirmed(false);
+    }
+  }, [isWeedingServiceSelected]);
+
   const handleToggleWeedingHerbicide = (zoneIndex: number) => {
     if (!activeServiceId || !bookingData.weedingZones || !bookingData.weedingZones[zoneIndex]) return;
     const updated = [...bookingData.weedingZones];
@@ -634,6 +792,69 @@ const DetailsPage: React.FC = () => {
       }
   }, [bookingData.lawnZones, debugService]);
 
+  // Sync shrub groups to global state
+  useEffect(() => {
+      const isShrubService = debugService.toLowerCase().includes('poda de plantas');
+      if (isShrubService && bookingData.shrubGroups) {
+          let totalHours = 0;
+          let totalQty = 0;
+          bookingData.shrubGroups.forEach(g => {
+              if (g.area > 0) {
+                  totalHours += Math.ceil(g.area * 0.15) || 1;
+                  totalQty += g.area;
+              }
+          });
+          
+          const allUrls = bookingData.shrubGroups.flatMap(g => g.photoUrls || []);
+          const currentHours = bookingData.estimatedHours || 0;
+          const currentUrls = bookingData.uploadedPhotoUrls || [];
+          
+          const hoursChanged = Math.abs(currentHours - totalHours) > 0.1;
+          const urlsChanged = allUrls.length !== currentUrls.length || !allUrls.every((u, i) => u === currentUrls[i]);
+          
+          if (hoursChanged || urlsChanged) {
+              setBookingData({ 
+                  estimatedHours: totalHours,
+                  uploadedPhotoUrls: allUrls,
+                  aiQuantity: totalQty,
+                  aiUnit: 'm2'
+              });
+          }
+      }
+  }, [bookingData.shrubGroups, debugService]);
+
+  // Sync weeding zones to global state
+  useEffect(() => {
+      const isWeedingService = debugService.toLowerCase().includes('desbroce') || debugService.toLowerCase().includes('malas hierbas');
+      if (isWeedingService && bookingData.weedingZones) {
+          let totalHours = 0;
+          let totalQty = 0;
+          bookingData.weedingZones.forEach(z => {
+              if (z.area > 0) {
+                  const sMod = z.state.includes('alta') ? 1.5 : z.state.includes('media') ? 1.2 : 1.0;
+                  totalHours += Math.ceil((z.area / 100) * sMod);
+                  totalQty += z.area;
+              }
+          });
+          
+          const allUrls = bookingData.weedingZones.flatMap(z => z.photoUrls || []);
+          const currentHours = bookingData.estimatedHours || 0;
+          const currentUrls = bookingData.uploadedPhotoUrls || [];
+          
+          const hoursChanged = Math.abs(currentHours - totalHours) > 0.1;
+          const urlsChanged = allUrls.length !== currentUrls.length || !allUrls.every((u, i) => u === currentUrls[i]);
+          
+          if (hoursChanged || urlsChanged) {
+              setBookingData({ 
+                  estimatedHours: totalHours,
+                  uploadedPhotoUrls: allUrls,
+                  aiQuantity: totalQty,
+                  aiUnit: 'm2'
+              });
+          }
+      }
+  }, [bookingData.weedingZones, debugService]);
+
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -681,7 +902,7 @@ const DetailsPage: React.FC = () => {
     );
     
     if (files.length + photos.length > 5) {
-      alert('Máximo 5 fotos permitidas');
+      toast.error('Máximo 5 fotos permitidas');
       return;
     }
 
@@ -902,18 +1123,17 @@ const DetailsPage: React.FC = () => {
   };
 
   const estimateTreeZoneHours = (zone: any) => {
-    const altura_m = Number(zone.aiHeightMeters || 0);
-    if (!Number.isFinite(altura_m) || altura_m <= 0) return 0;
+    const sizeBand = normalizeTreeSizeBand(zone.aiSizeBand);
+    if (!sizeBand) return 0;
     const pruningType = String(zone.pruningType || 'structural').toLowerCase();
-    const difficultyHigh = Boolean(zone.difficultyHigh);
+    const difficultyHigh = zone.difficultyHigh === true;
 
-    const band = altura_m <= 3 ? 'small' : altura_m <= 5 ? 'medium' : 'large';
     const base =
       pruningType.includes('shap')
-        ? (band === 'small' ? 1.0 : band === 'medium' ? 1.75 : 2.75)
-        : (band === 'small' ? 1.25 : band === 'medium' ? 2.25 : 3.25);
-    const difficultyExtra = difficultyHigh && altura_m > 3 ? 0.5 : 0;
-    const over9Extra = altura_m > 9 ? 1.0 : 0;
+        ? (sizeBand === 'small' ? 1.0 : sizeBand === 'medium' ? 1.75 : sizeBand === 'large' ? 2.75 : 3.25)
+        : (sizeBand === 'small' ? 1.25 : sizeBand === 'medium' ? 2.25 : sizeBand === 'large' ? 3.25 : 3.75);
+    const difficultyExtra = difficultyHigh ? 0.5 : 0;
+    const over9Extra = sizeBand === 'over_9' ? 1.0 : 0;
 
     return base + difficultyExtra + over9Extra;
   };
@@ -1071,7 +1291,7 @@ const DetailsPage: React.FC = () => {
             return true;
         });
 
-        const totalHours = newGroups.reduce((acc, g) => acc + (Math.ceil(g.quantity * 0.15) || 1), 0);
+        const totalHours = newGroups.reduce((acc, g) => acc + (Math.ceil((g.area || 0) * 0.15) || 1), 0);
         setBookingData({ shrubGroups: newGroups, estimatedHours: totalHours });
         if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups, estimatedHours: totalHours });
     }
@@ -1171,6 +1391,7 @@ const DetailsPage: React.FC = () => {
 
   const handleContinue = () => {
     const isPhytosanitaryService = debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit');
+    const isWeedingService = debugService.toLowerCase().includes('desbroce') || debugService.toLowerCase().includes('malas hierbas');
     if (isPhytosanitaryService) {
       const zones = bookingData.phytosanitaryZones || [];
       if (zones.length === 0) {
@@ -1179,26 +1400,52 @@ const DetailsPage: React.FC = () => {
       }
       const firstInvalidZone = zones.find((zone) => getPhytosanitaryValidation(zone as any).issues.length > 0);
       if (firstInvalidZone) {
-        alert(getPhytosanitaryValidation(firstInvalidZone as any).issues[0]);
+        toast.error(getPhytosanitaryValidation(firstInvalidZone as any).issues[0]);
         return;
       }
       if (zones.some((zone) => !isPhytosanitaryZoneAnalyzed(zone as any))) {
-        alert('Completa el análisis de todas las zonas antes de continuar.');
+        toast.error('Completa el análisis de todas las zonas antes de continuar.');
+        return;
+      }
+    }
+
+    if (isWeedingService) {
+      const zone = bookingData.weedingZones?.[0];
+      const hasValidArea = Number(zone?.area || 0) > 0;
+      const hasValidState = zone?.state === 'normal' || zone?.state === 'dificultad_media' || zone?.state === 'dificultad_alta';
+      if (!zone || !hasValidArea || !hasValidState) {
+        toast.error('Completa la superficie y el estado de la parcela para continuar.');
+        return;
+      }
+      if (!weedingManualConfirmed) {
+        toast.error('Debes confirmar los datos del desbroce para continuar.');
         return;
       }
     }
 
     if (debugService === 'Poda de palmeras') {
         if (!bookingData.palmGroups || bookingData.palmGroups.length === 0) {
-             alert('Por favor, asegúrate de tener al menos un grupo de palmeras configurado.');
+             toast.error('Por favor, asegúrate de tener al menos un grupo de palmeras configurado.');
              return;
         }
         // Validate quantities
         const invalid = bookingData.palmGroups.some(g => g.quantity <= 0);
         if (invalid) {
-            alert('Tienes palmeras con cantidad 0 o vacía. Por favor, elimínalas o añade una cantidad válida para continuar.');
+            toast.error('Tienes palmeras con cantidad 0 o vacía. Por favor, elimínalas o añade una cantidad válida para continuar.');
             return;
         }
+    }
+    if (debugService === 'Poda de árboles') {
+      const validTrees = (bookingData.treeGroups || []).filter((g: any) => !((g as any).isFailed === true || g.analysisLevel === 3));
+      if (validTrees.length === 0) {
+        toast.error('Analiza al menos un árbol válido para continuar.');
+        return;
+      }
+      const pendingAccess = validTrees.some((g: any) => typeof g.difficultyHigh !== 'boolean');
+      if (pendingAccess) {
+        toast.error('Responde la pregunta de acceso en cada árbol antes de continuar.');
+        return;
+      }
     }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
@@ -1215,8 +1462,10 @@ const DetailsPage: React.FC = () => {
             lawnZones: bookingData.lawnZones,
             palmGroups: bookingData.palmGroups,
             phytosanitaryZones: bookingData.phytosanitaryZones,
+            weedingZones: bookingData.weedingZones,
             aiQuantity: bookingData.aiQuantity,
-            aiDifficulty: bookingData.aiDifficulty
+            aiDifficulty: bookingData.aiDifficulty,
+            wasteRemoval: bookingData.wasteRemoval
         });
     }
     
@@ -1293,7 +1542,7 @@ const DetailsPage: React.FC = () => {
       if (targetUrls.length === 0) {
         setAnalyzing(false);
         setBookingData({ isAnalyzing: false });
-        alert('Error al procesar las imágenes seleccionadas.');
+        toast.error('Error al procesar las imágenes seleccionadas.');
         return;
       }
 
@@ -1433,18 +1682,21 @@ const DetailsPage: React.FC = () => {
         const bestIndex = typeof t.indice_imagen === 'number' ? t.indice_imagen : 0;
         const globalIndex = indexMap[bestIndex] ?? indexMap[0] ?? indicesToProcess[0] ?? 0;
         const originalUrl = photoUrls[globalIndex];
-        const aiHeightMeters = Number(t.altura_m || 0);
+        const aiSizeBand =
+          normalizeTreeSizeBand(t.size_band);
+        const legacyHeight = aiSizeBand ? treeSizeBandToLegacyMeters(aiSizeBand) : 0;
         const analysisLevel = Number(t.nivel_analisis || 3);
         const newTreeGroups = [
           {
             id: `ai-tree-${Date.now()}`,
             pruningType: 'structural' as const,
             photoUrls: targetUrls.map((u, i) => photoUrls[indexMap[i]]).filter(Boolean),
-            aiHeightMeters,
-            difficultyHigh: Boolean(t.dificultad_alta),
+            aiSizeBand: aiSizeBand ?? undefined,
+            aiHeightMeters: Number.isFinite(legacyHeight) ? legacyHeight : 0,
+            difficultyHigh: undefined,
             analysisLevel,
             observations: t.observaciones || [],
-            isFailed: analysisLevel === 3 || !(Number.isFinite(aiHeightMeters) && aiHeightMeters > 0),
+            isFailed: analysisLevel === 3 || !aiSizeBand,
           }
         ].map((g) => ({ ...g, estimatedHours: estimateTreeZoneHours(g) }));
         
@@ -1595,8 +1847,8 @@ const DetailsPage: React.FC = () => {
                 });
             }
             else if (normService.includes('desbroce') || normService.includes('malas hierbas')) {
-                const qty = Math.max(0, Number(t.superficie_malas_hierbas_m2 || 0));
-                const state = normalizeDetectedWeedingState(t.estado_malas_hierbas);
+                const qty = Math.max(0, Number(t.superficie_malas_hierbas_m2 ?? t.superficie_m2 ?? 0));
+                const state = normalizeDetectedWeedingState(t.estado_malas_hierbas ?? t.estado_jardin);
                 
                 // Estimation (very basic for UI, real calculation in ProvidersPage)
                 const sMod = state.includes('alta') ? 1.5 : state.includes('media') ? 1.2 : 1.0;
@@ -1638,7 +1890,12 @@ const DetailsPage: React.FC = () => {
                 });
             }
             else if (normService.includes('poda de plantas')) {
-                const m2 = Number(t.superficie_m2 || 0);
+                const legacyTotal = Number(t.tamano_total_jardin_m2 || 0);
+                const legacyPercent = Number(t.porcentaje_superficie_plantas || 0);
+                const fallbackM2 = Number.isFinite(legacyTotal) && Number.isFinite(legacyPercent)
+                  ? Math.max(0, Math.round(legacyTotal * (legacyPercent / 100)))
+                  : 0;
+                const m2 = Number(t.superficie_m2 ?? fallbackM2 ?? 0);
                 
                 let size = 'pequeñas';
                 const aiSize = String(t.tamano_dominante || '').toLowerCase();
@@ -1800,9 +2057,9 @@ const DetailsPage: React.FC = () => {
         } else {
              // Generic fallback
              setAnalysisError({
-                 title: 'No se detectaron elementos',
-                 message: 'No hemos podido identificar elementos del servicio solicitado. Por favor, añádelos manualmente.',
-                 type: 'warning'
+                 title: 'Análisis fallido',
+                 message: 'Elemento a analizar impredecible',
+                 type: 'error'
              });
         }
 
@@ -1816,6 +2073,8 @@ const DetailsPage: React.FC = () => {
                  isAnalyzing: false
              });
         }
+
+        toast.error('Error en el análisis. Por favor, reintente.');
         
         // DEBUG: Capture Error
         setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
@@ -1871,8 +2130,8 @@ const DetailsPage: React.FC = () => {
     }
     if (lower.includes('limpieza') || lower.includes('desbroce') || lower.includes('hierbas')) {
         return {
-            title: 'Fotos de la zona',
-            description: 'Sube fotos que muestren la densidad de la vegetación a limpiar.'
+            title: 'Datos de la parcela',
+            description: 'Indica la superficie y el estado de la parcela para calcular el presupuesto.'
         };
     }
     if (lower.includes('fitosanit')) {
@@ -2179,7 +2438,7 @@ const DetailsPage: React.FC = () => {
 
       if (finalUrls.length === 0) {
           const message = 'Selecciona al menos una foto para analizar';
-          if (!options?.silent) alert(message);
+          if (!options?.silent) toast.error(message);
           return false;
       }
 
@@ -2221,9 +2480,6 @@ const DetailsPage: React.FC = () => {
           };
           setDebugLogs(currentDebugInfo);
 
-          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
-              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
-          }
 
           if (lawnTasks.length > 0) {
               const t = lawnTasks[0];
@@ -2281,7 +2537,38 @@ const DetailsPage: React.FC = () => {
               errors: [e],
               timestamp: new Date().toISOString()
           });
-          if (!options?.silent) alert(e.message || 'Error en el análisis');
+          
+          setBookingData(prev => {
+              const currentZones = prev.lawnZones || [];
+              const updatedZones = currentZones.map(z => {
+                  if (z.id === zoneId) {
+                      return { 
+                          ...z, 
+                          isFailed: true,
+                          analysisLevel: 3,
+                          observations: ['Error en el análisis. Por favor, reintente.']
+                      };
+                  }
+                  return z;
+              });
+              
+              const activeServiceId = prev.serviceIds?.[0] || '';
+              const nextServicesData = activeServiceId
+                  ? {
+                      ...prev.servicesData,
+                      [activeServiceId]: {
+                          ...(prev.servicesData?.[activeServiceId] || {}),
+                          lawnZones: updatedZones
+                      }
+                  }
+                  : prev.servicesData;
+
+              return {
+                  lawnZones: updatedZones,
+                  servicesData: nextServicesData
+              };
+          });
+          
           return false;
       } finally {
           setLawnAnalyzingZoneIds(prev => {
@@ -2720,7 +3007,7 @@ const DetailsPage: React.FC = () => {
           if (finalFaceAUrls.length === 0) {
               const message = 'Selecciona al menos una foto en Cara A para analizar';
               if (options?.silent) toast.error(message);
-              else alert(message);
+              else toast.error(message);
               return false;
           }
 
@@ -2758,9 +3045,6 @@ const DetailsPage: React.FC = () => {
           };
           setDebugLogs(currentDebugInfo);
 
-          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
-              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
-          }
 
           if (res.tareas && res.tareas.length > 0) {
               const t = res.tareas[0];
@@ -2850,9 +3134,37 @@ const DetailsPage: React.FC = () => {
               timestamp: new Date().toISOString()
           });
 
-          const message = e.message || 'Error en el análisis';
-          if (options?.silent) toast.error(message);
-          else alert(message);
+          setBookingData((prev) => {
+              const currentZones = prev.hedgeZones || [];
+              const updatedZones = currentZones.map(z => {
+                  if (z.id === id) {
+                      return { 
+                          ...z, 
+                          isFailed: true,
+                          analysisLevel: 3,
+                          observations: ['Error en el análisis. Por favor, reintente.']
+                      };
+                  }
+                  return z;
+              });
+              
+              const activeServiceId = prev.serviceIds?.[0] || '';
+              const nextServicesData = activeServiceId
+                  ? {
+                      ...prev.servicesData,
+                      [activeServiceId]: {
+                          ...(prev.servicesData?.[activeServiceId] || {}),
+                          hedgeZones: updatedZones
+                      }
+                  }
+                  : prev.servicesData;
+
+              return {
+                  hedgeZones: updatedZones,
+                  servicesData: nextServicesData
+              };
+          });
+          
           return false;
       } finally {
           setHedgeAnalyzingZoneIds(prev => {
@@ -2890,12 +3202,26 @@ const DetailsPage: React.FC = () => {
         id: `tree-${Date.now()}`,
         pruningType: 'structural' as const,
         photoUrls: [] as string[],
+        aiSizeBand: undefined as TreeSizeBand | undefined,
         aiHeightMeters: 0,
-        difficultyHigh: false
+        difficultyHigh: undefined as boolean | undefined
     };
     const newGroups = [...(bookingData.treeGroups || []), newGroup];
     setBookingData({ treeGroups: newGroups });
     if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: newGroups });
+    saveProgress();
+  };
+
+  const updateTreeGroup = (id: string, updates: any) => {
+    const next = [...(bookingData.treeGroups || [])];
+    const idx = next.findIndex((z) => z.id === id);
+    if (idx === -1) return;
+    next[idx] = { ...next[idx], ...updates };
+    const newHours = calculateTotalTreeHours(next);
+    setBookingData({ treeGroups: next, estimatedHours: newHours });
+    if (bookingData.serviceIds?.[0]) {
+      updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
+    }
     saveProgress();
   };
 
@@ -2976,7 +3302,282 @@ const DetailsPage: React.FC = () => {
     }
   };
 
-  const analyzeTreeGroup = async (id: string) => {
+  
+  const toggleTreePhotoSelection = (zoneId: string, photoIndex: number) => {
+      const groups = [...(bookingData.treeGroups || [])];
+      const idx = groups.findIndex(z => z.id === zoneId);
+      if (idx === -1) return;
+      const zone = groups[idx] as any;
+      const allUrls = zone.photoUrls || [];
+      const currentSelected = zone.selectedIndices ?? allUrls.map((_: any, i: number) => i);
+      const isSelected = currentSelected.includes(photoIndex);
+      
+      let newSelected;
+      if (isSelected) {
+          newSelected = currentSelected.filter((i: number) => i !== photoIndex);
+      } else {
+          newSelected = [...currentSelected, photoIndex].sort((a, b) => a - b);
+      }
+      
+      zone.selectedIndices = newSelected;
+      setBookingData({ treeGroups: groups });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups });
+  };
+
+  const removeTreePhoto = (zoneId: string, photoIndex: number) => {
+      const groups = [...(bookingData.treeGroups || [])];
+      const idx = groups.findIndex(z => z.id === zoneId);
+      if (idx === -1) return;
+      const zone = groups[idx] as any;
+      
+      zone.photoUrls = (zone.photoUrls || []).filter((_: any, i: number) => i !== photoIndex);
+      zone.selectedIndices = (zone.selectedIndices || []).filter((i: number) => i !== photoIndex).map((i: number) => i > photoIndex ? i - 1 : i);
+      zone.analyzedIndices = (zone.analyzedIndices || []).filter((i: number) => i !== photoIndex).map((i: number) => i > photoIndex ? i - 1 : i);
+      
+      setBookingData({ treeGroups: groups });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups });
+  };
+
+  const addPalmGroup = () => {
+    const newGroup = {
+        id: `palm-${Date.now()}`,
+        species: '',
+        height: '',
+        quantity: 1,
+        state: 'normal',
+        wasteRemoval: true,
+        photoUrls: [] as string[]
+    };
+    const newGroups = [...(bookingData.palmGroups || []), newGroup as any];
+    setBookingData({ palmGroups: newGroups });
+    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: newGroups });
+  };
+
+  const removePalmGroup = (id: string) => {
+      const currentGroups = bookingData.palmGroups || [];
+      const nextGroups = currentGroups.filter(g => g.id !== id);
+      setBookingData({ palmGroups: nextGroups });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: nextGroups });
+      updatePalmPricing(nextGroups);
+  };
+
+  const handlePalmFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files || e.target.files.length === 0) return;
+      const files = Array.from(e.target.files);
+      const group = (bookingData.palmGroups || []).find(g => g.id === id);
+      if (!group) return;
+      const currentPhotos = (group as any).photoUrls || [];
+      if (currentPhotos.length + files.length > 5) {
+          toast.error('Máximo 5 fotos por grupo');
+          return;
+      }
+      
+      const newIndices = files.map((_, i) => currentPhotos.length + i);
+      setPalmUploads(prev => {
+          const next = { ...prev };
+          const set = new Set(next[id] || []);
+          newIndices.forEach(i => set.add(i));
+          next[id] = set;
+          return next;
+      });
+
+      const nextGroups = [...(bookingData.palmGroups || [])];
+      const zIdx = nextGroups.findIndex(x => x.id === id);
+      const tempUrls = files.map(f => URL.createObjectURL(f));
+      nextGroups[zIdx] = { ...group, photoUrls: [...currentPhotos, ...tempUrls] } as any;
+      setBookingData({ palmGroups: nextGroups });
+
+      try {
+          const uploadedUrls = await Promise.all(files.map((f, i) => uploadFile(f, currentPhotos.length + i)));
+          const finalGroups = [...(bookingData.palmGroups || [])];
+          const finalZIdx = finalGroups.findIndex(x => x.id === id);
+          if (finalZIdx !== -1) {
+              const updatedUrls = [...currentPhotos];
+              uploadedUrls.forEach((url, i) => {
+                  if (url) updatedUrls.push(url);
+              });
+              finalGroups[finalZIdx] = { ...finalGroups[finalZIdx], photoUrls: updatedUrls } as any;
+              setBookingData({ palmGroups: finalGroups });
+              if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: finalGroups });
+          }
+      } catch (err) {
+          console.error('Error uploading palm photos:', err);
+          toast.error('Error al subir algunas fotos');
+      } finally {
+          setPalmUploads(prev => {
+              const next = { ...prev };
+              const set = new Set(next[id] || []);
+              newIndices.forEach(i => set.delete(i));
+              if (set.size === 0) delete next[id];
+              else next[id] = set;
+              return next;
+          });
+      }
+  };
+
+  const togglePalmPhotoSelection = (id: string, photoIndex: number) => {
+      const groups = [...(bookingData.palmGroups || [])];
+      const zIdx = groups.findIndex(z => z.id === id);
+      if (zIdx === -1) return;
+      const group = groups[zIdx] as any;
+      const currentSelected = group.selectedIndices ?? Array.from({ length: (group.photoUrls || []).length }, (_, i) => i);
+      const newSelected = currentSelected.includes(photoIndex)
+          ? currentSelected.filter((i: number) => i !== photoIndex)
+          : [...currentSelected, photoIndex].sort((a: number, b: number) => a - b);
+      group.selectedIndices = newSelected;
+      setBookingData({ palmGroups: groups });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: groups });
+  };
+
+  const removePalmPhoto = (id: string, photoIndex: number) => {
+      const groups = [...(bookingData.palmGroups || [])];
+      const zIdx = groups.findIndex(z => z.id === id);
+      if (zIdx === -1) return;
+      const group = groups[zIdx] as any;
+      group.photoUrls = (group.photoUrls || []).filter((_: any, i: number) => i !== photoIndex);
+      if (group.selectedIndices) {
+          group.selectedIndices = group.selectedIndices
+              .filter((i: number) => i !== photoIndex)
+              .map((i: number) => i > photoIndex ? i - 1 : i);
+      }
+      setBookingData({ palmGroups: groups });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: groups });
+  };
+
+  const analyzePalmGroup = async (id: string) => {
+      const groups = [...(bookingData.palmGroups || [])];
+      const idx = groups.findIndex(z => z.id === id);
+      if (idx === -1) return;
+      const group = groups[idx];
+      
+      try {
+          setPalmAnalyzingZoneIds(prev => new Set(prev).add(id));
+          const photoUrls = (group as any).photoUrls || [];
+          
+          const debugInputs = {
+             description: '',
+             photoCount: photoUrls.length,
+             selectedServiceIds: bookingData.serviceIds,
+             photoUrls: photoUrls,
+             serviceName: 'Poda de palmeras',
+             model: aiModel
+          };
+
+          const res = await estimateWorkWithAI(debugInputs);
+          
+          const currentDebugInfo: AnalysisDebugInfo = {
+              service: 'Poda de palmeras',
+              model: aiModel,
+              promptInputs: debugInputs,
+              rawResponse: res.rawResponse,
+              parsedResponse: res.palmas,
+              finalAnalysisData: {},
+              errors: [],
+              timestamp: new Date().toISOString()
+          };
+          setDebugLogs(currentDebugInfo);
+
+          if (!res.palmas || res.palmas.length === 0) {
+              throw new Error('No se han detectado palmeras claras en la imagen.');
+          }
+
+          const p0 = res.palmas[0];
+          group.species = p0.especie ? p0.especie.charAt(0).toUpperCase() + p0.especie.slice(1) : 'Desconocida';
+          group.height = p0.altura;
+          group.state = normalizePalmState(p0.estado);
+          group.analysisLevel = p0.nivel_analisis;
+          group.observations = p0.observaciones || [];
+          (group as any).isFailed = group.analysisLevel === 3;
+          (group as any).hasPhytosanitary = supportsPhytosanitaryForSpecies(group.species);
+          groups[idx] = group;
+
+          for (let i = 1; i < res.palmas.length; i++) {
+              const p = res.palmas[i];
+              groups.push({
+                  id: `palm-ai-${Date.now()}-${i}`,
+                  species: p.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Desconocida',
+                  height: p.altura,
+                  quantity: 1,
+                  state: normalizePalmState(p.estado),
+                  wasteRemoval: true,
+                  hasPhytosanitary: supportsPhytosanitaryForSpecies(p.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Desconocida'),
+                  analysisLevel: p.nivel_analisis,
+                  observations: p.observaciones || [],
+                  photoUrls: [...photoUrls],
+                  isFailed: p.nivel_analisis === 3
+              } as any);
+          }
+
+          await updatePalmPricing(groups);
+          setBookingData({ palmGroups: groups });
+          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: groups });
+          
+          currentDebugInfo.finalAnalysisData = { palmGroups: groups };
+          setDebugLogs({...currentDebugInfo});
+          
+          saveProgress();
+      } catch (e: any) {
+          console.error(e);
+          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
+              service: 'Poda de palmeras',
+              model: aiModel,
+              promptInputs: {},
+              rawResponse: {},
+              parsedResponse: {},
+              finalAnalysisData: {},
+              errors: [e],
+              timestamp: new Date().toISOString()
+          });
+          
+          setBookingData((prev) => {
+              const currentZones = prev.palmGroups || [];
+              const updatedZones = currentZones.map(z => {
+                  if (z.id === id) {
+                      return { 
+                          ...z, 
+                          isFailed: true,
+                          analysisLevel: 3,
+                          observations: [e.message || 'Error en el análisis. Por favor, reintente.']
+                      } as any;
+                  }
+                  return z;
+              });
+              
+              const activeServiceId = prev.serviceIds?.[0] || '';
+              const nextServicesData = activeServiceId
+                  ? {
+                      ...prev.servicesData,
+                      [activeServiceId]: {
+                          ...(prev.servicesData?.[activeServiceId] || {}),
+                          palmGroups: updatedZones
+                      }
+                  }
+                  : prev.servicesData;
+
+              return { ...prev, palmGroups: updatedZones, servicesData: nextServicesData };
+          });
+          
+          const currentZones = bookingData.palmGroups || [];
+          const updatedZones = currentZones.map(z => z.id === id ? { ...z, isFailed: true, analysisLevel: 3, observations: [e.message || 'Error en el análisis.'] } as any : z);
+          await updatePalmPricing(updatedZones);
+      } finally {
+          setPalmAnalyzingZoneIds(prev => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+          });
+      }
+  };
+
+  const analyzeAllPendingPalmGroups = async () => {
+      const groups = bookingData.palmGroups || [];
+      const pending = groups.filter(z => z.analysisLevel === undefined && ((z as any).photoUrls || []).length > 0);
+      for (const z of pending) {
+          await analyzePalmGroup(z.id);
+      }
+  };
+
+const analyzeTreeGroup = async (id: string) => {
       const groups = [...(bookingData.treeGroups || [])];
       const idx = groups.findIndex(z => z.id === id);
       if (idx === -1) return;
@@ -3010,18 +3611,22 @@ const DetailsPage: React.FC = () => {
           };
           setDebugLogs(currentDebugInfo);
 
-          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
-              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
-          }
 
           const a = Array.isArray(res.arboles) && res.arboles.length > 0 ? res.arboles[0] : null;
           if (!a) throw new Error('No se han detectado datos válidos en las imágenes.');
 
-          group.aiHeightMeters = Number((a as any).altura_m || 0);
-          group.difficultyHigh = Boolean((a as any).dificultad_alta);
+          const sizeBand =
+            normalizeTreeSizeBand((a as any).size_band);
+          const legacyHeight = sizeBand
+            ? treeSizeBandToLegacyMeters(sizeBand)
+            : 0;
+          group.aiSizeBand = sizeBand ?? undefined;
+          group.aiHeightMeters = Number.isFinite(legacyHeight) ? legacyHeight : 0;
+          // BLOQUE 2: no consumir dificultad IA para decisiones de negocio.
+          group.difficultyHigh = typeof group.difficultyHigh === 'boolean' ? group.difficultyHigh : undefined;
           group.analysisLevel = Number((a as any).nivel_analisis || 3);
           group.observations = (a as any).observaciones || [];
-          group.isFailed = group.analysisLevel === 3 || !(Number.isFinite(group.aiHeightMeters) && group.aiHeightMeters > 0);
+          group.isFailed = group.analysisLevel === 3 || !group.aiSizeBand;
           group.estimatedHours = estimateTreeZoneHours(group);
 
           groups[idx] = group;
@@ -3049,7 +3654,40 @@ const DetailsPage: React.FC = () => {
               timestamp: new Date().toISOString()
           });
           
-          alert(e.message || 'Error en el análisis');
+          setBookingData((prev) => {
+              const currentZones = prev.treeGroups || [];
+              const updatedZones = currentZones.map(z => {
+                  if (z.id === id) {
+                      return { 
+                          ...z, 
+                          isFailed: true,
+                          analysisLevel: 3,
+                          observations: ['Error en el análisis. Por favor, reintente.']
+                      };
+                  }
+                  return z;
+              });
+              
+              const newHours = calculateTotalTreeHours(updatedZones);
+              
+              const activeServiceId = prev.serviceIds?.[0] || '';
+              const nextServicesData = activeServiceId
+                  ? {
+                      ...prev.servicesData,
+                      [activeServiceId]: {
+                          ...(prev.servicesData?.[activeServiceId] || {}),
+                          treeGroups: updatedZones,
+                          estimatedHours: newHours
+                      }
+                  }
+                  : prev.servicesData;
+
+              return {
+                  treeGroups: updatedZones,
+                  estimatedHours: newHours,
+                  servicesData: nextServicesData
+              };
+          });
       } finally {
           setTreeAnalyzingZoneIds(prev => {
               const next = new Set(prev);
@@ -3074,11 +3712,13 @@ const DetailsPage: React.FC = () => {
   const addShrubGroup = () => {
     const newGroup = {
         id: `shrub-${Date.now()}`,
-        area: 1,
+        area: 0,
         size: 'pequeñas' as const,
         wasteRemoval: true,
         photoUrls: [] as string[],
-        files: [] as File[]
+        files: [] as File[],
+        selectedIndices: [] as number[],
+        analyzedIndices: [] as number[]
     };
     const newGroups = [...(bookingData.shrubGroups || []), newGroup];
     setBookingData({ shrubGroups: newGroups });
@@ -3102,10 +3742,11 @@ const DetailsPage: React.FC = () => {
             if (z.id === id) {
               return {
                 ...z,
-                area: 1,
-                size: 'pequeñas' as const,
+                area: 0,
                 analysisLevel: undefined,
-                observations: []
+                observations: [],
+                isFailed: false,
+                analyzedIndices: []
               };
             }
             return z;
@@ -3132,39 +3773,146 @@ const DetailsPage: React.FC = () => {
     }
   };
 
+  const toggleShrubPhotoSelection = (zoneId: string, photoIndex: number) => {
+      const groups = [...(bookingData.shrubGroups || [])];
+      const idx = groups.findIndex(z => z.id === zoneId);
+      if (idx === -1) return;
+      const zone = groups[idx];
+      const allUrls = zone.photoUrls || [];
+      const currentSelected = zone.selectedIndices ?? allUrls.map((_, i) => i);
+      const isSelected = currentSelected.includes(photoIndex);
+      
+      let newSelected;
+      if (isSelected) {
+          newSelected = currentSelected.filter(i => i !== photoIndex);
+      } else {
+          newSelected = [...currentSelected, photoIndex].sort((a, b) => a - b);
+      }
+      
+      zone.selectedIndices = newSelected;
+      setBookingData({ shrubGroups: groups });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+  };
+
+  const removeShrubPhoto = (zoneId: string, photoIndex: number) => {
+      const groups = [...(bookingData.shrubGroups || [])];
+      const idx = groups.findIndex(z => z.id === zoneId);
+      if (idx === -1) return;
+      const zone = groups[idx];
+      
+      zone.photoUrls = (zone.photoUrls || []).filter((_, i) => i !== photoIndex);
+      zone.selectedIndices = (zone.selectedIndices || []).filter(i => i !== photoIndex).map(i => i > photoIndex ? i - 1 : i);
+      zone.analyzedIndices = (zone.analyzedIndices || []).filter(i => i !== photoIndex).map(i => i > photoIndex ? i - 1 : i);
+      
+      setBookingData({ shrubGroups: groups });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+      saveProgress();
+  };
+
   const handleShrubFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
     const groups = [...(bookingData.shrubGroups || [])];
     const idx = groups.findIndex(z => z.id === id);
     if (idx === -1) return;
-
-    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
-    const urls = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
-    const validUrls = urls.filter((u): u is string => !!u);
+    const group = groups[idx];
+    const currentPhotos = group.photoUrls || [];
     
-    if (validUrls.length > 0) {
-        groups[idx].photoUrls = [...(groups[idx].photoUrls || []), ...validUrls];
-        setBookingData({ shrubGroups: groups });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+    if (currentPhotos.length + files.length > 5) {
+        toast.error('Máximo 5 fotos por grupo');
+        return;
     }
+    
+    const startIndex = currentPhotos.length;
+    const tempUrls = files.map(f => URL.createObjectURL(f));
+    group.photoUrls = [...currentPhotos, ...tempUrls];
+
+    const currentSelected = group.selectedIndices ?? currentPhotos.map((_, i) => i);
+    group.selectedIndices = [...currentSelected, ...files.map((_, i) => startIndex + i)];
+
+    setBookingData({ shrubGroups: groups });
+
+    const newIndices = tempUrls.map((_, i) => startIndex + i);
+    setShrubUploads(prev => {
+        const next = { ...prev };
+        const set = new Set(next[id] || []);
+        newIndices.forEach(i => set.add(i));
+        next[id] = set;
+        return next;
+    });
+
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const globalIndex = startIndex + i;
+            const compressed = await compressImage(files[i]);
+            const url = await uploadFile(compressed, globalIndex);
+            if (!url) continue;
+
+            setBookingData(prev => {
+                const latest = [...(prev.shrubGroups || [])];
+                const z = latest.find(x => x.id === id);
+                if (z) {
+                    const urls = [...(z.photoUrls || [])];
+                    urls[globalIndex] = url;
+                    z.photoUrls = urls;
+                }
+                if (prev.serviceIds?.[0]) updateServiceData(prev.serviceIds[0], { shrubGroups: latest });
+                return { shrubGroups: latest };
+            });
+        }
+    } catch (e) {
+        console.error('Upload failed:', e);
+        toast.error('Error al subir algunas imágenes');
+    } finally {
+        setShrubUploads(prev => {
+            const next = { ...prev };
+            const set = new Set(next[id] || []);
+            newIndices.forEach(i => set.delete(i));
+            if (set.size === 0) delete next[id];
+            else next[id] = set;
+            return next;
+        });
+    }
+
+    saveProgress();
   };
 
-  const analyzeShrubGroup = async (id: string) => {
+  const isShrubGroupAnalyzed = (group: { area?: number; analysisLevel?: number }) => Number(group.area || 0) > 0 || group.analysisLevel !== undefined;
+
+  const analyzeAllPendingShrubGroups = async () => {
+      const groups = bookingData.shrubGroups || [];
+      const ready = groups.filter(z => !isShrubGroupAnalyzed(z) && (z.photoUrls || []).length > 0 && (z.selectedIndices || []).length > 0);
+      if (ready.length === 0) {
+          toast.error('No hay grupos listos para analizar. Asegúrate de añadir fotos.');
+          return;
+      }
+      await Promise.allSettled(ready.map(z => analyzeShrubGroup(z.id, { silent: true })));
+  };
+
+  const analyzeShrubGroup = async (id: string, options?: { silent?: boolean }) => {
       const groups = [...(bookingData.shrubGroups || [])];
       const idx = groups.findIndex(z => z.id === id);
       if (idx === -1) return;
       const group = groups[idx];
+      const allUrls = group.photoUrls || [];
+      const indicesToAnalyze = group.selectedIndices ?? allUrls.map((_, i) => i);
+      const finalUrls = indicesToAnalyze.map(i => allUrls[i]).filter((u): u is string => u !== undefined && u !== '');
+
+      if (finalUrls.length === 0) {
+          if (!options?.silent) toast.error('Sube al menos una foto del macizo');
+          return;
+      }
       
       try {
           setAnalyzing(true);
+          setShrubAnalyzingZoneIds(prev => new Set(prev).add(id));
           
           // Debug Info Prep
           const debugInputs = {
              description: '',
-             photoCount: group.photoUrls?.length || 0,
+             photoCount: finalUrls.length,
              selectedServiceIds: bookingData.serviceIds,
-             photoUrls: group.photoUrls || [],
+             photoUrls: finalUrls,
              serviceName: 'Poda de plantas y arbustos',
              model: aiModel
           };
@@ -3184,22 +3932,27 @@ const DetailsPage: React.FC = () => {
           };
           setDebugLogs(currentDebugInfo);
 
-          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
-              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
-          }
 
           if (res.tareas && res.tareas.length > 0) {
               const t = res.tareas[0];
               
               let mappedSize: 'pequeñas' | 'medianas' | 'grandes' = 'pequeñas';
-              const aiSize = t.tamano_dominante || '';
+              const aiSize = String(t.tamano_dominante || '').toLowerCase();
               if (aiSize.includes('grandes')) mappedSize = 'grandes';
               else if (aiSize.includes('medianas')) mappedSize = 'medianas';
 
-              group.area = Number(t.superficie_m2 || 1);
+              const legacyTotal = Number(t.tamano_total_jardin_m2 || 0);
+              const legacyPercent = Number(t.porcentaje_superficie_plantas || 0);
+              const fallbackM2 = Number.isFinite(legacyTotal) && Number.isFinite(legacyPercent)
+                ? Math.max(0, Math.round(legacyTotal * (legacyPercent / 100)))
+                : 0;
+
+              group.area = Math.max(0, Number(t.superficie_m2 ?? fallbackM2 ?? 0));
               group.size = mappedSize;
               group.analysisLevel = t.nivel_analisis;
               group.observations = t.observaciones;
+              group.analyzedIndices = indicesToAnalyze;
+              (group as any).isFailed = Number(t.nivel_analisis || 3) === 3;
           } else {
              throw new Error('No se han detectado datos válidos en las imágenes.');
           }
@@ -3228,11 +3981,84 @@ const DetailsPage: React.FC = () => {
               timestamp: new Date().toISOString()
           });
           
-          alert(e.message || 'Error en el análisis');
+          setBookingData((prev) => {
+              const currentZones = prev.shrubGroups || [];
+              const updatedZones = currentZones.map(z => {
+                  if (z.id === id) {
+                      return { 
+                          ...z, 
+                          isFailed: true,
+                          analysisLevel: 3,
+                          observations: ['Error en el análisis. Por favor, reintente.']
+                      };
+                  }
+                  return z;
+              });
+              
+              const activeServiceId = prev.serviceIds?.[0] || '';
+              const nextServicesData = activeServiceId
+                  ? {
+                      ...prev.servicesData,
+                      [activeServiceId]: {
+                          ...(prev.servicesData?.[activeServiceId] || {}),
+                          shrubGroups: updatedZones
+                      }
+                  }
+                  : prev.servicesData;
+
+              return {
+                  shrubGroups: updatedZones,
+                  servicesData: nextServicesData
+              };
+          });
       } finally {
           setAnalyzing(false);
+          setShrubAnalyzingZoneIds(prev => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+          });
       }
   };
+  // --- Weeding Manual Logic (single-zone, no AI) ---
+  const createDefaultWeedingZone = () => ({
+      id: `weeding-${Date.now()}`,
+      area: 0,
+      state: 'normal' as const,
+      applyHerbicide: false,
+      wasteRemoval: true,
+      photoUrls: [] as string[],
+      files: [] as File[],
+      selectedIndices: [] as number[],
+      analyzedIndices: [] as number[]
+  });
+
+  const updateSingleWeedingZone = (updater: (zone: any) => any) => {
+      const current = bookingData.weedingZones || [];
+      const baseZone = current[0] || createDefaultWeedingZone();
+      const nextZone = updater(baseZone);
+      const nextZones = [nextZone];
+      setBookingData({ weedingZones: nextZones });
+      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { weedingZones: nextZones });
+      saveProgress();
+  };
+
+  const handleWeedingAreaChange = (value: string) => {
+      const parsed = Number(value.replace(',', '.'));
+      const safeArea = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+      updateSingleWeedingZone((zone) => ({
+          ...zone,
+          area: safeArea
+      }));
+  };
+
+  const handleWeedingStateChange = (state: 'normal' | 'dificultad_media' | 'dificultad_alta') => {
+      updateSingleWeedingZone((zone) => ({
+          ...zone,
+          state
+      }));
+  };
+
   const addPhytosanitaryZone = () => {
     const newZone = {
         id: `fum-${Date.now()}`,
@@ -3416,7 +4242,7 @@ const DetailsPage: React.FC = () => {
     }
     if (!zone.affectedType) issues.push('Selecciona la vegetación afectada.');
     if (!zone.type) issues.push('Selecciona el tratamiento solicitado.');
-    if (selectedPhotoCount < 2) issues.push('Selecciona al menos 2 fotos para analizar esta zona.');
+    if (selectedPhotoCount < 1) issues.push('Selecciona al menos 1 foto para analizar esta zona.');
     if (selectedPhotoCount > 5) issues.push('No puedes analizar más de 5 fotos por zona.');
     if (zone.type && zone.affectedType && !allowedTreatments.includes(normalizedTreatment as PhytosanitaryTreatmentValue)) {
       issues.push('El tratamiento no es compatible con la vegetación seleccionada.');
@@ -3482,12 +4308,12 @@ const DetailsPage: React.FC = () => {
       const indicesToAnalyze = zone.selectedIndices ?? allUrls.map((_, i) => i);
       const finalUrls = indicesToAnalyze.map(i => allUrls[i]).filter((u): u is string => u !== undefined);
       if (finalUrls.length === 0) {
-          if (!options?.silent) alert('Selecciona al menos una foto para analizar.');
+          if (!options?.silent) toast.error('Selecciona al menos una foto para analizar.');
           return false;
       }
       const validation = getPhytosanitaryValidation(zone);
       if (validation.issues.length > 0) {
-          if (!options?.silent) alert(validation.issues[0]);
+          if (!options?.silent) toast.error(validation.issues[0]);
           return false;
       }
       
@@ -3561,9 +4387,6 @@ const DetailsPage: React.FC = () => {
           };
           setDebugLogs({ ...currentDebugInfo });
           
-          if (res.reasons && res.reasons.some(r => r === 'AI_FAILED_CRITICAL')) {
-              throw new Error('La IA no ha podido procesar las imágenes. Por favor, inténtalo de nuevo.');
-          }
 
           if (resData.metricas_fitosanitarias) {
               const rawMetrics = resData.metricas_fitosanitarias;
@@ -3650,7 +4473,38 @@ const DetailsPage: React.FC = () => {
             failed: true
           };
           setDebugLogs({ ...currentDebugInfo });
-          if (!options?.silent) alert(e.message || 'Error en el análisis');
+          
+          setBookingData((prev) => {
+              const currentZones = prev.phytosanitaryZones || [];
+              const updatedZones = currentZones.map(z => {
+                  if (z.id === id) {
+                      return { 
+                          ...z, 
+                          isFailed: true,
+                          analysisLevel: 3,
+                          observations: ['Error en el análisis. Por favor, reintente.']
+                      };
+                  }
+                  return z;
+              });
+              
+              const activeServiceId = prev.serviceIds?.[0] || '';
+              const nextServicesData = activeServiceId
+                  ? {
+                      ...prev.servicesData,
+                      [activeServiceId]: {
+                          ...(prev.servicesData?.[activeServiceId] || {}),
+                          phytosanitaryZones: updatedZones
+                      }
+                  }
+                  : prev.servicesData;
+
+              return {
+                  phytosanitaryZones: updatedZones,
+                  servicesData: nextServicesData
+              };
+          });
+          
           return false;
       } finally {
           setPhytosanitaryAnalyzingZoneIds(prev => {
@@ -3671,7 +4525,7 @@ const DetailsPage: React.FC = () => {
       return validation.issues.length === 0;
     });
     if (analyzable.length === 0) {
-      toast.error('Completa vegetación, altura contextual y 2-5 fotos en las zonas pendientes');
+      toast.error('Completa vegetación, altura contextual y 1-5 fotos en las zonas pendientes');
       return;
     }
 
@@ -3722,7 +4576,7 @@ const DetailsPage: React.FC = () => {
             <h2 className="text-lg font-bold text-gray-900">
                 {serviceContent.title}
             </h2>
-            {(!debugService.includes('Corte de césped') && !debugService.includes('césped')) && (
+            {(!debugService.includes('Corte de césped') && !debugService.includes('césped') && !debugService.toLowerCase().includes('desbroce') && !debugService.toLowerCase().includes('malas hierbas')) && (
                 <span className="text-sm text-gray-500">{photos.length}/5</span>
             )}
           </div>
@@ -3732,12 +4586,14 @@ const DetailsPage: React.FC = () => {
 
              <div className="flex flex-col gap-4">
                {(() => {
-                   const isLawnService = debugService.includes('Corte de césped') || debugService.includes('césped');
-                   const isHedgeService = debugService.includes('seto') || debugService.includes('Seto');
-                   const isTreeService = debugService.includes('árbol') || debugService.includes('arbol');
-                   const isShrubService = debugService.includes('poda de plantas') || (debugService.includes('poda') && !debugService.includes('árbol') && !debugService.includes('palmera'));
-                   const isPhytosanitaryService = debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit');
-                   const isWeedingService = debugService.toLowerCase().includes('desbroce') || debugService.toLowerCase().includes('malas hierbas');
+                   const normalizedServiceName = (debugService || '').toLowerCase();
+                   const isLawnService = normalizedServiceName.includes('corte de césped') || normalizedServiceName.includes('césped') || normalizedServiceName.includes('cesped');
+                   const isHedgeService = normalizedServiceName.includes('seto');
+                   const isTreeService = normalizedServiceName.includes('árbol') || normalizedServiceName.includes('arbol');
+                   const isPalmService = normalizedServiceName.includes('palmera');
+                   const isShrubService = normalizedServiceName.includes('poda de plantas') || (normalizedServiceName.includes('poda') && !isTreeService && !isPalmService);
+                   const isPhytosanitaryService = normalizedServiceName.includes('fitosanit');
+                   const isWeedingService = normalizedServiceName.includes('desbroce') || normalizedServiceName.includes('malas hierbas');
                    
                    if (isLawnService) {
                      return (
@@ -3765,38 +4621,7 @@ const DetailsPage: React.FC = () => {
                                 const isZoneAnalyzing = lawnAnalyzingZoneIds.has(zone.id);
                                 
                                if (isZoneAnalyzing) {
-                                    return (
-                                        <div key={zone.id} className="relative h-64 w-full flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-100 overflow-hidden shadow-inner mb-4">
-                                            <div className="absolute inset-0 z-0 opacity-20" 
-                                                 style={{
-                                                     backgroundImage: 'linear-gradient(#16a34a 1px, transparent 1px), linear-gradient(90deg, #16a34a 1px, transparent 1px)',
-                                                     backgroundSize: '20px 20px',
-                                                     transform: 'perspective(500px) rotateX(60deg) translateY(-50px) scale(1.5)',
-                                                     animation: 'gridMove 4s linear infinite'
-                                                 }} 
-                                            />
-                                            <div className="relative z-10 w-24 h-24 flex items-center justify-center mb-4">
-                                                <div className="absolute w-full h-full rounded-full border-2 border-green-500/30 animate-ping" />
-                                                <div className="absolute w-3/4 h-3/4 rounded-full border border-green-500/50 animate-ping delay-150" />
-                                                <div className="relative z-20 bg-white p-3 rounded-full shadow-lg border border-green-100">
-                                                    <Sprout className="w-8 h-8 text-green-600 animate-pulse" />
-                                                </div>
-                                                <div className="absolute w-full h-full rounded-full border-t-2 border-r-2 border-green-500 animate-spin" />
-                                            </div>
-                                            <div className="relative z-10 text-center">
-                                                <p className="text-sm font-semibold text-gray-800 animate-pulse transition-all duration-300">
-                                                    {loadingMessage}
-                                                </p>
-                                                <p className="text-xs text-gray-400 mt-1">Analizando estructura y vegetación...</p>
-                                            </div>
-                                            <style>{`
-                                                @keyframes gridMove {
-                                                    0% { background-position: 0 0; }
-                                                    100% { background-position: 0 20px; }
-                                                }
-                                            `}</style>
-                                        </div>
-                                    );
+                                    return <AnalysisLoadingAnimation key={zone.id} message={loadingMessage} />;
                                 }
 
                                 return (
@@ -3822,213 +4647,77 @@ const DetailsPage: React.FC = () => {
                                          </div>
 
                                          {/* Photos Area for this Zone */}
-                                         <div className="mb-4">
-                                             <div className="text-xs text-gray-500 mb-2 flex justify-between items-center">
-                                                 <span>Fotos de esta zona ({allPhotos.length})</span>
-                                                 {isAnalyzed && expandedZoneIds.has(zone.id) && (
-                                                     <button 
-                                                         onClick={() => {
-                                                             const next = new Set(expandedZoneIds);
-                                                             next.delete(zone.id);
-                                                             setExpandedZoneIds(next);
-                                                         }}
-                                                         className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1"
-                                                     >
-                                                         <ChevronLeft className="w-3 h-3 rotate-90" />
-                                                         Ocultar fotos
-                                                     </button>
-                                                 )}
-                                             </div>
-
-                                             {/* Stack View (Only if analyzed and collapsed) */}
-                                             {isAnalyzed && !expandedZoneIds.has(zone.id) && allPhotos.length > 0 ? (
-                                                 <div 
-                                                     onClick={() => {
-                                                         const next = new Set(expandedZoneIds);
-                                                         next.add(zone.id);
-                                                         setExpandedZoneIds(next);
-                                                     }}
-                                                     className="relative h-32 w-full flex items-center justify-center cursor-pointer group py-4 transition-all duration-500 ease-in-out bg-gray-50/50 rounded-xl border border-dashed border-gray-200 hover:bg-green-50/30 hover:border-green-200"
-                                                 >
-                                                     {allPhotos.slice(0, 3).map((photo, i) => (
-                                                         <div 
-                                                             key={i}
-                                                             className="absolute transition-all duration-500 ease-in-out shadow-lg rounded-xl overflow-hidden border-2 border-white bg-white"
-                                                             style={{
-                                                                 width: '90px',
-                                                                 height: '90px',
-                                                                 transform: `translateX(${i * 12}px) rotate(${i * 3}deg)`,
-                                                                 zIndex: 10 - i,
-                                                                 opacity: 1 - (i * 0.1)
-                                                             }}
-                                                         >
-                                                             <img 
-                                                                 src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
-                                                                 className="w-full h-full object-cover" 
-                                                                 alt=""
-                                                             />
-                                                         </div>
-                                                     ))}
-                                                     <div className="absolute bottom-2 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-medium text-gray-700 shadow-sm z-20 translate-y-1 group-hover:-translate-y-1 transition-transform border border-gray-100 flex items-center gap-1.5">
-                                                         <Image className="w-3 h-3" />
-                                                         Editar fotos
-                                                     </div>
-                                                 </div>
-                                             ) : (
-                                                 /* List View */
-                                                 <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide min-h-[110px]">
-                                                     {allPhotos.map((p, i) => {
-                                                         const isSelected = zone.selectedIndices?.includes(i) ?? true;
-                                                         const isAnalyzedPhoto = zone.analyzedIndices?.includes(i);
-                                                         
-                                                         return (
-                                                             <div 
-                                                                 key={i} 
-                                                                 className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`}
-                                                                 onClick={() => toggleLawnPhotoSelection(zone.id, i)}
-                                                             >
-                                                                 <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzedPhoto ? 'opacity-80' : 'opacity-100'}`}>
-                                                                    <img 
-                                                                        src={typeof p === 'string' ? p : URL.createObjectURL(p)} 
-                                                                        alt={`Foto ${i}`}
-                                                                        className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${lawnUploads[zone.id]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
-                                                                    />
-                                                                    
-                                                                    {/* Uploading Overlay */}
-                                                                    {lawnUploads[zone.id]?.has(i) && (
-                                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
-                                                                            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                        </div>
-                                                                    )}
-                                                                    
-                                                                    {/* Analyzed Badge */}
-                                                                     {isAnalyzedPhoto && (
-                                                                         <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
-                                                                             Analizada
-                                                                         </div>
-                                                                     )}
-                                                                     
-                                                                     {/* Selection Checkbox */}
-                                                                     <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500 scale-100' : 'bg-black/20 border-white/80 group-hover:bg-black/40 scale-90 group-hover:scale-100'}`}>
-                                                                         {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-                                                                     </div>
-                                                                 </div>
-                                                                 
-                                                                 {!isZoneAnalyzing && (
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); removePhotoFromZone(zone.id, i); }}
-                                                                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10"
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                )}
-                                                             </div>
-                                                         );
-                                                     })}
-                                                     
-                                                     {/* Add Photo Button */}
-                                                    {!isZoneAnalyzing && allPhotos.length < 5 && (
-                                                        <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
-                                                             <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                                                                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
-                                                                     <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
-                                                                 </div>
-                                                                 <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
-                                                                 <input 
-                                                                     type="file" 
-                                                                     accept="image/*" 
-                                                                     multiple 
-                                                                     className="hidden" 
-                                                                     onChange={(e) => handleLawnFileSelect(zone.id, e)}
-                                                                 />
-                                                             </label>
-                                                         </div>
-                                                     )}
-                                                 </div>
-                                             )}
-                                         </div>
+                                         <ZonePhotoGallery
+                                             photos={allPhotos}
+                                             uploadingIndices={lawnUploads[zone.id]}
+                                             selectedIndices={zone.selectedIndices}
+                                             analyzedIndices={zone.analyzedIndices}
+                                             isAnalyzing={isZoneAnalyzing}
+                                             isAnalyzed={isAnalyzed}
+                                             onToggleSelection={(i) => toggleLawnPhotoSelection(zone.id, i)}
+                                             onRemovePhoto={(i) => removePhotoFromZone(zone.id, i)}
+                                             onAddPhotos={(e) => handleLawnFileSelect(zone.id, e)}
+                                         />
 
                                          {/* Actions / Results */}
                                          <div className="mt-2">
-                                             <button
-                                                 onClick={() => analyzeLawnZone(zone.id)}
-                                                 disabled={isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0}
-                                                 className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3 transition-colors ${
-                                                     isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0
-                                                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                                                     : 'bg-green-600 text-white hover:bg-green-700'
-                                                 }`}
-                                             >
-                                                 {isZoneAnalyzing ? (
-                                                     <>
-                                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
-                                                        Analizando...
-                                                     </>
-                                                 ) : (
-                                                     isAnalyzed ? 'Reanalizar esta zona' : 'Analizar esta zona'
-                                                 )}
-                                             </button>
+                                             {!isAnalyzed && allPhotos.length > 0 && (
+                                                 <ZoneActionButton
+                                                     onClick={() => analyzeLawnZone(zone.id)}
+                                                     isAnalyzing={isZoneAnalyzing}
+                                                     isAnalyzed={isAnalyzed}
+                                                     disabled={isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0)}
+                                                 />
+                                             )}
                                              {allPhotos.length === 0 && (
-                                                 <p className="text-xs text-center text-amber-600 mt-2">
+                                                 <p className="text-xs text-center text-amber-600 mt-2 mb-4">
                                                      Añade al menos una foto para analizar
                                                  </p>
                                              )}
                                          </div>
 
                                          {isAnalyzed && (
-                                             <div className="mt-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 relative overflow-hidden">
-                                                <div className={`absolute top-0 left-0 w-1 h-full ${
-                                                    zone.analysisLevel === 3 ? 'bg-red-500' :
-                                                    zone.analysisLevel === 2 ? 'bg-amber-500' : 'bg-green-500'
-                                                }`}></div>
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                       {zone.analysisLevel === 3 ? (
-                                                           <div className="mt-1 text-xs font-medium text-red-600">
-                                                               Análisis fallido
-                                                           </div>
-                                                       ) : (
-                                                           <>
-                                                               <h4 className="font-semibold text-gray-900 text-sm">
-                                                                   {zone.species || 'Césped general'}
-                                                               </h4>
-                                                               <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
-                                                                   <span>
-                                                                       Superficie: <span className="font-medium text-gray-900">{zone.quantity} m²</span>
-                                                                   </span>
-                                                                   <span className="text-gray-300">|</span>
-                                                                   <span>
-                                                                       Estado: <span className="font-medium text-gray-900 capitalize">{zone.state}</span>
-                                                                   </span>
-                                                               </div>
-                                                               <div className={`mt-2 text-xs font-medium ${
-                                                                   zone.analysisLevel === 1 ? 'text-green-600' : 'text-amber-600'
-                                                               }`}>
-                                                                   {zone.analysisLevel === 1 ? 'Análisis fiable' : 'Análisis con observaciones'}
-                                                               </div>
-                                                           </>
-                                                       )}
-                                                    </div>
-                                                    <button 
-                                                        onClick={() => removeLawnZone(zone.id)}
-                                                        className="text-gray-400 hover:text-red-500 transition-colors"
-                                                        title="Eliminar resultado"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-            
-                                                {/* Observations */}
-                                                {zone.observations && zone.observations.length > 0 && (
-                                                   <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-100">
-                                                       <div className="font-medium mb-1 text-gray-700">Observaciones:</div>
-                                                       <ul className="list-disc list-inside space-y-0.5 ml-1">
-                                                           {zone.observations.map((obs, k) => (
-                                                               <li key={k}>{obs}</li>
-                                                           ))}
-                                                       </ul>
-                                                   </div>
+                                             <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                                {zone.isFailed || zone.analysisLevel === 3 ? (
+                                                    <AnalysisFailedCard 
+                                                        message={zone.observations?.[0]} 
+                                                        onReanalyze={() => analyzeLawnZone(zone.id)} 
+                                                    />
+                                                ) : (
+                                                    <ServiceResultCard
+                                                        title={zone.species || 'Césped general'}
+                                                        analysisLevel={zone.analysisLevel}
+                                                        stats={[
+                                                            { label: 'Superficie', value: `${zone.quantity} m²` },
+                                                            { label: 'Estado', value: <span className="capitalize">{zone.state}</span> }
+                                                        ]}
+                                                        observations={zone.observations}
+                                                        onDelete={() => {
+                                                            openConfirm({
+                                                                title: '¿Eliminar resultado?',
+                                                                message: 'Se borrarán los datos del análisis, pero las fotos se mantendrán para poder re-analizar.',
+                                                                onConfirm: () => {
+                                                                    const zones = [...(bookingData.lawnZones || [])];
+                                                                    const idx = zones.findIndex(z => z.id === zone.id);
+                                                                    if (idx !== -1) {
+                                                                        zones[idx] = { ...zones[idx], quantity: 0, species: '', state: 'normal', analysisLevel: undefined, observations: [], analyzedIndices: [] };
+                                                                        setBookingData({ lawnZones: zones });
+                                                                        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { lawnZones: zones });
+                                                                    }
+                                                                }
+                                                            });
+                                                        }}
+                                                    />
                                                 )}
+                                                
+                                                <div className="mt-3">
+                                                    <ZoneActionButton
+                                                         onClick={() => analyzeLawnZone(zone.id)}
+                                                         isAnalyzing={isZoneAnalyzing}
+                                                         isAnalyzed={isAnalyzed}
+                                                         disabled={isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0}
+                                                     />
+                                                </div>
                                              </div>
                                          )}
                                      </div>
@@ -4085,7 +4774,7 @@ const DetailsPage: React.FC = () => {
                                      </p>
                                      <button 
                                          onClick={addHedgeZone}
-                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4"
                                      >
                                          + Añadir primera zona
                                      </button>
@@ -4097,41 +4786,22 @@ const DetailsPage: React.FC = () => {
                                 const isAnalyzed = isHedgeZoneAnalyzed(normalizedZone);
                                 const isZoneAnalyzing = hedgeAnalyzingZoneIds.has(zone.id);
                                 const faceAUrls = normalizedZone.faceA.photoUrls || [];
-                                const faceASelected = normalizedZone.faceA.selectedIndices ?? faceAUrls.map((_: string, i: number) => i);
+                                const faceASelected = normalizedZone.faceA.selectedIndices ?? Array.from({ length: faceAUrls.length }, (_, i) => i);
                                 const hasFaceAPhotos = faceAUrls.length > 0;
                                 const hasFaceASelected = faceASelected.length > 0;
                                 const totalPhotos = (normalizedZone.faceA.photoUrls?.length || 0) + (normalizedZone.faceB.photoUrls?.length || 0);
 
                                 if (isZoneAnalyzing) {
+                                    return <AnalysisLoadingAnimation key={zone.id} message="Analizando esta zona..." />;
+                                }
+
+                                if ((zone as any).isFailed || zone.analysisLevel === 3) {
                                     return (
-                                        <div key={zone.id} className="relative h-64 w-full flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-100 overflow-hidden shadow-inner mb-4">
-                                            <div className="absolute inset-0 z-0 opacity-20" 
-                                                 style={{
-                                                     backgroundImage: 'linear-gradient(#16a34a 1px, transparent 1px), linear-gradient(90deg, #16a34a 1px, transparent 1px)',
-                                                     backgroundSize: '20px 20px',
-                                                     transform: 'perspective(500px) rotateX(60deg) translateY(-50px) scale(1.5)',
-                                                     animation: 'gridMove 4s linear infinite'
-                                                 }} 
-                                            />
-                                            <div className="relative z-10 w-24 h-24 flex items-center justify-center mb-4">
-                                                <div className="absolute w-full h-full rounded-full border-2 border-green-500/30 animate-ping" />
-                                                <div className="absolute w-3/4 h-3/4 rounded-full border border-green-500/50 animate-ping delay-150" />
-                                                <div className="relative z-20 bg-white p-3 rounded-full shadow-lg border border-green-100">
-                                                    <Scissors className="w-8 h-8 text-green-600 animate-pulse" />
-                                                </div>
-                                                <div className="absolute w-full h-full rounded-full border-t-2 border-r-2 border-green-500 animate-spin" />
-                                            </div>
-                                            <div className="relative z-10 text-center">
-                                                <p className="text-sm font-semibold text-gray-800 animate-pulse transition-all duration-300">Analizando esta zona...</p>
-                                                <p className="text-xs text-gray-400 mt-1">Analizando estructura y vegetación...</p>
-                                            </div>
-                                            <style>{`
-                                                @keyframes gridMove {
-                                                    0% { background-position: 0 0; }
-                                                    100% { background-position: 0 20px; }
-                                                }
-                                            `}</style>
-                                        </div>
+                                        <AnalysisFailedCard 
+                                            key={zone.id}
+                                            message={zone.observations?.[0]} 
+                                            onReanalyze={() => analyzeHedgeZone(zone.id)} 
+                                        />
                                     );
                                 }
 
@@ -4171,70 +4841,22 @@ const DetailsPage: React.FC = () => {
                                                                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">Opcional</span>
                                                                )}
                                                            </div>
-                                                           <span className="text-xs text-gray-500">{allFacePhotos.length}/5</span>
                                                        </div>
-                                                       <div className="flex flex-row overflow-x-auto gap-3 pb-1 snap-x items-center scrollbar-hide min-h-[110px]">
-                                                           {allFacePhotos.map((p, i) => {
-                                                               const isSelected = face.selectedIndices?.includes(i) ?? true;
-                                                               const isAnalyzedPhoto = face.analyzedIndices?.includes(i);
+                                                       
+                                                       <ZonePhotoGallery
+                                                           photos={allFacePhotos}
+                                                           uploadingIndices={hedgeUploads[uploadKey] || new Set()}
+                                                           selectedIndices={face.selectedIndices ?? Array.from({ length: allFacePhotos.length }, (_, i) => i)}
+                                                           analyzedIndices={face.analyzedIndices ?? []}
+                                                           isAnalyzing={isZoneAnalyzing}
+                                                           isAnalyzed={isAnalyzed}
+                                                           maxPhotos={5}
+                                                           onToggleSelection={(i) => toggleHedgePhotoSelection(zone.id, faceBlock.key, i)}
+                                                           onRemovePhoto={(i) => removePhotoFromHedgeZone(zone.id, faceBlock.key, i)}
+                                                           onAddPhotos={(e) => handleHedgeFileSelect(zone.id, faceBlock.key, e)}
+                                                           emptyText={`Fotos ${faceBlock.title}`}
+                                                       />
 
-                                                               return (
-                                                                   <div
-                                                                       key={i}
-                                                                       className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`}
-                                                                       onClick={() => toggleHedgePhotoSelection(zone.id, faceBlock.key, i)}
-                                                                   >
-                                                                       <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzedPhoto ? 'opacity-80' : 'opacity-100'}`}>
-                                                                           <img
-                                                                               src={typeof p === 'string' ? p : URL.createObjectURL(p)}
-                                                                               alt={`Foto ${i}`}
-                                                                               className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${hedgeUploads[uploadKey]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
-                                                                           />
-                                                                           {hedgeUploads[uploadKey]?.has(i) && (
-                                                                               <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
-                                                                                   <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                               </div>
-                                                                           )}
-                                                                           {isAnalyzedPhoto && (
-                                                                               <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
-                                                                                   Analizada
-                                                                               </div>
-                                                                           )}
-                                                                           <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500 scale-100' : 'bg-black/20 border-white/80 group-hover:bg-black/40 scale-90 group-hover:scale-100'}`}>
-                                                                               {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-                                                                           </div>
-                                                                       </div>
-
-                                                                       {!isZoneAnalyzing && (
-                                                                           <button
-                                                                               onClick={(e) => { e.stopPropagation(); removePhotoFromHedgeZone(zone.id, faceBlock.key, i); }}
-                                                                               className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10"
-                                                                           >
-                                                                               <Trash2 className="w-3.5 h-3.5" />
-                                                                           </button>
-                                                                       )}
-                                                                   </div>
-                                                               );
-                                                           })}
-
-                                                           {!isZoneAnalyzing && allFacePhotos.length < 5 && (
-                                                               <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
-                                                                   <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                                                                       <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
-                                                                           <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
-                                                                       </div>
-                                                                       <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
-                                                                       <input
-                                                                           type="file"
-                                                                           accept="image/*"
-                                                                           multiple
-                                                                           className="hidden"
-                                                                           onChange={(e) => handleHedgeFileSelect(zone.id, faceBlock.key, e)}
-                                                                       />
-                                                                   </label>
-                                                               </div>
-                                                           )}
-                                                       </div>
                                                        {faceBlock.required && allFacePhotos.length === 0 && (
                                                            <p className="mt-2 text-xs text-amber-600">
                                                                Debes subir al menos una foto de la Cara A para continuar.
@@ -4246,132 +4868,319 @@ const DetailsPage: React.FC = () => {
                                          </div>
 
                                         <div className="mt-2">
-                                            <button
-                                                onClick={() => analyzeHedgeZone(zone.id)}
-                                                disabled={isZoneAnalyzing || !hasFaceAPhotos || !hasFaceASelected}
-                                                className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3 transition-colors ${
-                                                    isZoneAnalyzing || !hasFaceAPhotos || !hasFaceASelected
-                                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                    : 'bg-green-600 text-white hover:bg-green-700'
-                                                }`}
-                                            >
-                                                {isZoneAnalyzing ? (
-                                                    <>
-                                                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
-                                                       Analizando...
-                                                    </>
-                                                ) : (
-                                                    isAnalyzed ? 'Reanalizar esta zona' : 'Analizar esta zona'
-                                                )}
-                                            </button>
-                                            {!hasFaceAPhotos && (
-                                                <p className="text-xs text-center text-amber-600 mt-2">
-                                                    Añade al menos una foto en Cara A para analizar
-                                                </p>
-                                            )}
+                                            <ZoneActionButton
+                                                 isAnalyzing={isZoneAnalyzing}
+                                                 isAnalyzed={isAnalyzed}
+                                                 disabled={isZoneAnalyzing || !hasFaceAPhotos || !hasFaceASelected}
+                                                 onClick={() => analyzeHedgeZone(zone.id)}
+                                                 analyzingText="Analizando..."
+                                                reanalyzeText="Reanalizar esta zona"
+                                                analyzeText="Analizar esta zona"
+                                            />
                                         </div>
 
                                         {isAnalyzed && (
-                                            <div className="mt-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 relative overflow-hidden">
-                                               <div className={`absolute top-0 left-0 w-1 h-full ${
-                                                   zone.analysisLevel === 3 ? 'bg-red-500' :
-                                                   zone.analysisLevel === 2 ? 'bg-amber-500' : 'bg-green-500'
-                                               }`}></div>
-                                               <div className="flex justify-between items-start">
-                                                   <div>
-                                                       {zone.analysisLevel === 3 ? (
-                                                           <div className="mt-1 text-xs font-medium text-red-600">
-                                                               Análisis fallido
-                                                           </div>
-                                                       ) : (
-                                                           <>
-                                                               <h4 className="font-semibold text-gray-900 text-sm">
-                                                                  {zone.type || '1-2m'}
-                                                               </h4>
-                                                               <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
-                                                                   <span>
-                                                                       Longitud: <span className="font-medium text-gray-900">{zone.length} m</span>
-                                                                   </span>
-                                                                   <span className="text-gray-300">|</span>
-                                                                   <span>
-                                                                       Altura: <span className="font-medium text-gray-900">{zone.height}</span>
-                                                                   </span>
-                                                                   <span className="text-gray-300">|</span>
-                                                                   <span>
-                                                                       Estado: <span className="font-medium text-gray-900 capitalize">{zone.state || 'normal'}</span>
-                                                                   </span>
-                                                                   <span className="text-gray-300">|</span>
-                                                                   <span>
-                                                                       Caras analizadas: <span className="font-medium text-gray-900">{Number((zone as any).faces_to_trim ?? (zone.hasBackFaceTrim ? 2 : 1))}</span>
-                                                                   </span>
-                                                               </div>
-                                                               <div className={`mt-2 text-xs font-medium ${
-                                                                   zone.analysisLevel === 1 ? 'text-green-600' : 'text-amber-600'
-                                                               }`}>
-                                                                   {zone.analysisLevel === 1 ? 'Análisis fiable' : 'Análisis con observaciones'}
-                                                               </div>
-                                                           </>
-                                                       )}
-                                                   </div>
-                                                   <button 
-                                                       onClick={() => removeHedgeZone(zone.id)}
-                                                       className="absolute top-3 right-3 text-gray-400 hover:text-red-500 transition-colors"
-                                                       title="Eliminar resultado"
-                                                   >
-                                                       <Trash2 className="w-4 h-4" />
-                                                   </button>
-                                               </div>
-
-                                               {zone.analysisLevel !== undefined && zone.analysisLevel >= 2 && zone.observations && zone.observations.length > 0 && (
-                                                  <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-100">
-                                                      <div className="font-medium mb-1 text-gray-700">Observaciones:</div>
-                                                      <ul className="list-disc list-inside space-y-0.5 ml-1">
-                                                          {zone.observations.map((obs, k) => (
-                                                              <li key={k}>{obs}</li>
-                                                          ))}
-                                                      </ul>
-                                                  </div>
-                                               )}
-                                            </div>
+                                            <ServiceResultCard
+                                                title={zone.type || '1-2m'}
+                                                analysisLevel={zone.analysisLevel}
+                                                stats={[
+                                                    { label: 'Longitud', value: `${zone.length} m` },
+                                                    { label: 'Altura', value: zone.height },
+                                                    { label: 'Estado', value: <span className="capitalize">{zone.state || 'normal'}</span> },
+                                                    { label: 'Caras analizadas', value: Number((zone as any).faces_to_trim ?? (zone.hasBackFaceTrim ? 2 : 1)) }
+                                                ]}
+                                                observations={zone.observations}
+                                            />
                                         )}
-                                    </div>
-                                );
-                            })}
+                                     </div>
+                                 );
+                             })}
 
-                            {(() => {
-                                const zones = (bookingData.hedgeZones || []).map((z) => normalizeHedgeZone(z));
-                                const pendingCount = zones.filter((z) => !isHedgeZoneAnalyzed(z)).length;
-                                const isBatchAnalyzing = hedgeAnalyzingZoneIds.size > 0;
-                                if (zones.length <= 1 || pendingCount <= 1) return null;
-                                return (
-                                    <button
-                                        onClick={analyzeAllPendingHedgeZones}
-                                        disabled={isBatchAnalyzing}
-                                        className={`w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
-                                            isBatchAnalyzing
-                                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                              : 'bg-green-600 text-white hover:bg-green-700'
-                                        }`}
-                                    >
-                                        {isBatchAnalyzing ? (
-                                            <>
-                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
-                                                Analizando zonas...
-                                            </>
-                                        ) : (`Analizar ${pendingCount} zona${pendingCount === 1 ? '' : 's'}`)}
-                                    </button>
-                                );
-                            })()}
+                             {(() => {
+                                 const hedgeZones = bookingData.hedgeZones || [];
+                                 const pendingHedgeZones = hedgeZones.filter(zone => !isHedgeZoneAnalyzed(zone) && !hedgeAnalyzingZoneIds.has(zone.id));
+                                 if (hedgeZones.length <= 1 || pendingHedgeZones.length <= 1) return null;
 
-                            {(bookingData.hedgeZones && bookingData.hedgeZones.length > 0) && (
-                                <button
-                                    onClick={addHedgeZone}
-                                    className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors flex items-center justify-center gap-2 group"
-                                >
-                                    <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm group-hover:bg-gray-300 transition-colors">+</span>
-                                    Añadir otra zona de setos
-                                </button>
-                            )}
+                                 return (
+                                     <button
+                                         onClick={analyzeAllPendingHedgeZones}
+                                         disabled={hedgeAnalyzingZoneIds.size > 0}
+                                         className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                                            hedgeAnalyzingZoneIds.size > 0
+                                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                             : 'bg-green-600 text-white hover:bg-green-700'
+                                         }`}
+                                     >
+                                         {hedgeAnalyzingZoneIds.size > 0 ? (
+                                             <>
+                                                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                 Analizando zonas...
+                                             </>
+                                         ) : `Analizar ${pendingHedgeZones.length} zona${pendingHedgeZones.length === 1 ? '' : 's'}`}
+                                     </button>
+                                 );
+                             })()}
+
+                             {(bookingData.hedgeZones && bookingData.hedgeZones.length > 0) && (
+                                 <button onClick={addHedgeZone} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2">
+                                     <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> 
+                                     Añadir otra zona
+                                 </button>
+                             )}
+                         </div>
+                     );
+                   }
+
+                   if (isPalmService) {
+                     return (
+                         <div className="space-y-6">
+                             {(!bookingData.palmGroups || bookingData.palmGroups.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Trees className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tus palmeras</h3>
+                                     <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
+                                         Sube una foto por cada tipo de palmera diferente para estimar la poda.
+                                     </p>
+                                     <button onClick={addPalmGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de palmeras</button>
+                                 </div>
+                             )}
+                             {(bookingData.palmGroups || []).map((zone, idx) => {
+                                 const isAnalyzed = zone.analysisLevel !== undefined;
+                                 const photoUrls = (zone as any).photoUrls || [];
+                                 const isZoneAnalyzing = palmAnalyzingZoneIds.has(zone.id);
+                                 const isFailedResult = (zone as any).isFailed === true || zone.analysisLevel === 3;
+                                 const hasResult = isAnalyzed || isFailedResult;
+
+                                 if (isZoneAnalyzing) {
+                                     return <AnalysisLoadingAnimation key={zone.id} message="Analizando palmeras..." />;
+                                 }
+
+                                 return (
+                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <div className="flex items-center gap-2">
+                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                                                     {idx + 1}
+                                                 </div>
+                                                 <h3 className="font-semibold text-gray-900">Grupo de Palmeras {idx + 1}</h3>
+                                                <span className="text-xs text-gray-500 ml-1 font-normal">({photoUrls.length}/5 fotos)</span>
+                                             </div>
+                                             <button onClick={() => removePalmGroup(zone.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>
+                                         </div>
+                                         
+                                         <ZonePhotoGallery
+                                             photos={photoUrls}
+                                             uploadingIndices={palmUploads[zone.id] || new Set()}
+                                             selectedIndices={(zone as any).selectedIndices ?? Array.from({ length: photoUrls.length }, (_, i) => i)}
+                                             analyzedIndices={(zone as any).analyzedIndices ?? (isAnalyzed ? Array.from({ length: photoUrls.length }, (_, i) => i) : [])}
+                                             isAnalyzing={isZoneAnalyzing}
+                                             isAnalyzed={hasResult}
+                                             maxPhotos={5}
+                                             onToggleSelection={(i) => togglePalmPhotoSelection(zone.id, i)}
+                                             onRemovePhoto={(i) => removePalmPhoto(zone.id, i)}
+                                             onAddPhotos={(e) => handlePalmFileSelect(zone.id, e)}
+                                             emptyText="Fotos de este grupo"
+                                         />
+
+                                         <div className="mt-2">
+                                             <ZoneActionButton
+                                                 isAnalyzing={isZoneAnalyzing}
+                                                 isAnalyzed={hasResult}
+                                                 disabled={isZoneAnalyzing || photoUrls.length === 0}
+                                                 onClick={() => {
+                                                     if (hasResult) {
+                                                         const next = [...(bookingData.palmGroups || [])];
+                                                         const z = next.find(x => x.id === zone.id);
+                                                         if (z) {
+                                                             z.analysisLevel = undefined;
+                                                             z.observations = [];
+                                                             (z as any).isFailed = false;
+                                                             setBookingData({ palmGroups: next });
+                                                             if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: next });
+                                                         }
+                                                     }
+                                                     setTimeout(() => analyzePalmGroup(zone.id), 0);
+                                                 }}
+                                                 analyzingText="Analizando..."
+                                                 reanalyzeText="Reanalizar esta zona"
+                                                 analyzeText="Analizar esta zona"
+                                             />
+                                             {photoUrls.length === 0 && (
+                                                 <p className="text-xs text-center text-amber-600 mt-2">
+                                                     Añade al menos una foto para analizar
+                                                 </p>
+                                             )}
+                                         </div>
+
+                                         {hasResult && (
+                                            <div className="mt-4">
+                                                {isFailedResult ? (
+                                                    <AnalysisFailedCard 
+                                                        message={zone.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'} 
+                                                        onReanalyze={() => analyzePalmGroup(zone.id)} 
+                                                    />
+                                                ) : (
+                                                    <ServiceResultCard
+                                                        title={zone.species || 'Desconocida'}
+                                                        analysisLevel={zone.analysisLevel}
+                                                        stats={[
+                                                            { label: 'Altura', value: zone.height || '-' },
+                                                            { label: 'Estado', value: <span className="capitalize">{zone.state || 'normal'}</span> }
+                                                        ]}
+                                                        observations={zone.observations}
+                                                        onDelete={() => removePalmGroup(zone.id)}
+                                                    >
+                                                        {/* Line 3: Quantity (Editable) */}
+                                                        <div className="text-xs text-gray-600 flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+                                                            <span className="font-medium text-gray-700">Cantidad de palmeras idénticas:</span>
+                                                            <div className="flex items-center border border-gray-300 rounded-md bg-white">
+                                                                <button 
+                                                                    className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-r border-gray-200"
+                                                                    onClick={() => handlePalmQuantityChange(zone.id, (zone.quantity || 1) - 1)}
+                                                                >
+                                                                    -
+                                                                </button>
+                                                                <input 
+                                                                    type="number" 
+                                                                    min="1" 
+                                                                    value={zone.quantity} 
+                                                                    onChange={(e) => handlePalmQuantityChange(zone.id, parseInt(e.target.value) || 1)}
+                                                                    className="w-10 text-center text-sm py-0.5 focus:outline-none"
+                                                                />
+                                                                <button 
+                                                                    className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
+                                                                    onClick={() => handlePalmQuantityChange(zone.id, (zone.quantity || 1) + 1)}
+                                                                >
+                                                                    +
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Servicios extras recomendados */}
+                                                        {(supportsPhytosanitaryForSpecies(zone.species) || supportsTrunkPeelingForSpecies(zone.species)) && (
+                                                            <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+                                                                <h5 className="text-sm font-semibold text-gray-800 mb-3">Servicios extras recomendados</h5>
+                                                                
+                                                                {supportsPhytosanitaryForSpecies(zone.species) && (
+                                                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
+                                                                        (zone as any).hasPhytosanitary ? 'bg-green-50 border-green-500 ring-1 ring-green-500' : 'bg-white border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                                                                    }`}>
+                                                                        <span className={`text-sm font-medium ${(zone as any).hasPhytosanitary ? 'text-green-800' : 'text-gray-700'}`}>
+                                                                            Tratamiento de insecticida y fungicida para prevenir plagas
+                                                                        </span>
+                                                                        <div className={`relative shrink-0 w-11 h-6 transition-colors duration-200 ease-in-out rounded-full ${(zone as any).hasPhytosanitary ? 'bg-green-500' : 'bg-gray-200'}`}>
+                                                                            <span className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform duration-200 ease-in-out shadow-sm ${(zone as any).hasPhytosanitary ? 'translate-x-5' : 'translate-x-0'}`} />
+                                                                            <input 
+                                                                                type="checkbox" 
+                                                                                className="sr-only"
+                                                                                checked={(zone as any).hasPhytosanitary || false}
+                                                                                onChange={(e) => {
+                                                                                    const isChecking = e.target.checked;
+                                                                                    if (isChecking) {
+                                                                                        updatePalmGroup(zone.id, { hasPhytosanitary: true } as any);
+                                                                                    } else {
+                                                                                        openConfirm({
+                                                                                            title: '¿Estás seguro de omitir este tratamiento?',
+                                                                                            message: 'El tratamiento de insecticida y fungicida es esencial para palmeras recién podadas. Previene infecciones graves como el picudo rojo y protege la salud de tu palmera tras el corte. No es recomendable omitirlo.',
+                                                                                            confirmLabel: 'No aplicar tratamiento',
+                                                                                            cancelLabel: 'Mantener servicio extra',
+                                                                                            tone: 'phytosanitary_warning',
+                                                                                            onConfirm: () => {
+                                                                                                updatePalmGroup(zone.id, { hasPhytosanitary: false } as any);
+                                                                                            }
+                                                                                        });
+                                                                                    }
+                                                                                }}
+                                                                            />
+                                                                        </div>
+                                                                    </label>
+                                                                )}
+
+                                                                {supportsTrunkPeelingForSpecies(zone.species) && (
+                                                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
+                                                                        (zone as any).hasTrunkPeeling ? 'bg-green-50 border-green-500 ring-1 ring-green-500' : 'bg-white border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                                                                    }`}>
+                                                                        <span className={`text-sm font-medium block ${(zone as any).hasTrunkPeeling ? 'text-green-800' : 'text-gray-700'}`}>
+                                                                            Cepillado y limpieza del tronco
+                                                                            <span className="block text-[11px] font-normal text-gray-500 mt-0.5">Deja tu palmera impecable con el cepillado del tronco</span>
+                                                                        </span>
+                                                                        <div className={`relative shrink-0 w-11 h-6 transition-colors duration-200 ease-in-out rounded-full ${(zone as any).hasTrunkPeeling ? 'bg-green-500' : 'bg-gray-200'}`}>
+                                                                            <span className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform duration-200 ease-in-out shadow-sm ${(zone as any).hasTrunkPeeling ? 'translate-x-5' : 'translate-x-0'}`} />
+                                                                            <input 
+                                                                                type="checkbox" 
+                                                                                className="sr-only"
+                                                                                checked={(zone as any).hasTrunkPeeling || false}
+                                                                                onChange={(e) => updatePalmGroup(zone.id, { hasTrunkPeeling: e.target.checked } as any)}
+                                                                            />
+                                                                        </div>
+                                                                    </label>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        <div className="mt-4 pt-4 border-t border-gray-100">
+                                                            <span className="block text-sm font-medium text-gray-700 mb-3">¿Se encuentra la base de la palmera en un lugar despejado para arrojar las hojas libremente al suelo?</span>
+                                                            <AccessDifficultyToggle 
+                                                                group={zone} 
+                                                                isAccessDisabled={!hasPositiveUnits(zone.quantity) || (isLowestRangeThresholdForSpecies(zone.species, zone.height) && !bookingData.palmGroups?.some(g => g.species === zone.species && hasPositiveUnits(g.quantity) && !isLowestRangeThresholdForSpecies(g.species, g.height)))} 
+                                                                updatePalmGroup={updatePalmGroup} 
+                                                            />
+                                                                {!hasPositiveUnits(zone.quantity) && (
+                                                                    <p className="text-xs text-gray-500 mt-2">
+                                                                      Indica unidades mayores a 0 para habilitar esta opción.
+                                                                    </p>
+                                                                )}
+                                                                {hasPositiveUnits(zone.quantity) && isLowestRangeThresholdForSpecies(zone.species, zone.height) && (
+                                                                    <p className="text-xs text-gray-500 mt-2">
+                                                                      Acceso no aplicable en el rango mínimo de esta especie.
+                                                                    </p>
+                                                                )}
+                                                                {hasPositiveUnits(zone.quantity) && isHighestOpenRangeForSpecies(zone.species, zone.height) && (
+                                                                    <p className="text-xs text-amber-700 mt-2">
+                                                                      Precio aproximado para este rango alto. El jardinero podrá proponer ajuste y requerirá tu aceptación en el chat.
+                                                                    </p>
+                                                                )}
+                                                            </div>
+
+                                                    </ServiceResultCard>
+                                                )}
+                                            </div>
+                                         )}
+                                     </div>
+                                 );
+                             })}
+
+                             {(() => {
+                                 const zones = bookingData.palmGroups || [];
+                                 const pending = zones.filter((z: any) => z.analysisLevel === undefined && (z.photoUrls || []).length > 0);
+                                 if (zones.length <= 1 || pending.length <= 1) return null;
+                                 const isBatchAnalyzing = palmAnalyzingZoneIds.size > 0;
+                                 return (
+                                     <button
+                                         onClick={analyzeAllPendingPalmGroups}
+                                         disabled={isBatchAnalyzing}
+                                         className={`w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+                                             isBatchAnalyzing
+                                               ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                               : 'bg-green-600 text-white hover:bg-green-700'
+                                         }`}
+                                     >
+                                         {isBatchAnalyzing ? (
+                                             <>
+                                                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                 Analizando palmeras...
+                                             </>
+                                         ) : (`Analizar ${pending.length} grupo${pending.length === 1 ? '' : 's'}`)}
+                                     </button>
+                                 );
+                             })()}
+
+                             {(bookingData.palmGroups && bookingData.palmGroups.length > 0) && (
+                                 <button onClick={addPalmGroup} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2 group">
+                                     <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm group-hover:bg-gray-300 transition-colors">+</span>
+                                     Añadir otro grupo de palmeras
+                                 </button>
+                             )}
                          </div>
                      );
                    }
@@ -4379,295 +5188,126 @@ const DetailsPage: React.FC = () => {
                    if (isTreeService) {
                      return (
                          <div className="space-y-6">
-                             {((bookingData.treeGroups || []).length === 0) && (
+                             {(!bookingData.treeGroups || bookingData.treeGroups.length === 0) && (
                                  <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
                                      <Trees className="w-12 h-12 text-green-500 mx-auto mb-3" />
                                      <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tus árboles</h3>
-                                     <button onClick={addTreeGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir árbol</button>
+                                     <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
+                                         Añade cada árbol o grupo de árboles para estimar el tiempo de poda.
+                                     </p>
+                                     <button onClick={addTreeGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de árboles</button>
                                  </div>
                              )}
-
                              {(bookingData.treeGroups || []).map((zone, idx) => {
+                                 const isAnalyzed = zone.analysisLevel !== undefined;
                                  const photoUrls = zone.photoUrls || [];
                                  const isZoneAnalyzing = treeAnalyzingZoneIds.has(zone.id);
-                                 const hasResult = zone.analysisLevel !== undefined;
-                                 const height = Number(zone.aiHeightMeters || 0);
-                                 const isOver9 = Number.isFinite(height) && height > 9;
-                                 const pruningTypeLabel = zone.pruningType === 'shaping' ? 'De formación' : 'Estructural';
+                                 const isFailedResult = (zone as any).isFailed === true || zone.analysisLevel === 3;
+                                 const hasResult = isAnalyzed || isFailedResult;
+
+                                 if (isZoneAnalyzing) {
+                                     return <AnalysisLoadingAnimation key={zone.id} message="Analizando árboles..." />;
+                                 }
 
                                  return (
                                      <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                                          <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
-                                             <h3 className="font-semibold text-gray-900">Árbol {idx + 1}</h3>
-                                             <button onClick={() => removeTreeGroup(zone.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+                                             <div className="flex items-center gap-2">
+                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                                                     {idx + 1}
+                                                 </div>
+                                                 <h3 className="font-semibold text-gray-900">Grupo de Árboles {idx + 1}</h3>
+                                                <span className="text-xs text-gray-500 ml-1 font-normal">({photoUrls.length}/5 fotos)</span>
+                                             </div>
+                                             <button onClick={() => removeTreeGroup(zone.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>
                                          </div>
+                                         
+                                         <ZonePhotoGallery
+                                                    photos={photoUrls}
+                                                    uploadingIndices={treeUploads[zone.id] || new Set()}
+                                                    selectedIndices={(zone as any).selectedIndices ?? Array.from({ length: photoUrls.length }, (_, i) => i)}
+                                                    analyzedIndices={(zone as any).analyzedIndices ?? (isAnalyzed ? Array.from({ length: photoUrls.length }, (_, i) => i) : [])}
+                                                    isAnalyzing={isZoneAnalyzing}
+                                             isAnalyzed={hasResult}
+                                             maxPhotos={5}
+                                             onToggleSelection={(i) => toggleTreePhotoSelection(zone.id, i)}
+                                             onRemovePhoto={(i) => removeTreePhoto(zone.id, i)}
+                                             onAddPhotos={(e) => handleTreeFileSelect(zone.id, e)}
+                                             emptyText="Fotos de este grupo"
+                                         />
 
-                                         <div className="space-y-4">
-                                             <div>
-                                                 <label className="text-xs text-gray-500 block mb-2">Tipo de poda</label>
-                                                 <select
-                                                     value={zone.pruningType}
-                                                     onChange={(e) => {
+                                         <div className="mt-2">
+                                             <ZoneActionButton
+                                                 isAnalyzing={isZoneAnalyzing}
+                                                 isAnalyzed={hasResult}
+                                                 disabled={isZoneAnalyzing || photoUrls.length === 0}
+                                                 onClick={() => {
+                                                     if (hasResult) {
                                                          const next = [...(bookingData.treeGroups || [])];
                                                          const z = next.find(x => x.id === zone.id);
-                                                         if (!z) return;
-                                                         z.pruningType = e.target.value as any;
-                                                         z.estimatedHours = estimateTreeZoneHours(z);
-                                                         const newHours = calculateTotalTreeHours(next);
-                                                         setBookingData({ treeGroups: next, estimatedHours: newHours });
-                                                         if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
-                                                     }}
-                                                     className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
-                                                 >
-                                                     <option value="structural">Estructural</option>
-                                                     <option value="shaping">De formación</option>
-                                                 </select>
-                                                 <div className="mt-2 text-[11px] text-gray-600 leading-snug">
-                                                     {zone.pruningType === 'structural'
-                                                       ? 'Estructural: elimina ramas dañadas o peligrosas y mejora la estructura.'
-                                                       : 'De formación: guía el crecimiento para dar forma, ideal en árboles jóvenes.'}
-                                                 </div>
-                                             </div>
-
-                                             <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide">
-                                                 {photoUrls.map((url, i) => {
-                                                     const isZoneAnalyzing = treeAnalyzingZoneIds.has(zone.id);
-                                                     const isAnalyzed = zone.analysisLevel !== undefined;
-                                                     const isUploading = treeUploads[zone.id]?.has(i);
-                                                     
-                                                     return (
-                                                         <div key={i} className="relative shrink-0 snap-start group cursor-pointer">
-                                                             <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 border-gray-200 shadow-sm ${isAnalyzed ? 'opacity-80' : 'opacity-100'}`}>
-                                                                 <img src={url} alt={`Foto ${i + 1}`} className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${isUploading ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`} />
-                                                                 
-                                                                 {isUploading && (
-                                                                     <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
-                                                                         <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                                     </div>
-                                                                 )}
-                                                                 
-                                                                 {isAnalyzed && !isUploading && (
-                                                                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                         <button 
-                                                                             onClick={(e) => {
-                                                                                 e.stopPropagation();
-                                                                                 const next = [...(bookingData.treeGroups || [])];
-                                                                                 const z = next.find(x => x.id === zone.id);
-                                                                                 if (z) {
-                                                                                     z.analysisLevel = undefined;
-                                                                                     z.aiHeightMeters = 0;
-                                                                                     z.difficultyHigh = false;
-                                                                                     z.observations = [];
-                                                                                     z.isFailed = false;
-                                                                                     z.estimatedHours = 0;
-                                                                                     const newHours = calculateTotalTreeHours(next);
-                                                                                     setBookingData({ treeGroups: next, estimatedHours: newHours });
-                                                                                     if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
-                                                                                     
-                                                                                     setTimeout(() => analyzeTreeGroup(zone.id), 0);
-                                                                                 }
-                                                                             }}
-                                                                             className="px-2 py-1 bg-white text-gray-800 text-[10px] font-bold rounded-full shadow-lg hover:bg-gray-100 flex items-center gap-1"
-                                                                         >
-                                                                             Re-analizar
-                                                                         </button>
-                                                                     </div>
-                                                                 )}
-                                                                 
-                                                                 {isAnalyzed && !isUploading && (
-                                                                     <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
-                                                                         Analizada
-                                                                     </div>
-                                                                 )}
-                                                                 
-                                                                 {!isZoneAnalyzing && !isUploading && (
-                                                                     <button
-                                                                         onClick={(e) => {
-                                                                             e.stopPropagation();
-                                                                             if (isAnalyzed) {
-                                                                                 openConfirm({
-                                                                                     title: 'Eliminar foto analizada',
-                                                                                     message: 'Si continúas, se eliminará la foto y se borrarán los resultados actuales del análisis para este árbol.',
-                                                                                     confirmLabel: 'Eliminar',
-                                                                                     cancelLabel: 'Cancelar',
-                                                                                     tone: 'danger',
-                                                                                     onConfirm: () => {
-                                                                                         const next = [...(bookingData.treeGroups || [])];
-                                                                                         const z = next.find(x => x.id === zone.id);
-                                                                                         if (z) {
-                                                                                             z.photoUrls = z.photoUrls?.filter((_, index) => index !== i);
-                                                                                             z.analysisLevel = undefined;
-                                                                                             z.aiHeightMeters = 0;
-                                                                                             z.difficultyHigh = false;
-                                                                                             z.observations = [];
-                                                                                             z.isFailed = false;
-                                                                                             z.estimatedHours = 0;
-                                                                                             const newHours = calculateTotalTreeHours(next);
-                                                                                             setBookingData({ treeGroups: next, estimatedHours: newHours });
-                                                                                             if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
-                                                                                         }
-                                                                                     }
-                                                                                 });
-                                                                             } else {
-                                                                                 const next = [...(bookingData.treeGroups || [])];
-                                                                                 const z = next.find(x => x.id === zone.id);
-                                                                                 if (z) {
-                                                                                     z.photoUrls = z.photoUrls?.filter((_, index) => index !== i);
-                                                                                     setBookingData({ treeGroups: next });
-                                                                                     if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: next });
-                                                                                 }
-                                                                             }
-                                                                         }}
-                                                                         className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10"
-                                                                     >
-                                                                         <Trash2 className="w-3.5 h-3.5" />
-                                                                     </button>
-                                                                 )}
-                                                             </div>
-                                                         </div>
-                                                     );
-                                                 })}
-                                                 
-                                                 {!treeAnalyzingZoneIds.has(zone.id) && photoUrls.length < 5 && (
-                                                     <label className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
-                                                         <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
-                                                             <Camera className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
-                                                         </div>
-                                                         <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
-                                                         <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleTreeFileSelect(zone.id, e)} />
-                                                     </label>
-                                                 )}
-                                             </div>
-
-                                             <button
-                                                 onClick={() => {
-                                                     const next = [...(bookingData.treeGroups || [])];
-                                                     const z = next.find(x => x.id === zone.id);
-                                                     if (z && hasResult) {
-                                                         z.analysisLevel = undefined;
-                                                         z.aiHeightMeters = 0;
-                                                         z.difficultyHigh = false;
-                                                         z.observations = [];
-                                                         z.isFailed = false;
-                                                         z.estimatedHours = 0;
-                                                         const newHours = calculateTotalTreeHours(next);
-                                                         setBookingData({ treeGroups: next, estimatedHours: newHours });
-                                                         if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
+                                                         if (z) {
+                                                             z.analysisLevel = undefined;
+                                                             (z as any).aiSizeBand = undefined;
+                                                             z.aiHeightMeters = 0;
+                                                             z.difficultyHigh = undefined;
+                                                             z.observations = [];
+                                                             z.isFailed = false;
+                                                             z.estimatedHours = 0;
+                                                             const newHours = calculateTotalTreeHours(next);
+                                                             setBookingData({ treeGroups: next, estimatedHours: newHours });
+                                                             if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
+                                                         }
                                                      }
                                                      setTimeout(() => analyzeTreeGroup(zone.id), 0);
                                                  }}
-                                                 disabled={isZoneAnalyzing || photoUrls.length === 0}
-                                                 className={`w-full py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 ${
-                                                     isZoneAnalyzing || photoUrls.length === 0
-                                                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                       : 'bg-green-600 text-white hover:bg-green-700'
-                                                 }`}
-                                             >
-                                                 {isZoneAnalyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> {hasResult ? 'Re-analizar' : 'Analizar'}</>}
-                                             </button>
-
-                                             {/* RESULT CARD INJECTED HERE */}
-                                             {(() => {
-                                                const isFailedResult = (zone as any).isFailed === true || zone.analysisLevel === 3;
-                                                const hasValidResult = zone.analysisLevel !== undefined || isFailedResult;
-                                                if (!hasValidResult) return null;
-
-                                                if (isFailedResult) {
-                                                    return (
-                                                        <div className="mt-3 bg-white rounded-lg border border-red-200 p-3 shadow-sm relative overflow-hidden flex items-center gap-3">
-                                                            <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                                                            {photoUrls && photoUrls.length > 0 && (
-                                                                <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-gray-100 border border-red-100 opacity-80">
-                                                                    <img src={photoUrls[0]} alt="Análisis fallido" className="w-full h-full object-cover grayscale-[0.3]" />
-                                                                </div>
-                                                            )}
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 mb-1">
-                                                                    <AlertTriangle className="w-4 h-4 text-red-600" />
-                                                                    <h4 className="font-semibold text-sm text-red-700">No se pudo analizar</h4>
-                                                                </div>
-                                                                <p className="text-xs text-red-600 truncate">
-                                                                    {(zone.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.')} <span className="opacity-80">(No afectará al precio)</span>
-                                                                </p>
-                                                            </div>
-                                                            <button 
-                                                                onClick={() => openConfirm({
-                                                                  title: 'Eliminar resultado',
-                                                                  message: 'Se eliminará este resultado del análisis y las fotos se conservarán.',
-                                                                  confirmLabel: 'Eliminar resultado',
-                                                                  cancelLabel: 'Cancelar',
-                                                                  tone: 'warning',
-                                                                  onConfirm: () => removeTreeAnalysisResult(zone.id)
-                                                                })}
-                                                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                                                                title="Eliminar resultado"
-                                                            >
-                                                                <X className="w-5 h-5" />
-                                                            </button>
-                                                        </div>
-                                                    );
-                                                }
-
-                                                return (
-                                                    <div className="mt-3 bg-white rounded-lg border border-gray-200 p-3 shadow-sm relative overflow-hidden transition-all">
-                                                        <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                                                        <div className="flex flex-row items-center gap-3">
-                                                            {photoUrls && photoUrls.length > 0 && (
-                                                                <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
-                                                                    <img src={photoUrls[0]} alt="Árbol" className="w-full h-full object-cover" />
-                                                                </div>
-                                                            )}
-                                                            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-                                                                <div className="flex items-center justify-between">
-                                                                    <h4 className="font-semibold text-sm text-gray-900">
-                                                                        {zone.pruningType === 'shaping' ? 'Poda de Formación' : 'Poda Estructural'}
-                                                                    </h4>
-                                                                    <button 
-                                                                         onClick={() => openConfirm({
-                                                                           title: 'Eliminar resultado',
-                                                                           message: 'Se eliminará este resultado del análisis y las fotos se conservarán para que puedas re-analizarlas.',
-                                                                           confirmLabel: 'Eliminar resultado',
-                                                                           cancelLabel: 'Cancelar',
-                                                                           tone: 'warning',
-                                                                           onConfirm: () => removeTreeAnalysisResult(zone.id)
-                                                                         })}
-                                                                         className="text-gray-400 hover:text-red-500 transition-colors"
-                                                                         title="Eliminar resultado"
-                                                                    >
-                                                                         <Trash2 className="w-4 h-4" />
-                                                                    </button>
-                                                                </div>
-                                                                <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
-                                                                    <span>Altura: <span className="font-medium text-gray-900">{Number(zone.aiHeightMeters || 0) > 0 ? `${Number(zone.aiHeightMeters).toFixed(1)}m` : '-'}</span></span>
-                                                                    <span className="text-gray-300">|</span>
-                                                                    <span>Dificultad: <span className="font-medium text-gray-900">{zone.difficultyHigh ? 'Alta' : 'Normal'}</span></span>
-                                                                    {zone.analysisLevel && (
-                                                                        <>
-                                                                            <span className="text-gray-300">|</span>
-                                                                            <span className={`font-medium ${zone.analysisLevel === 1 ? 'text-green-700' : 'text-amber-700'}`}>
-                                                                                {zone.analysisLevel === 1 ? 'Análisis fiable' : 'Revisión manual'}
-                                                                            </span>
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                                {Number(zone.aiHeightMeters || 0) > 9 && (
-                                                                    <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-100">
-                                                                        El profesional tendrá que verificar el pago porque es un servicio muy complejo.
-                                                                    </div>
-                                                                )}
-                                                                {zone.observations && zone.observations.length > 0 && (
-                                                                    <div className="mt-1 text-[10px] text-gray-600 bg-gray-50 p-1.5 rounded border border-gray-100">
-                                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">
-                                                                            {zone.observations.map((obs, i) => <li key={i}>{obs}</li>)}
-                                                                        </ul>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                             })()}
+                                                 analyzingText="Analizando..."
+                                                 reanalyzeText="Reanalizar esta zona"
+                                                 analyzeText="Analizar esta zona"
+                                             />
+                                             {photoUrls.length === 0 && (
+                                                 <p className="text-xs text-center text-amber-600 mt-2">
+                                                     Añade al menos una foto para analizar
+                                                 </p>
+                                             )}
                                          </div>
+
+                                         {hasResult && (
+                                            <div className="mt-4">
+                                                {isFailedResult ? (
+                                                    <AnalysisFailedCard 
+                                                        message={zone.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'} 
+                                                        onReanalyze={() => analyzeTreeGroup(zone.id)} 
+                                                    />
+                                                ) : (
+                                                    <ServiceResultCard
+                                                        title={zone.pruningType === 'shaping' ? 'Poda de Formación' : 'Poda Estructural'}
+                                                        analysisLevel={zone.analysisLevel}
+                                                        stats={[
+                                                            { label: 'Tamaño', value: treeBandLabel(normalizeTreeSizeBand((zone as any).aiSizeBand)) },
+                                                            { label: 'Acceso', value: typeof zone.difficultyHigh === 'boolean' ? (zone.difficultyHigh ? 'Difícil' : 'Fácil') : 'Pendiente de respuesta' }
+                                                        ]}
+                                                        observations={zone.observations}
+                                                        onDelete={() => removeTreeAnalysisResult(zone.id)}
+                                                    />
+                                                )}
+                                                {!isFailedResult && (
+                                                    <div className="mt-3 pt-3 border-t border-gray-100">
+                                                        <span className="block text-sm font-medium text-gray-700 mb-3">
+                                                            ¿El acceso al árbol (base y alrededores) es fácil y está libre de obstáculos que dificulten la poda?
+                                                        </span>
+                                                        <TreeAccessDifficultyToggle
+                                                            group={zone}
+                                                            updateTreeGroup={updateTreeGroup}
+                                                        />
+                                                    </div>
+                                                )}
+                                                {normalizeTreeSizeBand((zone as any).aiSizeBand) === 'over_9' && (
+                                                    <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-100">
+                                                        El profesional tendrá que verificar el pago porque es un servicio muy complejo.
+                                                    </div>
+                                                )}
+                                            </div>
+                                         )}
                                      </div>
                                  );
                              })}
@@ -4714,76 +5354,125 @@ const DetailsPage: React.FC = () => {
                                  <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
                                      <Flower2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
                                      <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tus plantas</h3>
+                                     <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
+                                         Añade cada grupo o macizo de plantas de manera independiente.
+                                     </p>
                                      <button onClick={addShrubGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de plantas</button>
                                  </div>
                              )}
                              {(bookingData.shrubGroups || []).map((group, idx) => {
-                                 const isAnalyzed = group.area > 0 || (group.analysisLevel !== undefined);
+                                const isAnalyzed = isShrubGroupAnalyzed(group);
+                                const isFailedResult = (group as any).isFailed === true || group.analysisLevel === 3;
+                                const hasResult = isAnalyzed || isFailedResult;
                                  const allPhotos = [...(group.photoUrls || []), ...(group.files || [])];
+                                 const isZoneAnalyzing = shrubAnalyzingZoneIds.has(group.id);
+
+                                 if (isZoneAnalyzing) {
+                                     return <AnalysisLoadingAnimation key={group.id} message="Analizando plantas y arbustos..." />;
+                                 }
+
                                  return (
                                      <div key={group.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                                          <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
-                                             <h3 className="font-semibold text-gray-900">Grupo de Plantas {idx + 1}</h3>
-                                             <button onClick={() => removeShrubGroup(group.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+                                             <div className="flex items-center gap-2">
+                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                                                     {idx + 1}
+                                                 </div>
+                                                 <h3 className="font-semibold text-gray-900">Grupo de Plantas {idx + 1}</h3>
+                                                <span className="text-xs text-gray-500 ml-1 font-normal">({allPhotos.length}/5 fotos)</span>
+                                             </div>
+                                             <button onClick={() => removeShrubGroup(group.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>
                                          </div>
                                          
-                                         <div className="mb-4 grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                             {allPhotos.map((p, i) => (<div key={i} className="relative aspect-square"><img src={typeof p === 'string' ? p : URL.createObjectURL(p)} className="w-full h-full object-cover rounded-lg" /></div>))}
-                                             {!isAnalyzed && <label className="border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer aspect-square text-gray-400 hover:text-green-600"><Camera className="w-6 h-6" /><input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleShrubFileSelect(group.id, e)} /></label>}
+                                         <ZonePhotoGallery
+                                             photos={allPhotos}
+                                             uploadingIndices={shrubUploads[group.id] || new Set()}
+                                             selectedIndices={group.selectedIndices ?? Array.from({ length: allPhotos.length }, (_, i) => i)}
+                                             analyzedIndices={group.analyzedIndices ?? []}
+                                             isAnalyzing={isZoneAnalyzing}
+                                             isAnalyzed={isAnalyzed}
+                                             maxPhotos={5}
+                                             onToggleSelection={(i) => toggleShrubPhotoSelection(group.id, i)}
+                                             onRemovePhoto={(i) => removeShrubPhoto(group.id, i)}
+                                             onAddPhotos={(e) => handleShrubFileSelect(group.id, e)}
+                                             emptyText="Fotos de este grupo"
+                                         />
+
+                                         <div className="mt-2">
+                                             <ZoneActionButton
+                                                 isAnalyzing={isZoneAnalyzing}
+                                                isAnalyzed={hasResult}
+                                                 disabled={isZoneAnalyzing || (group.selectedIndices !== undefined && group.selectedIndices.length === 0) || allPhotos.length === 0}
+                                                 onClick={() => analyzeShrubGroup(group.id)}
+                                                 analyzingText="Analizando..."
+                                                 reanalyzeText="Reanalizar esta zona"
+                                                 analyzeText="Analizar esta zona"
+                                             />
+                                             {allPhotos.length === 0 && (
+                                                 <p className="text-xs text-center text-amber-600 mt-2">
+                                                     Añade al menos una foto para analizar
+                                                 </p>
+                                             )}
                                          </div>
 
-                                         {!isAnalyzed ? (
-                                             <button onClick={() => analyzeShrubGroup(group.id)} disabled={analyzing || allPhotos.length === 0} className="w-full py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center justify-center gap-2">{analyzing ? 'Analizando...' : <><Wand2 className="w-4 h-4" /> Analizar</>}</button>
-                                         ) : (
-                                             <div className="mt-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 relative overflow-hidden">
-                                                <div className={`absolute top-0 left-0 w-1 h-full ${group.analysisLevel === 3 ? 'bg-red-500' : group.analysisLevel === 2 ? 'bg-amber-500' : 'bg-green-500'}`}></div>
-                                                
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        {group.analysisLevel === 3 ? (
-                                                            <div className="mt-1 text-xs font-medium text-red-600">
-                                                                Análisis fallido
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <h4 className="font-semibold text-gray-900 text-sm">
-                                                                    Macizo de plantas y arbustos
-                                                                </h4>
-                                                                <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
-                                                                    <span>
-                                                                        Superficie: <span className="font-medium text-gray-900">{group.area} m²</span>
-                                                                    </span>
-                                                                    <span className="text-gray-300">|</span>
-                                                                    <span>
-                                                                        Tamaño dominante: <span className="font-medium text-gray-900 capitalize">{group.size}</span>
-                                                                    </span>
-                                                                </div>
-                                                                <div className={`mt-2 text-xs font-medium ${group.analysisLevel === 1 ? 'text-green-600' : 'text-amber-600'}`}>
-                                                                    {group.analysisLevel === 1 ? 'Análisis fiable' : 'Análisis con observaciones'}
-                                                                </div>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {group.observations && group.observations.length > 0 && (
-                                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-100">
-                                                        <div className="font-medium mb-1 text-gray-700">Observaciones:</div>
-                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">
-                                                            {group.observations.map((obs, k) => (
-                                                                <li key={k}>{obs}</li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
+                                        {hasResult && (
+                                            <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                                {isFailedResult ? (
+                                                    <AnalysisFailedCard
+                                                        message={group.observations?.[0]}
+                                                        onReanalyze={() => analyzeShrubGroup(group.id)}
+                                                    />
+                                                ) : (
+                                                    <ServiceResultCard
+                                                        title="Macizo de plantas y arbustos"
+                                                        analysisLevel={group.analysisLevel}
+                                                        stats={[
+                                                            { label: 'Superficie', value: `${group.area} m²` },
+                                                            { label: 'Tamaño dominante', value: <span className="capitalize">{group.size}</span> }
+                                                        ]}
+                                                        observations={group.observations}
+                                                    />
                                                 )}
-                                             </div>
+                                            </div>
                                          )}
                                      </div>
                                  );
                              })}
-                             <button onClick={addShrubGroup} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otro grupo</button>
+                             
+                             {(() => {
+                                 const shrubGroups = bookingData.shrubGroups || [];
+                                 const pendingShrubGroups = shrubGroups.filter(zone => !isShrubGroupAnalyzed(zone) && !shrubAnalyzingZoneIds.has(zone.id));
+                                if (shrubGroups.length <= 1 || pendingShrubGroups.length <= 1) return null;
+
+                                 return (
+                                     <button
+                                         onClick={analyzeAllPendingShrubGroups}
+                                        disabled={shrubAnalyzingZoneIds.size > 0}
+                                         className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                                            shrubAnalyzingZoneIds.size > 0
+                                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                             : 'bg-green-600 text-white hover:bg-green-700'
+                                         }`}
+                                     >
+                                         {shrubAnalyzingZoneIds.size > 0 ? (
+                                             <>
+                                                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                 Analizando zonas...
+                                             </>
+                                         ) : `Analizar ${pendingShrubGroups.length} zona${pendingShrubGroups.length === 1 ? '' : 's'}`}
+                                     </button>
+                                 );
+                             })()}
+
+                             {(bookingData.shrubGroups && bookingData.shrubGroups.length > 0) && (
+                                 <button onClick={addShrubGroup} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm">+</span> Añadir otro grupo</button>
+                             )}
                          </div>
                      );
+                   }
+
+                   if (isWeedingService) {
+                    return null;
                    }
 
                    if (isPhytosanitaryService) {
@@ -4803,6 +5492,21 @@ const DetailsPage: React.FC = () => {
                           const validation = getPhytosanitaryValidation(zone as any);
                           const selectedPhotoCount = getPhytosanitarySelectedPhotoCount(zone);
                           const metrics = (zone as any).analysisMetrics || { ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS };
+                          
+                          if (isZoneAnalyzing) {
+                              return <AnalysisLoadingAnimation key={zone.id} message="Analizando zona de tratamientos..." />;
+                          }
+
+                          if ((zone as any).isFailed || zone.analysisLevel === 3) {
+                              return (
+                                  <AnalysisFailedCard 
+                                      key={zone.id}
+                                      message={zone.observations?.[0]} 
+                                      onReanalyze={() => analyzePhytosanitaryZone(zone.id)} 
+                                  />
+                              );
+                          }
+
                           const detectedItems = PHYTOSANITARY_RESULT_FIELDS
                             .map((item) => ({
                               ...item,
@@ -4810,7 +5514,6 @@ const DetailsPage: React.FC = () => {
                             }))
                             .filter((item) => item.value > 0);
                           const aiObservations = Array.isArray(metrics.observaciones_ia) ? metrics.observaciones_ia : [];
-                          const hasAiAlerts = Number(zone.analysisLevel || 0) >= 3 || aiObservations.length > 0;
 
                           return (
                             <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -4939,132 +5642,121 @@ const DetailsPage: React.FC = () => {
                                   </label>
                                 </div>
 
-                                <div className="pt-3 border-t border-gray-100">
-                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700 mb-2">Fotos de la zona</div>
-                                  <div className="text-xs text-gray-500 mb-2">Fotos de esta zona ({allPhotos.length}/5, seleccionadas: {selectedPhotoCount})</div>
-                                  <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide min-h-[110px]">
-                                    {allPhotos.map((photo, i) => {
-                                      const isSelected = zone.selectedIndices?.includes(i) ?? true;
-                                      return (
-                                        <div key={i} className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`} onClick={() => togglePhytosanitaryPhotoSelection(zone.id, i)}>
-                                          <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'}`}>
-                                            <img src={photo} alt={`Foto ${i + 1}`} className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${phytosanitaryUploads[zone.id]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`} />
-                                            <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500' : 'bg-black/20 border-white/80 group-hover:bg-black/40'}`}>
-                                              {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
-                                            </div>
-                                          </div>
-                                          <button onClick={(e) => { e.stopPropagation(); removePhytosanitaryPhoto(zone.id, i); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10">
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
+                                <div className="pt-4 border-t border-gray-100">
+                                  <ZonePhotoGallery
+                                      photos={allPhotos}
+                                      uploadingIndices={phytosanitaryUploads[zone.id] || new Set()}
+                                      selectedIndices={zone.selectedIndices ?? allPhotos.map((_, i) => i)}
+                                      analyzedIndices={zone.analyzedIndices ?? (isAnalyzed ? allPhotos.map((_, i) => i) : [])}
+                                      isAnalyzing={isZoneAnalyzing}
+                                      isAnalyzed={isAnalyzed}
+                                      onToggleSelection={(i) => togglePhytosanitaryPhotoSelection(zone.id, i)}
+                                      onRemovePhoto={(i) => removePhytosanitaryPhoto(zone.id, i)}
+                                      onAddPhotos={(e) => handlePhytosanitaryFileSelect(zone.id, e)}
+                                  />
+
+                                  <div className="mt-2">
+                                      {(!isAnalyzed || (isAnalyzed && (zone.analyzedIndices && (zone.analyzedIndices.length !== selectedPhotoCount || !zone.analyzedIndices.every(i => zone.selectedIndices?.includes(i)))))) && (
+                                          <ZoneActionButton
+                                              onClick={() => analyzePhytosanitaryZone(zone.id)}
+                                              isAnalyzing={isZoneAnalyzing}
+                                              isAnalyzed={isAnalyzed}
+                                              disabled={isZoneAnalyzing || validation.issues.length > 0 || selectedPhotoCount === 0}
+                                              analyzeText={`Analizar ${selectedPhotoCount} foto${selectedPhotoCount === 1 ? '' : 's'}`}
+                                              reanalyzeText="Reanalizar (hay cambios)"
+                                          />
+                                      )}
+                                      
+                                      {(validation.issues.length > 0 || validation.warnings.length > 0) && (
+                                        <div className="p-3 rounded-lg border border-yellow-200 bg-yellow-50 text-yellow-800 text-xs space-y-1 mb-4">
+                                          {validation.issues.map((issue, issueIndex) => <p key={`issue-${issueIndex}`}>{issue}</p>)}
+                                          {validation.warnings.map((warning, warningIndex) => <p key={`warning-${warningIndex}`}>{warning}</p>)}
                                         </div>
-                                      );
-                                    })}
-                                    {allPhotos.length < 5 && (
-                                      <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
-                                        <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
-                                            <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
-                                          </div>
-                                          <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
-                                          <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => handlePhytosanitaryFileSelect(zone.id, e)} />
-                                        </label>
-                                      </div>
-                                    )}
+                                      )}
                                   </div>
-                                </div>
 
-                                <div className="space-y-3 pt-3 border-t border-gray-100">
-                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Análisis IA</div>
-                                  {isZoneAnalyzing ? (
-                                    <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
-                                      <p className="text-sm font-semibold text-green-800">{loadingMessage}</p>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      onClick={() => analyzePhytosanitaryZone(zone.id)}
-                                      disabled={validation.issues.length > 0}
-                                      className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${validation.issues.length > 0 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}
-                                    >
-                                      <Wand2 className="w-4 h-4" />
-                                      {isAnalyzed ? (
-                                        (zone.analyzedIndices && (zone.analyzedIndices.length !== selectedPhotoCount || !zone.analyzedIndices.every(i => zone.selectedIndices?.includes(i)))) 
-                                          ? 'Reanalizar (hay cambios)' 
-                                          : `Reanalizar ${selectedPhotoCount} foto${selectedPhotoCount === 1 ? '' : 's'}`
-                                      ) : `Analizar ${selectedPhotoCount} foto${selectedPhotoCount === 1 ? '' : 's'}`}
-                                    </button>
-                                  )}
-                                  {(validation.issues.length > 0 || validation.warnings.length > 0) && (
-                                    <div className="p-3 rounded-lg border border-yellow-200 bg-yellow-50 text-yellow-800 text-xs space-y-1">
-                                      {validation.issues.map((issue, issueIndex) => <p key={`issue-${issueIndex}`}>{issue}</p>)}
-                                      {validation.warnings.map((warning, warningIndex) => <p key={`warning-${warningIndex}`}>{warning}</p>)}
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="space-y-3 pt-3 border-t border-gray-100">
-                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Resultados de la IA</div>
-                                  {!isAnalyzed ? (
-                                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
-                                      Un espacio reservado para mostrar el análisis una vez completado.
-                                    </div>
-                                  ) : (
-                                    <div className={`relative overflow-hidden rounded-xl border ${hasAiAlerts ? 'border-red-200 bg-red-50/40' : 'border-green-200 bg-green-50/40'}`}>
-                                      <div className={`absolute inset-y-0 left-0 w-1.5 ${hasAiAlerts ? 'bg-red-500' : 'bg-green-500'}`} />
-                                      <div className="pl-5 pr-3 py-3 space-y-2">
-                                        {detectedItems.length === 0 && aiObservations.length === 0 ? (
-                                          <div className="text-sm text-gray-600">La IA no detectó elementos con cantidad.</div>
-                                        ) : (
-                                          <>
-                                            {Object.entries(PHYTOSANITARY_GROUPED_FIELDS).map(([familyName, fields]) => {
-                                              const familyItems = detectedItems.filter(item => fields.some(f => f.key === item.key));
-                                              if (familyItems.length === 0) return null;
-                                              return (
-                                                <div key={familyName} className="mb-4 last:mb-0">
-                                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-700 mb-2">{familyName}</div>
-                                                  <div className="space-y-2 pl-2 border-l-2 border-green-200">
-                                                    {familyItems.map((item) => {
-                                                      const fieldDef = fields.find(f => f.key === item.key);
-                                                      return (
-                                                        <div key={item.key} className="flex items-center justify-between gap-3 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
-                                                          <div className="text-sm text-gray-800">
-                                                            {fieldDef?.label || item.label}: <span className="font-semibold">{item.value} {fieldDef?.unit || item.unit}</span>
-                                                          </div>
-                                                          <button
-                                                            onClick={() => removePhytosanitaryMetricItem(zone.id, item.key)}
-                                                            className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
-                                                          >
-                                                            <Trash2 className="w-4 h-4" />
-                                                          </button>
-                                                        </div>
-                                                      );
-                                                    })}
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                            {aiObservations.length > 0 && !aiObservations.includes('none') && (
-                                              <div className={`space-y-2 ${detectedItems.length > 0 ? 'mt-3 pt-3 border-t border-gray-200/50' : ''}`}>
-                                                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Observaciones</div>
-                                                {aiObservations.map((observation: string, observationIndex: number) => {
-                                                  if (observation === 'none') return null;
-                                                  return (
-                                                    <div key={`${observation}-${observationIndex}`} className="flex items-center justify-between gap-3 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
-                                                      <div className="text-sm text-gray-800">{OBS_TRANSLATIONS[observation] || observation}</div>
-                                                      <button
-                                                        onClick={() => removePhytosanitaryObservation(zone.id, observationIndex)}
-                                                        className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
-                                                      >
-                                                        <Trash2 className="w-4 h-4" />
-                                                      </button>
-                                                    </div>
-                                                  );
-                                                })}
+                                  {isAnalyzed && (
+                                      <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                          <ServiceResultCard
+                                              title="Análisis Fitosanitario"
+                                              analysisLevel={zone.analysisLevel}
+                                              stats={[]}
+                                              onDelete={() => {
+                                                  openConfirm({
+                                                      title: '¿Eliminar resultado?',
+                                                      message: 'Se borrarán los datos del análisis, pero las fotos se mantendrán para poder re-analizar.',
+                                                      onConfirm: () => {
+                                                          const next = [...(bookingData.phytosanitaryZones || [])];
+                                                          const z = next.find(x => x.id === zone.id);
+                                                          if (z) {
+                                                              (z as any).analysisMetrics = undefined;
+                                                              z.area = 0;
+                                                              z.analysisLevel = undefined;
+                                                              z.observations = [];
+                                                              z.analyzedIndices = [];
+                                                              setBookingData({ phytosanitaryZones: next });
+                                                              if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                                          }
+                                                      }
+                                                  });
+                                              }}
+                                          >
+                                              <div className="space-y-2 mt-3">
+                                                  {detectedItems.length === 0 && aiObservations.length === 0 ? (
+                                                      <div className="text-sm text-gray-600">La IA no detectó elementos con cantidad.</div>
+                                                  ) : (
+                                                      <>
+                                                          {Object.entries(PHYTOSANITARY_GROUPED_FIELDS).map(([familyName, fields]) => {
+                                                              const familyItems = detectedItems.filter(item => fields.some(f => f.key === item.key));
+                                                              if (familyItems.length === 0) return null;
+                                                              return (
+                                                                  <div key={familyName} className="mb-4 last:mb-0">
+                                                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-700 mb-2">{familyName}</div>
+                                                                      <div className="space-y-2 pl-2 border-l-2 border-green-200">
+                                                                          {familyItems.map((item) => {
+                                                                              const fieldDef = fields.find(f => f.key === item.key);
+                                                                              return (
+                                                                                  <div key={item.key} className="flex items-center justify-between gap-3 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
+                                                                                      <div className="text-sm text-gray-800">
+                                                                                          {fieldDef?.label || item.label}: <span className="font-semibold">{item.value} {fieldDef?.unit || item.unit}</span>
+                                                                                      </div>
+                                                                                      <button
+                                                                                          onClick={() => removePhytosanitaryMetricItem(zone.id, item.key)}
+                                                                                          className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
+                                                                                      >
+                                                                                          <Trash2 className="w-4 h-4" />
+                                                                                      </button>
+                                                                                  </div>
+                                                                              );
+                                                                          })}
+                                                                      </div>
+                                                                  </div>
+                                                              );
+                                                          })}
+                                                          {aiObservations.length > 0 && !aiObservations.includes('none') && (
+                                                              <div className={`space-y-2 ${detectedItems.length > 0 ? 'mt-3 pt-3 border-t border-gray-200/50' : ''}`}>
+                                                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Observaciones</div>
+                                                                  {aiObservations.map((observation: string, observationIndex: number) => {
+                                                                      if (observation === 'none') return null;
+                                                                      return (
+                                                                          <div key={`${observation}-${observationIndex}`} className="flex items-center justify-between gap-3 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
+                                                                              <div className="text-sm text-gray-800">{OBS_TRANSLATIONS[observation] || observation}</div>
+                                                                              <button
+                                                                                  onClick={() => removePhytosanitaryObservation(zone.id, observationIndex)}
+                                                                                  className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
+                                                                              >
+                                                                                  <Trash2 className="w-4 h-4" />
+                                                                              </button>
+                                                                          </div>
+                                                                      );
+                                                                  })}
+                                                              </div>
+                                                          )}
+                                                      </>
+                                                  )}
                                               </div>
-                                            )}
-                                          </>
-                                        )}
+                                          </ServiceResultCard>
                                       </div>
-                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -5133,49 +5825,7 @@ const DetailsPage: React.FC = () => {
 
                    // Analysis Loading Animation (Virtual Garden)
                    if (analyzing) {
-                       return (
-                           <div className="relative h-48 w-full flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-white rounded-xl border border-gray-100 overflow-hidden shadow-inner">
-                               
-                               {/* Background Grid */}
-                               <div className="absolute inset-0 z-0 opacity-20" 
-                                    style={{
-                                        backgroundImage: 'linear-gradient(#16a34a 1px, transparent 1px), linear-gradient(90deg, #16a34a 1px, transparent 1px)',
-                                        backgroundSize: '20px 20px',
-                                        transform: 'perspective(500px) rotateX(60deg) translateY(-50px) scale(1.5)',
-                                        animation: 'gridMove 4s linear infinite'
-                                    }} 
-                               />
-
-                               {/* Scanning Radar */}
-                               <div className="relative z-10 w-24 h-24 flex items-center justify-center mb-4">
-                                   <div className="absolute w-full h-full rounded-full border-2 border-green-500/30 animate-ping" />
-                                   <div className="absolute w-3/4 h-3/4 rounded-full border border-green-500/50 animate-ping delay-150" />
-                                   
-                                   {/* Central Icon */}
-                                   <div className="relative z-20 bg-white p-3 rounded-full shadow-lg border border-green-100">
-                                       <Sprout className="w-8 h-8 text-green-600 animate-pulse" />
-                                   </div>
-
-                                   {/* Spinner Ring */}
-                                   <div className="absolute w-full h-full rounded-full border-t-2 border-r-2 border-green-500 animate-spin" />
-                               </div>
-
-                               {/* Message */}
-                               <div className="relative z-10 text-center">
-                                   <p className="text-sm font-semibold text-gray-800 animate-pulse transition-all duration-300">
-                                       {loadingMessage}
-                                   </p>
-                                   <p className="text-xs text-gray-400 mt-1">Analizando estructura y vegetación...</p>
-                               </div>
-
-                               <style>{`
-                                   @keyframes gridMove {
-                                       0% { background-position: 0 0; }
-                                       100% { background-position: 0 20px; }
-                                   }
-                               `}</style>
-                           </div>
-                       );
+                       return <AnalysisLoadingAnimation message={loadingMessage} />;
                    }
 
                    return (
@@ -5336,7 +5986,7 @@ const DetailsPage: React.FC = () => {
               </div>
           )}
 
-          {!(debugService.includes('Corte de césped') || debugService.includes('césped') || debugService.includes('seto') || debugService.includes('Seto')) && (
+          {!(debugService.includes('Corte de césped') || debugService.includes('césped') || debugService.includes('seto') || debugService.includes('Seto') || debugService.toLowerCase().includes('desbroce') || debugService.toLowerCase().includes('malas hierbas')) && (
               <div className="flex flex-col gap-4 mb-4 mt-4 px-4 sm:px-0">
                 <div className="flex items-center justify-end sm:justify-end justify-center w-full gap-3">
                   <button
@@ -5367,328 +6017,64 @@ const DetailsPage: React.FC = () => {
 
 
 
-      {/* --- Shrub Analysis Results (Poda de plantas y arbustos) --- */}
-      {bookingData.shrubGroups && bookingData.shrubGroups.length > 0 && (
-        <div className="space-y-4 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <Sprout className="w-5 h-5 text-green-600" />
-                Plantas y arbustos detectados
-            </h3>
-            <div className="grid grid-cols-1 gap-3">
-                {bookingData.shrubGroups.map((group, idx) => (
-                    <div key={group.id || idx} className="bg-white rounded-lg border border-gray-200 p-3 shadow-sm relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                        <div className="flex justify-between items-start gap-3">
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center flex-wrap gap-2 mb-1">
-                                    <h4 className="font-semibold text-gray-900 text-sm">Macizo de plantas</h4>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                                        {group.area} m²
-                                    </span>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200 capitalize">
-                                        {group.size}
-                                    </span>
-                                </div>
-                                {group.observations && group.observations.length > 0 && (
-                                    <p className="text-[10px] text-gray-500 italic mt-1 truncate">
-                                        {group.observations.join(', ')}
-                                    </p>
-                                )}
-                            </div>
-                            
-                            <div className="shrink-0">
-                                {/* Removed state select */}
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-            <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-center justify-between">
-                <span>Tiempo estimado de trabajo:</span>
-                <span className="font-bold text-lg">{bookingData.estimatedHours} h</span>
-            </div>
-        </div>
-      )}
-
-      {/* --- Palm Analysis Results (Poda de palmeras) --- */}
-      {bookingData.palmGroups && bookingData.palmGroups.length > 0 && (
-        <div className="space-y-4 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <Trees className="w-5 h-5 text-green-600" />
-                Palmeras detectadas
-            </h3>
-            <div className="grid grid-cols-1 gap-3">
-                {bookingData.palmGroups.map((group, idx) => {
-                    // Check if this item is a failure case
-                    const isFailed = (group as any).isFailed === true || group.analysisLevel === 3;
-                    const showPhytosanitary = supportsPhytosanitaryForSpecies(group.species);
-                    const showTrunkPeeling = supportsTrunkPeelingForSpecies(group.species);
-                    const isLowestRangeThreshold = isLowestRangeThresholdForSpecies(group.species, group.height);
-                    const hasUnits = hasPositiveUnits(group.quantity);
-                    const palmGroups = bookingData.palmGroups ?? [];
-                    const sameSpeciesGroups = palmGroups.filter((g) =>
-                      g.species === group.species && !(((g as any).isFailed === true) || g.analysisLevel === 3)
-                    );
-                    const hasUnitsOutsideLowestRange = sameSpeciesGroups.some((g) =>
-                      hasPositiveUnits(g.quantity) && !isLowestRangeThresholdForSpecies(g.species, g.height)
-                    );
-                    const isAccessDisabled = !hasUnits || (isLowestRangeThreshold && !hasUnitsOutsideLowestRange);
-                    
-                    if (isFailed) {
-                        return (
-                            <div key={group.id || idx} className="bg-white rounded-lg border border-red-200 p-3 shadow-sm relative overflow-hidden flex items-center gap-3">
-                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                                
-                                {/* Photo Thumbnail */}
-                                {group.photoUrl && (
-                                    <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-gray-100 border border-red-100 opacity-80">
-                                        <img 
-                                            src={group.photoUrl} 
-                                            alt="Análisis fallido" 
-                                            className="w-full h-full object-cover grayscale-[0.3]"
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Content */}
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <AlertTriangle className="w-4 h-4 text-red-600" />
-                                        <h4 className="font-semibold text-sm text-red-700">Análisis fallido</h4>
-                                    </div>
-                                    <p className="text-xs text-red-600 truncate">
-                                        {(group.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.')} <span className="opacity-80">(No afectará al precio)</span>
-                                    </p>
-                                </div>
-
-                                {/* Close Button (Bidirectional Delete) */}
-                                <button 
-                                    onClick={() => openConfirm({
-                                      title: 'Eliminar resultado',
-                                      message: 'Se eliminará este resultado del análisis y la foto se conservará.',
-                                      confirmLabel: 'Eliminar resultado',
-                                      cancelLabel: 'Cancelar',
-                                      tone: 'warning',
-                                      onConfirm: () => removePalmAnalysisResult(group.id)
-                                    })}
-                                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                                    title="Eliminar resultado"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-                        );
-                    }
-
-                    return (
-                    <div key={group.id || idx} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm relative overflow-hidden transition-all">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                        
-                        <div className="flex flex-row items-center gap-4">
-                            {/* Photo (if available) */}
-                            {group.photoUrl && (
-                                <div className="shrink-0 w-24 h-24 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
-                                    <img 
-                                        src={group.photoUrl} 
-                                        alt={group.species} 
-                                        className="w-full h-full object-cover"
-                                    />
-                                </div>
-                            )}
-
-                            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-                                {/* Line 1: Species + Delete */}
-                                <div className="flex items-center justify-between">
-                                    <h4 className="font-semibold text-sm text-gray-900">
-                                        {group.species}
-                                    </h4>
-                                    
-                                    <button 
-                                         onClick={() => openConfirm({
-                                           title: 'Eliminar resultado',
-                                           message: 'Se eliminará este resultado del análisis y la foto se conservará.',
-                                           confirmLabel: 'Eliminar resultado',
-                                           cancelLabel: 'Cancelar',
-                                           tone: 'warning',
-                                           onConfirm: () => removePalmAnalysisResult(group.id)
-                                         })}
-                                         className="text-gray-400 hover:text-red-500 transition-colors"
-                                         title="Eliminar resultado"
-                                    >
-                                         <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-
-                                {/* Line 2: Height + State + Quality */}
-                                <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
-                                    <span>Altura: <span className="font-medium text-gray-900">{group.height}</span></span>
-                                    <span className="text-gray-300">|</span>
-                                    <span>
-                                        Estado: <span className="font-medium text-gray-900">
-                                            {group.state === 'muy_descuidado' || group.state === 'muy_descuidada' ? 'Muy descuidado' : group.state === 'descuidado' || group.state === 'descuidada' ? 'Descuidado' : 'Normal'}
-                                        </span>
-                                    </span>
-                                    {group.analysisLevel && (
-                                        <>
-                                            <span className="text-gray-300">|</span>
-                                            <span className={`font-medium ${group.analysisLevel === 1 ? 'text-green-700' : 'text-amber-700'}`}>
-                                                {group.analysisLevel === 1 ? 'Análisis fiable' : 'Análisis con posible error'}
-                                            </span>
-                                        </>
-                                    )}
-                                </div>
-                                
-                                {/* Observations (New) */}
-                                {group.observations && group.observations.length > 0 && (
-                                    <div className="mt-1 text-xs text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-100">
-                                        <ul className="list-disc list-inside">
-                                            {group.observations.map((obs, i) => <li key={i}>{obs}</li>)}
-                                        </ul>
-                                    </div>
-                                )}
-
-                                {/* Line 3: Quantity (Editable) */}
-                                <div className="text-xs text-gray-600 flex items-center gap-2 mt-1">
-                                    <span className="font-medium text-gray-700">Cantidad:</span>
-                                    <div className="flex items-center border border-gray-300 rounded-md bg-white">
-                                        <button 
-                                            className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-r border-gray-200"
-                                            onClick={() => handlePalmQuantityChange(group.id, (group.quantity || 1) - 1)}
-                                        >
-                                            -
-                                        </button>
-                                        <input 
-                                            type="number" 
-                                            min="1" 
-                                            value={group.quantity} 
-                                            onChange={(e) => handlePalmQuantityChange(group.id, parseInt(e.target.value) || 1)}
-                                            className="w-10 text-center text-sm py-0.5 focus:outline-none"
-                                        />
-                                        <button 
-                                            className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
-                                            onClick={() => handlePalmQuantityChange(group.id, (group.quantity || 1) + 1)}
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Servicios extras recomendados */}
-                        {(showPhytosanitary || showTrunkPeeling) && (
-                            <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-                                <h5 className="text-sm font-semibold text-gray-800 mb-3">Servicios extras recomendados</h5>
-                                
-                                {showPhytosanitary && (
-                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
-                                        group.hasPhytosanitary ? 'bg-green-50 border-green-500 ring-1 ring-green-500' : 'bg-white border-gray-200 hover:border-green-300 hover:bg-gray-50'
-                                    }`}>
-                                        <span className={`text-sm font-medium ${group.hasPhytosanitary ? 'text-green-800' : 'text-gray-700'}`}>
-                                            Tratamiento de insecticida y fungicida para prevenir plagas
-                                        </span>
-                                        <div className={`relative shrink-0 w-11 h-6 transition-colors duration-200 ease-in-out rounded-full ${group.hasPhytosanitary ? 'bg-green-500' : 'bg-gray-200'}`}>
-                                            <span className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform duration-200 ease-in-out shadow-sm ${group.hasPhytosanitary ? 'translate-x-5' : 'translate-x-0'}`} />
-                                            <input 
-                                                type="checkbox" 
-                                                className="sr-only"
-                                                checked={group.hasPhytosanitary || false}
-                                                onChange={(e) => {
-                                                    const isChecking = e.target.checked;
-                                                    if (isChecking) {
-                                                        updatePalmGroup(group.id, { hasPhytosanitary: true });
-                                                        console.log(`[Audit] Phytosanitary treatment selected for palm group ${group.id} (${group.species})`);
-                                                    } else {
-                                                        openConfirm({
-                                                            title: '¿Estás seguro de omitir este tratamiento?',
-                                                            message: 'El tratamiento de insecticida y fungicida es esencial para palmeras recién podadas. Previene infecciones graves como el picudo rojo y protege la salud de tu palmera tras el corte. No es recomendable omitirlo.',
-                                                            confirmLabel: 'No aplicar tratamiento',
-                                                            cancelLabel: 'Mantener servicio extra',
-                                                            tone: 'phytosanitary_warning',
-                                                            onConfirm: () => {
-                                                                updatePalmGroup(group.id, { hasPhytosanitary: false });
-                                                                console.log(`[Audit] Phytosanitary treatment unselected for palm group ${group.id} (${group.species})`);
-                                                            }
-                                                        });
-                                                    }
-                                                }}
-                                            />
-                                        </div>
-                                    </label>
-                                )}
-
-                                {showTrunkPeeling && (
-                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
-                                        group.hasTrunkPeeling ? 'bg-green-50 border-green-500 ring-1 ring-green-500' : 'bg-white border-gray-200 hover:border-green-300 hover:bg-gray-50'
-                                    }`}>
-                                        <span className={`text-sm font-medium block ${group.hasTrunkPeeling ? 'text-green-800' : 'text-gray-700'}`}>
-                                            Cepillado y limpieza del tronco
-                                            <span className="block text-[11px] font-normal text-gray-500 mt-0.5">Deja tu palmera impecable con el cepillado del tronco</span>
-                                        </span>
-                                        <div className={`relative shrink-0 w-11 h-6 transition-colors duration-200 ease-in-out rounded-full ${group.hasTrunkPeeling ? 'bg-green-500' : 'bg-gray-200'}`}>
-                                            <span className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform duration-200 ease-in-out shadow-sm ${group.hasTrunkPeeling ? 'translate-x-5' : 'translate-x-0'}`} />
-                                            <input 
-                                                type="checkbox" 
-                                                className="sr-only"
-                                                checked={group.hasTrunkPeeling || false}
-                                                onChange={(e) => updatePalmGroup(group.id, { hasTrunkPeeling: e.target.checked })}
-                                            />
-                                        </div>
-                                    </label>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                            <span className="block text-sm font-medium text-gray-700 mb-3">¿Se encuentra la base de la palmera en un lugar despejado para arrojar las hojas libremente al suelo?</span>
-                            <AccessDifficultyToggle 
-                                group={group} 
-                                isAccessDisabled={isAccessDisabled} 
-                                updatePalmGroup={updatePalmGroup} 
-                            />
-                                {!hasUnits && (
-                                    <p className="text-xs text-gray-500 mt-2">
-                                      Indica unidades mayores a 0 para habilitar esta opción.
-                                    </p>
-                                )}
-                                {hasUnits && isLowestRangeThreshold && (
-                                    <p className="text-xs text-gray-500 mt-2">
-                                      Acceso no aplicable en el rango mínimo de esta especie.
-                                    </p>
-                                )}
-                            </div>
-
-                    </div>
-                )})}
-            </div>
-            <div className="bg-blue-50 text-blue-800 p-3 rounded-lg text-sm flex items-center justify-between">
-                <span>Tiempo estimado de trabajo:</span>
-                <span className="font-bold text-lg">{bookingData.estimatedHours} h</span>
-            </div>
-        </div>
-      )}
-
       {/* --- Waste Removal Switch --- */}
       {/* Show only if there are valid results for Trees or Palms or Shrubs */}
       {bookingData.weedingZones && bookingData.weedingZones.length > 0 && (
           <div className="mb-6 space-y-4">
               <h3 className="text-lg font-semibold text-gray-900">Detalles del Desbroce</h3>
-              {bookingData.weedingZones.map((zone, idx) => (
-                  <div key={zone.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-4">
-                      <div className="flex justify-between items-center pb-3 border-b border-gray-100">
-                          <span className="font-medium text-gray-800">Zona {idx + 1}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <span className="block text-xs text-gray-500 mb-1">Superficie estimada</span>
-                              <div className="font-medium text-gray-900">{zone.area} m²</div>
+              {(() => {
+                const zone = bookingData.weedingZones?.[0];
+                if (!zone) return null;
+                return (
+                  <div key={zone.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-5">
+                      <div>
+                          <label htmlFor="weeding-area" className="block text-xs text-gray-500 mb-1">Superficie estimada</label>
+                          <div className="relative">
+                            <input
+                                id="weeding-area"
+                                type="number"
+                                min={0}
+                                step={1}
+                                inputMode="numeric"
+                                value={zone.area || ''}
+                                onChange={(e) => handleWeedingAreaChange(e.target.value)}
+                                placeholder="0"
+                                className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-12 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">m²</span>
                           </div>
-                          <div>
-                              <span className="block text-xs text-gray-500 mb-1">Estado detectado</span>
-                              <div className="font-medium text-gray-900 capitalize">{zone.state.replace(/_/g, ' ')}</div>
+                      </div>
+
+                      <div>
+                          <span className="block text-xs text-gray-500 mb-2">Estado de la parcela</span>
+                          <div className="space-y-2">
+                              {WEEDING_STATE_OPTIONS.map((option) => {
+                                  const selected = zone.state === option.value;
+                                  return (
+                                    <label
+                                      key={option.value}
+                                      className={`block rounded-xl border p-3 cursor-pointer transition-colors ${selected ? 'border-green-600 bg-green-50' : 'border-gray-200 bg-white hover:border-green-300'}`}
+                                    >
+                                      <div className="flex items-start gap-3">
+                                        <input
+                                          type="radio"
+                                          name="weeding-state"
+                                          checked={selected}
+                                          onChange={() => handleWeedingStateChange(option.value)}
+                                          className="mt-0.5 h-4 w-4 accent-green-600"
+                                        />
+                                        <div>
+                                          <div className="text-sm font-semibold text-gray-900">{option.label}</div>
+                                          <div className="text-xs text-gray-500 mt-0.5">{option.description}</div>
+                                        </div>
+                                      </div>
+                                    </label>
+                                  );
+                              })}
                           </div>
                       </div>
-                      <div className="flex items-center justify-between pt-2">
+
+                      <div className="flex items-center justify-between pt-1">
                           <div>
                               <span className="text-gray-700 font-medium text-sm block">Aplicar herbicida</span>
                               <span className="text-gray-500 text-xs">Previene rebrotes (requiere profesional certificado)</span>
@@ -5696,14 +6082,15 @@ const DetailsPage: React.FC = () => {
                           <button
                               type="button"
                               role="switch"
-                              onClick={() => handleToggleWeedingHerbicide(idx)}
-                              className={`${zone.applyHerbicide ? 'bg-green-500' : 'bg-gray-200'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0`}
+                              onClick={() => handleToggleWeedingHerbicide(0)}
+                              className={`${zone.applyHerbicide ? 'bg-green-600' : 'bg-gray-200'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0`}
                           >
                               <span className={`${zone.applyHerbicide ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
                           </button>
                       </div>
                   </div>
-              ))}
+                );
+              })()}
           </div>
       )}
 
@@ -6026,7 +6413,7 @@ const DetailsPage: React.FC = () => {
                 onClick={() => {
                   if (debugService === 'Poda de palmeras') {
                       if (debugPalmGroups.length === 0) {
-                          alert('Añade al menos un grupo de palmeras para simular.');
+                          toast.error('Añade al menos un grupo de palmeras para simular.');
                           return;
                       }
 
@@ -6329,6 +6716,29 @@ const DetailsPage: React.FC = () => {
         document.body
       )}
 
+      {(() => {
+        const lowerService = (debugService || '').toLowerCase();
+        const isWeedingService = lowerService.includes('desbroce') || lowerService.includes('malas hierbas');
+        if (!isWeedingService) return null;
+        return (
+          <div className="px-4 mb-28">
+            <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={weedingManualConfirmed}
+                  onChange={(e) => setWeedingManualConfirmed(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-green-600"
+                />
+                <span className="text-xs text-gray-700 leading-relaxed">
+                  Confirmo que las variables indicadas para el calculo del presupuesto son correctas. Acepto que, en caso de no serlo, el profesional podra recalcular el precio del desbroce en persona y deberé abonar la diferencia.
+                </span>
+              </label>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
         <div className="max-w-md mx-auto">
@@ -6343,6 +6753,15 @@ const DetailsPage: React.FC = () => {
                   || (bookingData.phytosanitaryZones || []).some((zone) => getPhytosanitaryValidation(zone as any).issues.length > 0 || !isPhytosanitaryZoneAnalyzed(zone as any))
                 )
               )
+              || (() => {
+                const lowerService = (debugService || '').toLowerCase();
+                const isWeedingService = lowerService.includes('desbroce') || lowerService.includes('malas hierbas');
+                if (!isWeedingService) return false;
+                const zone = bookingData.weedingZones?.[0];
+                const hasValidArea = Number(zone?.area || 0) > 0;
+                const hasValidState = zone?.state === 'normal' || zone?.state === 'dificultad_media' || zone?.state === 'dificultad_alta';
+                return !zone || !hasValidArea || !hasValidState || !weedingManualConfirmed;
+              })()
             }
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
@@ -6403,7 +6822,7 @@ const DetailsPage: React.FC = () => {
                          if (!debugLogs) return;
                          const data = JSON.stringify(debugLogs, null, 2);
                          navigator.clipboard.writeText(data);
-                         alert('Datos técnicos copiados al portapapeles');
+                         toast.success('Datos técnicos copiados al portapapeles');
                      }}
                      disabled={!debugLogs}
                      className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"

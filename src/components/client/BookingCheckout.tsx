@@ -207,7 +207,7 @@ const BookingCheckout: React.FC = () => {
     if (remainingToAssign > 0 && out.length > 0) {
       const weights = out.map(it => {
         const svc = catalogById.get(it.serviceId);
-        const w = typeof svc?.price_per_hour === 'number' && svc.price_per_hour > 0 ? svc.price_per_hour : 1;
+        const w = typeof svc?.hourly_rate === 'number' && svc.hourly_rate > 0 ? svc.hourly_rate : 1;
         return w;
       });
       const sumW = weights.reduce((a, b) => a + b, 0) || 1;

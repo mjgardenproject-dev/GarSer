@@ -165,7 +165,7 @@ const ClientHome: React.FC = () => {
   const hourlyRateAverage = useMemo(() => {
     if (selectedServiceIds.length === 0) return 0;
     const rates = selectedServiceIds
-      .map(id => services.find(s => s.id === id)?.price_per_hour || 0)
+      .map(id => services.find(s => s.id === id)?.hourly_rate || 0)
       .filter(n => n > 0);
     if (rates.length === 0) return 0;
     return Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 100) / 100;
@@ -1208,8 +1208,8 @@ const ClientHome: React.FC = () => {
                             className={`px-3 py-2 rounded-lg border text-sm ${selected ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
                           >
                             <div className="font-medium">{svc.name}</div>
-                            {typeof svc.price_per_hour === 'number' && svc.price_per_hour > 0 && (
-                              <div className="text-xs opacity-80">{`€${svc.price_per_hour}/h`}</div>
+                            {typeof svc.hourly_rate === 'number' && svc.hourly_rate > 0 && (
+                              <div className="text-xs opacity-80">{`€${svc.hourly_rate}/h`}</div>
                             )}
                           </button>
                         );

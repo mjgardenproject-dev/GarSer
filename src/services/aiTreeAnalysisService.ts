@@ -11,26 +11,25 @@ async function mockAICall(zone: TreePruningZone): Promise<Omit<AITreeAnalysisRes
 
   // Simulación basada en cantidad de fotos
   const photoCount = zone.photos.length;
-  let altura_m = 2.5 + Math.random() * 10; // 2.5m - 12.5m
-  let dificultad_alta = Math.random() > 0.6; // 40% dificultad alta
+  let size_band: 'small' | 'medium' | 'large' | 'over_9' = 'medium';
 
   // Más fotos = árbol más complejo
   if (photoCount > 2) {
-    altura_m = 8 + Math.random() * 5; // 8m - 13m
-    dificultad_alta = true;
+    size_band = 'over_9';
+  } else if (photoCount === 1) {
+    size_band = 'small';
   } else if (photoCount === 0) {
-    altura_m = 1; // Sin fotos, estimación baja
-    dificultad_alta = false;
+    size_band = 'small';
   }
 
   // Simular latencia de red
   await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
 
-  console.log(`[AI Mock] Árbol ${zone.id}: ${altura_m.toFixed(1)}m, dificultad: ${dificultad_alta}`);
+  console.log(`[AI Mock] Árbol ${zone.id}: banda ${size_band}`);
 
   return {
-    altura_m,
-    dificultad_alta,
+    size_band,
+    dificultad_alta: false,
     nivel_analisis: (photoCount === 0 ? 3 : photoCount === 1 ? 2 : 1) as 1 | 2 | 3,
     observaciones: photoCount === 0 ? ['No se detectó ningún árbol válido'] : []
   };
@@ -60,7 +59,7 @@ export async function analyzeTreeImages(zones: TreePruningZone[]): Promise<AITre
       // En caso de error, devolver valores por defecto
       return {
         zoneId: zone.id,
-        altura_m: 0,
+        size_band: 'small' as const,
         dificultad_alta: false,
         nivel_analisis: 3 as const,
         observaciones: ['Error analizando imágenes']

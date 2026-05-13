@@ -15,6 +15,7 @@ export interface SpeciesBusinessRule {
   hasPhytosanitary: boolean;
   hasTrunkPeeling: boolean;
   lowestRangeThreshold: string;
+  highestOpenRangeThreshold: string;
 }
 
 export const speciesBusinessRules: Record<PalmCanonicalSpecies, SpeciesBusinessRule> = {
@@ -23,42 +24,48 @@ export const speciesBusinessRules: Record<PalmCanonicalSpecies, SpeciesBusinessR
     aliases: ['phoenix canariensis', 'canariensis'],
     hasPhytosanitary: true,
     hasTrunkPeeling: true,
-    lowestRangeThreshold: '0-4m'
+    lowestRangeThreshold: '0-4m',
+    highestOpenRangeThreshold: '>10m'
   },
   'Phoenix dactylifera': {
     canonicalName: 'Phoenix dactylifera',
     aliases: ['phoenix dactylifera', 'dactylifera'],
     hasPhytosanitary: true,
     hasTrunkPeeling: true,
-    lowestRangeThreshold: '0-5m'
+    lowestRangeThreshold: '0-5m',
+    highestOpenRangeThreshold: '>15m'
   },
   'Washingtonia robusta/filifera': {
     canonicalName: 'Washingtonia robusta/filifera',
     aliases: ['washingtonia robusta/filifera', 'washingtonia', 'robusta', 'filifera'],
     hasPhytosanitary: true,
     hasTrunkPeeling: true,
-    lowestRangeThreshold: '0-4m'
+    lowestRangeThreshold: '0-4m',
+    highestOpenRangeThreshold: '>20m'
   },
   'Syagrus romanzoffiana': {
     canonicalName: 'Syagrus romanzoffiana',
     aliases: ['syagrus romanzoffiana', 'syagrus', 'romanzoffiana'],
     hasPhytosanitary: false,
     hasTrunkPeeling: false,
-    lowestRangeThreshold: '0-5m'
+    lowestRangeThreshold: '0-5m',
+    highestOpenRangeThreshold: '>10m'
   },
   'Trachycarpus fortunei': {
     canonicalName: 'Trachycarpus fortunei',
     aliases: ['trachycarpus fortunei', 'trachycarpus', 'fortunei'],
     hasPhytosanitary: true,
     hasTrunkPeeling: false,
-    lowestRangeThreshold: '0-3m'
+    lowestRangeThreshold: '0-3m',
+    highestOpenRangeThreshold: '>6m'
   },
   'Roystonea regia': {
     canonicalName: 'Roystonea regia',
     aliases: ['roystonea regia', 'roystonea', 'regia'],
     hasPhytosanitary: false,
     hasTrunkPeeling: false,
-    lowestRangeThreshold: '0-6m'
+    lowestRangeThreshold: '0-6m',
+    highestOpenRangeThreshold: '>6m'
   }
 };
 
@@ -104,6 +111,12 @@ export const getLowestRangeThresholdForSpecies = (species: string): string => {
   return rule.lowestRangeThreshold;
 };
 
+export const getHighestOpenRangeThresholdForSpecies = (species: string): string | null => {
+  const rule = resolveSpeciesBusinessRule(species);
+  if (!rule) return null;
+  return rule.highestOpenRangeThreshold;
+};
+
 const normalizeHeightRange = (value: string): string => {
   return String(value || '')
     .toLowerCase()
@@ -114,6 +127,12 @@ const normalizeHeightRange = (value: string): string => {
 
 export const isLowestRangeThresholdForSpecies = (species: string, heightRange: string): boolean => {
   return normalizeHeightRange(heightRange) === normalizeHeightRange(getLowestRangeThresholdForSpecies(species));
+};
+
+export const isHighestOpenRangeForSpecies = (species: string, heightRange: string): boolean => {
+  const threshold = getHighestOpenRangeThresholdForSpecies(species);
+  if (!threshold) return false;
+  return normalizeHeightRange(heightRange) === normalizeHeightRange(threshold);
 };
 
 export const canApplyTrunkFinish = (species: string, requested: boolean | undefined): boolean => {

@@ -1,9 +1,14 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { AlertTriangle, AlertCircle, Trash2, Info } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { Trash2, Info } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
 import { TreePruningServiceConfig } from '../../types/treePruning';
-import ServiceConfigFooter from './ServiceConfigFooter';
+import { UnifiedNumericInput } from './UnifiedNumericInput';
+import { useAutoSave } from '../../hooks/useAutoSave';
+import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import ServicePricePreview from './ServicePricePreview';
+
+const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
+const isInvalid = (v: any) => v === undefined || v === null || v === '';
 
 interface Props {
   value?: TreePruningServiceConfig;
@@ -12,133 +17,36 @@ interface Props {
   onSave?: (config: TreePruningServiceConfig) => Promise<void>;
 }
 
-const EuroInput = ({ id, valueNum, validationErrors, setValidationErrors, onValueChange }: { id: string, valueNum: number | undefined, validationErrors: string[], setValidationErrors: any, onValueChange: (num: number) => void }) => {
-  const hasError = validationErrors.includes(id);
-  const [localValue, setLocalValue] = useState(valueNum === 0 || valueNum === undefined ? '' : valueNum.toString());
-
-  useEffect(() => {
-    if (valueNum === undefined || valueNum === 0) {
-      setLocalValue((prev) => {
-        if (prev !== '' && prev !== '0' && prev !== '0.') return '';
-        return prev;
-      });
-    } else {
-      setLocalValue((prev) => {
-        const parsed = parseFloat(prev.replace(/,/g, '.'));
-        if (isNaN(parsed) || parsed !== valueNum) return valueNum.toString();
-        return prev;
-      });
-    }
-  }, [valueNum]);
-
-  return (
-    <div className="relative w-full">
-      <input
-        type="text"
-        inputMode="decimal"
-        className={`w-full h-10 pl-3 pr-7 border rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500 ${hasError ? 'border-red-400 bg-red-50' : ((valueNum || 0) > 0 ? 'border-gray-300' : 'border-gray-200 bg-gray-50')}`}
-        value={localValue}
-        onChange={(e) => {
-          const val = e.target.value.replace(/,/g, '.');
-          if (/^\d*\.?\d*$/.test(val)) {
-            setLocalValue(val);
-            if (val !== '' && val !== '.') {
-              onValueChange(parseFloat(val));
-            } else {
-              onValueChange(0);
-            }
-            if (hasError) {
-              setValidationErrors((prev: string[]) => prev.filter((x) => x !== id));
-            }
-          }
-        }}
-        onBlur={() => {
-          if (valueNum === 0 || valueNum === undefined) {
-            setLocalValue('');
-          } else {
-            setLocalValue(valueNum.toString());
-          }
-        }}
-      />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">€</span>
-    </div>
-  );
-};
-
-const PercentageInput = ({ id, valueNum, validationErrors, setValidationErrors, onValueChange }: { id: string, valueNum: number, validationErrors: string[], setValidationErrors: any, onValueChange: (num: number) => void }) => {
-  const hasError = validationErrors.includes(id);
-  const [localValue, setLocalValue] = useState(valueNum === 0 ? '' : valueNum.toString());
-
-  useEffect(() => {
-    if (valueNum === 0) {
-      setLocalValue((prev) => {
-        if (prev !== '' && prev !== '0' && prev !== '0.') return '';
-        return prev;
-      });
-    } else {
-      setLocalValue((prev) => {
-        const parsed = parseFloat(prev.replace(/,/g, '.'));
-        if (isNaN(parsed) || parsed !== valueNum) return valueNum.toString();
-        return prev;
-      });
-    }
-  }, [valueNum]);
-
-  return (
-    <div className="flex items-center gap-2 shrink-0">
-      <span className="text-gray-400 text-sm font-medium">+</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        className={`w-20 h-10 px-3 border rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${hasError ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
-        value={localValue}
-        placeholder="0"
-        onChange={(e) => {
-          const val = e.target.value.replace(/,/g, '.');
-          if (/^\d*\.?\d*$/.test(val)) {
-            setLocalValue(val);
-            if (val !== '' && val !== '.') {
-              onValueChange(parseFloat(val));
-            } else {
-              onValueChange(0);
-            }
-            if (hasError) {
-              setValidationErrors((prev: string[]) => prev.filter((x) => x !== id));
-            }
-          }
-        }}
-        onBlur={() => {
-          if (valueNum === 0) {
-            setLocalValue('');
-          } else {
-            setLocalValue(valueNum.toString());
-          }
-        }}
-      />
-      <span className="text-gray-500 text-sm font-medium w-4">%</span>
-    </div>
-  );
-};
-
-const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
-  const [isSaving, setIsSaving] = useState(false);
+export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
 
   const normalizedInitialConfig: TreePruningServiceConfig = useMemo(() => {
     return {
-      minimumPrice: initialConfig?.minimumPrice || 0,
+      minimumPrice: getVal(initialConfig?.minimumPrice),
       formacion: {
-        small: initialConfig?.formacion?.small || 0,
-        medium: initialConfig?.formacion?.medium || 0,
-        large: initialConfig?.formacion?.large,
+        small: getVal(initialConfig?.formacion?.small),
+        medium: getVal(initialConfig?.formacion?.medium),
+        large: initialConfig?.formacion?.large !== undefined ? getVal(initialConfig?.formacion?.large) : undefined,
       },
       estructural: {
-        small: initialConfig?.estructural?.small || 0,
-        medium: initialConfig?.estructural?.medium || 0,
-        large: initialConfig?.estructural?.large,
+        small: getVal(initialConfig?.estructural?.small),
+        medium: getVal(initialConfig?.estructural?.medium),
+        large: initialConfig?.estructural?.large !== undefined ? getVal(initialConfig?.estructural?.large) : undefined,
       },
-      difficultyIncrease: initialConfig?.difficultyIncrease || 0,
-      wasteRemovalMultiplier: initialConfig?.wasteRemovalMultiplier || 0,
+      difficultyIncrease: getVal(initialConfig?.difficultyIncrease),
+      wasteRemovalMultiplier: getVal(initialConfig?.wasteRemovalMultiplier),
+      yield_units_per_hour: {
+        formacion: {
+          small: getVal(initialConfig?.yield_units_per_hour?.formacion?.small),
+          medium: getVal(initialConfig?.yield_units_per_hour?.formacion?.medium),
+          large: initialConfig?.yield_units_per_hour?.formacion?.large !== undefined ? getVal(initialConfig?.yield_units_per_hour?.formacion?.large) : undefined,
+        },
+        estructural: {
+          small: getVal(initialConfig?.yield_units_per_hour?.estructural?.small),
+          medium: getVal(initialConfig?.yield_units_per_hour?.estructural?.medium),
+          large: initialConfig?.yield_units_per_hour?.estructural?.large !== undefined ? getVal(initialConfig?.yield_units_per_hour?.estructural?.large) : undefined,
+        }
+      }
     };
   }, [initialConfig]);
 
@@ -154,24 +62,51 @@ const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   }, [value]);
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [showResetModal, setShowResetModal] = useState(false);
 
-  const isDirty = useMemo(() => !deepEqual(config, normalizedInitialConfig), [config, normalizedInitialConfig]);
-
-  const validateConfig = (currentConfig: TreePruningServiceConfig): string[] => {
+  const validateConfig = useCallback((currentConfig: TreePruningServiceConfig): string[] => {
     const errors: string[] = [];
-    if (currentConfig.minimumPrice <= 0) errors.push('minimumPrice');
-    if (currentConfig.formacion.small <= 0) errors.push('formacion.small');
-    if (currentConfig.formacion.medium <= 0) errors.push('formacion.medium');
-    if (currentConfig.estructural.small <= 0) errors.push('estructural.small');
-    if (currentConfig.estructural.medium <= 0) errors.push('estructural.medium');
+    
+    if (isInvalid(currentConfig.formacion.small)) errors.push('formacion.small');
+    if (isInvalid(currentConfig.formacion.medium)) errors.push('formacion.medium');
+    if (isInvalid(currentConfig.estructural.small)) errors.push('estructural.small');
+    if (isInvalid(currentConfig.estructural.medium)) errors.push('estructural.medium');
 
     if (showLargeOption) {
-      if ((currentConfig.formacion.large || 0) <= 0) errors.push('formacion.large');
-      if ((currentConfig.estructural.large || 0) <= 0) errors.push('estructural.large');
+      if (isInvalid(currentConfig.formacion.large)) errors.push('formacion.large');
+      if (isInvalid(currentConfig.estructural.large)) errors.push('estructural.large');
     }
+
+    // Yields are always mandatory
+    const yields = currentConfig.yield_units_per_hour;
+    if (isInvalid(yields?.formacion?.small)) errors.push('yield_formacion_small');
+    if (isInvalid(yields?.formacion?.medium)) errors.push('yield_formacion_medium');
+    if (isInvalid(yields?.estructural?.small)) errors.push('yield_estructural_small');
+    if (isInvalid(yields?.estructural?.medium)) errors.push('yield_estructural_medium');
+    if (showLargeOption) {
+      if (isInvalid(yields?.formacion?.large)) errors.push('yield_formacion_large');
+      if (isInvalid(yields?.estructural?.large)) errors.push('yield_estructural_large');
+    }
+
+    if (isInvalid(currentConfig.minimumPrice)) errors.push('minimumPrice');
+    if (isInvalid(currentConfig.difficultyIncrease)) errors.push('difficultyIncrease');
+    if (isInvalid(currentConfig.wasteRemovalMultiplier)) errors.push('wasteRemovalMultiplier');
     return errors;
-  };
+  }, [showLargeOption]);
+
+  useEffect(() => {
+    setValidationErrors(validateConfig(config));
+  }, [config, validateConfig]);
+
+  const { status } = useAutoSave({
+    value: config,
+    initialValue: normalizedInitialConfig,
+    onSave: async (val) => {
+      if (onSave) {
+        await onSave(val);
+      }
+    },
+    validate: validateConfig
+  });
 
   const updateConfig = (updates: Partial<TreePruningServiceConfig>) => {
     const newConfig = { ...config, ...updates };
@@ -180,54 +115,15 @@ const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     onChange(newConfig);
   };
 
-  const handleReset = () => {
-    setShowResetModal(true);
-  };
-
-  const confirmReset = async () => {
-    setShowResetModal(false);
-    const emptyConfig: TreePruningServiceConfig = {
-      minimumPrice: 0,
-      formacion: { small: 0, medium: 0 },
-      estructural: { small: 0, medium: 0 },
-      difficultyIncrease: 0,
-      wasteRemovalMultiplier: 0
-    };
-    onChange(emptyConfig);
-    setValidationErrors([]);
-    
-    if (onSave) {
-      try {
-        setIsSaving(true);
-        await onSave(emptyConfig);
-      } catch (error) {
-        console.error('Error resetting config:', error);
-      } finally {
-        setIsSaving(false);
-      }
-    }
-  };
-
   const handleSave = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-
+    
     const errors = validateConfig(config);
-    if (errors.length > 0) {
-      setValidationErrors(errors);
-      return;
-    }
-
-    setValidationErrors([]);
-
+    setValidationErrors(errors);
+    if (errors.length > 0) return;
+    
     if (onSave) {
-      try {
-        setIsSaving(true);
-        await onSave(config);
-      } catch (error) {
-        console.error('Error saving config:', error);
-      } finally {
-        setIsSaving(false);
-      }
+      await onSave(config);
     }
   };
 
@@ -277,229 +173,325 @@ const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   };
 
   const renderEuroInput = (id: string, valueNum: number | undefined, onValueChange: (num: number) => void) => {
-    return <EuroInput id={id} valueNum={valueNum} validationErrors={validationErrors} setValidationErrors={setValidationErrors} onValueChange={onValueChange} />;
+    return (
+      <div className="w-full sm:w-24 mt-2 sm:mt-0">
+        <UnifiedNumericInput
+          value={valueNum}
+          autoSelect
+          onChange={onValueChange}
+          hasError={validationErrors.includes(id)}
+        />
+      </div>
+    );
   };
 
   const renderPercentageInput = (id: string, valueNum: number, onValueChange: (num: number) => void) => {
-    return <PercentageInput id={id} valueNum={valueNum} validationErrors={validationErrors} setValidationErrors={setValidationErrors} onValueChange={onValueChange} />;
+    return (
+      <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+        <span className="text-gray-400 text-sm font-medium hidden sm:inline">+</span>
+        <div className="w-full sm:w-20">
+          <UnifiedNumericInput
+            value={valueNum}
+            autoSelect
+            onChange={onValueChange}
+            hasError={validationErrors.includes(id)}
+            suffix="%"
+          />
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       {/* Header Info */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-2">
-        <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-900 text-lg">
-                Configuración de tarifas de poda de árboles (IVA incluido)
-            </h3>
-            <div className="relative">
-                <button 
-                    type="button"
-                    onClick={() => setShowGlobalInfo(!showGlobalInfo)}
-                    className="text-gray-400 hover:text-blue-500 transition-colors"
-                >
-                    <Info className="w-5 h-5" />
-                </button>
-                {showGlobalInfo && (
-                    <>
-                        <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
-                        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:left-0 md:translate-x-0 md:translate-y-0 md:w-64 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
-                            <ul className="list-disc pl-4 space-y-2">
-                                <li>Los precios son fijos por árbol y rango de altura.</li>
-                                <li>Los precios <strong>no incluyen la retirada de restos</strong> (se configura abajo).</li>
-                                <li>El <strong>IVA está incluido</strong>.</li>
-                            </ul>
-                        </div>
-                    </>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-8">
+        <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
+                    Configuración de tarifas de Poda de árboles (IVA incluido)
+                </h3>
+                <div className="relative">
+                    <button 
+                        type="button"
+                        onClick={() => setShowGlobalInfo(!showGlobalInfo)}
+                        className="text-gray-400 hover:text-blue-500 transition-colors"
+                    >
+                        <Info className="w-5 h-5" />
+                    </button>
+                    {showGlobalInfo && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
+                            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:left-0 md:translate-x-0 md:translate-y-0 md:w-64 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
+                                <ul className="list-disc pl-4 space-y-2">
+                                    <li>Precios por unidad según el tipo de poda y tamaño del árbol.</li>
+                                    <li>La poda <strong>Formación</strong> es para árboles jóvenes o mantenimiento ligero.</li>
+                                    <li>La poda <strong>Estructural</strong> es para árboles grandes, ramas pesadas o saneamiento profundo.</li>
+                                    <li>El <strong>IVA está incluido</strong> en todos los precios.</li>
+                                </ul>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+            <SaveStatusIndicator status={status} />
+        </div>
+      </div>
+
+      <hr className="border-gray-200 my-8" />
+
+      {/* Velocidad de trabajo (Obligatorio) */}
+      <div className="mb-8">
+        <div className="flex items-center gap-2 mb-3">
+          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Velocidad de trabajo</h4>
+          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full uppercase">Obligatorio</span>
+        </div>
+        
+        <div className="space-y-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            <div>
+              <h5 className="text-xs font-bold text-gray-400 uppercase mb-3">Velocidad de trabajo Poda Formación (uds/h)</h5>
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                  <span className="text-sm text-gray-600">Pequeño</span>
+                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                    <UnifiedNumericInput
+                      value={config.yield_units_per_hour?.formacion?.small}
+                      onChange={(v) => updateConfig({ 
+                        yield_units_per_hour: { 
+                          ...config.yield_units_per_hour!, 
+                          formacion: { ...config.yield_units_per_hour!.formacion, small: v } 
+                        } 
+                      })}
+                      hasError={validationErrors.includes('yield_formacion_small')}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                  <span className="text-sm text-gray-600">Mediano</span>
+                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                    <UnifiedNumericInput
+                      value={config.yield_units_per_hour?.formacion?.medium}
+                      onChange={(v) => updateConfig({ 
+                        yield_units_per_hour: { 
+                          ...config.yield_units_per_hour!, 
+                          formacion: { ...config.yield_units_per_hour!.formacion, medium: v } 
+                        } 
+                      })}
+                      hasError={validationErrors.includes('yield_formacion_medium')}
+                    />
+                  </div>
+                </div>
+                {showLargeOption && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                    <span className="text-sm text-gray-600">Grande</span>
+                    <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                      <UnifiedNumericInput
+                        value={config.yield_units_per_hour?.formacion?.large}
+                        onChange={(v) => updateConfig({ 
+                          yield_units_per_hour: { 
+                            ...config.yield_units_per_hour!, 
+                            formacion: { ...config.yield_units_per_hour!.formacion, large: v } 
+                          } 
+                        })}
+                        hasError={validationErrors.includes('yield_formacion_large')}
+                      />
+                    </div>
+                  </div>
                 )}
+              </div>
             </div>
+            <div>
+              <h5 className="text-xs font-bold text-gray-400 uppercase mb-3">Velocidad de trabajo Poda Estructural (uds/h)</h5>
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                  <span className="text-sm text-gray-600">Pequeño</span>
+                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                    <UnifiedNumericInput
+                      value={config.yield_units_per_hour?.estructural?.small}
+                      onChange={(v) => updateConfig({ 
+                        yield_units_per_hour: { 
+                          ...config.yield_units_per_hour!, 
+                          estructural: { ...config.yield_units_per_hour!.estructural, small: v } 
+                        } 
+                      })}
+                      hasError={validationErrors.includes('yield_estructural_small')}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                  <span className="text-sm text-gray-600">Mediano</span>
+                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                    <UnifiedNumericInput
+                      value={config.yield_units_per_hour?.estructural?.medium}
+                      onChange={(v) => updateConfig({ 
+                        yield_units_per_hour: { 
+                          ...config.yield_units_per_hour!, 
+                          estructural: { ...config.yield_units_per_hour!.estructural, medium: v } 
+                        } 
+                      })}
+                      hasError={validationErrors.includes('yield_estructural_medium')}
+                    />
+                  </div>
+                </div>
+                {showLargeOption && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                    <span className="text-sm text-gray-600">Grande</span>
+                    <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                      <UnifiedNumericInput
+                        value={config.yield_units_per_hour?.estructural?.large}
+                        onChange={(v) => updateConfig({ 
+                          yield_units_per_hour: { 
+                            ...config.yield_units_per_hour!, 
+                            estructural: { ...config.yield_units_per_hour!.estructural, large: v } 
+                          } 
+                        })}
+                        hasError={validationErrors.includes('yield_estructural_large')}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-2 italic">
+            Configura cuántos árboles puedes podar por hora. Este valor se utiliza para calcular la duración estimada del servicio y gestionar tu calendario.
+          </p>
         </div>
       </div>
 
-      {/* Minimum Price */}
-      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-1">Precio mínimo del servicio</p>
-            <p className="text-xs text-gray-500 mb-2">Importe mínimo a cobrar por desplazamiento y equipo.</p>
-            {renderEuroInput('minimumPrice', config.minimumPrice, (v) => updateConfig({ minimumPrice: v }))}
-          </div>
-        </div>
-      </div>
+      <hr className="border-gray-200 my-8" />
 
-      {/* Formacion */}
-      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-        <div>
-          <h4 className="text-sm font-bold text-gray-900">Poda de formación</h4>
-          <p className="text-xs text-gray-500 mt-1">Guía el crecimiento para dar forma, ideal en árboles jóvenes.</p>
-        </div>
-        
-        <div className="space-y-1 divide-y divide-gray-100">
-          <div className="flex items-center justify-between py-3 gap-3">
-            <div className="min-w-0">
-              <span className="block text-sm font-medium text-gray-900">0m - 3m (Pequeño)</span>
-            </div>
-            <div className="w-32">
-              {renderEuroInput('formacion.small', config.formacion.small, (v) => handleBandChange('formacion', 'small', v))}
-            </div>
-          </div>
-          <div className="flex items-center justify-between py-3 gap-3">
-            <div className="min-w-0">
-              <span className="block text-sm font-medium text-gray-900">3m - 5m (Mediano)</span>
-            </div>
-            <div className="w-32">
-              {renderEuroInput('formacion.medium', config.formacion.medium, (v) => handleBandChange('formacion', 'medium', v))}
-            </div>
-          </div>
-          {showLargeOption && (
-            <div className="flex items-center justify-between py-3 gap-3">
-              <div className="min-w-0">
-                <span className="block text-sm font-medium text-gray-900">5m - 9m (Grande)</span>
-              </div>
-              <div className="w-32">
-                {renderEuroInput('formacion.large', config.formacion.large, (v) => handleBandChange('formacion', 'large', v))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <div>
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Tarifas por unidad (Precio Fijo)</h4>
+        {/* 1. Tipos de poda */}
+            <div className="space-y-8">
+              <div>
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-6">
+                  <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Tarifas por tipo de poda (€/unidad)</h4>
+                  
+                  {!showLargeOption ? (
+                    <button 
+                      type="button"
+                      onClick={handleShowLargeOption}
+                      className="w-full md:w-auto mt-2 md:mt-0 text-xs font-semibold text-green-700 bg-green-50 px-4 py-2.5 rounded-lg hover:bg-green-100 transition-colors border border-green-200/60"
+                    >
+                      + Añadir árboles grandes
+                    </button>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={handleRemoveLargeOption}
+                      className="w-full md:w-auto mt-2 md:mt-0 justify-center text-xs font-semibold text-red-600 bg-red-50 px-4 py-2.5 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1 border border-red-200/60"
+                    >
+                      <Trash2 className="w-4 h-4" /> Quitar árboles grandes
+                    </button>
+                  )}
+                </div>
 
-      {/* Estructural */}
-      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-        <div>
-          <h4 className="text-sm font-bold text-gray-900">Poda estructural</h4>
-          <p className="text-xs text-gray-500 mt-1">Elimina ramas dañadas o peligrosas y mejora la estructura del árbol.</p>
-        </div>
-        
-        <div className="space-y-1 divide-y divide-gray-100">
-          <div className="flex items-center justify-between py-3 gap-3">
-            <div className="min-w-0">
-              <span className="block text-sm font-medium text-gray-900">0m - 3m (Pequeño)</span>
-            </div>
-            <div className="w-32">
-              {renderEuroInput('estructural.small', config.estructural.small, (v) => handleBandChange('estructural', 'small', v))}
-            </div>
-          </div>
-          <div className="flex items-center justify-between py-3 gap-3">
-            <div className="min-w-0">
-              <span className="block text-sm font-medium text-gray-900">3m - 5m (Mediano)</span>
-            </div>
-            <div className="w-32">
-              {renderEuroInput('estructural.medium', config.estructural.medium, (v) => handleBandChange('estructural', 'medium', v))}
-            </div>
-          </div>
-          {showLargeOption && (
-            <div className="flex items-center justify-between py-3 gap-3">
-              <div className="min-w-0">
-                <span className="block text-sm font-medium text-gray-900">5m - 9m (Grande)</span>
-              </div>
-              <div className="w-32">
-                {renderEuroInput('estructural.large', config.estructural.large, (v) => handleBandChange('estructural', 'large', v))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                  {/* Formación */}
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-900 mb-3">Poda de formación</h4>
+                    <p className="text-xs text-gray-500 mt-1 mb-4">Guía el crecimiento para dar forma, ideal en árboles jóvenes.</p>
+                    
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">0m - 3m (Pequeño)</span>
+                        </div>
+                        {renderEuroInput('formacion.small', config.formacion.small, (v) => handleBandChange('formacion', 'small', v))}
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">3m - 5m (Mediano)</span>
+                        </div>
+                        {renderEuroInput('formacion.medium', config.formacion.medium, (v) => handleBandChange('formacion', 'medium', v))}
+                      </div>
+                      {showLargeOption && (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                          <div className="min-w-0">
+                            <span className="block text-sm font-medium text-gray-900">5m - 9m (Grande)</span>
+                          </div>
+                          {renderEuroInput('formacion.large', config.formacion.large, (v) => handleBandChange('formacion', 'large', v))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-      {/* Toggle large option */}
-      <div className="flex justify-end">
-        {!showLargeOption ? (
-          <button
-            type="button"
-            onClick={handleShowLargeOption}
-            className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-          >
-            + Añadir poda de árboles en altura (5m - 9m)
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleRemoveLargeOption}
-            className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-2"
-          >
-            <Trash2 className="w-4 h-4" /> Eliminar poda en altura
-          </button>
-        )}
+                  {/* Estructural */}
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-900 mb-3">Poda estructural</h4>
+                    <p className="text-xs text-gray-500 mt-1 mb-4">Elimina ramas dañadas o peligrosas y mejora la estructura del árbol.</p>
+                    
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">0m - 3m (Pequeño)</span>
+                        </div>
+                        {renderEuroInput('estructural.small', config.estructural.small, (v) => handleBandChange('estructural', 'small', v))}
+                      </div>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                        <div className="min-w-0">
+                          <span className="block text-sm font-medium text-gray-900">3m - 5m (Mediano)</span>
+                        </div>
+                        {renderEuroInput('estructural.medium', config.estructural.medium, (v) => handleBandChange('estructural', 'medium', v))}
+                      </div>
+                      {showLargeOption && (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+                          <div className="min-w-0">
+                            <span className="block text-sm font-medium text-gray-900">5m - 9m (Grande)</span>
+                          </div>
+                          {renderEuroInput('estructural.large', config.estructural.large, (v) => handleBandChange('estructural', 'large', v))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
       </div>
+      <hr className="border-gray-200 my-8" />
 
       {/* Suplementos */}
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <h4 className="text-sm font-bold text-gray-900 mb-2">Suplementos Adicionales</h4>
+      <div>
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Suplementos Adicionales</h4>
         
-        <div className="space-y-1 divide-y divide-gray-100">
-          <div className="flex items-center justify-between py-3 gap-3">
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
             <div className="min-w-0">
               <span className="block text-sm font-medium text-gray-900">Dificultad Alta</span>
-              <span className="text-xs text-gray-500">Aplica si la IA detecta terreno irregular u obstáculos. No aplica a árboles de 0-3m.</span>
+              <span className="text-xs text-gray-500 block mt-1">Aplica si la IA detecta terreno irregular u obstáculos. No aplica a árboles de 0-3m.</span>
             </div>
             {renderPercentageInput('difficultyIncrease', config.difficultyIncrease, (v) => updateConfig({ difficultyIncrease: v }))}
           </div>
 
-          <div className="flex items-center justify-between py-3 gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
             <div className="min-w-0">
               <span className="block text-sm font-medium text-gray-900">Retirada de restos verdes</span>
-              <span className="text-xs text-gray-500">Recogida y gestión de los restos de la poda.</span>
+              <span className="text-xs text-gray-500 block mt-1">Recogida y gestión de los restos de la poda.</span>
             </div>
             {renderPercentageInput('wasteRemovalMultiplier', config.wasteRemovalMultiplier, (v) => updateConfig({ wasteRemovalMultiplier: v }))}
           </div>
         </div>
       </div>
 
-      {/* Error warnings if needed - though we only use global validation */}
-      {validationErrors.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-          <div>
-            <h4 className="text-sm font-semibold text-red-800">Faltan precios por configurar</h4>
-            <p className="text-sm text-red-600 mt-1">Completa todos los importes requeridos (mínimo, rangos básicos) antes de continuar.</p>
+      <hr className="border-gray-200 my-8" />
+
+      <div>
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Configuración Global</h4>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+          <div className="pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full sm:w-24 mt-3 sm:mt-0">
+            {renderEuroInput('minimumPrice', config.minimumPrice, (v) => updateConfig({ minimumPrice: v }))}
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Save Button */}
-      <ServiceConfigFooter 
-        onSave={() => handleSave()} 
-        onReset={handleReset} 
-        isDirty={isDirty} 
-        isSaving={isSaving} 
-      />
-
-      {/* Reset Confirmation Modal */}
-      {showResetModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
-                <AlertTriangle className="w-6 h-6 text-yellow-600" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">
-                ¿Restablecer configuración?
-              </h3>
-              <p className="text-gray-500 text-center mb-6 text-sm">
-                Se eliminarán todos los precios y recargos configurados para la poda de árboles. Esta acción es irreversible.
-              </p>
-              
-              <div className="flex gap-3 w-full">
-                <button
-                  type="button"
-                  onClick={() => setShowResetModal(false)}
-                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmReset}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  Sí, restablecer
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ServicePricePreview serviceName="Poda de árboles" config={config} />
     </div>
   );
 };

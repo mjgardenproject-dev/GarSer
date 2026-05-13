@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { TreePine, AlertTriangle, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { deepEqual } from '../../utils/deepEqual';
-import ServiceConfigFooter from './ServiceConfigFooter';
+import { UnifiedNumericInput } from './UnifiedNumericInput';
+import { useAutoSave } from '../../hooks/useAutoSave';
 
 export interface TreePricingConfig {
   structuralHourlyRate: number | null;
@@ -31,9 +32,8 @@ interface Props {
 }
 
 const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
-  const [isSaving, setIsSaving] = useState(false);
-  const [showResetModal, setShowResetModal] = useState(false);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Helper to normalize config (handle legacy data)
   const normalizeConfig = (val?: TreePricingConfig): TreePricingConfig => {
@@ -63,35 +63,52 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     return normalizeConfig(value);
   }, [value]);
 
-  // Determine if dirty
-  const isDirty = useMemo(() => {
-    const processedBase = normalizeConfig(initialConfig);
-    return !deepEqual(config, processedBase);
-  }, [config, initialConfig]);
+  const validateConfig = useCallback((cfg: TreePricingConfig): string[] => {
+    const errors: string[] = [];
+    const requiredFields: (keyof TreePricingConfig)[] = [
+        'structuralHourlyRate', 
+        'shapingHourlyRate', 
+        'ladderModifier', 
+        'climbingModifier', 
+        'wasteRemovalModifier',
+        'minimum_price'
+    ];
 
-  const handleReset = () => {
-    setShowResetModal(true);
-  };
-
-  const confirmReset = async () => {
-    setShowResetModal(false);
-    onChange(DEFAULT_CONFIG);
-    
-    if (onSave) {
-      try {
-        setIsSaving(true);
-        await onSave(DEFAULT_CONFIG);
-      } catch (error) {
-        console.error('Error resetting tree config:', error);
-      } finally {
-        setIsSaving(false);
-      }
+    const missingFields = requiredFields.filter(field => cfg[field] === null || cfg[field] === undefined);
+    if (missingFields.length > 0) {
+        errors.push('missing_fields');
     }
-  };
 
-  const cancelReset = () => {
-    setShowResetModal(false);
-  };
+    if ((cfg.structuralHourlyRate || 0) <= 0 || (cfg.shapingHourlyRate || 0) <= 0) {
+         errors.push('invalid_hourly_rate');
+    }
+
+    if ((cfg.minimum_price || 0) <= 0) {
+         errors.push('invalid_minimum_price');
+    }
+
+    const hasNegatives = requiredFields.some(field => (cfg[field] || 0) < 0);
+    if (hasNegatives) {
+        errors.push('negative_values');
+    }
+    
+    return errors;
+  }, []);
+
+  useEffect(() => {
+    setValidationErrors(validateConfig(config));
+  }, [config, validateConfig]);
+
+  useAutoSave({
+    value: config,
+    initialValue: normalizeConfig(initialConfig),
+    onSave: async (val) => {
+      if (onSave) {
+        await onSave(val);
+      }
+    },
+    validate: validateConfig
+  });
 
   const handleChange = (field: keyof TreePricingConfig, val: string) => {
     // Permitir vacío
@@ -107,56 +124,6 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     if (isNaN(num)) return;
 
     onChange({ ...config, [field]: num });
-  };
-
-  const handleSave = async () => {
-    if (onSave) {
-        // 1. Validar campos vacíos
-        const requiredFields: (keyof TreePricingConfig)[] = [
-            'structuralHourlyRate', 
-            'shapingHourlyRate', 
-            'ladderModifier', 
-            'climbingModifier', 
-            'wasteRemovalModifier',
-            'minimum_price'
-        ];
-
-        const missingFields = requiredFields.filter(field => config[field] === null || config[field] === undefined);
-        
-        if (missingFields.length > 0) {
-            toast.error('Tienes campos de precio sin completar. Debes rellenar todos los valores antes de guardar.');
-            return;
-        }
-
-        // 2. Validar valores 0 o negativos (Precios > 0, Modificadores >= 0)
-        // Regla usuario: "El precio no puede ser 0. Introduce un valor válido mayor que 0."
-        // Asumimos que esto aplica a las tarifas por hora.
-        if ((config.structuralHourlyRate || 0) <= 0 || (config.shapingHourlyRate || 0) <= 0) {
-             toast.error('El precio no puede ser 0. Introduce un valor válido mayor que 0.');
-             return;
-        }
-
-        if ((config.minimum_price || 0) <= 0) {
-             toast.error('El precio no puede ser 0. Introduce un valor válido mayor que 0.');
-             return;
-        }
-
-        // Validar negativos en general
-        const hasNegatives = requiredFields.some(field => (config[field] || 0) < 0);
-        if (hasNegatives) {
-            toast.error('No se permiten valores negativos.');
-            return;
-        }
-
-      try {
-        setIsSaving(true);
-        await onSave(config);
-      } catch (error) {
-        console.error('Error saving tree config:', error);
-      } finally {
-        setIsSaving(false);
-      }
-    }
   };
 
   return (
@@ -374,50 +341,6 @@ const TreePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
         </div>
       </div>
-
-      {/* Save Button */}
-      <div className="pt-6 border-t border-gray-200 sticky bottom-0 bg-white z-10 pb-4">
-        <ServiceConfigFooter 
-            onSave={handleSave} 
-            onReset={handleReset} 
-            isDirty={isDirty} 
-            isSaving={isSaving} 
-        />
-      </div>
-
-      {/* Reset Confirmation Modal */}
-      {showResetModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
-                <AlertTriangle className="w-6 h-6 text-yellow-600" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">
-                ¿Restablecer configuración?
-              </h3>
-              <p className="text-gray-500 text-center mb-6 text-sm">
-                Se eliminarán todas las tarifas configuradas para la poda de árboles. Esta acción es irreversible.
-              </p>
-              <div className="flex flex-col gap-3 w-full">
-                <button
-                  onClick={confirmReset}
-                  className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-red-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
-                >
-                  Confirmar
-                </button>
-                <button
-                  onClick={cancelReset}
-                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-bold hover:bg-gray-200 transition-colors"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   );
 };

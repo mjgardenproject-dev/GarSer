@@ -293,6 +293,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         <input
           ref={inputRef}
           type="text"
+          autoComplete="street-address"
           value={value}
           onChange={handleInputChange}
           placeholder={placeholder}

@@ -46,6 +46,9 @@ export interface BookingData {
     hasPhytosanitary?: boolean;
     hasTrunkPeeling?: boolean;
     lowestRangeThreshold?: string;
+    highestOpenRangeThreshold?: string;
+    isTerminalOpenRange?: boolean;
+    allowsPriceChange?: boolean;
     // Legacy compatibility
     needsPhytosanitary?: boolean;
     needsTrunkFinish?: boolean;
@@ -64,6 +67,7 @@ export interface BookingData {
     files?: File[]; // Local files pending upload
     analysisLevel?: number;
     observations?: string[];
+    isFailed?: boolean;
     selectedIndices?: number[];
     analyzedIndices?: number[];
   }>;
@@ -109,6 +113,7 @@ export interface BookingData {
     files?: File[];
     analysisLevel?: number;
     observations?: string[];
+    isFailed?: boolean;
     imageIndices?: number[];
     selectedIndices?: number[];
     analyzedIndices?: number[];
@@ -117,6 +122,7 @@ export interface BookingData {
     id: string;
     pruningType: 'structural' | 'shaping';
     photoUrls: string[];
+    aiSizeBand?: 'small' | 'medium' | 'large' | 'over_9';
     aiHeightMeters?: number;
     difficultyHigh?: boolean;
     analysisLevel?: number;
@@ -133,7 +139,10 @@ export interface BookingData {
     files?: File[];
     analysisLevel?: number;
     observations?: string[];
-    imageIndices?: number[];
+    isFailed?: boolean;
+    imageIndices?: number[]; // Indices in the main photos array
+    selectedIndices?: number[];
+    analyzedIndices?: number[];
   }>;
   phytosanitaryZones?: Array<{
     id: string;
@@ -166,6 +175,7 @@ export interface BookingData {
     analyzedIndices?: number[];
     analysisLevel?: number;
     observations?: string[];
+    isFailed?: boolean;
   }>;
   weedingZones?: Array<{
     id: string;
@@ -179,6 +189,7 @@ export interface BookingData {
     analyzedIndices?: number[];
     analysisLevel?: number;
     observations?: string[];
+    isFailed?: boolean;
   }>;
   // Per-service isolated state storage
   servicesData?: Record<string, {

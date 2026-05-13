@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import * as availCompat from '../../utils/availabilityServiceCompat';
 import { calculatePhytosanitaryQuote } from '../../utils/serviceValidation';
+import { persistBookingMedia } from '../../utils/bookingMediaService';
+import { isHighestOpenRangeForSpecies } from '../../domain/speciesBusinessRules';
 
 const ConfirmationPage: React.FC = () => {
   const navigate = useNavigate();
@@ -35,6 +37,53 @@ const ConfirmationPage: React.FC = () => {
     analysisMetrics: (zone as any).analysisMetrics
   }));
 
+  const collectStructuredPhotoUrls = (): string[] => {
+    const out = new Set<string>();
+    const maybePush = (value: unknown) => {
+      const v = String(value || '').trim();
+      if (v.startsWith('http://') || v.startsWith('https://')) out.add(v);
+    };
+    const collectGroupPhotoUrls = (arr: any[]) => {
+      (arr || []).forEach((item) => {
+        (item?.photoUrls || []).forEach((u: unknown) => maybePush(u));
+      });
+    };
+
+    const activeServiceId = bookingData.serviceIds?.[0] || '';
+    (bookingData.servicesData?.[activeServiceId]?.uploadedPhotoUrls || []).forEach((u: unknown) => maybePush(u));
+    collectGroupPhotoUrls((bookingData as any).lawnZones || []);
+    collectGroupPhotoUrls((bookingData as any).palmGroups || []);
+    collectGroupPhotoUrls((bookingData as any).hedgeZones || []);
+    collectGroupPhotoUrls((bookingData as any).treeGroups || []);
+    collectGroupPhotoUrls((bookingData as any).shrubGroups || []);
+    collectGroupPhotoUrls((bookingData as any).phytosanitaryZones || []);
+    collectGroupPhotoUrls((bookingData as any).weedingZones || []);
+
+    return Array.from(out);
+  };
+
+  const buildPricingContext = () => {
+    const palmGroups = (bookingData.palmGroups || []).map((group: any) => {
+      const isTerminalOpenRange = typeof group?.isTerminalOpenRange === 'boolean'
+        ? group.isTerminalOpenRange
+        : isHighestOpenRangeForSpecies(group?.species || '', group?.height || '');
+      return {
+        species: group?.species || '',
+        height: group?.height || '',
+        quantity: Number(group?.quantity || 0),
+        is_terminal_open_range: isTerminalOpenRange,
+      };
+    });
+    const allowsPriceChange = palmGroups.some((group: any) => group.quantity > 0 && group.is_terminal_open_range === true);
+    const isPalmPruningService = palmGroups.length > 0;
+
+    return {
+      service_type: isPalmPruningService ? 'palm_pruning' : 'standard',
+      allows_price_change: isPalmPruningService ? allowsPriceChange : true,
+      palm_groups: palmGroups,
+    };
+  };
+
   useEffect(() => {
     if (!bookingData.providerId || !bookingData.serviceIds?.[0]) return;
     if (Array.isArray(bookingData.priceBreakdown) && bookingData.priceBreakdown.length > 0) {
@@ -59,7 +108,11 @@ const ConfirmationPage: React.FC = () => {
             if (bookingData.shrubGroups) {
                 const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
                 bookingData.shrubGroups.forEach(group => {
-                    const { type, size, quantity, state } = group;
+                    const groupAny = group as any;
+                    const type = String(groupAny.type || 'grupo');
+                    const size = String(groupAny.size || '');
+                    const quantity = Number(groupAny.quantity ?? groupAny.area ?? 0);
+                    const state = String(groupAny.state || 'normal');
                     const base = config.species_prices?.[type]?.[size] || 0;
                     
                     const surcharges = config.condition_multipliers || { normal: 0, neglected: 15, overgrown: 30 };
@@ -172,10 +225,11 @@ const ConfirmationPage: React.FC = () => {
         setIsProcessing(false);
         return;
       }
+      const structuredPhotoUrls = collectStructuredPhotoUrls();
+      const allPhotoUrls = Array.from(new Set([...photoUrls, ...structuredPhotoUrls]));
       const notesWithPhotos = [
         bookingData.description || '',
-        bookingData.palmSpecies ? `Especie de palmera: ${bookingData.palmSpecies}` : '',
-        photoUrls.length > 0 ? `Fotos:\n${photoUrls.join('\n')}` : ''
+        bookingData.palmSpecies ? `Especie de palmera: ${bookingData.palmSpecies}` : ''
       ].filter(Boolean).join('\n\n');
       const row = {
         client_id: user?.id || null,
@@ -188,6 +242,7 @@ const ConfirmationPage: React.FC = () => {
         total_price: Math.max(0, Number(bookingData.totalPrice || 0)),
         client_address: bookingData.address || '',
         notes: notesWithPhotos,
+        pricing_context: buildPricingContext(),
       };
 
       const { data: booking, error } = await supabase
@@ -198,6 +253,17 @@ const ConfirmationPage: React.FC = () => {
 
       if (error) {
         throw error;
+      }
+      if (booking?.id && allPhotoUrls.length > 0) {
+        try {
+          await persistBookingMedia({
+            bookingId: booking.id,
+            uploaderId: user?.id || null,
+            mediaUrls: allPhotoUrls,
+          });
+        } catch (mediaError) {
+          console.warn('No se pudieron persistir fotos estructuradas de la reserva:', mediaError);
+        }
       }
       try {
         if (hourBlocks.length > 0 && bookingData.providerId && bookingData.preferredDate) {

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Upload, FileText, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAutoSave } from '../../hooks/useAutoSave';
+import SaveStatusIndicator from '../common/SaveStatusIndicator';
 import { GardenerLicense } from '../../types';
 import toast from 'react-hot-toast';
 
@@ -50,6 +52,9 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
       }
       
       setLicense(data as GardenerLicense);
+      if (data?.license_number) {
+        setLicenseNumber(data.license_number);
+      }
       onStatusChange(data?.status || null);
     } catch (e) {
       console.error(e);
@@ -98,6 +103,27 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
     }
     setPreviewUrl(URL.createObjectURL(file));
   };
+
+  const { status: saveStatus } = useAutoSave({
+    value: licenseNumber,
+    initialValue: license?.license_number || '',
+    onSave: async (val) => {
+      if (!license?.id || !user) return;
+      
+      const { error } = await supabase
+        .from('gardener_licenses')
+        .update({ license_number: val })
+        .eq('id', license.id)
+        .eq('gardener_id', user.id);
+
+      if (error) throw error;
+      
+      // Update local license state to keep initialValue in sync for next change
+      setLicense(prev => prev ? { ...prev, license_number: val } : null);
+    },
+    validate: () => [],
+    delay: 1000
+  });
 
   const cancelDraft = () => {
     setDraftFile(null);
@@ -214,19 +240,20 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
 
       {(!license || license.status === 'rejected') && (
         <div className="space-y-4 mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Número de registro/licencia (opcional)
-            </label>
-            <input 
-              type="text" 
-              value={licenseNumber}
-              onChange={(e) => setLicenseNumber(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg text-sm"
-              placeholder="Ej: ES-XXXXX"
-              disabled={uploading}
-            />
-          </div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Número de registro/licencia (opcional)
+          </label>
+          <SaveStatusIndicator status={saveStatus} />
+        </div>
+        <input 
+          type="text" 
+          value={licenseNumber}
+          onChange={(e) => setLicenseNumber(e.target.value)}
+          className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+          placeholder="Ej: ES-XXXXX"
+          disabled={uploading}
+        />
 
           <label className="flex items-start gap-2 cursor-pointer">
             <input 

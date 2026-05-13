@@ -10,7 +10,8 @@ const baseConfig = {
     dificultad_media: 20,
     dificultad_alta: 50,
     retirada_restos: 10
-  }
+  },
+  yield_m2_per_hour: 100
 };
 
 describe('weedingPricing', () => {
@@ -61,5 +62,30 @@ describe('weedingPricing', () => {
     expect(result.totalBeforeMinimum).toBe(450);
     expect(result.finalPrice).toBe(450);
     expect(result.minimumApplied).toBe(false);
+  });
+
+  it('calcula horas estimadas correctamente', () => {
+    const result = calculateWeedingQuote({
+      zones: [{ id: 'z1', area: 200, state: 'normal', applyHerbicide: false }],
+      config: baseConfig,
+      globalWaste: false
+    });
+
+    // Area 200 / Yield 100 = 2 hours
+    expect(result.totalEstimatedHours).toBe(2);
+    expect(result.breakdown[0].estimatedHours).toBe(2);
+  });
+
+  it('aplica suplementos a las horas estimadas', () => {
+    const result = calculateWeedingQuote({
+      zones: [{ id: 'z1', area: 100, state: 'dificultad_media', applyHerbicide: false }],
+      config: baseConfig,
+      globalWaste: true
+    });
+
+    // Area 100 / Yield 100 = 1 hour
+    // Dificultad media +20% -> 1.2 hours
+    // Retirada restos +10% -> 1.2 * 1.1 = 1.32 hours
+    expect(result.totalEstimatedHours).toBeCloseTo(1.32, 4);
   });
 });

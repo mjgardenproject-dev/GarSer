@@ -1,0 +1,211 @@
+                                         {/* Photos Area for this Zone */}
+                                         <div className="mb-4">
+                                             <div className="text-xs text-gray-500 mb-2 flex justify-between items-center">
+                                                 <span>Fotos de esta zona ({allPhotos.length})</span>
+                                                 {isAnalyzed && expandedZoneIds.has(zone.id) && (
+                                                     <button 
+                                                         onClick={() => {
+                                                             const next = new Set(expandedZoneIds);
+                                                             next.delete(zone.id);
+                                                             setExpandedZoneIds(next);
+                                                         }}
+                                                         className="text-xs text-green-600 hover:text-green-700 font-medium flex items-center gap-1"
+                                                     >
+                                                         <ChevronLeft className="w-3 h-3 rotate-90" />
+                                                         Ocultar fotos
+                                                     </button>
+                                                 )}
+                                             </div>
+
+                                             {/* Stack View (Only if analyzed and collapsed) */}
+                                             {isAnalyzed && !expandedZoneIds.has(zone.id) && allPhotos.length > 0 ? (
+                                                 <div 
+                                                     onClick={() => {
+                                                         const next = new Set(expandedZoneIds);
+                                                         next.add(zone.id);
+                                                         setExpandedZoneIds(next);
+                                                     }}
+                                                     className="relative h-32 w-full flex items-center justify-center cursor-pointer group py-4 transition-all duration-500 ease-in-out bg-gray-50/50 rounded-xl border border-dashed border-gray-200 hover:bg-green-50/30 hover:border-green-200"
+                                                 >
+                                                     {allPhotos.slice(0, 3).map((photo, i) => (
+                                                         <div 
+                                                             key={i}
+                                                             className="absolute transition-all duration-500 ease-in-out shadow-lg rounded-xl overflow-hidden border-2 border-white bg-white"
+                                                             style={{
+                                                                 width: '90px',
+                                                                 height: '90px',
+                                                                 transform: `translateX(${i * 12}px) rotate(${i * 3}deg)`,
+                                                                 zIndex: 10 - i,
+                                                                 opacity: 1 - (i * 0.1)
+                                                             }}
+                                                         >
+                                                             <img 
+                                                                 src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
+                                                                 className="w-full h-full object-cover" 
+                                                                 alt=""
+                                                             />
+                                                         </div>
+                                                     ))}
+                                                     <div className="absolute bottom-2 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-medium text-gray-700 shadow-sm z-20 translate-y-1 group-hover:-translate-y-1 transition-transform border border-gray-100 flex items-center gap-1.5">
+                                                         <Image className="w-3 h-3" />
+                                                         Editar fotos
+                                                     </div>
+                                                 </div>
+                                             ) : (
+                                                 /* List View */
+                                                 <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide min-h-[110px]">
+                                                     {allPhotos.map((p, i) => {
+                                                         const isSelected = zone.selectedIndices?.includes(i) ?? true;
+                                                         const isAnalyzedPhoto = zone.analyzedIndices?.includes(i);
+                                                         
+                                                         return (
+                                                             <div 
+                                                                 key={i} 
+                                                                 className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`}
+                                                                 onClick={() => toggleLawnPhotoSelection(zone.id, i)}
+                                                             >
+                                                                 <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzedPhoto ? 'opacity-80' : 'opacity-100'}`}>
+                                                                    <img 
+                                                                        src={typeof p === 'string' ? p : URL.createObjectURL(p)} 
+                                                                        alt={`Foto ${i}`}
+                                                                        className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${lawnUploads[zone.id]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
+                                                                    />
+                                                                    
+                                                                    {/* Uploading Overlay */}
+                                                                    {lawnUploads[zone.id]?.has(i) && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
+                                                                            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                        </div>
+                                                                    )}
+                                                                    
+                                                                    {/* Analyzed Badge */}
+                                                                     {isAnalyzedPhoto && (
+                                                                         <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
+                                                                             Analizada
+                                                                         </div>
+                                                                     )}
+                                                                     
+                                                                     {/* Selection Checkbox */}
+                                                                     <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500 scale-100' : 'bg-black/20 border-white/80 group-hover:bg-black/40 scale-90 group-hover:scale-100'}`}>
+                                                                         {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                                                                     </div>
+                                                                 </div>
+                                                                 
+                                                                 {!isZoneAnalyzing && (
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); removePhotoFromZone(zone.id, i); }}
+                                                                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                )}
+                                                             </div>
+                                                         );
+                                                     })}
+                                                     
+                                                     {/* Add Photo Button */}
+                                                    {!isZoneAnalyzing && allPhotos.length < 5 && (
+                                                        <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
+                                                             <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                                                                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
+                                                                     <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
+                                                                 </div>
+                                                                 <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
+                                                                 <input 
+                                                                     type="file" 
+                                                                     accept="image/*" 
+                                                                     multiple 
+                                                                     className="hidden" 
+                                                                     onChange={(e) => handleLawnFileSelect(zone.id, e)}
+                                                                 />
+                                                             </label>
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                             )}
+                                         </div>
+
+                                         {/* Actions / Results */}
+                                         <div className="mt-2">
+                                             <button
+                                                 onClick={() => analyzeLawnZone(zone.id)}
+                                                 disabled={isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0}
+                                                 className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3 transition-colors ${
+                                                     isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0
+                                                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                                     : 'bg-green-600 text-white hover:bg-green-700'
+                                                 }`}
+                                             >
+                                                 {isZoneAnalyzing ? (
+                                                     <>
+                                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                        Analizando...
+                                                     </>
+                                                 ) : (
+                                                     isAnalyzed ? 'Reanalizar esta zona' : 'Analizar esta zona'
+                                                 )}
+                                             </button>
+                                             {allPhotos.length === 0 && (
+                                                 <p className="text-xs text-center text-amber-600 mt-2">
+                                                     Añade al menos una foto para analizar
+                                                 </p>
+                                             )}
+                                         </div>
+
+                                         {isAnalyzed && (
+                                             <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                                {zone.isFailed || zone.analysisLevel === 3 ? (
+                                                    <AnalysisFailedCard 
+                                                        message={zone.observations?.[0]} 
+                                                        onReanalyze={() => analyzeLawnZone(zone.id)} 
+                                                    />
+                                                ) : (
+                                                    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
+                                                        <div className={`absolute top-0 left-0 w-1 h-full ${
+                                                            zone.analysisLevel === 2 ? 'bg-amber-500' : 'bg-green-500'
+                                                        }`}></div>
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                               <h4 className="font-semibold text-gray-900 text-sm">
+                                                                   {zone.species || 'Césped general'}
+                                                               </h4>
+                                                               <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                                                                   <span>
+                                                                       Superficie: <span className="font-medium text-gray-900">{zone.quantity} m²</span>
+                                                                   </span>
+                                                                   <span className="text-gray-300">|</span>
+                                                                   <span>
+                                                                       Estado: <span className="font-medium text-gray-900 capitalize">{zone.state}</span>
+                                                                   </span>
+                                                               </div>
+                                                               <div className={`mt-2 text-xs font-medium ${
+                                                                   zone.analysisLevel === 1 ? 'text-green-600' : 'text-amber-600'
+                                                               }`}>
+                                                                   {zone.analysisLevel === 1 ? 'Análisis fiable' : 'Análisis con observaciones'}
+                                                               </div>
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => removeLawnZone(zone.id)}
+                                                                className="text-gray-400 hover:text-red-500 transition-colors"
+                                                                title="Eliminar resultado"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                    
+                                                        {/* Observations */}
+                                                        {zone.observations && zone.observations.length > 0 && (
+                                                           <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-100">
+                                                               <div className="font-medium mb-1 text-gray-700">Observaciones:</div>
+                                                               <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                                                   {zone.observations.map((obs, k) => (
+                                                                       <li key={k}>{obs}</li>
+                                                                   ))}
+                                                               </ul>
+                                                           </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                             </div>
+                                         )}
+                                     </div>

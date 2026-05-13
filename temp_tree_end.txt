@@ -1,0 +1,151 @@
+                                                                    <button 
+                                                                         onClick={() => openConfirm({
+                                                                           title: 'Eliminar resultado',
+                                                                           message: 'Se eliminará este resultado del análisis y las fotos se conservarán para que puedas re-analizarlas.',
+                                                                           confirmLabel: 'Eliminar resultado',
+                                                                           cancelLabel: 'Cancelar',
+                                                                           tone: 'warning',
+                                                                           onConfirm: () => removeTreeAnalysisResult(zone.id)
+                                                                         })}
+                                                                         className="text-gray-400 hover:text-red-500 transition-colors"
+                                                                         title="Eliminar resultado"
+                                                                    >
+                                                                         <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                                                                    <span>Altura: <span className="font-medium text-gray-900">{Number(zone.aiHeightMeters || 0) > 0 ? `${Number(zone.aiHeightMeters).toFixed(1)}m` : '-'}</span></span>
+                                                                    <span className="text-gray-300">|</span>
+                                                                    <span>Dificultad: <span className="font-medium text-gray-900">{zone.difficultyHigh ? 'Alta' : 'Normal'}</span></span>
+                                                                    {zone.analysisLevel && (
+                                                                        <>
+                                                                            <span className="text-gray-300">|</span>
+                                                                            <span className={`font-medium ${zone.analysisLevel === 1 ? 'text-green-700' : 'text-amber-700'}`}>
+                                                                                {zone.analysisLevel === 1 ? 'Análisis fiable' : 'Revisión manual'}
+                                                                            </span>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                                {Number(zone.aiHeightMeters || 0) > 9 && (
+                                                                    <div className="mt-1 text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-100">
+                                                                        El profesional tendrá que verificar el pago porque es un servicio muy complejo.
+                                                                    </div>
+                                                                )}
+                                                                {zone.observations && zone.observations.length > 0 && (
+                                                                    <div className="mt-1 text-[10px] text-gray-600 bg-gray-50 p-1.5 rounded border border-gray-100">
+                                                                        <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                                                            {zone.observations.map((obs, i) => <li key={i}>{obs}</li>)}
+                                                                        </ul>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                             })()}
+                                         </div>
+                                     </div>
+                                 );
+                             })}
+
+                             {(() => {
+                                 const zones = bookingData.treeGroups || [];
+                                 const pending = zones.filter((z: any) => z.analysisLevel === undefined && (z.photoUrls || []).length > 0);
+                                 if (zones.length <= 1 || pending.length <= 1) return null;
+                                 const isBatchAnalyzing = treeAnalyzingZoneIds.size > 0;
+                                 return (
+                                     <button
+                                         onClick={analyzeAllPendingTreeGroups}
+                                         disabled={isBatchAnalyzing}
+                                         className={`w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+                                             isBatchAnalyzing
+                                               ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                               : 'bg-green-600 text-white hover:bg-green-700'
+                                         }`}
+                                     >
+                                         {isBatchAnalyzing ? (
+                                             <>
+                                                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                 Analizando árboles...
+                                             </>
+                                         ) : (`Analizar ${pending.length} árbol${pending.length === 1 ? '' : 'es'}`)}
+                                     </button>
+                                 );
+                             })()}
+
+                             {(bookingData.treeGroups && bookingData.treeGroups.length > 0) && (
+                                 <button onClick={addTreeGroup} className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 flex items-center justify-center gap-2 group">
+                                     <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm group-hover:bg-gray-300 transition-colors">+</span>
+                                     Añadir otro árbol
+                                 </button>
+                             )}
+                         </div>
+                     );
+                   }
+
+                   if (isShrubService) {
+                     return (
+                         <div className="space-y-6">
+                             {(!bookingData.shrubGroups || bookingData.shrubGroups.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Flower2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tus plantas</h3>
+                                     <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
+                                         Añade cada grupo o macizo de plantas de manera independiente.
+                                     </p>
+                                     <button onClick={addShrubGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de plantas</button>
+                                 </div>
+                             )}
+                             {(bookingData.shrubGroups || []).map((group, idx) => {
+                                 const isAnalyzed = group.area > 0 || (group.analysisLevel !== undefined);
+                                 const allPhotos = [...(group.photoUrls || []), ...(group.files || [])];
+                                 const isZoneAnalyzing = shrubAnalyzingZoneIds.has(group.id);
+
+                                 if (isZoneAnalyzing) {
+                                     return <AnalysisLoadingAnimation key={group.id} message="Analizando plantas y arbustos..." />;
+                                 }
+
+                                 if ((group as any).isFailed || group.analysisLevel === 3) {
+                                     return (
+                                         <AnalysisFailedCard 
+                                             key={group.id}
+                                             message={group.observations?.[0]} 
+                                             onReanalyze={() => analyzeShrubGroup(group.id)} 
+                                         />
+                                     );
+                                 }
+
+                                 return (
+                                     <div key={group.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <div className="flex items-center gap-2">
+                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                                                     {idx + 1}
+                                                 </div>
+                                                 <h3 className="font-semibold text-gray-900">Grupo de Plantas {idx + 1}</h3>
+                                                <span className="text-xs text-gray-500 ml-1 font-normal">({allPhotos.length}/5 fotos)</span>
+                                             </div>
+                                             <button onClick={() => removeShrubGroup(group.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>
+                                         </div>
+                                         
+                                         <div className="mb-4">
+                                            <div className="text-xs text-gray-500 mb-2">Fotos de este grupo ({allPhotos.length})</div>
+                                            <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide min-h-[110px]">
+                                                {allPhotos.map((p, i) => {
+                                                    const isSelected = group.selectedIndices?.includes(i) ?? true;
+                                                    const isAnalyzedPhoto = group.analyzedIndices?.includes(i);
+                                                    
+                                                    return (
+                                                        <div 
+                                                            key={i} 
+                                                            className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`}
+                                                            onClick={() => toggleShrubPhotoSelection(group.id, i)}
+                                                        >
+                                                            <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzedPhoto ? 'opacity-80' : 'opacity-100'}`}>
+                                                               <img 
+                                                                   src={typeof p === 'string' ? p : URL.createObjectURL(p)} 
+                                                                   alt={`Foto ${i}`}
+                                                                   className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${shrubUploads[group.id]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
+                                                               />
+                                                               
+                                                               {shrubUploads[group.id]?.has(i) && (

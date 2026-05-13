@@ -11,9 +11,11 @@ import { calculateWeedingQuote } from '../../utils/weedingPricing';
 import { calculateTreePruningQuoteForTrees } from '../../domain/pricing/treePruningPricing';
 import { TreePruningServiceConfig } from '../../types/treePruning';
 import { calculatePalmPriceEngine, findPalmPrice, PalmPricingGroup, calculatePalmHoursEngine } from '../../domain/pricingEngine';
+import { isHighestOpenRangeForSpecies } from '../../domain/speciesBusinessRules';
 import { PartialServiceModal } from './PartialServiceModal';
 
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number }
+type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
 
 const ProvidersPage: React.FC = () => {
   const navigate = useNavigate();
@@ -35,6 +37,7 @@ const ProvidersPage: React.FC = () => {
   const [monthLoading, setMonthLoading] = useState(false);
   const [hoursLoading, setHoursLoading] = useState(false);
   const [serviceName, setServiceName] = useState('');
+  const [globalMinPrice, setGlobalMinPrice] = useState(0);
   const daysCacheRef = useRef<Map<string, Array<{ date: string; day: number; disabled: boolean; count: number }>>>(new Map());
   const hoursCacheRef = useRef<Map<string, number[]>>(new Map());
   const reqIdRef = useRef<number>(0);
@@ -42,32 +45,124 @@ const ProvidersPage: React.FC = () => {
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
 
   const getEstimatedHours = (providerId: string): number => {
-    let hours = Number(bookingData.estimatedHours || 0);
-    if (!providerId) return Math.max(1, hours);
-
+    if (!providerId) return 1;
     const config = configs[providerId];
-    if (bookingData.palmGroups && bookingData.palmGroups.length > 0 && config) {
-      const coverage = palmCoverageMap[providerId];
-      if (coverage && !coverage.isFull) {
-        const coveredGroups = bookingData.palmGroups.filter(
-          (g) => findPalmPrice(config, g.species, g.height) > 0
-        );
-        const palms: any[] = [];
-        coveredGroups.forEach((g) => {
-          for (let i = 0; i < (g.quantity || 1); i++) {
-            palms.push({
-              especie: g.species,
-              altura: g.height,
-              estado: g.state || 'normal',
-              nivel_analisis: 1,
-            });
-          }
+    if (!config) return 1;
+
+    let totalHours = 0;
+
+    // Yield-based calculation helper for difficulty multipliers
+    const getDurationMultiplier = (state: string) => {
+        const s = (state || 'normal').toLowerCase();
+        if (s.includes('muy') && s.includes('descuidad')) return 1.7; // 70% more time
+        if (s.includes('descuidad')) return 1.3; // 30% more time
+        return 1.0;
+    };
+
+    // 1. Lawn (Yield: m2 per hour)
+    if (bookingData.lawnZones && bookingData.lawnZones.length > 0) {
+        const yieldM2 = Number(config.yield_m2_per_hour || 150);
+        bookingData.lawnZones.forEach(z => {
+            if (z.quantity > 0) {
+                totalHours += (z.quantity / yieldM2) * getDurationMultiplier(z.state);
+            }
         });
-        const result = calculatePalmHoursEngine(palms);
-        hours = result.tiempoTotalEstimado;
-      }
     }
-    return Math.max(1, Math.ceil(hours));
+
+    // 2. Hedges (Yield: ml per hour)
+    if (bookingData.hedgeZones && bookingData.hedgeZones.length > 0) {
+        const yields = config.yield_ml_per_hour || {};
+        bookingData.hedgeZones.forEach(z => {
+            const height = (z.height || '0-2m') as string;
+            const yieldMl = Number(yields[height] || yields['0-2m'] || 15);
+            const length = z.length || 0;
+            const faces = (z as any).faces_to_trim || 1;
+            totalHours += (length * faces / yieldMl) * getDurationMultiplier(z.state);
+        });
+    }
+
+    // 3. Palms (Yield: units per hour)
+    if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
+        const yields = config.yield_units_per_hour || {};
+        bookingData.palmGroups.forEach(g => {
+            const speciesYields = yields[g.species] || {};
+            const yieldUnits = Number(speciesYields[g.height] || 1);
+            totalHours += (g.quantity / yieldUnits) * getDurationMultiplier(g.state);
+        });
+        totalHours += 0.5; // Setup and tool preparation time
+    }
+
+    // 4. Trees (Yield: units per hour)
+    if (bookingData.treeGroups && bookingData.treeGroups.length > 0) {
+        const yields = config.yield_units_per_hour || {};
+        bookingData.treeGroups.forEach((t: any) => {
+            if (t.isFailed || t.analysisLevel === 3) return;
+            const type = t.pruningType === 'estructural' ? 'estructural' : 'formacion';
+            const band = resolveTreeBand(t) || 'medium';
+            const yieldUnits = Number(yields[type]?.[band] || 1);
+            totalHours += (1 / yieldUnits) * (t.difficultyHigh ? 1.5 : 1.0);
+        });
+    }
+
+    // 5. Weeding (Yield: m2 per hour)
+    if (bookingData.weedingZones && bookingData.weedingZones.length > 0) {
+        const yieldM2 = Number(config.yield_m2_per_hour || 100);
+        bookingData.weedingZones.forEach(z => {
+            totalHours += (Number(z.area || 0) / yieldM2) * getDurationMultiplier(z.state);
+        });
+    }
+
+    // 6. Shrubs (Yield: m2 per hour)
+    if (bookingData.shrubGroups && bookingData.shrubGroups.length > 0) {
+        const yields = config.yield_m2_per_hour || { pequeñas: 40, medianas: 20, grandes: 10 };
+        bookingData.shrubGroups.forEach(z => {
+            const size = (z.size || 'pequeñas') as keyof typeof yields;
+            const yieldM2 = Number(yields[size] || 20);
+            totalHours += (Number(z.area || 0) / yieldM2) * getDurationMultiplier(z.state || 'normal');
+        });
+    }
+
+    // 7. Phytosanitary (Yield: various metrics)
+    if (bookingData.phytosanitaryZones && bookingData.phytosanitaryZones.length > 0) {
+        const yields = config.yields || {
+            cesped_m2_per_hour: 200,
+            setos_ml_per_hour: 50,
+            palmeras_units_per_hour: 4,
+            arboles_units_per_hour: 4,
+            plantas_m2_per_hour: 100,
+            endoterapia_units_per_hour: 2
+        };
+        bookingData.phytosanitaryZones.forEach(z => {
+            const metrics = z.analysisMetrics;
+            if (metrics) {
+                if (metrics.cesped_m2) totalHours += metrics.cesped_m2 / Number(yields.cesped_m2_per_hour || 200);
+                if (metrics.seto_bajo_medio_ml) totalHours += metrics.seto_bajo_medio_ml / Number(yields.setos_ml_per_hour || 50);
+                if (metrics.seto_alto_ml) totalHours += metrics.seto_alto_ml / Number(yields.setos_ml_per_hour || 50);
+                if (metrics.palmeras_ducha_peq_ud) totalHours += metrics.palmeras_ducha_peq_ud / Number(yields.palmeras_units_per_hour || 4);
+                if (metrics.palmeras_ducha_med_ud) totalHours += metrics.palmeras_ducha_med_ud / Number(yields.palmeras_units_per_hour || 4);
+                if (metrics.palmeras_ducha_alta_ud) totalHours += metrics.palmeras_ducha_alta_ud / Number(yields.palmeras_units_per_hour || 4);
+                if (metrics.palmeras_cirugia_ud) totalHours += metrics.palmeras_cirugia_ud / Number(yields.palmeras_units_per_hour || 4);
+                if (metrics.palmeras_endoterapia_troncos_ud) totalHours += metrics.palmeras_endoterapia_troncos_ud / Number(yields.endoterapia_units_per_hour || 2);
+                if (metrics.arboles_peq_ud) totalHours += metrics.arboles_peq_ud / Number(yields.arboles_units_per_hour || 4);
+                if (metrics.arboles_med_ud) totalHours += metrics.arboles_med_ud / Number(yields.arboles_units_per_hour || 4);
+                if (metrics.arboles_gran_ud) totalHours += metrics.arboles_gran_ud / Number(yields.arboles_units_per_hour || 4);
+            } else if (z.area > 0) {
+                const affected = z.affectedType;
+                if (affected === 'Palmeras') totalHours += z.area / Number(yields.palmeras_units_per_hour || 4);
+                else if (affected === 'Árboles') totalHours += z.area / Number(yields.arboles_units_per_hour || 4);
+                else if (affected === 'Setos') totalHours += z.area / Number(yields.setos_ml_per_hour || 50);
+                else if (affected === 'Césped') totalHours += z.area / Number(yields.cesped_m2_per_hour || 200);
+                else totalHours += z.area / Number(yields.plantas_m2_per_hour || 100);
+            }
+        });
+    }
+
+    // Global efficiency for large jobs (over 8 hours)
+    let finalHours = totalHours;
+    if (totalHours > 8) finalHours = totalHours * 0.9;
+    
+    // Minimum 1 hour, increments of 0.5h
+    return Math.max(1, Math.ceil(finalHours * 2) / 2);
   };
 
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -106,6 +201,16 @@ const ProvidersPage: React.FC = () => {
     return 'estructural';
   };
 
+  const normalizeTreeSizeBand = (value: unknown): TreeSizeBand | null => {
+    const v = String(value || '').toLowerCase().trim();
+    if (v === 'small' || v === 'medium' || v === 'large' || v === 'over_9') return v;
+    return null;
+  };
+
+  const resolveTreeBand = (tree: any): TreeSizeBand | null => {
+    return normalizeTreeSizeBand(tree?.aiSizeBand);
+  };
+
   const getTreeOver9Notice = (gardenerId: string) => {
     if (!bookingData.treeGroups || bookingData.treeGroups.length === 0) return null;
     const c = configs[gardenerId];
@@ -114,9 +219,9 @@ const ProvidersPage: React.FC = () => {
       .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
       .map((t: any) => ({
         pruningType: mapTreePruningType(t.pruningType),
-        altura_m: Number(t.aiHeightMeters || 0)
+        sizeBand: resolveTreeBand(t)
       }))
-      .filter((t: any) => Number.isFinite(t.altura_m) && t.altura_m > 9);
+      .filter((t: any) => t.sizeBand === 'over_9');
     if (trees.length === 0) return null;
 
     for (const tree of trees) {
@@ -126,6 +231,17 @@ const ProvidersPage: React.FC = () => {
       }
     }
     return null;
+  };
+
+  const getPalmTerminalRangeNotice = () => {
+    const groups = bookingData.palmGroups || [];
+    const hasTerminalOpenRange = groups.some((g: any) => {
+      if (!(Number(g?.quantity || 0) > 0)) return false;
+      if (typeof g?.isTerminalOpenRange === 'boolean') return g.isTerminalOpenRange;
+      return isHighestOpenRangeForSpecies(g?.species || '', g?.height || '');
+    });
+    if (!hasTerminalOpenRange) return null;
+    return 'Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.';
   };
 
   const findFirstAvailableDate = async (providerId: string, startDate: string, hoursNeeded: number) => {
@@ -311,11 +427,12 @@ const ProvidersPage: React.FC = () => {
         // Determinar si se requiere licencia (Fitosanitarios químicos)
         const { data: serviceInfoData } = await supabase
             .from('services')
-            .select('name')
+            .select('name, base_price')
             .eq('id', primaryServiceId)
             .single();
 
         setServiceName(serviceInfoData?.name || '');
+        setGlobalMinPrice(Number(serviceInfoData?.base_price || 0));
 
         const isPhytosanitaryChemical = serviceInfoData?.name === 'Servicios fitosanitarios' && 
           (bookingData.phytosanitaryZones || []).some((z: any) => z.productPreference !== 'ecological');
@@ -403,12 +520,12 @@ const ProvidersPage: React.FC = () => {
                   .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
                   .map((t: any) => ({
                     pruningType: mapTreePruningType(t.pruningType),
-                    altura_m: Number(t.aiHeightMeters || 0),
+                    sizeBand: resolveTreeBand(t),
                   }))
-                  .filter((t: any) => Number.isFinite(t.altura_m) && t.altura_m > 0);
+                  .filter((t: any) => Boolean(t.sizeBand));
 
                 for (const tree of trees) {
-                  if (tree.altura_m > 5) {
+                  if (tree.sizeBand === 'large' || tree.sizeBand === 'over_9') {
                     const large = tree.pruningType === 'estructural' ? c.estructural.large : c.formacion.large;
                     if (!(typeof large === 'number' && large > 0)) return false;
                   }
@@ -509,42 +626,43 @@ const ProvidersPage: React.FC = () => {
 
 
   const computePrice = (gardenerId: string) => {
-    // Debug Log Start
-    console.log(`[ComputePrice] Calculating for Gardener: ${gardenerId}`);
-    console.log(`[ComputePrice] BookingData:`, JSON.stringify({
-        serviceIds: bookingData.serviceIds,
-        hedgeZones: bookingData.hedgeZones,
-        palmGroups: bookingData.palmGroups,
-        treeGroups: bookingData.treeGroups,
-        shrubGroups: bookingData.shrubGroups,
-        phytosanitaryZones: bookingData.phytosanitaryZones,
-        lawnZones: bookingData.lawnZones
-    }, null, 2));
-
     const config = configs[gardenerId];
-    console.log(`[ComputePrice] Config found:`, config);
+    if (!config) return 0;
+
     const applyMinimumPrice = (calculatedPrice: number) => {
         const rounded = Math.ceil(calculatedPrice);
-        const minimumPrice = Number(config?.minimum_price || 0);
-        if (minimumPrice > 0 && rounded > 0 && rounded < minimumPrice) {
-            return Math.ceil(minimumPrice);
+        const gardenerMin = Number(config?.minimum_price || 0);
+        // Implement global minimum price per service
+        const effectiveMin = Math.max(gardenerMin, globalMinPrice);
+        
+        if (effectiveMin > 0 && rounded > 0 && rounded < effectiveMin) {
+            return Math.ceil(effectiveMin);
         }
         return rounded;
     };
 
-    if (!config) {
-        console.warn(`[ComputePrice] No config for gardener ${gardenerId}`);
-        return 0;
+    // Fork between hourly and quantity modes
+    // NOTE: Tree and Palm pruning are EXCLUDED from hourly pricing as per professional logic
+    // because they require specific equipment and risks not covered by a standard hourly rate.
+    const hasTreeOrPalm = bookingData.serviceIds.some(id => 
+        id.toLowerCase().includes('poda-arboles') || 
+        id.toLowerCase().includes('poda-palmeras') ||
+        id.toLowerCase().includes('tree') ||
+        id.toLowerCase().includes('palm')
+    );
+    
+    if (config.pricing_method === 'per_hour' && config.hourly_rate > 0 && !hasTreeOrPalm) {
+        // Hours are yield-based (calculated in getEstimatedHours)
+        const totalHours = getEstimatedHours(gardenerId);
+        return applyMinimumPrice(totalHours * config.hourly_rate);
     }
 
-    // Palms (Poda de palmeras)
-    if (bookingData.palmGroups && bookingData.palmGroups.length > 0 && config) {
-        // GLOBAL OVERRIDE
-        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-        
-        // Ensure species_prices exists
-        if (!config.species_prices) return 0;
+    // Quantity-based logic (Default for professional services)
+    let total = 0;
+    const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
 
+    // 1. Palms
+    if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
         const groups: PalmPricingGroup[] = bookingData.palmGroups.map(g => ({
             species: g.species,
             height: g.height,
@@ -552,378 +670,127 @@ const ProvidersPage: React.FC = () => {
             state: g.state || 'normal',
             hasPhytosanitary: g.hasPhytosanitary ?? g.needsPhytosanitary,
             hasTrunkPeeling: g.hasTrunkPeeling ?? g.needsTrunkFinish,
-            lowestRangeThreshold: g.lowestRangeThreshold,
             needsPhytosanitary: g.needsPhytosanitary,
             needsTrunkFinish: g.needsTrunkFinish,
             hasAccessDifficulty: g.hasAccessDifficulty
         }));
-
-        const total = calculatePalmPriceEngine(groups, config, globalWaste);
-        return applyMinimumPrice(total);
+        total += calculatePalmPriceEngine(groups, config, globalWaste);
     }
     
-    // Fallback: Legacy single-group logic (for backward compatibility or if groups are empty but fields exist)
-    if (bookingData.palmSpecies && config) {
-        const species = bookingData.palmSpecies;
-        const height = bookingData.palmHeight;
-        const state = bookingData.palmState || 'normal';
-        const waste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : bookingData.palmWasteRemoval;
-        const qty = bookingData.aiQuantity || 0;
-
-        // Base Price from Config
-        let base = 0;
-        if (height && config.height_prices?.[species]?.[height]) {
-            base = config.height_prices[species][height];
-        } else if (config.species_prices?.[species]) {
-            base = config.species_prices[species];
-        } else {
-            base = prices[gardenerId] || 0; // Fallback to generic price
-        }
-
-        // State Surcharge
-        let stateKey = state;
-        const surcharges = config.condition_surcharges || {};
-
-        if (state === 'muy descuidado' || state === 'muy_descuidado') {
-            if (surcharges['muy_descuidado'] !== undefined) stateKey = 'muy_descuidado';
-            else if (surcharges['muy_descuidada'] !== undefined) stateKey = 'muy_descuidada';
-            else stateKey = 'muy_descuidado';
-        } else if (state === 'descuidado' || state === 'descuidada') {
-            if (surcharges['descuidado'] !== undefined) stateKey = 'descuidado';
-            else if (surcharges['descuidada'] !== undefined) stateKey = 'descuidada';
-            else stateKey = 'descuidado';
-        }
-        
-        const stateSurchargePercent = surcharges[stateKey] || 0;
-        const stateMult = 1 + (stateSurchargePercent / 100);
-
-        // Waste Removal Surcharge (applied after state surcharge)
-        let wasteMult = 1;
-        if (waste) {
-             const wastePercent = config.waste_removal?.percentage || 0;
-             wasteMult = 1 + (wastePercent / 100);
-        }
-
-        if (base > 0 && qty > 0) {
-            // Formula: Base * StateMult * WasteMult * Qty
-            return applyMinimumPrice(base * stateMult * wasteMult * qty);
-        }
-        return 0;
-    }
-
-    // --- New Service Pricing Logic ---
-
-    // Hedges
+    // 2. Hedges
     if (bookingData.hedgeZones && bookingData.hedgeZones.length > 0) {
-        if (!config) {
-            console.warn('[ComputePrice] Hedges: Missing config', config);
-            return 0;
-        }
-        
-        // GLOBAL OVERRIDE
-        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-
-        console.log('[ComputePrice] Starting Hedge Calculation...');
-        let total = 0;
+        let hedgeTotal = 0;
         for (const zone of bookingData.hedgeZones) {
-            const { type, height } = zone;
             const lengthForPricing = Number((zone as any).length_pricing_m ?? zone.length ?? 0);
-            const faces = Number((zone as any).faces_to_trim ?? ((zone as any).hasBackFaceTrim ? 2 : 1)) >= 2 ? 2 : 1;
-            const allowedHeights = ['0-2m', '2-4m', '4-6m'];
-            const numericHeightRaw = Number((zone as any).height_pricing_m ?? 0);
-            const numericHeight = numericHeightRaw > 0 ? numericHeightRaw / faces : 0;
-            const inferHeightBandFromValue = (h: number) => {
-                if (h <= 0) return '';
-                if (h <= 2) return '0-2m';
-                if (h <= 4) return '2-4m';
-                return '4-6m';
-            };
-            const inferredFromValue = inferHeightBandFromValue(numericHeight);
-            const normalizedHeightText = String(height || '').toLowerCase();
-            const normalizedHeight = allowedHeights.includes(height)
-                ? height
-                : (normalizedHeightText === '<1m' || normalizedHeightText === '0-1m' || normalizedHeightText === '1-2m' || normalizedHeightText === '>1-2m' || normalizedHeightText === 'hasta 2m' || normalizedHeightText === '<2m' || normalizedHeightText === '0-2m'
-                    ? '0-2m'
-                    : (normalizedHeightText === '>2m' || normalizedHeightText === '>2-3m' || normalizedHeightText === '3-4.5m'
-                        ? '2-4m'
-                        : inferredFromValue));
-            const specialistEnabled = config.specialist_enabled !== false;
-            if (!specialistEnabled && normalizedHeight === '4-6m') {
-                console.warn('[ComputePrice] Specialist level disabled. Skipping zone:', zone);
-                continue;
-            }
-            console.log(`[ComputePrice] Processing Zone:`, zone);
+            const faces = Number((zone as any).faces_to_trim ?? 1);
+            const height = (zone.height || '0-2m') as string;
             
-            let base = Number(config.pricing_matrix?.[normalizedHeight] || 0);
+            let base = Number(config.pricing_matrix?.[height] || 0);
+            if (base <= 0) base = Number(config.species_prices?.[zone.type]?.[height] || 0);
+            
+            if (base <= 0) continue;
 
-            if (base <= 0 && config.pricing_matrix) {
-                // V2 Fallback (Intermediate 2D matrix)
-                const pm = config.pricing_matrix;
-                const extractPrice = (entry: any) => {
-                    if (!entry) return 0;
-                    if (typeof entry === 'number') return entry;
-                    const standard = Number(entry['0-25m (Estándar)'] || 0);
-                    const volume = Number(entry['>25m (Gran Volumen)'] || 0);
-                    const candidates = [standard, volume].filter(v => v > 0);
-                    return candidates.length > 0 ? candidates.reduce((a, b) => a + b, 0) / candidates.length : 0;
-                };
-
-                if (normalizedHeight === '0-2m') {
-                    const p0_1 = extractPrice(pm['0-1m']);
-                    const p1_2 = extractPrice(pm['1-2m']);
-                    const c0_2 = [p0_1, p1_2].filter(v => v > 0);
-                    if (c0_2.length > 0) base = c0_2.reduce((a, b) => a + b, 0) / c0_2.length;
-                } else if (normalizedHeight === '2-4m') {
-                    base = extractPrice(pm['2-4m']);
-                } else if (normalizedHeight === '4-6m') {
-                    base = extractPrice(pm['4-6m']);
-                }
-            }
-            
-            if (base <= 0) {
-                // Legacy V1 fallback logic mapped to flat pricing_matrix
-                const legacyPairs =
-                  normalizedHeight === '0-2m'
-                    ? [
-                        { category: 'Setos Estándar (≤3m)', height: '0-1m' },
-                        { category: 'Setos Estándar (≤3m)', height: '>1-2m' }
-                      ]
-                    : normalizedHeight === '2-4m'
-                    ? [
-                        { category: 'Setos Estándar (≤3m)', height: '>2-3m' },
-                        { category: 'Setos Gran Altura (>3m)', height: '3-4.5m' }
-                      ]
-                    : [
-                        { category: 'Setos Gran Altura (>3m)', height: '>4.5-6m' },
-                        { category: 'Setos Gran Altura (>3m)', height: '>6-7.5m' }
-                      ];
-                const legacyCandidates: number[] = [];
-                legacyPairs.forEach(({ category, height: legacyHeight }) => {
-                    // Average across legacy length ranges if using legacy data
-                    ['0-10m', '11-25m', '26-50m', '>50m'].forEach((legacyRange) => {
-                        const v = Number(config.category_prices?.[category]?.[legacyHeight]?.[legacyRange] || 0);
-                        if (v > 0) legacyCandidates.push(v);
-                    });
-                });
-                const legacyMatrixBase = legacyCandidates.length > 0
-                    ? (legacyCandidates.reduce((acc, v) => acc + v, 0) / legacyCandidates.length)
-                    : 0;
-                base = Number(config.species_prices?.[type]?.[height] || 0) || legacyMatrixBase;
-            }
-            
-            console.log(`[ComputePrice] Base price lookup for height='${normalizedHeight}':`, base);
-            
-            if (base <= 0) {
-                console.warn(`[ComputePrice] Invalid base price (${base}) for height='${normalizedHeight}'`);
-                continue;
-            }
-            
             const surcharges = config.condition_surcharges || { media: 20, alta: 50 };
             const s = (zone.state || 'normal').toLowerCase();
             let statePercent = 0;
-            if (s.includes('alta') || s.includes('muy_descuidado') || s.includes('muy descuidado')) {
-                statePercent = Number(surcharges.alta || surcharges.muy_descuidado || surcharges.muy_descuidada || 0);
-            } else if (s.includes('media') || s.includes('descuidado')) {
-                statePercent = Number(surcharges.media || surcharges.descuidado || surcharges.descuidada || 0);
-            }
-            
+            if (s.includes('alta') || s.includes('muy_descuidado')) statePercent = surcharges.alta || 50;
+            else if (s.includes('media') || s.includes('descuidado')) statePercent = surcharges.media || 20;
+
             const stateMult = 1 + (statePercent / 100);
-            
-            // Waste
             let wasteMult = 1;
-            if (globalWaste) {
-                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
-            }
-            
-            const lineTotal = base * lengthForPricing * stateMult * wasteMult;
-            console.log(`[ComputePrice] Line Total: ${lineTotal} (Base: ${base}, Length: ${lengthForPricing}, StateMult: ${stateMult}, WasteMult: ${wasteMult})`);
-            
-            total += lineTotal;
+            if (globalWaste) wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+
+            hedgeTotal += base * lengthForPricing * faces * stateMult * wasteMult;
         }
-        console.log(`[ComputePrice] Final Hedge Total: ${Math.ceil(total)}`);
-        return applyMinimumPrice(total);
+        total += hedgeTotal;
     }
 
-    // Trees
-    if (bookingData.treeGroups && bookingData.treeGroups.length > 0) {
-        if (!isTreePruningConfig(config)) return 0;
-
+    // 3. Trees
+    if (bookingData.treeGroups && bookingData.treeGroups.length > 0 && isTreePruningConfig(config)) {
         const trees = (bookingData.treeGroups || [])
           .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
           .map((t: any) => ({
             id: String(t.id),
             pruningType: mapTreePruningType(t.pruningType),
-            altura_m: Number(t.aiHeightMeters || 0),
-            dificultad_alta: Boolean(t.difficultyHigh),
+            sizeBand: resolveTreeBand(t),
+            dificultad_alta: t.difficultyHigh,
             nivel_analisis: t.analysisLevel
-          }))
-          .filter((t: any) => Number.isFinite(t.altura_m) && t.altura_m > 0);
-
-        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-        const quote = calculateTreePruningQuoteForTrees(config, trees, globalWaste);
-        if (!quote.isProfessionalSuitable) return 0;
-        return applyMinimumPrice(quote.totalPrice);
-    }
-
-    // Shrubs (Poda de plantas y arbustos)
-    if (bookingData.shrubGroups && bookingData.shrubGroups.length > 0 && config && config.prices_per_m2) {
-        // GLOBAL OVERRIDE: La retirada de restos es una configuración global.
-        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-        
-        let total = 0;
-        for (const group of bookingData.shrubGroups) {
-            const { size, area } = group;
-            const base = config.prices_per_m2[size as 'pequeñas' | 'medianas' | 'grandes'] || 0;
-            if (base <= 0) continue;
-
-            let wasteMult = 1;
-            if (globalWaste) {
-                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
-            }
-            
-            total += base * area * wasteMult;
+          }));
+        if (trees.length > 0) {
+            const quote = calculateTreePruningQuoteForTrees(config, trees, globalWaste);
+            if (quote.isProfessionalSuitable) total += quote.totalPrice;
         }
-        return applyMinimumPrice(total);
     }
 
-    // Weeding (Desbroce)
-    if (bookingData.weedingZones && bookingData.weedingZones.length > 0 && config) {
-        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+    // 4. Weeding
+    if (bookingData.weedingZones && bookingData.weedingZones.length > 0) {
         const quote = calculateWeedingQuote({
-          zones: bookingData.weedingZones.map((zone) => ({
-            id: zone.id,
-            area: Number(zone.area || 0),
-            state: zone.state,
-            applyHerbicide: Boolean(zone.applyHerbicide)
-          })),
+          zones: bookingData.weedingZones.map((z) => ({ id: z.id, area: Number(z.area || 0), state: z.state, applyHerbicide: Boolean(z.applyHerbicide) })),
           config,
           globalWaste
         });
-        return quote.finalPrice;
+        total += quote.finalPrice;
     }
 
-    // Phytosanitary
-    if (bookingData.phytosanitaryZones && bookingData.phytosanitaryZones.length > 0) {
-        if (!config) return 0;
-        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-        const quote = calculatePhytosanitaryQuote({
-            zones: mapPhytosanitaryZonesForQuote(),
-            config,
-            globalWaste
-        });
-        return quote.final_price;
-    }
-
-    if ((bookingData.lawnSpecies || (bookingData.lawnZones && bookingData.lawnZones.length > 0)) && config && !config.height_prices) {
-        let zones: Array<{ state: string; quantity: number }> = [];
-        const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-
-        if (bookingData.lawnZones && bookingData.lawnZones.length > 0) {
-            zones = bookingData.lawnZones.map(z => ({
-                state: z.state,
-                quantity: z.quantity
-            }));
-        } else if (bookingData.lawnSpecies) {
-            let state = 'normal';
-            if (bookingData.aiDifficulty === 2) state = 'descuidado';
-            if (bookingData.aiDifficulty === 3) state = 'muy_descuidado';
-
-            zones.push({
-                state,
-                quantity: bookingData.aiQuantity || 0
+    // 5. Lawn
+    if ((bookingData.lawnSpecies || (bookingData.lawnZones && bookingData.lawnZones.length > 0)) && !config.height_prices) {
+        let lawnSubtotal = 0;
+        const zones = bookingData.lawnZones || [{ state: 'normal', quantity: bookingData.aiQuantity || 0 }];
+        const baseRate = config.price_per_m2 || 0;
+        
+        if (baseRate > 0) {
+            zones.forEach(z => {
+                const s = (z.state || 'normal').toLowerCase();
+                const surcharges = config.condition_surcharges || {};
+                let statePercent = 0;
+                if (s.includes('muy')) statePercent = surcharges.muy_descuidado || 50;
+                else if (s.includes('descuidad')) statePercent = surcharges.descuidado || 20;
+                
+                const stateMult = 1 + (statePercent / 100);
+                let wasteMult = 1;
+                if (globalWaste) wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+                
+                lawnSubtotal += baseRate * z.quantity * stateMult * wasteMult;
             });
         }
+        total += lawnSubtotal;
+    }
 
-        const totalArea = zones.reduce((acc, z) => acc + (z.quantity || 0), 0);
-        
-        const getLawnPricePerM2 = () => {
-            if (config.price_per_m2 > 0) return config.price_per_m2;
+    // 6. Shrubs
+    if (bookingData.shrubGroups && bookingData.shrubGroups.length > 0) {
+        let shrubTotal = 0;
+        const prices = config.prices_per_m2 || { pequeñas: 10, medianas: 15, grandes: 25 };
+        bookingData.shrubGroups.forEach(z => {
+            const size = (z.size || 'pequeñas') as keyof typeof prices;
+            const pricePerM2 = prices[size] || 15;
+            let line = Number(z.area || 0) * pricePerM2;
+            
+            const s = (z.state || 'normal').toLowerCase();
+            const surcharges = config.condition_surcharges || { media: 20, alta: 50 };
+            let statePercent = 0;
+            if (s.includes('muy')) statePercent = surcharges.alta || 50;
+            else if (s.includes('descuidad')) statePercent = surcharges.media || 20;
 
-            const parsed = {
-                '0-50': Number(config.surface_prices?.['0-50'] || 0),
-                '51-150': Number(config.surface_prices?.['51-150'] || 0),
-                '151-400': Number(config.surface_prices?.['151-400'] || 0),
-                '400+': Number(config.surface_prices?.['400+'] || 0)
-            };
-            const hasNew = Object.values(parsed).some(v => v > 0);
-            if (hasNew) return parsed['0-50'] || parsed['51-150'] || parsed['151-400'] || parsed['400+'] || 0;
-
-            const selectedSpecies = Array.isArray(config.selected_species) ? config.selected_species : [];
-            const legacySpeciesKey = selectedSpecies.find((s: string) => config.species_prices?.[s]) || Object.keys(config.species_prices || {})[0];
-            const legacyPrices = legacySpeciesKey ? config.species_prices?.[legacySpeciesKey] : null;
-            if (!legacyPrices) return 0;
-
-            return Number(legacyPrices['0-50'] || legacyPrices['50-200'] || legacyPrices['200+'] || 0);
-        };
-
-        const baseRate = getLawnPricePerM2();
-        if (baseRate <= 0) return 0;
-
-        let totalCost = 0;
-        for (const zone of zones) {
-            const subtotal = baseRate * zone.quantity;
-            if (subtotal <= 0) continue;
-
-            const surcharges = config.condition_surcharges || {};
-            let stateSurchargePercent = 0;
-            const s = (zone.state || 'normal').toLowerCase();
-            if (s.includes('muy') && s.includes('descuidad')) {
-                stateSurchargePercent = surcharges.muy_descuidado || surcharges.muy_descuidada || 0;
-            } else if (s.includes('descuidad') && !s.includes('muy')) {
-                stateSurchargePercent = surcharges.descuidado || surcharges.descuidada || 0;
-            }
-            const stateMult = 1 + (stateSurchargePercent / 100);
-
+            const stateMult = 1 + (statePercent / 100);
             let wasteMult = 1;
-            if (globalWaste) {
-                wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
-            }
+            if (globalWaste) wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
 
-            totalCost += subtotal * stateMult * wasteMult;
-        }
-
-        const lawnMinimumPrice = Number(config.minimum_price || 0);
-        const finalLawnCost = lawnMinimumPrice > 0 ? Math.max(totalCost, lawnMinimumPrice) : totalCost;
-        return Math.ceil(finalLawnCost);
+            shrubTotal += line * stateMult * wasteMult;
+        });
+        total += shrubTotal;
     }
 
-    // 3. Lógica por defecto (otros servicios)
-    const unitPrice = prices[gardenerId] || 0;
-    const qty = bookingData.aiQuantity || 0;
-    
-    // Apply surcharges from config if available
-    let mult = 1.0;
-    if (config) {
-        const difficulty = bookingData.aiDifficulty || 1;
-        const surcharges = config.condition_surcharges || {};
-        
-        let stateSurcharge = 0;
-        if (difficulty === 3) { // Muy descuidado
-            stateSurcharge = surcharges.muy_descuidado ?? surcharges.muy_descuidada ?? 50;
-        } else if (difficulty === 2) { // Descuidado
-            stateSurcharge = surcharges.descuidado ?? surcharges.descuidada ?? 20;
-        }
-        
-        const stateMult = 1 + (stateSurcharge / 100);
-        
-        // Waste Removal Surcharge
-        let wasteMult = 1;
-        const waste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
-        if (waste) {
-             const wastePercent = config.waste_removal?.percentage || 0;
-             wasteMult = 1 + (wastePercent / 100);
-        }
-        
-        mult = stateMult * wasteMult;
-    } else {
-        // Fallback to legacy hardcoded multipliers if no config found
-        mult = bookingData.aiDifficulty ? (bookingData.aiDifficulty === 3 ? 1.6 : bookingData.aiDifficulty === 2 ? 1.3 : 1.0) : 1.0;
-        // Legacy waste removal was implicit in price or not handled well for generic services previously
-        // We leave it as is for backward compatibility if no config exists
+    // 7. Phytosanitary
+    if (bookingData.phytosanitaryZones && bookingData.phytosanitaryZones.length > 0) {
+        const phytoResult = calculatePhytosanitaryQuote({
+            zones: mapPhytosanitaryZonesForQuote(),
+            config: config,
+            globalWaste: globalWaste
+        });
+        total += phytoResult.total;
     }
 
-    if (unitPrice > 0 && qty > 0) return applyMinimumPrice(qty * unitPrice * mult);
-    return 0;
+    return applyMinimumPrice(total);
   };
 
   const handleProviderSelect = (providerId: string) => { setSelectedProvider(providerId); };
@@ -978,12 +845,23 @@ const ProvidersPage: React.FC = () => {
           price: Math.ceil(phytosanitaryQuote.minimumFee)
         });
       }
+      const finalPrice = phytosanitaryQuote 
+        ? Math.max(phytosanitaryQuote.final_price, globalMinPrice)
+        : computePrice(selectedProvider);
+
+      if (phytosanitaryQuote && finalPrice > phytosanitaryQuote.final_price) {
+        phytosanitaryBreakdown.push({
+          desc: `Ajuste por importe mínimo global (${globalMinPrice}€)`,
+          price: globalMinPrice
+        });
+      }
+
       // Aseguramos que se guarde la fecha seleccionada y el proveedor
       setBookingData({ 
         providerId: selectedProvider, 
         palmGroups: groupsToKeep, // Sanitizar payload
         estimatedHours: getEstimatedHours(selectedProvider), // Actualizar el estimatedHours
-        totalPrice: phytosanitaryQuote ? phytosanitaryQuote.final_price : computePrice(selectedProvider),
+        totalPrice: finalPrice,
         preferredDate: selectedDate,
         priceBreakdown: phytosanitaryBreakdown
       }); 
@@ -1083,6 +961,7 @@ const ProvidersPage: React.FC = () => {
               const coverage = palmCoverageMap[p.user_id];
               const isPartial = coverage && !coverage.isFull;
               const treeOver9Notice = getTreeOver9Notice(p.user_id);
+              const palmTerminalNotice = getPalmTerminalRangeNotice();
 
               return (
                 <button
@@ -1125,6 +1004,11 @@ const ProvidersPage: React.FC = () => {
                       {!isPartial && treeOver9Notice && (
                           <div className="mt-2 text-xs text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 leading-tight">
                               {treeOver9Notice}
+                          </div>
+                      )}
+                      {!isPartial && palmTerminalNotice && (
+                          <div className="mt-2 text-xs text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 leading-tight">
+                              {palmTerminalNotice}
                           </div>
                       )}
 

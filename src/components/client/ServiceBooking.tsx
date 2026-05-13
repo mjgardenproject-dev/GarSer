@@ -139,7 +139,7 @@ const ServiceBooking = () => {
       if (service) {
         const basePrice = service.base_price;
         const travelFee = 15; // Precio fijo de desplazamiento
-        const hourlyRate = service.price_per_hour ?? 25; // Precio por hora
+        const hourlyRate = service.hourly_rate ?? 25; // Precio por hora
         const total = basePrice + travelFee + (hourlyRate * durationHours);
         setTotalPrice(total);
       }
@@ -681,7 +681,7 @@ const ServiceBooking = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Precio por hora:</span>
-                  <span className="font-medium">€{services.find(s => s.id === watchedValues.service_id)?.price_per_hour}</span>
+                  <span className="font-medium">€{services.find(s => s.id === watchedValues.service_id)?.hourly_rate}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Duración seleccionada:</span>

@@ -213,17 +213,27 @@ const PriceSimulator: React.FC<PriceSimulatorProps> = ({ services, configs }) =>
     }
 
     if (selectedService === 'Corte de setos a máquina') {
-      if (!config.pricing_matrix && !config.category_prices && !config.species_prices) return { price: 0, breakdown, warnings: ['Configuración incompleta de setos.'] };
+      if (!config.pricing_matrix && !config.category_prices && !config.species_prices && !config.use_yield_calculation) return { price: 0, breakdown, warnings: ['Configuración incompleta de setos.'] };
       let total = 0;
+      const useYield = config.use_yield_calculation && config.hourly_rate && config.yield_ml_per_hour;
+
       for (const zone of hedgeZones) {
         const heightBand = normalizeHedgeHeightBand(zone.height);
         if (!config.specialist_enabled && heightBand === '4-6m') {
           warnings.push('Altura 4-6m desactivada: esta zona no se incluye en el cálculo.');
           continue;
         }
-        const matrixBase = Number(config.pricing_matrix?.[heightBand] || 0);
-        const legacyBase = Number(getLegacyHedgeBase(config, heightBand) || 0);
-        const base = matrixBase || legacyBase;
+
+        let base = 0;
+        if (useYield) {
+          const y = config.yield_ml_per_hour[heightBand];
+          if (y > 0) base = config.hourly_rate / y;
+        } else {
+          const matrixBase = Number(config.pricing_matrix?.[heightBand] || 0);
+          const legacyBase = Number(getLegacyHedgeBase(config, heightBand) || 0);
+          base = matrixBase || legacyBase;
+        }
+
         if (base <= 0) continue;
         const surcharges = config.condition_surcharges || { media: 20, alta: 50 };
         const s = (zone.state || 'normal').toLowerCase();
@@ -238,7 +248,7 @@ const PriceSimulator: React.FC<PriceSimulatorProps> = ({ services, configs }) =>
         if (globalWasteRemoval) wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
         const lineTotal = base * (zone.length || 0) * stateMult * wasteMult;
         total += lineTotal;
-        breakdown.push(`${heightBand} ${zone.length}m → base ${base.toFixed(2)}€ · estado ${statePercent}% · restos ${((wasteMult - 1) * 100).toFixed(0)}% = ${lineTotal.toFixed(2)}€`);
+        breakdown.push(`${heightBand} ${zone.length}m → base ${base.toFixed(2)}€ ${useYield ? '(rendimiento)' : ''} · estado ${statePercent}% · restos ${((wasteMult - 1) * 100).toFixed(0)}% = ${lineTotal.toFixed(2)}€`);
       }
       const minimumResult = applyMinimumPrice(total);
       if (minimumResult.minimumApplied) {
@@ -324,25 +334,49 @@ const PriceSimulator: React.FC<PriceSimulatorProps> = ({ services, configs }) =>
     if (selectedService === 'Corte de césped') {
       const zones = lawnZones.map((z) => ({ state: z.state, quantity: z.quantity }));
       const totalArea = zones.reduce((acc, z) => acc + (z.quantity || 0), 0);
-      const baseRate = getLawnPricePerM2(config);
-      if (baseRate <= 0) return { price: 0, breakdown, warnings: ['Configuración incompleta de césped.'] };
+      
+      const pricingMethod = config.pricing_method || 'per_quantity';
+      const useYieldForDuration = true; // Always use yield for duration
+      
+      let baseRate = 0;
+      if (pricingMethod === 'per_hour') {
+        if (config.yield_m2_per_hour > 0 && config.hourly_rate > 0) {
+          baseRate = config.hourly_rate / config.yield_m2_per_hour;
+        }
+      } else {
+        baseRate = getLawnPricePerM2(config);
+      }
+      
+      if (baseRate <= 0) return { price: 0, breakdown, warnings: ['Configuración incompleta de césped (revisa precios o rendimientos).'] };
       let totalCost = 0;
+      let totalHours = 0;
       for (const zone of zones) {
-        const subtotal = baseRate * zone.quantity;
-        if (subtotal <= 0) continue;
         const surcharges = config.condition_surcharges || {};
         let stateSurchargePercent = 0;
         const s = (zone.state || 'normal').toLowerCase();
         if (s.includes('muy') && s.includes('descuidad')) stateSurchargePercent = surcharges.muy_descuidado || 0;
         else if (s.includes('descuidad') && !s.includes('muy')) stateSurchargePercent = surcharges.descuidado || 0;
+        
         const stateMult = 1 + stateSurchargePercent / 100;
-        let wasteMult = 1;
-        if (globalWasteRemoval) wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
-        const lineTotal = subtotal * stateMult * wasteMult;
+        const lineTotal = baseRate * zone.quantity * stateMult;
+        
+        // Estimated hours calculation
+        if (config.yield_m2_per_hour > 0) {
+          totalHours += (zone.quantity / config.yield_m2_per_hour) * stateMult;
+        }
+
         totalCost += lineTotal;
-        breakdown.push(`Césped general ${zone.quantity}m² · base ${baseRate.toFixed(2)}€/m² · estado ${stateSurchargePercent}% = ${lineTotal.toFixed(2)}€`);
+        breakdown.push(`Césped general ${zone.quantity}m² · base ${baseRate.toFixed(2)}€/m² ${pricingMethod === 'per_hour' ? '(via rendimiento)' : ''} · estado ${stateSurchargePercent}% = ${lineTotal.toFixed(2)}€`);
       }
-      const minimumResult = applyMinimumPrice(totalCost);
+      
+      let wasteMult = 1;
+      if (globalWasteRemoval) wasteMult = 1 + ((config.waste_removal?.percentage || 0) / 100);
+      const finalBeforeMin = totalCost * wasteMult;
+      
+      const minimumResult = applyMinimumPrice(finalBeforeMin);
+      
+      breakdown.push(`Duración estimada: ${totalHours.toFixed(1)} h (basada en rendimiento de ${config.yield_m2_per_hour} m²/h)`);
+
       if (minimumResult.minimumApplied) {
         breakdown.push(`Tarifa mínima aplicada: cálculo normal ${minimumResult.roundedCalculatedPrice.toFixed(0)}€ < tarifa mínima configurada ${minimumResult.minimumPrice.toFixed(0)}€. Resultado final: ${minimumResult.finalPrice.toFixed(0)}€.`);
       }

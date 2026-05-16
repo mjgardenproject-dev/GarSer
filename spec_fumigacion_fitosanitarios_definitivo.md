@@ -41,7 +41,7 @@ Este documento está preparado para ejecución por fases, con puntos de control 
 
 ### 1.2 Flujo cliente obligatorio
 
-- 2 fotos obligatorias:
+- 1 foto obligatoria:
   - 1 panorámica
   - 1 detalle del problema
 - 2 preguntas de escala:
@@ -298,7 +298,7 @@ Punto de reanudación:
 **Objetivo:** captura correcta de datos + análisis reproducible.
 
 Checklist:
-- [ ] Exigir 2 fotos obligatorias.
+- [ ] Exigir 1 foto obligatoria.
 - [ ] Exigir 2 preguntas de escala.
 - [ ] Integrar llamada a endpoint con prompt definitivo.
 - [ ] Validar contrato JSON de respuesta IA.
@@ -365,7 +365,7 @@ Punto de reanudación:
 Se considera terminado cuando:
 
 1. Jardinero puede configurar y guardar matriz v2 válida.
-2. Cliente completa flujo con 2 fotos + 2 preguntas.
+2. Cliente completa flujo con 1 foto + 2 preguntas.
 3. IA devuelve JSON válido y determinista bajo el contrato.
 4. Motor calcula quote desglosado aplicando reglas y mínimo.
 5. Proveedores muestran presupuesto/cobertura con transparencia.

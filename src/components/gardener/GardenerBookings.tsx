@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale';
 import { Booking } from '../../types';
 import { useNavigate } from 'react-router-dom';
 import ChatWindow from '../chat/ChatWindow';
+import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 
 const GardenerBookings: React.FC = () => {
   const { user } = useAuth();
@@ -47,7 +48,15 @@ const GardenerBookings: React.FC = () => {
           client_profile: profilesData?.find((p: any) => p.id === b.client_id) || null
         }));
 
-        setBookings(bookingsWithProfiles as any);
+        const mediaMap = await fetchBookingMediaMap(
+          bookingsWithProfiles.map((b: any) => b.id),
+          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes]))
+        );
+        const withMedia = bookingsWithProfiles.map((booking: any) => ({
+          ...booking,
+          media_urls: mediaMap[booking.id] || [],
+        }));
+        setBookings(withMedia as any);
       } else {
         setBookings([]);
       }
@@ -178,6 +187,12 @@ const GardenerBookings: React.FC = () => {
                   </div>
                 </div>
 
+                {booking.price_change_status === 'pending_client_acceptance' && (
+                  <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm">
+                    Cambio de precio pendiente de respuesta del cliente.
+                  </div>
+                )}
+
                 <div className="flex items-center justify-end gap-2 flex-wrap">
                   {booking.status === 'confirmed' && (
                     <button
@@ -198,6 +213,19 @@ const GardenerBookings: React.FC = () => {
                     </button>
                   )}
                 </div>
+
+                {(booking as any).media_urls?.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Fotos de la reserva</p>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {(booking as any).media_urls.slice(0, 8).map((url: string) => (
+                        <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                          <img src={url} alt="Foto reserva" className="w-full h-20 object-cover" loading="lazy" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

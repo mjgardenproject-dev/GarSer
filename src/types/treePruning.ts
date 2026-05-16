@@ -4,6 +4,7 @@
  * Tipos de poda soportados por el servicio.
  */
 export type PruningServiceType = 'estructural' | 'formacion';
+export type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
 
 /**
  * Rangos de altura para la configuración de precios del profesional.
@@ -11,15 +12,14 @@ export type PruningServiceType = 'estructural' | 'formacion';
 export interface TreeHeightBandPricing {
   small: number; // Hasta 3m (incl.)
   medium: number; // >3m y hasta 5m (incl.)
-  large?: number; // >5m y hasta 9m (incl.) - opcional
+  large: number; // >5m y hasta 9m (incl.)
 }
 
 /**
  * Configuración completa del servicio de Poda de árboles para un profesional.
  *
- * Campo opcional (5-9m):
- * - Se habilita desde la UI con el botón “Añadir poda de árboles en altura”.
- * - Si un rango no está configurado, el profesional no debe aparecer para árboles que lo requieran.
+ * Todos los rangos de altura (small, medium, large) son obligatorios para garantizar
+ * que el profesional pueda atender cualquier solicitud estándar y para cálculos de tiempo.
  */
 export interface TreePruningServiceConfig {
   minimumPrice: number; // Precio mínimo de la reserva
@@ -27,6 +27,11 @@ export interface TreePruningServiceConfig {
   estructural: TreeHeightBandPricing;
   difficultyIncrease: number; // Incremento porcentual (%) por dificultad alta
   wasteRemovalMultiplier: number; // Incremento porcentual (%) por retirada de restos
+  // Yields (mandatory for internal time calculation, expressed in units/hour)
+  yield_units_per_hour: {
+    formacion: TreeHeightBandPricing;
+    estructural: TreeHeightBandPricing;
+  };
 }
 
 /**
@@ -43,8 +48,12 @@ export interface TreePruningZone {
  */
 export interface AITreeAnalysisResult {
   zoneId: string;
-  altura_m: number; // Altura estimada en metros
-  dificultad_alta: boolean; // true si terreno irregular u obstáculos cercanos
+  // Legacy field kept for compatibility during migration to size bands.
+  altura_m?: number; // Altura estimada en metros
+  // Canonical field for pricing consistency. If present, it takes precedence.
+  size_band?: TreeSizeBand;
+  // Legacy field. Tree pricing difficulty must come from explicit customer response.
+  dificultad_alta: boolean;
   nivel_analisis?: 1 | 2 | 3;
   observaciones?: string[] | null;
 }
@@ -55,9 +64,12 @@ export interface AITreeAnalysisResult {
 export interface PerTreeQuote {
   zoneId: string;
   pruningType: PruningServiceType;
-  altura_m: number;
+  sizeBand: TreeSizeBand;
+  // Legacy field kept for UI compatibility while migrating consumers.
+  altura_m?: number;
   basePrice: number;
   finalPrice: number;
+  estimatedHours: number;
   appliedDifficultyIncrease: boolean;
   warnings: string[];
 }
@@ -67,6 +79,7 @@ export interface PerTreeQuote {
  */
 export interface TreePruningQuote {
   totalPrice: number;
+  totalEstimatedHours: number;
   perTreeQuotes: PerTreeQuote[];
   isProfessionalSuitable: boolean; // false si algún árbol excede capacidades
   overallWarnings: string[];

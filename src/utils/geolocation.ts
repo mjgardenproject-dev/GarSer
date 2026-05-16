@@ -1,3 +1,5 @@
+import googleMapsLoader from '../lib/googleMapsLoader';
+
 // Función para calcular la distancia entre dos coordenadas usando la fórmula de Haversine
 export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371; // Radio de la Tierra en kilómetros
@@ -29,7 +31,7 @@ export const getCoordinatesFromAddress = async (address: string): Promise<{lat: 
     if (window.google?.maps?.Geocoder) {
       const geocoder = new window.google.maps.Geocoder();
       coords = await new Promise<{lat: number, lng: number} | null>((resolve) => {
-        geocoder.geocode({ address }, (results, status) => {
+        geocoder.geocode({ address }, (results: any, status: any) => {
           if (status === 'OK' && results && results[0]) {
             const location = results[0].geometry.location;
             resolve({ lat: location.lat(), lng: location.lng() });
@@ -68,18 +70,40 @@ export const getCoordinatesFromAddress = async (address: string): Promise<{lat: 
   }
 };
 
+export const getAddressFromCoordinates = async (
+  lat: number,
+  lng: number
+): Promise<string | null> => {
+  try {
+    if (!window.google?.maps) {
+      await googleMapsLoader.load();
+    }
+
+    if (!window.google?.maps?.Geocoder) {
+      return null;
+    }
+
+    const geocoder = new window.google.maps.Geocoder();
+    const address = await new Promise<string | null>((resolve) => {
+      geocoder.geocode({ location: { lat, lng } }, (results: any, status: any) => {
+        if (status === 'OK' && results && results[0]?.formatted_address) {
+          resolve(results[0].formatted_address);
+        } else {
+          resolve(null);
+        }
+      });
+    });
+
+    return address;
+  } catch (error) {
+    console.error('Error en reverse geocoding:', error);
+    return null;
+  }
+};
+
 // Declaración de tipos para Google Maps
 declare global {
   interface Window {
-    google: {
-      maps: {
-        Geocoder: new () => google.maps.Geocoder;
-        places: {
-          PlacesService: new (node: Element) => google.maps.places.PlacesService;
-          PlacesServiceStatus: any;
-        };
-      };
-    };
+    google: any;
   }
 }
-import googleMapsLoader from '../lib/googleMapsLoader';

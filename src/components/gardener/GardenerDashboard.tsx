@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Star, MapPin, Clock, Settings, User, Briefcase, MessageCircle, Bell } from 'lucide-react';
+import { Calendar, MapPin, Clock, User, MessageCircle, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { GardenerProfile, Booking } from '../../types';
+import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { toast } from 'react-hot-toast';
 import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
+import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
+import { respondBookingRequest } from '../../utils/bookingRequestService';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -140,8 +143,17 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           client_profile: profilesData?.find((profile: any) => profile.id === booking.client_id) || null
         }));
 
+        const mediaMap = await fetchBookingMediaMap(
+          bookingsWithProfiles.map((b: any) => b.id),
+          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes]))
+        );
+        const withMedia = bookingsWithProfiles.map((booking: any) => ({
+          ...booking,
+          media_urls: mediaMap[booking.id] || [],
+        }));
+
         console.log('✅ fetchBookings: bookings count', bookingsWithProfiles.length);
-        setBookings(bookingsWithProfiles);
+        setBookings(withMedia);
       } else {
         console.log('ℹ️ fetchBookings: no bookings');
         setBookings([]);
@@ -160,13 +172,24 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       // Obtener información de la reserva antes de actualizarla
       const booking = bookings.find(b => b.id === bookingId);
       if (!booking) return;
+      if (status === 'confirmed' && booking.price_change_status === 'pending_client_acceptance') {
+        toast.error('No puedes confirmar: el cliente debe aceptar el nuevo precio en el chat.');
+        return;
+      }
 
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status })
-        .eq('id', bookingId);
+      if (booking.status === 'pending' && (status === 'confirmed' || status === 'cancelled')) {
+        await respondBookingRequest({
+          bookingId,
+          response: status === 'confirmed' ? 'accept' : 'reject',
+        });
+      } else {
+        const { error } = await supabase
+          .from('bookings')
+          .update({ status })
+          .eq('id', bookingId);
 
-      if (error) throw error;
+        if (error) throw error;
+      }
 
       // Enviar mensaje automático según el estado
       let message = '';
@@ -368,6 +391,12 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                       </div>
                     </div>
 
+                    {booking.price_change_status === 'pending_client_acceptance' && (
+                      <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm">
+                        Cambio de precio pendiente de aceptación del cliente.
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-end gap-2 flex-wrap">
                       {booking.status === 'pending' && (
                         <div className="space-x-2">
@@ -411,6 +440,19 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         <p className="text-sm text-gray-600">
                           <strong>Notas:</strong> {booking.notes}
                         </p>
+                      </div>
+                    )}
+
+                    {(booking as any).media_urls?.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-sm font-medium text-gray-700 mb-2">Fotos de la reserva</p>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {(booking as any).media_urls.slice(0, 8).map((url: string) => (
+                            <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                              <img src={url} alt="Foto reserva" className="w-full h-20 object-cover" loading="lazy" />
+                            </a>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

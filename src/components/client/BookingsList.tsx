@@ -7,6 +7,7 @@ import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from '../chat/ChatWindow';
 import { useNavigate } from 'react-router-dom';
+import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: {
@@ -74,7 +75,15 @@ const BookingsList = () => {
           gardener_profile: profilesData?.find((profile: any) => profile.id === booking.gardener_id) || null
         }));
 
-        setBookings(bookingsWithProfiles);
+        const mediaMap = await fetchBookingMediaMap(
+          bookingsWithProfiles.map((b: any) => b.id),
+          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes]))
+        );
+        const withMedia = bookingsWithProfiles.map((booking: any) => ({
+          ...booking,
+          media_urls: mediaMap[booking.id] || [],
+        }));
+        setBookings(withMedia);
       } else {
         setBookings([]);
       }
@@ -271,16 +280,75 @@ const BookingsList = () => {
                 </div>
               </div>
 
+              {booking.price_change_status === 'pending_client_acceptance' && (
+                <div className="mb-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
+                  <p className="text-sm text-amber-900 font-medium mb-3">
+                    El jardinero ha propuesto un nuevo precio para esta reserva: <strong>€{booking.proposed_total_price}</strong>
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const { respondBookingPriceChange } = await import('../../utils/bookingPriceChangeService');
+                          await respondBookingPriceChange({
+                            bookingId: booking.id,
+                            accept: true,
+                            operationId: crypto.randomUUID(),
+                          });
+                          fetchBookings();
+                        } catch (error) {
+                          console.error('Error accepting price:', error);
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Aceptar nuevo precio
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const { respondBookingPriceChange } = await import('../../utils/bookingPriceChangeService');
+                          await respondBookingPriceChange({
+                            bookingId: booking.id,
+                            accept: false,
+                            operationId: crypto.randomUUID(),
+                          });
+                          fetchBookings();
+                        } catch (error) {
+                          console.error('Error rejecting price:', error);
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      Rechazar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {booking.notes && (
                 <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">
-                    <strong>Notas:</strong> {booking.notes}
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                    <strong>Notas:</strong> {booking.notes.replace(/Fotos:\n(https?:\/\/[^\s]+[\n]?)+/g, '').trim()}
                   </p>
                 </div>
               )}
 
+              {(booking as any).media_urls?.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Fotos de la reserva</p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {(booking as any).media_urls.slice(0, 8).map((url: string) => (
+                      <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                        <img src={url} alt="Foto reserva" className="w-full h-20 object-cover" loading="lazy" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 flex-wrap">
-                {booking.status === 'confirmed' && (
+                {(booking.status === 'pending' || booking.status === 'confirmed') && (
                   <button
                     onClick={() => openChat(booking.id, booking.gardener_profile?.full_name || 'Jardinero')}
                     className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"

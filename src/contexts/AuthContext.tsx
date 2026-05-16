@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { clearBookingResumeStorage } from '../utils/bookingResumeStorage';
 
 interface AuthContextType {
   user: User | null;
@@ -102,16 +103,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.log('🕒', ts(), event);
           setUser(u);
           setLoading(false);
-          try {
-            const src = localStorage.getItem('signup_source');
-            if (src === 'checkout' && u?.id) {
-              await supabase.auth.updateUser({ data: { role: 'client', requested_role: 'client' } });
-              await supabase.from('profiles').upsert({ id: u.id, role: 'client' }, { onConflict: 'id' });
-              try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
-              localStorage.removeItem('signup_source');
-              console.log('✅ Rol forzado a client tras verificación desde checkout');
-            }
-          } catch {}
           break;
         }
         case 'PASSWORD_RECOVERY': {
@@ -136,8 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             keysToRemove.forEach(k => localStorage.removeItem(k));
             
-            // También limpiar progreso de reserva de cliente al cerrar sesión
-            localStorage.removeItem('bookingProgress');
+            clearBookingResumeStorage();
           } catch (e) {
             console.error('Error cleaning up wizard progress:', e);
           }
@@ -177,9 +167,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Verifica tu correo para continuar.');
         }
         try {
-          const src = (()=>{ try { return localStorage.getItem('signup_source'); } catch { return null; } })();
           const isGardenerIntent = (fresh as any)?.user_metadata?.role === 'gardener' || (fresh as any)?.user_metadata?.requested_role === 'gardener';
-          if (src !== 'checkout' && isGardenerIntent) {
+          if (isGardenerIntent) {
             const { data: app } = await supabase
               .from('gardener_applications')
               .select('id,status')
@@ -231,6 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await supabase.auth.signOut();
       clearAuthStorage();
+      clearBookingResumeStorage();
       try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
       setUser(null);
       console.log('✅ Signed out');

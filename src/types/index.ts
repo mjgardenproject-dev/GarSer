@@ -48,9 +48,11 @@ export interface Service {
   name: string;
   description: string;
   base_price: number;
-  price_per_hour?: number; // Precio por hora
+  pricing_method: 'per_hour' | 'per_quantity';
+  hourly_rate?: number;
   icon: string;
   image_id?: string; // ID de imagen opcional
+  image_url?: string;
   created_at: string;
 }
 
@@ -153,12 +155,19 @@ export interface Booking {
   start_time: string;
   end_time?: string;
   duration_hours: number;
-  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
+  price_change_status?: 'none' | 'pending_client_acceptance' | 'accepted' | 'rejected' | 'expired';
+  proposed_total_price?: number | null;
+  proposed_price_reason?: string | null;
+  proposed_price_by?: string | null;
+  proposed_price_at?: string | null;
+  proposed_price_expires_at?: string | null;
   total_price: number;
   travel_fee: number;
   hourly_rate: number;
   client_address: string;
   notes?: string;
+  media_urls?: string[];
   request_id?: string;
   buffer_applied?: boolean;
   services?: Service[]; // Servicios asociados
@@ -188,6 +197,120 @@ export interface Review {
   rating: number;
   comment: string;
   created_at: string;
+}
+
+// --- Service Configuration Types ---
+
+export type LawnSpecies = 
+  | 'Bermuda (fina o gramilla)' 
+  | 'Gramón (Kikuyu, San Agustín o similares)' 
+  | 'Dichondra (oreja de ratón o similares)'
+  | 'Césped Mixto (Festuca/Raygrass)';
+
+export type LawnRange = '0-50' | '51-150' | '151-400' | '400+';
+
+export interface LawnPricingConfig {
+  price_per_m2: number;
+  surface_prices?: Partial<Record<LawnRange, number>>;
+  condition_surcharges: {
+    descuidado: number;
+    muy_descuidado: number;
+  };
+  waste_removal: {
+    percentage: number;
+  };
+  minimum_price: number;
+  selected_species?: LawnSpecies[];
+  species_prices?: Record<string, any>;
+  pricing_method?: 'per_quantity' | 'per_hour';
+  hourly_rate?: number;
+  yield_m2_per_hour?: number;
+}
+
+export type HedgeHeightBand = '0-2m' | '2-4m' | '4-6m';
+
+export interface HedgePricingConfig {
+  pricing_matrix: Record<HedgeHeightBand, number>;
+  specialist_enabled?: boolean;
+  condition_surcharges: {
+    media: number;
+    alta: number;
+    descuidado?: number;
+    muy_descuidado?: number;
+  };
+  waste_removal: {
+    percentage: number;
+  };
+  minimum_price: number;
+  category_prices?: Record<string, any>;
+  selected_categories?: string[];
+  species_prices?: Record<string, any>;
+  selected_types?: string[];
+  pricing_method?: 'per_quantity' | 'per_hour';
+  hourly_rate?: number;
+  yield_ml_per_hour?: Record<HedgeHeightBand, number>;
+}
+
+export type PalmSpecies = 
+  | 'Phoenix canariensis'
+  | 'Phoenix dactylifera'
+  | 'Washingtonia robusta/filifera'
+  | 'Syagrus romanzoffiana'
+  | 'Trachycarpus fortunei'
+  | 'Roystonea regia';
+
+export type PalmCondition = 'normal' | 'descuidado' | 'muy_descuidado';
+export type WasteRemovalOption = 'included' | 'extra_percentage' | 'not_included' | 'extra_fixed';
+
+export interface PalmPricingConfig {
+  species_prices: Record<PalmSpecies, number>; 
+  height_prices: Record<PalmSpecies, Record<string, number>>; 
+  condition_surcharges: Record<PalmCondition, number>; 
+  access_difficulty: number;
+  phytosanitary: number;
+  trunk_finish: number;
+  waste_removal: {
+    option: WasteRemovalOption;
+    fixed_price?: number;
+    percentage?: number;
+  };
+  minimum_price: number;
+  selected_species?: PalmSpecies[];
+  yield_units_per_hour: Record<PalmSpecies, Record<string, number>>;
+}
+
+export type ShrubSize = 'pequeñas' | 'medianas' | 'grandes';
+
+export interface ShrubPricingConfig {
+  prices_per_m2: {
+    pequeñas: number;
+    medianas: number;
+    grandes: number;
+  };
+  waste_removal: {
+    percentage: number;
+  };
+  minimum_price: number;
+  pricing_method?: 'per_quantity' | 'per_hour';
+  hourly_rate?: number;
+  yield_m2_per_hour: {
+    pequeñas: number;
+    medianas: number;
+    grandes: number;
+  };
+}
+
+export interface WeedingPricingConfig {
+  version: 'weeding_v1';
+  importe_minimo: number;
+  precio_desbroce_m2: number;
+  precio_herbicida_m2?: number;
+  suplementos: {
+    dificultad_media: number;
+    dificultad_alta: number;
+    retirada_restos: number;
+  };
+  yield_m2_per_hour?: number;
 }
 
 export interface ChatMessage {
@@ -268,8 +391,19 @@ export interface PhytosanitaryDetailedPricing {
   };
 }
 
+export interface PhytosanitaryYields {
+  cesped_m2_per_hour: number;
+  setos_ml_per_hour: number;
+  palmeras_units_per_hour: number;
+  arboles_units_per_hour: number;
+  plantas_m2_per_hour: number;
+  endoterapia_units_per_hour: number;
+}
+
 export interface PhytosanitaryPricingConfig {
   version?: 'phytosanitary_v2';
+  pricing_method?: 'per_quantity' | 'per_hour';
+  hourly_rate?: number;
   importe_minimo?: number;
   tratamientos_activos?: PhytosanitaryType[];
   superficies_plantas?: {
@@ -296,4 +430,6 @@ export interface PhytosanitaryPricingConfig {
   pricing_modifiers?: PhytosanitaryPricingModifiers;
   selected_types?: LegacyPhytosanitaryType[];
   detailed_pricing?: PhytosanitaryDetailedPricing;
+  // Yields (mandatory for internal time calculation)
+  yields: PhytosanitaryYields;
 }

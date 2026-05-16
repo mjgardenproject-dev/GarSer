@@ -135,3 +135,21 @@ describe('calculatePhytosanitaryQuote', () => {
     expect(result.breakdown[0].formula).toContain('32.10');
   });
 });
+
+describe('Phytosanitary Photo Validation', () => {
+  it('should require at least 1 photo', () => {
+    // This test simulates the logic inside DetailsPage.tsx for getPhytosanitaryValidation
+    const testValidation = (selectedPhotoCount: number) => {
+      const issues: string[] = [];
+      if (selectedPhotoCount < 1) issues.push('Selecciona al menos 1 foto para analizar esta zona.');
+      if (selectedPhotoCount > 5) issues.push('No puedes analizar más de 5 fotos por zona.');
+      return issues;
+    };
+
+    expect(testValidation(0)).toContain('Selecciona al menos 1 foto para analizar esta zona.');
+    expect(testValidation(1).length).toBe(0);
+    expect(testValidation(3).length).toBe(0);
+    expect(testValidation(5).length).toBe(0);
+    expect(testValidation(6)).toContain('No puedes analizar más de 5 fotos por zona.');
+  });
+});

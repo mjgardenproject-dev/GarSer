@@ -1,8 +1,19 @@
 import { supabase } from '../lib/supabase';
 import { Booking, TimeBlock } from '../types';
-import { format, parseISO, addMinutes, isSameDay } from 'date-fns';
 
 export class BufferService {
+  private static async getAvailableHourSet(gardenerId: string, date: string): Promise<Set<number>> {
+    const availabilityData = await import('./availabilityServiceCompat').then(service =>
+      service.getGardenerAvailability(gardenerId, date)
+    );
+
+    return new Set<number>(
+      ((availabilityData || []) as any[])
+        .filter((block: any) => block.is_available)
+        .map((block: any) => block.hour_block)
+    );
+  }
+
   // Verificar si se necesita aplicar buffer entre dos reservas
   static needsBuffer(
     existingBooking: Booking, 
@@ -54,31 +65,14 @@ export class BufferService {
     availableBlocks: TimeBlock[]
   ): Promise<TimeBlock[]> {
     try {
-      const existingBookings = await BufferService.getGardenerBookingsForDate(gardenerId, date);
-      
-      if (existingBookings.length === 0) {
-        return availableBlocks;
-      }
+      void gardenerId;
+      void date;
+      void clientId;
 
-      const blocksWithBuffer = availableBlocks.map(block => {
-        let hasBuffer = false;
-
-        // Verificar si este bloque necesita buffer
-        for (const booking of existingBookings) {
-          if (BufferService.needsBuffer(booking, block.hour, clientId, date)) {
-            hasBuffer = true;
-            break;
-          }
-        }
-
-        return {
-          ...block,
-          available: block.available && !hasBuffer,
-          hasBuffer
-        };
-      });
-
-      return blocksWithBuffer;
+      return availableBlocks.map(block => ({
+        ...block,
+        hasBuffer: false
+      }));
     } catch (error) {
       console.error('Error applying buffer rules:', error);
       return availableBlocks;
@@ -94,48 +88,14 @@ export class BufferService {
     clientId: string
   ): Promise<{ canBook: boolean; reason?: string }> {
     try {
-      const [existingBookings, availabilityData] = await Promise.all([
-        BufferService.getGardenerBookingsForDate(gardenerId, date),
-        import('./availabilityServiceCompat').then(service => service.getGardenerAvailability(gardenerId, date))
-      ]);
-      const availSet = new Set<number>(((availabilityData || []) as any[]).filter((b: any) => b.is_available).map((b: any) => b.hour_block));
+      void clientId;
+
+      const availSet = await BufferService.getAvailableHourSet(gardenerId, date);
+
       for (let i = 0; i < durationHours; i++) {
         const h = startHour + i;
         if (!availSet.has(h)) {
           return { canBook: false, reason: 'La hora seleccionada excede la disponibilidad del jardinero' };
-        }
-      }
-      
-      // Verificar cada hora en la secuencia
-      for (let i = 0; i < durationHours; i++) {
-        const currentHour = startHour + i;
-        
-        // Verificar si hay conflicto directo
-        const hasDirectConflict = existingBookings.some(booking => {
-          const bookingStartHour = parseInt(booking.start_time.split(':')[0]);
-          const bookingEndHour = bookingStartHour + booking.duration_hours;
-          return currentHour >= bookingStartHour && currentHour < bookingEndHour;
-        });
-
-        if (hasDirectConflict) {
-          return { 
-            canBook: false, 
-            reason: `Conflicto directo en la hora ${currentHour}:00` 
-          };
-        }
-
-        // Verificar buffer solo para el primer bloque
-        if (i === 0) {
-          const needsBufferCheck = existingBookings.some(booking => 
-            BufferService.needsBuffer(booking, currentHour, clientId, date)
-          );
-
-          if (needsBufferCheck) {
-            return { 
-              canBook: false, 
-              reason: 'Se requiere un intervalo de 30 minutos entre clientes diferentes' 
-            };
-          }
         }
       }
 
@@ -157,10 +117,7 @@ export class BufferService {
 
       for (const gardenerId of gardenerIds) {
         // Use compatibility service to get availability
-        const availabilityData = await import('./availabilityServiceCompat').then(service => 
-          service.getGardenerAvailability(gardenerId, date)
-        );
-        
+        const availableHours = await BufferService.getAvailableHourSet(gardenerId, date);
         const error = null;
 
         if (error) {
@@ -171,7 +128,7 @@ export class BufferService {
         // Crear bloques de tiempo base
         const baseBlocks: TimeBlock[] = [];
         for (let hour = 8; hour <= 19; hour++) {
-          const isAvailable = availabilityData?.some(block => block.hour_block === hour) || false;
+          const isAvailable = availableHours.has(hour);
           baseBlocks.push({
             hour,
             label: `${hour.toString().padStart(2, '0')}:00 - ${(hour + 1).toString().padStart(2, '0')}:00`,
@@ -291,5 +248,5 @@ export const getGardenerBookingsForDate = BufferService.getGardenerBookingsForDa
 export const applyBufferRules = BufferService.applyBufferRules;
 export const canBookSequence = BufferService.canBookSequence;
 export const getAvailableBlocksWithBuffer = BufferService.getAvailableBlocksWithBuffer;
-export const getNextAvailableSlot = BufferService.getNextAvailableSlot;
+export const getNextAvailableSlot = BufferService.calculateNextAvailableSlot;
 export const suggestAlternativeSlots = BufferService.suggestAlternativeSlots;

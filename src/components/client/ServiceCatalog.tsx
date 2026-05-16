@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MapPin, Star, Clock, Euro } from 'lucide-react';
 import { Service } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { getServiceImageFallbackUrl, getServiceImageUrl } from '../../utils/serviceImages';
 
 const ServiceCatalog = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }),
+    []
+  );
 
   // Catálogo limitado a servicios canónicos de la IA
   const ALLOWED_SERVICE_NAMES = [
@@ -74,7 +79,14 @@ const ServiceCatalog = () => {
 
   const handleBookNow = (service: Service, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigate('/booking');
+    navigate('/reservar', { state: { selectedServiceId: service.id } });
+  };
+
+  const handleImageError = (event: React.SyntheticEvent<HTMLImageElement>, serviceName: string) => {
+    const fallbackUrl = getServiceImageFallbackUrl(serviceName);
+    if (event.currentTarget.src !== fallbackUrl) {
+      event.currentTarget.src = fallbackUrl;
+    }
   };
 
   if (loading) {
@@ -88,22 +100,27 @@ const ServiceCatalog = () => {
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6">
       {/* Header */}
-      <div className="text-center mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
+      <section aria-labelledby="service-catalog-heading" className="text-center mb-6 sm:mb-8">
+        <h2 id="service-catalog-heading" className="text-2xl sm:text-4xl font-bold text-gray-900 text-pretty mb-3 sm:mb-4">
           Servicios de Jardinería Profesional
-        </h1>
+        </h2>
         <p className="text-base sm:text-xl text-gray-600 max-w-2xl sm:max-w-3xl mx-auto">
           Encuentra el servicio perfecto para tu jardín. Profesionales cualificados a tu disposición.
         </p>
-      </div>
+      </section>
 
       {/* Search Bar */}
       <div className="mb-6 sm:mb-8">
         <div className="relative max-w-md mx-auto">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <label htmlFor="service-catalog-search" className="sr-only">Buscar servicio</label>
           <input
+              id="service-catalog-search"
+            name="serviceCatalogSearch"
             type="text"
-            placeholder="Buscar servicios..."
+              placeholder="Buscar servicios…"
+            autoComplete="off"
+            spellCheck={false}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-base"
@@ -114,75 +131,80 @@ const ServiceCatalog = () => {
       {/* Services Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {filteredServices.map((service) => (
-          <div
+          <article
             key={service.id}
-            onClick={() => handleServiceClick(service.id)}
-            className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer sm:hover:-translate-y-1 overflow-hidden"
+            className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden"
           >
             {/* Service Image */}
             <div className="h-40 sm:h-48 bg-gradient-to-br from-green-400 to-green-600 relative overflow-hidden">
               <img
-                src={`https://images.pexels.com/photos/${service.image_id || '416978'}/pexels-photo-${service.image_id || '416978'}.jpeg?auto=compress&cs=tinysrgb&w=800`}
+                src={getServiceImageUrl(service, 800)}
                 alt={service.name}
+                width={800}
+                height={480}
+                loading="lazy"
+                onError={(event) => handleImageError(event, service.name)}
                 className="w-full h-full object-cover"
               />
               <div className="absolute top-4 right-4 bg-white bg-opacity-90 backdrop-blur-sm rounded-full px-3 py-1">
                 <div className="flex items-center text-sm font-semibold text-gray-900">
-                  <Euro className="w-4 h-4 mr-1" />
-                  {service.base_price}
+                  <Euro aria-hidden="true" className="w-4 h-4 mr-1" />
+                  {currencyFormatter.format(service.base_price)}
                 </div>
               </div>
             </div>
 
             {/* Service Content */}
             <div className="p-4 sm:p-6">
-              <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">{service.name}</h3>
-              <p className="text-gray-600 mb-4 text-sm sm:text-base line-clamp-2">{service.description}</p>
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900 text-pretty mb-2">{service.name}</h3>
+              <p className="text-gray-600 mb-4 text-sm sm:text-base line-clamp-2 min-w-0">{service.description}</p>
               
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <div className="flex items-center text-xs sm:text-sm text-gray-500">
-                  <Clock className="w-4 h-4 mr-1" />
+                  <Clock aria-hidden="true" className="w-4 h-4 mr-1" />
                   Desde 1 hora
                 </div>
                 <div className="flex items-center text-xs sm:text-sm text-gray-500">
-                  <MapPin className="w-4 h-4 mr-1" />
+                  <MapPin aria-hidden="true" className="w-4 h-4 mr-1" />
                   A domicilio
                 </div>
               </div>
 
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <div className="flex items-center">
-                  <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                  <Star aria-hidden="true" className="w-4 h-4 text-yellow-400 fill-current" />
                   <span className="text-xs sm:text-sm text-gray-600 ml-1">4.8 (127 reseñas)</span>
                 </div>
               </div>
               
               <div className="flex gap-2">
                 <button 
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleServiceClick(service.id);
                   }}
-                  className="flex-1 bg-gray-100 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm sm:text-base"
+                  className="flex-1 bg-gray-100 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm sm:text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
                 >
                   Ver detalles
                 </button>
                 <button 
+                  type="button"
                   onClick={(e) => handleBookNow(service, e)}
-                  className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm sm:text-base"
+                  className="flex-1 bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm sm:text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
                 >
                   Reservar
                 </button>
               </div>
             </div>
-          </div>
+          </article>
         ))}
       </div>
 
       {filteredServices.length === 0 && (
         <div className="text-center py-10 sm:py-12">
           <div className="text-gray-400 mb-4">
-            <Search className="w-16 h-16 mx-auto" />
+            <Search aria-hidden="true" className="w-16 h-16 mx-auto" />
           </div>
           <p className="text-gray-600 text-sm sm:text-base">No se encontraron servicios que coincidan con tu búsqueda.</p>
         </div>

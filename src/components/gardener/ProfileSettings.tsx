@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useForm } from 'react-hook-form';
+import { useForm, FormProvider } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { Save, User, MapPin, Phone, Briefcase, Star, ArrowLeft } from 'lucide-react';
@@ -23,14 +24,18 @@ import StandardServiceConfig, { StandardPricingConfig } from './StandardServiceC
 import ServiceItem from './ServiceItem';
 import PriceSimulator from './PriceSimulator';
 import UnsavedChangesModal from '../common/UnsavedChangesModal';
+import ProfileSidebar from './profile-tabs/ProfileSidebar';
+import PersonalTab from './profile-tabs/PersonalTab';
+import CoverageTab from './profile-tabs/CoverageTab';
+import ServicesTab from './profile-tabs/ServicesTab';
 import { 
   isLawnConfigValid, 
-  isPalmConfigValid, 
   isHedgeConfigValid, 
+  isPalmConfigValid, 
+  isTreePruningConfigValid, 
   isShrubConfigValid, 
-  isPhytosanitaryConfigValid,
-  isWeedingConfigValid,
-  WeedingPricingConfig
+  isPhytosanitaryConfigValid, 
+  isWeedingConfigValid 
 } from '../../utils/serviceValidation';
 // import { isTreePruningConfigValid } from '../../domain/treePruning';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
@@ -85,6 +90,9 @@ interface ProfileSettingsProps {
 
 const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'monolith';
+
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
@@ -189,7 +197,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     action: 'expand' | 'collapse' | 'toggle';
   }>({ isOpen: false, pendingServiceId: null, action: 'collapse' });
 
-  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
+  const methods = useForm<FormData>({
     resolver: yupResolver(schema) as any,
     defaultValues: {
       full_name: '',
@@ -200,6 +208,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       services: []
     }
   });
+
+  const { register, handleSubmit, setValue, watch, formState: { errors } } = methods;
 
   const watchedServices = watch('services') || [];
 
@@ -500,12 +510,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             case 'Corte de césped': isValid = isLawnConfigValid(lawnConfig); break;
             case 'Corte de setos a máquina': isValid = isHedgeConfigValid(hedgeConfig); break;
             case 'Poda de árboles': 
-                isValid = !!treePruningConfig && 
-                          (treePruningConfig.formacion?.small ?? 0) > 0 && 
-                          (treePruningConfig.formacion?.medium ?? 0) > 0 &&
-                          (treePruningConfig.estructural?.small ?? 0) > 0 && 
-                          (treePruningConfig.estructural?.medium ?? 0) > 0 &&
-                          (treePruningConfig.minimumPrice ?? 0) > 0;
+                isValid = isTreePruningConfigValid(treePruningConfig);
                 break;
             case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(shrubConfig); break;
             case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(phytosanitaryConfig); break;
@@ -588,12 +593,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Corte de césped': isValid = isLawnConfigValid(configToSave as LawnPricingConfig); break;
                 case 'Corte de setos a máquina': isValid = isHedgeConfigValid(configToSave as HedgePricingConfig); break;
                 case 'Poda de árboles': 
-                isValid = !!treePruningConfig && 
-                          (treePruningConfig.formacion?.small ?? 0) > 0 && 
-                          (treePruningConfig.formacion?.medium ?? 0) > 0 &&
-                          (treePruningConfig.estructural?.small ?? 0) > 0 && 
-                          (treePruningConfig.estructural?.medium ?? 0) > 0 &&
-                          (treePruningConfig.minimumPrice ?? 0) > 0;
+                isValid = isTreePruningConfigValid(configToSave as TreePruningServiceConfig);
                 break;
                 case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(configToSave as ShrubPricingConfig); break;
                 case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(configToSave as PhytosanitaryPricingConfig); break;
@@ -750,6 +750,21 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       });
   }, [services, gardenerProfile]);
 
+  const handleTabChange = (tab: string) => {
+    setSearchParams({ tab });
+  };
+
+  const personalInitialData = useMemo(() => ({
+    full_name: gardenerProfile?.full_name || '',
+    phone: gardenerProfile?.phone || '',
+    description: gardenerProfile?.description || ''
+  }), [gardenerProfile?.full_name, gardenerProfile?.phone, gardenerProfile?.description]);
+
+  const coverageInitialData = useMemo(() => ({
+    address: gardenerProfile?.address || '',
+    max_distance: gardenerProfile?.max_distance || 25
+  }), [gardenerProfile?.address, gardenerProfile?.max_distance]);
+
   return (
     <div 
         className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6 transition-opacity duration-300"
@@ -772,157 +787,88 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </h2>
       </div>
 
-      <form onSubmit={handleSubmit(onSaveProfileInfo, onError)} className="space-y-8">
-        
-        {/* SECTION 1: Personal Info */}
-        <div className="space-y-6">
-            <h3 className="text-lg font-bold text-gray-900 flex items-center border-b pb-4">
-                <User className="w-5 h-5 mr-2 text-green-600" />
-                Información Personal
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nombre completo</label>
-                    <input {...register('full_name')} type="text" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Tu nombre completo" />
-                    {errors.full_name && <p className="mt-1 text-sm text-red-600">{errors.full_name.message}</p>}
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Teléfono</label>
-                    <input {...register('phone')} type="tel" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="+34 600 000 000" />
-                    {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone.message}</p>}
-                </div>
-            </div>
-
-            <div className="space-y-6">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Dirección base</label>
-                    <AddressAutocomplete value={watch('address') || ''} onChange={(address) => setValue('address', address)} placeholder="Tu dirección de trabajo" />
-                    {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address.message}</p>}
-                </div>
-                <div>
-                    <DistanceMapSelector address={watch('address') || ''} distance={watch('max_distance') || 25} onDistanceChange={(d) => setValue('max_distance', d)} />
-                    {errors.max_distance && <p className="mt-1 text-sm text-red-600">{errors.max_distance.message}</p>}
-                </div>
-            </div>
-
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Descripción profesional</label>
-                <textarea {...register('description')} rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Describe tu experiencia..." />
-                {errors.description && <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>}
-            </div>
-
-            <button type="submit" disabled={loading} className="w-full md:w-auto px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 font-semibold flex items-center justify-center">
-                <Save className="w-5 h-5 mr-2" />
-                {loading ? 'Guardando...' : 'Guardar Información Personal'}
-            </button>
+      <div className="flex flex-col md:flex-row gap-8">
+        {/* Sidebar Navigation */}
+        <div className="md:w-64 flex-shrink-0">
+          <ProfileSidebar activeTab={activeTab} onTabChange={handleTabChange} />
         </div>
 
-        {/* SECTION 1.5: Phytosanitary License */}
-        <PhytosanitaryLicenseUpload onStatusChange={setLicenseStatus} />
+        {/* Tab Content Area */}
+        <div className="flex-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <FormProvider {...methods}>
+            <form onSubmit={handleSubmit(onSaveProfileInfo, onError)}>
+              {/* Monolith view or specific tabs */}
+              {(activeTab === 'monolith' || activeTab === 'personal') && (
+                <div className={activeTab === 'monolith' ? 'mb-12' : ''}>
+                  <PersonalTab 
+                    loading={loading} 
+                    setLicenseStatus={setLicenseStatus}
+                    initialData={personalInitialData}
+                    onSave={onSaveProfileInfo}
+                  />
+                </div>
+              )}
 
-        {/* SECTION 2: Services */}
-        <div className="space-y-4">
-            <h3 className="text-lg font-bold text-gray-900 flex items-center">
-                <Briefcase className="w-5 h-5 mr-2 text-green-600" />
-                Servicios que ofreces
-            </h3>
-            
-            <div className="grid grid-cols-1 gap-4">
-                {sortedServices.map(service => {
-                    const isSelected = watchedServices.includes(service.id);
-                    const isExpanded = expandedServiceId === service.id;
-                    
-                    return (
-                        <ServiceItem
-                            key={service.id}
-                            service={service}
-                            isActive={isSelected}
-                            isExpanded={isExpanded}
-                            hasError={false} // We handle error toast/expansion on interaction, not persistent state yet
-                            onToggle={() => handleToggleService(service.id)}
-                            onExpand={() => handleExpand(service.id)}
-                        >
-                            {/* Render Configurator based on Name */}
-                            {service.name === 'Poda de palmeras' && (
-                                <PalmPricingConfigurator 
-                                    value={palmConfig} 
-                                    initialConfig={savedConfigs['Poda de palmeras']}
-                                    onChange={setPalmConfig} 
-                                    onSave={(c) => handleWrapperSave('Poda de palmeras', c)} 
-                                />
-                            )}
-                            {service.name === 'Corte de césped' && (
-                                <LawnPricingConfigurator 
-                                    value={lawnConfig} 
-                                    initialConfig={savedConfigs['Corte de césped']}
-                                    onChange={setLawnConfig} 
-                                    onSave={(c) => handleWrapperSave('Corte de césped', c)} 
-                                />
-                            )}
-                            {service.name === 'Corte de setos a máquina' && (
-                                <HedgePricingConfigurator 
-                                    value={hedgeConfig} 
-                                    initialConfig={savedConfigs['Corte de setos a máquina']}
-                                    onChange={setHedgeConfig} 
-                                    onSave={(c) => handleWrapperSave('Corte de setos a máquina', c)} 
-                                />
-                            )}
-                            {service.name === 'Poda de árboles' && (
-                                <TreePruningConfigurator
-                                  value={treePruningConfig}
-                                  initialConfig={savedConfigs['Poda de árboles']}
-                                  onChange={setTreePruningConfig}
-                                  onSave={(c) => handleWrapperSave('Poda de árboles', c)}
-                                />
-                            )}
-                            {service.name === 'Poda de plantas y arbustos' && (
-                                <ShrubPricingConfigurator 
-                                    value={shrubConfig} 
-                                    initialConfig={savedConfigs['Poda de plantas y arbustos']}
-                                    onChange={setShrubConfig} 
-                                    onSave={(c) => handleWrapperSave('Poda de plantas y arbustos', c)} 
-                                />
-                            )}
-                            {service.name === 'Servicios fitosanitarios' && (
-                                <PhytosanitaryPricingConfigurator 
-                                    value={phytosanitaryConfig} 
-                                    initialConfig={savedConfigs['Servicios fitosanitarios']}
-                                    onChange={setPhytosanitaryConfig} 
-                                    onSave={(c: PhytosanitaryPricingConfig) => handleWrapperSave('Servicios fitosanitarios', c)}
-                                    licenseStatus={licenseStatus} 
-                                />
-                            )}
-                            {service.name === 'Desbroce de malas hierbas' && (
-                                <WeedingPricingConfigurator 
-                                    value={weedingConfig} 
-                                    initialConfig={savedConfigs['Desbroce de malas hierbas']}
-                                    onChange={setWeedingConfig} 
-                                    onSave={(c: WeedingPricingConfig) => handleWrapperSave('Desbroce de malas hierbas', c)}
-                                    licenseStatus={licenseStatus} 
-                                />
-                            )}
-                        </ServiceItem>
-                    );
-                })}
-            </div>
+              {(activeTab === 'monolith' || activeTab === 'coverage') && (
+                <div className={activeTab === 'monolith' ? 'mb-12' : ''}>
+                  <CoverageTab 
+                    loading={loading} 
+                    initialData={coverageInitialData}
+                    onSave={onSaveProfileInfo}
+                  />
+                </div>
+              )}
+
+              {(activeTab === 'monolith' || activeTab === 'services') && (
+                <div>
+                  <ServicesTab 
+                    sortedServices={sortedServices}
+                    watchedServices={watchedServices}
+                    expandedServiceId={expandedServiceId}
+                    handleToggleService={handleToggleService}
+                    handleExpand={handleExpand}
+                    handleWrapperSave={handleWrapperSave}
+                    configs={{
+                      palmConfig,
+                      lawnConfig,
+                      hedgeConfig,
+                      treePruningConfig,
+                      shrubConfig,
+                      phytosanitaryConfig,
+                      weedingConfig
+                    }}
+                    setConfigs={{
+                      setPalmConfig,
+                      setLawnConfig,
+                      setHedgeConfig,
+                      setTreePruningConfig,
+                      setShrubConfig,
+                      setPhytosanitaryConfig,
+                      setWeedingConfig
+                    }}
+                    savedConfigs={savedConfigs}
+                    licenseStatus={licenseStatus}
+                  />
+                  
+                  <div className="mt-8 pt-8 border-t">
+                    <PriceSimulator
+                      services={sortedServices}
+                      configs={{
+                        palmConfig,
+                        lawnConfig,
+                        hedgeConfig,
+                        treeConfig,
+                        shrubConfig,
+                        phytosanitaryConfig,
+                        weedingConfig
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </form>
+          </FormProvider>
         </div>
-
-      </form>
-
-      <div className="mt-8">
-        <PriceSimulator
-          services={sortedServices}
-          configs={{
-            palmConfig,
-            lawnConfig,
-            hedgeConfig,
-            treeConfig,
-            shrubConfig,
-            phytosanitaryConfig,
-            weedingConfig
-          }}
-        />
       </div>
 
       <UnsavedChangesModal 

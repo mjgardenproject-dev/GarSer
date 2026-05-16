@@ -143,6 +143,9 @@ export interface EstimationResult {
     hasPhytosanitary?: boolean;
     hasTrunkPeeling?: boolean;
     lowestRangeThreshold?: string;
+    highestOpenRangeThreshold?: string;
+    isTerminalOpenRange?: boolean;
+    allowsPriceChange?: boolean;
     // Legacy compatibility
     needsPhytosanitary?: boolean;
     needsTrunkFinish?: boolean;
@@ -152,7 +155,9 @@ export interface EstimationResult {
     indice_imagen: number;
     especie?: string;
     altura?: string;
+    size_band?: 'small' | 'medium' | 'large' | 'over_9';
     altura_m?: number;
+    // Legacy field; business logic should not depend on IA difficulty.
     dificultad_alta?: boolean;
     tipo_acceso?: string;
     tipo_poda?: string;
@@ -184,7 +189,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
     });
     if (error) {
       console.warn('[AI] Edge Function error:', error);
-      return { tareas: [], rawResponse: { error } };
+      throw new Error(error.message || 'System Error');
     }
     const tareas = Array.isArray((data as any)?.tareas) ? (data as any).tareas : [];
     const palmas = Array.isArray((data as any)?.palmas) ? (data as any).palmas : undefined;
@@ -234,7 +239,14 @@ export interface AutoQuoteResponse {
   version?: string;
 }
 
-export async function estimateServiceAutoQuote(params: { service: string; imageUrl: string; description?: string; model?: 'gpt-4o-mini' | 'gemini-2.0-flash' }): Promise<AutoQuoteResponse | null> {
+// Removed legacy hardcoded performance pricing logic as it's now handled dynamically in ProvidersPage.tsx
+export async function estimateServiceAutoQuote(params: { 
+  service: string; 
+  imageUrl: string; 
+  description?: string; 
+  model?: 'gpt-4o-mini' | 'gemini-2.0-flash';
+  gardenerConfig?: any;
+}): Promise<AutoQuoteResponse | null> {
   try {
     const { data, error } = await supabase.functions.invoke('ai-pricing-estimator', {
       body: {
@@ -243,32 +255,17 @@ export async function estimateServiceAutoQuote(params: { service: string; imageU
         image_url: params.imageUrl,
         description: '',
         model: params.model || 'gemini-2.0-flash',
+        gardener_config: params.gardenerConfig
       },
     });
-    if (error) {
-      console.warn('[AI] auto_quote error:', error);
-      return null;
-    }
-    const analysis = (data as any)?.analysis;
-    const result = (data as any)?.result;
-    if (analysis && result) {
-      return { analysis, result, version: (data as any)?.version } as AutoQuoteResponse;
-    }
-    return null;
-  } catch (e) {
-    console.warn('[AI] auto_quote invoke failed:', e);
+
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    console.error('Error in estimateServiceAutoQuote:', err);
     return null;
   }
 }
-
-const LOCAL_DIFFICULTY: Record<1 | 2 | 3, number> = { 1: 1.0, 2: 1.3, 3: 1.7 };
-const LOCAL_PERF: Record<string, { performance: number; pricePerUnit: number }> = {
-  'Corte de césped': { performance: 100, pricePerUnit: 0.30 },
-  'Corte de setos': { performance: 25, pricePerUnit: 3.50 },
-  'Servicios fitosanitarios': { performance: 40, pricePerUnit: 2.50 },
-  'Poda de plantas y arbustos': { performance: 8, pricePerUnit: 6.00 },
-  'Poda de árboles': { performance: 0.8, pricePerUnit: 45.00 },
-};
 
 const PROMPTS_MAP: Record<string, string> = {
   'Corte de césped': `---
@@ -462,13 +459,13 @@ Eres una IA especializada en análisis de jardines llamada 'TreeScale'. Tu objet
 
 INSTRUCCIONES DE ANÁLISIS:
 1. Cuenta el número de árboles a podar.
-2. Estima la altura promedio.
+2. Clasifica el tamaño en bandas, sin calcular altura exacta.
 3. Clasifica el tipo de árbol.
 
 VARIABLES A EXTRAER:
 - tipo_servicio: "Poda de árboles"
 - cantidad: Número de árboles.
-- altura_aprox_m: Altura aproximada en metros.
+- size_band: "small" | "medium" | "large" | "over_9".
 - tipo_arbol: "Frutal", "Decorativo", "Conífera".
 - nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
 - observaciones: Lista de detalles (ej. "Ramas cerca de cables", "Árbol muy alto").
@@ -479,7 +476,7 @@ FORMATO DE SALIDA (JSON ÚNICAMENTE):
     {
       "tipo_servicio": "Poda de árboles",
       "cantidad": number,
-      "altura_aprox_m": number,
+      "size_band": "small" | "medium" | "large" | "over_9",
       "tipo_arbol": string,
       "nivel_analisis": 1 | 2 | 3,
       "observaciones": string[]

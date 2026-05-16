@@ -1,41 +1,29 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Info, AlertCircle, AlertTriangle } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
-import ServiceConfigFooter from './ServiceConfigFooter';
+import { LawnPricingConfig, LawnSpecies, LawnRange } from '../../types';
+import { UnifiedNumericInput } from './UnifiedNumericInput';
+import { useAutoSave } from '../../hooks/useAutoSave';
+import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import ServicePricePreview from './ServicePricePreview';
 
-export type LawnSpecies = 
-  | 'Bermuda (fina o gramilla)' 
-  | 'Gramón (Kikuyu, San Agustín o similares)' 
-  | 'Dichondra (oreja de ratón o similares)'
-  | 'Césped Mixto (Festuca/Raygrass)';
-
-export type LawnRange = '0-50' | '51-150' | '151-400' | '400+';
 type LegacyLawnRange = '0-50' | '50-200' | '200+';
 
-export interface LawnPricingConfig {
-  price_per_m2: number;
-  surface_prices?: Partial<Record<LawnRange, number>>;
-  condition_surcharges: {
-    descuidado: number;
-    muy_descuidado: number;
-  };
-  waste_removal: {
-    percentage: number;
-  };
-  minimum_price: number;
-  selected_species?: LawnSpecies[];
-  species_prices?: Record<string, Partial<Record<LegacyLawnRange, number>>>;
-}
-
 const EMPTY_CONFIG: LawnPricingConfig = {
-  price_per_m2: 0,
-  condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
-  waste_removal: { percentage: 0 },
-  minimum_price: 0,
+  price_per_m2: '' as any,
+  condition_surcharges: { descuidado: '' as any, muy_descuidado: '' as any },
+  waste_removal: { percentage: '' as any },
+  minimum_price: '' as any,
   selected_species: [],
-  species_prices: {}
+  species_prices: {},
+  pricing_method: 'per_quantity',
+  hourly_rate: '' as any,
+  yield_m2_per_hour: '' as any
 };
+
+const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
+const isInvalid = (v: any) => v === undefined || v === null || v === '';
 
 interface Props {
   value?: LawnPricingConfig;
@@ -45,11 +33,8 @@ interface Props {
 }
 
 const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
-  const [isSaving, setIsSaving] = useState(false);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [showGlobalError, setShowGlobalError] = useState(false);
-  const [showResetModal, setShowResetModal] = useState(false);
 
   const normalizeConfig = (incoming?: LawnPricingConfig): LawnPricingConfig => {
     if (!incoming) return EMPTY_CONFIG;
@@ -57,14 +42,6 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     const next: LawnPricingConfig = {
       ...EMPTY_CONFIG,
       ...incoming,
-      condition_surcharges: {
-        ...EMPTY_CONFIG.condition_surcharges,
-        ...(incoming.condition_surcharges || {})
-      },
-      waste_removal: {
-        ...EMPTY_CONFIG.waste_removal,
-        ...(incoming.waste_removal || {})
-      },
       selected_species: incoming.selected_species || [],
       species_prices: incoming.species_prices || {}
     };
@@ -88,42 +65,17 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
     return {
       ...next,
-      price_per_m2: Number(price_per_m2 || 0)
+      price_per_m2: price_per_m2 > 0 ? price_per_m2 : getVal(incoming.price_per_m2),
+      minimum_price: getVal(incoming.minimum_price),
+      condition_surcharges: {
+        descuidado: getVal(incoming.condition_surcharges?.descuidado),
+        muy_descuidado: getVal(incoming.condition_surcharges?.muy_descuidado)
+      },
+      waste_removal: { percentage: getVal(incoming.waste_removal?.percentage) }
     };
   };
 
   const config = useMemo(() => normalizeConfig(value), [value]);
-
-  const isDirty = useMemo(() => {
-    const baseToCompare = normalizeConfig(initialConfig || EMPTY_CONFIG);
-    return !deepEqual(config, baseToCompare);
-  }, [config, initialConfig]);
-
-  const handleReset = () => {
-    setShowResetModal(true);
-  };
-
-  const confirmReset = async () => {
-    setShowResetModal(false);
-    onChange(EMPTY_CONFIG);
-    setValidationErrors([]);
-    setShowGlobalError(false);
-    
-    if (onSave) {
-      try {
-        setIsSaving(true);
-        await onSave(EMPTY_CONFIG);
-      } catch (error) {
-        console.error('Error resetting lawn config:', error);
-      } finally {
-        setIsSaving(false);
-      }
-    }
-  };
-
-  const cancelReset = () => {
-    setShowResetModal(false);
-  };
 
   const handlePriceChange = (newPrice: number) => {
     onChange({
@@ -158,178 +110,215 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
       });
   };
 
-  const handleSave = async (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-
+  const validateConfig = useCallback((cfg: LawnPricingConfig): string[] => {
     const errors: string[] = [];
-    if (!config.price_per_m2 || config.price_per_m2 <= 0) {
-      errors.push('price_per_m2');
+    if (cfg.pricing_method === 'per_hour') {
+      if (isInvalid(cfg.hourly_rate)) errors.push('hourly_rate');
+    } else {
+      if (isInvalid(cfg.price_per_m2)) errors.push('price_per_m2');
     }
+    // Yield is always mandatory
+    if (isInvalid(cfg.yield_m2_per_hour)) errors.push('yield_m2_per_hour');
+    
+    if (isInvalid(cfg.minimum_price)) errors.push('minimum_price');
+    if (isInvalid(cfg.condition_surcharges?.descuidado)) errors.push('descuidado');
+    if (isInvalid(cfg.condition_surcharges?.muy_descuidado)) errors.push('muy_descuidado');
+    if (isInvalid(cfg.waste_removal?.percentage)) errors.push('waste_removal');
+    return errors;
+  }, []);
 
-    if (errors.length > 0) {
-      setValidationErrors(errors);
-      setShowGlobalError(true);
-      return;
-    }
+  useEffect(() => {
+    setValidationErrors(validateConfig(config));
+  }, [config, validateConfig]);
 
-    if (!config.minimum_price || config.minimum_price <= 0) {
-      setShowGlobalError(true);
-      return;
-    }
-
-    setValidationErrors([]);
-    setShowGlobalError(false);
-
-    if (onSave) {
-      try {
-        setIsSaving(true);
-        await onSave(config);
-      } catch (error) {
-        console.error('Error saving lawn config:', error);
-      } finally {
-        setIsSaving(false);
+  const { status } = useAutoSave({
+    value: config,
+    initialValue: normalizeConfig(initialConfig),
+    onSave: async (val) => {
+      if (onSave) {
+        await onSave(val);
       }
-    }
-  };
-
-  const renderPriceInput = () => {
-     const val = Number(config.price_per_m2 || 0);
-     const hasError = validationErrors.includes('price_per_m2');
-
-     return (
-        <div className="relative w-full">
-             <input
-                type="number"
-                min="0"
-                step="0.01"
-              className={`w-full h-11 md:h-10 pl-[1px] pr-6 text-right text-[17px] md:text-sm transition-all border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 ${hasError ? 'border-red-400 bg-red-50 md:border-red-500' : (val > 0 ? 'border-slate-200 bg-white md:border-gray-300' : 'border-slate-200 bg-slate-50 md:border-gray-200')}`}
-                value={val === 0 ? '' : val}
-                placeholder={val === 0 ? '-' : ''}
-                onChange={(e) => {
-                    handlePriceChange(parseFloat(e.target.value) || 0);
-                    if (hasError) {
-                        setValidationErrors(prev => prev.filter(err => err !== 'price_per_m2'));
-                    }
-                }}
-              />
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 leading-none text-gray-400 text-sm font-medium">€</span>
-         </div>
-     );
-  };
+    },
+    validate: validateConfig
+  });
 
   return (
     <div className="space-y-8">
       {/* Header Info */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-        <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-900 text-lg">
-                Configuración de tarifas por superficie (IVA incluido)
-            </h3>
-            <div className="relative">
-                <button 
-                    type="button"
-                    onClick={() => setShowGlobalInfo(!showGlobalInfo)}
-                    className="text-gray-400 hover:text-blue-500 transition-colors"
-                >
-                    <Info className="w-5 h-5" />
-                </button>
-                {showGlobalInfo && (
-                    <>
-                        <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
-                        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:left-0 md:translate-x-0 md:translate-y-0 md:w-64 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
-                            <ul className="list-disc pl-4 space-y-2">
-                                <li>Los precios son por m² en todos los rangos.</li>
-                                <li>Los precios <strong>no incluyen la retirada de restos</strong> (se configura abajo).</li>
-                                <li>El <strong>IVA está incluido</strong>.</li>
-                            </ul>
-                        </div>
-                    </>
-                )}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-8">
+        <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
+                    Configuración de tarifas de Corte de césped (IVA incluido)
+                </h3>
+                <div className="relative">
+                    <button 
+                        type="button"
+                        onClick={() => setShowGlobalInfo(!showGlobalInfo)}
+                        className="text-gray-400 hover:text-blue-500 transition-colors"
+                    >
+                        <Info className="w-5 h-5" />
+                    </button>
+                    {showGlobalInfo && (
+                        <>
+                            <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setShowGlobalInfo(false)} />
+                            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[90vw] max-w-xs p-6 bg-white rounded-xl shadow-xl border border-gray-100 text-sm text-gray-600 md:absolute md:top-8 md:left-0 md:translate-x-0 md:translate-y-0 md:w-64 md:p-4 md:shadow-lg md:border-blue-100 md:rounded-lg">
+                                <ul className="list-disc pl-4 space-y-2">
+                                    <li>El precio es por m².</li>
+                                    <li>Los precios <strong>no incluyen la retirada de restos</strong> (se configura abajo).</li>
+                                    <li>El <strong>IVA está incluido</strong>.</li>
+                                </ul>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
+            <SaveStatusIndicator status={status} />
         </div>
       </div>
 
-      <div>
-        <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Precio mínimo</h4>
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="pr-2">
-              <span className="text-gray-700 text-sm font-medium block">Importe mínimo del servicio</span>
-              <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-            </div>
-            <div className="relative w-24">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className={`w-full h-9 pl-3 pr-7 border rounded-lg text-right text-[17px] md:text-sm focus:ring-2 focus:ring-green-500 ${config.minimum_price > 0 ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
-                value={config.minimum_price === 0 ? '' : config.minimum_price}
-                placeholder={config.minimum_price === 0 ? '-' : ''}
-                onChange={(e) => handleMinimumPriceChange(parseFloat(e.target.value) || 0)}
+      {/* Método de Cobro */}
+      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Método de Cobro</h4>
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => onChange({ ...config, pricing_method: 'per_quantity' })}
+            className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
+              config.pricing_method === 'per_quantity'
+                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+            }`}
+          >
+            Por Cantidad (€/m²)
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ ...config, pricing_method: 'per_hour' })}
+            className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
+              config.pricing_method === 'per_hour'
+                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+            }`}
+          >
+            Por Hora (€/h)
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-3">
+          {config.pricing_method === 'per_hour' 
+            ? 'El precio se calculará multiplicando las horas estimadas por tu tarifa horaria.' 
+            : 'El precio se calculará multiplicando los m² analizados por tu tarifa unitaria.'}
+        </p>
+      </div>
+
+      {/* Velocidad de trabajo (Obligatorio) */}
+      <div className="mb-8">
+        <div className="flex items-center gap-2 mb-3">
+          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Velocidad de trabajo</h4>
+          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full uppercase">Obligatorio</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Velocidad de trabajo (m²/h)</label>
+            <div className="w-32">
+              <UnifiedNumericInput
+                value={config.yield_m2_per_hour}
+                autoSelect
+                onChange={(val) => onChange({ ...config, yield_m2_per_hour: val })}
+                suffix="m²/h"
+                hasError={validationErrors.includes('yield_m2_per_hour')}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">€</span>
             </div>
+            <p className="text-[10px] text-gray-500 mt-1">¿Cuántos m² puedes cortar en una hora?</p>
           </div>
-        </div>
-      </div>
-
-      <div className="-mx-1 rounded-xl border border-slate-200 bg-white shadow-sm md:mx-0 md:border md:rounded-xl md:overflow-hidden md:shadow-sm md:bg-white">
-        <div className="hidden md:grid md:grid-cols-12 gap-4 bg-gray-50 p-4 border-b text-sm font-semibold text-gray-700 items-center">
-            <div className="md:col-span-3">Concepto</div>
-            <div className="md:col-span-9 text-center">Precio por m²</div>
-        </div>
-
-        <div className="divide-y divide-slate-100">
-            <div className="p-4 hover:bg-gray-50 transition-colors">
-              <div className="grid grid-cols-1 md:grid-cols-12 md:gap-4 md:items-center gap-2">
-                <div className="md:col-span-3">
-                  <span className="font-medium text-gray-800">
-                    Precio base (m²)
-                  </span>
-                </div>
-                <div className="md:col-span-9">
-                  {renderPriceInput()}
-                </div>
+          
+          {config.pricing_method === 'per_hour' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Precio por Hora (€/h)</label>
+              <div className="w-32">
+                <UnifiedNumericInput
+                  value={config.hourly_rate}
+                  autoSelect
+                  onChange={(val) => onChange({ ...config, hourly_rate: val })}
+                  suffix="€/h"
+                  hasError={validationErrors.includes('hourly_rate')}
+                />
               </div>
             </div>
+          )}
+
+          {config.pricing_method === 'per_hour' && config.hourly_rate && config.yield_m2_per_hour && config.yield_m2_per_hour > 0 && (
+            <div className="md:col-span-2 p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
+              <p className="text-xs text-blue-800">
+                <span className="font-semibold">Nota:</span> Con este rendimiento y precio por hora, tu tarifa equivalente es de <span className="font-bold">{(config.hourly_rate / config.yield_m2_per_hour).toFixed(2)}€/m²</span>.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
+      <hr className="border-gray-200 my-8" />
+
+      {config.pricing_method === 'per_quantity' && (
+        <>
+          <div>
+            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Tarifa por m² (Precio Fijo)</h4>
+            <div className="flex items-center justify-between">
+              <div className="pr-2">
+                <span className="text-sm font-medium text-gray-900 block">Precio por m²</span>
+              </div>
+              <div className="w-24">
+                <UnifiedNumericInput
+                  value={config.price_per_m2}
+                  autoSelect
+                  onChange={(val) => {
+                    handlePriceChange(val);
+                    if (validationErrors.includes('price_per_m2')) {
+                      setValidationErrors(prev => prev.filter(err => err !== 'price_per_m2'));
+                    }
+                  }}
+                  hasError={validationErrors.includes('price_per_m2')}
+                />
+              </div>
+            </div>
+          </div>
+          <hr className="border-gray-200 my-8" />
+        </>
+      )}
+
       {/* Surcharges Section (Copied style from StandardServiceConfig/PalmPricingConfigurator) */}
-      <div className="border-t border-gray-200 pt-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Condition Surcharges */}
             <div>
-              <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Suplementos por estado</h4>
-              <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100">
+              <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Suplementos por estado</h4>
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-700 text-sm font-medium">Descuidado</span>
+                  <span className="text-sm font-medium text-gray-900 block">Descuidado</span>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.condition_surcharges.descuidado === 0 ? '' : config.condition_surcharges.descuidado}
-                      placeholder={config.condition_surcharges.descuidado === 0 ? '-' : ''}
-                      onChange={(e) => handleSurchargeChange('descuidado', parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
+                    <div className="w-20">
+                      <UnifiedNumericInput
+                        value={config.condition_surcharges.descuidado}
+                        autoSelect
+                        onChange={(val) => handleSurchargeChange('descuidado', val)}
+                        suffix="%"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-700 text-sm font-medium">Muy Descuidado</span>
+                  <span className="text-sm font-medium text-gray-900 block">Muy Descuidado</span>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.condition_surcharges.muy_descuidado === 0 ? '' : config.condition_surcharges.muy_descuidado}
-                      placeholder={config.condition_surcharges.muy_descuidado === 0 ? '-' : ''}
-                      onChange={(e) => handleSurchargeChange('muy_descuidado', parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
+                    <div className="w-20">
+                      <UnifiedNumericInput
+                        value={config.condition_surcharges.muy_descuidado}
+                        autoSelect
+                        onChange={(val) => handleSurchargeChange('muy_descuidado', val)}
+                        suffix="%"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -337,24 +326,23 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
             {/* Waste Removal */}
             <div>
-              <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Recargo por retirada</h4>
-              <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100 h-full">
-                <div className="flex items-center justify-between h-full">
+              <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Gestión de Residuos</h4>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
                   <div className="pr-2">
-                    <span className="text-gray-700 text-sm font-medium block">Retirada de restos</span>
+                    <span className="text-sm font-medium text-gray-900 block">Retirada de restos</span>
                     <p className="text-xs text-gray-500 mt-1">Incremento si el cliente lo solicita</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-400 text-sm font-medium">+</span>
-                    <input
-                      type="number"
-                      min="0"
-                      className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
-                      value={config.waste_removal.percentage === 0 ? '' : config.waste_removal.percentage}
-                      placeholder={config.waste_removal.percentage === 0 ? '-' : ''}
-                      onChange={(e) => handleWasteChange(parseFloat(e.target.value) || 0)}
-                    />
-                    <span className="text-gray-500 text-sm font-medium w-4">%</span>
+                    <div className="w-20">
+                      <UnifiedNumericInput
+                        value={config.waste_removal.percentage}
+                        autoSelect
+                        onChange={(val) => handleWasteChange(val)}
+                        suffix="%"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -362,61 +350,27 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
           </div>
       </div>
 
-      {/* Global Error */}
-      {showGlobalError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-            <div>
-                <h4 className="text-sm font-semibold text-red-800">Faltan precios por configurar</h4>
-                <p className="text-sm text-red-600 mt-1">
-                    Asegúrate de rellenar el precio por m² y el importe mínimo.
-                    Los precios deben ser mayores a 0.
-                </p>
-            </div>
-        </div>
-      )}
+      <hr className="border-gray-200 my-8" />
 
-      {/* Save Button */}
-      <ServiceConfigFooter 
-        onSave={() => handleSave()} 
-        onReset={handleReset} 
-        isDirty={isDirty} 
-        isSaving={isSaving} 
-      />
-
-      {/* Reset Confirmation Modal */}
-      {showResetModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
-                <AlertTriangle className="w-6 h-6 text-yellow-600" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">
-                ¿Restablecer configuración?
-              </h3>
-              <p className="text-gray-500 text-center mb-6 text-sm">
-                Se eliminarán todos los precios y recargos configurados para el corte de césped. Esta acción es irreversible.
-              </p>
-              <div className="flex flex-col gap-3 w-full">
-                <button
-                  onClick={confirmReset}
-                  className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-red-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
-                >
-                  Confirmar
-                </button>
-                <button
-                  onClick={cancelReset}
-                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-bold hover:bg-gray-200 transition-colors"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
+      <div>
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex items-center justify-between">
+          <div className="pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
           </div>
-        </div>,
-        document.body
-      )}
+          <div className="w-24">
+            <UnifiedNumericInput
+                value={config.minimum_price}
+                autoSelect
+                onChange={handleMinimumPriceChange}
+                hasError={validationErrors.includes('minimum_price')}
+              />
+          </div>
+        </div>
+      </div>
+
+      <ServicePricePreview serviceName="Corte de césped" config={config} />
     </div>
   );
 };

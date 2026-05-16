@@ -27,6 +27,7 @@ interface Payload {
   palms?: any[]; // Array for palm pricing calculation
   phytosanitary_scopes?: string[]; // Array of selected scopes for Fitosanitarios
   qa_runs?: number;
+  gardener_config?: any; // Configuración personalizada del jardinero
 }
 
 type PhytosanitaryTreatment = 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia' | 'inconclusive';
@@ -81,6 +82,12 @@ function buildPhytosanitarySystemPrompt(payload: Payload) {
     `The user has explicitly restricted the analysis to: [${scopeStr}].`,
     `You MUST ONLY analyze and count elements that belong to this scope.`,
     `Any other element outside this scope MUST BE STRICTLY 0, even if it is clearly visible in the image.`,
+    '',
+    '### ERROR HANDLING (ZERO SILENT FAILURES) ###',
+    'If there is NO valid vegetation clearly visible within the requested scope, or the image quality is too poor to analyze (extreme darkness, blur), you MUST return:',
+    '- All metrics as 0',
+    '- "observaciones_ia": ["Elemento a analizar impredecible"]',
+    'Do NOT guess or infer.',
   ];
 
   systemPrompt.push(
@@ -97,6 +104,7 @@ function buildPhytosanitarySystemPrompt(payload: Payload) {
     '- PALMS (units): "palmeras_ducha_peq_ud" (< 3.5m), "palmeras_ducha_med_ud" (3.5m - 8m), "palmeras_ducha_alta_ud" (> 8m).',
     '- PALM SURGERY: "palmeras_cirugia_ud" (Count ONLY if severe crown collapse or trunk holes are visible. Otherwise 0).',
     '- SURFACES (m2): "cesped_m2" (Lawn).',
+    '- PLANTS LOW MASS (m2): "plantas_superficie_calculada_m2" using BRUTE BED AREA POLICY (outer contour of each continuous mass, include internal natural voids, exclude pavements/pathways/non-target islands, deduplicate repeated angles).',
     '',
     '### OUTPUT RULES ###',
     '1. Return ONLY valid JSON.',
@@ -123,7 +131,7 @@ function buildPhytosanitarySystemPrompt(payload: Payload) {
     '    "arboles_gran_ud": number,',
     '    "herbicida_poca_densidad_m2": number,',
     '    "herbicida_mucha_densidad_m2": number,',
-    '    "porcentaje_superficie_plantas": number,',
+    '    "plantas_superficie_calculada_m2": number,',
     '    "plantas_tamano_dominante": "pequenas" | "medianas" | "grandes" | null',
     '  },',
     '  "observaciones_ia": ["string"]',
@@ -141,15 +149,17 @@ function buildPhytosanitaryUserContent(payload: Payload) {
   const instructions = ['INSTRUCTIONS: 1. Identify scale anchors. 2. Map objects to landmarks for deduplication. 3. Assess spraying risks. 4. Output JSON.'];
   
   if (phytosanitary_scopes.includes('plantas') || phytosanitary_scopes.includes('todo_jardin')) {
-    instructions.push('CRITICAL FOR PLANTAS: "Plantas bajas" includes shrubs, bushes, flowers, AND small trees under 2 meters. You MUST analyze the images and extract two specific values for plants:');
-    instructions.push('1) "porcentaje_superficie_plantas": A strict number representing the percentage of the total garden area covered by these plants. You MUST round to one of these exact values: 5, 10, 25, 50, 75, or 100.');
-    instructions.push('2) "plantas_tamano_dominante": A strict string representing the average height of these plants. MUST be exactly one of: "pequenas" (<0.5m), "medianas" (0.5-1.5m), or "grandes" (1.5-2m). Small trees (<2m) must be classified into these ranges based on their actual height.');
+    instructions.push('CRITICAL FOR PLANTAS: "Plantas bajas" includes shrubs, bushes, flowers, ornamental mass, AND small trees under 2 meters.');
+    instructions.push('Apply BRUTE BED AREA POLICY: estimate operational area by outer contour of each continuous bed/mass, include internal natural gaps, exclude pathways/pavement/non-target islands, and deduplicate repeated photo angles.');
+    instructions.push('1) "plantas_superficie_calculada_m2": integer m2 estimate for the consolidated brute bed area.');
+    instructions.push('2) "plantas_tamano_dominante": dominant size as "pequenas" (<0.5m), "medianas" (0.5-1.5m), or "grandes" (1.5-2m).');
   }
 
   const userContent: any[] = [
     { type: 'text', text: `Customer notes: ${String(description || '').trim() || 'none'}` },
     { type: 'text', text: `Scope: ${scopes.join(', ')}` },
     { type: 'text', text: instructions.join(' ') },
+    { type: 'text', text: 'You may receive between 1 and 5 images. Ensure deduplication across all of them. Output a single, consolidated result.' }
   ];
   photo_urls.slice(0, 6).forEach((url, idx) => {
     userContent.push({ type: 'text', text: `--- Image Index ${idx} ---` });
@@ -177,7 +187,7 @@ function filterPhytosanitaryMetricsByScope(metrics: any, scopes: string[]) {
   
   if (!hasCesped) filtered.cesped_m2 = 0;
   if (!hasPlantas) {
-    filtered.porcentaje_superficie_plantas = 0;
+    filtered.plantas_superficie_calculada_m2 = 0;
     filtered.plantas_tamano_dominante = null;
   }
   if (!hasSetos) {
@@ -716,20 +726,22 @@ Eres un motor determinista de análisis visual para un marketplace de jardinerí
 Tu tarea para este servicio es analizar 1 árbol (una zona) a partir de 1 o más fotos del MISMO árbol.
 
 OBJETIVO:
-- Estimar la altura del árbol en metros (altura_m).
-- Determinar si la poda es de dificultad alta (dificultad_alta) por:
-  - terreno irregular/inclinado/inestable en la base, o
-  - obstáculos cercanos (cables, tejados, muros, piscinas, mobiliario grande, otros árboles muy próximos) que dificulten el trabajo o la caída de ramas.
+- Clasificar el árbol en una banda de tamaño (size_band), sin devolver altura exacta.
 
 REGLAS:
 1) No calcules precios.
 2) No estimes horas.
 3) No clasifiques tipo de poda.
 4) Si hay varios árboles visibles, analiza SOLO el árbol principal (más cercano/centrado en la imagen).
-5) Si NO hay un árbol válido claramente visible: nivel_analisis = 3, altura_m = 0, dificultad_alta = false, observaciones incluye "No se detectó ningún árbol válido".
+5) Si NO hay un árbol válido claramente visible: nivel_analisis = 3, size_band = "small", dificultad_alta = false, observaciones incluye "No se detectó ningún árbol válido".
 6) Si hay visibilidad parcial o poca referencia de escala: nivel_analisis = 2.
 7) Si la vista es clara: nivel_analisis = 1.
-8) Usa referencias comunes para escala (persona ~1.7m, puerta ~2m, valla ~1.5-2m, planta baja ~3m).
+8) Clasifica obligatoriamente en una de estas bandas:
+   - "small" para 0m a <3m
+   - "medium" para 3m a <5m
+   - "large" para 5m a <9m
+   - "over_9" para >=9m
+9) No inferir dificultad del trabajo: devuelve siempre dificultad_alta = false.
 
 SALIDA:
 Devuelve SOLO JSON válido, sin texto adicional.
@@ -738,7 +750,7 @@ Devuelve SOLO JSON válido, sin texto adicional.
   "arboles": [
     {
       "indice_imagen": integer,
-      "altura_m": number,
+      "size_band": "small" | "medium" | "large" | "over_9",
       "dificultad_alta": boolean,
       "nivel_analisis": 1 | 2 | 3,
       "observaciones": ["string"] OR null
@@ -749,65 +761,71 @@ Devuelve SOLO JSON válido, sin texto adicional.
   ].join('\n'),
   'Poda de plantas y arbustos': [
     `---
-You are an expert image analysis AI used in a gardening services marketplace.
+You are "ShrubZoneAI", a deterministic visual analysis engine for a gardening marketplace.
+Your only responsibility is extracting repeatable pruning metrics for the service "Poda de plantas y arbustos".
 
-Your role is to analyze one or more images provided by a client and extract objective, visible data required to generate an automatic service estimate for plant pruning.
+GLOBAL CONSTRAINTS (MANDATORY):
+1) Return ONLY valid JSON. No markdown. No prose outside JSON.
+2) Analyze ONLY visible evidence. Never infer hidden areas.
+3) Never calculate prices.
+4) If there is NO valid shrub/ornamental mass clearly visible, or image quality is too poor, return nivel_analisis: 3 with observaciones: ["Elemento a analizar impredecible"].
 
-You DO NOT calculate prices.
-You DO NOT explain your reasoning.
-You DO NOT include text outside the required JSON.
+SERVICE SCOPE (STRICT):
+- Include: shrubs, bushes, roses, ornamental low plants, climbing ornamental vegetation, large succulents.
+- Exclude: trees (covered by "Poda de árboles"), lawn/grass (covered by "Corte de césped"), hedges for linear trimming.
 
-Your task is limited strictly to image analysis.
+MULTI-PHOTO DEDUPLICATION & CONSOLIDATION (CRITICAL):
+- Cross-reference all images.
+- If the same shrub mass appears from different angles, count it once.
+- If multiple distinct shrub masses appear, consolidate into one total pruning surface for this zone.
+- NEVER sum duplicated views.
+- Output MUST be one single consolidated task object.
 
-SERVICE:
-Poda de plantas y arbustos
+PRIMARY OUTPUT METRICS:
+- superficie_m2: estimated BRUTE footprint area (m2) of the shrub bed ("macizo bruto") to prune.
+- tamano_dominante: "pequeñas" | "medianas" | "grandes".
+- nivel_analisis: 1 | 2 | 3.
+- observaciones: string[] | null.
 
-ANALYSIS OBJECTIVE:
-Analyze the provided images to identify shrubs, bushes, roses, climbing plants, or large succulents. Determine the total surface area of the visible garden, the percentage of that area covered by these plants, and their dominant size.
-Ignore trees (handled by "Poda de árboles") and grass (handled by "Corte de césped").
+BRUTE SHRUB BED AREA POLICY (CRITICAL):
+- Measure the pruning bed using the OUTER CONTOUR (2D footprint) of each continuous shrub mass.
+- Include internal gaps/voids that are naturally part of the same bed layout (do NOT subtract every empty hole between branches).
+- Exclude clear pathways, lawn corridors, pavements, and detached non-target islands.
+- If several adjacent plants form one continuous bed visually, treat them as ONE macizo.
+- If two beds are clearly separated by visible transit space, treat as separate beds and then sum.
+- This is NOT leaf-only pixel area; this is operational pruning footprint area.
 
-MULTI-IMAGE & DEDUPLICATION:
-- The user may provide multiple images of the same garden.
-- You must analyze ALL images to create a comprehensive list of tasks.
-- CRITICAL: Deduplicate plants. If the SAME plant appears in multiple images (e.g., from different angles), measure it ONLY ONCE.
-- If distinct groups of plants appear in different images, evaluate the overall garden size and the total percentage covered across all visible areas.
+SIZE CLASSIFICATION (STRICT):
+- "pequeñas": dominant height/diameter in [0m, 1m).
+- "medianas": dominant height/diameter in [1m, 2m).
+- "grandes": dominant height/diameter in [2m, 3m].
 
-VARIABLES TO EXTRACT:
-- tipo_servicio: Fixed value "Poda de plantas y arbustos".
-- razonamiento_cot: Object explaining your rationale before extracting metrics.
-- tamano_total_jardin_m2: Integer representing the estimated total surface area of the visible garden in square meters.
-- porcentaje_superficie_plantas: Integer representing the percentage of the garden area covered by the plants to prune. MUST be exactly one of: 10, 25, 50, 75, 100.
-- tamano_dominante: Classification of the average/dominant size (Exact strings only).
-- nivel_analisis: 1 (Clear), 2 (Partial/Unsure), 3 (Failed).
-- observaciones: List of visual issues (e.g., "plantas superpuestas", "mala iluminación").
-- indices_imagenes: Array of integers representing the 0-based indices of the images used to identify these plants.
+RELIABILITY LEVELS:
+- nivel_analisis = 1: clear boundaries + clear scale references.
+- nivel_analisis = 2: partial boundaries OR weak scale references.
+- nivel_analisis = 3: no measurable shrub mass due to blur/darkness/obstruction/non-matching content.
 
-### MANDATORY CHAIN OF THOUGHT (CoT) ###
-You must populate the "razonamiento_cot" object FIRST:
-1. "identificacion_escalas": Identify visual anchors (doors ~2m, cars ~4.5m, fences ~1.5m).
-2. "calculo_area_total": Explain your mathematical estimation of the visible garden (width x depth).
-3. "calculo_area_plantas": Explain your mathematical estimation of the area covered ONLY by the plants to prune.
-4. "derivacion_porcentaje": Show the calculation that forces you to choose exactly 10, 25, 50, 75, or 100%.
+CONSISTENCY RULES:
+- If nivel_analisis = 3:
+  - superficie_m2 MUST be 0
+  - tamano_dominante MUST be null
+  - observaciones MUST be ["Elemento a analizar impredecible"]
+- If nivel_analisis in (1,2):
+  - superficie_m2 MUST be integer >= 0
+  - tamano_dominante MUST be one of "pequeñas" | "medianas" | "grandes"
 
-CLASSIFICATION RULES:
+EXAMPLES (REFERENCE):
+Example A (single compact bed):
+- A flower/shrub bed occupies approx. 4m x 2m from border to border.
+- Even if foliage density is uneven, superficie_m2 should be close to 8 (brute bed footprint), not only dense leaf patches.
 
-A) DOMINANT SIZE (tamano_dominante) - MUST be exactly one of:
-- "pequeñas": Height or diameter 0m - 1m. Typically knee to waist height.
-- "medianas": Height or diameter 1m - 2m. Up to head height.
-- "grandes": Height or diameter 2m - 3m. Taller than a person, requiring a ladder.
+Example B (two separated beds):
+- Left bed approx. 3m x 1.5m, right bed approx. 2m x 1m, separated by clear path.
+- superficie_m2 should be close to 6.5 total (sum of both bed footprints).
 
-OUTPUT RULES (MANDATORY):
-- Return ONLY valid JSON
-- No explanations
-- No comments
-- No additional fields
-- No markdown
-- No text outside the JSON
-
-ESTIMATION RULES:
-- If a value cannot be determined with absolute certainty, provide the most reasonable estimate based on visible information.
-- Never return null or empty values unless explicitly allowed.
-- Ensure porcentaje_superficie_plantas is one of the allowed values: 10, 25, 50, 75, 100.
+Example C (partial visibility):
+- Bed contour is partially occluded and scale references are weak.
+- Return conservative estimate with nivel_analisis=2 and explain limitation in observaciones.
 
 RESPONSE FORMAT (STRICT):
 {
@@ -816,16 +834,64 @@ RESPONSE FORMAT (STRICT):
       "tipo_servicio": "Poda de plantas y arbustos",
       "razonamiento_cot": {
         "identificacion_escalas": "string",
-        "calculo_area_total": "string",
         "calculo_area_plantas": "string",
-        "derivacion_porcentaje": "string"
+        "deduplicacion_multifoto": "string"
       },
-      "tamano_total_jardin_m2": integer,
-      "porcentaje_superficie_plantas": 10 | 25 | 50 | 75 | 100,
-      "tamano_dominante": "pequeñas" | "medianas" | "grandes",
+      "superficie_m2": number,
+      "tamano_dominante": "pequeñas" | "medianas" | "grandes" | null,
       "nivel_analisis": 1 | 2 | 3,
-      "observaciones": ["string"] OR null,
+      "observaciones": ["string"] | null,
       "indices_imagenes": [integer]
+    }
+  ]
+}
+---`
+  ].join('\n'),
+  'Servicios fitosanitarios': [
+    `---
+Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar tratamientos fitosanitarios.
+
+INSTRUCCIONES DE ANÁLISIS:
+1. Estima la cantidad o superficie afectada.
+2. Determina el tipo de tratamiento necesario (Preventivo o Curativo).
+
+BRUTE SHRUB BED AREA POLICY (CRITICAL) PARA "Plantas bajas":
+- Measure the bed using the OUTER CONTOUR (2D footprint) of each continuous plant/shrub mass.
+- Include internal gaps/voids that are naturally part of the same bed layout.
+- Exclude clear pathways, lawn corridors, pavements, and detached non-target islands.
+- If several adjacent plants form one continuous bed visually, treat them as ONE macizo.
+- If two beds are clearly separated by visible transit space, treat as separate beds and then sum.
+- This is NOT leaf-only pixel area; this is operational footprint area.
+- Set "unidad" to "m2" and "cantidad_o_superficie" to the estimated area.
+
+VARIABLES A EXTRAER:
+- tipo_servicio: "Servicios fitosanitarios"
+- tipo_afectado: "Césped" | "Árboles" | "Setos" | "Plantas bajas" | "Palmeras".
+- cantidad_o_superficie: Número (si son árboles/palmeras) o m2 (si es césped/plantas bajas) o ml (si es setos).
+- unidad: "unidades" o "m2" o "ml".
+- tratamiento_recomendado: "insecticida" | "fungicida" | "ecologico_preventivo" | "endoterapia" | "inconclusive".
+- altura_tramo: "bajos_medios" | "altos" | "pequenos" | "medianos" | "grandes" | "pequenas" | "medianas" | "altas" | null.
+- palmeras_cirugia: boolean | null.
+- confidence: número entre 0 y 1.
+- nivel_plaga: etiqueta corta alineada con el tratamiento.
+- nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
+- observaciones: Lista de detalles (ej. "Pulgón visible", "Hojas comidas").
+
+FORMATO DE SALIDA (JSON ÚNICAMENTE):
+{
+  "tareas": [
+    {
+      "tipo_servicio": "Servicios fitosanitarios",
+      "tipo_afectado": "Césped" | "Árboles" | "Setos" | "Plantas bajas" | "Palmeras",
+      "cantidad_o_superficie": number,
+      "unidad": "m2" | "ml" | "unidades",
+      "tratamiento_recomendado": "insecticida" | "fungicida" | "ecologico_preventivo" | "endoterapia" | "inconclusive",
+      "nivel_plaga": "string",
+      "altura_tramo": "bajos_medios" | "altos" | "pequenos" | "medianos" | "grandes" | "pequenas" | "medianas" | "altas" | null,
+      "palmeras_cirugia": boolean | null,
+      "confidence": number,
+      "nivel_analisis": 1 | 2 | 3,
+      "observaciones": ["string"]
     }
   ]
 }
@@ -948,6 +1014,30 @@ function parseWeedingResult(ai: any): WeedingNormalizedTask | null {
   return normalizeWeedingTask(candidate);
 }
 
+type ShrubSize = 'pequeñas' | 'medianas' | 'grandes';
+
+function normalizeShrubSize(value: unknown): ShrubSize | null {
+  const normalized = String(value || '').toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes('grande')) return 'grandes';
+  if (normalized.includes('mediana')) return 'medianas';
+  if (normalized.includes('peque')) return 'pequeñas';
+  return null;
+}
+
+function getShrubAreaFromTask(task: any): number {
+  const directArea = Number(task?.superficie_m2);
+  if (Number.isFinite(directArea)) return Math.max(0, Math.round(directArea));
+
+  // Legacy compatibility fallback (temporary): derive area if old payload still arrives.
+  const totalM2 = Number(task?.tamano_total_jardin_m2);
+  const percentage = Number(task?.porcentaje_superficie_plantas);
+  if (Number.isFinite(totalM2) && Number.isFinite(percentage)) {
+    return Math.max(0, Math.round(totalM2 * (percentage / 100)));
+  }
+  return 0;
+}
+
 function areaBand(value: number) {
   return Math.round(Math.max(0, value) / 5) * 5;
 }
@@ -1049,7 +1139,7 @@ function buildMessages(payload: Payload) {
   if (service_name === 'Poda de plantas y arbustos') {
     const userContent: any[] = [
       { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-      { type: 'text', text: `Analiza las siguientes imágenes para el servicio de Poda de plantas y arbustos. Identifica las plantas y agrúpalas.` }
+      { type: 'text', text: `Analiza las imágenes para Poda de plantas y arbustos. Deduplica vistas repetidas y devuelve directamente superficie_m2 del macizo a podar junto con tamano_dominante.` }
     ];
 
     photo_urls.slice(0, 5).forEach((url, idx) => {
@@ -1810,23 +1900,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       const unidad = analysis?.unidad as string | undefined;
       const dificultad = Number(analysis?.dificultad ?? 1) as 1 | 2 | 3;
 
-      const perf = cfg.PERFORMANCE_PRICING[payload.service];
-      const mult = cfg.DIFFICULTY_MULTIPLIER[dificultad] ?? 1.0;
-      if (!perf) {
-        // Fallback or error?
-        // return new Response(JSON.stringify({ error: 'Config no disponible' }), ...
-        // Better to return 0 values than error 500
-      }
-      
-      const tiempo_estimado_horas = perf ? (cantidad / perf.performance) * mult : 0;
-      const precio_estimado = perf ? (cantidad * perf.pricePerUnit) * mult : 0;
-
       const out = {
         analysis: { servicio, cantidad, unidad, dificultad },
-        result: {
-          tiempo_estimado_horas: Math.round(tiempo_estimado_horas * 100) / 100,
-          precio_estimado: Math.round(precio_estimado * 100) / 100,
-        },
         version: 'v1-gemini-only',
         reasons: analysis.reasons || []
       };
@@ -1972,42 +2047,63 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     let tareas = Array.isArray(ai?.tareas) ? ai.tareas : [];
     
-    // Post-processing: Merge identical "Poda de plantas y arbustos" tasks
+    // Post-processing: normalize + merge "Poda de plantas y arbustos" tasks
     if (payload.service_name === 'Poda de plantas y arbustos' && tareas.length > 0) {
         const mergedTasks: Record<string, any> = {};
         
         tareas.forEach((task: any) => {
             if (task.tipo_servicio === 'Poda de plantas y arbustos') {
-                // Calculate superficie_m2 from total garden size and percentage
-                const totalM2 = Number(task.tamano_total_jardin_m2 || 1);
-                const porcentaje = Number(task.porcentaje_superficie_plantas || 10);
-                const calculatedArea = Math.ceil(totalM2 * (porcentaje / 100));
-                
-                // We use calculatedArea directly on the task so the frontend consumes it normally
-                task.superficie_m2 = Math.max(1, calculatedArea);
+                const normalizedLevel = [1, 2, 3].includes(Number(task.nivel_analisis))
+                  ? Number(task.nivel_analisis)
+                  : 3;
+                const normalizedSize = normalizeShrubSize(task.tamano_dominante);
+                const normalizedArea = getShrubAreaFromTask(task);
+                const normalizedObs = Array.isArray(task.observaciones)
+                  ? task.observaciones.filter((item: unknown) => typeof item === 'string')
+                  : [];
+                const normalizedIndices = Array.isArray(task.indices_imagenes)
+                  ? task.indices_imagenes.filter((index: unknown) => Number.isInteger(index))
+                  : [];
 
-                // Create a unique key for grouping
-                const key = `${task.tamano_dominante}`;
+                const normalizedTask = {
+                  ...task,
+                  tipo_servicio: 'Poda de plantas y arbustos',
+                  nivel_analisis: normalizedLevel,
+                  tamano_dominante: normalizedLevel === 3 ? null : normalizedSize,
+                  superficie_m2: normalizedLevel === 3 ? 0 : normalizedArea,
+                  observaciones: normalizedLevel === 3
+                    ? ['Elemento a analizar impredecible']
+                    : (normalizedObs.length > 0 ? normalizedObs : null),
+                  indices_imagenes: normalizedIndices
+                };
+
+                // Group by dominant size; invalid or failed results are isolated as fallback_group.
+                const key = normalizedTask.tamano_dominante || 'fallback_group';
                 
                 if (!mergedTasks[key]) {
-                    mergedTasks[key] = { ...task };
+                    mergedTasks[key] = { ...normalizedTask };
                     // Ensure arrays are initialized
-                    mergedTasks[key].indices_imagenes = task.indices_imagenes || [];
-                    mergedTasks[key].observaciones = task.observaciones || [];
+                    mergedTasks[key].indices_imagenes = normalizedTask.indices_imagenes || [];
+                    mergedTasks[key].observaciones = normalizedTask.observaciones || [];
                 } else {
-                    // Merge calculated areas
-                    mergedTasks[key].superficie_m2 += task.superficie_m2;
+                    // Merge m2 directly extracted by IA (legacy fallback already normalized upstream)
+                    mergedTasks[key].superficie_m2 += normalizedTask.superficie_m2;
                     
                     // Merge image indices
-                    const newIndices = task.indices_imagenes || [];
+                    const newIndices = normalizedTask.indices_imagenes || [];
                     mergedTasks[key].indices_imagenes = [...new Set([...mergedTasks[key].indices_imagenes, ...newIndices])].sort();
                     
                     // Merge observations
-                    const newObs = task.observaciones || [];
+                    const newObs = normalizedTask.observaciones || [];
                     mergedTasks[key].observaciones = [...new Set([...mergedTasks[key].observaciones, ...newObs])];
                     
                     // Keep the worst analysis level (highest number)
-                    mergedTasks[key].nivel_analisis = Math.max(mergedTasks[key].nivel_analisis, task.nivel_analisis || 1);
+                    mergedTasks[key].nivel_analisis = Math.max(mergedTasks[key].nivel_analisis, normalizedTask.nivel_analisis || 1);
+                    if (mergedTasks[key].nivel_analisis === 3) {
+                      mergedTasks[key].superficie_m2 = 0;
+                      mergedTasks[key].tamano_dominante = null;
+                      mergedTasks[key].observaciones = ['Elemento a analizar impredecible'];
+                    }
                 }
             } else {
                 // If mixed services (unlikely but possible), keep them separate or handle accordingly

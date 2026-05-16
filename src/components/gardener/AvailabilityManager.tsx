@@ -414,7 +414,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
                 `}
               >
                 <Save className="w-4 h-4" />
-                {saving ? 'Guardando...' : 'Guardar'}
+                {saving ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
 

@@ -18,11 +18,13 @@ export interface WeedingQuoteBreakdownItem {
   wastePercent: number;
   subtotalBeforeModifiers: number;
   lineTotal: number;
+  estimatedHours: number;
 }
 
 export interface WeedingQuoteResult {
   totalBeforeMinimum: number;
   finalPrice: number;
+  totalEstimatedHours: number;
   minimumApplied: boolean;
   minimumPrice: number;
   breakdown: WeedingQuoteBreakdownItem[];
@@ -59,7 +61,9 @@ export const calculateWeedingZonePrice = (params: {
   const state = normalizeWeedingState(zone.state);
   const applyHerbicide = Boolean(zone.applyHerbicide);
 
-  const baseDesbroce = toSafeNumber(config.precio_desbroce_m2) * area;
+  const pricePerM2 = toSafeNumber(config.precio_desbroce_m2);
+
+  const baseDesbroce = pricePerM2 * area;
   const herbicideAddon = applyHerbicide ? toSafeNumber(config.precio_herbicida_m2) * area : 0;
   const statePercent = getStatePercent(state, config);
   const wastePercent = params.globalWaste ? toSafeNumber(config.suplementos?.retirada_restos) : 0;
@@ -68,6 +72,10 @@ export const calculateWeedingZonePrice = (params: {
   const stateMultiplier = 1 + (statePercent / 100);
   const wasteMultiplier = 1 + (wastePercent / 100);
   const lineTotal = subtotalBeforeModifiers * stateMultiplier * wasteMultiplier;
+
+  const yieldPerHour = toSafeNumber(config.yield_m2_per_hour);
+  const baseHours = yieldPerHour > 0 ? area / yieldPerHour : 0;
+  const estimatedHours = baseHours * stateMultiplier * wasteMultiplier;
 
   return {
     zoneId: zone.id || params.zoneIdFallback || 'zone-unknown',
@@ -79,7 +87,8 @@ export const calculateWeedingZonePrice = (params: {
     statePercent,
     wastePercent,
     subtotalBeforeModifiers,
-    lineTotal
+    lineTotal,
+    estimatedHours
   };
 };
 
@@ -100,6 +109,7 @@ export const calculateWeedingQuote = (params: {
   );
 
   const totalBeforeMinimum = breakdown.reduce((acc, item) => acc + item.lineTotal, 0);
+  const totalEstimatedHours = breakdown.reduce((acc, item) => acc + item.estimatedHours, 0);
   const minimumPrice = toSafeNumber(config.importe_minimo);
   const minimumApplied = minimumPrice > 0 && totalBeforeMinimum > 0 && totalBeforeMinimum < minimumPrice;
   const finalPriceRaw = minimumApplied ? minimumPrice : totalBeforeMinimum;
@@ -107,6 +117,7 @@ export const calculateWeedingQuote = (params: {
   return {
     totalBeforeMinimum,
     finalPrice: Math.ceil(finalPriceRaw),
+    totalEstimatedHours,
     minimumApplied,
     minimumPrice: Math.ceil(minimumPrice),
     breakdown

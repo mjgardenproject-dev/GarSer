@@ -6,29 +6,33 @@ import {
   AITreeAnalysisResult,
   TreePruningQuote,
   PerTreeQuote,
-  PruningServiceType
-} from '../../types/treePruning';
+  PruningServiceType,
+  TreeSizeBand
+} from '../../types/treePruning.ts';
 
 export type TreePruningAnalyzedTree = {
   id: string;
   pruningType: PruningServiceType;
-  altura_m: number;
+  sizeBand: TreeSizeBand;
+  // Must come from explicit customer response per tree, never from IA inference.
   dificultad_alta: boolean;
   nivel_analisis?: 1 | 2 | 3;
 };
 
-export function getHeightBand(altura_m: number): 'small' | 'medium' | 'large' | 'over_9' {
-  // Evaluando límites: >= limite_inferior y < limite_superior
-  if (altura_m >= 0 && altura_m < 3) return 'small';
-  if (altura_m >= 3 && altura_m < 5) return 'medium';
-  if (altura_m >= 5 && altura_m < 9) return 'large';
-  return 'over_9';
+function normalizeSizeBand(value?: string | null): TreeSizeBand | null {
+  const v = String(value || '').toLowerCase().trim();
+  if (v === 'small' || v === 'medium' || v === 'large' || v === 'over_9') return v;
+  return null;
+}
+
+function resolveTreeSizeBand(tree: TreePruningAnalyzedTree): TreeSizeBand | null {
+  return normalizeSizeBand(tree.sizeBand);
 }
 
 function getBandPrice(
   config: TreePruningServiceConfig,
   pruningType: PruningServiceType,
-  band: 'small' | 'medium' | 'large' | 'over_9'
+  band: TreeSizeBand
 ): number | null {
   const pricing = pruningType === 'estructural' ? config.estructural : config.formacion;
   if (band === 'small') return pricing.small;
@@ -37,8 +41,19 @@ function getBandPrice(
   return pricing.large ?? null;
 }
 
-function canHandleTree(config: TreePruningServiceConfig, pruningType: PruningServiceType, altura_m: number): boolean {
-  const band = getHeightBand(altura_m);
+function getBandYield(
+  config: TreePruningServiceConfig,
+  pruningType: PruningServiceType,
+  band: TreeSizeBand
+): number | null {
+  const yields = pruningType === 'estructural' ? config.yield_units_per_hour.estructural : config.yield_units_per_hour.formacion;
+  if (band === 'small') return yields.small;
+  if (band === 'medium') return yields.medium;
+  // Si es over_9 se usa el rendimiento de large
+  return yields.large ?? null;
+}
+
+function canHandleTree(config: TreePruningServiceConfig, pruningType: PruningServiceType, band: TreeSizeBand): boolean {
   if (band === 'small' || band === 'medium') return true;
   // Si el árbol es 'large' o 'over_9', el profesional debe tener configurado el rango 'large'
   const pricing = pruningType === 'estructural' ? config.estructural : config.formacion;
@@ -55,26 +70,34 @@ export function calculateTreePruningQuoteForTrees(
 
   for (const tree of trees) {
     if (tree.nivel_analisis === 3) continue;
-    if (!canHandleTree(config, tree.pruningType, tree.altura_m)) {
-      return { totalPrice: 0, perTreeQuotes: [], isProfessionalSuitable: false, overallWarnings: [] };
+    const band = resolveTreeSizeBand(tree);
+    if (!band) continue;
+    if (!canHandleTree(config, tree.pruningType, band)) {
+      return { totalPrice: 0, totalEstimatedHours: 0, perTreeQuotes: [], isProfessionalSuitable: false, overallWarnings: [] };
     }
   }
 
   for (const tree of trees) {
     if (tree.nivel_analisis === 3) continue;
 
-    const band = getHeightBand(tree.altura_m);
+    const band = resolveTreeSizeBand(tree);
+    if (!band) continue;
     const basePrice = getBandPrice(config, tree.pruningType, band);
     if (basePrice === null) continue;
 
+    const baseYield = getBandYield(config, tree.pruningType, band);
+    const unitHours = baseYield && baseYield > 0 ? 1 / baseYield : 0;
+
     let subtotal = basePrice;
+    let estimatedHours = unitHours;
     let appliedDifficultyIncrease = false;
     const warnings: string[] = [];
 
-    // Incremento por dificultad (solo aplica a >= 3m, es decir, medium, large, over_9)
-    if (tree.dificultad_alta && band !== 'small') {
+    // Incremento por dificultad por árbol según respuesta explícita del cliente.
+    if (tree.dificultad_alta) {
       const difficultyMultiplier = Number(config.difficultyIncrease || 0) / 100;
       subtotal += basePrice * difficultyMultiplier;
+      estimatedHours += unitHours * difficultyMultiplier;
       appliedDifficultyIncrease = difficultyMultiplier > 0;
     }
 
@@ -82,6 +105,7 @@ export function calculateTreePruningQuoteForTrees(
     if (wasteRemoval) {
       const wasteMultiplier = Number(config.wasteRemovalMultiplier || 0) / 100;
       subtotal += subtotal * wasteMultiplier;
+      estimatedHours += estimatedHours * wasteMultiplier;
     }
 
     if (band === 'over_9') {
@@ -94,15 +118,17 @@ export function calculateTreePruningQuoteForTrees(
     perTreeQuotes.push({
       zoneId: tree.id,
       pruningType: tree.pruningType,
-      altura_m: tree.altura_m,
+      sizeBand: band,
       basePrice,
       finalPrice: subtotal,
+      estimatedHours,
       appliedDifficultyIncrease,
       warnings
     });
   }
 
   const calculatedTotalPrice = perTreeQuotes.reduce((sum, quote) => sum + quote.finalPrice, 0);
+  const totalEstimatedHours = perTreeQuotes.reduce((sum, quote) => sum + quote.estimatedHours, 0);
 
   // Aplicar el precio mínimo global del servicio
   const minimumPrice = Number(config.minimumPrice || 0);
@@ -110,6 +136,7 @@ export function calculateTreePruningQuoteForTrees(
 
   return {
     totalPrice,
+    totalEstimatedHours,
     perTreeQuotes,
     isProfessionalSuitable: true,
     overallWarnings
@@ -121,8 +148,8 @@ export function calculateTreePruningQuoteForTrees(
  *
  * Reglas de negocio:
  * - Filtrado: Profesional excluido si algún árbol excede su rango máximo
- * - Precio base: Según rango de altura
- * - Dificultad: +incremento porcentual si dificultad_alta=true, excepto árboles <3m
+ * - Precio base: Según rango de tamaño (size_band)
+ * - Dificultad: +incremento porcentual si dificultad_alta=true (respuesta cliente por árbol)
  * - Retirada de restos: +incremento porcentual sobre el subtotal de cada árbol
  * - Caso especial >=9m: Usa precio 5-9m + warning específico
  * - Mínimo: Se asegura de cobrar al menos config.minimumPrice
@@ -140,9 +167,12 @@ export function calculateTreePruningQuote(
     const tree: TreePruningAnalyzedTree = {
       id: zone.id,
       pruningType: zone.pruningType,
-      altura_m: Number(aiResult.altura_m || 0),
-      dificultad_alta: Boolean(aiResult.dificultad_alta)
+      sizeBand: aiResult.size_band as TreeSizeBand,
+      // Legacy wrapper: pricing difficulty must come from explicit client response.
+      // In this IA-based wrapper we force false to avoid business decisions from IA.
+      dificultad_alta: false
     };
+    if (!tree.sizeBand || !normalizeSizeBand(tree.sizeBand)) return [];
     if (aiResult.nivel_analisis) tree.nivel_analisis = aiResult.nivel_analisis;
     return [tree];
   });

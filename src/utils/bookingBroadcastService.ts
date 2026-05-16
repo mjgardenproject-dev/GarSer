@@ -1,4 +1,7 @@
-import { supabase } from '../lib/supabase';
+import { persistBookingMedia, uploadBookingPhotos } from './bookingMediaService';
+import { createAtomicBooking } from './bookingAtomicService';
+import { createBroadcastBookingRequests } from './bookingRequestService';
+import { reportBookingEvent } from './bookingTelemetry';
 
 interface BroadcastParams {
   clientId: string;
@@ -12,47 +15,32 @@ interface BroadcastParams {
   totalPrice: number;
   hourlyRate?: number;
   photoFiles?: File[];
+  operationId?: string;
 }
 
 export async function broadcastBookingRequest(params: BroadcastParams): Promise<void> {
   const startTime = `${String(params.startHour).padStart(2,'0')}:00`;
-
-  // Subir fotos opcionalmente y añadir URLs a notas (con nombres sanitizados)
   let notesWithPhotos = params.notes || '';
-  const bucket = (import.meta.env.VITE_BOOKING_PHOTOS_BUCKET as string | undefined) || 'booking-photos';
-  const now = Date.now();
-
-  const sanitizeFileName = (name: string) => {
-    const base = name.trim().toLowerCase().replace(/\s+/g, '_');
-    return base.replace(/[^a-z0-9._-]/g, '_');
-  };
+  let uploadedMedia: Array<{ storageBucket?: string; storagePath?: string }> = [];
 
   if (params.photoFiles && params.photoFiles.length > 0) {
-    const uploadedUrls: string[] = [];
-    for (let i = 0; i < params.photoFiles.length; i++) {
-      const file = params.photoFiles[i];
-      try {
-        const safeName = sanitizeFileName(file.name || `foto_${i}.jpg`);
-        const path = `bookings/${params.clientId}/${params.date}_${params.startHour}_${now}_${i}_${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from(bucket)
-          .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
-        if (!uploadError) {
-          const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-          if (data?.publicUrl) uploadedUrls.push(data.publicUrl);
-          else {
-            const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
-            if (signed?.signedUrl) uploadedUrls.push(signed.signedUrl);
-          }
-        } else {
-          console.warn('Error subiendo foto de reserva:', uploadError.message);
-        }
-      } catch (e) {
-        console.warn('Error subiendo foto, continuando sin bloquear:', e);
-      }
-    }
-    if (uploadedUrls.length > 0) {
-      notesWithPhotos = `${notesWithPhotos || ''}\nFotos: ${uploadedUrls.join(', ')}`.trim();
+    try {
+      uploadedMedia = await uploadBookingPhotos({
+        clientId: params.clientId,
+        date: params.date,
+        startHour: params.startHour,
+        files: params.photoFiles,
+      });
+    } catch (e) {
+      console.warn('Error subiendo foto, continuando sin bloquear:', e);
+      reportBookingEvent('warn', {
+        event: 'booking.photo_upload_failed',
+        context: {
+          clientId: params.clientId,
+          serviceId: params.primaryServiceId,
+          message: e instanceof Error ? e.message : 'unknown',
+        },
+      });
     }
   }
 
@@ -61,21 +49,56 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
     ? params.hourlyRate
     : Math.max(1, Math.round(((params.totalPrice - travelFee) / Math.max(params.durationHours,1)) * 100) / 100);
 
-  const rows = params.gardenerIds.map(gardenerId => ({
-    client_id: params.clientId,
-    gardener_id: gardenerId,
-    service_id: params.primaryServiceId,
-    date: params.date,
-    start_time: startTime,
-    duration_hours: params.durationHours,
-    status: 'pending',
-    total_price: params.totalPrice,
-    travel_fee: travelFee,
-    hourly_rate: hourlyRate,
-    client_address: params.clientAddress,
-    notes: notesWithPhotos,
-  }));
+  if (params.gardenerIds.length === 1) {
+    const booking = await createAtomicBooking({
+      providerId: params.gardenerIds[0],
+      serviceId: params.primaryServiceId,
+      date: params.date,
+      startTime: `${startTime}:00`,
+      durationHours: params.durationHours,
+      totalPrice: params.totalPrice,
+      clientAddress: params.clientAddress,
+      notes: notesWithPhotos,
+      pricingContext: { source: 'legacy-checkout' },
+      travelFee,
+      hourlyRate,
+      operationId: params.operationId,
+    });
 
-  const { error } = await supabase.from('bookings').insert(rows);
-  if (error) throw error;
+    if (booking?.booking_id && uploadedMedia.length > 0) {
+      await persistBookingMedia({
+        bookingId: booking.booking_id,
+        uploaderId: params.clientId,
+        mediaItems: uploadedMedia,
+      });
+    }
+    return;
+  }
+
+  const result = await createBroadcastBookingRequests({
+    gardenerIds: params.gardenerIds,
+    serviceId: params.primaryServiceId,
+    date: params.date,
+    startTime,
+    durationHours: params.durationHours,
+    totalPrice: params.totalPrice,
+    clientAddress: params.clientAddress,
+    notes: notesWithPhotos,
+    pricingContext: { source: 'broadcast-request' },
+    travelFee,
+    hourlyRate,
+    operationId: params.operationId,
+  });
+
+  if (result?.booking_ids?.length > 0 && params.photoFiles && params.photoFiles.length > 0) {
+    await Promise.allSettled(
+      result.booking_ids.map((bookingId: string) =>
+        persistBookingMedia({
+          bookingId,
+          uploaderId: params.clientId,
+          mediaItems: uploadedMedia,
+        })
+      )
+    );
+  }
 }

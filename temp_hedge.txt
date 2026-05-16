@@ -1,0 +1,291 @@
+                                     <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm group-hover:bg-gray-300 transition-colors">+</span> 
+                                     Añadir otra zona de césped
+                                 </button>
+                             )}
+                         </div>
+                     );
+                   }
+
+                   if (isHedgeService) {
+                     return (
+                         <div className="space-y-6">
+                             {(!bookingData.hedgeZones || bookingData.hedgeZones.length === 0) && (
+                                 <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                     <Scissors className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                     <h3 className="text-lg font-medium text-gray-900 mb-1">Añade tu zona de setos</h3>
+                                     <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
+                                         Añade una zona por cada tramo de seto diferente.
+                                     </p>
+                                     <button 
+                                         onClick={addHedgeZone}
+                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                                     >
+                                         + Añadir primera zona
+                                     </button>
+                                 </div>
+                             )}
+
+                            {(bookingData.hedgeZones || []).map((zone, idx) => {
+                                const normalizedZone = normalizeHedgeZone(zone);
+                                const isAnalyzed = isHedgeZoneAnalyzed(normalizedZone);
+                                const isZoneAnalyzing = hedgeAnalyzingZoneIds.has(zone.id);
+                                const faceAUrls = normalizedZone.faceA.photoUrls || [];
+                                const faceASelected = normalizedZone.faceA.selectedIndices ?? faceAUrls.map((_: string, i: number) => i);
+                                const hasFaceAPhotos = faceAUrls.length > 0;
+                                const hasFaceASelected = faceASelected.length > 0;
+                                const totalPhotos = (normalizedZone.faceA.photoUrls?.length || 0) + (normalizedZone.faceB.photoUrls?.length || 0);
+
+                                if (isZoneAnalyzing) {
+                                    return <AnalysisLoadingAnimation key={zone.id} message="Analizando esta zona..." />;
+                                }
+
+                                if ((zone as any).isFailed || zone.analysisLevel === 3) {
+                                    return (
+                                        <AnalysisFailedCard 
+                                            key={zone.id}
+                                            message={zone.observations?.[0]} 
+                                            onReanalyze={() => analyzeHedgeZone(zone.id)} 
+                                        />
+                                    );
+                                }
+
+                                 return (
+                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                                             <div className="flex items-center gap-2">
+                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">{idx + 1}</div>
+                                                <h3 className="font-semibold text-gray-900">Zona de Setos {idx + 1}</h3>
+                                                <span className="text-xs text-gray-500 ml-1 font-normal">({totalPhotos}/10 fotos)</span>
+                                             </div>
+                                             <button onClick={() => removeHedgeZone(zone.id)} className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors">
+                                                 <Trash2 className="w-5 h-5" />
+                                             </button>
+                                         </div>
+
+                                         <div className="mb-4">
+                                           <div className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                                               Sube fotos por cara para evitar confusiones: Cara A es la delantera y es obligatoria para analizar; Cara B es la trasera y opcional.
+                                           </div>
+                                           {([
+                                               { key: 'faceA', title: 'Cara A (delantera)', required: true },
+                                               { key: 'faceB', title: 'Cara B (trasera)', required: false },
+                                           ] as Array<{ key: HedgeFaceKey; title: string; required: boolean }>).map((faceBlock) => {
+                                               const face = normalizedZone[faceBlock.key];
+                                               const allFacePhotos = [...(face.photoUrls || []), ...(face.files || [])];
+                                               const uploadKey = `${zone.id}-${faceBlock.key}`;
+
+                                               return (
+                                                   <div key={faceBlock.key} className="mb-3 rounded-lg border border-gray-200 p-3">
+                                                       <div className="mb-2 flex items-center justify-between">
+                                                           <div className="flex items-center gap-2">
+                                                               <span className="text-sm font-medium text-gray-900">{faceBlock.title}</span>
+                                                               {faceBlock.required ? (
+                                                                   <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">Obligatoria</span>
+                                                               ) : (
+                                                                   <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">Opcional</span>
+                                                               )}
+                                                           </div>
+                                                           <span className="text-xs text-gray-500">{allFacePhotos.length}/5</span>
+                                                       </div>
+                                                       <div className="flex flex-row overflow-x-auto gap-3 pb-1 snap-x items-center scrollbar-hide min-h-[110px]">
+                                                           {allFacePhotos.map((p, i) => {
+                                                               const isSelected = face.selectedIndices?.includes(i) ?? true;
+                                                               const isAnalyzedPhoto = face.analyzedIndices?.includes(i);
+
+                                                               return (
+                                                                   <div
+                                                                       key={i}
+                                                                       className={`relative shrink-0 snap-start group cursor-pointer ${isSelected ? 'p-0.5' : ''}`}
+                                                                       onClick={() => toggleHedgePhotoSelection(zone.id, faceBlock.key, i)}
+                                                                   >
+                                                                       <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isSelected ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzedPhoto ? 'opacity-80' : 'opacity-100'}`}>
+                                                                           <img
+                                                                               src={typeof p === 'string' ? p : URL.createObjectURL(p)}
+                                                                               alt={`Foto ${i}`}
+                                                                               className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${hedgeUploads[uploadKey]?.has(i) ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
+                                                                           />
+                                                                           {hedgeUploads[uploadKey]?.has(i) && (
+                                                                               <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-20 transition-opacity duration-300">
+                                                                                   <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                                                               </div>
+                                                                           )}
+                                                                           {isAnalyzedPhoto && (
+                                                                               <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
+                                                                                   Analizada
+                                                                               </div>
+                                                                           )}
+                                                                           <div className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${isSelected ? 'bg-green-500 border-green-500 scale-100' : 'bg-black/20 border-white/80 group-hover:bg-black/40 scale-90 group-hover:scale-100'}`}>
+                                                                               {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                                                                           </div>
+                                                                       </div>
+
+                                                                       {!isZoneAnalyzing && (
+                                                                           <button
+                                                                               onClick={(e) => { e.stopPropagation(); removePhotoFromHedgeZone(zone.id, faceBlock.key, i); }}
+                                                                               className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 shadow-sm transition-colors z-10"
+                                                                           >
+                                                                               <Trash2 className="w-3.5 h-3.5" />
+                                                                           </button>
+                                                                       )}
+                                                                   </div>
+                                                               );
+                                                           })}
+
+                                                           {!isZoneAnalyzing && allFacePhotos.length < 5 && (
+                                                               <div className="w-24 h-24 shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-green-400 transition-colors cursor-pointer group snap-start">
+                                                                   <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                                                                       <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
+                                                                           <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
+                                                                       </div>
+                                                                       <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
+                                                                       <input
+                                                                           type="file"
+                                                                           accept="image/*"
+                                                                           multiple
+                                                                           className="hidden"
+                                                                           onChange={(e) => handleHedgeFileSelect(zone.id, faceBlock.key, e)}
+                                                                       />
+                                                                   </label>
+                                                               </div>
+                                                           )}
+                                                       </div>
+                                                       {faceBlock.required && allFacePhotos.length === 0 && (
+                                                           <p className="mt-2 text-xs text-amber-600">
+                                                               Debes subir al menos una foto de la Cara A para continuar.
+                                                           </p>
+                                                       )}
+                                                   </div>
+                                               );
+                                           })}
+                                         </div>
+
+                                        <div className="mt-2">
+                                            <button
+                                                onClick={() => analyzeHedgeZone(zone.id)}
+                                                disabled={isZoneAnalyzing || !hasFaceAPhotos || !hasFaceASelected}
+                                                className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3 transition-colors ${
+                                                    isZoneAnalyzing || !hasFaceAPhotos || !hasFaceASelected
+                                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-green-600 text-white hover:bg-green-700'
+                                                }`}
+                                            >
+                                                {isZoneAnalyzing ? (
+                                                    <>
+                                                       <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                       Analizando...
+                                                    </>
+                                                ) : (
+                                                    isAnalyzed ? 'Reanalizar esta zona' : 'Analizar esta zona'
+                                                )}
+                                            </button>
+                                            {!hasFaceAPhotos && (
+                                                <p className="text-xs text-center text-amber-600 mt-2">
+                                                    Añade al menos una foto en Cara A para analizar
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        {isAnalyzed && (
+                                            <div className="mt-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300 relative overflow-hidden">
+                                               <div className={`absolute top-0 left-0 w-1 h-full ${
+                                                   zone.analysisLevel === 3 ? 'bg-red-500' :
+                                                   zone.analysisLevel === 2 ? 'bg-amber-500' : 'bg-green-500'
+                                               }`}></div>
+                                               <div className="flex justify-between items-start">
+                                                   <div>
+                                                       {zone.analysisLevel === 3 ? (
+                                                           <div className="mt-1 text-xs font-medium text-red-600">
+                                                               Análisis fallido
+                                                           </div>
+                                                       ) : (
+                                                           <>
+                                                               <h4 className="font-semibold text-gray-900 text-sm">
+                                                                  {zone.type || '1-2m'}
+                                                               </h4>
+                                                               <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                                                                   <span>
+                                                                       Longitud: <span className="font-medium text-gray-900">{zone.length} m</span>
+                                                                   </span>
+                                                                   <span className="text-gray-300">|</span>
+                                                                   <span>
+                                                                       Altura: <span className="font-medium text-gray-900">{zone.height}</span>
+                                                                   </span>
+                                                                   <span className="text-gray-300">|</span>
+                                                                   <span>
+                                                                       Estado: <span className="font-medium text-gray-900 capitalize">{zone.state || 'normal'}</span>
+                                                                   </span>
+                                                                   <span className="text-gray-300">|</span>
+                                                                   <span>
+                                                                       Caras analizadas: <span className="font-medium text-gray-900">{Number((zone as any).faces_to_trim ?? (zone.hasBackFaceTrim ? 2 : 1))}</span>
+                                                                   </span>
+                                                               </div>
+                                                               <div className={`mt-2 text-xs font-medium ${
+                                                                   zone.analysisLevel === 1 ? 'text-green-600' : 'text-amber-600'
+                                                               }`}>
+                                                                   {zone.analysisLevel === 1 ? 'Análisis fiable' : 'Análisis con observaciones'}
+                                                               </div>
+                                                           </>
+                                                       )}
+                                                   </div>
+                                                   <button 
+                                                       onClick={() => removeHedgeZone(zone.id)}
+                                                       className="absolute top-3 right-3 text-gray-400 hover:text-red-500 transition-colors"
+                                                       title="Eliminar resultado"
+                                                   >
+                                                       <Trash2 className="w-4 h-4" />
+                                                   </button>
+                                               </div>
+
+                                               {zone.analysisLevel !== undefined && zone.analysisLevel >= 2 && zone.observations && zone.observations.length > 0 && (
+                                                  <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-100">
+                                                      <div className="font-medium mb-1 text-gray-700">Observaciones:</div>
+                                                      <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                                          {zone.observations.map((obs, k) => (
+                                                              <li key={k}>{obs}</li>
+                                                          ))}
+                                                      </ul>
+                                                  </div>
+                                               )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                            {(() => {
+                                const zones = (bookingData.hedgeZones || []).map((z) => normalizeHedgeZone(z));
+                                const pendingCount = zones.filter((z) => !isHedgeZoneAnalyzed(z)).length;
+                                const isBatchAnalyzing = hedgeAnalyzingZoneIds.size > 0;
+                                if (zones.length <= 1 || pendingCount <= 1) return null;
+                                return (
+                                    <button
+                                        onClick={analyzeAllPendingHedgeZones}
+                                        disabled={isBatchAnalyzing}
+                                        className={`w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
+                                            isBatchAnalyzing
+                                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                              : 'bg-green-600 text-white hover:bg-green-700'
+                                        }`}
+                                    >
+                                        {isBatchAnalyzing ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-green-600 border-t-transparent"></div>
+                                                Analizando zonas...
+                                            </>
+                                        ) : (`Analizar ${pendingCount} zona${pendingCount === 1 ? '' : 's'}`)}
+                                    </button>
+                                );
+                            })()}
+
+                            {(bookingData.hedgeZones && bookingData.hedgeZones.length > 0) && (
+                                <button
+                                    onClick={addHedgeZone}
+                                    className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors flex items-center justify-center gap-2 group"
+                                >
+                                    <span className="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center text-sm group-hover:bg-gray-300 transition-colors">+</span>
+                                    Añadir otra zona de setos
+                                </button>
+                            )}
+                         </div>
+                     );
+                   }

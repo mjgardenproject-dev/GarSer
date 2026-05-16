@@ -7,9 +7,10 @@
 import {
   canApplyTrunkPeeling,
   getLowestRangeThresholdForSpecies,
+  isHighestOpenRangeForSpecies,
   resolveSpeciesBusinessRule,
   supportsPhytosanitaryForSpecies
-} from './speciesBusinessRules';
+} from './speciesBusinessRules.ts';
 
 export interface PricingConfig {
   minimumPrice: number;
@@ -41,24 +42,44 @@ export const applyMinimumPrice = (calculatedPrice: number, minimumPrice: number)
   return Math.max(calculatedPrice, minimumPrice);
 };
 
+// Yield-based calculation helper
+export const calculatePriceFromYield = (
+  quantity: number,
+  yieldPerHour: number,
+  hourlyRate: number,
+  difficultyMultiplier: number = 1.0
+): number => {
+  if (!yieldPerHour || yieldPerHour <= 0 || !hourlyRate || hourlyRate <= 0) return 0;
+  const estimatedHours = (quantity / yieldPerHour) * difficultyMultiplier;
+  return estimatedHours * hourlyRate;
+};
+
 // Lawn Pricing
 export const calculateLawnPrice = (
   zones: { quantity: number; state: string }[],
   globalWasteRemoval: boolean,
   baseRatePer150m2: number,
-  config: PricingConfig
+  config: any // Extended to any for flexibility with LawnPricingConfig
 ): number => {
   let totalHours = 0;
+  let totalPrice = 0;
+
+  const useYield = config.use_yield_calculation && config.yield_m2_per_hour && config.hourly_rate;
+
   zones.forEach(z => {
     if (z.quantity > 0) {
       const diff = getConditionMultiplier(z.state);
-      totalHours += (z.quantity / 150) * diff;
+      if (useYield) {
+        totalPrice += calculatePriceFromYield(z.quantity, config.yield_m2_per_hour, config.hourly_rate, diff);
+      } else {
+        totalHours += (z.quantity / 150) * diff;
+      }
     }
   });
 
-  const basePrice = totalHours * baseRatePer150m2;
-  const wasteMult = getWasteMultiplier(globalWasteRemoval, config.wasteRemovalPercentage);
-  return applyMinimumPrice(basePrice * wasteMult, config.minimumPrice);
+  let basePrice = useYield ? totalPrice : (totalHours * baseRatePer150m2);
+  const wasteMult = getWasteMultiplier(globalWasteRemoval, config.waste_removal?.percentage || config.wasteRemovalPercentage || 0);
+  return applyMinimumPrice(basePrice * wasteMult, config.minimum_price || config.minimumPrice || 0);
 };
 
 // Tree Pricing
@@ -181,11 +202,18 @@ export interface PalmPricingGroup {
   hasPhytosanitary?: boolean;
   hasTrunkPeeling?: boolean;
   lowestRangeThreshold?: string;
+  highestOpenRangeThreshold?: string;
+  isTerminalOpenRange?: boolean;
+  allowsPriceChange?: boolean;
   // Backward-compat fields
   needsPhytosanitary?: boolean;
   needsTrunkFinish?: boolean;
   hasAccessDifficulty?: boolean;
 }
+
+export const isPalmGroupInTerminalOpenRange = (group: Pick<PalmPricingGroup, 'species' | 'height'>): boolean => {
+  return isHighestOpenRangeForSpecies(group.species, group.height);
+};
 
 const parseRangeLowerBound = (range: string): number => {
   const normalized = String(range || '').replace(/\s+/g, '');
@@ -297,11 +325,20 @@ export function calculatePalmPriceEngine(
   config: any,
   globalWasteRemoval: boolean
 ): number {
-  if (!config || !config.species_prices) return 0;
+  if (!config) return 0;
   
   let total = 0;
+  const useYield = config.use_yield_calculation && config.yield_units_per_hour && config.hourly_rate;
+
   for (const group of groups) {
-    const basePrice = findPalmPrice(config, group.species, group.height);
+    let basePrice = 0;
+    if (useYield) {
+      const yieldForSpecies = config.yield_units_per_hour[group.species]?.[group.height] || 0;
+      basePrice = calculatePriceFromYield(1, yieldForSpecies, config.hourly_rate);
+    } else {
+      basePrice = findPalmPrice(config, group.species, group.height);
+    }
+
     if (basePrice <= 0) continue;
 
     // Condition Surcharge

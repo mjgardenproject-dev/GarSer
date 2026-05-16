@@ -1,8 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import {
+  clearBookingResumeStorage,
+  readAnyBookingResume,
+  sanitizeBookingPayload,
+  writeBookingResume,
+} from '../utils/bookingResumeStorage';
+import { useAuth } from './AuthContext';
 
 export interface BookingData {
   address: string;
   serviceIds: string[];
+  restrictedGardenerId?: string;
   photos: File[];
   description: string;
   preferredDate: string;
@@ -14,6 +22,11 @@ export interface BookingData {
     desc: string;
     price: number;
   }>;
+  quoteId?: string;
+  quoteSignature?: string;
+  quoteExpiresAt?: string;
+  quotePricingVersion?: string;
+  quoteProviderConfigVersion?: string;
   aiQuantity?: number;
   aiUnit?: string;
   aiDifficulty?: number;
@@ -221,11 +234,13 @@ interface BookingContextType {
   bookingData: BookingData;
   currentStep: number;
   isLoading: boolean; // Estado de carga para evitar renderizar el paso 0 prematuramente
+  resumeWarning: { discardedPaths: string[] } | null;
   setBookingData: (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => void;
   setCurrentStep: (step: number) => void;
   nextStep: () => void;
   prevStep: () => void;
   resetBooking: () => void;
+  clearResumeWarning: () => void;
   saveProgress: () => void;
   loadProgress: () => void;
   updateServiceData: (serviceId: string, data: any) => void;
@@ -243,6 +258,11 @@ const initialBookingData: BookingData = {
   estimatedHours: 0,
   totalPrice: 0,
   priceBreakdown: [],
+  quoteId: '',
+  quoteSignature: '',
+  quoteExpiresAt: '',
+  quotePricingVersion: '',
+  quoteProviderConfigVersion: '',
   aiQuantity: 0,
   aiUnit: '',
   aiDifficulty: 1,
@@ -268,9 +288,11 @@ export const useBooking = () => {
 };
 
 export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading: authLoading } = useAuth();
   const [bookingData, setBookingDataState] = useState<BookingData>(initialBookingData);
   const [currentStep, setCurrentStepState] = useState(0);
   const [isLoading, setIsLoading] = useState(true); // Inicialmente cargando
+  const [resumeWarning, setResumeWarning] = useState<{ discardedPaths: string[] } | null>(null);
 
   const setBookingData = (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => {
     setBookingDataState(prev => {
@@ -322,7 +344,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const nextStep = () => {
-    setCurrentStepState(prev => Math.min(prev + 1, 5));
+    setCurrentStepState(prev => Math.min(prev + 1, 4));
   };
 
   const prevStep = () => {
@@ -332,20 +354,19 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const resetBooking = () => {
     setBookingDataState(initialBookingData);
     setCurrentStepState(0);
-    // Solo borramos localStorage si se llama explícitamente a resetBooking (abandono confirmado)
-    // No lo borramos aquí para permitir persistencia entre recargas si no se ha confirmado el abandono
-    localStorage.removeItem('bookingProgress');
+    setResumeWarning(null);
+    clearBookingResumeStorage();
   };
 
   const saveProgress = () => {
-    // Guardado robusto en cada cambio
     try {
+      const safeBookingData = sanitizeBookingPayload(bookingData);
       const progress = {
-        bookingData,
+        bookingData: safeBookingData,
         currentStep,
         timestamp: new Date().toISOString(),
       };
-      localStorage.setItem('bookingProgress', JSON.stringify(progress));
+      writeBookingResume('draft', 'wizard', progress, { userId: user?.id });
     } catch (e) {
       console.warn('Error saving booking progress:', e);
     }
@@ -353,14 +374,27 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const loadProgress = () => {
     try {
-      const saved = localStorage.getItem('bookingProgress');
-      if (saved) {
-        const { bookingData: savedData, currentStep: savedStep } = JSON.parse(saved);
+      const resume = readAnyBookingResume<{ bookingData?: BookingData; currentStep?: number } | BookingData>({
+        userId: user?.id,
+        flow: 'wizard',
+        allowAnonFallback: true,
+      });
+      const progress = resume?.flow === 'wizard' ? resume.payload : null;
+      if (progress) {
+        const savedData =
+          'bookingData' in (progress as Record<string, unknown>)
+            ? (progress as { bookingData?: BookingData }).bookingData
+            : (progress as BookingData);
+        const savedStep =
+          'currentStep' in (progress as Record<string, unknown>)
+            ? (progress as { currentStep?: number }).currentStep
+            : 0;
         if (savedData && savedStep !== undefined) {
-          // Restaurar datos completos
           setBookingDataState(prev => ({ ...prev, ...savedData }));
-          // Restaurar paso exacto
-          setCurrentStepState(Math.max(0, Math.min(savedStep, 5)));
+          setCurrentStepState(Math.max(0, Math.min(savedStep, 4)));
+        }
+        if (Array.isArray(resume?.nonSerializablePaths) && resume.nonSerializablePaths.length > 0) {
+          setResumeWarning({ discardedPaths: resume.nonSerializablePaths });
         }
       }
     } catch (error) {
@@ -372,8 +406,9 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   // Efecto para restaurar estado al recargar la página si existe progreso guardado
   useEffect(() => {
+    if (authLoading) return;
     loadProgress();
-  }, []);
+  }, [user?.id, authLoading]);
 
   // Guardar automáticamente cuando cambien los datos o el paso
   // Solo guardar si NO estamos cargando para evitar sobrescribir con datos vacíos iniciales
@@ -387,11 +422,13 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     bookingData,
     currentStep,
     isLoading,
+    resumeWarning,
     setBookingData,
-    setCurrentStep: (step: number) => setCurrentStepState(Math.max(0, Math.min(step, 5))),
+    setCurrentStep: (step: number) => setCurrentStepState(Math.max(0, Math.min(step, 4))),
     nextStep,
     prevStep,
     resetBooking,
+    clearResumeWarning: () => setResumeWarning(null),
     saveProgress,
     loadProgress,
     updateServiceData,

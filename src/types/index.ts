@@ -52,6 +52,7 @@ export interface Service {
   hourly_rate?: number;
   icon: string;
   image_id?: string; // ID de imagen opcional
+  image_url?: string;
   created_at: string;
 }
 

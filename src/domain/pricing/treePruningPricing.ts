@@ -8,7 +8,7 @@ import {
   PerTreeQuote,
   PruningServiceType,
   TreeSizeBand
-} from '../../types/treePruning';
+} from '../../types/treePruning.ts';
 
 export type TreePruningAnalyzedTree = {
   id: string;

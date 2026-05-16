@@ -3,6 +3,8 @@ import { MapPin, ChevronDown, Loader2 } from 'lucide-react';
 import googleMapsLoader from '../../lib/googleMapsLoader';
 
 interface AddressAutocompleteProps {
+  id?: string;
+  name?: string;
   value: string;
   onChange: (address: string) => void;
   placeholder?: string;
@@ -11,9 +13,11 @@ interface AddressAutocompleteProps {
 }
 
 const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
+  id,
+  name,
   value,
   onChange,
-  placeholder = "Buscar dirección...",
+  placeholder = "Buscar dirección…",
   className = "",
   error
 }) => {
@@ -291,35 +295,39 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     <div className={`relative ${className}`}>
       <div className="relative">
         <input
+          id={id}
+          name={name || id || 'booking-address'}
           ref={inputRef}
           type="text"
           autoComplete="street-address"
           value={value}
           onChange={handleInputChange}
           placeholder={placeholder}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id || 'booking-address'}-error` : undefined}
           className={`w-full px-3.5 py-2.5 pl-12 pr-12 text-base sm:text-sm border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
             error ? 'border-red-500' : 'border-gray-300'
           }`}
         />
-        <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+        <MapPin aria-hidden="true" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
         {loading && (
-          <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 animate-spin" />
+          <Loader2 aria-hidden="true" className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 animate-spin" />
         )}
         {!loading && value && (
-          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+          <ChevronDown aria-hidden="true" className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
         )}
       </div>
 
       {error && (
-        <p className="mt-1 text-xs sm:text-sm text-red-600">{error}</p>
+        <p id={`${id || 'booking-address'}-error`} className="mt-1 text-xs sm:text-sm text-red-600" aria-live="polite">{error}</p>
       )}
 
       {!isGoogleMapsLoaded && (
-        <p className="mt-1 text-xs sm:text-sm text-yellow-600">Cargando servicio de direcciones...</p>
+        <p className="mt-1 text-xs sm:text-sm text-yellow-600" aria-live="polite">Cargando servicio de direcciones…</p>
       )}
 
       {apiHint && (
-        <p className="mt-1 text-xs sm:text-sm text-yellow-700">
+        <p className="mt-1 text-xs sm:text-sm text-yellow-700" aria-live="polite">
           {apiHint} {" "}
           <a
             href="https://console.cloud.google.com/project/_/billing/enable"
@@ -344,20 +352,23 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       {isOpen && suggestions.length > 0 && (
         <div
           ref={dropdownRef}
+          role="listbox"
           className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto"
         >
           {suggestions.map((suggestion) => (
-            <div
+            <button
               key={suggestion.place_id}
+              type="button"
               onClick={() => handleSuggestionClick(suggestion)}
-              className="px-3.5 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 flex items-center"
+              role="option"
+              className="w-full px-3.5 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 flex items-center text-left"
             >
-              <MapPin className="h-4 w-4 text-gray-400 mr-3 flex-shrink-0" />
-              <div className="flex-1">
+              <MapPin aria-hidden="true" className="h-4 w-4 text-gray-400 mr-3 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
                 <div className="text-sm text-gray-900">{suggestion.structured_formatting.main_text}</div>
                 <div className="text-xs text-gray-500">{suggestion.structured_formatting.secondary_text}</div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}

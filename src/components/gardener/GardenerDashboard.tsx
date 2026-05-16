@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Star, MapPin, Clock, Settings, User, Briefcase, MessageCircle, Bell } from 'lucide-react';
+import { Calendar, MapPin, Clock, User, MessageCircle, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { GardenerProfile, Booking } from '../../types';
+import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -12,6 +12,7 @@ import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
+import { respondBookingRequest } from '../../utils/bookingRequestService';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -176,12 +177,19 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         return;
       }
 
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status })
-        .eq('id', bookingId);
+      if (booking.status === 'pending' && (status === 'confirmed' || status === 'cancelled')) {
+        await respondBookingRequest({
+          bookingId,
+          response: status === 'confirmed' ? 'accept' : 'reject',
+        });
+      } else {
+        const { error } = await supabase
+          .from('bookings')
+          .update({ status })
+          .eq('id', bookingId);
 
-      if (error) throw error;
+        if (error) throw error;
+      }
 
       // Enviar mensaje automático según el estado
       let message = '';

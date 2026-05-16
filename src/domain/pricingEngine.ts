@@ -10,7 +10,7 @@ import {
   isHighestOpenRangeForSpecies,
   resolveSpeciesBusinessRule,
   supportsPhytosanitaryForSpecies
-} from './speciesBusinessRules';
+} from './speciesBusinessRules.ts';
 
 export interface PricingConfig {
   minimumPrice: number;

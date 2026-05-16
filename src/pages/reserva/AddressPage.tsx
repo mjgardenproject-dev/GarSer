@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBooking } from "../../contexts/BookingContext";
-import { ChevronLeft, MapPin, Navigation, Search } from 'lucide-react';
+import { ChevronLeft, MapPin, Navigation } from 'lucide-react';
 import AddressAutocomplete from '../../components/common/AddressAutocomplete';
+import { getAddressFromCoordinates } from '../../utils/geolocation';
 
 const AddressPage: React.FC = () => {
   const navigate = useNavigate();
-  const { bookingData, setBookingData, saveProgress, setCurrentStep, prevStep } = useBooking();
+  const { bookingData, setBookingData, saveProgress, setCurrentStep } = useBooking();
   const [address, setAddress] = useState(bookingData.address);
   const [isLocating, setIsLocating] = useState(false);
   const [addressError, setAddressError] = useState('');
@@ -31,9 +32,12 @@ const AddressPage: React.FC = () => {
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          // Usamos las coordenadas para crear una dirección mock
-          const mockAddress = `Calle Ejemplo ${Math.floor(Math.random() * 100)}, Madrid (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
-          setAddress(mockAddress);
+          const resolvedAddress = await getAddressFromCoordinates(latitude, longitude);
+          if (!resolvedAddress) {
+            setAddressError('No se pudo convertir tu ubicación en una dirección válida');
+            return;
+          }
+          setAddress(resolvedAddress);
           setAddressError('');
         } catch (error) {
           setAddressError('No se pudo obtener la dirección');
@@ -41,7 +45,7 @@ const AddressPage: React.FC = () => {
           setIsLocating(false);
         }
       },
-      (error) => {
+      () => {
         setAddressError('No se pudo obtener tu ubicación');
         setIsLocating(false);
       },
@@ -73,12 +77,14 @@ const AddressPage: React.FC = () => {
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
           <button
+            type="button"
             onClick={() => {
               navigate('/');
             }}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="Volver al inicio"
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
           >
-            <ChevronLeft className="w-5 h-5 text-gray-600" />
+            <ChevronLeft aria-hidden="true" className="w-5 h-5 text-gray-600" />
           </button>
           <h1 className="text-lg font-semibold text-gray-900">Dirección</h1>
           <div className="w-9" />
@@ -109,29 +115,33 @@ const AddressPage: React.FC = () => {
 
           {/* Address Input */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="booking-address" className="block text-sm font-medium text-gray-700 mb-2">
               Dirección completa
             </label>
             <AddressAutocomplete
+              id="booking-address"
+              name="booking-address"
               value={address}
               onChange={handleAddressSelected}
               error={addressError}
-              placeholder="Buscar dirección..."
+              placeholder="Buscar dirección completa…"
             />
           </div>
 
           {/* Use Current Location */}
           <button
+            type="button"
             onClick={handleUseCurrentLocation}
             disabled={isLocating}
-            className="w-full flex items-center justify-center space-x-2 bg-blue-50 text-blue-700 py-3 px-4 rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-50"
+            aria-busy={isLocating}
+            className="w-full flex items-center justify-center space-x-2 bg-blue-50 text-blue-700 py-3 px-4 rounded-xl hover:bg-blue-100 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
-            <Navigation className="w-4 h-4" />
-            <span>{isLocating ? 'Obteniendo ubicación...' : 'Usar mi ubicación actual'}</span>
+            <Navigation aria-hidden="true" className="w-4 h-4" />
+            <span>{isLocating ? 'Obteniendo ubicación…' : 'Usar mi ubicación actual'}</span>
           </button>
 
           {addressError && (
-            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg" aria-live="polite">
               <p className="text-sm text-red-700">{addressError}</p>
             </div>
           )}
@@ -140,7 +150,7 @@ const AddressPage: React.FC = () => {
         {/* Tips */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
           <div className="flex items-start space-x-3">
-            <MapPin className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <MapPin aria-hidden="true" className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <div>
               <h3 className="font-medium text-blue-900 text-sm mb-1">
                 Consejo
@@ -157,11 +167,12 @@ const AddressPage: React.FC = () => {
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
         <div className="max-w-md mx-auto">
           <button
+            type="button"
             onClick={validateAndContinue}
             disabled={!address.trim()}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
-            Continuar
+            Continuar a servicios
           </button>
         </div>
       </div>

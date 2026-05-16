@@ -1,11 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
-import { ChevronLeft, Camera, Upload, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Shovel, Bug, Eye, EyeOff, X } from 'lucide-react';
+import { ChevronLeft, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { estimateWorkWithAI, estimateServiceAutoQuote, calculatePalmHours } from '../../utils/aiPricingEstimator';
+import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
 import { readWeedingHerbicideState, writeWeedingHerbicideState } from '../../utils/weedingPersistence';
 import { AnalysisLoadingAnimation } from '../../components/shared/AnalysisLoadingAnimation';
@@ -14,7 +13,6 @@ import { ZonePhotoGallery } from '../../components/shared/ZonePhotoGallery';
 import { ZoneActionButton } from '../../components/shared/ZoneActionButton';
 import { ServiceResultCard } from '../../components/shared/ServiceResultCard';
 import {
-  PALM_CANONICAL_SPECIES,
   getHighestOpenRangeThresholdForSpecies,
   getLowestRangeThresholdForSpecies,
   isHighestOpenRangeForSpecies,
@@ -237,8 +235,6 @@ const PHYTOSANITARY_RESULT_FIELDS: Array<{ key: PhytosanitaryMetricKey; label: s
   { key: 'arboles_gran_ud', label: 'Árboles grandes', unit: 'ud' }
 ];
 
-const PALM_SPECIES = [...PALM_CANONICAL_SPECIES, '<Especie> o similar'] as const;
-
 type PalmGroup = NonNullable<BookingData['palmGroups']>[number];
 
 const hasPositiveUnits = (quantity?: number): boolean => Number(quantity ?? 0) > 0;
@@ -430,8 +426,16 @@ function TreeAccessDifficultyToggle({
 }
 
 const DetailsPage: React.FC = () => {
-  const navigate = useNavigate();
-  const { bookingData, setBookingData, saveProgress, setCurrentStep, updateServiceData, switchToService } = useBooking();
+  const {
+    bookingData,
+    setBookingData,
+    saveProgress,
+    setCurrentStep,
+    updateServiceData,
+    switchToService,
+    resumeWarning,
+    clearResumeWarning,
+  } = useBooking();
   const [analysisError, setAnalysisError] = useState<{title: string, message: string, type: 'error' | 'warning'} | null>(null);
   
   // --- NEW: Selective Analysis State ---
@@ -465,33 +469,12 @@ const DetailsPage: React.FC = () => {
       setDescription(bookingData.description);
   }, [bookingData.description]);
   const [analyzing, setAnalyzing] = useState(false);
-  const [aiModel, setAiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gemini-2.0-flash');
+  const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gemini-2.0-flash');
   const [debugService, setDebugService] = useState<string>('');
-  const [debugLawnSpecies, setDebugLawnSpecies] = useState<string>('');
-  const [debugState, setDebugState] = useState<string>('normal');
-  const [debugPalmSpecies, setDebugPalmSpecies] = useState<string>('');
-  const [debugPalmHeight, setDebugPalmHeight] = useState<string>('');
-  const [debugWasteRemoval, setDebugWasteRemoval] = useState<boolean>(true);
-  const [debugQuantity, setDebugQuantity] = useState<number | ''>('');
-  const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // New Debug States for specific services
-  const [debugHedgeHeight, setDebugHedgeHeight] = useState<string>('');
-  const [debugHedgeState, setDebugHedgeState] = useState<string>('normal');
-  const [debugHedgeAccess, setDebugHedgeAccess] = useState<string>('normal'); // Legacy?
-  const [debugTreePruningType, setDebugTreePruningType] = useState<string>('structural');
-  const [debugTreeAccess, setDebugTreeAccess] = useState<string>('normal');
-  const [debugTreeHours, setDebugTreeHours] = useState<string>('');
-  const [debugShrubType, setDebugShrubType] = useState<string>('');
-  const [debugShrubSize, setDebugShrubSize] = useState<string>('');
-  const [debugPhytosanitaryType, setDebugPhytosanitaryType] = useState<string>('');
-
-  const [debugPalmGroups, setDebugPalmGroups] = useState<Array<{species: string, height: string, quantity: number, state: string}>>([]);
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [isImageStackExpanded, setIsImageStackExpanded] = useState(false);
-  const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(new Set());
   const [loadingMessage, setLoadingMessage] = useState('Escaneando terreno...');
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean;
@@ -594,27 +577,6 @@ const DetailsPage: React.FC = () => {
     return hasAiTasks || hasPalmGroups || hasLawnZones || hasHedgeZones || hasTreeGroups || hasShrubGroups || hasPhytosanitaryZones;
   }, [bookingData]);
 
-  const resetAnalysis = () => {
-      const resetData = {
-          aiTasks: [],
-          lawnZones: [],
-          hedgeZones: [],
-          treeGroups: [],
-          shrubGroups: [],
-          phytosanitaryZones: [],
-          palmGroups: [],
-          estimatedHours: 0,
-          aiQuantity: 0,
-          aiDifficulty: 1
-      };
-      setBookingData(resetData);
-      
-      if (bookingData.serviceIds?.[0]) {
-           updateServiceData(bookingData.serviceIds[0], resetData);
-      }
-      setIsImageStackExpanded(false);
-  };
-
   // --- DEBUG TOOL STATE ---
   interface AnalysisDebugInfo {
     service: string;
@@ -627,8 +589,7 @@ const DetailsPage: React.FC = () => {
     timestamp: string;
   }
 
-  const [debugLogs, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
-  const [showDebugPanel, setShowDebugPanel] = useState(import.meta.env.DEV || false);
+  const [, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
   const activeServiceId = bookingData.serviceIds?.[0] || '';
   const isWeedingServiceSelected =
     debugService.toLowerCase().includes('desbroce') ||
@@ -644,6 +605,22 @@ const DetailsPage: React.FC = () => {
     errors: overrides.errors ?? [],
     timestamp: overrides.timestamp ?? new Date().toISOString()
   });
+
+  const mergeActiveServiceSnapshot = (
+    prev: BookingData,
+    patch: Partial<NonNullable<BookingData['servicesData']>[string]>
+  ) => {
+    const currentActiveServiceId = prev.serviceIds?.[0];
+    if (!currentActiveServiceId) return prev.servicesData;
+
+    return {
+      ...prev.servicesData,
+      [currentActiveServiceId]: {
+        ...(prev.servicesData?.[currentActiveServiceId] || {}),
+        ...patch,
+      },
+    };
+  };
   // -----------------------
 
   // Auto-resume analysis if needed
@@ -855,16 +832,6 @@ const DetailsPage: React.FC = () => {
       }
   }, [bookingData.weedingZones, debugService]);
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
   const uploadFile = async (file: File, index: number): Promise<string | null> => {
       try {
         const { data: userData } = await supabase.auth.getUser();
@@ -889,118 +856,6 @@ const DetailsPage: React.FC = () => {
       }
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    // Clear previous analysis errors when new photos are added
-    setAnalysisError(null);
-
-    const files = Array.from(e.dataTransfer.files).filter(file => 
-      file.type.startsWith('image/')
-    );
-    
-    if (files.length + photos.length > 5) {
-      toast.error('Máximo 5 fotos permitidas');
-      return;
-    }
-
-    // Add files to state first for immediate UI feedback
-    const startIndex = photos.length;
-    // Use functional update to ensure we don't lose previous state if multiple drops happen quickly
-    // (though drag-drop is usually sequential user action)
-    setPhotos(prev => [...prev, ...files]);
-
-    // Mark indices as uploading
-    setUploadingIndices(prev => {
-        const next = new Set(prev);
-        files.forEach((_, i) => next.add(startIndex + i));
-        return next;
-    });
-
-    // Add new indices to analysis queue (pending by default)
-    setPhotosToAnalyze(prev => {
-        const next = new Set(prev);
-        files.forEach((_, i) => next.add(startIndex + i));
-        return next;
-    });
-
-    // Prepare local mutable state for incremental updates
-    // We start with the current known state plus placeholders for new files
-    // Note: bookingData might be slightly stale if a re-render is pending, 
-    // but typically handleDrop runs on stable state.
-    const currentUrls = [...(bookingData.uploadedPhotoUrls || [])];
-    while(currentUrls.length < startIndex) currentUrls.push(''); // Fill gaps if any
-    files.forEach(() => currentUrls.push('')); // Add placeholders for new files
-
-    // We also need to track the mixed array of File|string for local state updates
-    // We can't easily get the "current" photos from state inside the loop without functional updates,
-    // but we can maintain a local shadow copy that assumes we started from `photos` + `files`.
-    const localPhotosState = [...photos, ...files];
-
-    files.forEach(async (file, i) => {
-        const globalIndex = startIndex + i;
-        
-        try {
-            const compressedFile = await compressImage(file);
-            const url = await uploadFile(compressedFile, globalIndex);
-            
-            if (url) {
-                // Update local tracking variables
-                currentUrls[globalIndex] = url;
-                localPhotosState[globalIndex] = url;
-
-                // 1. Update uploading status
-                setUploadingIndices(prev => {
-                    const next = new Set(prev);
-                    next.delete(globalIndex);
-                    return next;
-                });
-
-                // 2. Update photos state
-                setPhotos(prev => {
-                    const next = [...prev];
-                    // Ensure we don't go out of bounds if state changed unexpectedly, though unlikely with indices
-                    if (next.length > globalIndex) {
-                        next[globalIndex] = url;
-                    }
-                    return next;
-                });
-
-                // 3. Update global booking data incrementally
-                setBookingData({ uploadedPhotoUrls: [...currentUrls] });
-                
-                // 4. Update service specific data
-                if (bookingData.serviceIds?.[0]) {
-                    updateServiceData(bookingData.serviceIds[0], {
-                        uploadedPhotoUrls: [...currentUrls],
-                        // We filter for Files to match the type expectation, 
-                        // but effectively we are saving the progress of URLs
-                        photos: localPhotosState.filter(p => p instanceof File) 
-                    });
-                }
-            } else {
-                // Handle upload failure (remove spinner)
-                setUploadingIndices(prev => {
-                    const next = new Set(prev);
-                    next.delete(globalIndex);
-                    return next;
-                });
-            }
-        } catch (e) {
-            console.error('Error uploading file:', e);
-            setUploadingIndices(prev => {
-                const next = new Set(prev);
-                next.delete(globalIndex);
-                return next;
-            });
-        }
-    });
-    
-    saveProgress();
-  };
-
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     // Clear previous analysis errors
     setAnalysisError(null);
@@ -1010,7 +865,7 @@ const DetailsPage: React.FC = () => {
     );
     
     if (files.length + photos.length > 5) {
-      alert('Máximo 5 fotos permitidas');
+      toast.error('Máximo 5 fotos permitidas');
       return;
     }
 
@@ -1092,9 +947,6 @@ const DetailsPage: React.FC = () => {
             });
         }
     });
-
-    // Remove resetAnalysis to persist previous results when adding new photos
-    // if (isAnalysisComplete) resetAnalysis();
     saveProgress();
   };
 
@@ -1395,7 +1247,7 @@ const DetailsPage: React.FC = () => {
     if (isPhytosanitaryService) {
       const zones = bookingData.phytosanitaryZones || [];
       if (zones.length === 0) {
-        alert('Añade al menos una zona para continuar.');
+        toast.error('Añade al menos una zona para continuar.');
         return;
       }
       const firstInvalidZone = zones.find((zone) => getPhytosanitaryValidation(zone as any).issues.length > 0);
@@ -2501,16 +2353,9 @@ const DetailsPage: React.FC = () => {
                   }
 
                   nextZones = updatedZones;
-                  const activeServiceId = prev.serviceIds?.[0];
-                  const nextServicesData = activeServiceId
-                      ? {
-                          ...prev.servicesData,
-                          [activeServiceId]: {
-                              ...(prev.servicesData?.[activeServiceId] || {}),
-                              lawnZones: updatedZones
-                          }
-                      }
-                      : prev.servicesData;
+                  const nextServicesData = mergeActiveServiceSnapshot(prev, {
+                    lawnZones: updatedZones
+                  });
 
                   return {
                       lawnZones: updatedZones,
@@ -2552,16 +2397,9 @@ const DetailsPage: React.FC = () => {
                   return z;
               });
               
-              const activeServiceId = prev.serviceIds?.[0] || '';
-              const nextServicesData = activeServiceId
-                  ? {
-                      ...prev.servicesData,
-                      [activeServiceId]: {
-                          ...(prev.servicesData?.[activeServiceId] || {}),
-                          lawnZones: updatedZones
-                      }
-                  }
-                  : prev.servicesData;
+              const nextServicesData = mergeActiveServiceSnapshot(prev, {
+                lawnZones: updatedZones
+              });
 
               return {
                   lawnZones: updatedZones,
@@ -2639,14 +2477,6 @@ const DetailsPage: React.FC = () => {
     if (heightM <= 2) return '1-2m';
     if (heightM <= 4) return '2-4m';
     return '4-6m';
-  };
-
-  const hedgeHeightBandToMeters = (heightBand: string): number => {
-    if (heightBand === '0-1m' || heightBand === '<1m') return 0.75;
-    if (heightBand === '1-2m' || heightBand === '>1-2m' || heightBand === 'Hasta 2m (Nivel Suelo)') return 1.5;
-    if (heightBand === '2-4m' || heightBand === '>2-3m' || heightBand === '3-4.5m' || heightBand === '2-4m (Nivel Escalera)') return 3;
-    if (heightBand === '4-6m' || heightBand === '>4.5-6m' || heightBand === '>6-7.5m' || heightBand === '4-6m (Nivel Especialista)') return 5;
-    return 3;
   };
 
   const resolveHedgeFaceDetails = (task: any) => {
@@ -3148,16 +2978,9 @@ const DetailsPage: React.FC = () => {
                   return z;
               });
               
-              const activeServiceId = prev.serviceIds?.[0] || '';
-              const nextServicesData = activeServiceId
-                  ? {
-                      ...prev.servicesData,
-                      [activeServiceId]: {
-                          ...(prev.servicesData?.[activeServiceId] || {}),
-                          hedgeZones: updatedZones
-                      }
-                  }
-                  : prev.servicesData;
+              const nextServicesData = mergeActiveServiceSnapshot(prev, {
+                hedgeZones: updatedZones
+              });
 
               return {
                   hedgeZones: updatedZones,
@@ -3543,16 +3366,9 @@ const DetailsPage: React.FC = () => {
                   return z;
               });
               
-              const activeServiceId = prev.serviceIds?.[0] || '';
-              const nextServicesData = activeServiceId
-                  ? {
-                      ...prev.servicesData,
-                      [activeServiceId]: {
-                          ...(prev.servicesData?.[activeServiceId] || {}),
-                          palmGroups: updatedZones
-                      }
-                  }
-                  : prev.servicesData;
+              const nextServicesData = mergeActiveServiceSnapshot(prev, {
+                palmGroups: updatedZones
+              });
 
               return { ...prev, palmGroups: updatedZones, servicesData: nextServicesData };
           });
@@ -3670,17 +3486,10 @@ const analyzeTreeGroup = async (id: string) => {
               
               const newHours = calculateTotalTreeHours(updatedZones);
               
-              const activeServiceId = prev.serviceIds?.[0] || '';
-              const nextServicesData = activeServiceId
-                  ? {
-                      ...prev.servicesData,
-                      [activeServiceId]: {
-                          ...(prev.servicesData?.[activeServiceId] || {}),
-                          treeGroups: updatedZones,
-                          estimatedHours: newHours
-                      }
-                  }
-                  : prev.servicesData;
+              const nextServicesData = mergeActiveServiceSnapshot(prev, {
+                treeGroups: updatedZones,
+                estimatedHours: newHours
+              });
 
               return {
                   treeGroups: updatedZones,
@@ -3995,16 +3804,9 @@ const analyzeTreeGroup = async (id: string) => {
                   return z;
               });
               
-              const activeServiceId = prev.serviceIds?.[0] || '';
-              const nextServicesData = activeServiceId
-                  ? {
-                      ...prev.servicesData,
-                      [activeServiceId]: {
-                          ...(prev.servicesData?.[activeServiceId] || {}),
-                          shrubGroups: updatedZones
-                      }
-                  }
-                  : prev.servicesData;
+              const nextServicesData = mergeActiveServiceSnapshot(prev, {
+                shrubGroups: updatedZones
+              });
 
               return {
                   shrubGroups: updatedZones,
@@ -4488,16 +4290,9 @@ const analyzeTreeGroup = async (id: string) => {
                   return z;
               });
               
-              const activeServiceId = prev.serviceIds?.[0] || '';
-              const nextServicesData = activeServiceId
-                  ? {
-                      ...prev.servicesData,
-                      [activeServiceId]: {
-                          ...(prev.servicesData?.[activeServiceId] || {}),
-                          phytosanitaryZones: updatedZones
-                      }
-                  }
-                  : prev.servicesData;
+              const nextServicesData = mergeActiveServiceSnapshot(prev, {
+                phytosanitaryZones: updatedZones
+              });
 
               return {
                   phytosanitaryZones: updatedZones,
@@ -4546,10 +4341,12 @@ const analyzeTreeGroup = async (id: string) => {
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
           <button
+            type="button"
             onClick={() => setCurrentStep(1)}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            aria-label="Volver al paso de servicios"
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
-            <ChevronLeft className="w-5 h-5 text-gray-600" />
+            <ChevronLeft aria-hidden="true" className="w-5 h-5 text-gray-600" />
           </button>
           <h1 className="text-lg font-semibold text-gray-900">Detalles</h1>
           <div className="w-9" />
@@ -4570,6 +4367,28 @@ const analyzeTreeGroup = async (id: string) => {
 
       {/* Main Content */}
       <div className="max-w-md mx-auto px-4 py-6 pb-24">
+        {resumeWarning?.discardedPaths?.length ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4" aria-live="polite">
+            <div className="flex items-start gap-3">
+              <Info aria-hidden="true" className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-amber-900">Se ha recuperado tu borrador</p>
+                <p className="mt-1 text-sm text-amber-800">
+                  Los archivos locales no se restauran tras recargar o volver desde autenticacion. Revisa las zonas con fotos pendientes y vuelve a subirlas si falta alguna imagen antes de continuar.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearResumeWarning}
+                aria-label="Cerrar aviso de borrador recuperado"
+                className="rounded-lg p-1 text-amber-700 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {/* Photo Upload */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-4">
@@ -5045,7 +4864,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                                     min="1" 
                                                                     value={zone.quantity} 
                                                                     onChange={(e) => handlePalmQuantityChange(zone.id, parseInt(e.target.value) || 1)}
-                                                                    className="w-10 text-center text-sm py-0.5 focus:outline-none"
+                                                                    className="w-10 text-center text-sm py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                                                                 />
                                                                 <button 
                                                                     className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
@@ -5062,7 +4881,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                                 <h5 className="text-sm font-semibold text-gray-800 mb-3">Servicios extras recomendados</h5>
                                                                 
                                                                 {supportsPhytosanitaryForSpecies(zone.species) && (
-                                                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
+                                                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-colors duration-200 ${
                                                                         (zone as any).hasPhytosanitary ? 'bg-green-50 border-green-500 ring-1 ring-green-500' : 'bg-white border-gray-200 hover:border-green-300 hover:bg-gray-50'
                                                                     }`}>
                                                                         <span className={`text-sm font-medium ${(zone as any).hasPhytosanitary ? 'text-green-800' : 'text-gray-700'}`}>
@@ -5097,7 +4916,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                                 )}
 
                                                                 {supportsTrunkPeelingForSpecies(zone.species) && (
-                                                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
+                                                                    <label className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-colors duration-200 ${
                                                                         (zone as any).hasTrunkPeeling ? 'bg-green-50 border-green-500 ring-1 ring-green-500' : 'bg-white border-gray-200 hover:border-green-300 hover:bg-gray-50'
                                                                     }`}>
                                                                         <span className={`text-sm font-medium block ${(zone as any).hasTrunkPeeling ? 'text-green-800' : 'text-gray-700'}`}>
@@ -5788,12 +5607,12 @@ const analyzeTreeGroup = async (id: string) => {
                        return (
                            <div 
                                onClick={() => setIsImageStackExpanded(true)}
-                               className="relative h-40 w-full flex items-center justify-center cursor-pointer group py-4 transition-all duration-500 ease-in-out"
+                              className="relative h-40 w-full flex items-center justify-center cursor-pointer group py-4 transition-transform duration-500 ease-in-out"
                            >
                                {photos.slice(0, 3).map((photo, i) => (
                                    <div 
                                        key={i}
-                                       className="absolute transition-all duration-500 ease-in-out shadow-lg rounded-xl overflow-hidden border-2 border-white bg-white"
+                                      className="absolute transition-transform duration-500 ease-in-out shadow-lg rounded-xl overflow-hidden border-2 border-white bg-white"
                                        style={{
                                            width: '120px',
                                            height: '120px',
@@ -5829,7 +5648,7 @@ const analyzeTreeGroup = async (id: string) => {
                    }
 
                    return (
-                     <div className={`flex flex-col gap-2 transition-all duration-500 ease-in-out ${(!isAnalysisComplete || isImageStackExpanded) ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 hidden'}`}>
+                    <div className={`flex flex-col gap-2 transition-[opacity,transform] duration-500 ease-in-out ${(!isAnalysisComplete || isImageStackExpanded) ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 hidden'}`}>
                        <div className="flex flex-row overflow-x-auto gap-3 pb-2 snap-x items-center scrollbar-hide">
                        {displayItems.map((photo, index) => {
                          const isUploading = uploadingIndices.has(index);
@@ -5843,11 +5662,11 @@ const analyzeTreeGroup = async (id: string) => {
                                 onClick={(e) => togglePending(index, e)}
                            >
                              {photo ? (
-                                 <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-all duration-300 ${isPending ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzed ? 'opacity-80' : 'opacity-100'}`}>
+                                <div className={`relative w-24 h-24 rounded-lg overflow-hidden border transition-colors duration-300 ${isPending ? 'border-2 border-green-500 shadow-md' : 'border-gray-200 shadow-sm'} ${isAnalyzed ? 'opacity-80' : 'opacity-100'}`}>
                                      <img 
                                        src={typeof photo === 'string' ? photo : URL.createObjectURL(photo)} 
                                        alt={`Foto ${index + 1}`} 
-                                       className={`w-full h-full object-cover transition-all duration-700 ease-in-out ${isUploading ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
+                                      className={`w-full h-full object-cover transition-[transform,filter] duration-700 ease-in-out ${isUploading ? 'scale-110 blur-sm brightness-50' : 'scale-100 blur-0 brightness-100'}`}
                                      />
                                      {/* Uploading Overlay */}
                                      {isUploading && (
@@ -5890,7 +5709,7 @@ const analyzeTreeGroup = async (id: string) => {
                                      {/* Selection Checkbox (Circle/Tick) */}
                                     {!isAnalyzed && !isUploading && (
                                         <div
-                                            className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all z-20 ${
+                                           className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-[background-color,border-color,transform] z-20 ${
                                                 isPending 
                                                 ? 'bg-green-500 border-green-500 scale-100' 
                                                 : 'bg-black/20 border-white/80 group-hover:bg-black/40 scale-90 group-hover:scale-100'
@@ -6082,8 +5901,10 @@ const analyzeTreeGroup = async (id: string) => {
                           <button
                               type="button"
                               role="switch"
+                              aria-checked={zone.applyHerbicide}
+                              aria-label="Aplicar herbicida"
                               onClick={() => handleToggleWeedingHerbicide(0)}
-                              className={`${zone.applyHerbicide ? 'bg-green-600' : 'bg-gray-200'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0`}
+                              className={`${zone.applyHerbicide ? 'bg-green-600' : 'bg-gray-200'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2`}
                           >
                               <span className={`${zone.applyHerbicide ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
                           </button>
@@ -6102,13 +5923,17 @@ const analyzeTreeGroup = async (id: string) => {
           <div className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
               <span className="text-gray-700 font-medium text-sm">Incluir retirada de restos</span>
               <button 
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(bookingData.wasteRemoval)}
+                  aria-label="Incluir retirada de restos"
                   onClick={() => {
                       const newValue = !bookingData.wasteRemoval;
                       setBookingData({ wasteRemoval: newValue });
                       if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { wasteRemoval: newValue });
                       saveProgress();
                   }}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${bookingData.wasteRemoval ? 'bg-green-600' : 'bg-gray-200'}`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${bookingData.wasteRemoval ? 'bg-green-600' : 'bg-gray-200'}`}
               >
                   <span
                       className={`${
@@ -6130,474 +5955,10 @@ const analyzeTreeGroup = async (id: string) => {
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej: Cuidado con el perro, entrar por la puerta lateral..."
+            placeholder="Ej: cuidado con el perro; entra por la puerta lateral…"
             className="w-full p-4 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm bg-gray-50"
             rows={3}
           />
-      </div>
-
-      {/* Legacy single-group manual input - REMOVED/REPLACED by the above loop */}
-
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-          <h3 className="text-amber-900 font-semibold mb-3">Debug IA (manual)</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-800 mb-1">Tipo de servicio</label>
-              <select
-                value={debugService}
-                onChange={(e) => setDebugService(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-              >
-                <option value="">Selecciona…</option>
-                <option value="Corte de césped">Corte de césped</option>
-                <option value="Corte de setos a máquina">Corte de setos a máquina</option>
-                <option value="Poda de plantas y arbustos">Poda de plantas y arbustos</option>
-                <option value="Poda de árboles">Poda de árboles</option>
-                <option value="Servicios fitosanitarios">Servicios fitosanitarios</option>
-                <option value="Poda de palmeras">Poda de palmeras</option>
-              </select>
-            </div>
-            {debugService === 'Corte de césped' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-1">Especie de césped</label>
-                <select
-                  value={debugLawnSpecies}
-                  onChange={(e) => setDebugLawnSpecies(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                >
-                  <option value="" disabled>Selecciona especie...</option>
-                  <option value="Bermuda (fina o gramilla)">Bermuda (fina o gramilla)</option>
-                  <option value="Gramón (Kikuyu, San Agustín o similares)">Gramón (Kikuyu, San Agustín o similares)</option>
-                  <option value="Dichondra (oreja de ratón o similares)">Dichondra (oreja de ratón o similares)</option>
-                  <option value="Césped Mixto (Festuca/Raygrass)">Césped Mixto (Festuca/Raygrass)</option>
-                </select>
-              </div>
-            )}
-
-            {/* --- Hedges --- */}
-            {debugService === 'Corte de setos a máquina' && (
-                <>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-800 mb-1">Altura</label>
-                        <select
-                            value={debugHedgeHeight}
-                            onChange={(e) => setDebugHedgeHeight(e.target.value)}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                        >
-                            <option value="">Selecciona...</option>
-                            <option value="0-1m">0-1m</option>
-                            <option value="1-2m">1-2m</option>
-                            <option value="2-4m">2-4m</option>
-                            <option value="4-6m">4-6m</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-800 mb-1">Estado</label>
-                        <select
-                            value={debugHedgeState}
-                            onChange={(e) => setDebugHedgeState(e.target.value)}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                        >
-                            <option value="normal">Normal</option>
-                            <option value="descuidado">Descuidado</option>
-                        </select>
-                    </div>
-                </>
-            )}
-
-            {/* --- Tree Pruning Service --- */}
-            {/* {debugService === 'Poda de árboles' && (
-                <TreePruningBooking
-                    onEstimateCalculated={(estimate) => {
-                        // Aquí se puede manejar el resultado del presupuesto
-                        console.log('Tree pruning estimate calculated:', estimate);
-                        // TODO: Integrar con el contexto de booking
-                    }}
-                />
-            )} */}
-
-            {/* --- Shrubs --- */}
-            {debugService === 'Poda de plantas y arbustos' && (
-                <>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-800 mb-1">Tamaño</label>
-                        <select
-                            value={debugShrubSize}
-                            onChange={(e) => setDebugShrubSize(e.target.value)}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                        >
-                            <option value="">Selecciona...</option>
-                            <option value="Pequeño (hasta 1m)">Pequeño (hasta 1m)</option>
-                            <option value="Mediano (1-2.5m)">Mediano (1-2.5m)</option>
-                            <option value="Grande (>2.5m)">Grande (&gt;2.5m)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-800 mb-1">Tipo</label>
-                        <select
-                            value={debugShrubType}
-                            onChange={(e) => setDebugShrubType(e.target.value)}
-                            className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                        >
-                            <option value="">Selecciona...</option>
-                            <option value="Arbustos ornamentales">Arbustos ornamentales</option>
-                            <option value="Rosales y plantas florales">Rosales y plantas florales</option>
-                            <option value="Trepadoras">Trepadoras</option>
-                            <option value="Cactus y suculentas grandes">Cactus y suculentas grandes</option>
-                        </select>
-                    </div>
-                </>
-            )}
-
-            {/* --- Phytosanitary --- */}
-            {((debugService || '').toLowerCase().includes('fitosanit') || (debugService || '').toLowerCase().includes('fitosanit')) && (
-                <div>
-                    <label className="block text-sm font-medium text-gray-800 mb-1">Tipo tratamiento</label>
-                    <select
-                        value={debugPhytosanitaryType}
-                        onChange={(e) => setDebugPhytosanitaryType(e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                    >
-                        <option value="">Selecciona...</option>
-                        <option value="Insecticida">Insecticida</option>
-                        <option value="Fungicida">Fungicida</option>
-                        <option value="Herbicida">Herbicida</option>
-                    </select>
-                </div>
-            )}
-
-            {debugService !== 'Poda de palmeras' && debugService !== 'Corte de setos a máquina' && debugService !== 'Poda de árboles' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-1">Estado del jardín</label>
-                <select
-                  value={debugState}
-                  onChange={(e) => setDebugState(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                >
-                  <option value="normal">Normal</option>
-                  <option value="descuidado">Descuidado</option>
-                  <option value="muy descuidado">Muy descuidado</option>
-                </select>
-                {debugService === 'Poda de plantas y arbustos' && (
-                  <p className="text-xs text-gray-500 mt-1">
-                     {debugState === 'normal' && 'planta saludable, pocas ramas secas'}
-                     {debugState === 'descuidado' && 'follaje denso, algunas ramas secas'}
-                     {debugState === 'muy descuidado' && 'crecimiento descontrolado, muchas ramas secas'}
-                  </p>
-                )}
-              </div>
-            )}
-            
-            {debugService === 'Poda de palmeras' && (
-              <div className="sm:col-span-2 space-y-3 p-3 bg-blue-50/50 rounded-lg border border-blue-100">
-                <h4 className="font-semibold text-blue-900 text-sm">Simulador de Grupos de Palmeras</h4>
-                
-                {/* List of simulated groups */}
-                {debugPalmGroups.length > 0 && (
-                    <ul className="space-y-2 mb-2">
-                        {debugPalmGroups.map((g, i) => (
-                            <li key={i} className="flex justify-between items-center bg-white p-2 rounded border border-blue-200 text-sm">
-                                <span>{g.quantity}x {g.species} ({g.height}) - {g.state}</span>
-                                <button 
-                                    onClick={() => setDebugPalmGroups(prev => prev.filter((_, idx) => idx !== i))}
-                                    className="text-red-500 hover:text-red-700"
-                                >
-                                    <Trash2 className="w-3 h-3" />
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-
-                <div className="space-y-2 border-t border-blue-200 pt-2">
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Especie</label>
-                        <select
-                            value={debugPalmSpecies}
-                            onChange={(e) => {
-                                setDebugPalmSpecies(e.target.value);
-                                setDebugPalmHeight(''); 
-                            }}
-                            className="w-full p-1 border border-blue-300 rounded text-sm"
-                        >
-                            <option value="">Selecciona...</option>
-                            {PALM_SPECIES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
-
-                    {debugPalmSpecies && (
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Altura</label>
-                            <select
-                                value={debugPalmHeight}
-                                onChange={(e) => setDebugPalmHeight(e.target.value)}
-                                className="w-full p-1 border border-blue-300 rounded text-sm"
-                            >
-                                <option value="">Selecciona...</option>
-                                <option value="0-5">0 – 5 m</option>
-                                <option value="5-12">5 – 12 m</option>
-                                <option value="12-20">12 – 20 m</option>
-                                <option value="20+">Más de 20 m</option>
-                            </select>
-                        </div>
-                    )}
-                    
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Estado</label>
-                        <select
-                            value={debugState}
-                            onChange={(e) => setDebugState(e.target.value)}
-                            className="w-full p-1 border border-blue-300 rounded text-sm"
-                        >
-                            <option value="normal">Normal</option>
-                            <option value="descuidado">Descuidado</option>
-                            <option value="muy descuidado">Muy descuidado</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Cantidad Inicial</label>
-                        <input
-                            type="number"
-                            min="1"
-                            value={debugQuantity}
-                            onChange={(e) => setDebugQuantity(Number(e.target.value))}
-                            className="w-full p-1 border border-blue-300 rounded text-sm"
-                            placeholder="1"
-                        />
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (debugPalmSpecies && debugPalmHeight && debugQuantity) {
-                                setDebugPalmGroups(prev => [...prev, {
-                                    species: debugPalmSpecies,
-                                    height: debugPalmHeight,
-                                    quantity: Number(debugQuantity),
-                                    state: debugState
-                                }]);
-                                // Reset fields
-                                setDebugPalmSpecies('');
-                                setDebugPalmHeight('');
-                                setDebugQuantity('');
-                            }
-                        }}
-                        disabled={!debugPalmSpecies || !debugPalmHeight || !debugQuantity}
-                        className="w-full py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
-                    >
-                        + Añadir Grupo
-                    </button>
-                </div>
-              </div>
-            )}
-
-            {debugService !== 'Poda de palmeras' && debugService !== 'Poda de árboles' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-800 mb-1">Cantidad</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={debugQuantity}
-                  onChange={(e) => setDebugQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full p-2 border border-gray-300 rounded-lg bg-white text-base sm:text-sm"
-                  placeholder="Ej: 1"
-                />
-                <div className="text-xs text-gray-600 mt-1">Unidad: m² o plantas según servicio</div>
-              </div>
-            )}
-            <div className="flex items-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (debugService === 'Poda de palmeras') {
-                      if (debugPalmGroups.length === 0) {
-                          toast.error('Añade al menos un grupo de palmeras para simular.');
-                          return;
-                      }
-
-                      // Convert simulated groups to context structure
-                      const groups = debugPalmGroups.map((g, i) => ({
-                          id: `debug-${Date.now()}-${i}`,
-                          species: g.species,
-                          height: g.height,
-                          quantity: g.quantity,
-                          state: g.state,
-                          wasteRemoval: debugWasteRemoval,
-                          hasPhytosanitary: supportsPhytosanitaryForSpecies(g.species),
-                          photoUrl: undefined 
-                      }));
-
-                      const totalHours = groups.reduce((acc, g) => acc + Math.ceil(g.quantity * (20/60)), 0);
-
-                      const updatePayload = { 
-                        palmGroups: groups,
-                        estimatedHours: totalHours,
-                        palmSpecies: undefined,
-                        palmHeight: undefined,
-                        palmState: undefined,
-                      };
-
-                      setBookingData(updatePayload);
-                      if (bookingData.serviceIds?.[0]) {
-                           updateServiceData(bookingData.serviceIds[0], updatePayload);
-                      }
-                  } else {
-                      const qty = debugQuantity === '' ? 0 : Number(debugQuantity);
-                      const lowerDebugService = debugService.toLowerCase();
-                      const unit = lowerDebugService.includes('césped') || lowerDebugService.includes('setos') || lowerDebugService.includes('fitosanit') || lowerDebugService.includes('fitosanit') ? 'm2' : 'plantas';
-                      const effectiveDebugState = debugService.includes('seto') ? debugHedgeState : debugState;
-                      const diff = effectiveDebugState.includes('muy') ? 3 : effectiveDebugState.includes('descuidado') ? 2 : 1;
-                      const debugHedgeHeightMeters = hedgeHeightBandToMeters(debugHedgeHeight);
-                      const debugHedgeCategory = debugHedgeHeight || resolveHedgeHeightBand(debugHedgeHeightMeters);
-                      
-                      // Create synthetic task for AI simulation
-                      const syntheticTask: any = {
-                        tipo_servicio: debugService,
-                        estado_jardin: effectiveDebugState,
-                        nivel_analisis: 1, 
-                        observaciones: ['Simulación manual'],
-                        // Lawn
-                        especie_cesped: debugLawnSpecies,
-                        superficie_m2: unit === 'm2' ? qty : null,
-                        numero_plantas: unit === 'plantas' ? qty : null,
-                        // Hedge
-                        longitud_m: debugService.includes('seto') ? qty : null,
-                        altura_m: debugService.includes('seto') ? debugHedgeHeightMeters : null,
-                        tipo_seto: debugHedgeCategory,
-                        dificultad_acceso: debugHedgeAccess === 'dificil' ? 3 : debugHedgeAccess === 'medio' ? 2 : 1,
-                        // Tree
-                        cantidad: debugService.includes('árbol') ? 1 : null,
-                        altura_aprox_m: debugService.includes('árbol') ? 3 : null, // Default
-                        tipo_arbol: 'Generico', // Default
-                        // Shrub
-                        cantidad_estimada: debugService.toLowerCase().includes('planta') && !debugService.toLowerCase().includes('fitosanit') && !debugService.toLowerCase().includes('fitosanit') ? qty : null,
-                        tamano_promedio: debugShrubSize,
-                        tipo_plantacion: debugShrubType,
-                        // Phytosanitary
-                        cantidad_o_superficie: qty,
-                        unidad: (debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit')) ? 'm2' : null,
-                        nivel_plaga: debugPhytosanitaryType
-                       };
- 
-                       console.log('[Debug] Simulating AI Result:', { 
-                           aiQuantity: qty, 
-                           aiTasks: [syntheticTask]
-                       });
-
-                       const updatePayload: any = {
-                         aiQuantity: qty, 
-                         aiUnit: unit, 
-                         aiDifficulty: diff, 
-                         aiTasks: [syntheticTask],
-                         isAnalyzing: false
-                       };
-                       
-                       if (debugService === 'Corte de césped') {
-                           updatePayload.lawnZones = [{
-                               id: `debug-lawn-${Date.now()}`,
-                               species: debugLawnSpecies || 'Césped estándar',
-                               state: debugState,
-                               quantity: qty,
-                               wasteRemoval: true,
-                               photoUrls: [],
-                               imageIndices: [],
-                               analysisLevel: 1,
-                               observations: ['Simulación manual']
-                           }];
-                           updatePayload.estimatedHours = Math.ceil(qty / 150);
-                       } else if (debugService === 'Corte de setos a máquina') {
-                           updatePayload.hedgeZones = [{
-                               id: `debug-hedge-${Date.now()}`,
-                               category: debugHedgeCategory,
-                               type: debugHedgeCategory,
-                               height: debugHedgeHeight || '1-2m',
-                               length: qty,
-                               length_pricing_m: qty,
-                               height_pricing_m: qty * debugHedgeHeightMeters,
-                               faces_to_trim: 1,
-                               hasBackFaceTrim: false,
-                               state: debugHedgeState || 'normal',
-                               access: 'normal', // Legacy
-                               wasteRemoval: true,
-                               photoUrls: [],
-                               analysisLevel: 1,
-                               observations: ['Simulación manual']
-                           }];
-                           updatePayload.estimatedHours = Math.ceil(qty / 10);
-                       } else if (debugService === 'Poda de árboles') {
-                          const h = debugTreeHours ? Number(debugTreeHours) : 3;
-                          updatePayload.treeGroups = [{
-                              id: `debug-tree-${Date.now()}`,
-                              type: 'Generico', // Default for legacy compatibility
-                              height: 'N/A',   // Default for legacy compatibility
-                              pruningType: debugTreePruningType as 'structural' | 'shaping',
-                              quantity: 1,     // Placeholder quantity
-                              access: debugTreeAccess as 'normal' | 'medio' | 'dificil',
-                              wasteRemoval: true,
-                              photoUrls: [],
-                              analysisLevel: 1,
-                              observations: ['Simulación manual']
-                          }];
-                          updatePayload.estimatedHours = h;
-                       } else if (debugService === 'Poda de plantas y arbustos') {
-                            updatePayload.shrubGroups = [{
-                                id: `debug-shrub-${Date.now()}`,
-                                type: debugShrubType || 'Arbustos ornamentales',
-                                size: debugShrubSize || 'Pequeño (hasta 1m)',
-                                state: debugState,
-                                quantity: qty,
-                                wasteRemoval: true,
-                                photoUrls: [],
-                                analysisLevel: 1,
-                                observations: ['Simulación manual'],
-                                imageIndices: []
-                            }];
-                            updatePayload.estimatedHours = Math.ceil(qty * 0.15);
-                       } else if ((debugService || '').toLowerCase().includes('fitosanit') || (debugService || '').toLowerCase().includes('fitosanit')) {
-                           updatePayload.phytosanitaryZones = [{
-                               id: `debug-fum-${Date.now()}`,
-                               type: debugPhytosanitaryType || 'Insecticida',
-                               area: qty,
-                               wasteRemoval: true,
-                               photoUrls: [],
-                               analysisLevel: 1,
-                               observations: ['Simulación manual']
-                           }];
-                           updatePayload.estimatedHours = Math.ceil(qty / 100);
-                       }
-
-                       setBookingData(updatePayload);
-                       if (bookingData.serviceIds?.[0]) {
-                           updateServiceData(bookingData.serviceIds[0], updatePayload);
-                       }
-                  }
-                  saveProgress();
-                }}
-                className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm"
-              >
-                Aplicar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDebugService('');
-                  setDebugLawnSpecies('');
-                  setDebugState('normal');
-                  setDebugQuantity('');
-                  setDebugPalmSpecies('');
-                  setDebugPalmHeight('');
-                  setDebugPalmGroups([]);
-                  setDebugWasteRemoval(true);
-                }}
-                className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-800 rounded-lg border border-gray-300 text-sm"
-              >
-                Limpiar
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Retry Modal */}
@@ -6678,13 +6039,13 @@ const analyzeTreeGroup = async (id: string) => {
                   <>
                     <button
                       onClick={closeConfirm}
-                      className="w-full bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-600/20 py-3 px-4 rounded-xl font-bold transition-all"
+                      className="w-full bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-600/20 py-3 px-4 rounded-xl font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
                     >
                       {confirmState.cancelLabel}
                     </button>
                     <button
                       onClick={handleConfirmAction}
-                      className="w-full bg-white text-red-600 border border-red-200 hover:bg-red-50 py-3 px-4 rounded-xl font-bold transition-all"
+                      className="w-full bg-white text-red-600 border border-red-200 hover:bg-red-50 py-3 px-4 rounded-xl font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                     >
                       {confirmState.confirmLabel}
                     </button>
@@ -6693,7 +6054,7 @@ const analyzeTreeGroup = async (id: string) => {
                   <>
                     <button
                       onClick={handleConfirmAction}
-                      className={`w-full text-white py-3 px-4 rounded-xl font-bold transition-all flex items-center justify-center ${
+                      className={`w-full text-white py-3 px-4 rounded-xl font-bold transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 ${
                         confirmState.tone === 'danger'
                           ? 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-600/20'
                           : 'bg-amber-600 hover:bg-amber-700 shadow-lg shadow-amber-600/20'
@@ -6703,7 +6064,7 @@ const analyzeTreeGroup = async (id: string) => {
                     </button>
                     <button
                       onClick={closeConfirm}
-                      className="w-full bg-white text-gray-700 border border-gray-200 py-3 px-4 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                      className="w-full bg-white text-gray-700 border border-gray-200 py-3 px-4 rounded-xl font-bold hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
                     >
                       {confirmState.cancelLabel}
                     </button>
@@ -6739,6 +6100,8 @@ const analyzeTreeGroup = async (id: string) => {
         );
       })()}
 
+      </div>
+
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
         <div className="max-w-md mx-auto">
@@ -6763,7 +6126,7 @@ const analyzeTreeGroup = async (id: string) => {
                 return !zone || !hasValidArea || !hasValidState || !weedingManualConfirmed;
               })()
             }
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
             {(() => {
                 const lowerService = (debugService || '').toLowerCase();
@@ -6786,152 +6149,6 @@ const analyzeTreeGroup = async (id: string) => {
           </button>
         </div>
       </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* DEBUG TOOL UI                                                      */}
-      {/* ------------------------------------------------------------------ */}
-      
-      {/* Toggle Button */}
-      <button 
-        onClick={() => setShowDebugPanel(!showDebugPanel)}
-        className="fixed bottom-24 right-4 bg-gray-800 text-white p-3 rounded-full shadow-lg opacity-75 hover:opacity-100 transition-opacity z-50 hover:scale-110 transform duration-200 border-2 border-green-500"
-        title="Toggle AI Debugger"
-      >
-        <Bug className="w-6 h-6" />
-      </button>
-
-      {/* Debug Panel Overlay */}
-      {showDebugPanel && (
-        <div className="fixed bottom-0 left-0 right-0 h-[60vh] bg-gray-900 text-gray-200 border-t-4 border-green-500 z-[100] shadow-2xl flex flex-col font-mono text-xs animate-in slide-in-from-bottom-10">
-           {/* Header */}
-           <div className="flex items-center justify-between px-4 py-3 bg-gray-800 border-b border-gray-700 shadow-md">
-              <div className="flex items-center gap-3">
-                  <div className="bg-green-900/50 p-1.5 rounded text-green-400 border border-green-800">
-                      <Bug className="w-4 h-4" />
-                  </div>
-                  <div>
-                      <span className="font-bold text-white text-sm block">AI Analysis Debugger</span>
-                      <span className="text-gray-500 text-[10px]">
-                          {debugLogs?.timestamp ? new Date(debugLogs.timestamp).toLocaleTimeString() : 'Esperando...'}
-                      </span>
-                  </div>
-              </div>
-              <div className="flex gap-3">
-                  <button 
-                     onClick={() => {
-                         if (!debugLogs) return;
-                         const data = JSON.stringify(debugLogs, null, 2);
-                         navigator.clipboard.writeText(data);
-                         toast.success('Datos técnicos copiados al portapapeles');
-                     }}
-                     disabled={!debugLogs}
-                     className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                     <span className="text-lg">📋</span> Copiar Datos
-                  </button>
-                  <button 
-                      onClick={() => setShowDebugPanel(false)} 
-                      className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                      <ChevronLeft className="w-6 h-6 rotate-[270deg]" />
-                  </button>
-              </div>
-           </div>
-           
-           {/* Main Content Area */}
-           <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-gray-900">
-               {!debugLogs ? (
-                   <div className="h-full flex flex-col items-center justify-center text-gray-600 gap-4">
-                       <Wand2 className="w-12 h-12 opacity-20" />
-                       <p className="text-sm">Ejecuta un análisis ("Analizar") para capturar datos...</p>
-                   </div>
-               ) : (
-                   <>
-                       {/* 0. Summary Cards */}
-                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                           <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700">
-                               <div className="text-gray-500 mb-1 text-[10px] uppercase tracking-wider">Servicio Detectado</div>
-                               <div className="text-green-400 font-bold text-sm truncate">{debugLogs.service || 'N/A'}</div>
-                           </div>
-                           <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700">
-                               <div className="text-gray-500 mb-1 text-[10px] uppercase tracking-wider">Modelo IA</div>
-                               <div className="text-blue-400 font-bold text-sm">{debugLogs.model}</div>
-                           </div>
-                           <div className="p-4 bg-gray-800/50 rounded-xl border border-gray-700">
-                               <div className="text-gray-500 mb-1 text-[10px] uppercase tracking-wider">Estado</div>
-                               <div className={`font-bold text-sm ${debugLogs.errors?.length ? 'text-red-400' : 'text-green-400'}`}>
-                                   {debugLogs.errors?.length ? 'Fallido' : 'Exitoso'}
-                               </div>
-                           </div>
-                       </div>
-
-                       {/* 1. Errors Section (High Priority) */}
-                       {debugLogs.errors && debugLogs.errors.length > 0 && (
-                           <div className="p-4 bg-red-900/10 border border-red-500/30 rounded-xl">
-                               <div className="text-red-400 font-bold mb-3 flex items-center gap-2">
-                                   <AlertTriangle className="w-4 h-4" />
-                                   Errores Detectados
-                               </div>
-                               {debugLogs.errors.map((e, i) => (
-                                   <pre key={i} className="text-red-300 text-[10px] whitespace-pre-wrap bg-red-950/30 p-2 rounded border border-red-900/50">
-                                       {typeof e === 'string' ? e : JSON.stringify(e, null, 2)}
-                                   </pre>
-                               ))}
-                           </div>
-                       )}
-
-                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                           {/* 2. Raw Response */}
-                           <div className="space-y-2">
-                               <div className="flex items-center gap-2 text-yellow-500 font-bold text-sm border-b border-gray-800 pb-2">
-                                   <span>📥 Respuesta Raw (JSON)</span>
-                               </div>
-                               <div className="relative group">
-                                   <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-yellow-100/80 h-64 text-[10px] leading-relaxed border border-gray-700">
-                                       {JSON.stringify(debugLogs.rawResponse, null, 2)}
-                                   </pre>
-                               </div>
-                           </div>
-
-                           {/* 3. Parsed Data */}
-                           <div className="space-y-2">
-                               <div className="flex items-center gap-2 text-blue-400 font-bold text-sm border-b border-gray-800 pb-2">
-                                   <span>🔄 Datos Procesados</span>
-                               </div>
-                               <div className="relative group">
-                                   <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-blue-100/80 h-64 text-[10px] leading-relaxed border border-gray-700">
-                                       {JSON.stringify(debugLogs.parsedResponse, null, 2)}
-                                   </pre>
-                               </div>
-                           </div>
-                       </div>
-
-                       {/* 4. Inputs & Final State */}
-                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                           <div className="space-y-2">
-                               <div className="flex items-center gap-2 text-gray-400 font-bold text-sm border-b border-gray-800 pb-2">
-                                   <span>📤 Inputs Enviados</span>
-                               </div>
-                               <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-gray-300 h-48 text-[10px] leading-relaxed border border-gray-700">
-                                   {JSON.stringify(debugLogs.promptInputs, null, 2)}
-                               </pre>
-                           </div>
-
-                           <div className="space-y-2">
-                               <div className="flex items-center gap-2 text-purple-400 font-bold text-sm border-b border-gray-800 pb-2">
-                                   <span>🚀 Estado Final (App)</span>
-                               </div>
-                               <pre className="bg-gray-800 p-4 rounded-xl overflow-x-auto text-purple-200 h-48 text-[10px] leading-relaxed border border-gray-700">
-                                   {JSON.stringify(debugLogs.finalAnalysisData, null, 2)}
-                               </pre>
-                           </div>
-                       </div>
-                   </>
-               )}
-           </div>
-        </div>
-      )}
-
     </div>
   );
 };

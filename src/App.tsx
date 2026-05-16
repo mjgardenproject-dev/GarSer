@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
@@ -11,28 +11,25 @@ import DevelopmentRoute from './components/auth/DevelopmentRoute';
 import Navbar from './components/layout/Navbar';
 import GardenerBookings from './components/gardener/GardenerBookings';
 import BottomNav from './components/layout/BottomNav';
-import ServiceCatalog from './components/client/ServiceCatalog';
-import ClientHome from './components/client/ClientHome';
-import BookingCheckout from './components/client/BookingCheckout';
+import ClientBookingLauncher from './components/client/ClientBookingLauncher';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ServiceDetail from './components/client/ServiceDetail';
 import MyAccount from './components/account/MyAccount';
-import ServiceBooking from './components/client/ServiceBooking';
+import LegacyBookingRedirect from './components/client/LegacyBookingRedirect';
+import LegacyCheckoutRedirect from './components/client/LegacyCheckoutRedirect';
 import GardenerPublicProfile from './components/public/GardenerPublicProfile';
 import BookingsList from './components/client/BookingsList';
 import GardenerDashboard from './components/gardener/GardenerDashboard';
-import DashboardApplyCTA from './components/gardener/DashboardApplyCTA';
 import GoogleMapsDebug from './components/common/GoogleMapsDebug';
 import ChatList from './components/chat/ChatList';
 import RoleDebug from './components/debug/RoleDebug';
 import RoleMonitor from './components/admin/RoleMonitor';
 import GardenerApplicationWizard from './components/gardener/GardenerApplicationWizard';
 import GardenerStatusPage from './components/gardener/GardenerStatusPage';
-import ApplicationsAdmin from './components/admin/ApplicationsAdmin';
-import LicenseVerificationAdmin from './components/admin/LicenseVerificationAdmin';
 import BookingFlow from './pages/reserva/BookingFlow';
 import ConfirmationPage from './pages/reserva/ConfirmationPage';
 import { supabase } from './lib/supabase';
+import { hasWizardResume } from './utils/bookingResumeStorage';
 
 import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
 import AdminLayout from './pages/admin/AdminLayout';
@@ -59,15 +56,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const isApplyPage = location.pathname === '/apply';
     const isAdminPage = location.pathname.startsWith('/admin');
   
-  // Debug logging
-  useEffect(() => {
-    console.log('[App Debug] Current path:', location.pathname);
-    console.log('[App Debug] Location state:', location.state);
-    console.log('[App Debug] Location search:', location.search);
-  }, [location]);
-  
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
-  const [dbStatus, setDbStatus] = useState<null | 'draft' | 'submitted' | 'approved' | 'rejected'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
   const [statusLoaded, setStatusLoaded] = useState(false);
 
@@ -93,7 +82,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         
         // Check 1: Gardener Profile (Active)
         // Intentamos leer el perfil directamente. Si existe, es active.
-        const { data: gp, error: gpError } = await supabase
+        const { data: gp } = await supabase
             .from('gardener_profiles')
             .select('user_id')
             .eq('user_id', user.id)
@@ -118,7 +107,6 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
         if (appError) console.error('Error fetching application:', appError);
 
-        setDbStatus((app?.status as any) || null);
         setDenialReason((app?.review_comment as any) || '');
 
         const metaIntent = (user as any)?.user_metadata?.requested_role === 'gardener' || (user as any)?.user_metadata?.role === 'gardener';
@@ -236,7 +224,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
               <Navigate to="/dashboard" replace />
             ) : (
               <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
-                <ClientHome />
+                <ClientBookingLauncher />
               </ErrorBoundary>
             )
           }
@@ -246,11 +234,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           element={
             <ProtectedRoute>
               {(() => {
-                const src = (()=>{ try { return localStorage.getItem('signup_source'); } catch { return null; } })();
                 const metaIntent = (user as any)?.user_metadata?.role === 'gardener' || (user as any)?.user_metadata?.requested_role === 'gardener';
                 const lsRole = (()=>{ try { return localStorage.getItem('signup_role'); } catch { return null; } })();
                 const baseIntent = metaIntent || lsRole === 'gardener' || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
-                const gardenerIntent = (src === 'checkout') ? false : baseIntent;
+                const gardenerIntent = baseIntent;
                 
                 if (gardenerIntent) {
                     if (!statusLoaded) {
@@ -286,18 +273,12 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                 }
                 
                 // Rol de Cliente
-                try {
-                  const raw = localStorage.getItem('bookingDraft');
-                  if (raw) {
-                    const draft = JSON.parse(raw);
-                    if (draft?.step && draft.step !== 'welcome') {
-                      return <Navigate to="/reservar" replace />;
-                    }
-                  }
-                } catch {}
+                if (hasWizardResume()) {
+                  return <Navigate to="/reservar" replace />;
+                }
                 return (
                   <ErrorBoundary fallbackTitle="Algo ha fallado en el panel" fallbackMessage="Estamos trabajando para solucionarlo. Puedes reintentar o volver atrás.">
-                    <ClientHome />
+                    <ClientBookingLauncher />
                   </ErrorBoundary>
                 );
               })()}
@@ -349,7 +330,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           path="/reserva/checkout" 
           element={
             <ErrorBoundary fallbackTitle="Error en el checkout" fallbackMessage="Si el problema persiste, vuelve a la reserva y reintenta.">
-              <BookingCheckout />
+              <LegacyCheckoutRedirect />
             </ErrorBoundary>
           } 
         />
@@ -357,7 +338,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           path="/reservar/checkout" 
           element={
             <ErrorBoundary fallbackTitle="Error en el checkout" fallbackMessage="Si el problema persiste, vuelve a la reserva y reintenta.">
-              <BookingCheckout />
+              <LegacyCheckoutRedirect />
             </ErrorBoundary>
           } 
         />
@@ -383,7 +364,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           path="/booking" 
           element={
             <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
-              <ServiceBooking />
+              <LegacyBookingRedirect />
             </ErrorBoundary>
           } 
         />
@@ -393,8 +374,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             <ProtectedRoute>
               {/* Mostrar lista distinta según el rol sin depender del perfil */}
               {(() => {
-                const src = (()=>{ try { return localStorage.getItem('signup_source'); } catch { return null; } })();
-                const fallbackRole = (src === 'checkout') ? 'client' : ((user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client');
+                const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
                 const effectiveRole = fallbackRole;
                 if (effectiveRole === 'gardener') {
                   if (applicationStatus !== 'active') {

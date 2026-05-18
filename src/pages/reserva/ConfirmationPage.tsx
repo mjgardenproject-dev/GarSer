@@ -4,8 +4,10 @@ import { useBooking } from "../../contexts/BookingContext";
 import { MapPin, Calendar, Clock, User, CreditCard } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { persistBookingMedia, uploadBookingPhotos } from '../../utils/bookingMediaService';
-import { isHighestOpenRangeForSpecies } from '../../domain/speciesBusinessRules';
+import {
+  persistBookingMedia,
+  prepareBookingMediaForPersistence,
+} from '../../utils/bookingMediaService';
 import toast from 'react-hot-toast';
 import { createAtomicBooking } from '../../utils/bookingAtomicService';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
@@ -15,6 +17,14 @@ import {
   writeBookingResume,
 } from '../../utils/bookingResumeStorage';
 import { createAuthoritativeQuote } from '../../utils/bookingAuthorityService';
+
+const randomUuid = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `booking-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
 
 const ConfirmationPage: React.FC = () => {
   const navigate = useNavigate();
@@ -40,41 +50,27 @@ const ConfirmationPage: React.FC = () => {
     () => new Intl.DateTimeFormat('es-ES', { dateStyle: 'long' }),
     []
   );
-  const collectStructuredPhotoUrls = (): string[] => {
-    const out = new Set<string>();
-    const maybePush = (value: unknown) => {
-      const v = String(value || '').trim();
-      if (v.startsWith('http://') || v.startsWith('https://')) out.add(v);
-    };
-    const collectGroupPhotoUrls = (arr: any[]) => {
-      (arr || []).forEach((item) => {
-        (item?.photoUrls || []).forEach((u: unknown) => maybePush(u));
-      });
-    };
-
-    const activeServiceId = bookingData.serviceIds?.[0] || '';
-    (bookingData.servicesData?.[activeServiceId]?.uploadedPhotoUrls || []).forEach((u: unknown) => maybePush(u));
-    collectGroupPhotoUrls((bookingData as any).lawnZones || []);
-    collectGroupPhotoUrls((bookingData as any).palmGroups || []);
-    collectGroupPhotoUrls((bookingData as any).hedgeZones || []);
-    collectGroupPhotoUrls((bookingData as any).treeGroups || []);
-    collectGroupPhotoUrls((bookingData as any).shrubGroups || []);
-    collectGroupPhotoUrls((bookingData as any).phytosanitaryZones || []);
-    collectGroupPhotoUrls((bookingData as any).weedingZones || []);
-
-    return Array.from(out);
-  };
-
   const buildPricingContext = () => {
+    const quoteMetadata = bookingData.quoteMetadata;
+    if (quoteMetadata?.pricingContext?.serviceType === 'palm_pruning') {
+      return {
+        service_type: 'palm_pruning',
+        allows_price_change: quoteMetadata.pricingContext.allowsPriceChange,
+        palm_groups: quoteMetadata.pricingContext.palmGroups.map((group) => ({
+          species: group.species,
+          height: group.height,
+          quantity: Number(group.quantity || 0),
+          is_terminal_open_range: group.isTerminalOpenRange,
+        })),
+      };
+    }
+
     const palmGroups = (bookingData.palmGroups || []).map((group: any) => {
-      const isTerminalOpenRange = typeof group?.isTerminalOpenRange === 'boolean'
-        ? group.isTerminalOpenRange
-        : isHighestOpenRangeForSpecies(group?.species || '', group?.height || '');
       return {
         species: group?.species || '',
         height: group?.height || '',
         quantity: Number(group?.quantity || 0),
-        is_terminal_open_range: isTerminalOpenRange,
+        is_terminal_open_range: Boolean(group?.isTerminalOpenRange),
       };
     });
     const allowsPriceChange = palmGroups.some((group: any) => group.quantity > 0 && group.is_terminal_open_range === true);
@@ -113,6 +109,8 @@ const ConfirmationPage: React.FC = () => {
         throw new Error('No se pudo determinar la hora de inicio');
       }
       const startHourBlock = parseInt(startTime.split(':')[0], 10);
+      const bookingId = randomUuid();
+      const operationId = randomUuid();
 
       const authoritativeQuote = await createAuthoritativeQuote({
         bookingData,
@@ -120,22 +118,28 @@ const ConfirmationPage: React.FC = () => {
         providerId: bookingData.providerId || '',
       });
 
-      const photosArray = Array.isArray(bookingData.photos) ? bookingData.photos : [];
-      const uploadedMedia = photosArray.length > 0
-        ? await uploadBookingPhotos({
-            clientId: user.id,
-            date: bookingData.preferredDate || '',
-            startHour: startHourBlock,
-            files: photosArray,
-          })
-        : [];
+      const preparedMedia = await prepareBookingMediaForPersistence({
+        clientId: user.id,
+        date: bookingData.preferredDate || '',
+        startHour: startHourBlock,
+        bookingId,
+        operationId,
+        localFiles: Array.isArray(bookingData.photos) ? bookingData.photos : [],
+        contractLike: bookingData,
+        telemetryContext: {
+          scope: 'booking_confirmation',
+          providerId: bookingData.providerId,
+          serviceId: bookingData.serviceIds?.[0],
+          preferredDate: bookingData.preferredDate,
+        },
+      });
 
-      const structuredPhotoUrls = collectStructuredPhotoUrls();
       const notesWithPhotos = [
         bookingData.description || '',
         bookingData.palmSpecies ? `Especie de palmera: ${bookingData.palmSpecies}` : ''
       ].filter(Boolean).join('\n\n');
       const booking = await createAtomicBooking({
+        bookingId,
         providerId: bookingData.providerId || '',
         serviceId: bookingData.serviceIds?.[0] || '',
         date: bookingData.preferredDate,
@@ -145,17 +149,15 @@ const ConfirmationPage: React.FC = () => {
         clientAddress: bookingData.address || '',
         notes: notesWithPhotos,
         pricingContext: buildPricingContext(),
+        operationId,
         quoteId: authoritativeQuote.quoteId,
       });
-      if (booking?.booking_id && (uploadedMedia.length > 0 || structuredPhotoUrls.length > 0)) {
+      if (booking?.booking_id && preparedMedia.length > 0) {
         try {
           await persistBookingMedia({
             bookingId: booking.booking_id,
             uploaderId: user?.id || null,
-            mediaItems: [
-              ...uploadedMedia,
-              ...structuredPhotoUrls.map((url) => ({ url })),
-            ],
+            mediaItems: preparedMedia,
           });
         } catch (mediaError) {
           console.warn('No se pudieron persistir fotos estructuradas de la reserva:', mediaError);
@@ -179,6 +181,8 @@ const ConfirmationPage: React.FC = () => {
         quoteExpiresAt: authoritativeQuote.expiresAt || '',
         quotePricingVersion: authoritativeQuote.pricingVersion || '',
         quoteProviderConfigVersion: authoritativeQuote.providerConfigVersion || '',
+        quoteWarnings: authoritativeQuote.warnings || [],
+        quoteMetadata: authoritativeQuote.metadata,
       });
 
       // Limpiar el estado y redirigir a lista de reservas
@@ -188,8 +192,8 @@ const ConfirmationPage: React.FC = () => {
       navigate('/bookings');
       
     } catch (error) {
-      console.error('Error creating booking:', error);
       const message = error instanceof Error ? error.message : 'Error al crear la reserva.';
+      console.warn('Error creating booking:', message);
       reportBookingEvent('error', {
         event: 'booking.confirmation_failed',
         context: {
@@ -276,12 +280,16 @@ const ConfirmationPage: React.FC = () => {
       estimatedHours: bookingData.estimatedHours,
       totalPrice: bookingData.totalPrice,
       palmSpecies: bookingData.palmSpecies,
+      uploadedPhotoUrls: bookingData.uploadedPhotoUrls,
+      bookingPhotoContract: bookingData.bookingPhotoContract,
       priceBreakdown: bookingData.priceBreakdown,
       quoteId: bookingData.quoteId,
       quoteSignature: bookingData.quoteSignature,
       quoteExpiresAt: bookingData.quoteExpiresAt,
       quotePricingVersion: bookingData.quotePricingVersion,
-      quoteProviderConfigVersion: bookingData.quoteProviderConfigVersion
+      quoteProviderConfigVersion: bookingData.quoteProviderConfigVersion,
+      quoteWarnings: bookingData.quoteWarnings,
+      quoteMetadata: bookingData.quoteMetadata,
     };
     try { return encodeURIComponent(btoa(JSON.stringify(snapshot))); } catch { return ''; }
   };

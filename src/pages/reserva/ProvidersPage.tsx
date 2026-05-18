@@ -2,9 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, Star, AlertTriangle, Sprout } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { TreePruningServiceConfig } from '../../types/treePruning';
-import { findPalmPrice } from '../../domain/pricingEngine';
-import { isHighestOpenRangeForSpecies } from '../../domain/speciesBusinessRules';
+import type { BookingQuoteMetadata, BookingQuotePalmCoverage, BookingQuotePalmGroupContext } from '../../shared/bookingQuoteCore';
 import { PartialServiceModal } from './PartialServiceModal';
 import {
   fetchProviderMonthDays,
@@ -16,15 +14,12 @@ import {
 import toast from 'react-hot-toast';
 
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number }
-type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
 
 const ProvidersPage: React.FC = () => {
   const { bookingData, setBookingData, setCurrentStep } = useBooking();
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<string>(bookingData.providerId);
-  const [configs, setConfigs] = useState<Record<string, any>>({});
-  const [palmCoverageMap, setPalmCoverageMap] = useState<Record<string, { isFull: boolean; coveredCount: number; totalCount: number; missingGroups: any[] }>>({});
   const [selectedDate, setSelectedDate] = useState<string>(bookingData.preferredDate || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`);
   const [, setHoursAvailable] = useState<number[]>([]);
   const [calendarMonthDate, setCalendarMonthDate] = useState<Date>(new Date(Number(selectedDate.split('-')[0]), Number(selectedDate.split('-')[1]) - 1, Number(selectedDate.split('-')[2])));
@@ -56,61 +51,49 @@ const ProvidersPage: React.FC = () => {
 
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-  const isTreePruningConfig = (value: any): value is TreePruningServiceConfig => {
-    if (!value || typeof value !== 'object') return false;
-    if (!value.estructural || typeof value.estructural !== 'object') return false;
-    if (!value.formacion || typeof value.formacion !== 'object') return false;
-    if (typeof value.difficultyIncrease !== 'number') return false;
-    return true;
+  const buildPalmGroupIdentity = (group: { id?: string; species?: string; height?: string }) => {
+    if (group?.id) return `id:${group.id}`;
+    return `spec:${String(group?.species || '').trim()}::${String(group?.height || '').trim()}`;
   };
 
-  const mapTreePruningType = (value: any): 'estructural' | 'formacion' => {
-    const v = String(value || '').toLowerCase();
-    if (v.includes('shaping') || v.includes('form') || v.includes('formacion')) return 'formacion';
-    return 'estructural';
+  const getQuoteMetadata = (providerId: string): BookingQuoteMetadata | undefined => {
+    return previewQuotes[providerId]?.metadata;
   };
 
-  const normalizeTreeSizeBand = (value: unknown): TreeSizeBand | null => {
-    const v = String(value || '').toLowerCase().trim();
-    if (v === 'small' || v === 'medium' || v === 'large' || v === 'over_9') return v;
-    return null;
+  const getPalmCoverage = (providerId: string): BookingQuotePalmCoverage | undefined => {
+    return getQuoteMetadata(providerId)?.palmCoverage;
   };
 
-  const resolveTreeBand = (tree: any): TreeSizeBand | null => {
-    return normalizeTreeSizeBand(tree?.aiSizeBand);
+  const getGroupsFromPalmContexts = (contexts: BookingQuotePalmGroupContext[]) => {
+    const selectedKeys = new Set(contexts.map((group) => buildPalmGroupIdentity(group)));
+    return (bookingData.palmGroups || []).filter((group) => selectedKeys.has(buildPalmGroupIdentity(group)));
   };
 
-  const getTreeOver9Notice = (gardenerId: string) => {
-    if (!bookingData.treeGroups || bookingData.treeGroups.length === 0) return null;
-    const c = configs[gardenerId];
-    if (!isTreePruningConfig(c)) return null;
-    const trees = (bookingData.treeGroups || [])
-      .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
-      .map((t: any) => ({
-        pruningType: mapTreePruningType(t.pruningType),
-        sizeBand: resolveTreeBand(t)
-      }))
-      .filter((t: any) => t.sizeBand === 'over_9');
-    if (trees.length === 0) return null;
-
-    for (const tree of trees) {
-      const large = tree.pruningType === 'estructural' ? c.estructural.large : c.formacion.large;
-      if (typeof large === 'number' && large > 0) {
-        return 'El profesional tendrá que verificar el pago porque es un servicio muy complejo.';
-      }
+  const buildSelectedQuoteMetadata = (quote: ProviderQuotePreview, groupsToKeep: Array<{ id?: string; species?: string; height?: string }>) => {
+    const metadata = quote.metadata;
+    if (!metadata || metadata.pricingContext.serviceType !== 'palm_pruning') {
+      return metadata;
     }
-    return null;
-  };
 
-  const getPalmTerminalRangeNotice = () => {
-    const groups = bookingData.palmGroups || [];
-    const hasTerminalOpenRange = groups.some((g: any) => {
-      if (!(Number(g?.quantity || 0) > 0)) return false;
-      if (typeof g?.isTerminalOpenRange === 'boolean') return g.isTerminalOpenRange;
-      return isHighestOpenRangeForSpecies(g?.species || '', g?.height || '');
-    });
-    if (!hasTerminalOpenRange) return null;
-    return 'Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.';
+    const selectedKeys = new Set(groupsToKeep.map((group) => buildPalmGroupIdentity(group)));
+    const selectedPalmGroups = metadata.pricingContext.palmGroups.filter((group) => selectedKeys.has(buildPalmGroupIdentity(group)));
+    const requestedGroups = selectedPalmGroups.filter((group) => Number(group.quantity || 0) > 0);
+    const coveredGroups = requestedGroups.filter((group) => group.isPriced);
+
+    return {
+      ...metadata,
+      pricingContext: {
+        ...metadata.pricingContext,
+        allowsPriceChange: coveredGroups.some((group) => group.isTerminalOpenRange),
+        palmGroups: selectedPalmGroups,
+      },
+      palmCoverage: {
+        isFull: true,
+        coveredCount: coveredGroups.length,
+        totalCount: requestedGroups.length,
+        missingGroups: [],
+      },
+    };
   };
 
   const openAvailability = async (providerId: string) => {
@@ -272,89 +255,10 @@ const ProvidersPage: React.FC = () => {
         const { data: profiles } = await profilesQuery;
         
         let list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
-        const map: Record<string, number> = {};
-        const configMap: Record<string, any> = {};
-        const coverageMap: Record<string, { isFull: boolean; coveredCount: number; totalCount: number; missingGroups: any[] }> = {};
 
         // Filtro estricto en Frontend (Capa 2)
         if (requiresChemical) {
           list = list.filter(p => (p as any).has_phytosanitary_license === true);
-        }
-
-        (priceRows || []).forEach((p: any) => { 
-            map[p.gardener_id] = p.price_per_unit;
-            configMap[p.gardener_id] = p.additional_config;
-            
-            // Calculate Palm Coverage if applicable
-            if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
-                const config = p.additional_config;
-                let covered = 0;
-                const missing = [];
-                const total = bookingData.palmGroups.length;
-                
-                for (const group of bookingData.palmGroups) {
-                     const price = findPalmPrice(config, group.species, group.height);
-                     if (price > 0) {
-                         covered++;
-                     } else {
-                         missing.push(group);
-                     }
-                }
-                
-                coverageMap[p.gardener_id] = {
-                    isFull: covered === total,
-                    coveredCount: covered,
-                    totalCount: total,
-                    missingGroups: missing
-                };
-            }
-        });
-        setConfigs(configMap);
-        setPalmCoverageMap(coverageMap);
-
-        // Strict Filtering for Tree Pruning (Poda de árboles)
-        // Rule 4: Gardener Availability Logic
-        const { data: treeServiceInfo } = await supabase
-            .from('services')
-            .select('name')
-            .eq('id', primaryServiceId)
-            .single();
-
-        if (treeServiceInfo?.name === 'Poda de árboles') {
-            list = list.filter(p => {
-                const c = configMap[p.user_id];
-                if (!c) return false;
-                if (!isTreePruningConfig(c)) return false;
-
-                const required =
-                  Number(c.estructural.small || 0) > 0 &&
-                  Number(c.estructural.medium || 0) > 0 &&
-                  Number(c.formacion.small || 0) > 0 &&
-                  Number(c.formacion.medium || 0) > 0;
-                if (!required) return false;
-
-                const trees = (bookingData.treeGroups || [])
-                  .filter((t: any) => !(t.isFailed || t.analysisLevel === 3))
-                  .map((t: any) => ({
-                    pruningType: mapTreePruningType(t.pruningType),
-                    sizeBand: resolveTreeBand(t),
-                  }))
-                  .filter((t: any) => Boolean(t.sizeBand));
-
-                for (const tree of trees) {
-                  if (tree.sizeBand === 'large' || tree.sizeBand === 'over_9') {
-                    const large = tree.pruningType === 'estructural' ? c.estructural.large : c.formacion.large;
-                    if (!(typeof large === 'number' && large > 0)) return false;
-                  }
-                }
-
-                return true;
-            });
-        }
-
-        // Filter list: Remove gardeners with 0 coverage for palms
-        if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
-             list = list.filter(p => coverageMap[p.user_id]?.coveredCount > 0);
         }
 
         const preview = list.length > 0
@@ -368,6 +272,16 @@ const ProvidersPage: React.FC = () => {
             })
           : { quotes: {}, earliestByProvider: {} };
 
+        list = list.filter((provider) => {
+          const quote = preview.quotes?.[provider.user_id];
+          if (!quote) return false;
+          if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
+            const coverage = quote.metadata?.palmCoverage;
+            return Number(quote.totalPrice || 0) > 0 && Number(coverage?.coveredCount || 0) > 0;
+          }
+          return Number(quote.totalPrice || 0) > 0;
+        });
+
         const earliestMap: Record<string, number> = {};
         Object.entries(preview.earliestByProvider || {}).forEach(([providerId, earliest]) => {
           earliestMap[providerId] = earliest
@@ -380,8 +294,8 @@ const ProvidersPage: React.FC = () => {
           
           // Primary Sort: Full Coverage > Partial Coverage (if Palm Service)
           if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
-              const coverageA = coverageMap[a.user_id];
-              const coverageB = coverageMap[b.user_id];
+              const coverageA = preview.quotes?.[a.user_id]?.metadata?.palmCoverage;
+              const coverageB = preview.quotes?.[b.user_id]?.metadata?.palmCoverage;
               if (coverageA?.isFull && !coverageB?.isFull) return -1;
               if (!coverageA?.isFull && coverageB?.isFull) return 1;
               // Secondary: More coverage count
@@ -449,7 +363,7 @@ const ProvidersPage: React.FC = () => {
 
   const handleContinue = () => { 
     if (selectedProvider) { 
-      const coverage = palmCoverageMap[selectedProvider];
+      const coverage = getPalmCoverage(selectedProvider);
       if (coverage && !coverage.isFull && coverage.missingGroups.length > 0) {
         setIsPartialModalOpen(true);
         return;
@@ -461,12 +375,14 @@ const ProvidersPage: React.FC = () => {
   const handleConfirmPartialService = () => {
     setIsPartialModalOpen(false);
     if (!selectedProvider) return;
-    
-    const config = configs[selectedProvider];
-    const coveredGroups = (bookingData.palmGroups || []).filter(
-      (g) => findPalmPrice(config, g.species, g.height) > 0
+
+    const coverage = getPalmCoverage(selectedProvider);
+    const coveredGroups = getGroupsFromPalmContexts(
+      (coverage?.missingGroups?.length || 0) > 0
+        ? ((previewQuotes[selectedProvider]?.metadata?.pricingContext.palmGroups || []).filter((group) => group.isPriced))
+        : [],
     );
-    
+
     proceedWithBooking(coveredGroups);
   };
 
@@ -493,6 +409,8 @@ const ProvidersPage: React.FC = () => {
         quoteExpiresAt: '',
         quotePricingVersion: quote.pricingVersion || '',
         quoteProviderConfigVersion: quote.providerConfigVersion || '',
+        quoteWarnings: quote.warnings || [],
+        quoteMetadata: buildSelectedQuoteMetadata(quote, groupsToKeep),
       });
       setCurrentStep(4); 
     } 
@@ -561,7 +479,7 @@ const ProvidersPage: React.FC = () => {
 
         {/* Partial Coverage Warning */}
         {providers.length > 0 && bookingData.palmGroups && bookingData.palmGroups.length > 0 && 
-         !providers.some(p => palmCoverageMap[p.user_id]?.isFull) && (
+         !providers.some((p) => getPalmCoverage(p.user_id)?.isFull) && (
             <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
                 <div className="p-1 bg-amber-100 rounded-full text-amber-600 shrink-0 mt-0.5">
                     <AlertTriangle className="w-4 h-4" />
@@ -590,10 +508,8 @@ const ProvidersPage: React.FC = () => {
           <div className="flex gap-3 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {providers.map((p) => {
               const selected = selectedProvider === p.user_id;
-              const coverage = palmCoverageMap[p.user_id];
+              const coverage = getPalmCoverage(p.user_id);
               const isPartial = coverage && !coverage.isFull;
-              const treeOver9Notice = getTreeOver9Notice(p.user_id);
-              const palmTerminalNotice = getPalmTerminalRangeNotice();
 
               return (
                 <button
@@ -642,17 +558,6 @@ const ProvidersPage: React.FC = () => {
                             </div>
                           ))}
                         </div>
-                      )}
-                      
-                      {!isPartial && treeOver9Notice && (
-                          <div className="mt-2 text-xs text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 leading-tight">
-                              {treeOver9Notice}
-                          </div>
-                      )}
-                      {!isPartial && palmTerminalNotice && (
-                          <div className="mt-2 text-xs text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 leading-tight">
-                              {palmTerminalNotice}
-                          </div>
                       )}
 
                       {/* Partial Coverage Details */}
@@ -825,15 +730,15 @@ const ProvidersPage: React.FC = () => {
         onClose={() => setIsPartialModalOpen(false)}
         onConfirm={handleConfirmPartialService}
         coveredGroups={
-          selectedProvider && configs[selectedProvider]
-            ? (bookingData.palmGroups || []).filter(
-                (g) => findPalmPrice(configs[selectedProvider], g.species, g.height) > 0
+          selectedProvider
+            ? getGroupsFromPalmContexts(
+                (previewQuotes[selectedProvider]?.metadata?.pricingContext.palmGroups || []).filter((group) => group.isPriced)
               )
             : []
         }
         missingGroups={
-          selectedProvider && palmCoverageMap[selectedProvider]
-            ? palmCoverageMap[selectedProvider].missingGroups
+          selectedProvider
+            ? getGroupsFromPalmContexts(getPalmCoverage(selectedProvider)?.missingGroups || [])
             : []
         }
       />

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
@@ -9,9 +9,56 @@ import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
 import { readWeedingHerbicideState, writeWeedingHerbicideState } from '../../utils/weedingPersistence';
 import { AnalysisLoadingAnimation } from '../../components/shared/AnalysisLoadingAnimation';
 import { AnalysisFailedCard } from '../../components/shared/AnalysisFailedCard';
-import { ZonePhotoGallery } from '../../components/shared/ZonePhotoGallery';
+import { buildZonePhotoRemovalConfirmation, ZonePhotoGallery } from '../../components/shared/ZonePhotoGallery';
 import { ZoneActionButton } from '../../components/shared/ZoneActionButton';
 import { ServiceResultCard } from '../../components/shared/ServiceResultCard';
+import {
+  buildBookingPhotoSelectionErrorMessage,
+  fileToDataUrl,
+  resolveAnalysisPhotoSources,
+  validateBookingPhotoSelection,
+} from '../../utils/bookingPhotoPipeline';
+import { readAndResetFileInput } from '../../utils/fileInputSelection';
+import {
+  buildAnalysisCommonFields,
+  getAnalysisLoadingMessage,
+  getCanonicalAnalyzedPhotoIndices,
+  getDefaultSelectedPhotoIndices,
+  hasCanonicalAnalysisFailure,
+  hasCanonicalAnalysisResult,
+  resetAnalysisCommonFields
+} from '../../shared/analysisV2Details';
+import {
+  EMPTY_PHYTOSANITARY_ANALYSIS_METRICS,
+  adaptLawnAnalysisResult,
+  adaptPhytosanitaryAnalysisResult,
+  adaptShrubAnalysisResult,
+  adaptTreeAnalysisResult,
+  appendFilesToPhotoCollection,
+  appendFilesToHedgeFaceCollection,
+  appendDebugError,
+  buildDetailsPageBookingPatch,
+  buildAnalysisFailureFields,
+  createEmptyHedgeFaceCollection,
+  createDebugInfo,
+  extractLawnLegacyTasks,
+  getPrimaryBookingPhotoUrls,
+  normalizeHedgeZonePhotoCollections,
+  normalizePhotoIdentityList,
+  normalizeTreeSizeBand,
+  removePhotoFromHedgeFaceCollection,
+  removePhotoFromCollection,
+  reportDetailsPageIssue,
+  syncLegacyHedgeZonePhotoCollections,
+  sumPhytosanitaryMetrics,
+  toggleHedgeFacePhotoSelection,
+  togglePhotoSelectionInCollection,
+  treeSizeBandToLegacyMeters,
+  type AnalysisDebugInfo,
+  type HedgeFaceKey,
+  type PhytosanitaryAnalysisMetrics,
+  type TreeSizeBand,
+} from './detailsPageAdapters';
 import {
   getHighestOpenRangeThresholdForSpecies,
   getLowestRangeThresholdForSpecies,
@@ -27,22 +74,6 @@ type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas baj
 type PhytosanitaryTreatmentValue = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
 type PhytosanitaryScope = 'todo_jardin' | 'palmeras' | 'arboles' | 'cesped' | 'setos' | 'plantas';
 type PhytosanitaryRequestTreatment = 'insecticida' | 'fungicida' | 'combo';
-type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
-
-type PhytosanitaryAnalysisMetrics = {
-  cesped_m2: number;
-  seto_bajo_medio_ml: number;
-  seto_alto_ml: number;
-  palmeras_ducha_peq_ud: number;
-  palmeras_ducha_med_ud: number;
-  palmeras_ducha_alta_ud: number;
-  palmeras_cirugia_ud: number;
-  palmeras_endoterapia_troncos_ud: number;
-  arboles_peq_ud: number;
-  arboles_med_ud: number;
-  arboles_gran_ud: number;
-  observaciones_ia: string[];
-};
 type PhytosanitaryMetricKey = Exclude<keyof PhytosanitaryAnalysisMetrics, 'observaciones_ia'>;
 
 const PHYTOSANITARY_SCOPE_OPTIONS: Array<{ value: PhytosanitaryScope; label: string; affectedType: PhytosanitaryAffectedType }> = [
@@ -60,21 +91,6 @@ const PHYTOSANITARY_REQUEST_TREATMENT_OPTIONS: Array<{ value: PhytosanitaryReque
   { value: 'combo', label: 'Combo insecticida + fungicida' }
 ];
 
-const EMPTY_PHYTOSANITARY_ANALYSIS_METRICS: PhytosanitaryAnalysisMetrics = {
-  cesped_m2: 0,
-  seto_bajo_medio_ml: 0,
-  seto_alto_ml: 0,
-  palmeras_ducha_peq_ud: 0,
-  palmeras_ducha_med_ud: 0,
-  palmeras_ducha_alta_ud: 0,
-  palmeras_cirugia_ud: 0,
-  palmeras_endoterapia_troncos_ud: 0,
-  arboles_peq_ud: 0,
-  arboles_med_ud: 0,
-  arboles_gran_ud: 0,
-  observaciones_ia: []
-};
-
 const getAllowedPhytosanitaryTreatments = (affectedType?: PhytosanitaryAffectedType): PhytosanitaryTreatmentValue[] => {
   if (affectedType === 'Palmeras') return ['insecticida', 'fungicida', 'ecologico_preventivo', 'endoterapia'];
   if (affectedType === 'Árboles' || affectedType === 'Setos') return ['insecticida', 'fungicida', 'ecologico_preventivo'];
@@ -82,7 +98,7 @@ const getAllowedPhytosanitaryTreatments = (affectedType?: PhytosanitaryAffectedT
 };
 
 const buildPhytosanitaryZoneType = (
-  scope: string | string[] | undefined,
+  _scope: string | string[] | undefined,
   requested: PhytosanitaryRequestTreatment | undefined,
   wantsEco: boolean | undefined
 ) => {
@@ -93,25 +109,6 @@ const buildPhytosanitaryZoneType = (
   return wantsEco ? `${requested}+ecologico_preventivo` : requested;
 };
 
-const toPhytosanitaryMetricNumber = (value: unknown) => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || Number.isNaN(parsed)) return 0;
-  return Math.max(0, parsed);
-};
-
-const normalizeTreeSizeBand = (value: unknown): TreeSizeBand | null => {
-  const v = String(value || '').toLowerCase().trim();
-  if (v === 'small' || v === 'medium' || v === 'large' || v === 'over_9') return v;
-  return null;
-};
-
-const treeSizeBandToLegacyMeters = (band: TreeSizeBand): number => {
-  if (band === 'small') return 2;
-  if (band === 'medium') return 4;
-  if (band === 'large') return 7;
-  return 9.5;
-};
-
 const treeBandLabel = (band?: TreeSizeBand | null): string => {
   if (band === 'small') return 'Pequeño (0-3m)';
   if (band === 'medium') return 'Mediano (3-5m)';
@@ -120,9 +117,12 @@ const treeBandLabel = (band?: TreeSizeBand | null): string => {
   return '-';
 };
 
+export const shouldShowZoneAnalysisResult = (hasResult: boolean, isZoneAnalyzing: boolean) =>
+  hasResult && !isZoneAnalyzing;
+
 const getDefaultPhytosanitaryScope = (
   affectedType?: PhytosanitaryAffectedType,
-  treatmentType?: string
+  _treatmentType?: string
 ): PhytosanitaryScope[] => {
   if (affectedType === 'Palmeras') return ['palmeras'];
   if (affectedType === 'Árboles') return ['arboles'];
@@ -171,20 +171,6 @@ const WEEDING_STATE_OPTIONS: Array<{
 
 // Deprecated normalizer - removed
 
-
-const sumPhytosanitaryMetrics = (metrics: PhytosanitaryAnalysisMetrics) => {
-  return Number(metrics.cesped_m2 || 0)
-    + Number(metrics.seto_bajo_medio_ml || 0)
-    + Number(metrics.seto_alto_ml || 0)
-    + Number(metrics.palmeras_ducha_peq_ud || 0)
-    + Number(metrics.palmeras_ducha_med_ud || 0)
-    + Number(metrics.palmeras_ducha_alta_ud || 0)
-    + Number(metrics.palmeras_cirugia_ud || 0)
-    + Number(metrics.palmeras_endoterapia_troncos_ud || 0)
-    + Number(metrics.arboles_peq_ud || 0)
-    + Number(metrics.arboles_med_ud || 0)
-    + Number(metrics.arboles_gran_ud || 0);
-};
 
 // Observation Translations
 const OBS_TRANSLATIONS: Record<string, string> = {
@@ -276,60 +262,6 @@ const applyPalmSpeciesRules = (group: PalmGroup): PalmGroup => {
     allowsPriceChange,
     hasAccessDifficulty
   };
-};
-
-const compressImage = async (file: File): Promise<File> => {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image();
-    const url = URL.createObjectURL(file);
-    
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
-      const maxDimension = 1920;
-
-      if (width > maxDimension || height > maxDimension) {
-        if (width > height) {
-          height = Math.round((height * maxDimension) / width);
-          width = maxDimension;
-        } else {
-          width = Math.round((width * maxDimension) / height);
-          height = maxDimension;
-        }
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-          resolve(file);
-          return;
-      }
-      
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const compressedFile = new File([blob], file.name, {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          });
-          resolve(compressedFile);
-        } else {
-          resolve(file);
-        }
-      }, 'image/jpeg', 0.8);
-    };
-    
-    img.onerror = (error: Event | string) => {
-        URL.revokeObjectURL(url);
-        reject(error);
-    };
-    
-    img.src = url;
-  });
 };
 
 function AccessDifficultyToggle({ group, isAccessDisabled, updatePalmGroup }: { group: any, isAccessDisabled: boolean, updatePalmGroup: (id: string, updates: any) => void }) {
@@ -452,15 +384,19 @@ const DetailsPage: React.FC = () => {
   // We need to keep this in sync with bookingData changes triggered by switchToService
     const [photos, setPhotos] = useState<(File | string)[]>([]);
   const [uploadingIndices, setUploadingIndices] = useState<Set<number>>(new Set());
+  const primaryMainPhotoUrls = useMemo(
+    () => getPrimaryBookingPhotoUrls(bookingData),
+    [bookingData.bookingPhotoContract, bookingData.uploadedPhotoUrls]
+  );
   
   useEffect(() => {
       // Skip sync if currently uploading
       if (uploadingIndices.size > 0) return;
 
       if (bookingData.photos && bookingData.photos.length > 0) setPhotos(bookingData.photos);
-      else if (bookingData.uploadedPhotoUrls && bookingData.uploadedPhotoUrls.length > 0) setPhotos(bookingData.uploadedPhotoUrls);
+      else if (primaryMainPhotoUrls.length > 0) setPhotos(primaryMainPhotoUrls);
       else setPhotos([]);
-  }, [bookingData.photos, bookingData.uploadedPhotoUrls, uploadingIndices.size]);
+  }, [bookingData.photos, primaryMainPhotoUrls, uploadingIndices.size]);
 
   const [description, setDescription] = useState(bookingData.description);
   
@@ -472,6 +408,7 @@ const DetailsPage: React.FC = () => {
   const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gemini-2.0-flash');
   const [debugService, setDebugService] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [isImageStackExpanded, setIsImageStackExpanded] = useState(false);
@@ -563,6 +500,28 @@ const DetailsPage: React.FC = () => {
     if (action) await action();
   };
 
+  const openPhotoRemovalConfirm = (config: {
+    analysis?: any;
+    analysisLevel?: number;
+    observations?: string[];
+    subjectLabel?: string;
+    linkedResultCount?: number;
+    onConfirm: () => void | Promise<void>;
+  }) => {
+    const copy = buildZonePhotoRemovalConfirmation({
+      analysis: config.analysis,
+      analysisLevel: config.analysisLevel,
+      observations: config.observations,
+      subjectLabel: config.subjectLabel,
+      linkedResultCount: config.linkedResultCount
+    });
+
+    openConfirm({
+      ...copy,
+      onConfirm: config.onConfirm
+    });
+  };
+
   // Helper to check if analysis has been performed
   const isAnalysisComplete = React.useMemo(() => {
     const hasAiTasks = bookingData.aiTasks && bookingData.aiTasks.length > 0;
@@ -577,34 +536,11 @@ const DetailsPage: React.FC = () => {
     return hasAiTasks || hasPalmGroups || hasLawnZones || hasHedgeZones || hasTreeGroups || hasShrubGroups || hasPhytosanitaryZones;
   }, [bookingData]);
 
-  // --- DEBUG TOOL STATE ---
-  interface AnalysisDebugInfo {
-    service: string;
-    model: string;
-    promptInputs: any;
-    rawResponse: any;
-    parsedResponse: any;
-    finalAnalysisData: any;
-    errors: any[];
-    timestamp: string;
-  }
-
   const [, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
   const activeServiceId = bookingData.serviceIds?.[0] || '';
   const isWeedingServiceSelected =
     debugService.toLowerCase().includes('desbroce') ||
     debugService.toLowerCase().includes('malas hierbas');
-
-  const createDebugInfo = (overrides: Partial<AnalysisDebugInfo> & Pick<AnalysisDebugInfo, 'service' | 'model' | 'promptInputs'>): AnalysisDebugInfo => ({
-    service: overrides.service,
-    model: overrides.model,
-    promptInputs: overrides.promptInputs,
-    rawResponse: overrides.rawResponse ?? null,
-    parsedResponse: overrides.parsedResponse ?? null,
-    finalAnalysisData: overrides.finalAnalysisData ?? {},
-    errors: overrides.errors ?? [],
-    timestamp: overrides.timestamp ?? new Date().toISOString()
-  });
 
   const mergeActiveServiceSnapshot = (
     prev: BookingData,
@@ -620,6 +556,189 @@ const DetailsPage: React.FC = () => {
         ...patch,
       },
     };
+  };
+
+  const withReconciledBookingPhotoContract = (
+    baseData: BookingData,
+    patch: Partial<BookingData>,
+    contractSeed = baseData.bookingPhotoContract
+  ): Partial<BookingData> => buildDetailsPageBookingPatch(baseData, patch, contractSeed);
+
+  type SimplePhotoCollectionServiceKey =
+    | 'lawnZones'
+    | 'treeGroups'
+    | 'palmGroups'
+    | 'shrubGroups'
+    | 'phytosanitaryZones'
+    | 'weedingZones';
+
+  const commitDetailsPatch = (
+    patch: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>),
+    options?: {
+      reconcileBookingPhotos?: boolean;
+      syncActiveServiceSnapshot?: boolean;
+      saveAfterCommit?: boolean;
+    }
+  ) => {
+    const {
+      reconcileBookingPhotos = true,
+      syncActiveServiceSnapshot = true,
+      saveAfterCommit = false,
+    } = options || {};
+
+    setBookingData((prev) => {
+      const rawPatch = typeof patch === 'function' ? patch(prev) : patch;
+      const nextPatch = reconcileBookingPhotos
+        ? withReconciledBookingPhotoContract(prev, rawPatch)
+        : rawPatch;
+
+      if (!activeServiceId || !syncActiveServiceSnapshot) {
+        return nextPatch;
+      }
+
+      const servicePatch = { ...rawPatch } as Partial<BookingData>;
+      delete (servicePatch as Partial<BookingData>).servicesData;
+
+      return {
+        ...nextPatch,
+        servicesData: mergeActiveServiceSnapshot(prev, servicePatch),
+      };
+    });
+
+    if (saveAfterCommit) {
+      saveProgress();
+    }
+  };
+
+  const commitSimplePhotoCollectionPatch = <K extends SimplePhotoCollectionServiceKey>(
+    key: K,
+    items: NonNullable<BookingData[K]>,
+    extraPatch: Partial<BookingData> = {},
+    options?: {
+      reconcileBookingPhotos?: boolean;
+      saveAfterCommit?: boolean;
+    }
+  ) => {
+    const patch = {
+      ...extraPatch,
+      [key]: items,
+    } as Partial<BookingData>;
+
+    commitDetailsPatch(patch, {
+      reconcileBookingPhotos: options?.reconcileBookingPhotos,
+      saveAfterCommit: options?.saveAfterCommit,
+    });
+  };
+
+  const commitTreeGroups = (
+    treeGroups: NonNullable<BookingData['treeGroups']>,
+    estimatedHours: number,
+    saveAfterCommit = false
+  ) => {
+    commitSimplePhotoCollectionPatch('treeGroups', treeGroups, { estimatedHours }, { saveAfterCommit });
+  };
+
+  const commitPalmGroups = (
+    palmGroups: NonNullable<BookingData['palmGroups']>,
+    saveAfterCommit = false
+  ) => {
+    commitSimplePhotoCollectionPatch('palmGroups', palmGroups, {}, { saveAfterCommit });
+  };
+
+  const commitShrubGroups = (
+    shrubGroups: NonNullable<BookingData['shrubGroups']>,
+    saveAfterCommit = false
+  ) => {
+    commitSimplePhotoCollectionPatch('shrubGroups', shrubGroups, {}, { saveAfterCommit });
+  };
+
+  const commitPhytosanitaryZones = (
+    phytosanitaryZones: NonNullable<BookingData['phytosanitaryZones']>,
+    saveAfterCommit = false
+  ) => {
+    commitSimplePhotoCollectionPatch('phytosanitaryZones', phytosanitaryZones, {}, { saveAfterCommit });
+  };
+
+  const updateUploadTracker = (
+    setter: React.Dispatch<React.SetStateAction<Record<string, Set<number>>>>,
+    uploadKey: string,
+    indices: number[],
+    action: 'add' | 'remove'
+  ) => {
+    setter((prev) => {
+      const next = { ...prev };
+      const tracked = new Set(next[uploadKey] || []);
+
+      indices.forEach((index) => {
+        if (action === 'add') tracked.add(index);
+        else tracked.delete(index);
+      });
+
+      if (tracked.size === 0) {
+        delete next[uploadKey];
+      } else {
+        next[uploadKey] = tracked;
+      }
+
+      return next;
+    });
+  };
+
+  const toggleSimplePhotoCollectionSelection = <K extends SimplePhotoCollectionServiceKey>(
+    key: K,
+    itemId: string,
+    photoIndex: number
+  ) => {
+    const items = [...((bookingData[key] || []) as any[])];
+    const itemIndex = items.findIndex((item) => item.id === itemId);
+    if (itemIndex === -1) return;
+
+    items[itemIndex] = togglePhotoSelectionInCollection(
+      { ...items[itemIndex] },
+      photoIndex
+    ) as any;
+
+    commitSimplePhotoCollectionPatch(key, items as NonNullable<BookingData[K]>);
+  };
+
+  const appendFilesToSimplePhotoCollection = async <K extends SimplePhotoCollectionServiceKey>(params: {
+    key: K;
+    itemId: string;
+    event: React.ChangeEvent<HTMLInputElement>;
+    validationScope: string;
+    uploadSetter: React.Dispatch<React.SetStateAction<Record<string, Set<number>>>>;
+    uploadKey?: string;
+  }) => {
+    const items = [...((bookingData[params.key] || []) as any[])];
+    const itemIndex = items.findIndex((item) => item.id === params.itemId);
+    if (itemIndex === -1) return;
+
+    const currentItem = items[itemIndex];
+    const currentPhotoUrls = Array.isArray(currentItem.photoUrls) ? currentItem.photoUrls : [];
+    const selectedFiles = readAndResetFileInput(params.event);
+    const files = await validatePhotoFiles(
+      selectedFiles,
+      currentPhotoUrls.length,
+      5,
+      params.validationScope
+    );
+    if (files.length === 0) return;
+
+    const { nextCollection, newIndices } = appendFilesToPhotoCollection(
+      {
+        ...currentItem,
+        photoUrls: [...currentPhotoUrls],
+        files: [...(currentItem.files || [])],
+      },
+      files
+    );
+
+    items[itemIndex] = nextCollection;
+    const uploadKey = params.uploadKey || params.itemId;
+
+    updateUploadTracker(params.uploadSetter, uploadKey, newIndices, 'add');
+    commitSimplePhotoCollectionPatch(params.key, items as NonNullable<BookingData[K]>);
+    updateUploadTracker(params.uploadSetter, uploadKey, newIndices, 'remove');
   };
   // -----------------------
 
@@ -662,9 +781,7 @@ const DetailsPage: React.FC = () => {
     });
 
     if (!hasChanges) return;
-    setBookingData({ weedingZones: hydratedZones });
-    updateServiceData(activeServiceId, { weedingZones: hydratedZones });
-    saveProgress();
+    commitSimplePhotoCollectionPatch('weedingZones', hydratedZones, {}, { saveAfterCommit: true });
   }, [
     activeServiceId,
     isWeedingServiceSelected,
@@ -695,22 +812,17 @@ const DetailsPage: React.FC = () => {
     if (!mustCreate && !mustNormalizeToSingle && !mustStripAiArtifacts) return;
 
     const nextZone = primary
-      ? {
+      ? resetAnalysisCommonFields({
           ...primary,
           photoUrls: [],
           files: [],
           selectedIndices: [],
           analyzedIndices: [],
-          analysisLevel: undefined,
-          observations: [],
-          isFailed: false
-        }
+        })
       : createDefaultWeedingZone();
     const nextZones = [nextZone];
 
-    setBookingData({ weedingZones: nextZones });
-    if (activeServiceId) updateServiceData(activeServiceId, { weedingZones: nextZones });
-    saveProgress();
+    commitSimplePhotoCollectionPatch('weedingZones', nextZones, {}, { saveAfterCommit: true });
   }, [isWeedingServiceSelected, activeServiceId, bookingData.weedingZones]);
 
   useEffect(() => {
@@ -727,9 +839,7 @@ const DetailsPage: React.FC = () => {
     updated[zoneIndex] = { ...zone, applyHerbicide: nextApplyHerbicide };
 
     writeWeedingHerbicideState(activeServiceId, zone.id, nextApplyHerbicide);
-    setBookingData({ weedingZones: updated });
-    updateServiceData(activeServiceId, { weedingZones: updated });
-    saveProgress();
+    commitSimplePhotoCollectionPatch('weedingZones', updated, {}, { saveAfterCommit: true });
   };
 
   // Sync lawn zones to global state
@@ -753,13 +863,13 @@ const DetailsPage: React.FC = () => {
           
           // Only update if changed
           const currentHours = bookingData.estimatedHours || 0;
-          const currentUrls = bookingData.uploadedPhotoUrls || [];
+          const currentUrls = primaryMainPhotoUrls;
           
           const hoursChanged = Math.abs(currentHours - Math.ceil(totalHours)) > 0.1;
           const urlsChanged = allUrls.length !== currentUrls.length || !allUrls.every((u, i) => u === currentUrls[i]);
           
           if (hoursChanged || urlsChanged) {
-              setBookingData({ 
+              commitDetailsPatch({
                   estimatedHours: Math.ceil(totalHours),
                   uploadedPhotoUrls: allUrls,
                   aiQuantity: totalQty,
@@ -784,13 +894,13 @@ const DetailsPage: React.FC = () => {
           
           const allUrls = bookingData.shrubGroups.flatMap(g => g.photoUrls || []);
           const currentHours = bookingData.estimatedHours || 0;
-          const currentUrls = bookingData.uploadedPhotoUrls || [];
+          const currentUrls = primaryMainPhotoUrls;
           
           const hoursChanged = Math.abs(currentHours - totalHours) > 0.1;
           const urlsChanged = allUrls.length !== currentUrls.length || !allUrls.every((u, i) => u === currentUrls[i]);
           
           if (hoursChanged || urlsChanged) {
-              setBookingData({ 
+              commitDetailsPatch({
                   estimatedHours: totalHours,
                   uploadedPhotoUrls: allUrls,
                   aiQuantity: totalQty,
@@ -816,13 +926,13 @@ const DetailsPage: React.FC = () => {
           
           const allUrls = bookingData.weedingZones.flatMap(z => z.photoUrls || []);
           const currentHours = bookingData.estimatedHours || 0;
-          const currentUrls = bookingData.uploadedPhotoUrls || [];
+          const currentUrls = primaryMainPhotoUrls;
           
           const hoursChanged = Math.abs(currentHours - totalHours) > 0.1;
           const urlsChanged = allUrls.length !== currentUrls.length || !allUrls.every((u, i) => u === currentUrls[i]);
           
           if (hoursChanged || urlsChanged) {
-              setBookingData({ 
+              commitDetailsPatch({ 
                   estimatedHours: totalHours,
                   uploadedPhotoUrls: allUrls,
                   aiQuantity: totalQty,
@@ -832,40 +942,37 @@ const DetailsPage: React.FC = () => {
       }
   }, [bookingData.weedingZones, debugService]);
 
-  const uploadFile = async (file: File, index: number): Promise<string | null> => {
-      try {
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData?.user?.id || 'anon';
-        const bucket = (import.meta.env.VITE_BOOKING_PHOTOS_BUCKET as string | undefined) || 'booking-photos';
-        const now = Date.now();
-        const safeName = (file.name || `foto_${index}.jpg`).toLowerCase().replace(/[^a-z0-9._-]/g, '_');
-        const path = `drafts/${userId}/${now}_${index}_${safeName}`;
-        
-        const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
-        
-        if (!uploadError) {
-          const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 3600 * 24); // 24 hours
-          return signed?.signedUrl || null;
-        } else {
-            console.error('Upload error:', uploadError);
-            return null;
-        }
-      } catch (e) {
-          console.error('Upload exception:', e);
-          return null;
-      }
+  const validatePhotoFiles = async (
+    files: File[],
+    existingCount: number,
+    maxTotalPhotos: number,
+    scope: string,
+  ) => {
+    const selection = await validateBookingPhotoSelection({
+      files,
+      existingCount,
+      maxTotalPhotos,
+      telemetryContext: {
+        scope,
+        serviceId: bookingData.serviceIds?.[0] || 'unknown',
+      },
+    });
+
+    if (selection.rejectedFiles.length > 0) {
+      toast.error(buildBookingPhotoSelectionErrorMessage(selection.rejectedFiles));
+    }
+
+    return selection.acceptedFiles;
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     // Clear previous analysis errors
     setAnalysisError(null);
 
-    const files = Array.from(e.target.files || []).filter(file => 
-      file.type.startsWith('image/')
-    );
-    
-    if (files.length + photos.length > 5) {
-      toast.error('Máximo 5 fotos permitidas');
+    const selectedFiles = readAndResetFileInput(e);
+    const files = await validatePhotoFiles(selectedFiles, photos.length, 5, 'details_main_selection');
+    if (files.length === 0) {
+      setMainPhotoInputVersion((version) => version + 1);
       return;
     }
 
@@ -887,66 +994,24 @@ const DetailsPage: React.FC = () => {
         return next;
     });
 
-    // Prepare local mutable state for incremental updates
-    const currentUrls = [...(bookingData.uploadedPhotoUrls || [])];
+    const previewUrls = files.map((file) => URL.createObjectURL(file));
+    const currentUrls = [...primaryMainPhotoUrls];
     while(currentUrls.length < startIndex) currentUrls.push('');
-    files.forEach(() => currentUrls.push(''));
-
-    const localPhotosState = [...photos, ...files];
-
-    files.forEach(async (file, i) => {
-        const globalIndex = startIndex + i;
-        try {
-            const compressedFile = await compressImage(file);
-            const url = await uploadFile(compressedFile, globalIndex);
-            
-            if (url) {
-                // Update local tracking variables
-                currentUrls[globalIndex] = url;
-                localPhotosState[globalIndex] = url;
-
-                // 1. Update uploading status
-                setUploadingIndices(prev => {
-                    const next = new Set(prev);
-                    next.delete(globalIndex);
-                    return next;
-                });
-
-                // 2. Update photos state
-                setPhotos(prev => {
-                    const next = [...prev];
-                    if (next.length > globalIndex) {
-                        next[globalIndex] = url;
-                    }
-                    return next;
-                });
-
-                // 3. Update global booking data incrementally
-                setBookingData({ uploadedPhotoUrls: [...currentUrls] });
-
-                // 4. Update service specific data
-                if (bookingData.serviceIds?.[0]) {
-                    updateServiceData(bookingData.serviceIds[0], {
-                        uploadedPhotoUrls: [...currentUrls],
-                        photos: localPhotosState.filter(p => p instanceof File)
-                    });
-                }
-            } else {
-                 setUploadingIndices(prev => {
-                    const next = new Set(prev);
-                    next.delete(globalIndex);
-                    return next;
-                });
-            }
-        } catch (e) {
-            console.error('Error uploading file:', e);
-            setUploadingIndices(prev => {
-                const next = new Set(prev);
-                next.delete(globalIndex);
-                return next;
-            });
-        }
+    previewUrls.forEach((url, i) => {
+      currentUrls[startIndex + i] = url;
     });
+
+    commitDetailsPatch({
+        uploadedPhotoUrls: [...currentUrls],
+        photos: [...(bookingData.photos || []), ...files],
+      });
+
+    setUploadingIndices(prev => {
+      const next = new Set(prev);
+      files.forEach((_, i) => next.delete(startIndex + i));
+      return next;
+    });
+    setMainPhotoInputVersion((version) => version + 1);
     saveProgress();
   };
 
@@ -1024,11 +1089,18 @@ const DetailsPage: React.FC = () => {
           const estimation = await calculatePalmHours(flatPalms);
           totalHours = roundToHalfHour(estimation.tiempoTotalEstimado);
       } catch (e) {
-          console.error("Pricing error", e);
+          reportDetailsPageIssue({
+            event: 'booking.details_pricing_failed',
+            service: 'Poda de palmeras',
+            error: e,
+            serviceId: bookingData.serviceIds?.[0],
+            scope: 'details_palm_pricing',
+            photoCount: flatPalms.length,
+          });
       }
       
       const payload = { palmGroups: normalizedGroups, estimatedHours: totalHours, isAnalyzing: false };
-      setBookingData(prev => ({ ...prev, ...payload }));
+      setBookingData(prev => withReconciledBookingPhotoContract(prev, payload));
       if (bookingData.serviceIds?.[0]) {
           updateServiceData(bookingData.serviceIds[0], payload);
       }
@@ -1054,7 +1126,7 @@ const DetailsPage: React.FC = () => {
   };
 
   const removePhoto = async (indexToRemove: number, includeLinkedResults = true) => {
-    const removedUrl = bookingData.uploadedPhotoUrls?.[indexToRemove];
+    const removedUrl = primaryMainPhotoUrls[indexToRemove];
     // 1. Remove from 'photos' array
     const newPhotos = photos.filter((_, i) => i !== indexToRemove);
     setPhotos(newPhotos);
@@ -1078,26 +1150,19 @@ const DetailsPage: React.FC = () => {
         return next;
     });
     
-    const newUrls = (bookingData.uploadedPhotoUrls || []).filter((_, i) => i !== indexToRemove);
-    setBookingData({ uploadedPhotoUrls: newUrls });
-    
-    // Explicitly update per-service data
-    if (bookingData.serviceIds?.[0]) {
-        updateServiceData(bookingData.serviceIds[0], {
-            uploadedPhotoUrls: newUrls,
-            photos: newPhotos.filter(p => p instanceof File)
-        });
-    }
+    const newUrls = primaryMainPhotoUrls.filter((_, i) => i !== indexToRemove);
+    commitDetailsPatch({
+      uploadedPhotoUrls: newUrls,
+      photos: newPhotos.filter((photo): photo is File => photo instanceof File),
+    });
+    setMainPhotoInputVersion((version) => version + 1);
     
     if (bookingData.treeGroups && removedUrl) {
         const nextTreeGroups = includeLinkedResults
           ? bookingData.treeGroups.filter(g => !g.photoUrls?.includes(removedUrl))
           : bookingData.treeGroups;
         const treeHours = calculateTotalTreeHours(nextTreeGroups);
-        setBookingData({ treeGroups: nextTreeGroups, estimatedHours: treeHours });
-        if (bookingData.serviceIds?.[0]) {
-          updateServiceData(bookingData.serviceIds[0], { treeGroups: nextTreeGroups, estimatedHours: treeHours });
-        }
+        commitSimplePhotoCollectionPatch('treeGroups', nextTreeGroups, { estimatedHours: treeHours });
     }
 
     if (bookingData.palmGroups) {
@@ -1144,15 +1209,14 @@ const DetailsPage: React.FC = () => {
         });
 
         const totalHours = newGroups.reduce((acc, g) => acc + (Math.ceil((g.area || 0) * 0.15) || 1), 0);
-        setBookingData({ shrubGroups: newGroups, estimatedHours: totalHours });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups, estimatedHours: totalHours });
+        commitSimplePhotoCollectionPatch('shrubGroups', newGroups, { estimatedHours: totalHours });
     }
     
     saveProgress();
   };
 
   const getMainPhotoLinkedResultCount = (photoIndex: number) => {
-    const photoUrl = bookingData.uploadedPhotoUrls?.[photoIndex];
+    const photoUrl = primaryMainPhotoUrls[photoIndex];
     let count = 0;
     if (bookingData.treeGroups) {
       count += bookingData.treeGroups.filter(g => (g.photoUrls || []).includes(photoUrl || '')).length;
@@ -1173,42 +1237,10 @@ const DetailsPage: React.FC = () => {
       removePhoto(photoIndex, false);
       return;
     }
-    openConfirm({
-      title: 'Eliminar foto analizada',
-      message: `Esta foto tiene ${linkedCount} resultado${linkedCount === 1 ? '' : 's'} asociado${linkedCount === 1 ? '' : 's'}. Si continúas, se eliminará la foto y también sus resultados vinculados.`,
-      confirmLabel: 'Eliminar foto y resultados',
-      cancelLabel: 'Conservar todo',
-      tone: 'danger',
+    openPhotoRemovalConfirm({
+      linkedResultCount: linkedCount,
       onConfirm: () => removePhoto(photoIndex, true)
     });
-  };
-
-  const removePalmAnalysisResult = (groupId: string) => {
-    const group = (bookingData.palmGroups || []).find(g => g.id === groupId);
-    if (!group) return;
-    const nextGroups = (bookingData.palmGroups || []).filter(g => g.id !== groupId);
-    const photoIndex = typeof group.imageIndex === 'number'
-      ? group.imageIndex
-      : (group.photoUrl && bookingData.uploadedPhotoUrls ? bookingData.uploadedPhotoUrls.indexOf(group.photoUrl) : -1);
-    const hasOtherFromSamePhoto = nextGroups.some(g => {
-      if (typeof group.imageIndex === 'number' && typeof g.imageIndex === 'number') return g.imageIndex === group.imageIndex;
-      if (group.photoUrl && g.photoUrl) return g.photoUrl === group.photoUrl;
-      return false;
-    });
-    if (!hasOtherFromSamePhoto && photoIndex >= 0) {
-      setAnalyzedPhotoIndices(prev => {
-        const next = new Set(prev);
-        next.delete(photoIndex);
-        return next;
-      });
-      setPhotosToAnalyze(prev => {
-        const next = new Set(prev);
-        next.add(photoIndex);
-        return next;
-      });
-    }
-    updatePalmPricing(nextGroups);
-    saveProgress();
   };
 
   const removeTreeAnalysisResult = (groupId: string) => {
@@ -1218,12 +1250,9 @@ const DetailsPage: React.FC = () => {
     const targetUrl = target.photoUrls?.[0];
     const nextGroups = currentGroups.filter(g => g.id !== groupId);
     const newHours = calculateTotalTreeHours(nextGroups);
-    setBookingData({ treeGroups: nextGroups, estimatedHours: newHours });
-    if (bookingData.serviceIds?.[0]) {
-      updateServiceData(bookingData.serviceIds[0], { treeGroups: nextGroups, estimatedHours: newHours });
-    }
-    if (targetUrl && bookingData.uploadedPhotoUrls) {
-      const photoIndex = bookingData.uploadedPhotoUrls.indexOf(targetUrl);
+    commitTreeGroups(nextGroups, newHours);
+    if (targetUrl) {
+      const photoIndex = primaryMainPhotoUrls.indexOf(targetUrl);
       const hasOtherFromSamePhoto = nextGroups.some(g => (g.photoUrls || []).includes(targetUrl));
       if (!hasOtherFromSamePhoto && photoIndex >= 0) {
         setAnalyzedPhotoIndices(prev => {
@@ -1343,40 +1372,27 @@ const DetailsPage: React.FC = () => {
       }
 
       const photoUrls: string[] = [];
-      const uploadsToPerform: { file: File, index: number }[] = [];
 
       // Only process selected indices
-      indicesToProcess.forEach(i => {
+      await Promise.all(indicesToProcess.map(async (i) => {
           const p = photos[i];
           if (!p) return;
-          
-          // Check if already uploaded
-          const existingUrl = bookingData.uploadedPhotoUrls?.[i];
-          if (existingUrl) {
-              photoUrls[i] = existingUrl; // Keep original index position in sparse array
-          } else {
-              if (typeof p === 'string') {
-                  photoUrls[i] = p;
-              } else {
-                  uploadsToPerform.push({ file: p, index: i });
-              }
-          }
-      });
 
-      if (uploadsToPerform.length > 0) {
-        await Promise.allSettled(uploadsToPerform.map(async ({ file, index }) => {
-           const url = await uploadFile(file, index);
-           if (url) {
-               photoUrls[index] = url;
-               // Also update state/context for future persistence
-               const currentUrls = [...(bookingData.uploadedPhotoUrls || [])];
-               // Ensure size
-               while(currentUrls.length <= index) currentUrls.push('');
-               currentUrls[index] = url;
-               setBookingData({ uploadedPhotoUrls: currentUrls });
-           }
-        }));
-      }
+          if (p instanceof File) {
+              photoUrls[i] = await fileToDataUrl(p);
+              return;
+          }
+
+          if (typeof p === 'string') {
+              photoUrls[i] = p;
+              return;
+          }
+
+          const existingUrl = primaryMainPhotoUrls[i];
+          if (existingUrl) {
+              photoUrls[i] = existingUrl;
+          }
+      }));
 
       // Filter out undefined holes, but we need to map results back to original indices?
       // The AI takes a list of URLs. It returns items with 'indice_imagen'.
@@ -1531,9 +1547,6 @@ const DetailsPage: React.FC = () => {
 
       if (res.arboles && res.arboles.length > 0) {
         const t: any = res.arboles[0];
-        const bestIndex = typeof t.indice_imagen === 'number' ? t.indice_imagen : 0;
-        const globalIndex = indexMap[bestIndex] ?? indexMap[0] ?? indicesToProcess[0] ?? 0;
-        const originalUrl = photoUrls[globalIndex];
         const aiSizeBand =
           normalizeTreeSizeBand(t.size_band);
         const legacyHeight = aiSizeBand ? treeSizeBandToLegacyMeters(aiSizeBand) : 0;
@@ -1542,7 +1555,7 @@ const DetailsPage: React.FC = () => {
           {
             id: `ai-tree-${Date.now()}`,
             pruningType: 'structural' as const,
-            photoUrls: targetUrls.map((u, i) => photoUrls[indexMap[i]]).filter(Boolean),
+            photoUrls: targetUrls.map((_, i) => photoUrls[indexMap[i]]).filter(Boolean),
             aiSizeBand: aiSizeBand ?? undefined,
             aiHeightMeters: Number.isFinite(legacyHeight) ? legacyHeight : 0,
             difficultyHigh: undefined,
@@ -2014,6 +2027,7 @@ const DetailsPage: React.FC = () => {
         state: 'normal',
         quantity: 0,
         wasteRemoval: true,
+        photoIds: [],
         photoUrls: [],
         imageIndices: [],
         files: [],
@@ -2053,21 +2067,14 @@ const DetailsPage: React.FC = () => {
         cancelLabel: 'Cancelar',
         tone: 'warning',
         onConfirm: () => {
-          const updatedZone = { 
+          const updatedZone = resetAnalysisCommonFields({ 
               ...zone,
               quantity: 0,
               species: '',
               state: 'normal',
-              analysisLevel: undefined,
-              observations: [],
-              analyzedIndices: []
-          };
+          });
           zones[idx] = updatedZone;
-          setBookingData({ lawnZones: zones });
-          if (bookingData.serviceIds?.[0]) {
-               updateServiceData(bookingData.serviceIds[0], { lawnZones: zones });
-          }
-          saveProgress();
+          commitSimplePhotoCollectionPatch('lawnZones', zones, {}, { saveAfterCommit: true });
         }
       });
       return;
@@ -2081,7 +2088,7 @@ const DetailsPage: React.FC = () => {
       tone: 'danger',
       onConfirm: () => {
         const newZones = zones.filter(z => z.id !== zoneId);
-        setBookingData({ lawnZones: newZones });
+        setBookingData(withReconciledBookingPhotoContract(bookingData, { lawnZones: newZones }));
         if (bookingData.serviceIds?.[0]) {
              updateServiceData(bookingData.serviceIds[0], { lawnZones: newZones });
         }
@@ -2091,123 +2098,17 @@ const DetailsPage: React.FC = () => {
   };
 
   const toggleLawnPhotoSelection = (zoneId: string, photoIndex: number) => {
-      const zones = [...(bookingData.lawnZones || [])];
-      const idx = zones.findIndex(z => z.id === zoneId);
-      if (idx === -1) return;
-      
-      const zone = { ...zones[idx] };
-      // If undefined, initialize with all selected (matching UI default)
-      let currentSelected = zone.selectedIndices;
-      if (!currentSelected) {
-          currentSelected = zone.photoUrls.map((_, i) => i);
-      }
-
-      const selected = new Set(currentSelected);
-      
-      if (selected.has(photoIndex)) {
-          selected.delete(photoIndex);
-      } else {
-          selected.add(photoIndex);
-      }
-      
-      zone.selectedIndices = Array.from(selected);
-      zones[idx] = zone;
-      
-      setBookingData({ lawnZones: zones });
-      if (bookingData.serviceIds?.[0]) {
-           updateServiceData(bookingData.serviceIds[0], { lawnZones: zones });
-      }
+      toggleSimplePhotoCollectionSelection('lawnZones', zoneId, photoIndex);
   };
 
   const handleLawnFileSelect = async (zoneId: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-
-    const zones = [...(bookingData.lawnZones || [])];
-    const idx = zones.findIndex(z => z.id === zoneId);
-    if (idx === -1) return;
-
-    // Check max photos per zone
-    if (zones[idx].photoUrls.length + files.length > 5) {
-        toast.error('Máximo 5 fotos por zona');
-        return;
-    }
-
-    // 1. Create temporary object URLs and add to zone immediately
-    const tempUrls = files.map(f => URL.createObjectURL(f));
-    const currentLen = zones[idx].photoUrls.length;
-    
-    // Add temp URLs to photoUrls
-    zones[idx].photoUrls = [...zones[idx].photoUrls, ...tempUrls];
-    
-    // Auto-select new photos
-    const newIndices = tempUrls.map((_, i) => currentLen + i);
-    zones[idx].selectedIndices = [...(zones[idx].selectedIndices || []), ...newIndices];
-
-    // Mark as uploading in local state
-    setLawnUploads(prev => {
-        const zoneUploads = new Set(prev[zoneId] || []);
-        newIndices.forEach(i => zoneUploads.add(i));
-        return { ...prev, [zoneId]: zoneUploads };
+    await appendFilesToSimplePhotoCollection({
+      key: 'lawnZones',
+      itemId: zoneId,
+      event: e,
+      validationScope: 'details_lawn_selection',
+      uploadSetter: setLawnUploads,
     });
-
-    // Update UI immediately
-    setBookingData({ lawnZones: zones });
-
-    // 2. Upload in background
-    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now(); 
-    
-    try {
-        const uploadResults = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
-        
-        // 3. Update with real URLs
-        // We need to fetch the latest state to avoid race conditions (though here we are inside the function closure)
-        // Ideally we should use functional state updates, but bookingData is complex.
-        // We'll re-read bookingData in the next render cycle effectively by creating a new object here.
-        
-        // Note: We need to update the SAME zone object instance we modified earlier? 
-        // No, we need to create a new one based on the current state.
-        // But since we are in an async function, bookingData might have changed?
-        // For now, let's assume single-user interaction flow.
-        
-        const updatedZones = [...(bookingData.lawnZones || [])];
-        // Re-find index in case zones changed (unlikely in this short time but possible)
-        const updatedIdx = updatedZones.findIndex(z => z.id === zoneId);
-        if (updatedIdx === -1) return;
-        
-        const updatedZone = { ...updatedZones[updatedIdx] };
-        const finalUrls = [...updatedZone.photoUrls];
-        
-        uploadResults.forEach((url, i) => {
-            const targetIdx = currentLen + i;
-            if (url && targetIdx < finalUrls.length) {
-                finalUrls[targetIdx] = url;
-            }
-        });
-        
-        updatedZone.photoUrls = finalUrls;
-        updatedZones[updatedIdx] = updatedZone;
-        
-        setBookingData({ lawnZones: updatedZones });
-        
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], {
-                 lawnZones: updatedZones
-             });
-        }
-    } catch (error) {
-        console.error("Upload failed", error);
-        toast.error("Error al subir algunas imágenes");
-    } finally {
-        // Clear uploading state
-        setLawnUploads(prev => {
-            const next = { ...prev };
-            const zoneUploads = new Set(next[zoneId] || []);
-            newIndices.forEach(i => zoneUploads.delete(i));
-            next[zoneId] = zoneUploads;
-            return next;
-        });
-    }
   };
 
   const removePhotoFromZone = (zoneId: string, photoIndex: number) => {
@@ -2218,42 +2119,17 @@ const DetailsPage: React.FC = () => {
       const zone = { ...zones[idx] };
       const isAnalyzedPhoto = zone.analyzedIndices?.includes(photoIndex);
       const executeRemove = () => {
-      const updatedZone = { ...zone };
-      
-      // Update photos
-      const urlCount = updatedZone.photoUrls.length;
-      if (photoIndex < urlCount) {
-          updatedZone.photoUrls = updatedZone.photoUrls.filter((_, i) => i !== photoIndex);
-      } else {
-          const fileIdx = photoIndex - urlCount;
-          if (updatedZone.files) updatedZone.files = updatedZone.files.filter((_, i) => i !== fileIdx);
-      }
-
-      // Update indices (selectedIndices)
-      if (updatedZone.selectedIndices) {
-          updatedZone.selectedIndices = updatedZone.selectedIndices
-              .filter(i => i !== photoIndex) // Remove the deleted index
-              .map(i => i > photoIndex ? i - 1 : i); // Shift subsequent indices
-      }
-
-      // Update analyzedIndices
-      if (updatedZone.analyzedIndices) {
-          updatedZone.analyzedIndices = updatedZone.analyzedIndices
-              .filter(i => i !== photoIndex)
-              .map(i => i > photoIndex ? i - 1 : i);
-      }
+      const updatedZone = removePhotoFromCollection({ ...zone }, photoIndex);
 
       if (isAnalyzedPhoto) {
         updatedZone.quantity = 0;
         updatedZone.species = '';
         updatedZone.state = 'normal';
-        updatedZone.analysisLevel = undefined;
-        updatedZone.observations = [];
-        updatedZone.analyzedIndices = [];
+        Object.assign(updatedZone, resetAnalysisCommonFields(updatedZone));
       }
 
       zones[idx] = updatedZone;
-      setBookingData({ lawnZones: zones });
+      setBookingData(withReconciledBookingPhotoContract(bookingData, { lawnZones: zones }));
       
       if (bookingData.serviceIds?.[0]) {
            updateServiceData(bookingData.serviceIds[0], {
@@ -2267,12 +2143,11 @@ const DetailsPage: React.FC = () => {
         return;
       }
 
-      openConfirm({
-        title: 'Eliminar foto analizada',
-        message: 'Esta foto forma parte del análisis de la zona. Si continúas, también se eliminará ese resultado de análisis.',
-        confirmLabel: 'Eliminar foto y resultado',
-        cancelLabel: 'Conservar todo',
-        tone: 'danger',
+      openPhotoRemovalConfirm({
+        analysis: zone.analysisV2,
+        analysisLevel: zone.analysisLevel,
+        observations: zone.observations,
+        subjectLabel: 'la zona',
         onConfirm: executeRemove
       });
   };
@@ -2285,8 +2160,12 @@ const DetailsPage: React.FC = () => {
       if (idx === -1) return false;
       const zone = zones[idx];
       const allUrls = zone.photoUrls || [];
-      const indicesToAnalyze = zone.selectedIndices ?? allUrls.map((_, i) => i);
-      const finalUrls = indicesToAnalyze.map(i => allUrls[i]).filter((u): u is string => u !== undefined);
+      const indicesToAnalyze = getDefaultSelectedPhotoIndices(allUrls.length, zone.selectedIndices);
+      const finalUrls = await resolveAnalysisPhotoSources({
+        photoUrls: allUrls,
+        selectedIndices: indicesToAnalyze,
+        files: zone.files,
+      });
 
       if (finalUrls.length === 0) {
           const message = 'Selecciona al menos una foto para analizar';
@@ -2311,14 +2190,8 @@ const DetailsPage: React.FC = () => {
           };
 
           const res = await estimateWorkWithAI(debugInputs);
-          const lawnTasks = (() => {
-              if (Array.isArray(res.tareas) && res.tareas.length > 0) return res.tareas;
-              const raw = res.rawResponse as any;
-              if (Array.isArray(raw?.tareas) && raw.tareas.length > 0) return raw.tareas;
-              if (raw?.tareas && typeof raw.tareas === 'object') return [raw.tareas];
-              if (raw?.tarea && typeof raw.tarea === 'object') return [raw.tarea];
-              return [];
-          })();
+          const analysis = res.analysis_v2;
+          const lawnTasks = extractLawnLegacyTasks(res);
           
           const currentDebugInfo: AnalysisDebugInfo = {
               service: 'Corte de césped',
@@ -2333,16 +2206,14 @@ const DetailsPage: React.FC = () => {
           setDebugLogs(currentDebugInfo);
 
 
-          if (lawnTasks.length > 0) {
+          if (analysis || lawnTasks.length > 0) {
               const t = lawnTasks[0];
-              const zonePatch = {
-                  species: 'Césped general',
-                  state: t.estado_jardin || 'normal',
-                  quantity: Number(t.superficie_m2 || 0),
-                  analysisLevel: t.nivel_analisis,
-                  observations: t.observaciones,
-                  analyzedIndices: indicesToAnalyze
-              };
+              const zonePatch = adaptLawnAnalysisResult({
+                analysis,
+                legacyTask: t,
+                selectedIndices: indicesToAnalyze,
+                totalPhotoCount: allUrls.length
+              });
               let nextZones: any[] = [];
 
               setBookingData(prev => {
@@ -2371,27 +2242,32 @@ const DetailsPage: React.FC = () => {
 
           throw new Error('No se han detectado datos válidos en las imágenes.');
       } catch (e: any) {
-          console.error(e);
-          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
-              service: 'Corte de césped',
-              model: aiModel,
-              promptInputs: {},
-              rawResponse: {},
-              parsedResponse: {},
-              finalAnalysisData: {},
-              errors: [e],
-              timestamp: new Date().toISOString()
+          reportDetailsPageIssue({
+            event: 'booking.details_analysis_failed',
+            service: 'Corte de césped',
+            error: e,
+            serviceId: bookingData.serviceIds?.[0],
+            zoneId,
+            scope: 'details_lawn_analysis',
+            photoCount: finalUrls.length,
           });
+          setDebugLogs(prev => appendDebugError(
+            prev || createDebugInfo({ service: 'Corte de césped', model: aiModel, promptInputs: {} }),
+            e
+          ));
           
+          const failureFields = buildAnalysisFailureFields({
+            serviceName: 'Corte de césped',
+            selectedIndices: zone.selectedIndices,
+            totalPhotoCount: (zone.photoUrls || []).length
+          });
           setBookingData(prev => {
               const currentZones = prev.lawnZones || [];
               const updatedZones = currentZones.map(z => {
                   if (z.id === zoneId) {
                       return { 
                           ...z, 
-                          isFailed: true,
-                          analysisLevel: 3,
-                          observations: ['Error en el análisis. Por favor, reintente.']
+                          ...failureFields
                       };
                   }
                   return z;
@@ -2453,25 +2329,6 @@ const DetailsPage: React.FC = () => {
   };
 
   // --- Hedge Logic ---
-  type HedgeFaceKey = 'faceA' | 'faceB';
-  type HedgeFace = {
-    photoUrls: string[];
-    files: File[];
-    selectedIndices: number[];
-    analyzedIndices: number[];
-    analysisLevel?: number;
-    observations?: string[];
-    longitud_m?: number;
-    altura_m?: number;
-  };
-
-  const createEmptyHedgeFace = (): HedgeFace => ({
-    photoUrls: [],
-    files: [],
-    selectedIndices: [],
-    analyzedIndices: [],
-  });
-
   const resolveHedgeHeightBand = (heightM: number): '0-1m' | '1-2m' | '2-4m' | '4-6m' => {
     if (heightM <= 1) return '0-1m';
     if (heightM <= 2) return '1-2m';
@@ -2486,58 +2343,10 @@ const DetailsPage: React.FC = () => {
   };
 
   const isHedgeZoneAnalyzed = (zone: any) => Number(zone.length || 0) > 0 || zone.analysisLevel !== undefined;
-
-  const normalizeHedgeZone = (zone: any) => {
-    const legacyUrls = zone.photoUrls || [];
-    const legacySelected = zone.selectedIndices ?? legacyUrls.map((_: string, i: number) => i);
-    const legacyAnalyzed = zone.analyzedIndices || [];
-
-    const faceA: HedgeFace = {
-      ...createEmptyHedgeFace(),
-      ...(zone.faceA || {}),
-      photoUrls: zone.faceA?.photoUrls ? [...zone.faceA.photoUrls] : [...legacyUrls],
-      files: zone.faceA?.files ? [...zone.faceA.files] : [],
-      selectedIndices: zone.faceA?.selectedIndices ? [...zone.faceA.selectedIndices] : [...legacySelected],
-      analyzedIndices: zone.faceA?.analyzedIndices ? [...zone.faceA.analyzedIndices] : [...legacyAnalyzed],
-    };
-
-    const faceB: HedgeFace = {
-      ...createEmptyHedgeFace(),
-      ...(zone.faceB || {}),
-      photoUrls: zone.faceB?.photoUrls ? [...zone.faceB.photoUrls] : [],
-      files: zone.faceB?.files ? [...zone.faceB.files] : [],
-      selectedIndices: zone.faceB?.selectedIndices ? [...zone.faceB.selectedIndices] : [],
-      analyzedIndices: zone.faceB?.analyzedIndices ? [...zone.faceB.analyzedIndices] : [],
-    };
-
-    return {
-      ...zone,
-      faceA,
-      faceB,
-      hasBackFaceTrim: zone.hasBackFaceTrim ?? faceB.photoUrls.length > 0,
-      faces_to_trim: zone.faces_to_trim,
-      length_pricing_m: zone.length_pricing_m,
-      height_pricing_m: zone.height_pricing_m,
-    };
-  };
-
-  const syncLegacyHedgeZone = (zone: any) => {
-    const faceAUrls = zone.faceA?.photoUrls || [];
-    const faceBUrls = zone.faceB?.photoUrls || [];
-    const faceASelected = zone.faceA?.selectedIndices || [];
-    const faceBSelected = zone.faceB?.selectedIndices || [];
-    const faceAAnalyzed = zone.faceA?.analyzedIndices || [];
-    const faceBAnalyzed = zone.faceB?.analyzedIndices || [];
-    const offset = faceAUrls.length;
-
-    return {
-      ...zone,
-      hasBackFaceTrim: faceBUrls.length > 0,
-      photoUrls: [...faceAUrls, ...faceBUrls],
-      files: [],
-      selectedIndices: [...faceASelected, ...faceBSelected.map((i: number) => i + offset)],
-      analyzedIndices: [...faceAAnalyzed, ...faceBAnalyzed.map((i: number) => i + offset)],
-    };
+  const normalizeHedgeZone = (zone: any) => normalizeHedgeZonePhotoCollections(zone);
+  const syncLegacyHedgeZone = (zone: any) => syncLegacyHedgeZonePhotoCollections(zone);
+  const commitHedgeZones = (hedgeZones: BookingData['hedgeZones'], saveAfterCommit = false) => {
+    commitDetailsPatch({ hedgeZones }, { saveAfterCommit });
   };
 
   const addHedgeZone = () => {
@@ -2556,12 +2365,13 @@ const DetailsPage: React.FC = () => {
         state: 'normal',
         access: 'normal' as const, // Legacy
         wasteRemoval: true,
-        faceA: createEmptyHedgeFace(),
-        faceB: createEmptyHedgeFace(),
+        faceA: createEmptyHedgeFaceCollection(),
+        faceB: createEmptyHedgeFaceCollection(),
         hasBackFaceTrim: false,
         faces_to_trim: 1 as 1 | 2,
         length_pricing_m: 0,
         height_pricing_m: 0,
+        photoIds: [] as string[],
         photoUrls: [] as string[],
         files: [] as File[],
         imageIndices: [] as number[],
@@ -2569,9 +2379,7 @@ const DetailsPage: React.FC = () => {
         analyzedIndices: [] as number[]
     };
     const newZones = [...(bookingData.hedgeZones || []), newZone];
-    setBookingData({ hedgeZones: newZones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: newZones });
-    saveProgress();
+    commitHedgeZones(newZones, true);
   };
 
   const removeHedgeZone = (id: string) => {
@@ -2590,7 +2398,7 @@ const DetailsPage: React.FC = () => {
         cancelLabel: 'Cancelar',
         tone: 'warning',
         onConfirm: () => {
-          const updatedZone = {
+          const updatedZone = resetAnalysisCommonFields({
               ...normalizeHedgeZone(zone),
               length: 0,
               length_pricing_m: 0,
@@ -2600,8 +2408,6 @@ const DetailsPage: React.FC = () => {
               type: '1-2m',
               height: '1-2m',
               state: 'normal',
-              analysisLevel: undefined,
-              observations: [],
               faceA: {
                 ...normalizeHedgeZone(zone).faceA,
                 analyzedIndices: [],
@@ -2614,11 +2420,9 @@ const DetailsPage: React.FC = () => {
                 analysisLevel: undefined,
                 observations: [],
               },
-          };
+          });
           zones[idx] = syncLegacyHedgeZone(updatedZone);
-          setBookingData({ hedgeZones: zones });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: zones });
-          saveProgress();
+          commitHedgeZones(zones, true);
         }
       });
       return;
@@ -2632,9 +2436,7 @@ const DetailsPage: React.FC = () => {
       tone: 'danger',
       onConfirm: () => {
         const newZones = zones.filter(z => z.id !== id);
-        setBookingData({ hedgeZones: newZones });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: newZones });
-        saveProgress();
+        commitHedgeZones(newZones, true);
       }
     });
   };
@@ -2644,51 +2446,29 @@ const DetailsPage: React.FC = () => {
     const idx = zones.findIndex(z => z.id === zoneId);
     if (idx === -1) return;
 
-    const zone = normalizeHedgeZone(zones[idx]);
-    const face = { ...zone[faceKey] };
-    let currentSelected = face.selectedIndices;
-    if (!currentSelected) {
-        currentSelected = (face.photoUrls || []).map((_: string, i: number) => i);
-    }
-
-    const selected = new Set(currentSelected);
-    if (selected.has(photoIndex)) {
-        selected.delete(photoIndex);
-    } else {
-        selected.add(photoIndex);
-    }
-
-    face.selectedIndices = Array.from(selected);
-    zone[faceKey] = face;
-    zones[idx] = syncLegacyHedgeZone(zone);
-    setBookingData({ hedgeZones: zones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: zones });
+    zones[idx] = toggleHedgeFacePhotoSelection(zones[idx], faceKey, photoIndex);
+    commitHedgeZones(zones);
   };
 
   const handleHedgeFileSelect = async (id: string, faceKey: HedgeFaceKey, e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
     const zones = [...(bookingData.hedgeZones || [])];
     const idx = zones.findIndex(z => z.id === id);
     if (idx === -1) return;
 
     const normalizedZone = normalizeHedgeZone(zones[idx]);
     const currentFace = { ...normalizedZone[faceKey] };
+    const selectedFiles = readAndResetFileInput(e);
+    const files = await validatePhotoFiles(
+      selectedFiles,
+      currentFace.photoUrls?.length || 0,
+      5,
+      'details_hedge_selection'
+    );
+    if (files.length === 0) return;
 
-    if ((currentFace.photoUrls?.length || 0) + files.length > 5) {
-        toast.error('Máximo 5 fotos por cara');
-        return;
-    }
+    const { zone: updatedZone, newIndices } = appendFilesToHedgeFaceCollection(normalizedZone, faceKey, files);
+    zones[idx] = updatedZone;
 
-    const tempUrls = files.map(f => URL.createObjectURL(f));
-    const currentLen = currentFace.photoUrls?.length || 0;
-    currentFace.photoUrls = [...(currentFace.photoUrls || []), ...tempUrls];
-    currentFace.selectedIndices = [...(currentFace.selectedIndices || []), ...tempUrls.map((_: string, i: number) => currentLen + i)];
-
-    normalizedZone[faceKey] = currentFace;
-    zones[idx] = syncLegacyHedgeZone(normalizedZone);
-
-    const newIndices = tempUrls.map((_: string, i: number) => currentLen + i);
     const uploadKey = `${id}-${faceKey}`;
 
     setHedgeUploads(prev => {
@@ -2697,47 +2477,14 @@ const DetailsPage: React.FC = () => {
         return { ...prev, [uploadKey]: zoneUploads };
     });
 
-    setBookingData({ hedgeZones: zones });
-
-    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
-
-    try {
-        const uploadResults = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
-        const updatedZones = [...zones];
-        const updatedIdx = updatedZones.findIndex(z => z.id === id);
-        if (updatedIdx === -1) return;
-
-        const updatedZone = normalizeHedgeZone(updatedZones[updatedIdx]);
-        const updatedFace = { ...updatedZone[faceKey] };
-        const finalUrls = [...(updatedFace.photoUrls || [])];
-
-        uploadResults.forEach((url, i) => {
-            const targetIdx = currentLen + i;
-            if (!url) return;
-            if (targetIdx < finalUrls.length) {
-                finalUrls[targetIdx] = url;
-            } else {
-                finalUrls.push(url);
-            }
-        });
-
-        updatedFace.photoUrls = finalUrls;
-        updatedZone[faceKey] = updatedFace;
-        updatedZones[updatedIdx] = syncLegacyHedgeZone(updatedZone);
-        setBookingData({ hedgeZones: updatedZones });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: updatedZones });
-    } catch (error) {
-        console.error('Upload failed', error);
-        toast.error('Error al subir algunas imágenes');
-    } finally {
-        setHedgeUploads(prev => {
-            const next = { ...prev };
-            const zoneUploads = new Set(next[uploadKey] || []);
-            newIndices.forEach(i => zoneUploads.delete(i));
-            next[uploadKey] = zoneUploads;
-            return next;
-        });
-    }
+    commitHedgeZones(zones);
+    setHedgeUploads(prev => {
+        const next = { ...prev };
+        const zoneUploads = new Set(next[uploadKey] || []);
+        newIndices.forEach(i => zoneUploads.delete(i));
+        next[uploadKey] = zoneUploads;
+        return next;
+    });
   };
 
   const removePhotoFromHedgeZone = (zoneId: string, faceKey: HedgeFaceKey, photoIndex: number) => {
@@ -2749,27 +2496,7 @@ const DetailsPage: React.FC = () => {
     const face = { ...zone[faceKey] };
     const isAnalyzedPhoto = face.analyzedIndices?.includes(photoIndex);
     const executeRemove = () => {
-    const updatedZone = normalizeHedgeZone(zone);
-    const updatedFace = { ...updatedZone[faceKey] };
-    const urlCount = (face.photoUrls || []).length;
-    if (photoIndex < urlCount) {
-        updatedFace.photoUrls = (updatedFace.photoUrls || []).filter((_: string, i: number) => i !== photoIndex);
-    } else {
-        const fileIdx = photoIndex - urlCount;
-        if (updatedFace.files) updatedFace.files = updatedFace.files.filter((_: File, i: number) => i !== fileIdx);
-    }
-
-    if (updatedFace.selectedIndices) {
-        updatedFace.selectedIndices = updatedFace.selectedIndices
-            .filter((i: number) => i !== photoIndex)
-            .map((i: number) => (i > photoIndex ? i - 1 : i));
-    }
-
-    if (updatedFace.analyzedIndices) {
-        updatedFace.analyzedIndices = updatedFace.analyzedIndices
-            .filter((i: number) => i !== photoIndex)
-            .map((i: number) => (i > photoIndex ? i - 1 : i));
-    }
+    const updatedZone = removePhotoFromHedgeFaceCollection(zone, faceKey, photoIndex);
 
     if (isAnalyzedPhoto) {
       updatedZone.length = 0;
@@ -2780,8 +2507,7 @@ const DetailsPage: React.FC = () => {
       updatedZone.type = '1-2m';
       updatedZone.height = '1-2m';
       updatedZone.state = 'normal';
-      updatedZone.analysisLevel = undefined;
-      updatedZone.observations = [];
+      Object.assign(updatedZone, resetAnalysisCommonFields(updatedZone));
       updatedZone.faceA = {
         ...updatedZone.faceA,
         analyzedIndices: [],
@@ -2796,10 +2522,8 @@ const DetailsPage: React.FC = () => {
       };
     }
 
-    updatedZone[faceKey] = updatedFace;
     zones[idx] = syncLegacyHedgeZone(updatedZone);
-    setBookingData({ hedgeZones: zones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { hedgeZones: zones });
+    commitHedgeZones(zones);
     };
 
     if (!isAnalyzedPhoto) {
@@ -2807,12 +2531,11 @@ const DetailsPage: React.FC = () => {
       return;
     }
 
-    openConfirm({
-      title: 'Eliminar foto analizada',
-      message: 'Esta foto participa en el análisis del seto. Si continúas, se eliminará la foto y también el resultado de esta zona.',
-      confirmLabel: 'Eliminar foto y resultado',
-      cancelLabel: 'Conservar todo',
-      tone: 'danger',
+    openPhotoRemovalConfirm({
+      analysis: zone.analysisV2,
+      analysisLevel: zone.analysisLevel,
+      observations: zone.observations,
+      subjectLabel: 'el seto',
       onConfirm: executeRemove
     });
   };
@@ -2831,8 +2554,12 @@ const DetailsPage: React.FC = () => {
           });
 
           const faceAUrls = zone.faceA.photoUrls || [];
-          const faceAIndices = zone.faceA.selectedIndices ?? faceAUrls.map((_: string, i: number) => i);
-          const finalFaceAUrls = faceAIndices.map((i: number) => faceAUrls[i]).filter((u: string | undefined): u is string => u !== undefined);
+          const faceAIndices = getDefaultSelectedPhotoIndices(faceAUrls.length, zone.faceA.selectedIndices);
+          const finalFaceAUrls = await resolveAnalysisPhotoSources({
+            photoUrls: faceAUrls,
+            selectedIndices: faceAIndices,
+            files: zone.faceA.files,
+          });
 
           if (finalFaceAUrls.length === 0) {
               const message = 'Selecciona al menos una foto en Cara A para analizar';
@@ -2842,8 +2569,12 @@ const DetailsPage: React.FC = () => {
           }
 
           const faceBUrls = zone.faceB.photoUrls || [];
-          const faceBIndices = zone.faceB.selectedIndices ?? faceBUrls.map((_: string, i: number) => i);
-          const finalFaceBUrls = faceBIndices.map((i: number) => faceBUrls[i]).filter((u: string | undefined): u is string => u !== undefined);
+          const faceBIndices = getDefaultSelectedPhotoIndices(faceBUrls.length, zone.faceB.selectedIndices);
+          const finalFaceBUrls = await resolveAnalysisPhotoSources({
+            photoUrls: faceBUrls,
+            selectedIndices: faceBIndices,
+            files: zone.faceB.files,
+          });
           const finalUrls = [...finalFaceAUrls, ...finalFaceBUrls];
           const hedgeFaces = {
             face_a_urls: finalFaceAUrls,
@@ -2861,6 +2592,7 @@ const DetailsPage: React.FC = () => {
           };
 
           const res = await estimateWorkWithAI(debugInputs);
+          const analysis = res.analysis_v2;
           
           // Initialize Debug Info
           const currentDebugInfo: AnalysisDebugInfo = {
@@ -2876,20 +2608,31 @@ const DetailsPage: React.FC = () => {
           setDebugLogs(currentDebugInfo);
 
 
-          if (res.tareas && res.tareas.length > 0) {
-              const t = res.tareas[0];
-              const resumen = t.resumen_medicion || {};
-              const faceDetails = resolveHedgeFaceDetails(t);
-              const caraA = faceDetails?.cara_a;
-              const caraB = faceDetails?.cara_b;
+          if (analysis || (res.tareas && res.tareas.length > 0)) {
+              const t = res.tareas?.[0] || {};
+              const hedgeMetrics = analysis?.service === 'Corte de setos' ? analysis.service_metrics as any : null;
+              const resumen = hedgeMetrics?.resumen_medicion || t.resumen_medicion || {};
+              const faceDetails = hedgeMetrics?.detalle_caras || resolveHedgeFaceDetails(t);
+              const caraA = faceDetails?.cara_a || {};
+              const caraB = faceDetails?.cara_b || {};
               const hasFaceB = finalFaceBUrls.length > 0;
-              const numericFaces = typeof t.caras === 'number' ? t.caras : undefined;
+              const numericFaces = typeof hedgeMetrics?.caras === 'number'
+                ? hedgeMetrics.caras
+                : (typeof t.caras === 'number' ? t.caras : undefined);
               const facesToTrimValue = Number(resumen.caras_recortar ?? numericFaces ?? (hasFaceB ? 2 : 1));
               const facesToTrim: 1 | 2 = facesToTrimValue >= 2 ? 2 : 1;
-              const baseLength = Number(resumen.base_longitud_m ?? t.longitud_m ?? 0);
-              const baseHeight = Number(resumen.base_altura_m ?? t.altura_m ?? 0);
+              const baseLength = Number(resumen.base_longitud_m ?? hedgeMetrics?.longitud_m ?? t.longitud_m ?? 0);
+              const baseHeight = Number(resumen.base_altura_m ?? hedgeMetrics?.altura_m ?? t.altura_m ?? 0);
               const pricingLength = Number(resumen.longitud_calculo_m ?? (baseLength * facesToTrim));
               const pricingHeight = Number(resumen.altura_calculo_m ?? (baseHeight * facesToTrim));
+              const commonAnalysis = buildAnalysisCommonFields({
+                analysis,
+                analysisLevel: t.nivel_analisis,
+                observations: t.observaciones,
+                analyzedIndices: [...faceAIndices, ...faceBIndices.map((i) => i + faceAUrls.length)],
+                selectedIndices: [...faceAIndices, ...faceBIndices.map((i) => i + faceAUrls.length)],
+                totalPhotoCount: finalUrls.length
+              });
 
               const h = baseHeight;
               const heightBand = resolveHedgeHeightBand(h);
@@ -2901,18 +2644,19 @@ const DetailsPage: React.FC = () => {
               zone.faces_to_trim = facesToTrim;
               zone.hasBackFaceTrim = hasFaceB;
               zone.height = heightBand;
-              zone.state = t.estado_seto || 'normal';
+              zone.state = hedgeMetrics?.estado_seto || t.estado_seto || 'normal';
               zone.access = 'normal'; // Legacy
-              zone.analysisLevel = t.nivel_analisis;
-              const baseObservations = Number(t.nivel_analisis || 1) >= 2 ? (t.observaciones || []) : [];
+              zone.analysisV2 = commonAnalysis.analysisV2;
+              zone.analysisLevel = commonAnalysis.analysisLevel;
+              zone.isFailed = commonAnalysis.isFailed;
               zone.observations = h > 7.5
-                ? [...baseObservations, 'Altura detectada superior a 7.5m, revisar manualmente por seguridad.']
-                : baseObservations;
+                ? [...commonAnalysis.observations, 'Altura detectada superior a 7.5m, revisar manualmente por seguridad.']
+                : commonAnalysis.observations;
               zone.faceA = {
                 ...zone.faceA,
                 analyzedIndices: faceAIndices,
                 analysisLevel: caraA?.nivel_analisis ?? zone.analysisLevel,
-                observations: caraA?.nivel_analisis >= 2 ? (caraA?.observaciones || []) : [],
+                observations: caraA?.observaciones || [],
                 longitud_m: caraA?.longitud_m,
                 altura_m: caraA?.altura_m
               };
@@ -2920,7 +2664,7 @@ const DetailsPage: React.FC = () => {
                 ...zone.faceB,
                 analyzedIndices: faceBIndices,
                 analysisLevel: caraB?.nivel_analisis,
-                observations: caraB?.nivel_analisis >= 2 ? (caraB?.observaciones || []) : [],
+                observations: caraB?.observaciones || [],
                 longitud_m: caraB?.longitud_m,
                 altura_m: caraB?.altura_m
               };
@@ -2928,65 +2672,46 @@ const DetailsPage: React.FC = () => {
               throw new Error('No se han detectado datos válidos en las imágenes.');
           }
 
-          let mergedZones: any[] = [];
-          setBookingData((prev) => {
-              const prevZones = [...(prev.hedgeZones || [])];
-              const prevIdx = prevZones.findIndex((z: any) => z.id === id);
-              if (prevIdx === -1) return {};
-              const mergedZone = syncLegacyHedgeZone({
-                  ...normalizeHedgeZone(prevZones[prevIdx]),
-                  ...zone
-              });
-              prevZones[prevIdx] = mergedZone;
-              mergedZones = prevZones;
-              return { hedgeZones: prevZones };
+          const mergedZones = [...(bookingData.hedgeZones || [])];
+          mergedZones[idx] = syncLegacyHedgeZone({
+            ...normalizeHedgeZone(mergedZones[idx]),
+            ...zone
           });
-          if (bookingData.serviceIds?.[0] && mergedZones.length > 0) updateServiceData(bookingData.serviceIds[0], { hedgeZones: mergedZones });
+          commitHedgeZones(mergedZones, true);
           
           // Update Final Debug Data
           currentDebugInfo.finalAnalysisData = { hedgeZones: mergedZones.length > 0 ? mergedZones : zones };
           setDebugLogs({...currentDebugInfo});
-          
-          saveProgress();
           return true;
       } catch (e: any) {
-          console.error(e);
-          
-          // Capture Error in Debug Logs
-          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
-              service: 'Corte de setos a máquina',
-              model: aiModel,
-              promptInputs: {},
-              rawResponse: {},
-              parsedResponse: {},
-              finalAnalysisData: {},
-              errors: [e],
-              timestamp: new Date().toISOString()
+          reportDetailsPageIssue({
+            event: 'booking.details_analysis_failed',
+            service: 'Corte de setos',
+            error: e,
+            serviceId: bookingData.serviceIds?.[0],
+            zoneId: id,
+            scope: 'details_hedge_analysis',
+            photoCount: zone.faceA.photoUrls.length + zone.faceB.photoUrls.length,
           });
+          setDebugLogs(prev => appendDebugError(
+            prev || createDebugInfo({ service: 'Corte de setos a máquina', model: aiModel, promptInputs: {} }),
+            e
+          ));
 
-          setBookingData((prev) => {
-              const currentZones = prev.hedgeZones || [];
-              const updatedZones = currentZones.map(z => {
-                  if (z.id === id) {
-                      return { 
-                          ...z, 
-                          isFailed: true,
-                          analysisLevel: 3,
-                          observations: ['Error en el análisis. Por favor, reintente.']
-                      };
-                  }
-                  return z;
-              });
-              
-              const nextServicesData = mergeActiveServiceSnapshot(prev, {
-                hedgeZones: updatedZones
-              });
-
-              return {
-                  hedgeZones: updatedZones,
-                  servicesData: nextServicesData
-              };
+          const failureFields = buildAnalysisFailureFields({
+            serviceName: 'Corte de setos',
+            selectedIndices: zone.selectedIndices,
+            totalPhotoCount: (zone.photoUrls || []).length
           });
+          const updatedZones = (bookingData.hedgeZones || []).map((z) =>
+            z.id === id
+              ? {
+                  ...z,
+                  ...failureFields
+                }
+              : z
+          );
+          commitHedgeZones(updatedZones, true);
           
           return false;
       } finally {
@@ -3024,15 +2749,14 @@ const DetailsPage: React.FC = () => {
     const newGroup = {
         id: `tree-${Date.now()}`,
         pruningType: 'structural' as const,
+        photoIds: [] as string[],
         photoUrls: [] as string[],
         aiSizeBand: undefined as TreeSizeBand | undefined,
         aiHeightMeters: 0,
         difficultyHigh: undefined as boolean | undefined
     };
     const newGroups = [...(bookingData.treeGroups || []), newGroup];
-    setBookingData({ treeGroups: newGroups });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: newGroups });
-    saveProgress();
+    commitTreeGroups(newGroups, calculateTotalTreeHours(newGroups), true);
   };
 
   const updateTreeGroup = (id: string, updates: any) => {
@@ -3041,11 +2765,7 @@ const DetailsPage: React.FC = () => {
     if (idx === -1) return;
     next[idx] = { ...next[idx], ...updates };
     const newHours = calculateTotalTreeHours(next);
-    setBookingData({ treeGroups: next, estimatedHours: newHours });
-    if (bookingData.serviceIds?.[0]) {
-      updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
-    }
-    saveProgress();
+    commitTreeGroups(next, newHours, true);
   };
 
   const removeTreeGroup = (id: string) => {
@@ -3058,93 +2778,24 @@ const DetailsPage: React.FC = () => {
       onConfirm: () => {
         const newGroups = (bookingData.treeGroups || []).filter(z => z.id !== id);
         const newHours = calculateTotalTreeHours(newGroups);
-        setBookingData({ treeGroups: newGroups, estimatedHours: newHours });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: newGroups, estimatedHours: newHours });
-        saveProgress();
+        commitTreeGroups(newGroups, newHours, true);
       }
     });
   };
 
   const handleTreeFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    const groups = [...(bookingData.treeGroups || [])];
-    const idx = groups.findIndex(z => z.id === id);
-    if (idx === -1) return;
-
-    if ((groups[idx].photoUrls?.length || 0) + files.length > 5) {
-        toast.error('Máximo 5 fotos por árbol');
-        return;
-    }
-
-    const currentLen = groups[idx].photoUrls?.length || 0;
-    const tempUrls = files.map(f => URL.createObjectURL(f));
-    groups[idx].photoUrls = [...(groups[idx].photoUrls || []), ...tempUrls];
-    setBookingData({ treeGroups: groups });
-
-    const newIndices = tempUrls.map((_, i) => currentLen + i);
-    setTreeUploads(prev => {
-        const zoneUploads = new Set(prev[id] || []);
-        newIndices.forEach(i => zoneUploads.add(i));
-        return { ...prev, [id]: zoneUploads };
+    await appendFilesToSimplePhotoCollection({
+      key: 'treeGroups',
+      itemId: id,
+      event: e,
+      validationScope: 'details_tree_selection',
+      uploadSetter: setTreeUploads,
     });
-
-    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
-    
-    try {
-        const uploadResults = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
-        const updatedGroups = [...(bookingData.treeGroups || [])];
-        const updatedIdx = updatedGroups.findIndex(z => z.id === id);
-        if (updatedIdx === -1) return;
-
-        const finalUrls = [...(updatedGroups[updatedIdx].photoUrls || [])];
-        uploadResults.forEach((url, i) => {
-            const targetIdx = currentLen + i;
-            if (!url) return;
-            if (targetIdx < finalUrls.length) {
-                finalUrls[targetIdx] = url;
-            } else {
-                finalUrls.push(url);
-            }
-        });
-        
-        updatedGroups[updatedIdx].photoUrls = finalUrls;
-        setBookingData({ treeGroups: updatedGroups });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: updatedGroups });
-    } catch (error) {
-        console.error('Upload failed', error);
-        toast.error('Error al subir algunas imágenes');
-    } finally {
-        setTreeUploads(prev => {
-            const next = { ...prev };
-            const zoneUploads = new Set(next[id] || []);
-            newIndices.forEach(i => zoneUploads.delete(i));
-            next[id] = zoneUploads;
-            return next;
-        });
-    }
   };
 
   
   const toggleTreePhotoSelection = (zoneId: string, photoIndex: number) => {
-      const groups = [...(bookingData.treeGroups || [])];
-      const idx = groups.findIndex(z => z.id === zoneId);
-      if (idx === -1) return;
-      const zone = groups[idx] as any;
-      const allUrls = zone.photoUrls || [];
-      const currentSelected = zone.selectedIndices ?? allUrls.map((_: any, i: number) => i);
-      const isSelected = currentSelected.includes(photoIndex);
-      
-      let newSelected;
-      if (isSelected) {
-          newSelected = currentSelected.filter((i: number) => i !== photoIndex);
-      } else {
-          newSelected = [...currentSelected, photoIndex].sort((a, b) => a - b);
-      }
-      
-      zone.selectedIndices = newSelected;
-      setBookingData({ treeGroups: groups });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups });
+      toggleSimplePhotoCollectionSelection('treeGroups', zoneId, photoIndex);
   };
 
   const removeTreePhoto = (zoneId: string, photoIndex: number) => {
@@ -3152,13 +2803,37 @@ const DetailsPage: React.FC = () => {
       const idx = groups.findIndex(z => z.id === zoneId);
       if (idx === -1) return;
       const zone = groups[idx] as any;
-      
-      zone.photoUrls = (zone.photoUrls || []).filter((_: any, i: number) => i !== photoIndex);
-      zone.selectedIndices = (zone.selectedIndices || []).filter((i: number) => i !== photoIndex).map((i: number) => i > photoIndex ? i - 1 : i);
-      zone.analyzedIndices = (zone.analyzedIndices || []).filter((i: number) => i !== photoIndex).map((i: number) => i > photoIndex ? i - 1 : i);
-      
-      setBookingData({ treeGroups: groups });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups });
+      const isAnalyzedPhoto = (zone.analyzedIndices || []).includes(photoIndex);
+      const executeRemove = () => {
+          Object.assign(zone, removePhotoFromCollection(zone, photoIndex));
+
+          if (isAnalyzedPhoto) {
+              Object.assign(zone, resetAnalysisCommonFields({
+                  ...zone,
+                  aiSizeBand: undefined,
+                  aiHeightMeters: 0,
+                  difficultyHigh: undefined,
+                  estimatedHours: 0
+              }));
+          }
+
+          groups[idx] = zone;
+          const newHours = calculateTotalTreeHours(groups);
+          commitTreeGroups(groups, newHours, true);
+      };
+
+      if (!isAnalyzedPhoto) {
+          executeRemove();
+          return;
+      }
+
+      openPhotoRemovalConfirm({
+          analysis: zone.analysisV2,
+          analysisLevel: zone.analysisLevel,
+          observations: zone.observations,
+          subjectLabel: 'el árbol',
+          onConfirm: executeRemove
+      });
   };
 
   const addPalmGroup = () => {
@@ -3169,87 +2844,35 @@ const DetailsPage: React.FC = () => {
         quantity: 1,
         state: 'normal',
         wasteRemoval: true,
-        photoUrls: [] as string[]
+        photoIds: [] as string[],
+        photoUrls: [] as string[],
+        files: [] as File[],
+        selectedIndices: [] as number[],
+        analyzedIndices: [] as number[]
     };
     const newGroups = [...(bookingData.palmGroups || []), newGroup as any];
-    setBookingData({ palmGroups: newGroups });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: newGroups });
+    commitPalmGroups(newGroups);
   };
 
   const removePalmGroup = (id: string) => {
       const currentGroups = bookingData.palmGroups || [];
       const nextGroups = currentGroups.filter(g => g.id !== id);
-      setBookingData({ palmGroups: nextGroups });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: nextGroups });
+      commitPalmGroups(nextGroups);
       updatePalmPricing(nextGroups);
   };
 
   const handlePalmFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files || e.target.files.length === 0) return;
-      const files = Array.from(e.target.files);
-      const group = (bookingData.palmGroups || []).find(g => g.id === id);
-      if (!group) return;
-      const currentPhotos = (group as any).photoUrls || [];
-      if (currentPhotos.length + files.length > 5) {
-          toast.error('Máximo 5 fotos por grupo');
-          return;
-      }
-      
-      const newIndices = files.map((_, i) => currentPhotos.length + i);
-      setPalmUploads(prev => {
-          const next = { ...prev };
-          const set = new Set(next[id] || []);
-          newIndices.forEach(i => set.add(i));
-          next[id] = set;
-          return next;
+      await appendFilesToSimplePhotoCollection({
+        key: 'palmGroups',
+        itemId: id,
+        event: e,
+        validationScope: 'details_palm_selection',
+        uploadSetter: setPalmUploads,
       });
-
-      const nextGroups = [...(bookingData.palmGroups || [])];
-      const zIdx = nextGroups.findIndex(x => x.id === id);
-      const tempUrls = files.map(f => URL.createObjectURL(f));
-      nextGroups[zIdx] = { ...group, photoUrls: [...currentPhotos, ...tempUrls] } as any;
-      setBookingData({ palmGroups: nextGroups });
-
-      try {
-          const uploadedUrls = await Promise.all(files.map((f, i) => uploadFile(f, currentPhotos.length + i)));
-          const finalGroups = [...(bookingData.palmGroups || [])];
-          const finalZIdx = finalGroups.findIndex(x => x.id === id);
-          if (finalZIdx !== -1) {
-              const updatedUrls = [...currentPhotos];
-              uploadedUrls.forEach((url, i) => {
-                  if (url) updatedUrls.push(url);
-              });
-              finalGroups[finalZIdx] = { ...finalGroups[finalZIdx], photoUrls: updatedUrls } as any;
-              setBookingData({ palmGroups: finalGroups });
-              if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: finalGroups });
-          }
-      } catch (err) {
-          console.error('Error uploading palm photos:', err);
-          toast.error('Error al subir algunas fotos');
-      } finally {
-          setPalmUploads(prev => {
-              const next = { ...prev };
-              const set = new Set(next[id] || []);
-              newIndices.forEach(i => set.delete(i));
-              if (set.size === 0) delete next[id];
-              else next[id] = set;
-              return next;
-          });
-      }
   };
 
   const togglePalmPhotoSelection = (id: string, photoIndex: number) => {
-      const groups = [...(bookingData.palmGroups || [])];
-      const zIdx = groups.findIndex(z => z.id === id);
-      if (zIdx === -1) return;
-      const group = groups[zIdx] as any;
-      const currentSelected = group.selectedIndices ?? Array.from({ length: (group.photoUrls || []).length }, (_, i) => i);
-      const newSelected = currentSelected.includes(photoIndex)
-          ? currentSelected.filter((i: number) => i !== photoIndex)
-          : [...currentSelected, photoIndex].sort((a: number, b: number) => a - b);
-      group.selectedIndices = newSelected;
-      setBookingData({ palmGroups: groups });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: groups });
+      toggleSimplePhotoCollectionSelection('palmGroups', id, photoIndex);
   };
 
   const removePalmPhoto = (id: string, photoIndex: number) => {
@@ -3257,14 +2880,43 @@ const DetailsPage: React.FC = () => {
       const zIdx = groups.findIndex(z => z.id === id);
       if (zIdx === -1) return;
       const group = groups[zIdx] as any;
-      group.photoUrls = (group.photoUrls || []).filter((_: any, i: number) => i !== photoIndex);
-      if (group.selectedIndices) {
-          group.selectedIndices = group.selectedIndices
-              .filter((i: number) => i !== photoIndex)
-              .map((i: number) => i > photoIndex ? i - 1 : i);
+      const isAnalyzedPhoto = (group.analyzedIndices || []).includes(photoIndex);
+      const executeRemove = () => {
+          Object.assign(group, removePhotoFromCollection(group, photoIndex));
+          if (isAnalyzedPhoto) {
+              Object.assign(group, resetAnalysisCommonFields({
+                  ...group,
+                  species: '',
+                  height: '',
+                  state: 'normal',
+                  hasPhytosanitary: false,
+                  hasTrunkPeeling: false,
+                  needsPhytosanitary: false,
+                  needsTrunkFinish: false,
+                  hasAccessDifficulty: undefined,
+                  lowestRangeThreshold: undefined,
+                  highestOpenRangeThreshold: undefined,
+                  isTerminalOpenRange: false,
+                  allowsPriceChange: false,
+              }));
+          }
+          groups[zIdx] = group;
+          void updatePalmPricing(groups);
+          saveProgress();
+      };
+
+      if (!isAnalyzedPhoto) {
+          executeRemove();
+          return;
       }
-      setBookingData({ palmGroups: groups });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: groups });
+
+      openPhotoRemovalConfirm({
+          analysis: group.analysisV2,
+          analysisLevel: group.analysisLevel,
+          observations: group.observations,
+          subjectLabel: 'el grupo',
+          onConfirm: executeRemove
+      });
   };
 
   const analyzePalmGroup = async (id: string) => {
@@ -3276,17 +2928,24 @@ const DetailsPage: React.FC = () => {
       try {
           setPalmAnalyzingZoneIds(prev => new Set(prev).add(id));
           const photoUrls = (group as any).photoUrls || [];
+          const selectedIndices = getDefaultSelectedPhotoIndices(photoUrls.length, (group as any).selectedIndices);
+          const finalPhotoUrls = await resolveAnalysisPhotoSources({
+            photoUrls,
+            selectedIndices,
+            files: (group as any).files,
+          });
           
           const debugInputs = {
              description: '',
-             photoCount: photoUrls.length,
+             photoCount: finalPhotoUrls.length,
              selectedServiceIds: bookingData.serviceIds,
-             photoUrls: photoUrls,
+             photoUrls: finalPhotoUrls,
              serviceName: 'Poda de palmeras',
              model: aiModel
           };
 
           const res = await estimateWorkWithAI(debugInputs);
+          const analysis = res.analysis_v2;
           
           const currentDebugInfo: AnalysisDebugInfo = {
               service: 'Poda de palmeras',
@@ -3300,22 +2959,29 @@ const DetailsPage: React.FC = () => {
           };
           setDebugLogs(currentDebugInfo);
 
-          if (!res.palmas || res.palmas.length === 0) {
-              throw new Error('No se han detectado palmeras claras en la imagen.');
-          }
-
-          const p0 = res.palmas[0];
-          group.species = p0.especie ? p0.especie.charAt(0).toUpperCase() + p0.especie.slice(1) : 'Desconocida';
-          group.height = p0.altura;
-          group.state = normalizePalmState(p0.estado);
-          group.analysisLevel = p0.nivel_analisis;
-          group.observations = p0.observaciones || [];
-          (group as any).isFailed = group.analysisLevel === 3;
+          const palms = Array.isArray(res.palmas) ? res.palmas : [];
+          const p0 = palms[0];
+          const commonAnalysis = buildAnalysisCommonFields({
+            analysis,
+            analysisLevel: p0?.nivel_analisis,
+            observations: p0?.observaciones,
+            analyzedIndices: selectedIndices,
+            selectedIndices,
+            totalPhotoCount: photoUrls.length
+          });
+          group.species = p0?.especie ? p0.especie.charAt(0).toUpperCase() + p0.especie.slice(1) : (group.species || 'Desconocida');
+          group.height = p0?.altura || group.height;
+          group.state = normalizePalmState(p0?.estado);
+          group.analysisV2 = commonAnalysis.analysisV2;
+          group.analysisLevel = commonAnalysis.analysisLevel;
+          group.observations = commonAnalysis.observations;
+          (group as any).isFailed = commonAnalysis.isFailed;
+          (group as any).analyzedIndices = commonAnalysis.analyzedIndices;
           (group as any).hasPhytosanitary = supportsPhytosanitaryForSpecies(group.species);
           groups[idx] = group;
 
-          for (let i = 1; i < res.palmas.length; i++) {
-              const p = res.palmas[i];
+          for (let i = 1; i < palms.length; i++) {
+              const p = palms[i];
               groups.push({
                   id: `palm-ai-${Date.now()}-${i}`,
                   species: p.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Desconocida',
@@ -3324,33 +2990,39 @@ const DetailsPage: React.FC = () => {
                   state: normalizePalmState(p.estado),
                   wasteRemoval: true,
                   hasPhytosanitary: supportsPhytosanitaryForSpecies(p.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Desconocida'),
-                  analysisLevel: p.nivel_analisis,
-                  observations: p.observaciones || [],
+                  analysisLevel: commonAnalysis.analysisLevel,
+                  observations: commonAnalysis.observations,
+                  analysisV2: commonAnalysis.analysisV2,
                   photoUrls: [...photoUrls],
-                  isFailed: p.nivel_analisis === 3
+                  analyzedIndices: commonAnalysis.analyzedIndices,
+                  isFailed: commonAnalysis.isFailed
               } as any);
           }
 
           await updatePalmPricing(groups);
-          setBookingData({ palmGroups: groups });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: groups });
+          commitPalmGroups(groups, true);
           
           currentDebugInfo.finalAnalysisData = { palmGroups: groups };
           setDebugLogs({...currentDebugInfo});
-          
-          saveProgress();
       } catch (e: any) {
-          console.error(e);
-          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
-              service: 'Poda de palmeras',
-              model: aiModel,
-              promptInputs: {},
-              rawResponse: {},
-              parsedResponse: {},
-              finalAnalysisData: {},
-              errors: [e],
-              timestamp: new Date().toISOString()
+          reportDetailsPageIssue({
+            event: 'booking.details_analysis_failed',
+            service: 'Poda de palmeras',
+            error: e,
+            serviceId: bookingData.serviceIds?.[0],
+            zoneId: id,
+            scope: 'details_palm_analysis',
+            photoCount: ((group as any).photoUrls || []).length,
           });
+          const failureFields = buildAnalysisFailureFields({
+            serviceName: 'Poda de palmeras',
+            selectedIndices: (group as any).selectedIndices,
+            totalPhotoCount: ((group as any).photoUrls || []).length
+          });
+          setDebugLogs(prev => appendDebugError(
+            prev || createDebugInfo({ service: 'Poda de palmeras', model: aiModel, promptInputs: {} }),
+            e
+          ));
           
           setBookingData((prev) => {
               const currentZones = prev.palmGroups || [];
@@ -3358,9 +3030,7 @@ const DetailsPage: React.FC = () => {
                   if (z.id === id) {
                       return { 
                           ...z, 
-                          isFailed: true,
-                          analysisLevel: 3,
-                          observations: [e.message || 'Error en el análisis. Por favor, reintente.']
+                          ...failureFields
                       } as any;
                   }
                   return z;
@@ -3374,7 +3044,10 @@ const DetailsPage: React.FC = () => {
           });
           
           const currentZones = bookingData.palmGroups || [];
-          const updatedZones = currentZones.map(z => z.id === id ? { ...z, isFailed: true, analysisLevel: 3, observations: [e.message || 'Error en el análisis.'] } as any : z);
+          const updatedZones = currentZones.map(z => z.id === id ? {
+            ...z,
+            ...failureFields
+          } as any : z);
           await updatePalmPricing(updatedZones);
       } finally {
           setPalmAnalyzingZoneIds(prev => {
@@ -3401,18 +3074,25 @@ const analyzeTreeGroup = async (id: string) => {
       
       try {
           setTreeAnalyzingZoneIds(prev => new Set(prev).add(id));
+          const selectedIndices = getDefaultSelectedPhotoIndices(group.photoUrls?.length || 0, (group as any).selectedIndices);
+          const finalPhotoUrls = await resolveAnalysisPhotoSources({
+            photoUrls: group.photoUrls || [],
+            selectedIndices,
+            files: (group as any).files,
+          });
           
           // Debug Info Prep
           const debugInputs = {
              description: '',
-             photoCount: group.photoUrls?.length || 0,
+             photoCount: finalPhotoUrls.length,
              selectedServiceIds: bookingData.serviceIds,
-             photoUrls: group.photoUrls || [],
+             photoUrls: finalPhotoUrls,
              serviceName: 'Poda de árboles',
              model: aiModel
           };
 
           const res = await estimateWorkWithAI(debugInputs);
+          const analysis = res.analysis_v2;
           
           // Initialize Debug Info
           const currentDebugInfo: AnalysisDebugInfo = {
@@ -3429,46 +3109,43 @@ const analyzeTreeGroup = async (id: string) => {
 
 
           const a = Array.isArray(res.arboles) && res.arboles.length > 0 ? res.arboles[0] : null;
-          if (!a) throw new Error('No se han detectado datos válidos en las imágenes.');
-
-          const sizeBand =
-            normalizeTreeSizeBand((a as any).size_band);
-          const legacyHeight = sizeBand
-            ? treeSizeBandToLegacyMeters(sizeBand)
-            : 0;
-          group.aiSizeBand = sizeBand ?? undefined;
-          group.aiHeightMeters = Number.isFinite(legacyHeight) ? legacyHeight : 0;
-          // BLOQUE 2: no consumir dificultad IA para decisiones de negocio.
-          group.difficultyHigh = typeof group.difficultyHigh === 'boolean' ? group.difficultyHigh : undefined;
-          group.analysisLevel = Number((a as any).nivel_analisis || 3);
-          group.observations = (a as any).observaciones || [];
-          group.isFailed = group.analysisLevel === 3 || !group.aiSizeBand;
+          const treePatch = adaptTreeAnalysisResult({
+            analysis,
+            legacyTree: a,
+            selectedIndices,
+            totalPhotoCount: group.photoUrls?.length || 0,
+            difficultyHigh: group.difficultyHigh,
+          });
+          Object.assign(group, treePatch);
+          group.isFailed = Boolean(group.isFailed || !group.aiSizeBand);
           group.estimatedHours = estimateTreeZoneHours(group);
 
           groups[idx] = group;
           const newHours = calculateTotalTreeHours(groups);
-          setBookingData({ treeGroups: groups, estimatedHours: newHours });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: groups, estimatedHours: newHours });
+          commitTreeGroups(groups, newHours, true);
           
           // Update Final Debug Data
           currentDebugInfo.finalAnalysisData = { treeGroups: groups, estimatedHours: newHours };
           setDebugLogs({...currentDebugInfo});
-          
-          saveProgress();
       } catch (e: any) {
-          console.error(e);
-          
-          // Capture Error in Debug Logs
-          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
-              service: 'Poda de árboles',
-              model: aiModel,
-              promptInputs: {},
-              rawResponse: {},
-              parsedResponse: {},
-              finalAnalysisData: {},
-              errors: [e],
-              timestamp: new Date().toISOString()
+          reportDetailsPageIssue({
+            event: 'booking.details_analysis_failed',
+            service: 'Poda de árboles',
+            error: e,
+            serviceId: bookingData.serviceIds?.[0],
+            zoneId: id,
+            scope: 'details_tree_analysis',
+            photoCount: group.photoUrls?.length || 0,
           });
+          const failureFields = buildAnalysisFailureFields({
+            serviceName: 'Poda de árboles',
+            selectedIndices: (group as any).selectedIndices,
+            totalPhotoCount: (group.photoUrls || []).length
+          });
+          setDebugLogs(prev => appendDebugError(
+            prev || createDebugInfo({ service: 'Poda de árboles', model: aiModel, promptInputs: {} }),
+            e
+          ));
           
           setBookingData((prev) => {
               const currentZones = prev.treeGroups || [];
@@ -3476,9 +3153,7 @@ const analyzeTreeGroup = async (id: string) => {
                   if (z.id === id) {
                       return { 
                           ...z, 
-                          isFailed: true,
-                          analysisLevel: 3,
-                          observations: ['Error en el análisis. Por favor, reintente.']
+                          ...failureFields
                       };
                   }
                   return z;
@@ -3530,9 +3205,7 @@ const analyzeTreeGroup = async (id: string) => {
         analyzedIndices: [] as number[]
     };
     const newGroups = [...(bookingData.shrubGroups || []), newGroup];
-    setBookingData({ shrubGroups: newGroups });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups });
-    saveProgress();
+    commitShrubGroups(newGroups, true);
   };
 
   const removeShrubGroup = (id: string) => {
@@ -3549,20 +3222,14 @@ const analyzeTreeGroup = async (id: string) => {
         onConfirm: () => {
           const newGroups = (bookingData.shrubGroups || []).map(z => {
             if (z.id === id) {
-              return {
+              return resetAnalysisCommonFields({
                 ...z,
                 area: 0,
-                analysisLevel: undefined,
-                observations: [],
-                isFailed: false,
-                analyzedIndices: []
-              };
+              });
             }
             return z;
           });
-          setBookingData({ shrubGroups: newGroups });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups });
-          saveProgress();
+          commitShrubGroups(newGroups, true);
         }
       });
     } else {
@@ -3574,33 +3241,14 @@ const analyzeTreeGroup = async (id: string) => {
         tone: 'danger',
         onConfirm: () => {
           const newGroups = (bookingData.shrubGroups || []).filter(z => z.id !== id);
-          setBookingData({ shrubGroups: newGroups });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: newGroups });
-          saveProgress();
+          commitShrubGroups(newGroups, true);
         }
       });
     }
   };
 
   const toggleShrubPhotoSelection = (zoneId: string, photoIndex: number) => {
-      const groups = [...(bookingData.shrubGroups || [])];
-      const idx = groups.findIndex(z => z.id === zoneId);
-      if (idx === -1) return;
-      const zone = groups[idx];
-      const allUrls = zone.photoUrls || [];
-      const currentSelected = zone.selectedIndices ?? allUrls.map((_, i) => i);
-      const isSelected = currentSelected.includes(photoIndex);
-      
-      let newSelected;
-      if (isSelected) {
-          newSelected = currentSelected.filter(i => i !== photoIndex);
-      } else {
-          newSelected = [...currentSelected, photoIndex].sort((a, b) => a - b);
-      }
-      
-      zone.selectedIndices = newSelected;
-      setBookingData({ shrubGroups: groups });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+      toggleSimplePhotoCollectionSelection('shrubGroups', zoneId, photoIndex);
   };
 
   const removeShrubPhoto = (zoneId: string, photoIndex: number) => {
@@ -3608,80 +3256,43 @@ const analyzeTreeGroup = async (id: string) => {
       const idx = groups.findIndex(z => z.id === zoneId);
       if (idx === -1) return;
       const zone = groups[idx];
-      
-      zone.photoUrls = (zone.photoUrls || []).filter((_, i) => i !== photoIndex);
-      zone.selectedIndices = (zone.selectedIndices || []).filter(i => i !== photoIndex).map(i => i > photoIndex ? i - 1 : i);
-      zone.analyzedIndices = (zone.analyzedIndices || []).filter(i => i !== photoIndex).map(i => i > photoIndex ? i - 1 : i);
-      
-      setBookingData({ shrubGroups: groups });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
-      saveProgress();
+      const isAnalyzedPhoto = (zone.analyzedIndices || []).includes(photoIndex);
+      const executeRemove = () => {
+          Object.assign(zone, removePhotoFromCollection(zone, photoIndex));
+
+          if (isAnalyzedPhoto) {
+              Object.assign(zone, resetAnalysisCommonFields({
+                  ...zone,
+                  area: 0,
+              }));
+          }
+
+          groups[idx] = zone;
+          commitShrubGroups(groups, true);
+      };
+
+      if (!isAnalyzedPhoto) {
+          executeRemove();
+          return;
+      }
+
+      openPhotoRemovalConfirm({
+          analysis: zone.analysisV2,
+          analysisLevel: zone.analysisLevel,
+          observations: zone.observations,
+          subjectLabel: 'el macizo',
+          onConfirm: executeRemove
+      });
   };
 
   const handleShrubFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    const groups = [...(bookingData.shrubGroups || [])];
-    const idx = groups.findIndex(z => z.id === id);
-    if (idx === -1) return;
-    const group = groups[idx];
-    const currentPhotos = group.photoUrls || [];
-    
-    if (currentPhotos.length + files.length > 5) {
-        toast.error('Máximo 5 fotos por grupo');
-        return;
-    }
-    
-    const startIndex = currentPhotos.length;
-    const tempUrls = files.map(f => URL.createObjectURL(f));
-    group.photoUrls = [...currentPhotos, ...tempUrls];
-
-    const currentSelected = group.selectedIndices ?? currentPhotos.map((_, i) => i);
-    group.selectedIndices = [...currentSelected, ...files.map((_, i) => startIndex + i)];
-
-    setBookingData({ shrubGroups: groups });
-
-    const newIndices = tempUrls.map((_, i) => startIndex + i);
-    setShrubUploads(prev => {
-        const next = { ...prev };
-        const set = new Set(next[id] || []);
-        newIndices.forEach(i => set.add(i));
-        next[id] = set;
-        return next;
+    await appendFilesToSimplePhotoCollection({
+      key: 'shrubGroups',
+      itemId: id,
+      event: e,
+      validationScope: 'details_shrub_selection',
+      uploadSetter: setShrubUploads,
     });
-
-    try {
-        for (let i = 0; i < files.length; i++) {
-            const globalIndex = startIndex + i;
-            const compressed = await compressImage(files[i]);
-            const url = await uploadFile(compressed, globalIndex);
-            if (!url) continue;
-
-            setBookingData(prev => {
-                const latest = [...(prev.shrubGroups || [])];
-                const z = latest.find(x => x.id === id);
-                if (z) {
-                    const urls = [...(z.photoUrls || [])];
-                    urls[globalIndex] = url;
-                    z.photoUrls = urls;
-                }
-                if (prev.serviceIds?.[0]) updateServiceData(prev.serviceIds[0], { shrubGroups: latest });
-                return { shrubGroups: latest };
-            });
-        }
-    } catch (e) {
-        console.error('Upload failed:', e);
-        toast.error('Error al subir algunas imágenes');
-    } finally {
-        setShrubUploads(prev => {
-            const next = { ...prev };
-            const set = new Set(next[id] || []);
-            newIndices.forEach(i => set.delete(i));
-            if (set.size === 0) delete next[id];
-            else next[id] = set;
-            return next;
-        });
-    }
 
     saveProgress();
   };
@@ -3704,8 +3315,12 @@ const analyzeTreeGroup = async (id: string) => {
       if (idx === -1) return;
       const group = groups[idx];
       const allUrls = group.photoUrls || [];
-      const indicesToAnalyze = group.selectedIndices ?? allUrls.map((_, i) => i);
-      const finalUrls = indicesToAnalyze.map(i => allUrls[i]).filter((u): u is string => u !== undefined && u !== '');
+      const indicesToAnalyze = getDefaultSelectedPhotoIndices(allUrls.length, group.selectedIndices);
+      const finalUrls = await resolveAnalysisPhotoSources({
+        photoUrls: allUrls,
+        selectedIndices: indicesToAnalyze,
+        files: group.files,
+      });
 
       if (finalUrls.length === 0) {
           if (!options?.silent) toast.error('Sube al menos una foto del macizo');
@@ -3727,6 +3342,7 @@ const analyzeTreeGroup = async (id: string) => {
           };
 
           const res = await estimateWorkWithAI(debugInputs);
+          const analysis = res.analysis_v2;
           
           // Initialize Debug Info
           const currentDebugInfo: AnalysisDebugInfo = {
@@ -3742,53 +3358,43 @@ const analyzeTreeGroup = async (id: string) => {
           setDebugLogs(currentDebugInfo);
 
 
-          if (res.tareas && res.tareas.length > 0) {
-              const t = res.tareas[0];
-              
-              let mappedSize: 'pequeñas' | 'medianas' | 'grandes' = 'pequeñas';
-              const aiSize = String(t.tamano_dominante || '').toLowerCase();
-              if (aiSize.includes('grandes')) mappedSize = 'grandes';
-              else if (aiSize.includes('medianas')) mappedSize = 'medianas';
-
-              const legacyTotal = Number(t.tamano_total_jardin_m2 || 0);
-              const legacyPercent = Number(t.porcentaje_superficie_plantas || 0);
-              const fallbackM2 = Number.isFinite(legacyTotal) && Number.isFinite(legacyPercent)
-                ? Math.max(0, Math.round(legacyTotal * (legacyPercent / 100)))
-                : 0;
-
-              group.area = Math.max(0, Number(t.superficie_m2 ?? fallbackM2 ?? 0));
-              group.size = mappedSize;
-              group.analysisLevel = t.nivel_analisis;
-              group.observations = t.observaciones;
-              group.analyzedIndices = indicesToAnalyze;
-              (group as any).isFailed = Number(t.nivel_analisis || 3) === 3;
+          if (analysis || (res.tareas && res.tareas.length > 0)) {
+              const t = res.tareas?.[0] || {};
+              Object.assign(group, adaptShrubAnalysisResult({
+                analysis,
+                legacyTask: t,
+                selectedIndices: indicesToAnalyze,
+                totalPhotoCount: allUrls.length
+              }));
           } else {
              throw new Error('No se han detectado datos válidos en las imágenes.');
           }
 
           groups[idx] = group;
-          setBookingData({ shrubGroups: groups });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { shrubGroups: groups });
+          commitShrubGroups(groups, true);
           
           // Update Final Debug Data
           currentDebugInfo.finalAnalysisData = { shrubGroups: groups };
           setDebugLogs({...currentDebugInfo});
-          
-          saveProgress();
       } catch (e: any) {
-          console.error(e);
-          
-          // Capture Error in Debug Logs
-          setDebugLogs(prev => prev ? ({...prev, errors: [...prev.errors, e]}) : {
-              service: 'Poda de plantas y arbustos',
-              model: aiModel,
-              promptInputs: {},
-              rawResponse: {},
-              parsedResponse: {},
-              finalAnalysisData: {},
-              errors: [e],
-              timestamp: new Date().toISOString()
+          reportDetailsPageIssue({
+            event: 'booking.details_analysis_failed',
+            service: 'Poda de plantas y arbustos',
+            error: e,
+            serviceId: bookingData.serviceIds?.[0],
+            zoneId: id,
+            scope: 'details_shrub_analysis',
+            photoCount: allUrls.length,
           });
+          const failureFields = buildAnalysisFailureFields({
+            serviceName: 'Poda de plantas y arbustos',
+            selectedIndices: group.selectedIndices,
+            totalPhotoCount: allUrls.length
+          });
+          setDebugLogs(prev => appendDebugError(
+            prev || createDebugInfo({ service: 'Poda de plantas y arbustos', model: aiModel, promptInputs: {} }),
+            e
+          ));
           
           setBookingData((prev) => {
               const currentZones = prev.shrubGroups || [];
@@ -3796,9 +3402,7 @@ const analyzeTreeGroup = async (id: string) => {
                   if (z.id === id) {
                       return { 
                           ...z, 
-                          isFailed: true,
-                          analysisLevel: 3,
-                          observations: ['Error en el análisis. Por favor, reintente.']
+                          ...failureFields
                       };
                   }
                   return z;
@@ -3829,6 +3433,7 @@ const analyzeTreeGroup = async (id: string) => {
       state: 'normal' as const,
       applyHerbicide: false,
       wasteRemoval: true,
+      photoIds: [] as string[],
       photoUrls: [] as string[],
       files: [] as File[],
       selectedIndices: [] as number[],
@@ -3840,9 +3445,7 @@ const analyzeTreeGroup = async (id: string) => {
       const baseZone = current[0] || createDefaultWeedingZone();
       const nextZone = updater(baseZone);
       const nextZones = [nextZone];
-      setBookingData({ weedingZones: nextZones });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { weedingZones: nextZones });
-      saveProgress();
+      commitSimplePhotoCollectionPatch('weedingZones', nextZones, {}, { saveAfterCommit: true });
   };
 
   const handleWeedingAreaChange = (value: string) => {
@@ -3874,15 +3477,14 @@ const analyzeTreeGroup = async (id: string) => {
         aboveThreeMeters: undefined as boolean | undefined,
         analysisMetrics: { ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS },
         wasteRemoval: true,
+        photoIds: [] as string[],
         photoUrls: [] as string[],
         files: [] as File[],
         selectedIndices: [] as number[],
         analyzedIndices: [] as number[]
     };
     const newZones = [...(bookingData.phytosanitaryZones || []), newZone];
-    setBookingData({ phytosanitaryZones: newZones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: newZones });
-    saveProgress();
+    commitPhytosanitaryZones(newZones, true);
   };
 
   const removePhytosanitaryZone = (id: string) => {
@@ -3894,80 +3496,23 @@ const analyzeTreeGroup = async (id: string) => {
       tone: 'danger',
       onConfirm: () => {
         const newZones = (bookingData.phytosanitaryZones || []).filter(z => z.id !== id);
-        setBookingData({ phytosanitaryZones: newZones });
-        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: newZones });
-        saveProgress();
+        commitPhytosanitaryZones(newZones, true);
       }
     });
   };
 
   const handlePhytosanitaryFileSelect = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    const zones = [...(bookingData.phytosanitaryZones || [])];
-    const idx = zones.findIndex(z => z.id === id);
-    if (idx === -1) return;
-    if ((zones[idx].photoUrls?.length || 0) + files.length > 5) {
-      toast.error('Máximo 5 fotos por zona');
-      return;
-    }
-
-    const currentLen = zones[idx].photoUrls?.length || 0;
-    const tempUrls = files.map(f => URL.createObjectURL(f));
-    const newIndices = tempUrls.map((_, i) => currentLen + i);
-    zones[idx].photoUrls = [...(zones[idx].photoUrls || []), ...tempUrls];
-    zones[idx].selectedIndices = [...(zones[idx].selectedIndices || []), ...newIndices];
-    setPhytosanitaryUploads(prev => {
-      const zoneUploads = new Set(prev[id] || []);
-      newIndices.forEach(i => zoneUploads.add(i));
-      return { ...prev, [id]: zoneUploads };
+    await appendFilesToSimplePhotoCollection({
+      key: 'phytosanitaryZones',
+      itemId: id,
+      event: e,
+      validationScope: 'details_phytosanitary_selection',
+      uploadSetter: setPhytosanitaryUploads,
     });
-    setBookingData({ phytosanitaryZones: zones });
-
-    const startIdx = (bookingData.uploadedPhotoUrls?.length || 0) + Date.now();
-    try {
-      const uploadResults = await Promise.all(files.map((file, i) => uploadFile(file, startIdx + i)));
-      const updatedZones = [...(bookingData.phytosanitaryZones || [])];
-      const updatedIdx = updatedZones.findIndex(z => z.id === id);
-      if (updatedIdx === -1) return;
-      const updatedZone = { ...updatedZones[updatedIdx] };
-      const finalUrls = [...(updatedZone.photoUrls || [])];
-      uploadResults.forEach((url, i) => {
-        const targetIdx = currentLen + i;
-        if (url && targetIdx < finalUrls.length) {
-          finalUrls[targetIdx] = url;
-        }
-      });
-      updatedZone.photoUrls = finalUrls;
-      updatedZones[updatedIdx] = updatedZone;
-      setBookingData({ phytosanitaryZones: updatedZones });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: updatedZones });
-    } catch (error) {
-      console.error(error);
-      toast.error('Error al subir algunas imágenes');
-    } finally {
-      setPhytosanitaryUploads(prev => {
-        const next = { ...prev };
-        const zoneUploads = new Set(next[id] || []);
-        newIndices.forEach(i => zoneUploads.delete(i));
-        next[id] = zoneUploads;
-        return next;
-      });
-    }
   };
 
   const togglePhytosanitaryPhotoSelection = (zoneId: string, photoIndex: number) => {
-    const zones = [...(bookingData.phytosanitaryZones || [])];
-    const idx = zones.findIndex(z => z.id === zoneId);
-    if (idx === -1) return;
-    const zone = { ...zones[idx] };
-    const selected = new Set(zone.selectedIndices || []);
-    if (selected.has(photoIndex)) selected.delete(photoIndex);
-    else selected.add(photoIndex);
-    zone.selectedIndices = Array.from(selected);
-    zones[idx] = zone;
-    setBookingData({ phytosanitaryZones: zones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+    toggleSimplePhotoCollectionSelection('phytosanitaryZones', zoneId, photoIndex);
   };
 
   const removePhytosanitaryPhoto = (zoneId: string, photoIndex: number, skipConfirm = false) => {
@@ -3977,31 +3522,26 @@ const analyzeTreeGroup = async (id: string) => {
     const zone = { ...zones[idx] };
 
     const doRemove = () => {
-      const photoUrls = [...(zone.photoUrls || [])];
-      zone.photoUrls = photoUrls.filter((_, i) => i !== photoIndex);
-      zone.selectedIndices = (zone.selectedIndices || []).filter(i => i !== photoIndex).map(i => (i > photoIndex ? i - 1 : i));
-      zone.analyzedIndices = (zone.analyzedIndices || []).filter(i => i !== photoIndex).map(i => (i > photoIndex ? i - 1 : i));
+      Object.assign(zone, removePhotoFromCollection(zone, photoIndex));
       
       if (isPhytosanitaryZoneAnalyzed(zone)) {
-        zone.analysisMetrics = undefined;
-        zone.area = 0;
-        zone.analysisLevel = undefined;
-        zone.observations = [];
-        zone.analyzedIndices = [];
+        Object.assign(zone, resetAnalysisCommonFields({
+          ...zone,
+          analysisMetrics: undefined,
+          area: 0,
+        }));
       }
 
       zones[idx] = zone;
-      setBookingData({ phytosanitaryZones: zones });
-      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+      commitPhytosanitaryZones(zones);
     };
 
     if (!skipConfirm && isPhytosanitaryZoneAnalyzed(zone)) {
-      openConfirm({
-        title: 'Eliminar foto analizada',
-        message: 'Esta foto forma parte de un análisis completado. Si la eliminas, se borrarán los resultados actuales de esta zona y tendrás que volver a analizarla.',
-        confirmLabel: 'Eliminar y resetear',
-        cancelLabel: 'Cancelar',
-        tone: 'danger',
+      openPhotoRemovalConfirm({
+        analysis: zone.analysisV2,
+        analysisLevel: zone.analysisLevel,
+        observations: zone.observations,
+        subjectLabel: 'la zona fitosanitaria',
         onConfirm: doRemove
       });
       return;
@@ -4068,14 +3608,11 @@ const analyzeTreeGroup = async (id: string) => {
 
     if (zone.area === 0 && (!metrics.observaciones_ia || metrics.observaciones_ia.length === 0)) {
       (zone as any).analysisMetrics = undefined;
-      zone.analysisLevel = undefined;
-      zone.observations = [];
-      zone.analyzedIndices = [];
+      Object.assign(zone, resetAnalysisCommonFields(zone));
     }
 
     zones[idx] = zone;
-    setBookingData({ phytosanitaryZones: zones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+    commitPhytosanitaryZones(zones);
   };
 
   const removePhytosanitaryObservation = (zoneId: string, observationIndex: number) => {
@@ -4091,14 +3628,11 @@ const analyzeTreeGroup = async (id: string) => {
 
     if (zone.area === 0 && (!metrics.observaciones_ia || metrics.observaciones_ia.length === 0)) {
       (zone as any).analysisMetrics = undefined;
-      zone.analysisLevel = undefined;
-      zone.observations = [];
-      zone.analyzedIndices = [];
+      Object.assign(zone, resetAnalysisCommonFields(zone));
     }
 
     zones[idx] = zone;
-    setBookingData({ phytosanitaryZones: zones });
-    if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+    commitPhytosanitaryZones(zones);
   };
 
   const analyzePhytosanitaryZone = async (id: string, options?: { silent?: boolean }) => {
@@ -4107,8 +3641,12 @@ const analyzeTreeGroup = async (id: string) => {
       if (idx === -1) return false;
       const zone = zones[idx];
       const allUrls = zone.photoUrls || [];
-      const indicesToAnalyze = zone.selectedIndices ?? allUrls.map((_, i) => i);
-      const finalUrls = indicesToAnalyze.map(i => allUrls[i]).filter((u): u is string => u !== undefined);
+      const indicesToAnalyze = getDefaultSelectedPhotoIndices(allUrls.length, zone.selectedIndices);
+      const finalUrls = await resolveAnalysisPhotoSources({
+        photoUrls: allUrls,
+        selectedIndices: indicesToAnalyze,
+        files: zone.files,
+      });
       if (finalUrls.length === 0) {
           if (!options?.silent) toast.error('Selecciona al menos una foto para analizar.');
           return false;
@@ -4178,6 +3716,7 @@ const analyzeTreeGroup = async (id: string) => {
              model: aiModel,
              phytosanitary_scopes: currentScope
           });
+          const analysis = res.analysis_v2;
           
           const resData = res as any;
 
@@ -4189,85 +3728,47 @@ const analyzeTreeGroup = async (id: string) => {
           };
           setDebugLogs({ ...currentDebugInfo });
           
-
-          if (resData.metricas_fitosanitarias) {
-              const rawMetrics = resData.metricas_fitosanitarias;
-              const metrics: PhytosanitaryAnalysisMetrics = {
-                ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS,
-                cesped_m2: Number(rawMetrics.cesped_m2 || 0),
-                seto_bajo_medio_ml: Number(rawMetrics.seto_bajo_medio_ml || 0),
-                seto_alto_ml: Number(rawMetrics.seto_alto_ml || 0),
-                palmeras_ducha_peq_ud: Number(rawMetrics.palmeras_ducha_peq_ud || 0),
-                palmeras_ducha_med_ud: Number(rawMetrics.palmeras_ducha_med_ud || 0),
-                palmeras_ducha_alta_ud: Number(rawMetrics.palmeras_ducha_alta_ud || 0),
-                palmeras_cirugia_ud: Number(rawMetrics.palmeras_cirugia_ud || 0),
-                palmeras_endoterapia_troncos_ud: Number(rawMetrics.palmeras_endoterapia_troncos_ud || 0),
-                arboles_peq_ud: Number(rawMetrics.arboles_peq_ud || 0),
-                arboles_med_ud: Number(rawMetrics.arboles_med_ud || 0),
-                arboles_gran_ud: Number(rawMetrics.arboles_gran_ud || 0),
-                observaciones_ia: Array.isArray(rawMetrics.observaciones_ia) ? rawMetrics.observaciones_ia : []
-              };
-              zone.analysisMetrics = metrics;
-              zone.area = Math.max(0, sumPhytosanitaryMetrics(metrics));
-              zone.analysisLevel = 1; // Or infer from confidence if we add it back
-              zone.observations = resData.observaciones_ia || [];
-              zone.analyzedIndices = indicesToAnalyze;
-              currentDebugInfo.finalAnalysisData = {
-                zoneId: zone.id,
-                after: {
-                  area: zone.area,
-                  analysisLevel: zone.analysisLevel,
-                  observations: zone.observations,
-                  analyzedIndices: zone.analyzedIndices,
-                  analysisMetrics: zone.analysisMetrics
-                }
-              };
-          } else if (res.tareas && res.tareas.length > 0) {
-              // Legacy support just in case
-              const t = res.tareas[0];
-              const rawMetrics = (t as any).metricas_fitosanitarias || resData.metricas_fitosanitarias || {};
-              const metrics: PhytosanitaryAnalysisMetrics = {
-                ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS,
-                cesped_m2: Number(rawMetrics.cesped_m2 || 0),
-                seto_bajo_medio_ml: Number(rawMetrics.seto_bajo_medio_ml || 0),
-                seto_alto_ml: Number(rawMetrics.seto_alto_ml || 0),
-                palmeras_ducha_peq_ud: Number(rawMetrics.palmeras_ducha_peq_ud || 0),
-                palmeras_ducha_med_ud: Number(rawMetrics.palmeras_ducha_med_ud || 0),
-                palmeras_ducha_alta_ud: Number(rawMetrics.palmeras_ducha_alta_ud || 0),
-                palmeras_cirugia_ud: Number(rawMetrics.palmeras_cirugia_ud || 0),
-                palmeras_endoterapia_troncos_ud: Number(rawMetrics.palmeras_endoterapia_troncos_ud || 0),
-                arboles_peq_ud: Number(rawMetrics.arboles_peq_ud || 0),
-                arboles_med_ud: Number(rawMetrics.arboles_med_ud || 0),
-                arboles_gran_ud: Number(rawMetrics.arboles_gran_ud || 0),
-                observaciones_ia: Array.isArray(rawMetrics.observaciones_ia) ? rawMetrics.observaciones_ia : []
-              };
-              zone.analysisMetrics = metrics;
-              zone.area = Math.max(Number(t.cantidad_o_superficie || 0), sumPhytosanitaryMetrics(metrics));
-              zone.analysisLevel = t.nivel_analisis;
-              zone.observations = t.observaciones;
-              zone.analyzedIndices = indicesToAnalyze;
-              currentDebugInfo.finalAnalysisData = {
-                zoneId: zone.id,
-                after: {
-                  area: zone.area,
-                  analysisLevel: zone.analysisLevel,
-                  observations: zone.observations,
-                  analyzedIndices: zone.analyzedIndices,
-                  analysisMetrics: zone.analysisMetrics
-                }
-              };
-          } else {
+          if (!analysis && !resData.metricas_fitosanitarias && !(res.tareas && res.tareas.length > 0)) {
              throw new Error('No se han detectado datos válidos en las imágenes.');
           }
 
+          Object.assign(zone, adaptPhytosanitaryAnalysisResult({
+            analysis,
+            legacyTask: res.tareas?.[0],
+            legacyMetrics: resData.metricas_fitosanitarias,
+            selectedIndices: indicesToAnalyze,
+            totalPhotoCount: allUrls.length
+          }));
+          currentDebugInfo.finalAnalysisData = {
+            zoneId: zone.id,
+            after: {
+              area: zone.area,
+              analysisLevel: zone.analysisLevel,
+              observations: zone.observations,
+              analyzedIndices: zone.analyzedIndices,
+              analysisMetrics: zone.analysisMetrics
+            }
+          };
+
           zones[idx] = zone;
-          setBookingData({ phytosanitaryZones: zones });
-          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: zones });
+          commitPhytosanitaryZones(zones, true);
           setDebugLogs({ ...currentDebugInfo });
-          saveProgress();
           return true;
       } catch (e: any) {
-          console.error(e);
+          reportDetailsPageIssue({
+            event: 'booking.details_analysis_failed',
+            service: 'Servicios fitosanitarios',
+            error: e,
+            serviceId: bookingData.serviceIds?.[0],
+            zoneId: id,
+            scope: 'details_phytosanitary_analysis',
+            photoCount: allUrls.length,
+          });
+          const failureFields = buildAnalysisFailureFields({
+            serviceName: 'Servicios fitosanitarios',
+            selectedIndices: zone.selectedIndices,
+            totalPhotoCount: allUrls.length
+          });
           currentDebugInfo.errors.push(e?.message || String(e));
           currentDebugInfo.finalAnalysisData = {
             ...(currentDebugInfo.finalAnalysisData || {}),
@@ -4282,9 +3783,7 @@ const analyzeTreeGroup = async (id: string) => {
                   if (z.id === id) {
                       return { 
                           ...z, 
-                          isFailed: true,
-                          analysisLevel: 3,
-                          observations: ['Error en el análisis. Por favor, reintente.']
+                          ...failureFields
                       };
                   }
                   return z;
@@ -4374,7 +3873,10 @@ const analyzeTreeGroup = async (id: string) => {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-amber-900">Se ha recuperado tu borrador</p>
                 <p className="mt-1 text-sm text-amber-800">
-                  Los archivos locales no se restauran tras recargar o volver desde autenticacion. Revisa las zonas con fotos pendientes y vuelve a subirlas si falta alguna imagen antes de continuar.
+                  {resumeWarning.restoredPhotoCount
+                    ? `Se han restaurado ${resumeWarning.restoredPhotoCount} foto${resumeWarning.restoredPhotoCount === 1 ? '' : 's'} local${resumeWarning.restoredPhotoCount === 1 ? '' : 'es'}, pero alguna imagen ya no estaba disponible en este dispositivo.`
+                    : 'Alguna foto local ya no estaba disponible en este dispositivo y no se ha podido recuperar automáticamente.'}{' '}
+                  Revisa las zonas con fotos pendientes y vuelve a subir cualquier imagen que falte antes de continuar.
                 </p>
               </div>
               <button
@@ -4435,13 +3937,19 @@ const analyzeTreeGroup = async (id: string) => {
                              )}
 
                              {(bookingData.lawnZones || []).map((zone, idx) => {
-                                 const isAnalyzed = zone.quantity > 0 || (zone.analysisLevel !== undefined);
-                                const allPhotos = [...zone.photoUrls, ...(zone.files || [])];
+                                const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: zone.isFailed,
+                                  observations: zone.observations,
+                                  analyzedIndices: zone.analyzedIndices
+                                }) || zone.quantity > 0;
+                                const isFailedResult = hasCanonicalAnalysisFailure(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: zone.isFailed,
+                                  observations: zone.observations
+                                });
+                                const allPhotos = zone.photoUrls || [];
                                 const isZoneAnalyzing = lawnAnalyzingZoneIds.has(zone.id);
-                                
-                               if (isZoneAnalyzing) {
-                                    return <AnalysisLoadingAnimation key={zone.id} message={loadingMessage} />;
-                                }
 
                                 return (
                                      <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -4468,11 +3976,21 @@ const analyzeTreeGroup = async (id: string) => {
                                          {/* Photos Area for this Zone */}
                                          <ZonePhotoGallery
                                              photos={allPhotos}
+                                             photoIds={normalizePhotoIdentityList(zone)}
                                              uploadingIndices={lawnUploads[zone.id]}
-                                             selectedIndices={zone.selectedIndices}
-                                             analyzedIndices={zone.analyzedIndices}
+                                            selectedIndices={getDefaultSelectedPhotoIndices(allPhotos.length, zone.selectedIndices)}
+                                            analyzedIndices={getCanonicalAnalyzedPhotoIndices(zone.analysisV2, {
+                                              analyzedIndices: zone.analyzedIndices,
+                                              selectedIndices: zone.selectedIndices,
+                                              totalPhotoCount: allPhotos.length
+                                            })}
                                              isAnalyzing={isZoneAnalyzing}
                                              isAnalyzed={isAnalyzed}
+                                             analysis={zone.analysisV2}
+                                             analysisLevel={zone.analysisLevel}
+                                             observations={zone.observations}
+                                             loadingMessage={getAnalysisLoadingMessage('Corte de césped')}
+                                             onRetryAnalysis={() => analyzeLawnZone(zone.id)}
                                              onToggleSelection={(i) => toggleLawnPhotoSelection(zone.id, i)}
                                              onRemovePhoto={(i) => removePhotoFromZone(zone.id, i)}
                                              onAddPhotos={(e) => handleLawnFileSelect(zone.id, e)}
@@ -4497,14 +4015,16 @@ const analyzeTreeGroup = async (id: string) => {
 
                                          {isAnalyzed && (
                                              <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                                {zone.isFailed || zone.analysisLevel === 3 ? (
+                                               {isFailedResult ? (
                                                     <AnalysisFailedCard 
+                                                        analysis={zone.analysisV2}
                                                         message={zone.observations?.[0]} 
                                                         onReanalyze={() => analyzeLawnZone(zone.id)} 
                                                     />
                                                 ) : (
                                                     <ServiceResultCard
                                                         title={zone.species || 'Césped general'}
+                                                        analysis={zone.analysisV2}
                                                         analysisLevel={zone.analysisLevel}
                                                         stats={[
                                                             { label: 'Superficie', value: `${zone.quantity} m²` },
@@ -4519,9 +4039,8 @@ const analyzeTreeGroup = async (id: string) => {
                                                                     const zones = [...(bookingData.lawnZones || [])];
                                                                     const idx = zones.findIndex(z => z.id === zone.id);
                                                                     if (idx !== -1) {
-                                                                        zones[idx] = { ...zones[idx], quantity: 0, species: '', state: 'normal', analysisLevel: undefined, observations: [], analyzedIndices: [] };
-                                                                        setBookingData({ lawnZones: zones });
-                                                                        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { lawnZones: zones });
+                                                                        zones[idx] = resetAnalysisCommonFields({ ...zones[idx], quantity: 0, species: '', state: 'normal' });
+                                                                        commitSimplePhotoCollectionPatch('lawnZones', zones);
                                                                     }
                                                                 }
                                                             });
@@ -4602,27 +4121,23 @@ const analyzeTreeGroup = async (id: string) => {
 
                             {(bookingData.hedgeZones || []).map((zone, idx) => {
                                 const normalizedZone = normalizeHedgeZone(zone);
-                                const isAnalyzed = isHedgeZoneAnalyzed(normalizedZone);
+                                const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: zone.isFailed,
+                                  observations: zone.observations,
+                                  analyzedIndices: zone.analyzedIndices
+                                }) || isHedgeZoneAnalyzed(normalizedZone);
+                                const isFailedResult = hasCanonicalAnalysisFailure(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: zone.isFailed,
+                                  observations: zone.observations
+                                });
                                 const isZoneAnalyzing = hedgeAnalyzingZoneIds.has(zone.id);
                                 const faceAUrls = normalizedZone.faceA.photoUrls || [];
-                                const faceASelected = normalizedZone.faceA.selectedIndices ?? Array.from({ length: faceAUrls.length }, (_, i) => i);
+                                const faceASelected = getDefaultSelectedPhotoIndices(faceAUrls.length, normalizedZone.faceA.selectedIndices);
                                 const hasFaceAPhotos = faceAUrls.length > 0;
                                 const hasFaceASelected = faceASelected.length > 0;
                                 const totalPhotos = (normalizedZone.faceA.photoUrls?.length || 0) + (normalizedZone.faceB.photoUrls?.length || 0);
-
-                                if (isZoneAnalyzing) {
-                                    return <AnalysisLoadingAnimation key={zone.id} message="Analizando esta zona..." />;
-                                }
-
-                                if ((zone as any).isFailed || zone.analysisLevel === 3) {
-                                    return (
-                                        <AnalysisFailedCard 
-                                            key={zone.id}
-                                            message={zone.observations?.[0]} 
-                                            onReanalyze={() => analyzeHedgeZone(zone.id)} 
-                                        />
-                                    );
-                                }
 
                                  return (
                                      <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -4646,7 +4161,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                { key: 'faceB', title: 'Cara B (trasera)', required: false },
                                            ] as Array<{ key: HedgeFaceKey; title: string; required: boolean }>).map((faceBlock) => {
                                                const face = normalizedZone[faceBlock.key];
-                                               const allFacePhotos = [...(face.photoUrls || []), ...(face.files || [])];
+                                              const allFacePhotos = face.photoUrls || [];
                                                const uploadKey = `${zone.id}-${faceBlock.key}`;
 
                                                return (
@@ -4664,11 +4179,17 @@ const analyzeTreeGroup = async (id: string) => {
                                                        
                                                        <ZonePhotoGallery
                                                            photos={allFacePhotos}
+                                                           photoIds={face.photoIds}
                                                            uploadingIndices={hedgeUploads[uploadKey] || new Set()}
-                                                           selectedIndices={face.selectedIndices ?? Array.from({ length: allFacePhotos.length }, (_, i) => i)}
+                                                           selectedIndices={getDefaultSelectedPhotoIndices(allFacePhotos.length, face.selectedIndices)}
                                                            analyzedIndices={face.analyzedIndices ?? []}
                                                            isAnalyzing={isZoneAnalyzing}
                                                            isAnalyzed={isAnalyzed}
+                                                           analysis={zone.analysisV2}
+                                                           analysisLevel={zone.analysisLevel}
+                                                           observations={zone.observations}
+                                                           loadingMessage={getAnalysisLoadingMessage('Corte de setos')}
+                                                           onRetryAnalysis={() => analyzeHedgeZone(zone.id)}
                                                            maxPhotos={5}
                                                            onToggleSelection={(i) => toggleHedgePhotoSelection(zone.id, faceBlock.key, i)}
                                                            onRemovePhoto={(i) => removePhotoFromHedgeZone(zone.id, faceBlock.key, i)}
@@ -4698,18 +4219,29 @@ const analyzeTreeGroup = async (id: string) => {
                                             />
                                         </div>
 
-                                        {isAnalyzed && (
-                                            <ServiceResultCard
-                                                title={zone.type || '1-2m'}
-                                                analysisLevel={zone.analysisLevel}
-                                                stats={[
-                                                    { label: 'Longitud', value: `${zone.length} m` },
-                                                    { label: 'Altura', value: zone.height },
-                                                    { label: 'Estado', value: <span className="capitalize">{zone.state || 'normal'}</span> },
-                                                    { label: 'Caras analizadas', value: Number((zone as any).faces_to_trim ?? (zone.hasBackFaceTrim ? 2 : 1)) }
-                                                ]}
-                                                observations={zone.observations}
-                                            />
+                                        {shouldShowZoneAnalysisResult(isAnalyzed, isZoneAnalyzing) && (
+                                            <div className="mt-4">
+                                                {isFailedResult ? (
+                                                    <AnalysisFailedCard
+                                                        analysis={zone.analysisV2}
+                                                        message={zone.observations?.[0]}
+                                                        onReanalyze={() => analyzeHedgeZone(zone.id)}
+                                                    />
+                                                ) : (
+                                                    <ServiceResultCard
+                                                        title={zone.type || '1-2m'}
+                                                        analysis={zone.analysisV2}
+                                                        analysisLevel={zone.analysisLevel}
+                                                        stats={[
+                                                            { label: 'Longitud', value: `${zone.length} m` },
+                                                            { label: 'Altura', value: zone.height },
+                                                            { label: 'Estado', value: <span className="capitalize">{zone.state || 'normal'}</span> },
+                                                            { label: 'Caras analizadas', value: Number((zone as any).faces_to_trim ?? (zone.hasBackFaceTrim ? 2 : 1)) }
+                                                        ]}
+                                                        observations={zone.observations}
+                                                    />
+                                                )}
+                                            </div>
                                         )}
                                      </div>
                                  );
@@ -4764,15 +4296,20 @@ const analyzeTreeGroup = async (id: string) => {
                                  </div>
                              )}
                              {(bookingData.palmGroups || []).map((zone, idx) => {
-                                 const isAnalyzed = zone.analysisLevel !== undefined;
+                                const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: (zone as any).isFailed,
+                                  observations: zone.observations,
+                                  analyzedIndices: (zone as any).analyzedIndices
+                                });
                                  const photoUrls = (zone as any).photoUrls || [];
                                  const isZoneAnalyzing = palmAnalyzingZoneIds.has(zone.id);
-                                 const isFailedResult = (zone as any).isFailed === true || zone.analysisLevel === 3;
-                                 const hasResult = isAnalyzed || isFailedResult;
-
-                                 if (isZoneAnalyzing) {
-                                     return <AnalysisLoadingAnimation key={zone.id} message="Analizando palmeras..." />;
-                                 }
+                                const isFailedResult = hasCanonicalAnalysisFailure(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: (zone as any).isFailed,
+                                  observations: zone.observations
+                                });
+                                const hasResult = isAnalyzed;
 
                                  return (
                                      <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -4789,11 +4326,21 @@ const analyzeTreeGroup = async (id: string) => {
                                          
                                          <ZonePhotoGallery
                                              photos={photoUrls}
+                                             photoIds={normalizePhotoIdentityList(zone)}
                                              uploadingIndices={palmUploads[zone.id] || new Set()}
-                                             selectedIndices={(zone as any).selectedIndices ?? Array.from({ length: photoUrls.length }, (_, i) => i)}
-                                             analyzedIndices={(zone as any).analyzedIndices ?? (isAnalyzed ? Array.from({ length: photoUrls.length }, (_, i) => i) : [])}
+                                            selectedIndices={getDefaultSelectedPhotoIndices(photoUrls.length, (zone as any).selectedIndices)}
+                                            analyzedIndices={getCanonicalAnalyzedPhotoIndices(zone.analysisV2, {
+                                              analyzedIndices: (zone as any).analyzedIndices,
+                                              selectedIndices: (zone as any).selectedIndices,
+                                              totalPhotoCount: photoUrls.length
+                                            })}
                                              isAnalyzing={isZoneAnalyzing}
                                              isAnalyzed={hasResult}
+                                             analysis={zone.analysisV2}
+                                             analysisLevel={zone.analysisLevel}
+                                             observations={zone.observations}
+                                             loadingMessage={getAnalysisLoadingMessage('Poda de palmeras')}
+                                             onRetryAnalysis={() => analyzePalmGroup(zone.id)}
                                              maxPhotos={5}
                                              onToggleSelection={(i) => togglePalmPhotoSelection(zone.id, i)}
                                              onRemovePhoto={(i) => removePalmPhoto(zone.id, i)}
@@ -4811,11 +4358,8 @@ const analyzeTreeGroup = async (id: string) => {
                                                          const next = [...(bookingData.palmGroups || [])];
                                                          const z = next.find(x => x.id === zone.id);
                                                          if (z) {
-                                                             z.analysisLevel = undefined;
-                                                             z.observations = [];
-                                                             (z as any).isFailed = false;
-                                                             setBookingData({ palmGroups: next });
-                                                             if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { palmGroups: next });
+                                                            Object.assign(z, resetAnalysisCommonFields(z));
+                                                            commitPalmGroups(next);
                                                          }
                                                      }
                                                      setTimeout(() => analyzePalmGroup(zone.id), 0);
@@ -4831,16 +4375,18 @@ const analyzeTreeGroup = async (id: string) => {
                                              )}
                                          </div>
 
-                                         {hasResult && (
+                                       {shouldShowZoneAnalysisResult(hasResult, isZoneAnalyzing) && (
                                             <div className="mt-4">
                                                 {isFailedResult ? (
                                                     <AnalysisFailedCard 
+                                                        analysis={zone.analysisV2}
                                                         message={zone.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'} 
                                                         onReanalyze={() => analyzePalmGroup(zone.id)} 
                                                     />
                                                 ) : (
                                                     <ServiceResultCard
                                                         title={zone.species || 'Desconocida'}
+                                                        analysis={zone.analysisV2}
                                                         analysisLevel={zone.analysisLevel}
                                                         stats={[
                                                             { label: 'Altura', value: zone.height || '-' },
@@ -5018,15 +4564,20 @@ const analyzeTreeGroup = async (id: string) => {
                                  </div>
                              )}
                              {(bookingData.treeGroups || []).map((zone, idx) => {
-                                 const isAnalyzed = zone.analysisLevel !== undefined;
+                                const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: zone.isFailed,
+                                  observations: zone.observations,
+                                  analyzedIndices: (zone as any).analyzedIndices
+                                });
                                  const photoUrls = zone.photoUrls || [];
                                  const isZoneAnalyzing = treeAnalyzingZoneIds.has(zone.id);
-                                 const isFailedResult = (zone as any).isFailed === true || zone.analysisLevel === 3;
-                                 const hasResult = isAnalyzed || isFailedResult;
-
-                                 if (isZoneAnalyzing) {
-                                     return <AnalysisLoadingAnimation key={zone.id} message="Analizando árboles..." />;
-                                 }
+                                const isFailedResult = hasCanonicalAnalysisFailure(zone.analysisV2, {
+                                  analysisLevel: zone.analysisLevel,
+                                  isFailed: zone.isFailed,
+                                  observations: zone.observations
+                                });
+                                const hasResult = isAnalyzed;
 
                                  return (
                                      <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -5042,12 +4593,22 @@ const analyzeTreeGroup = async (id: string) => {
                                          </div>
                                          
                                          <ZonePhotoGallery
-                                                    photos={photoUrls}
-                                                    uploadingIndices={treeUploads[zone.id] || new Set()}
-                                                    selectedIndices={(zone as any).selectedIndices ?? Array.from({ length: photoUrls.length }, (_, i) => i)}
-                                                    analyzedIndices={(zone as any).analyzedIndices ?? (isAnalyzed ? Array.from({ length: photoUrls.length }, (_, i) => i) : [])}
-                                                    isAnalyzing={isZoneAnalyzing}
+                                             photos={photoUrls}
+                                             photoIds={normalizePhotoIdentityList(zone)}
+                                             uploadingIndices={treeUploads[zone.id] || new Set()}
+                                             selectedIndices={getDefaultSelectedPhotoIndices(photoUrls.length, (zone as any).selectedIndices)}
+                                             analyzedIndices={getCanonicalAnalyzedPhotoIndices(zone.analysisV2, {
+                                               analyzedIndices: (zone as any).analyzedIndices,
+                                               selectedIndices: (zone as any).selectedIndices,
+                                               totalPhotoCount: photoUrls.length
+                                             })}
+                                             isAnalyzing={isZoneAnalyzing}
                                              isAnalyzed={hasResult}
+                                             analysis={zone.analysisV2}
+                                             analysisLevel={zone.analysisLevel}
+                                             observations={zone.observations}
+                                             loadingMessage={getAnalysisLoadingMessage('Poda de árboles')}
+                                             onRetryAnalysis={() => analyzeTreeGroup(zone.id)}
                                              maxPhotos={5}
                                              onToggleSelection={(i) => toggleTreePhotoSelection(zone.id, i)}
                                              onRemovePhoto={(i) => removeTreePhoto(zone.id, i)}
@@ -5065,16 +4626,15 @@ const analyzeTreeGroup = async (id: string) => {
                                                          const next = [...(bookingData.treeGroups || [])];
                                                          const z = next.find(x => x.id === zone.id);
                                                          if (z) {
-                                                             z.analysisLevel = undefined;
-                                                             (z as any).aiSizeBand = undefined;
-                                                             z.aiHeightMeters = 0;
-                                                             z.difficultyHigh = undefined;
-                                                             z.observations = [];
-                                                             z.isFailed = false;
-                                                             z.estimatedHours = 0;
+                                                            Object.assign(z, resetAnalysisCommonFields({
+                                                              ...z,
+                                                              aiSizeBand: undefined,
+                                                              aiHeightMeters: 0,
+                                                              difficultyHigh: undefined,
+                                                              estimatedHours: 0
+                                                            }));
                                                              const newHours = calculateTotalTreeHours(next);
-                                                             setBookingData({ treeGroups: next, estimatedHours: newHours });
-                                                             if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { treeGroups: next, estimatedHours: newHours });
+                                                             commitTreeGroups(next, newHours);
                                                          }
                                                      }
                                                      setTimeout(() => analyzeTreeGroup(zone.id), 0);
@@ -5094,12 +4654,14 @@ const analyzeTreeGroup = async (id: string) => {
                                             <div className="mt-4">
                                                 {isFailedResult ? (
                                                     <AnalysisFailedCard 
+                                                        analysis={zone.analysisV2}
                                                         message={zone.observations?.[0] || 'Intenta hacer la foto desde otro ángulo.'} 
                                                         onReanalyze={() => analyzeTreeGroup(zone.id)} 
                                                     />
                                                 ) : (
                                                     <ServiceResultCard
                                                         title={zone.pruningType === 'shaping' ? 'Poda de Formación' : 'Poda Estructural'}
+                                                        analysis={zone.analysisV2}
                                                         analysisLevel={zone.analysisLevel}
                                                         stats={[
                                                             { label: 'Tamaño', value: treeBandLabel(normalizeTreeSizeBand((zone as any).aiSizeBand)) },
@@ -5180,15 +4742,20 @@ const analyzeTreeGroup = async (id: string) => {
                                  </div>
                              )}
                              {(bookingData.shrubGroups || []).map((group, idx) => {
-                                const isAnalyzed = isShrubGroupAnalyzed(group);
-                                const isFailedResult = (group as any).isFailed === true || group.analysisLevel === 3;
-                                const hasResult = isAnalyzed || isFailedResult;
-                                 const allPhotos = [...(group.photoUrls || []), ...(group.files || [])];
+                               const isAnalyzed = hasCanonicalAnalysisResult(group.analysisV2, {
+                                 analysisLevel: group.analysisLevel,
+                                 isFailed: group.isFailed,
+                                 observations: group.observations,
+                                 analyzedIndices: group.analyzedIndices
+                               }) || isShrubGroupAnalyzed(group);
+                               const isFailedResult = hasCanonicalAnalysisFailure(group.analysisV2, {
+                                 analysisLevel: group.analysisLevel,
+                                 isFailed: group.isFailed,
+                                 observations: group.observations
+                               });
+                               const hasResult = isAnalyzed;
+                                 const allPhotos = group.photoUrls || [];
                                  const isZoneAnalyzing = shrubAnalyzingZoneIds.has(group.id);
-
-                                 if (isZoneAnalyzing) {
-                                     return <AnalysisLoadingAnimation key={group.id} message="Analizando plantas y arbustos..." />;
-                                 }
 
                                  return (
                                      <div key={group.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -5205,11 +4772,21 @@ const analyzeTreeGroup = async (id: string) => {
                                          
                                          <ZonePhotoGallery
                                              photos={allPhotos}
+                                             photoIds={normalizePhotoIdentityList(group)}
                                              uploadingIndices={shrubUploads[group.id] || new Set()}
-                                             selectedIndices={group.selectedIndices ?? Array.from({ length: allPhotos.length }, (_, i) => i)}
-                                             analyzedIndices={group.analyzedIndices ?? []}
+                                             selectedIndices={getDefaultSelectedPhotoIndices(allPhotos.length, group.selectedIndices)}
+                                             analyzedIndices={getCanonicalAnalyzedPhotoIndices(group.analysisV2, {
+                                               analyzedIndices: group.analyzedIndices,
+                                               selectedIndices: group.selectedIndices,
+                                               totalPhotoCount: allPhotos.length
+                                             })}
                                              isAnalyzing={isZoneAnalyzing}
-                                             isAnalyzed={isAnalyzed}
+                                             isAnalyzed={hasResult}
+                                             analysis={group.analysisV2}
+                                             analysisLevel={group.analysisLevel}
+                                             observations={group.observations}
+                                             loadingMessage={getAnalysisLoadingMessage('Poda de plantas y arbustos')}
+                                             onRetryAnalysis={() => analyzeShrubGroup(group.id)}
                                              maxPhotos={5}
                                              onToggleSelection={(i) => toggleShrubPhotoSelection(group.id, i)}
                                              onRemovePhoto={(i) => removeShrubPhoto(group.id, i)}
@@ -5234,16 +4811,18 @@ const analyzeTreeGroup = async (id: string) => {
                                              )}
                                          </div>
 
-                                        {hasResult && (
+                                        {shouldShowZoneAnalysisResult(hasResult, isZoneAnalyzing) && (
                                             <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                                 {isFailedResult ? (
                                                     <AnalysisFailedCard
+                                                        analysis={group.analysisV2}
                                                         message={group.observations?.[0]}
                                                         onReanalyze={() => analyzeShrubGroup(group.id)}
                                                     />
                                                 ) : (
                                                     <ServiceResultCard
                                                         title="Macizo de plantas y arbustos"
+                                                        analysis={group.analysisV2}
                                                         analysisLevel={group.analysisLevel}
                                                         stats={[
                                                             { label: 'Superficie', value: `${group.area} m²` },
@@ -5305,26 +4884,22 @@ const analyzeTreeGroup = async (id: string) => {
                           </div>
                         )}
                         {(bookingData.phytosanitaryZones || []).map((zone, idx) => {
-                          const isAnalyzed = isPhytosanitaryZoneAnalyzed(zone);
+                          const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
+                            analysisLevel: zone.analysisLevel,
+                            isFailed: zone.isFailed,
+                            observations: zone.observations,
+                            analyzedIndices: zone.analyzedIndices
+                          }) || isPhytosanitaryZoneAnalyzed(zone);
+                          const isFailedResult = hasCanonicalAnalysisFailure(zone.analysisV2, {
+                            analysisLevel: zone.analysisLevel,
+                            isFailed: zone.isFailed,
+                            observations: zone.observations
+                          });
                           const allPhotos = zone.photoUrls || [];
                           const isZoneAnalyzing = phytosanitaryAnalyzingZoneIds.has(zone.id);
                           const validation = getPhytosanitaryValidation(zone as any);
                           const selectedPhotoCount = getPhytosanitarySelectedPhotoCount(zone);
                           const metrics = (zone as any).analysisMetrics || { ...EMPTY_PHYTOSANITARY_ANALYSIS_METRICS };
-                          
-                          if (isZoneAnalyzing) {
-                              return <AnalysisLoadingAnimation key={zone.id} message="Analizando zona de tratamientos..." />;
-                          }
-
-                          if ((zone as any).isFailed || zone.analysisLevel === 3) {
-                              return (
-                                  <AnalysisFailedCard 
-                                      key={zone.id}
-                                      message={zone.observations?.[0]} 
-                                      onReanalyze={() => analyzePhytosanitaryZone(zone.id)} 
-                                  />
-                              );
-                          }
 
                           const detectedItems = PHYTOSANITARY_RESULT_FIELDS
                             .map((item) => ({
@@ -5384,15 +4959,14 @@ const analyzeTreeGroup = async (id: string) => {
                                               z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
                                               
                                               if (isPhytosanitaryZoneAnalyzed(z)) {
-                                                (z as any).analysisMetrics = undefined;
-                                                z.area = 0;
-                                                z.analysisLevel = undefined;
-                                                z.observations = [];
-                                                z.analyzedIndices = [];
+                                                Object.assign(z, resetAnalysisCommonFields({
+                                                  ...z,
+                                                  analysisMetrics: undefined,
+                                                  area: 0,
+                                                }));
                                               }
 
-                                              setBookingData({ phytosanitaryZones: next });
-                                              if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                              commitPhytosanitaryZones(next);
                                             }}
                                             className={`px-3 py-1.5 text-sm rounded-full border transition-colors flex items-center gap-1.5 ${isSelected ? 'bg-green-100 border-green-500 text-green-800' : 'bg-white border-gray-300 text-gray-700 hover:border-green-300 hover:bg-green-50'}`}
                                           >
@@ -5415,15 +4989,14 @@ const analyzeTreeGroup = async (id: string) => {
                                           z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
                                           
                                           if (isPhytosanitaryZoneAnalyzed(z)) {
-                                            (z as any).analysisMetrics = undefined;
-                                            z.area = 0;
-                                            z.analysisLevel = undefined;
-                                            z.observations = [];
-                                            z.analyzedIndices = [];
+                                            Object.assign(z, resetAnalysisCommonFields({
+                                              ...z,
+                                              analysisMetrics: undefined,
+                                              area: 0,
+                                            }));
                                           }
 
-                                          setBookingData({ phytosanitaryZones: next });
-                                          if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                          commitPhytosanitaryZones(next);
                                         }}
                                         className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
                                       >
@@ -5447,15 +5020,14 @@ const analyzeTreeGroup = async (id: string) => {
                                         z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
                                         
                                         if (isPhytosanitaryZoneAnalyzed(z)) {
-                                          (z as any).analysisMetrics = undefined;
-                                          z.area = 0;
-                                          z.analysisLevel = undefined;
-                                          z.observations = [];
-                                          z.analyzedIndices = [];
+                                          Object.assign(z, resetAnalysisCommonFields({
+                                            ...z,
+                                            analysisMetrics: undefined,
+                                            area: 0,
+                                          }));
                                         }
 
-                                        setBookingData({ phytosanitaryZones: next });
-                                        if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                        commitPhytosanitaryZones(next);
                                       }}
                                     />
                                   </label>
@@ -5464,11 +5036,21 @@ const analyzeTreeGroup = async (id: string) => {
                                 <div className="pt-4 border-t border-gray-100">
                                   <ZonePhotoGallery
                                       photos={allPhotos}
+                                      photoIds={normalizePhotoIdentityList(zone)}
                                       uploadingIndices={phytosanitaryUploads[zone.id] || new Set()}
-                                      selectedIndices={zone.selectedIndices ?? allPhotos.map((_, i) => i)}
-                                      analyzedIndices={zone.analyzedIndices ?? (isAnalyzed ? allPhotos.map((_, i) => i) : [])}
+                                      selectedIndices={getDefaultSelectedPhotoIndices(allPhotos.length, zone.selectedIndices)}
+                                      analyzedIndices={getCanonicalAnalyzedPhotoIndices(zone.analysisV2, {
+                                        analyzedIndices: zone.analyzedIndices,
+                                        selectedIndices: zone.selectedIndices,
+                                        totalPhotoCount: allPhotos.length
+                                      })}
                                       isAnalyzing={isZoneAnalyzing}
                                       isAnalyzed={isAnalyzed}
+                                      analysis={zone.analysisV2}
+                                      analysisLevel={zone.analysisLevel}
+                                      observations={zone.observations}
+                                      loadingMessage={getAnalysisLoadingMessage('Servicios fitosanitarios')}
+                                      onRetryAnalysis={() => analyzePhytosanitaryZone(zone.id)}
                                       onToggleSelection={(i) => togglePhytosanitaryPhotoSelection(zone.id, i)}
                                       onRemovePhoto={(i) => removePhytosanitaryPhoto(zone.id, i)}
                                       onAddPhotos={(e) => handlePhytosanitaryFileSelect(zone.id, e)}
@@ -5494,12 +5076,21 @@ const analyzeTreeGroup = async (id: string) => {
                                       )}
                                   </div>
 
-                                  {isAnalyzed && (
+                                  {shouldShowZoneAnalysisResult(isAnalyzed, isZoneAnalyzing) && (
                                       <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                          {isFailedResult ? (
+                                              <AnalysisFailedCard
+                                                  analysis={zone.analysisV2}
+                                                  message={zone.observations?.[0]}
+                                                  onReanalyze={() => analyzePhytosanitaryZone(zone.id)}
+                                              />
+                                          ) : (
                                           <ServiceResultCard
                                               title="Análisis Fitosanitario"
+                                              analysis={zone.analysisV2}
                                               analysisLevel={zone.analysisLevel}
                                               stats={[]}
+                                              observations={zone.observations}
                                               onDelete={() => {
                                                   openConfirm({
                                                       title: '¿Eliminar resultado?',
@@ -5508,13 +5099,12 @@ const analyzeTreeGroup = async (id: string) => {
                                                           const next = [...(bookingData.phytosanitaryZones || [])];
                                                           const z = next.find(x => x.id === zone.id);
                                                           if (z) {
-                                                              (z as any).analysisMetrics = undefined;
-                                                              z.area = 0;
-                                                              z.analysisLevel = undefined;
-                                                              z.observations = [];
-                                                              z.analyzedIndices = [];
-                                                              setBookingData({ phytosanitaryZones: next });
-                                                              if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { phytosanitaryZones: next });
+                                                              Object.assign(z, resetAnalysisCommonFields({
+                                                                ...z,
+                                                                analysisMetrics: undefined,
+                                                                area: 0,
+                                                              }));
+                                                              commitPhytosanitaryZones(next);
                                                           }
                                                       }
                                                   });
@@ -5575,6 +5165,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                   )}
                                               </div>
                                           </ServiceResultCard>
+                                          )}
                                       </div>
                                   )}
                                 </div>
@@ -5766,6 +5357,7 @@ const analyzeTreeGroup = async (id: string) => {
                })()}
                
                 <input
+                  key={`main-photo-input-${mainPhotoInputVersion}`}
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
@@ -5929,9 +5521,7 @@ const analyzeTreeGroup = async (id: string) => {
                   aria-label="Incluir retirada de restos"
                   onClick={() => {
                       const newValue = !bookingData.wasteRemoval;
-                      setBookingData({ wasteRemoval: newValue });
-                      if (bookingData.serviceIds?.[0]) updateServiceData(bookingData.serviceIds[0], { wasteRemoval: newValue });
-                      saveProgress();
+                      commitDetailsPatch({ wasteRemoval: newValue }, { saveAfterCommit: true });
                   }}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${bookingData.wasteRemoval ? 'bg-green-600' : 'bg-gray-200'}`}
               >
@@ -6012,8 +5602,7 @@ const analyzeTreeGroup = async (id: string) => {
               </button>
               <button
                 onClick={() => {
-                    setBookingData({ wasteRemoval: false });
-                    saveProgress();
+                    commitDetailsPatch({ wasteRemoval: false }, { saveAfterCommit: true });
                     setShowWasteModal(false);
                 }}
                 className="w-full py-3 text-gray-500 hover:text-gray-700 font-medium transition-colors"

@@ -8,6 +8,7 @@ import { Booking } from '../../types';
 import { useNavigate } from 'react-router-dom';
 import ChatWindow from '../chat/ChatWindow';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
+import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
 
 const GardenerBookings: React.FC = () => {
   const { user } = useAuth();
@@ -50,7 +51,10 @@ const GardenerBookings: React.FC = () => {
 
         const mediaMap = await fetchBookingMediaMap(
           bookingsWithProfiles.map((b: any) => b.id),
-          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes]))
+          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes])),
+          {
+            statusByBooking: Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.status])),
+          }
         );
         const withMedia = bookingsWithProfiles.map((booking: any) => ({
           ...booking,
@@ -69,12 +73,12 @@ const GardenerBookings: React.FC = () => {
 
   const updateBookingStatus = async (bookingId: string, status: 'completed') => {
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq('id', bookingId)
-        .eq('gardener_id', user?.id);
-      if (error) throw error;
+      if (status === 'completed') {
+        const result = await completeBookingAndCleanupMedia(bookingId);
+        if (result.cleanup?.status === 'failed') {
+          console.warn('La reserva se completó, pero la limpieza de fotos requiere revisión:', result.cleanup.warning);
+        }
+      }
       await fetchBookings();
     } catch (e) {
       console.error('Error actualizando estado de la reserva:', e);

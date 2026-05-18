@@ -1,12 +1,107 @@
 import { supabase } from '../lib/supabase';
+import {
+  buildBookingPhotoContract,
+  extractBookingPhotoUrls,
+  serializeBookingPhotoContract,
+} from './bookingPhotoContract';
+import { reportBookingEvent } from './bookingTelemetry';
+import {
+  buildBookingMediaPhotoUploadAdapter,
+  uploadBookingPhotoBatch,
+} from './bookingPhotoPipeline';
 
 const URL_REGEX = /https?:\/\/[^\s,\n]+/g;
 const DEFAULT_BOOKING_MEDIA_BUCKET = (import.meta.env.VITE_BOOKING_PHOTOS_BUCKET as string | undefined) || 'booking-photos';
+const DRAFT_STORAGE_PREFIX = 'drafts/';
 
 export interface BookingMediaReference {
   url?: string;
   storageBucket?: string;
   storagePath?: string;
+}
+
+interface PrepareBookingMediaForPersistenceParams {
+  clientId: string;
+  date: string;
+  startHour: number;
+  bucket?: string;
+  bookingId?: string;
+  operationId?: string;
+  localFiles?: File[];
+  contractLike?: unknown;
+  telemetryContext?: Record<string, unknown>;
+}
+
+function normalizeText(value: unknown): string | undefined {
+  const candidate = String(value || '').trim();
+  return candidate ? candidate : undefined;
+}
+
+function isDefinitiveBookingStoragePath(storagePath?: string): storagePath is string {
+  return Boolean(storagePath) && !String(storagePath).trim().toLowerCase().startsWith(DRAFT_STORAGE_PREFIX);
+}
+
+function getBookingMediaReferenceFileName(item: BookingMediaReference, index: number): string {
+  const storagePath = normalizeText(item.storagePath);
+  if (storagePath) {
+    const candidate = storagePath.split('/').pop();
+    if (candidate) return candidate;
+  }
+
+  const url = normalizeText(item.url);
+  if (url) {
+    try {
+      const pathname = new URL(url).pathname;
+      const candidate = pathname.split('/').pop();
+      if (candidate) return candidate;
+    } catch {
+      // Fall through to the default filename.
+    }
+  }
+
+  return `booking_photo_${index}.jpg`;
+}
+
+async function materializeBookingMediaReferenceAsFile(
+  item: BookingMediaReference,
+  index: number,
+): Promise<File> {
+  const url = normalizeText(item.url);
+  if (!url) {
+    throw new Error('Las fotos adjuntas ya no tienen una URL utilizable para recuperarse.');
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`No se pudo recuperar una foto adjunta (${response.status}).`);
+  }
+
+  const blob = await response.blob();
+  return new File([blob], getBookingMediaReferenceFileName(item, index), {
+    type: blob.type || 'image/jpeg',
+  });
+}
+
+export function extractDefinitiveBookingMediaReferences(
+  mediaItems: BookingMediaReference[],
+): Array<Required<Pick<BookingMediaReference, 'storageBucket' | 'storagePath'>>> {
+  const uniqueItems = new Map<string, Required<Pick<BookingMediaReference, 'storageBucket' | 'storagePath'>>>();
+
+  for (const item of mediaItems) {
+    const storageBucket = normalizeText(item.storageBucket);
+    const storagePath = normalizeText(item.storagePath);
+
+    if (!storageBucket || !isDefinitiveBookingStoragePath(storagePath)) {
+      continue;
+    }
+
+    uniqueItems.set(`storage:${storageBucket}:${storagePath}`, {
+      storageBucket,
+      storagePath,
+    });
+  }
+
+  return Array.from(uniqueItems.values());
 }
 
 export function extractLegacyPhotoUrlsFromNotes(notes?: string | null): string[] {
@@ -21,37 +116,139 @@ export async function persistBookingMedia(params: {
   mediaUrls?: string[];
   mediaItems?: BookingMediaReference[];
 }) {
-  const mediaItems = Array.from(
-    new Map(
-      ((params.mediaItems || []).concat((params.mediaUrls || []).map((url) => ({ url }))))
-        .map((item) => {
-          const normalized: BookingMediaReference = {
-            url: item.url ? String(item.url).trim() : undefined,
-            storageBucket: item.storageBucket ? String(item.storageBucket).trim() : undefined,
-            storagePath: item.storagePath ? String(item.storagePath).trim() : undefined,
-          };
-          const dedupeKey = normalized.storageBucket && normalized.storagePath
-            ? `${normalized.storageBucket}:${normalized.storagePath}`
-            : normalized.url || '';
-          return [dedupeKey, normalized] as const;
-        })
-        .filter(([key]) => Boolean(key))
-    ).values()
+  const definitiveMediaItems = extractDefinitiveBookingMediaReferences(
+    serializeBookingPhotoContract(
+    buildBookingPhotoContract(params.mediaItems || [], params.mediaUrls || [])
+    )
   );
 
-  if (mediaItems.length === 0) return;
+  if (definitiveMediaItems.length === 0) return;
 
-  const rows = mediaItems.map((item) => ({
+  const rows = definitiveMediaItems.map((item) => ({
     booking_id: params.bookingId,
     uploader_id: params.uploaderId || null,
-    media_url: item.url || '',
-    storage_bucket: item.storageBucket || null,
-    storage_path: item.storagePath || null,
+    media_url: null,
+    storage_bucket: item.storageBucket,
+    storage_path: item.storagePath,
     media_type: 'image' as const,
   }));
 
-  const { error } = await supabase.from('booking_media').insert(rows);
+  const { error } = await supabase.from('booking_media').upsert(rows, {
+    onConflict: 'booking_id,storage_bucket,storage_path',
+    ignoreDuplicates: true,
+  });
   if (error) throw error;
+}
+
+export async function prepareBookingMediaForPersistence(
+  params: PrepareBookingMediaForPersistenceParams,
+): Promise<BookingMediaReference[]> {
+  const contract = buildBookingPhotoContract(params.contractLike);
+  const definitiveContractRefs = extractDefinitiveBookingMediaReferences(
+    serializeBookingPhotoContract(contract),
+  );
+
+  if (contract.items.length > 0 && definitiveContractRefs.length === contract.items.length) {
+    reportBookingEvent('info', {
+      event: 'booking.media_prepare_reused_contract_refs',
+      context: {
+        count: definitiveContractRefs.length,
+        ...params.telemetryContext,
+      },
+    });
+    return definitiveContractRefs;
+  }
+
+  const contractRefsToPromote = contract.items.filter((item) => {
+    const storageBucket = normalizeText(item.storageBucket);
+    const storagePath = normalizeText(item.storagePath);
+    return !(storageBucket && isDefinitiveBookingStoragePath(storagePath));
+  });
+
+  let filesToUpload: File[] = [];
+
+  if (contractRefsToPromote.length > 0) {
+    const missingSourceCount = contractRefsToPromote.filter((item) => !normalizeText(item.url)).length;
+    if (missingSourceCount > 0) {
+      reportBookingEvent('warn', {
+        event: 'booking.media_prepare_missing_contract_source',
+        context: {
+          missingSourceCount,
+          contractItemCount: contract.items.length,
+          ...params.telemetryContext,
+        },
+      });
+      throw new Error('Las fotos adjuntas ya no tienen una referencia definitiva. Vuelve al paso anterior y subelas otra vez antes de confirmar.');
+    }
+
+    try {
+      filesToUpload = await Promise.all(
+        contractRefsToPromote.map((item, index) => materializeBookingMediaReferenceAsFile(item, index)),
+      );
+    } catch (error) {
+      reportBookingEvent('error', {
+        event: 'booking.media_prepare_reference_fetch_failed',
+        context: {
+          contractItemCount: contract.items.length,
+          message: error instanceof Error ? error.message : 'unknown',
+          ...params.telemetryContext,
+        },
+      });
+      throw error;
+    }
+
+    reportBookingEvent('info', {
+      event: 'booking.media_prepare_promoting_contract_refs',
+      context: {
+        count: filesToUpload.length,
+        ...params.telemetryContext,
+      },
+    });
+  } else if ((params.localFiles || []).length > 0) {
+    filesToUpload = params.localFiles || [];
+    reportBookingEvent('info', {
+      event: 'booking.media_prepare_uploading_local_files',
+      context: {
+        count: filesToUpload.length,
+        ...params.telemetryContext,
+      },
+    });
+  }
+
+  const uploadedRefs =
+    filesToUpload.length > 0
+      ? await uploadBookingPhotos({
+          clientId: params.clientId,
+          date: params.date,
+          startHour: params.startHour,
+          files: filesToUpload,
+          bucket: params.bucket,
+          bookingId: params.bookingId,
+          operationId: params.operationId,
+        })
+      : [];
+
+  const definitiveRefs = extractDefinitiveBookingMediaReferences([
+    ...definitiveContractRefs,
+    ...uploadedRefs,
+  ]);
+
+  if (
+    definitiveRefs.length === 0 &&
+    (contract.items.length > 0 || (params.localFiles || []).length > 0)
+  ) {
+    reportBookingEvent('warn', {
+      event: 'booking.media_prepare_empty_result',
+      context: {
+        contractItemCount: contract.items.length,
+        localFileCount: params.localFiles?.length || 0,
+        ...params.telemetryContext,
+      },
+    });
+    throw new Error('Las fotos adjuntas ya no tienen una referencia definitiva. Vuelve al paso anterior y subelas otra vez antes de confirmar.');
+  }
+
+  return definitiveRefs;
 }
 
 export async function uploadBookingPhotos(params: {
@@ -60,46 +257,57 @@ export async function uploadBookingPhotos(params: {
   startHour: number;
   files: File[];
   bucket?: string;
+  bookingId?: string;
+  operationId?: string;
 }): Promise<BookingMediaReference[]> {
-  const bucket = params.bucket || DEFAULT_BOOKING_MEDIA_BUCKET;
-  const now = Date.now();
-  const sanitizeFileName = (name: string) =>
-    String(name || 'foto.jpg')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9._-]/g, '_');
+  const results = await uploadBookingPhotoBatch({
+    files: params.files || [],
+    adapter: buildBookingMediaPhotoUploadAdapter({
+      clientId: params.clientId,
+      date: params.date,
+      startHour: params.startHour,
+      bucket: params.bucket || DEFAULT_BOOKING_MEDIA_BUCKET,
+      bookingId: params.bookingId,
+      operationId: params.operationId,
+    }),
+    telemetryContext: {
+      scope: 'booking_media_service',
+      clientId: params.clientId,
+      date: params.date,
+      startHour: params.startHour,
+      bookingId: params.bookingId,
+      operationId: params.operationId,
+    },
+  });
 
-  const results = await Promise.allSettled(
-    (params.files || []).map(async (file, index) => {
-      const safeName = sanitizeFileName(file.name || `foto_${index}.jpg`);
-      const path = `bookings/${params.clientId}/${params.date}_${params.startHour}_${now}_${index}_${safeName}`;
-      const { error } = await supabase.storage
-        .from(bucket)
-        .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
-
-      if (error) {
-        throw error;
-      }
-
-      return {
-        storageBucket: bucket,
-        storagePath: path,
-      } satisfies BookingMediaReference;
-    })
+  return results.flatMap((result) =>
+    result.uploadSucceeded && result.storageBucket && result.storagePath
+      ? [
+          {
+            storageBucket: result.storageBucket,
+            storagePath: result.storagePath,
+          } satisfies BookingMediaReference,
+        ]
+      : []
   );
-
-  return results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
 }
 
 export async function fetchBookingMediaMap(
   bookingIds: string[],
-  legacyNotesByBooking?: Record<string, string | undefined | null>
+  legacyNotesByBooking?: Record<string, string | undefined | null>,
+  options?: {
+    statusByBooking?: Record<string, string | undefined | null>
+  }
 ): Promise<Record<string, string[]>> {
   const validIds = Array.from(new Set((bookingIds || []).filter(Boolean)));
   if (validIds.length === 0) return {};
 
   const map: Record<string, string[]> = {};
+  const completedBookingIds = new Set(
+    Object.entries(options?.statusByBooking || {})
+      .filter(([, status]) => String(status || '').trim() === 'completed')
+      .map(([bookingId]) => bookingId)
+  );
   const { data, error } = await supabase
     .from('booking_media')
     .select('booking_id, media_url, storage_bucket, storage_path, created_at')
@@ -144,6 +352,7 @@ export async function fetchBookingMediaMap(
 
   if (legacyNotesByBooking) {
     Object.entries(legacyNotesByBooking).forEach(([bookingId, notes]) => {
+      if (completedBookingIds.has(bookingId)) return;
       const legacyUrls = extractLegacyPhotoUrlsFromNotes(notes);
       if (!map[bookingId]) map[bookingId] = [];
       legacyUrls.forEach((url) => {
@@ -152,5 +361,7 @@ export async function fetchBookingMediaMap(
     });
   }
 
-  return map;
+  return Object.fromEntries(
+    Object.entries(map).map(([bookingId, urls]) => [bookingId, extractBookingPhotoUrls(buildBookingPhotoContract(urls))])
+  );
 }

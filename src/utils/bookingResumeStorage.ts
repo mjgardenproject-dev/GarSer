@@ -1,3 +1,5 @@
+import { syncBookingPhotoContractWithLegacy } from './bookingPhotoContract';
+
 export type BookingResumeStage = 'draft' | 'checkout' | 'confirmation';
 export type BookingResumeFlow = 'wizard' | 'legacy-checkout' | 'legacy-client-home';
 
@@ -76,8 +78,21 @@ function readRecordByKey<T>(key: string): BookingResumeRecord<T> | null {
   return record;
 }
 
+function shouldStripTransientPhotoUrl(currentPath: string, value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized.startsWith('blob:') && !normalized.startsWith('data:')) {
+    return false;
+  }
+
+  return /(uploadedPhotoUrls\[\]|photoUrls\[\]|photoUrl|bookingPhotoContract\.items\[\]\.url)$/.test(currentPath);
+}
+
 function cleanNonSerializable(value: unknown, currentPath = '', nonSerializablePaths: string[] = []): unknown {
   if (value == null) return value;
+  if (typeof value === 'string' && shouldStripTransientPhotoUrl(currentPath, value)) {
+    if (currentPath) nonSerializablePaths.push(currentPath);
+    return undefined;
+  }
   if (typeof File !== 'undefined' && value instanceof File) {
     if (currentPath) nonSerializablePaths.push(currentPath);
     return undefined;
@@ -99,8 +114,37 @@ function cleanNonSerializable(value: unknown, currentPath = '', nonSerializableP
   return value;
 }
 
+function looksLikeBookingData(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    Array.isArray(record.serviceIds) ||
+    'bookingPhotoContract' in record ||
+    'uploadedPhotoUrls' in record ||
+    'photos' in record ||
+    'servicesData' in record
+  );
+}
+
 export function sanitizeBookingPayload<T>(payload: T): T {
-  return cleanNonSerializable(payload) as T;
+  const cleaned = cleanNonSerializable(payload) as T;
+  if (!cleaned || typeof cleaned !== 'object') return cleaned;
+
+  if (looksLikeBookingData(cleaned)) {
+    return syncBookingPhotoContractWithLegacy(cleaned) as T;
+  }
+
+  if ('bookingData' in (cleaned as Record<string, unknown>)) {
+    const record = cleaned as Record<string, unknown>;
+    if (looksLikeBookingData(record.bookingData)) {
+      return {
+        ...(cleaned as Record<string, unknown>),
+        bookingData: syncBookingPhotoContractWithLegacy(record.bookingData),
+      } as T;
+    }
+  }
+
+  return cleaned;
 }
 
 export function collectNonSerializablePaths(payload: unknown): string[] {

@@ -1,13 +1,12 @@
-// src/services/aiTreeAnalysisService.ts
-
 import { TreePruningZone, AITreeAnalysisResult } from '../types/treePruning';
-import { TREE_ANALYSIS_SYSTEM_PROMPT } from '../domain/ai/prompts';
 
 /**
- * Simula llamada a IA para desarrollo (reemplazar con llamada real a OpenAI/Gemini).
+ * Compatibilidad para el componente legacy de poda de arboles.
+ * El flujo activo de reserva usa el backend canonico (`estimateWorkWithAI` + `analysis_v2`),
+ * asi que este fallback no debe depender de prompts frontend duplicados.
  */
-async function mockAICall(zone: TreePruningZone): Promise<Omit<AITreeAnalysisResult, 'zoneId'>> {
-  console.log(`[AI Mock] Analizando ${zone.photos.length} fotos para árbol ${zone.id}...`);
+async function inferTreeAnalysisLocally(zone: TreePruningZone): Promise<Omit<AITreeAnalysisResult, 'zoneId'>> {
+  console.log(`[AI Legacy Fallback] Analizando ${zone.photos.length} fotos para arbol ${zone.id}...`);
 
   // Simulación basada en cantidad de fotos
   const photoCount = zone.photos.length;
@@ -25,7 +24,7 @@ async function mockAICall(zone: TreePruningZone): Promise<Omit<AITreeAnalysisRes
   // Simular latencia de red
   await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
 
-  console.log(`[AI Mock] Árbol ${zone.id}: banda ${size_band}`);
+  console.log(`[AI Legacy Fallback] Arbol ${zone.id}: banda ${size_band}`);
 
   return {
     size_band,
@@ -42,20 +41,19 @@ async function mockAICall(zone: TreePruningZone): Promise<Omit<AITreeAnalysisRes
 export async function analyzeTreeImages(zones: TreePruningZone[]): Promise<AITreeAnalysisResult[]> {
   if (zones.length === 0) return [];
 
-  console.log(`Iniciando análisis IA paralelo para ${zones.length} árboles...`);
+  console.log(`Iniciando analisis legacy paralelo para ${zones.length} arboles...`);
 
   // Procesar todas las zonas en paralelo
   const analysisPromises = zones.map(async (zone) => {
     try {
-      // En producción: llamar a OpenAI/Gemini con TREE_ANALYSIS_SYSTEM_PROMPT
-      const analysis = await mockAICall(zone);
+      const analysis = await inferTreeAnalysisLocally(zone);
 
       return {
         zoneId: zone.id,
         ...analysis,
       } as AITreeAnalysisResult;
     } catch (error) {
-      console.error(`Error analizando árbol ${zone.id}:`, error);
+      console.error(`Error analizando arbol ${zone.id}:`, error);
       // En caso de error, devolver valores por defecto
       return {
         zoneId: zone.id,
@@ -69,10 +67,10 @@ export async function analyzeTreeImages(zones: TreePruningZone[]): Promise<AITre
 
   try {
     const results = await Promise.all(analysisPromises);
-    console.log(`Análisis IA completado para ${results.length} árboles.`);
+    console.log(`Analisis legacy completado para ${results.length} arboles.`);
     return results;
   } catch (error) {
-    console.error('Error en análisis IA paralelo:', error);
-    throw new Error('Falló el análisis de una o más imágenes de árboles.');
+    console.error('Error en analisis legacy paralelo:', error);
+    throw new Error('Fallo el analisis de una o mas imagenes de arboles.');
   }
 }

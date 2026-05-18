@@ -273,7 +273,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                 }
                 
                 // Rol de Cliente
-                if (hasWizardResume()) {
+                if (hasWizardResume({ userId: user?.id, allowAnonFallback: true })) {
                   return <Navigate to="/reservar" replace />;
                 }
                 return (

@@ -1,6 +1,8 @@
 import {
   calculatePalmHoursEngine,
+  calculatePriceFromYield,
   calculatePalmPriceEngine,
+  findPalmPrice,
   type PalmPricingGroup,
 } from '../domain/pricingEngine.ts';
 import { isHighestOpenRangeForSpecies } from '../domain/speciesBusinessRules.ts';
@@ -15,6 +17,33 @@ export interface BookingQuoteLine {
 export interface BookingQuoteWarning {
   code: string;
   message: string;
+}
+
+export interface BookingQuotePalmGroupContext {
+  id?: string;
+  species: string;
+  height: string;
+  quantity: number;
+  isTerminalOpenRange: boolean;
+  isPriced: boolean;
+}
+
+export interface BookingQuotePricingContext {
+  serviceType: 'standard' | 'palm_pruning';
+  allowsPriceChange: boolean;
+  palmGroups: BookingQuotePalmGroupContext[];
+}
+
+export interface BookingQuotePalmCoverage {
+  isFull: boolean;
+  coveredCount: number;
+  totalCount: number;
+  missingGroups: BookingQuotePalmGroupContext[];
+}
+
+export interface BookingQuoteMetadata {
+  pricingContext: BookingQuotePricingContext;
+  palmCoverage?: BookingQuotePalmCoverage;
 }
 
 export interface SerializableBookingData {
@@ -102,6 +131,7 @@ export interface BookingQuoteResult {
   estimatedHours: number;
   breakdown: BookingQuoteLine[];
   warnings: BookingQuoteWarning[];
+  metadata: BookingQuoteMetadata;
 }
 
 const DEFAULT_HEDGE_SURCHARGES = { media: 20, alta: 50 };
@@ -330,6 +360,64 @@ const normalizeWeedingState = (value?: string): 'normal' | 'dificultad_media' | 
   if (normalized.includes('alta')) return 'dificultad_alta';
   if (normalized.includes('media') || normalized.includes('descuidad')) return 'dificultad_media';
   return 'normal';
+};
+
+const buildDefaultQuoteMetadata = (): BookingQuoteMetadata => ({
+  pricingContext: {
+    serviceType: 'standard',
+    allowsPriceChange: true,
+    palmGroups: [],
+  },
+});
+
+const getPalmBaseUnitPrice = (config: any, group: Pick<PalmPricingGroup, 'species' | 'height'>): number => {
+  const useYield = config?.use_yield_calculation && config?.yield_units_per_hour && config?.hourly_rate;
+  if (useYield) {
+    const yieldPerUnit = Number(config?.yield_units_per_hour?.[group.species]?.[group.height] || 0);
+    return calculatePriceFromYield(1, yieldPerUnit, Number(config?.hourly_rate || 0));
+  }
+  return findPalmPrice(config, group.species, group.height);
+};
+
+const buildPalmQuoteMetadata = (
+  bookingGroups: NonNullable<SerializableBookingData['palmGroups']>,
+  pricingGroups: PalmPricingGroup[],
+  config: any,
+): BookingQuoteMetadata => {
+  const palmGroups = pricingGroups.map((group, index) => {
+    const bookingGroup = bookingGroups[index];
+    const quantity = Math.max(0, Number(group.quantity || 0));
+    const isTerminalOpenRange =
+      Boolean(bookingGroup?.isTerminalOpenRange) ||
+      isHighestOpenRangeForSpecies(group.species || '', group.height || '');
+    const isPriced = getPalmBaseUnitPrice(config, group) > 0;
+
+    return {
+      id: bookingGroup?.id,
+      species: group.species,
+      height: group.height,
+      quantity,
+      isTerminalOpenRange,
+      isPriced,
+    };
+  });
+
+  const requestedPalmGroups = palmGroups.filter((group) => group.quantity > 0);
+  const coveredPalmGroups = requestedPalmGroups.filter((group) => group.isPriced);
+
+  return {
+    pricingContext: {
+      serviceType: palmGroups.length > 0 ? 'palm_pruning' : 'standard',
+      allowsPriceChange: coveredPalmGroups.some((group) => group.isTerminalOpenRange),
+      palmGroups,
+    },
+    palmCoverage: {
+      isFull: requestedPalmGroups.length === coveredPalmGroups.length,
+      coveredCount: coveredPalmGroups.length,
+      totalCount: requestedPalmGroups.length,
+      missingGroups: requestedPalmGroups.filter((group) => !group.isPriced),
+    },
+  };
 };
 
 const calculateWeedingQuote = (params: {
@@ -692,9 +780,10 @@ export function buildAuthoritativeBookingQuote(params: {
   const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
   const breakdown: BookingQuoteLine[] = [];
   const warnings: BookingQuoteWarning[] = [];
+  let metadata = buildDefaultQuoteMetadata();
 
   if (!config) {
-    return { totalPrice: 0, estimatedHours: 1, breakdown, warnings };
+    return { totalPrice: 0, estimatedHours: 1, breakdown, warnings, metadata };
   }
 
   const pushWarning = (code: string, message: string) => {
@@ -704,6 +793,40 @@ export function buildAuthoritativeBookingQuote(params: {
   };
 
   let totalHours = 0;
+  const palmGroups: PalmPricingGroup[] = (bookingData.palmGroups || []).map((group) => ({
+    species: group.species,
+    height: group.height,
+    quantity: group.quantity || 1,
+    state: group.state || 'normal',
+    hasPhytosanitary: group.hasPhytosanitary ?? group.needsPhytosanitary,
+    hasTrunkPeeling: group.hasTrunkPeeling ?? group.needsTrunkFinish,
+    needsPhytosanitary: group.needsPhytosanitary,
+    needsTrunkFinish: group.needsTrunkFinish,
+    hasAccessDifficulty: group.hasAccessDifficulty,
+    isTerminalOpenRange: group.isTerminalOpenRange,
+  }));
+  if (bookingData.palmGroups?.length) {
+    metadata = buildPalmQuoteMetadata(bookingData.palmGroups, palmGroups, config);
+  }
+  const pricedPalmGroups = palmGroups.filter((_, index) => metadata.pricingContext.palmGroups[index]?.isPriced);
+
+  const validTrees = bookingData.treeGroups
+    ?.filter((tree: any) => !(tree.isFailed || tree.analysisLevel === 3))
+    .flatMap((tree: any) => {
+      const sizeBand = resolveTreeBand(tree);
+      if (!sizeBand) return [];
+      return [{
+        id: String(tree.id),
+        pruningType: mapTreePruningType(tree.pruningType),
+        sizeBand,
+        dificultad_alta: Boolean(tree.difficultyHigh),
+        nivel_analisis: tree.analysisLevel,
+      }];
+    }) || [];
+  const treeQuote =
+    validTrees.length > 0 && isTreePruningConfig(config)
+      ? calculateTreePruningQuoteForTrees(config, validTrees, globalWaste)
+      : null;
 
   if (bookingData.lawnZones?.length) {
     const yieldM2 = Number(config.yield_m2_per_hour || 150);
@@ -723,49 +846,30 @@ export function buildAuthoritativeBookingQuote(params: {
     });
   }
 
-  if (bookingData.palmGroups?.length) {
-    const groups: PalmPricingGroup[] = bookingData.palmGroups.map((group) => ({
-      species: group.species,
-      height: group.height,
-      quantity: group.quantity || 1,
-      state: group.state || 'normal',
-      hasPhytosanitary: group.hasPhytosanitary ?? group.needsPhytosanitary,
-      hasTrunkPeeling: group.hasTrunkPeeling ?? group.needsTrunkFinish,
-      needsPhytosanitary: group.needsPhytosanitary,
-      needsTrunkFinish: group.needsTrunkFinish,
-      hasAccessDifficulty: group.hasAccessDifficulty,
-    }));
+  if (palmGroups.length) {
     const palmHours = calculatePalmHoursEngine(
-      groups.map((group) => ({
-        especie: group.species,
-        altura: group.height,
-        estado: group.state,
-        nivel_analisis: 2,
-      }))
+      pricedPalmGroups.flatMap((group) =>
+        Array.from({ length: Math.max(0, Math.trunc(Number(group.quantity || 0))) }, () => ({
+          especie: group.species,
+          altura: group.height,
+          estado: group.state,
+          nivel_analisis: 2,
+        }))
+      )
     );
     totalHours += Number(palmHours.tiempoTotalEstimado || 0);
 
-    groups.forEach((group) => {
-      const isTerminalOpenRange =
-        isHighestOpenRangeForSpecies(group.species || '', group.height || '') ||
-        Boolean((group as any).isTerminalOpenRange);
-      if (isTerminalOpenRange) {
+    metadata.pricingContext.palmGroups.forEach((group) => {
+      if (group.isPriced && group.quantity > 0 && group.isTerminalOpenRange) {
         pushWarning('palm_terminal_range', 'Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.');
       }
     });
   }
 
-  if (bookingData.treeGroups?.length) {
-    const yields = config.yield_units_per_hour || {};
-    bookingData.treeGroups.forEach((tree: any) => {
-      if (tree.isFailed || tree.analysisLevel === 3) return;
-      const type = mapTreePruningType(tree.pruningType);
-      const band = resolveTreeBand(tree) || 'medium';
-      const yieldUnits = Number(yields[type]?.[band] || 1);
-      totalHours += (1 / yieldUnits) * (tree.difficultyHigh ? 1.5 : 1);
-      if (band === 'over_9') {
-        pushWarning('tree_complexity_review', 'El profesional tendrá que verificar el pago porque es un servicio muy complejo.');
-      }
+  if (treeQuote?.isProfessionalSuitable) {
+    totalHours += Number(treeQuote.totalEstimatedHours || 0);
+    treeQuote.overallWarnings.forEach((message) => {
+      pushWarning('tree_complexity_review', message);
     });
   }
 
@@ -835,26 +939,13 @@ export function buildAuthoritativeBookingQuote(params: {
   } else {
     let total = 0;
 
-    if (bookingData.palmGroups?.length) {
-      const groups: PalmPricingGroup[] = bookingData.palmGroups.map((group) => ({
-        species: group.species,
-        height: group.height,
-        quantity: group.quantity || 1,
-        state: group.state || 'normal',
-        hasPhytosanitary: group.hasPhytosanitary ?? group.needsPhytosanitary,
-        hasTrunkPeeling: group.hasTrunkPeeling ?? group.needsTrunkFinish,
-        needsPhytosanitary: group.needsPhytosanitary,
-        needsTrunkFinish: group.needsTrunkFinish,
-        hasAccessDifficulty: group.hasAccessDifficulty,
-      }));
-      total += calculatePalmPriceEngine(groups, config, globalWaste);
+    if (palmGroups.length) {
+      total += calculatePalmPriceEngine(pricedPalmGroups, config, globalWaste);
 
-      groups.forEach((group) => {
-        const isTerminalOpenRange =
-          isHighestOpenRangeForSpecies(group.species || '', group.height || '') ||
-          Boolean((group as any).isTerminalOpenRange);
+      metadata.pricingContext.palmGroups.forEach((group) => {
+        if (!group.isPriced || group.quantity <= 0) return;
         breakdown.push({
-          desc: `${group.quantity}x ${group.species} (${group.height})${isTerminalOpenRange ? ' · verificación final del profesional' : ''}`,
+          desc: `${group.quantity}x ${group.species} (${group.height})${group.isTerminalOpenRange ? ' · verificación final del profesional' : ''}`,
           price: 0,
         });
       });
@@ -883,25 +974,8 @@ export function buildAuthoritativeBookingQuote(params: {
       total += hedgeTotal;
     }
 
-    if (bookingData.treeGroups?.length && isTreePruningConfig(config)) {
-      const trees = bookingData.treeGroups
-        .filter((tree: any) => !(tree.isFailed || tree.analysisLevel === 3))
-        .flatMap((tree: any) => {
-          const sizeBand = resolveTreeBand(tree);
-          if (!sizeBand) return [];
-          return [{
-            id: String(tree.id),
-            pruningType: mapTreePruningType(tree.pruningType),
-            sizeBand,
-            dificultad_alta: Boolean(tree.difficultyHigh),
-            nivel_analisis: tree.analysisLevel,
-          }];
-        });
-
-      if (trees.length > 0) {
-        const quote = calculateTreePruningQuoteForTrees(config, trees, globalWaste);
-        if (quote.isProfessionalSuitable) total += quote.totalPrice;
-      }
+    if (treeQuote?.isProfessionalSuitable) {
+      total += treeQuote.totalPrice;
     }
 
     if (bookingData.weedingZones?.length) {
@@ -994,5 +1068,6 @@ export function buildAuthoritativeBookingQuote(params: {
     estimatedHours,
     breakdown: breakdown.filter((line) => line.price > 0 || line.desc.includes('verificación final del profesional')),
     warnings,
+    metadata,
   };
 }

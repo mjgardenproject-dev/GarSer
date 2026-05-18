@@ -1,10 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { AnalysisV2Envelope } from '../shared/analysisV2';
+import type { BookingQuoteMetadata } from '../shared/bookingQuoteCore';
+import type { BookingPhotoContract } from '../utils/bookingPhotoContract';
+import {
+  clearBookingDraftPhotoCache,
+  restoreBookingDraftPhotoCache,
+  syncBookingDraftPhotoCache,
+} from '../utils/bookingPhotoDraftCache';
 import {
   clearBookingResumeStorage,
   readAnyBookingResume,
   sanitizeBookingPayload,
   writeBookingResume,
 } from '../utils/bookingResumeStorage';
+import { syncBookingPhotoContractWithLegacy } from '../utils/bookingPhotoContract';
 import { useAuth } from './AuthContext';
 
 export interface BookingData {
@@ -12,6 +21,7 @@ export interface BookingData {
   serviceIds: string[];
   restrictedGardenerId?: string;
   photos: File[];
+  bookingPhotoContract?: BookingPhotoContract;
   description: string;
   preferredDate: string;
   timeSlot: string;
@@ -27,6 +37,8 @@ export interface BookingData {
   quoteExpiresAt?: string;
   quotePricingVersion?: string;
   quoteProviderConfigVersion?: string;
+  quoteWarnings?: string[];
+  quoteMetadata?: BookingQuoteMetadata;
   aiQuantity?: number;
   aiUnit?: string;
   aiDifficulty?: number;
@@ -53,9 +65,15 @@ export interface BookingData {
     state?: string;
     wasteRemoval?: boolean;
     photoUrl?: string;
+    photoIds?: string[];
+    photoUrls?: string[];
+    files?: File[];
+    selectedIndices?: number[];
+    analyzedIndices?: number[];
     imageIndex?: number;
     analysisLevel?: number;
     observations?: string[];
+    analysisV2?: AnalysisV2Envelope;
     hasPhytosanitary?: boolean;
     hasTrunkPeeling?: boolean;
     lowestRangeThreshold?: string;
@@ -75,6 +93,7 @@ export interface BookingData {
     state: string; // "normal" | "descuidado" | "muy descuidado"
     quantity: number; // m2
     wasteRemoval: boolean;
+    photoIds?: string[];
     photoUrls: string[]; // Multiple photos per zone
     imageIndices: number[]; // Indices in the main photos array
     files?: File[]; // Local files pending upload
@@ -83,6 +102,7 @@ export interface BookingData {
     isFailed?: boolean;
     selectedIndices?: number[];
     analyzedIndices?: number[];
+    analysisV2?: AnalysisV2Envelope;
   }>;
   // New Service-Specific Fields
   hedgeFaces?: {
@@ -91,6 +111,7 @@ export interface BookingData {
   };
   hedgeZones?: Array<{
     faceA?: {
+      photoIds?: string[];
       photoUrls?: string[];
       files?: File[];
       selectedIndices?: number[];
@@ -101,6 +122,7 @@ export interface BookingData {
       altura_m?: number;
     };
     faceB?: {
+      photoIds?: string[];
       photoUrls?: string[];
       files?: File[];
       selectedIndices?: number[];
@@ -122,6 +144,7 @@ export interface BookingData {
     access: 'normal' | 'medio' | 'dificil';
     state?: string;
     wasteRemoval: boolean;
+    photoIds?: string[];
     photoUrls?: string[];
     files?: File[];
     analysisLevel?: number;
@@ -130,11 +153,16 @@ export interface BookingData {
     imageIndices?: number[];
     selectedIndices?: number[];
     analyzedIndices?: number[];
+    analysisV2?: AnalysisV2Envelope;
   }>;
   treeGroups?: Array<{
     id: string;
     pruningType: 'structural' | 'shaping';
+    photoIds?: string[];
     photoUrls: string[];
+    files?: File[];
+    selectedIndices?: number[];
+    analyzedIndices?: number[];
     aiSizeBand?: 'small' | 'medium' | 'large' | 'over_9';
     aiHeightMeters?: number;
     difficultyHigh?: boolean;
@@ -142,12 +170,14 @@ export interface BookingData {
     observations?: string[];
     isFailed?: boolean;
     estimatedHours?: number;
+    analysisV2?: AnalysisV2Envelope;
   }>;
   shrubGroups?: Array<{
     id: string;
     area: number; // m2
     size: 'pequeñas' | 'medianas' | 'grandes';
     wasteRemoval: boolean;
+    photoIds?: string[];
     photoUrls?: string[];
     files?: File[];
     analysisLevel?: number;
@@ -156,6 +186,7 @@ export interface BookingData {
     imageIndices?: number[]; // Indices in the main photos array
     selectedIndices?: number[];
     analyzedIndices?: number[];
+    analysisV2?: AnalysisV2Envelope;
   }>;
   phytosanitaryZones?: Array<{
     id: string;
@@ -182,6 +213,7 @@ export interface BookingData {
       observaciones_ia: string[];
     };
     wasteRemoval: boolean;
+    photoIds?: string[];
     photoUrls?: string[];
     files?: File[];
     selectedIndices?: number[];
@@ -189,6 +221,7 @@ export interface BookingData {
     analysisLevel?: number;
     observations?: string[];
     isFailed?: boolean;
+    analysisV2?: AnalysisV2Envelope;
   }>;
   weedingZones?: Array<{
     id: string;
@@ -196,6 +229,7 @@ export interface BookingData {
     state: string; // "normal" | "dificultad_media" | "dificultad_alta"
     applyHerbicide: boolean;
     wasteRemoval: boolean;
+    photoIds?: string[];
     photoUrls?: string[];
     files?: File[];
     selectedIndices?: number[];
@@ -203,6 +237,7 @@ export interface BookingData {
     analysisLevel?: number;
     observations?: string[];
     isFailed?: boolean;
+    analysisV2?: AnalysisV2Envelope;
   }>;
   // Per-service isolated state storage
   servicesData?: Record<string, {
@@ -234,7 +269,7 @@ interface BookingContextType {
   bookingData: BookingData;
   currentStep: number;
   isLoading: boolean; // Estado de carga para evitar renderizar el paso 0 prematuramente
-  resumeWarning: { discardedPaths: string[] } | null;
+  resumeWarning: { discardedPaths: string[]; restoredPhotoCount?: number } | null;
   setBookingData: (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => void;
   setCurrentStep: (step: number) => void;
   nextStep: () => void;
@@ -251,6 +286,7 @@ const initialBookingData: BookingData = {
   address: '',
   serviceIds: [],
   photos: [],
+  bookingPhotoContract: { schemaVersion: 'booking_photo_v1', items: [] },
   description: '',
   preferredDate: '',
   timeSlot: '',
@@ -263,6 +299,7 @@ const initialBookingData: BookingData = {
   quoteExpiresAt: '',
   quotePricingVersion: '',
   quoteProviderConfigVersion: '',
+  quoteWarnings: [],
   aiQuantity: 0,
   aiUnit: '',
   aiDifficulty: 1,
@@ -292,18 +329,21 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [bookingData, setBookingDataState] = useState<BookingData>(initialBookingData);
   const [currentStep, setCurrentStepState] = useState(0);
   const [isLoading, setIsLoading] = useState(true); // Inicialmente cargando
-  const [resumeWarning, setResumeWarning] = useState<{ discardedPaths: string[] } | null>(null);
+  const [resumeWarning, setResumeWarning] = useState<{ discardedPaths: string[]; restoredPhotoCount?: number } | null>(null);
+
+  const applyPhotoContractCompatibility = (data: BookingData): BookingData =>
+    syncBookingPhotoContractWithLegacy(data) as BookingData;
 
   const setBookingData = (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => {
     setBookingDataState(prev => {
         const updates = typeof data === 'function' ? data(prev) : data;
         const newData = { ...prev, ...updates };
-        return newData;
+        return applyPhotoContractCompatibility(newData);
     });
   };
 
   const updateServiceData = (serviceId: string, data: any) => {
-      setBookingDataState(prev => ({
+      setBookingDataState(prev => applyPhotoContractCompatibility({
           ...prev,
           servicesData: {
               ...prev.servicesData,
@@ -320,7 +360,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setBookingDataState(prev => {
           const saved = prev.servicesData?.[serviceId] || {};
           // Merge saved data into active fields, resetting others to defaults if not present
-          return {
+          return applyPhotoContractCompatibility({
               ...prev,
               // Reset common fields to avoid contamination, then overwrite with saved
               photos: [],
@@ -339,7 +379,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               aiDifficulty: 1,
               // Apply saved
               ...saved
-          };
+          });
       });
   };
 
@@ -356,6 +396,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCurrentStepState(0);
     setResumeWarning(null);
     clearBookingResumeStorage();
+    void clearBookingDraftPhotoCache(user?.id);
   };
 
   const saveProgress = () => {
@@ -367,41 +408,56 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         timestamp: new Date().toISOString(),
       };
       writeBookingResume('draft', 'wizard', progress, { userId: user?.id });
+      void syncBookingDraftPhotoCache(bookingData, user?.id);
     } catch (e) {
       console.warn('Error saving booking progress:', e);
     }
   };
 
   const loadProgress = () => {
-    try {
-      const resume = readAnyBookingResume<{ bookingData?: BookingData; currentStep?: number } | BookingData>({
-        userId: user?.id,
-        flow: 'wizard',
-        allowAnonFallback: true,
-      });
-      const progress = resume?.flow === 'wizard' ? resume.payload : null;
-      if (progress) {
-        const savedData =
-          'bookingData' in (progress as Record<string, unknown>)
-            ? (progress as { bookingData?: BookingData }).bookingData
-            : (progress as BookingData);
-        const savedStep =
-          'currentStep' in (progress as Record<string, unknown>)
-            ? (progress as { currentStep?: number }).currentStep
-            : 0;
-        if (savedData && savedStep !== undefined) {
-          setBookingDataState(prev => ({ ...prev, ...savedData }));
-          setCurrentStepState(Math.max(0, Math.min(savedStep, 4)));
+    void (async () => {
+      try {
+        const resume = readAnyBookingResume<{ bookingData?: BookingData; currentStep?: number } | BookingData>({
+          userId: user?.id,
+          flow: 'wizard',
+          allowAnonFallback: true,
+        });
+        const progress = resume?.flow === 'wizard' ? resume.payload : null;
+        if (progress) {
+          const savedData =
+            'bookingData' in (progress as Record<string, unknown>)
+              ? (progress as { bookingData?: BookingData }).bookingData
+              : (progress as BookingData);
+          const savedStep =
+            'currentStep' in (progress as Record<string, unknown>)
+              ? (progress as { currentStep?: number }).currentStep
+              : 0;
+          if (savedData && savedStep !== undefined) {
+            const restored = await restoreBookingDraftPhotoCache(
+              applyPhotoContractCompatibility({ ...initialBookingData, ...savedData }),
+              user?.id,
+            );
+            setBookingDataState(restored.restoredData as BookingData);
+            setCurrentStepState(Math.max(0, Math.min(savedStep, 4)));
+
+            const missingPaths = restored.missingPaths;
+            const discardedPaths = Array.from(new Set([...(missingPaths || [])]));
+            if (discardedPaths.length > 0) {
+              setResumeWarning({
+                discardedPaths,
+                restoredPhotoCount: restored.restoredCount,
+              });
+            } else {
+              setResumeWarning(null);
+            }
+          }
         }
-        if (Array.isArray(resume?.nonSerializablePaths) && resume.nonSerializablePaths.length > 0) {
-          setResumeWarning({ discardedPaths: resume.nonSerializablePaths });
-        }
+      } catch (error) {
+        console.warn('Error al cargar el progreso:', error);
+      } finally {
+        setIsLoading(false); // Marcar como cargado independientemente del resultado
       }
-    } catch (error) {
-      console.warn('Error al cargar el progreso:', error);
-    } finally {
-      setIsLoading(false); // Marcar como cargado independientemente del resultado
-    }
+    })();
   };
   
   // Efecto para restaurar estado al recargar la página si existe progreso guardado

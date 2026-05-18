@@ -8,7 +8,7 @@ import { clearBookingResumeStorage, hasWizardResume } from '../../utils/bookingR
 const ClientBookingLauncher: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canResume = hasWizardResume();
+  const canResume = hasWizardResume({ userId: user?.id, allowAnonFallback: true });
   const firstName = (user?.user_metadata?.full_name as string | undefined)?.split(' ')[0];
 
   const handleNewBooking = () => {

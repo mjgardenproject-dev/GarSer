@@ -55,6 +55,7 @@ describe('bookingAtomicService RPC integration', () => {
       p_client_address: 'Calle Mayor 10',
       p_notes: 'Acceso por portón lateral',
       p_pricing_context: { source: 'test' },
+      p_quote_id: null,
       p_travel_fee: 15,
       p_hourly_rate: 25,
       p_operation_id: '11111111-1111-1111-1111-111111111111',

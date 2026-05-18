@@ -179,7 +179,10 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
 
       const mediaMap = await fetchBookingMediaMap(
         transformedRequests.map((r: BookingRequestWithDetails) => r.id),
-        Object.fromEntries(transformedRequests.map((r: BookingRequestWithDetails) => [r.id, r.notes]))
+        Object.fromEntries(transformedRequests.map((r: BookingRequestWithDetails) => [r.id, r.notes])),
+        {
+          statusByBooking: Object.fromEntries(transformedRequests.map((r: BookingRequestWithDetails) => [r.id, r.status])),
+        }
       );
 
       const enrichedRequests = transformedRequests.map((request: BookingRequestWithDetails) => ({

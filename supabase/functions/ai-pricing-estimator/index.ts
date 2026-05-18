@@ -2,6 +2,16 @@
 // Requiere configurar el secreto OPENAI_API_KEY
 declare const Deno: any;
 import * as cfg from './config.ts';
+import {
+  adaptLegacyAnalysisToV2,
+  validateAnalysisV2,
+  type LegacyAnalysisResponse,
+} from '../../../src/shared/analysisV2.ts';
+import {
+  buildAnalysisPromptAssembly,
+  buildAutoQuotePromptAssembly,
+  DETERMINISTIC_PROMPT_SETTINGS,
+} from './new_prompts.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,107 +78,6 @@ function getPhytosanitaryScope(payload: Payload): string[] {
     return ['todo el jardin'];
   }
   return scopes;
-}
-
-function buildPhytosanitarySystemPrompt(payload: Payload) {
-  const scopes = getPhytosanitaryScope(payload);
-  const scopeStr = scopes.join(', ').toUpperCase();
-
-  const systemPrompt = [
-    'You are a strict, deterministic vision-analysis engine for a gardening marketplace specializing in phytosanitary treatments.',
-    'Your ONLY goal is to quantify visible vegetation into specific UI buckets based on scale references. DO NOT guess hidden areas.',
-    '',
-    `### CRITICAL SCOPE RESTRICTION ###`,
-    `The user has explicitly restricted the analysis to: [${scopeStr}].`,
-    `You MUST ONLY analyze and count elements that belong to this scope.`,
-    `Any other element outside this scope MUST BE STRICTLY 0, even if it is clearly visible in the image.`,
-    '',
-    '### ERROR HANDLING (ZERO SILENT FAILURES) ###',
-    'If there is NO valid vegetation clearly visible within the requested scope, or the image quality is too poor to analyze (extreme darkness, blur), you MUST return:',
-    '- All metrics as 0',
-    '- "observaciones_ia": ["Elemento a analizar impredecible"]',
-    'Do NOT guess or infer.',
-  ];
-
-  systemPrompt.push(
-    '',
-    '### MANDATORY CHAIN OF THOUGHT (CoT) ###',
-    'You must populate the "razonamiento_cot" object FIRST:',
-    '1. "identificacion_escalas": Identify visual anchors (doors ~2m, fences ~2m).',
-    '2. "analisis_deduplicacion": Explain how you ensure elements across multiple photos are counted only once.',
-    '',
-    '### EXACT BUSINESS THRESHOLDS (MATCH UI STRICLY) ###',
-    'Aggregate counts/measurements into these exact keys in "metricas_fitosanitarias":',
-    '- HEDGES (ml): "seto_bajo_medio_ml" (< 2.5m) vs "seto_alto_ml" (2.5m - 5m).',
-    '- TREES (units): CRITICAL RULE: Ignore ANY tree shorter than 2 meters. Trees < 2m must be considered "Plantas" and excluded from the tree count. Categorize STRICTLY by height: Between 2m and 4m = "arboles_peq_ud". Between 4m and 6m = "arboles_med_ud". > 6m = "arboles_gran_ud". Use reference objects (doors, fences) to calculate height accurately.',
-    '- PALMS (units): "palmeras_ducha_peq_ud" (< 3.5m), "palmeras_ducha_med_ud" (3.5m - 8m), "palmeras_ducha_alta_ud" (> 8m).',
-    '- PALM SURGERY: "palmeras_cirugia_ud" (Count ONLY if severe crown collapse or trunk holes are visible. Otherwise 0).',
-    '- SURFACES (m2): "cesped_m2" (Lawn).',
-    '- PLANTS LOW MASS (m2): "plantas_superficie_calculada_m2" using BRUTE BED AREA POLICY (outer contour of each continuous mass, include internal natural voids, exclude pavements/pathways/non-target islands, deduplicate repeated angles).',
-    '',
-    '### OUTPUT RULES ###',
-    '1. Return ONLY valid JSON.',
-    '2. "observaciones_ia" should only contain operational risks in Spanish. No pest diagnoses.',
-    '3. If a category is not present in the images or not requested in the scope, output 0.',
-    '',
-    '### JSON SCHEMA ###',
-    '{',
-    '  "razonamiento_cot": {',
-    '    "identificacion_escalas": "string",',
-    '    "analisis_deduplicacion": "string",',
-    '    "evaluacion_riesgos_acceso": "string"',
-    '  },',
-    '  "metricas_fitosanitarias": {',
-    '    "cesped_m2": number,',
-    '    "seto_bajo_medio_ml": number,',
-    '    "seto_alto_ml": number,',
-    '    "palmeras_ducha_peq_ud": number,',
-    '    "palmeras_ducha_med_ud": number,',
-    '    "palmeras_ducha_alta_ud": number,',
-    '    "palmeras_cirugia_ud": number,',
-    '    "arboles_peq_ud": number,',
-    '    "arboles_med_ud": number,',
-    '    "arboles_gran_ud": number,',
-    '    "herbicida_poca_densidad_m2": number,',
-    '    "herbicida_mucha_densidad_m2": number,',
-    '    "plantas_superficie_calculada_m2": number,',
-    '    "plantas_tamano_dominante": "pequenas" | "medianas" | "grandes" | null',
-    '  },',
-    '  "observaciones_ia": ["string"]',
-    '}'
-  );
-
-  return systemPrompt.join('\n');
-}
-
-function buildPhytosanitaryUserContent(payload: Payload) {
-  const { photo_urls = [], description, phytosanitary_scopes = [] } = payload;
-  const scopes = getPhytosanitaryScope(payload);
-  
-  // Custom instructions based on scope
-  const instructions = ['INSTRUCTIONS: 1. Identify scale anchors. 2. Map objects to landmarks for deduplication. 3. Assess spraying risks. 4. Output JSON.'];
-  
-  if (phytosanitary_scopes.includes('plantas') || phytosanitary_scopes.includes('todo_jardin')) {
-    instructions.push('CRITICAL FOR PLANTAS: "Plantas bajas" includes shrubs, bushes, flowers, ornamental mass, AND small trees under 2 meters.');
-    instructions.push('Apply BRUTE BED AREA POLICY: estimate operational area by outer contour of each continuous bed/mass, include internal natural gaps, exclude pathways/pavement/non-target islands, and deduplicate repeated photo angles.');
-    instructions.push('1) "plantas_superficie_calculada_m2": integer m2 estimate for the consolidated brute bed area.');
-    instructions.push('2) "plantas_tamano_dominante": dominant size as "pequenas" (<0.5m), "medianas" (0.5-1.5m), or "grandes" (1.5-2m).');
-  }
-
-  const userContent: any[] = [
-    { type: 'text', text: `Customer notes: ${String(description || '').trim() || 'none'}` },
-    { type: 'text', text: `Scope: ${scopes.join(', ')}` },
-    { type: 'text', text: instructions.join(' ') },
-    { type: 'text', text: 'You may receive between 1 and 5 images. Ensure deduplication across all of them. Output a single, consolidated result.' }
-  ];
-  photo_urls.slice(0, 6).forEach((url, idx) => {
-    userContent.push({ type: 'text', text: `--- Image Index ${idx} ---` });
-    userContent.push({
-      type: 'image_url',
-      image_url: { url, detail: 'high' },
-    });
-  });
-  return userContent;
 }
 
 function filterPhytosanitaryMetricsByScope(metrics: any, scopes: string[]) {
@@ -369,538 +278,16 @@ function calculatePalmEstimation(palms: any[]) {
   };
 }
 
-// Mapeo de System Prompts por servicio (estrictamente detallados)
-const PROMPTS: Record<string, string> = {
-  'Desbroce de malas hierbas': [
-    `---
-You are "DesbroceVision", a deterministic visual analysis engine for a gardening marketplace.
-Your responsibility is to extract repeatable and auditable measurements for the service "Desbroce de malas hierbas".
-
-GLOBAL CONSTRAINTS (MANDATORY):
-1) Return ONLY valid JSON. No markdown, no explanations outside JSON.
-2) Analyze ONLY visible evidence. Never infer hidden surfaces.
-3) Never calculate prices.
-4) If uncertainty is high, downgrade reliability level instead of guessing.
-
-MULTI-PHOTO DEDUPLICATION & SINGLE-ZONE CONSOLIDATION (CRITICAL):
-- Carefully cross-reference all images. If multiple images show the same weed area from different angles, merge them into one single consolidated entity.
-- Only count distinct weed zones clearly in focus for clearing. Do NOT count the same zone multiple times.
-- For consolidation, use common spatial anchors (fence, door, car, curb, house wall) to verify it's the same area.
-- EXPLICITLY PROHIBIT: Adding m2 from different images of the same zone. Always produce ONE consolidated estimate per unique weed zone.
-- If images show overlapping views of the same area, take the maximum visible extent without double-counting.
-- Output MUST be a single task object representing the consolidated zone.
-
-SERVICE CONTEXT:
-- tipo_servicio fixed value: "Desbroce de malas hierbas"
-- objective fields: superficie_malas_hierbas_m2, estado_malas_hierbas, nivel_analisis, observaciones.
-
-STEP-BY-STEP DECISION POLICY (OUTPUT-ORIENTED):
-Step A: Detect visible scale anchors (door ~2m tall, car ~4.5m long, fence modules, paving tiles).
-Step B: Delimit only visible weeded polygons that require clearing.
-Step C: Estimate visible total area (m2) and round to the nearest integer.
-Step D: Classify weed condition using strict thresholds below.
-Step E: Assign reliability level based on visibility quality and evidence.
-
-CLASSIFICATION THRESHOLDS (QUANTIFIABLE):
-A) estado_malas_hierbas
-- "normal": dominant height <30cm, soft stems, low density.
-- "dificultad_media": dominant height >=30cm with medium/high density and mostly non-woody stems.
-- "dificultad_alta": clear woody stems/brush (zarzas, cañas leñosas) OR very dense/tall mass requiring heavy blade work.
-
-B) nivel_analisis
-- 1 (alta confianza): area boundaries clear + scale references clear + lighting adequate.
-- 2 (confianza media): partial boundaries OR weak scale references OR partial occlusion/shadows.
-- 3 (fallo): no measurable weed area (blur, darkness, obstruction, non-detectable weeds).
-
-OBSERVACIONES CONTROLLED VOCABULARY (ONLY THESE):
-- For nivel_analisis=2: "mala luz", "zonas no visibles", "foto de baja calidad", "pocas referencias de escala", "ángulo limitado".
-- For nivel_analisis=3: "muy mala luz", "foto extremadamente borrosa", "malas hierbas no detectables", "imagen obstruida".
-
-OUTPUT CONSISTENCY RULES:
-- If nivel_analisis = 3:
-  - superficie_malas_hierbas_m2 MUST be 0
-  - estado_malas_hierbas MUST be null
-  - observaciones MUST be non-empty array (allowed vocabulary)
-- If nivel_analisis in (1,2):
-  - superficie_malas_hierbas_m2 MUST be an integer >= 0
-  - estado_malas_hierbas MUST be one of: normal, dificultad_media, dificultad_alta
-
-FEW-SHOT EXAMPLES (FORMAT REFERENCE):
-Example 1 (clear scene):
-INPUT SUMMARY: visible weed patch with clear fence modules and a parked car; weeds around 20cm.
-OUTPUT:
-{
-  "tareas": [{
-    "tipo_servicio": "Desbroce de malas hierbas",
-    "estado_malas_hierbas": "normal",
-    "superficie_malas_hierbas_m2": 35,
-    "nivel_analisis": 1,
-    "observaciones": null
-  }]
-}
-
-Example 2 (partial visibility):
-INPUT SUMMARY: only part of the lot is visible, heavy shadows, tall dense non-woody weeds.
-OUTPUT:
-{
-  "tareas": [{
-    "tipo_servicio": "Desbroce de malas hierbas",
-    "estado_malas_hierbas": "dificultad_media",
-    "superficie_malas_hierbas_m2": 18,
-    "nivel_analisis": 2,
-    "observaciones": ["zonas no visibles", "mala luz"]
-  }]
-}
-
-Example 3 (unusable image):
-INPUT SUMMARY: image is extremely blurred and weeds are not distinguishable.
-OUTPUT:
-{
-  "tareas": [{
-    "tipo_servicio": "Desbroce de malas hierbas",
-    "estado_malas_hierbas": null,
-    "superficie_malas_hierbas_m2": 0,
-    "nivel_analisis": 3,
-    "observaciones": ["foto extremadamente borrosa", "malas hierbas no detectables"]
-  }]
-}
-
-FINAL RESPONSE SCHEMA (STRICT):
-{
-  "tareas": [
-    {
-      "tipo_servicio": "Desbroce de malas hierbas",
-      "estado_malas_hierbas": "normal" | "dificultad_media" | "dificultad_alta" | null,
-      "superficie_malas_hierbas_m2": number,
-      "nivel_analisis": 1 | 2 | 3,
-      "observaciones": ["string"] | null
-    }
-  ]
-}
----`
-  ].join('\n'),
-  'Poda de palmeras': [ 
-     `--- 
-  You are an expert, highly deterministic palm arborist AI estimating pruning workloads from one or multiple images. 
-  Your goal is conservative, highly reproducible accuracy. NEVER overestimate sizes. 
-  
-  0. DETECTION VALIDATION (MANDATORY FIRST STEP): 
-  - Scan the image for TRUE palms (Arecaceae family: unbranched trunks with a tuft of large leaves/fronds at the top). 
-  - IGNORE: Broadleaf trees, conifers, shrubs, bushes, potted indoor plants, and background forests not part of the garden. 
-  - IF NO VALID PRUNABLE PALM IS FOUND IN AN IMAGE: You MUST return an entry for that image with "nivel_analisis": 3, "observaciones": ["No se detectó ninguna palmera"], "especie": "No detectada" and "altura_m": 0.
-  - IF UNCLEAR: Better to return empty than false positives. 
-  
-  1. MULTI-PHOTO DEDUPLICATION & COUNTING (CRITICAL): 
- 	 • 	 Carefully cross-reference all images. If multiple images show the same palm from different angles, merge them into one single entity. 
- 	 • 	 Only count distinct target palms clearly in focus for pruning. 
- 	 • 	 For "indice_imagen", use the index of the photo where the palm is most clearly visible. 
- 	 • 	 DO NOT group multiple distinct palms into a single entry. Create one JSON object for EACH distinct palm found. 
-  
-  2. SPECIES CLASSIFICATION (STRICT): 
-  You must classify each palm using ONLY the following strict species list: 
-  - "Phoenix canariensis"
-  - "Phoenix dactylifera"
-  - "Washingtonia robusta/filifera"
-  - "Syagrus romanzoffiana"
-  - "Trachycarpus fortunei"
-  - "Roystonea regia"
-  If the detected palm species is not exactly in this list but resembles one of them, return the closest matching species name from the list and append " o similar" to it (e.g., "Phoenix canariensis o similar").
-  
-  3. CONSERVATIVE SIZE ESTIMATION & HEIGHT (STRICT TRUNK MEASUREMENT): 
-  Anchor height estimates to visual reference points: doors (~2m), fences (~1.5m), roofs (~3m), or cars. 
-  You MUST measure the height STRICTLY up to the base of the crown (the top of the clear trunk/stipe). DO NOT include the leaves/fronds in the height measurement.
-  You MUST estimate this EXACT TRUNK HEIGHT in meters as a number (altura_m).
-  
-  4. STATE (MAINTENANCE CONDITION) CLASSIFICATION: 
-  You MUST output EXACTLY one of these strings (case-insensitive): "normal", "descuidado", or "muy descuidado".
-  - "normal": Palmera con mantenimiento regular. Presenta hojas secas habituales pero no acumulación. Es una poda estándar que no requiere tiempo ni esfuerzo adicional.
-  - "descuidado": Palmera con una falda (acumulación de hojas secas) de tamaño moderado. Implica una dificultad técnica y un tiempo de ejecución superiores a la poda estándar.
-  - "muy descuidado": Palmera en estado de abandono notable. Presenta una falda grande y densa. Exige al podador el nivel máximo de esfuerzo y tiempo para su limpieza y preparación.
-  
-  5. OBSERVATIONS & ANALYSIS LEVEL: 
-  - Level 1: Clear view, full palm visible. Observations:[] 
-  - Level 2: Partial view, backlight, or minor obstruction. Observations:["copa parcialmente oculta", "contraluz", "posiblemente más alta de lo visible"] 
-  - Level 3: Blurry, dark, or major obstruction. Observations:["palmera borrosa", "muy oscuro", "no se ve la base", "estimación imprecisa por mala foto"] 
-  
-  6. OUTPUT FORMAT: 
-  Return ONLY a valid JSON object. No markdown blocks. No explanations. 
-  
-  { 
-    "palmas":[ 
-      { 
-        "indice_imagen": integer, 
-        "especie": "string", 
-        "altura_m": number, 
-        "estado": "normal" | "descuidado" | "muy descuidado", 
-        "nivel_analisis": integer (1, 2, or 3), 
-        "observaciones": ["string"] OR null 
-      } 
-    ] 
-  } 
-  ---`
-  ].join('\n'),
-  'Corte de césped': [
-    `---
-You are an expert image analysis AI for a gardening marketplace. Your task is to objectively analyze lawn areas visible in images to extract structured data.
-
-CORE RULES:
-1. OUTPUT MUST BE VALID JSON ONLY. No markdown (json), no conversational text.
-2. DO NOT infer hidden areas. Analyze ONLY what is strictly visible.
-3. DO NOT calculate prices.
-4. Accuracy is priority over completeness. If unsure, declare lower reliability.
-
-SERVICE CONTEXT:
-Service Type: "Corte de césped"
-
----------------------------------------------------------------------
-ANALYSIS LOGIC & RELIABILITY LEVELS (nivel_analisis):
-
-Determine the level based on visibility, lighting, and scale references.
-
-LEVEL 1 (High Confidence):
-- Criteria: Entire lawn visible, perfect lighting, clear scale references (doors, people, standard paving).
-- Output: All fields populated. observaciones = null.
-
-LEVEL 2 (Moderate Limitations):
-- Criteria: Partial visibility, shadows, awkward angles, or lack of scale references.
-- Output: All fields populated (best estimate). observaciones = ARRAY with specific allowed notes.
-
-LEVEL 3 (Failed/Unusable):
-- Criteria: Lawn not detectable, extreme blur, pitch black, or not a garden.
-- Output: superficie_m2 = 0, estado_jardin = null. observaciones = ARRAY with failure notes.
-
----------------------------------------------------------------------
-DATA EXTRACTION RULES:
-
-A) SURFACE AREA (superficie_m2):
-- Estimate ONLY visible natural grass.
-- USE REFERENCES: Look for standard objects (doors ~0.9m wide, cars ~4.5m long, standard tiles) to calibrate scale.
-- If scale is impossible to determine (no references), set nivel_analisis = 2 and add "pocas referencias de escala".
-
-B) CONDITION (estado_jardin):
-- "normal" -> Even surface, defined edges.
-- "descuidado" -> Uneven height, invading edges.
-- "muy descuidado" -> High weeds, undefined edges, wild appearance.
-
-C) OBSERVACIONES (Allowed values ONLY):
-- Level 2: "mala luz", "zonas no visibles", "foto de baja calidad", "pocas referencias de escala", "ángulo limitado", "parte del jardín fuera de encuadre", "posible solapamiento entre imágenes".
-- Level 3: "muy mala luz", "foto extremadamente borrosa", "césped no detectable", "imagen no corresponde a un jardín", "superficie completamente fuera de encuadre", "imagen obstruida".
-
----------------------------------------------------------------------
-RESPONSE FORMAT (JSON Schema):
-
-{
-  "tareas": [
-    {
-      "tipo_servicio": "Corte de césped",
-      "estado_jardin": "string OR null",
-      "superficie_m2": number,
-      "numero_plantas": null,
-      "tamaño_plantas": null,
-      "nivel_analisis": integer (1, 2, or 3),
-      "observaciones": ["string"] OR null
-    }
-  ]
-}`
-  ].join('\n'),
-  'Corte de setos': [
-    `---
-SYSTEM ROLE:
-You are 'HedgeMap', an expert AI specialized in landscape analysis and estimating hedge trimming jobs.
-
-INPUT CONTEXT:
-You will receive one or multiple images in a single request. ALL provided images belong to the EXACT SAME HEDGE (same zone).
-Images are grouped by explicit labels:
-- FACE_A: front/main side (always present)
-- FACE_B: back/opposite side (optional)
-You must never infer or invent additional faces. Use only the provided groups.
-
-CORE MEASUREMENT RULES (STRICT STRICT STRICT):
-1. GROSS HEIGHT RULE (altura_m):
-   - Measure the GROSS height from the ground to the top of the foliage.
-   - If the hedge is growing on top of a wall, fence, planter, or slope, you MUST include the height of the wall/structure because the gardener must reach that total height from the ground.
-   - Example: A 1.5m hedge sitting on a 1m brick wall has an altura_m of 2.5.
-
-2. LENGTH & SHAPE RULE (longitud_m):
-   - Estimate the linear length of the hedge.
-   - L-Shape / U-Shape Handling: If the hedge turns a corner, sum the lengths of all visible sections (e.g., a 5m section + a 3m section = 8m base length).
-
-3. FACE-BASED CALCULATION (CRITICAL):
-   - Measure FACE_A and FACE_B independently if both are provided.
-   - Determine base_longitud_m and base_altura_m using:
-     a) Average of both faces when both are reliable (nivel_analisis 1 or 2),
-     b) Otherwise, the most reliable face.
-   - Determine caras_recortar:
-     - 1 if only FACE_A is provided,
-     - 2 if FACE_B is provided.
-   - Compute:
-     - longitud_calculo_m = base_longitud_m * caras_recortar
-     - altura_calculo_m = base_altura_m * caras_recortar
-   - Also return longitud_m as base_longitud_m for backward compatibility.
-   - Also return altura_m as base_altura_m for backward compatibility.
-
-CLASSIFICATION & STATE RULES:
-Translate your visual findings into the exact following Spanish categories.
-
-A. Operational Height Band (tipo_seto) - Choose EXACTLY ONE:
-   - "0-2m": Use when base_altura_m <= 2.0m.
-   - "2-4m": Use when base_altura_m is >2.0m and <=4.0m.
-   - "4-6m": Use when base_altura_m is >4.0m.
-
-A2. Height band guidance:
-   - Keep numeric altura_m as your measured foliage height.
-   - tipo_seto must follow the 3 bands above.
-   - If estimated base_altura_m exceeds 6m, keep numeric altura_m as estimated and add an observation indicating manual safety review is required.
-
-B. Cutting Difficulty (estado_seto) - Choose EXACTLY ONE:
-   - "normal": Flat shape, preserves geometry, short new shoots. Easy to trim.
-   - "media": Loss of geometry, requires extra effort to recover straight lines, slightly thicker branches.
-   - "alta": Uncontrolled growth, very thick branches protruding, entangled vines, or requires heavy tools.
-   - DO NOT factor height into difficulty, as height is already priced separately.
-
-C. Image Quality (nivel_analisis):
-   - 1: Clear, fully usable for 3D estimation.
-   - 2: Partially blurry or obstructed, but estimation is possible.
-   - 3: Unusable, too dark, or doesn't show the hedge.
-
-D. PRESET OBSERVATIONS (STRICT):
-Use ONLY these exact Spanish phrases:
-- "vista parcial por ángulo"
-- "zona con sombras"
-- "vegetación tapa parte del seto"
-- "parte del seto fuera de encuadre"
-- "imagen con enfoque limitado"
-- "foto borrosa"
-- "foto oscura"
-- "seto no visible con claridad"
-
-Rules:
-- nivel_analisis = 1 -> "observaciones": []
-- nivel_analisis = 2 -> include 1-2 phrases from the list
-- nivel_analisis = 3 -> include 1-2 phrases from the list
-
-OUTPUT FORMAT:
-You must output ONLY a valid JSON object. No markdown formatting (json), no introductory text, no explanations outside the JSON.
-
-{
-  "tareas":[
-    {
-      "tipo_servicio": "Corte de setos",
-      "longitud_m": number,
-      "altura_m": number,
-      "tipo_seto": "0-2m" | "2-4m" | "4-6m",
-      "estado_seto": "normal" | "media" | "alta",
-      "caras": 1 | 2,
-      "detalle_caras": {
-        "cara_a": {
-          "longitud_m": number,
-          "altura_m": number,
-          "nivel_analisis": 1 | 2 | 3,
-          "observaciones": string[]
-        },
-        "cara_b": {
-          "longitud_m": number,
-          "altura_m": number,
-          "nivel_analisis": 1 | 2 | 3,
-          "observaciones": string[]
-        }
-      },
-      "resumen_medicion": {
-        "base_longitud_m": number,
-        "base_altura_m": number,
-        "caras_recortar": 1 | 2,
-        "longitud_calculo_m": number,
-        "altura_calculo_m": number,
-        "metodo": "media_caras" | "cara_mas_fiable"
-      },
-      "nivel_analisis": 1 | 2 | 3,
-      "observaciones": string[]
-    }
-  ]
-}
----`
-  ].join('\n'),
-  'Poda de árboles': [
-    `---
-Eres un motor determinista de análisis visual para un marketplace de jardinería.
-Tu tarea para este servicio es analizar 1 árbol (una zona) a partir de 1 o más fotos del MISMO árbol.
-
-OBJETIVO:
-- Clasificar el árbol en una banda de tamaño (size_band), sin devolver altura exacta.
-
-REGLAS:
-1) No calcules precios.
-2) No estimes horas.
-3) No clasifiques tipo de poda.
-4) Si hay varios árboles visibles, analiza SOLO el árbol principal (más cercano/centrado en la imagen).
-5) Si NO hay un árbol válido claramente visible: nivel_analisis = 3, size_band = "small", dificultad_alta = false, observaciones incluye "No se detectó ningún árbol válido".
-6) Si hay visibilidad parcial o poca referencia de escala: nivel_analisis = 2.
-7) Si la vista es clara: nivel_analisis = 1.
-8) Clasifica obligatoriamente en una de estas bandas:
-   - "small" para 0m a <3m
-   - "medium" para 3m a <5m
-   - "large" para 5m a <9m
-   - "over_9" para >=9m
-9) No inferir dificultad del trabajo: devuelve siempre dificultad_alta = false.
-
-SALIDA:
-Devuelve SOLO JSON válido, sin texto adicional.
-
-{
-  "arboles": [
-    {
-      "indice_imagen": integer,
-      "size_band": "small" | "medium" | "large" | "over_9",
-      "dificultad_alta": boolean,
-      "nivel_analisis": 1 | 2 | 3,
-      "observaciones": ["string"] OR null
-    }
-  ]
-}
----`
-  ].join('\n'),
-  'Poda de plantas y arbustos': [
-    `---
-You are "ShrubZoneAI", a deterministic visual analysis engine for a gardening marketplace.
-Your only responsibility is extracting repeatable pruning metrics for the service "Poda de plantas y arbustos".
-
-GLOBAL CONSTRAINTS (MANDATORY):
-1) Return ONLY valid JSON. No markdown. No prose outside JSON.
-2) Analyze ONLY visible evidence. Never infer hidden areas.
-3) Never calculate prices.
-4) If there is NO valid shrub/ornamental mass clearly visible, or image quality is too poor, return nivel_analisis: 3 with observaciones: ["Elemento a analizar impredecible"].
-
-SERVICE SCOPE (STRICT):
-- Include: shrubs, bushes, roses, ornamental low plants, climbing ornamental vegetation, large succulents.
-- Exclude: trees (covered by "Poda de árboles"), lawn/grass (covered by "Corte de césped"), hedges for linear trimming.
-
-MULTI-PHOTO DEDUPLICATION & CONSOLIDATION (CRITICAL):
-- Cross-reference all images.
-- If the same shrub mass appears from different angles, count it once.
-- If multiple distinct shrub masses appear, consolidate into one total pruning surface for this zone.
-- NEVER sum duplicated views.
-- Output MUST be one single consolidated task object.
-
-PRIMARY OUTPUT METRICS:
-- superficie_m2: estimated BRUTE footprint area (m2) of the shrub bed ("macizo bruto") to prune.
-- tamano_dominante: "pequeñas" | "medianas" | "grandes".
-- nivel_analisis: 1 | 2 | 3.
-- observaciones: string[] | null.
-
-BRUTE SHRUB BED AREA POLICY (CRITICAL):
-- Measure the pruning bed using the OUTER CONTOUR (2D footprint) of each continuous shrub mass.
-- Include internal gaps/voids that are naturally part of the same bed layout (do NOT subtract every empty hole between branches).
-- Exclude clear pathways, lawn corridors, pavements, and detached non-target islands.
-- If several adjacent plants form one continuous bed visually, treat them as ONE macizo.
-- If two beds are clearly separated by visible transit space, treat as separate beds and then sum.
-- This is NOT leaf-only pixel area; this is operational pruning footprint area.
-
-SIZE CLASSIFICATION (STRICT):
-- "pequeñas": dominant height/diameter in [0m, 1m).
-- "medianas": dominant height/diameter in [1m, 2m).
-- "grandes": dominant height/diameter in [2m, 3m].
-
-RELIABILITY LEVELS:
-- nivel_analisis = 1: clear boundaries + clear scale references.
-- nivel_analisis = 2: partial boundaries OR weak scale references.
-- nivel_analisis = 3: no measurable shrub mass due to blur/darkness/obstruction/non-matching content.
-
-CONSISTENCY RULES:
-- If nivel_analisis = 3:
-  - superficie_m2 MUST be 0
-  - tamano_dominante MUST be null
-  - observaciones MUST be ["Elemento a analizar impredecible"]
-- If nivel_analisis in (1,2):
-  - superficie_m2 MUST be integer >= 0
-  - tamano_dominante MUST be one of "pequeñas" | "medianas" | "grandes"
-
-EXAMPLES (REFERENCE):
-Example A (single compact bed):
-- A flower/shrub bed occupies approx. 4m x 2m from border to border.
-- Even if foliage density is uneven, superficie_m2 should be close to 8 (brute bed footprint), not only dense leaf patches.
-
-Example B (two separated beds):
-- Left bed approx. 3m x 1.5m, right bed approx. 2m x 1m, separated by clear path.
-- superficie_m2 should be close to 6.5 total (sum of both bed footprints).
-
-Example C (partial visibility):
-- Bed contour is partially occluded and scale references are weak.
-- Return conservative estimate with nivel_analisis=2 and explain limitation in observaciones.
-
-RESPONSE FORMAT (STRICT):
-{
-  "tareas": [
-    {
-      "tipo_servicio": "Poda de plantas y arbustos",
-      "razonamiento_cot": {
-        "identificacion_escalas": "string",
-        "calculo_area_plantas": "string",
-        "deduplicacion_multifoto": "string"
-      },
-      "superficie_m2": number,
-      "tamano_dominante": "pequeñas" | "medianas" | "grandes" | null,
-      "nivel_analisis": 1 | 2 | 3,
-      "observaciones": ["string"] | null,
-      "indices_imagenes": [integer]
-    }
-  ]
-}
----`
-  ].join('\n'),
-  'Servicios fitosanitarios': [
-    `---
-Eres una IA especializada en análisis de jardines llamada 'PestVision'. Tu objetivo es analizar imágenes para presupuestar tratamientos fitosanitarios.
-
-INSTRUCCIONES DE ANÁLISIS:
-1. Estima la cantidad o superficie afectada.
-2. Determina el tipo de tratamiento necesario (Preventivo o Curativo).
-
-BRUTE SHRUB BED AREA POLICY (CRITICAL) PARA "Plantas bajas":
-- Measure the bed using the OUTER CONTOUR (2D footprint) of each continuous plant/shrub mass.
-- Include internal gaps/voids that are naturally part of the same bed layout.
-- Exclude clear pathways, lawn corridors, pavements, and detached non-target islands.
-- If several adjacent plants form one continuous bed visually, treat them as ONE macizo.
-- If two beds are clearly separated by visible transit space, treat as separate beds and then sum.
-- This is NOT leaf-only pixel area; this is operational footprint area.
-- Set "unidad" to "m2" and "cantidad_o_superficie" to the estimated area.
-
-VARIABLES A EXTRAER:
-- tipo_servicio: "Servicios fitosanitarios"
-- tipo_afectado: "Césped" | "Árboles" | "Setos" | "Plantas bajas" | "Palmeras".
-- cantidad_o_superficie: Número (si son árboles/palmeras) o m2 (si es césped/plantas bajas) o ml (si es setos).
-- unidad: "unidades" o "m2" o "ml".
-- tratamiento_recomendado: "insecticida" | "fungicida" | "ecologico_preventivo" | "endoterapia" | "inconclusive".
-- altura_tramo: "bajos_medios" | "altos" | "pequenos" | "medianos" | "grandes" | "pequenas" | "medianas" | "altas" | null.
-- palmeras_cirugia: boolean | null.
-- confidence: número entre 0 y 1.
-- nivel_plaga: etiqueta corta alineada con el tratamiento.
-- nivel_analisis: 1 (Claro), 2 (Parcial), 3 (Inutilizable).
-- observaciones: Lista de detalles (ej. "Pulgón visible", "Hojas comidas").
-
-FORMATO DE SALIDA (JSON ÚNICAMENTE):
-{
-  "tareas": [
-    {
-      "tipo_servicio": "Servicios fitosanitarios",
-      "tipo_afectado": "Césped" | "Árboles" | "Setos" | "Plantas bajas" | "Palmeras",
-      "cantidad_o_superficie": number,
-      "unidad": "m2" | "ml" | "unidades",
-      "tratamiento_recomendado": "insecticida" | "fungicida" | "ecologico_preventivo" | "endoterapia" | "inconclusive",
-      "nivel_plaga": "string",
-      "altura_tramo": "bajos_medios" | "altos" | "pequenos" | "medianos" | "grandes" | "pequenas" | "medianas" | "altas" | null,
-      "palmeras_cirugia": boolean | null,
-      "confidence": number,
-      "nivel_analisis": 1 | 2 | 3,
-      "observaciones": ["string"]
-    }
-  ]
-}
----`
-  ].join('\n'),
-};
-
 const WEEDING_SERVICE_NAME = 'Desbroce de malas hierbas';
-const WEEDING_PROMPT_TEMPERATURE = 0.05;
+const STANDARD_TECHNICAL_REASONS = {
+  providerAuthMissing: 'PROVIDER_AUTH_MISSING',
+  providerRateLimit: 'PROVIDER_RATE_LIMIT',
+  providerRequestFailed: 'PROVIDER_REQUEST_FAILED',
+  modelOutputInvalid: 'MODEL_OUTPUT_INVALID',
+  analysisValidationFailed: 'ANALYSIS_VALIDATION_FAILED',
+  internalError: 'INTERNAL_ERROR',
+  edgeInvocationFailed: 'EDGE_FUNCTION_INVOCATION_FAILED',
+} as const;
 
 type WeedingState = 'normal' | 'dificultad_media' | 'dificultad_alta';
 
@@ -1082,324 +469,30 @@ function computeRepeatabilityMetrics(results: WeedingNormalizedTask[]) {
 }
 
 function buildMessages(payload: Payload) {
-  const { description, service_ids = [], photo_urls = [], service_name, hedge_faces } = payload;
+  return buildAnalysisPromptAssembly(payload).messages;
+}
 
-  // Lógica específica para Poda de Palmeras
-  if (service_name === 'Poda de palmeras') {
-    const userContent: any[] = [
-      { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-      { type: 'text', text: `Analiza las siguientes imágenes e identifica las palmeras según el índice.` }
-    ];
-
-    photo_urls.slice(0, 5).forEach((url, idx) => {
-      userContent.push({
-        type: 'text',
-        text: `Imagen Índice ${idx}:`
-      });
-      userContent.push({
-        type: 'image_url',
-        image_url: { url, detail: 'auto' },
-      });
-    });
-
-    return [
-      { role: 'system', content: PROMPTS['Poda de palmeras'] },
-      { role: 'user', content: userContent },
-    ];
-  }
-
-  // Lógica específica para Corte de césped
-  if (service_name === 'Corte de césped' || (service_name && service_name.toLowerCase().includes('césped'))) {
-    const userContent: any[] = [
-      { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-      { type: 'text', text: `Analiza las imágenes para el servicio de corte de césped.` }
-    ];
-
-    photo_urls.slice(0, 5).forEach((url, idx) => {
-        userContent.push({
-            type: 'image_url',
-            image_url: { url, detail: 'auto' },
-        });
-    });
-
-    return [
-        { role: 'system', content: PROMPTS['Corte de césped'] },
-        { role: 'user', content: userContent },
-    ];
-  }
-
-  if (isPhytosanitaryService(service_name)) {
-    return [
-      { role: 'system', content: buildPhytosanitarySystemPrompt(payload) },
-      { role: 'user', content: buildPhytosanitaryUserContent(payload) },
-    ];
-  }
-
-  // Lógica específica para Poda de plantas y arbustos
-  if (service_name === 'Poda de plantas y arbustos') {
-    const userContent: any[] = [
-      { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-      { type: 'text', text: `Analiza las imágenes para Poda de plantas y arbustos. Deduplica vistas repetidas y devuelve directamente superficie_m2 del macizo a podar junto con tamano_dominante.` }
-    ];
-
-    photo_urls.slice(0, 5).forEach((url, idx) => {
-      userContent.push({
-        type: 'text',
-        text: `Imagen Índice ${idx}:`
-      });
-      userContent.push({
-        type: 'image_url',
-        image_url: { url, detail: 'auto' },
-      });
-    });
-
-    return [
-      { role: 'system', content: PROMPTS['Poda de plantas y arbustos'] },
-      { role: 'user', content: userContent },
-    ];
-  }
-
-  // Lógica específica para Poda de árboles
-  if (service_name === 'Poda de árboles') {
-    const userContent: any[] = [
-      { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-      { type: 'text', text: `Estas imágenes corresponden a un único árbol (una zona). Devuelve un único análisis consolidado.` }
-    ];
-
-    photo_urls.slice(0, 5).forEach((url, idx) => {
-      userContent.push({
-        type: 'text',
-        text: `Imagen Índice ${idx}:`
-      });
-      userContent.push({
-        type: 'image_url',
-        image_url: { url, detail: 'auto' },
-      });
-    });
-
-    return [
-      { role: 'system', content: PROMPTS['Poda de árboles'] },
-      { role: 'user', content: userContent },
-    ];
-  }
-
-  // Lógica genérica para otros servicios con prompts específicos
-  // (Corte de setos, Poda de árboles, Poda de plantas y arbustos, Desbroce, Servicios fitosanitarios)
-  const exactServicePrompt = PROMPTS[service_name || ''];
-  if (exactServicePrompt) {
-      const isHedgeService = (service_name || '').toLowerCase().includes('seto');
-      const isWeedingService = isWeedingServiceName(service_name);
-      const userContent: any[] = [
-          { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-          { type: 'text', text: `Analiza las imágenes para el servicio: ${service_name}` }
-      ];
-      if (isHedgeService) {
-        const faceAUrls = (hedge_faces?.face_a_urls || []).filter(Boolean).slice(0, 4);
-        const faceBUrls = (hedge_faces?.face_b_urls || []).filter(Boolean).slice(0, 4);
-        userContent.push({ type: 'text', text: 'Todas las imágenes corresponden al mismo seto/zona. Debes cruzar todas las vistas para una única estimación consolidada.' });
-        if (faceAUrls.length > 0) {
-          userContent.push({ type: 'text', text: 'FACE_A (cara delantera/principal):' });
-          faceAUrls.forEach((url) => {
-            userContent.push({
-              type: 'image_url',
-              image_url: { url, detail: 'auto' },
-            });
-          });
-        }
-        if (faceBUrls.length > 0) {
-          userContent.push({ type: 'text', text: 'FACE_B (cara trasera/opcional):' });
-          faceBUrls.forEach((url) => {
-            userContent.push({
-              type: 'image_url',
-              image_url: { url, detail: 'auto' },
-            });
-          });
-        }
-        if (faceAUrls.length === 0 && faceBUrls.length === 0) {
-          photo_urls.slice(0, 5).forEach((url) => {
-            userContent.push({
-              type: 'image_url',
-              image_url: { url, detail: 'auto' },
-            });
-          });
-        }
-      } else if (isWeedingService) {
-        userContent.push({ type: 'text', text: 'Todas las imágenes pertenecen a la misma zona de malas hierbas; consolidar una única estimación.' });
-        photo_urls.slice(0, 5).forEach((url) => {
-          userContent.push({
-            type: 'image_url',
-            image_url: { url, detail: 'auto' },
-          });
-        });
-      } else {
-        photo_urls.slice(0, 5).forEach((url) => {
-          userContent.push({
-            type: 'image_url',
-            image_url: { url, detail: 'auto' },
-          });
-        });
-      }
-
-      return [
-          { role: 'system', content: exactServicePrompt },
-          { role: 'user', content: userContent },
-      ];
-  }
-  
-  // Mapeo flexible para nombres que no coincidan exactamente
-  const flexibleMap: Record<string, string> = {
-      'seto': 'Corte de setos',
-      'árbol': 'Poda de árboles',
-      'arbol': 'Poda de árboles',
-      'poda de plantas': 'Poda de plantas y arbustos',
-      'fitosanitarios': 'Servicios fitosanitarios',
-      'desbroce': 'Desbroce de malas hierbas'
-  };
-  
-  const lowerName = (service_name || '').toLowerCase();
-  for (const [key, promptKey] of Object.entries(flexibleMap)) {
-      if (lowerName.includes(key) && PROMPTS[promptKey]) {
-          const isHedgeService = promptKey === 'Corte de setos';
-          const userContent: any[] = [
-            { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-            { type: 'text', text: `Analiza las imágenes para el servicio: ${promptKey}` }
-          ];
-          if (isHedgeService) {
-            const faceAUrls = (hedge_faces?.face_a_urls || []).filter(Boolean).slice(0, 4);
-            const faceBUrls = (hedge_faces?.face_b_urls || []).filter(Boolean).slice(0, 4);
-            userContent.push({ type: 'text', text: 'Todas las imágenes corresponden al mismo seto/zona. Debes cruzar todas las vistas para una única estimación consolidada.' });
-            if (faceAUrls.length > 0) {
-              userContent.push({ type: 'text', text: 'FACE_A (cara delantera/principal):' });
-              faceAUrls.forEach((url) => {
-                userContent.push({
-                  type: 'image_url',
-                  image_url: { url, detail: 'auto' },
-                });
-              });
-            }
-            if (faceBUrls.length > 0) {
-              userContent.push({ type: 'text', text: 'FACE_B (cara trasera/opcional):' });
-              faceBUrls.forEach((url) => {
-                userContent.push({
-                  type: 'image_url',
-                  image_url: { url, detail: 'auto' },
-                });
-              });
-            }
-            if (faceAUrls.length === 0 && faceBUrls.length === 0) {
-              photo_urls.slice(0, 5).forEach((url) => {
-                userContent.push({
-                  type: 'image_url',
-                  image_url: { url, detail: 'auto' },
-                });
-              });
-            }
-          } else {
-            photo_urls.slice(0, 5).forEach((url) => {
-              userContent.push({
-                  type: 'image_url',
-                  image_url: { url, detail: 'auto' },
-              });
-            });
-          }
-
-          return [
-            { role: 'system', content: PROMPTS[promptKey] },
-            { role: 'user', content: userContent },
-          ];
-      }
-  }
-
-  // FALLBACK GENÉRICO (Legacy)
-  const userContent: any[] = [
-    { type: 'text', text: `Descripción del cliente: ${description || ''}` },
-    { type: 'text', text: `Servicios seleccionados (informativo): ${service_ids.join(', ')}` },
-  ];
-
-  // Adjuntar hasta 4 imágenes para limitar coste/tiempo
-  photo_urls.slice(0, 4).forEach((url) => {
-    userContent.push({
-      type: 'image_url',
-      image_url: { url, detail: 'auto' },
-    });
-  });
-
-  const systemPrompt = [
-    'Actúa como un asistente especializado en jardinería. Tu tarea es analizar una imagen del jardín y la descripción escrita del cliente para generar una lista estructurada de tareas necesarias.',
-    'Tu salida será un JSON válido y limpio, sin texto adicional, que contenga todos los tipos de trabajos detectados junto con las variables necesarias para que un sistema de presupuestos los procese automáticamente.',
-    '',
-    '1️⃣ SERVICIOS POSIBLES',
-    'Solo puedes detectar los siguientes tipos de servicio:',
-    'Corte de césped',
-    'Poda de plantas y arbustos',
-    'Corte de setos a máquina',
-    'Poda de árboles',
-    'Servicios fitosanitarios',
-    'Desbroce de malas hierbas',
-    '',
-    '2️⃣ VARIABLES A DETECTAR',
-    'Para cada servicio identificado, devuelve:',
-    'tipo_servicio: uno de los listados arriba.',
-    'estado_jardin: “normal”, “descuidado” o “muy descuidado”. (O estado_malas_hierbas para Desbroce: “normal”, “dificultad_media”, “dificultad_alta”).',
-    'superficie_m2: número estimado solo para:',
-    ' - Corte de césped',
-    ' - Corte de setos a máquina',
-    'superficie_malas_hierbas_m2: número estimado solo para:',
-    ' - Desbroce de malas hierbas',
-    'numero_plantas: número aproximado solo para:',
-    ' - Servicios fitosanitarios',
-    ' - Poda de plantas y arbustos',
-    ' - Poda de árboles',
-    'tamaño_plantas: “pequeñas” (<0,5 m), “medianas” (0,5–1 m), “grandes” (1–1,5 m), “muy grandes” (1,5–2 m).',
-    '',
-    '3️⃣ CONTROL DE INCERTIDUMBRE',
-    'Si no estás completamente seguro de alguno de los valores, no lo inventes. En esos casos, usa el valor null.',
-    '',
-    '4️⃣ SUPERFICIE VISIBLE',
-    'Calcula únicamente la superficie visible en la imagen, sin estimar zonas que no se vean con claridad.',
-    'Si solo se muestra una parte del jardín, estima el área de la parte visible y trabajable, no de toda la propiedad.',
-    '',
-    '5️⃣ NORMALIZACIÓN DE UNIDADES',
-    'Devuelve siempre solo una unidad válida según el tipo de servicio:',
-    'Césped, setos → superficie_m2',
-    'Desbroce → superficie_malas_hierbas_m2',
-    'Poda o servicios fitosanitarios → numero_plantas + tamaño_plantas',
-    'No mezcles unidades dentro de una misma tarea.',
-    '',
-    '6️⃣ ESTRUCTURA DE RESPUESTA',
-    'Devuelve únicamente un JSON con esta estructura exacta:',
-    '{',
-    '  "tareas": [',
-    '    {',
-    '      "tipo_servicio": "",',
-    '      "estado_jardin": "",',
-    '      "superficie_m2": null,',
-    '      "superficie_malas_hierbas_m2": null,',
-    '      "estado_malas_hierbas": null,',
-    '      "numero_plantas": null,',
-    '      "tamaño_plantas": null',
-    '    }',
-    '  ]',
-    '}',
-    'Puedes incluir tantas tareas como sean necesarias dentro del array "tareas".',
-  ].join('\n');
-
-  return [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userContent },
-  ];
+function buildAutoQuoteMessages(payload: Payload) {
+  return buildAutoQuotePromptAssembly({
+    service: payload.service || '',
+    image_url: payload.image_url || '',
+    description: payload.description,
+  }).messages;
 }
 
 async function callOpenAI(messages: any[]) {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   if (!apiKey) {
-    return { tareas: [], reasons: ['Falta OPENAI_API_KEY'] };
+    return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerAuthMissing] };
   }
 
   const body = {
     model: 'gpt-4o-mini',
     messages,
-    temperature: 0.2,
+    temperature: DETERMINISTIC_PROMPT_SETTINGS.temperature,
+    top_p: DETERMINISTIC_PROMPT_SETTINGS.topP,
+    frequency_penalty: DETERMINISTIC_PROMPT_SETTINGS.frequencyPenalty,
+    presence_penalty: DETERMINISTIC_PROMPT_SETTINGS.presencePenalty,
     response_format: { type: 'json_object' },
   };
 
@@ -1415,7 +508,7 @@ async function callOpenAI(messages: any[]) {
   if (!resp.ok) {
     const txt = await resp.text();
     console.error('OpenAI error:', txt);
-    return { tareas: [], reasons: ['Error llamando a OpenAI'] };
+    return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerRequestFailed] };
   }
 
   const data = await resp.json();
@@ -1424,7 +517,7 @@ async function callOpenAI(messages: any[]) {
     const parsed = JSON.parse(content);
     return parsed;
   } catch {
-    return { tareas: [], reasons: ['Respuesta no parseable'] };
+    return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.modelOutputInvalid] };
   }
 }
 
@@ -1433,7 +526,7 @@ function heuristicTasks(payload: Payload) {
   // Devolvemos una señal clara de error para que el frontend pida reintentar.
   return { 
       tareas: [], 
-      reasons: ['AI_FAILED_CRITICAL'] 
+      reasons: [STANDARD_TECHNICAL_REASONS.modelOutputInvalid] 
   };
 }
 
@@ -1742,10 +835,10 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
-async function callGemini(messages: any[], temperature?: number) {
+async function callGemini(messages: any[]) {
   const apiKey = Deno.env.get('GOOGLE_API_KEY');
   if (!apiKey) {
-    return { tareas: [], reasons: ['Falta GOOGLE_API_KEY'] };
+    return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerAuthMissing] };
   }
 
   // Extract system prompt
@@ -1795,11 +888,11 @@ async function callGemini(messages: any[], temperature?: number) {
   }
 
   const generationConfig: any = {
-    response_mime_type: "application/json"
+    response_mime_type: 'application/json',
+    temperature: DETERMINISTIC_PROMPT_SETTINGS.temperature,
+    topP: DETERMINISTIC_PROMPT_SETTINGS.topP,
+    topK: DETERMINISTIC_PROMPT_SETTINGS.topK,
   };
-  if (typeof temperature === 'number') {
-    generationConfig.temperature = temperature;
-  }
 
   const body = {
     contents,
@@ -1830,7 +923,7 @@ async function callGemini(messages: any[], temperature?: number) {
               return JSON.parse(text);
           } catch {
               console.error(`[Gemini] JSON Parse Error. Raw text:`, text);
-              return { tareas: [], reasons: ['Respuesta Gemini no parseable'] };
+              return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.modelOutputInvalid] };
           }
       }
 
@@ -1844,13 +937,13 @@ async function callGemini(messages: any[], temperature?: number) {
               await new Promise(r => setTimeout(r, delay));
               continue;
           }
-          return { tareas: [], reasons: ['Gemini Rate Limit Exceeded (Daily Quota or RPM)'] };
+          return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerRateLimit] };
       }
 
       const txt = await resp.text();
       console.error(`Gemini API Error (${resp.status} - ${MODEL_NAME}):`, txt);
       
-      return { tareas: [], reasons: [`Error Gemini: ${resp.status}`] };
+      return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerRequestFailed] };
     } catch (networkError) {
       console.error(`[Gemini] Network/Fetch Error:`, networkError);
       if (attempts < maxAttempts) {
@@ -1858,10 +951,61 @@ async function callGemini(messages: any[], temperature?: number) {
          await new Promise(r => setTimeout(r, delay));
          continue;
       }
-      return { tareas: [], reasons: ['Error de Red al llamar a Gemini'] };
+      return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerRequestFailed] };
     }
   }
-  return { tareas: [], reasons: ['Gemini Failed'] };
+  return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerRequestFailed] };
+}
+
+function getAnalysisModelParams() {
+  return {
+    temperature: DETERMINISTIC_PROMPT_SETTINGS.temperature,
+    top_p: DETERMINISTIC_PROMPT_SETTINGS.topP,
+    top_k: DETERMINISTIC_PROMPT_SETTINGS.topK,
+    frequency_penalty: DETERMINISTIC_PROMPT_SETTINGS.frequencyPenalty,
+    presence_penalty: DETERMINISTIC_PROMPT_SETTINGS.presencePenalty,
+    response_mime_type: 'application/json',
+  };
+}
+
+function buildResponseWithAnalysisV2(
+  payload: Payload,
+  legacyResponse: LegacyAnalysisResponse,
+  provider = 'google',
+) {
+  const baseAnalysis = adaptLegacyAnalysisToV2({
+    serviceName: payload.service_name,
+    legacyResponse,
+    sourcePhotoCount: payload.photo_count,
+    provider,
+    model: payload.model || 'gemini-2.0-flash',
+    modelParams: getAnalysisModelParams(),
+  });
+
+  const validationErrors = validateAnalysisV2(baseAnalysis);
+  const analysis_v2 = validationErrors.length === 0
+    ? baseAnalysis
+    : adaptLegacyAnalysisToV2({
+        serviceName: payload.service_name,
+        legacyResponse: { reasons: [STANDARD_TECHNICAL_REASONS.analysisValidationFailed, ...validationErrors] },
+        sourcePhotoCount: payload.photo_count,
+        provider: 'internal',
+        model: payload.model || 'gemini-2.0-flash',
+        modelParams: {
+          ...getAnalysisModelParams(),
+          validation_failed: true,
+        },
+      });
+
+  const safeReasons = validationErrors.length === 0
+    ? legacyResponse.reasons
+    : [...new Set([...(legacyResponse.reasons || []), ...validationErrors])];
+
+  return {
+    ...legacyResponse,
+    reasons: safeReasons,
+    analysis_v2,
+  };
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -1877,22 +1021,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     // Nuevo modo: auto‑presupuesto por servicio único
     if (payload.mode === 'auto_quote' && payload.service && payload.image_url) {
-      const system = PROMPTS[payload.service];
-      if (!system) {
-        return new Response(JSON.stringify({ error: 'Servicio no soportado' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      const userContent: any[] = [
-        { type: 'text', text: `Analiza la imagen y devuelve SOLO JSON. Servicio: ${payload.service}.` },
-        { type: 'image_url', image_url: { url: payload.image_url, detail: 'auto' } },
-      ];
-      if (payload.description) userContent.unshift({ type: 'text', text: `Notas del cliente: ${payload.description}` });
-
-      const messages = [
-        { role: 'system', content: system },
-        { role: 'user', content: userContent },
-      ];
-      
-      // SOLO GEMINI
+      const messages = buildAutoQuoteMessages(payload);
       const analysis = await callGemini(messages);
 
       const servicio = analysis?.servicio as string | undefined;
@@ -1925,7 +1054,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       for (let i = 0; i < runs; i++) {
         const messages = buildMessages(qaPayload);
-        const ai = await callGemini(messages, WEEDING_PROMPT_TEMPERATURE);
+        const ai = await callGemini(messages);
         rawRuns.push({
           index: i + 1,
           parsed: parseWeedingResult(ai),
@@ -1955,7 +1084,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       const report = {
         service: WEEDING_SERVICE_NAME,
-        temperature: WEEDING_PROMPT_TEMPERATURE,
+        temperature: DETERMINISTIC_PROMPT_SETTINGS.temperature,
         runs_requested: runs,
         runs_valid: metrics.sample_size,
         accepted,
@@ -1973,19 +1102,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Modo existente: estimación de tareas múltiples desde imágenes/texto
     const messages = buildMessages(payload);
     
-    // EXTRACT PROMPT FOR DEBUG
-    const systemMsg = messages.find((m: any) => m.role === 'system');
-    const usedPrompt = systemMsg ? systemMsg.content : '';
-    
     // SOLO GEMINI
-    let ai;
-    if (isPhytosanitaryService(payload.service_name) || payload.service_name === 'Poda de plantas y arbustos') {
-      ai = await callGemini(messages, 0.0);
-    } else if (isWeedingServiceName(payload.service_name)) {
-      ai = await callGemini(messages, WEEDING_PROMPT_TEMPERATURE);
-    } else {
-      ai = await callGemini(messages);
-    }
+    const ai = await callGemini(messages);
 
     if (isPhytosanitaryService(payload.service_name)) {
       // Devolver la respuesta limpia, ya agregada por Gemini, pero con el middleware de filtrado de scopes
@@ -1993,26 +1111,28 @@ Deno.serve(async (req: Request): Promise<Response> => {
         const scopes = getPhytosanitaryScope(payload);
         ai.metricas_fitosanitarias = filterPhytosanitaryMetricsByScope(ai.metricas_fitosanitarias, scopes);
       }
-      return new Response(JSON.stringify(ai), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, ai)), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     if (isWeedingServiceName(payload.service_name)) {
       const normalizedTask = parseWeedingResult(ai);
       if (normalizedTask) {
-        return new Response(JSON.stringify({ tareas: [normalizedTask] }), {
+        return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { tareas: [normalizedTask] })), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
-      return new Response(JSON.stringify({
+      return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, {
         tareas: [{
           tipo_servicio: WEEDING_SERVICE_NAME,
           estado_malas_hierbas: null,
           superficie_malas_hierbas_m2: 0,
           nivel_analisis: 3,
-          observaciones: ['malas hierbas no detectables']
+          observaciones: ['ELEMENTS_NOT_DETECTED']
         }],
-        reasons: ai?.reasons || ['Salida de desbroce no válida']
-      }), {
+        reasons: ai?.reasons || [STANDARD_TECHNICAL_REASONS.modelOutputInvalid]
+      })), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -2029,20 +1149,28 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (payload.service_name === 'Poda de palmeras') {
         // If valid array, return it
         if (Array.isArray(palmResult)) {
-             return new Response(JSON.stringify({ palmas: palmResult }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+             return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { palmas: palmResult })), {
+               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+             });
         }
         // If AI returned empty/missing key for this specific service, return empty list instead of generic error
         // allowing the frontend to show "0 palms found" instead of "Error"
-        return new Response(JSON.stringify({ palmas: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { palmas: [] })), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
     }
 
     if (palmResult && Array.isArray(palmResult)) {
-      return new Response(JSON.stringify({ palmas: palmResult }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { palmas: palmResult })), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     // Support for Tree Analysis Response
     if (ai?.arboles && Array.isArray(ai.arboles)) {
-      return new Response(JSON.stringify({ arboles: ai.arboles }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { arboles: ai.arboles })), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     let tareas = Array.isArray(ai?.tareas) ? ai.tareas : [];
@@ -2072,7 +1200,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
                   tamano_dominante: normalizedLevel === 3 ? null : normalizedSize,
                   superficie_m2: normalizedLevel === 3 ? 0 : normalizedArea,
                   observaciones: normalizedLevel === 3
-                    ? ['Elemento a analizar impredecible']
+                    ? ['ELEMENTS_NOT_DETECTED']
                     : (normalizedObs.length > 0 ? normalizedObs : null),
                   indices_imagenes: normalizedIndices
                 };
@@ -2102,7 +1230,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
                     if (mergedTasks[key].nivel_analisis === 3) {
                       mergedTasks[key].superficie_m2 = 0;
                       mergedTasks[key].tamano_dominante = null;
-                      mergedTasks[key].observaciones = ['Elemento a analizar impredecible'];
+                      mergedTasks[key].observaciones = ['ELEMENTS_NOT_DETECTED'];
                     }
                 }
             } else {
@@ -2117,16 +1245,26 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     if (tareas.length > 0) {
-      return new Response(JSON.stringify({ tareas }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { tareas })), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
     
     const h = heuristicTasks(payload);
-    return new Response(JSON.stringify({ ...h, reasons: ai.reasons || ['No se detectaron tareas (Gemini)'] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, {
+      ...h,
+      reasons: ai.reasons || [STANDARD_TECHNICAL_REASONS.modelOutputInvalid]
+    })), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   } catch (err) {
     console.error('Estimator error:', err);
     const h = heuristicTasks({ description: '', photo_count: 0 });
     return new Response(
-      JSON.stringify({ ...h, reasons: ['Error interno crítico'] }),
+      JSON.stringify(buildResponseWithAnalysisV2({ description: '', photo_count: 0 }, {
+        ...h,
+        reasons: [STANDARD_TECHNICAL_REASONS.internalError]
+      }, 'internal')),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

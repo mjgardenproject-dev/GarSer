@@ -78,4 +78,118 @@ describe('bookingQuote', () => {
       { desc: 'Ajuste por importe mínimo global (80€)', price: 27 },
     ]);
   });
+
+  it('usa metadatos autoritativos para cobertura parcial de palmeras y horas solo de grupos soportados', () => {
+    const result = buildBookingQuote({
+      bookingData: {
+        address: 'Calle Palma 12',
+        serviceIds: ['palm-service'],
+        photos: [],
+        description: '',
+        preferredDate: '',
+        timeSlot: '',
+        providerId: '',
+        estimatedHours: 0,
+        totalPrice: 0,
+        wasteRemoval: false,
+        palmGroups: [
+          {
+            id: 'phoenix-1',
+            species: 'Phoenix',
+            height: '0-5',
+            quantity: 2,
+            state: 'normal',
+            isTerminalOpenRange: true,
+          },
+          {
+            id: 'wash-1',
+            species: 'Phoenix',
+            height: '5-12',
+            quantity: 1,
+            state: 'normal',
+            isTerminalOpenRange: true,
+          },
+        ],
+      } as any,
+      providerConfig: {
+        height_prices: {
+          Phoenix: { '0-5': 50 },
+        },
+        condition_surcharges: { normal: 0, descuidada: 20, muy_descuidada: 50 },
+        waste_removal: { percentage: 0 },
+        minimum_price: 0,
+      },
+      globalMinPrice: 0,
+    });
+
+    expect(result.totalPrice).toBe(120);
+    expect(result.estimatedHours).toBe(1.5);
+    expect(result.warnings).toEqual([
+      {
+        code: 'palm_terminal_range',
+        message: 'Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.',
+      },
+    ]);
+    expect(result.metadata.palmCoverage).toEqual({
+      isFull: false,
+      coveredCount: 1,
+      totalCount: 2,
+      missingGroups: [
+        {
+          id: 'wash-1',
+          species: 'Phoenix',
+          height: '5-12',
+          quantity: 1,
+          isTerminalOpenRange: true,
+          isPriced: false,
+        },
+      ],
+    });
+    expect(result.breakdown).toEqual([
+      { desc: '2x Phoenix (0-5) · verificación final del profesional', price: 0 },
+    ]);
+  });
+
+  it('calcula horas de poda de arboles desde el motor autoritativo compartido', () => {
+    const result = buildBookingQuote({
+      bookingData: {
+        address: 'Calle Encina 5',
+        serviceIds: ['tree-service'],
+        photos: [],
+        description: '',
+        preferredDate: '',
+        timeSlot: '',
+        providerId: '',
+        estimatedHours: 0,
+        totalPrice: 0,
+        wasteRemoval: true,
+        treeGroups: [
+          {
+            id: 'tree-1',
+            pruningType: 'structural',
+            aiSizeBand: 'large',
+            difficultyHigh: true,
+            analysisLevel: 1,
+            isFailed: false,
+          },
+        ],
+      } as any,
+      providerConfig: {
+        minimumPrice: 0,
+        estructural: { small: 50, medium: 100, large: 200 },
+        formacion: { small: 45, medium: 90, large: 180 },
+        difficultyIncrease: 10,
+        wasteRemovalMultiplier: 10,
+        yield_units_per_hour: {
+          estructural: { small: 2, medium: 1, large: 0.5 },
+          formacion: { small: 4, medium: 2, large: 1 },
+        },
+      },
+      globalMinPrice: 0,
+    });
+
+    expect(result.totalPrice).toBe(242);
+    expect(result.estimatedHours).toBe(2.5);
+    expect(result.warnings).toEqual([]);
+  });
 });

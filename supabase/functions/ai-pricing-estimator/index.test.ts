@@ -1,46 +1,39 @@
-// @ts-ignore
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { describe, expect, it } from 'vitest';
 
-declare const Deno: any;
+describe('ai-pricing-estimator payload guards', () => {
+  it('depende explícitamente del header apikey en la request', () => {
+    const req = new Request('http://localhost:8000/ai-pricing-estimator', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ mode: 'auto_quote' }),
+    });
 
-Deno.test("Payload validation should reject if apikey is missing", async () => {
-  const req = new Request("http://localhost:8000/ai-pricing-estimator", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ mode: "auto_quote" })
+    expect(req.headers.get('apikey')).toBeNull();
   });
 
-  // Mocking the environment to ensure no apikey matches
-  Deno.env.set("SUPABASE_ANON_KEY", "valid-key-123");
+  it('trunca descripciones largas a 1000 caracteres', () => {
+    const description = 'A'.repeat(2000);
+    const truncated = description.substring(0, 1000);
+    expect(truncated).toHaveLength(1000);
+    expect(truncated).toBe('A'.repeat(1000));
+  });
 
-  // Since we can't easily mock Deno.serve directly without spinning up the server,
-  // we will just assert that our architecture relies on the 'apikey' header.
-  const apiKeyHeader = req.headers.get("apikey");
-  assertEquals(apiKeyHeader, null);
-});
+  it('limita photo_urls al máximo permitido por el contrato', () => {
+    const photoUrls = ['1', '2', '3', '4', '5', '6', '7', '8'];
+    const sliced = photoUrls.slice(0, 6);
+    expect(sliced).toEqual(['1', '2', '3', '4', '5', '6']);
+  });
 
-Deno.test("Payload validation should truncate long descriptions", () => {
-  const description = "A".repeat(2000);
-  const truncated = description.substring(0, 1000);
-  assertEquals(truncated.length, 1000);
-  assertEquals(truncated, "A".repeat(1000));
-});
+  it('devuelve estructura de error heurístico consistente', () => {
+    const reason = 'AI_TIMEOUT';
+    const result = {
+      tareas: [],
+      reasons: [reason || 'AI_FAILED_CRITICAL'],
+    };
 
-Deno.test("Payload validation should slice photo_urls to max 6", () => {
-  const photo_urls = ["1", "2", "3", "4", "5", "6", "7", "8"];
-  const sliced = photo_urls.slice(0, 6);
-  assertEquals(sliced.length, 6);
-  assertEquals(sliced, ["1", "2", "3", "4", "5", "6"]);
-});
-
-Deno.test("Heuristic tasks should return expected error structure", () => {
-  const reason = "AI_TIMEOUT";
-  const result = {
-    tareas: [],
-    reasons: [reason || 'AI_FAILED_CRITICAL']
-  };
-  assertEquals(result.tareas.length, 0);
-  assertEquals(result.reasons[0], "AI_TIMEOUT");
+    expect(result.tareas).toHaveLength(0);
+    expect(result.reasons[0]).toBe('AI_TIMEOUT');
+  });
 });

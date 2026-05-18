@@ -13,7 +13,8 @@ const corsHeaders = {
 
 const PRICING_VERSION = 'booking_quote_v1';
 
-type QuotePreview = BookingQuoteResult & {
+type QuotePreview = Omit<BookingQuoteResult, 'warnings'> & {
+  warnings: string[];
   providerId: string;
   quoteId?: string;
   signature?: string;
@@ -203,6 +204,7 @@ async function buildQuotePreview(params: {
     estimatedHours: quote.estimatedHours,
     breakdown: quote.breakdown,
     warnings: quote.warnings.map((item) => item.message),
+    metadata: quote.metadata,
     pricingVersion: PRICING_VERSION,
     providerConfigVersion: params.providerConfigVersion,
   };
@@ -460,6 +462,7 @@ Deno.serve(async (req) => {
         estimatedHours: quote.estimatedHours,
         breakdown: quote.breakdown,
         warnings: quote.warnings,
+        metadata: quote.metadata,
         providerId,
         serviceId,
       };

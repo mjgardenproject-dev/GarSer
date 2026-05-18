@@ -5,10 +5,10 @@ const baseConfig = {
   version: 'phytosanitary_v2' as const,
   importe_minimo: 40,
   minimum_fee: 100,
-  tratamientos_activos: ['insecticida', 'fungicida', 'herbicida', 'ecologico_preventivo'] as const,
+  tratamientos_activos: ['insecticida', 'fungicida', 'ecologico_preventivo'] as const,
   superficies_plantas: {
-    hasta_100m2: { insecticida: 3, fungicida: 4, herbicida: 2, ecologico_preventivo: 2 },
-    mas_de_100m2: { insecticida: 2, fungicida: 3, herbicida: 1, ecologico_preventivo: 1.5 }
+    hasta_100m2: { insecticida: 3, fungicida: 4, ecologico_preventivo: 2 },
+    mas_de_100m2: { insecticida: 2, fungicida: 3, ecologico_preventivo: 1.5 }
   },
   setos: {
     hasta_2m: { insecticida: 7, fungicida: 8, ecologico_preventivo: 6 },
@@ -26,31 +26,39 @@ const baseConfig = {
   pricing_modifiers: {
     eco: { percentage: 10 },
     combo: { two_treatments_percentage: -5, three_plus_treatments_percentage: -12 }
+  },
+  yields: {
+    cesped_m2_per_hour: 100,
+    setos_ml_per_hour: 20,
+    palmeras_units_per_hour: 2,
+    arboles_units_per_hour: 2,
+    plantas_m2_per_hour: 50,
+    endoterapia_units_per_hour: 2,
   }
 };
 
 describe('calculatePhytosanitaryQuote', () => {
-  it('aplica fórmula eco/combo y minimum_fee', () => {
+  it('aplica modificador eco y minimum_fee en césped preventivo', () => {
     const result = calculatePhytosanitaryQuote({
-      zones: [{ area: 10, intent: 'curative', curativeTarget: 'insects', productPreference: 'ecological', affectedType: 'Césped' }],
+      zones: [{ area: 10, intent: 'preventive', productPreference: 'ecological', affectedType: 'Césped' }],
       config: baseConfig,
       globalWaste: true
     });
 
-    expect(result.totalBeforeMinimum).toBeCloseTo(30, 4); // Without severe infestation
+    expect(result.totalBeforeMinimum).toBeCloseTo(22, 4);
     expect(result.minimumFeeApplied).toBe(true);
     expect(result.minimumFee).toBe(100);
     expect(result.total).toBe(100);
-    expect(result.breakdown[0].subtotal).toBe(30);
-    expect(result.breakdown[0].lineTotal).toBeCloseTo(30, 4);
+    expect(result.breakdown[0].subtotal).toBe(20);
+    expect(result.breakdown[0].lineTotal).toBeCloseTo(22, 4);
   });
 
   it('devuelve subtotal nulo cuando no hay compatibilidad', () => {
     const result = calculatePhytosanitaryQuote({
-      zones: [{ area: 5, intent: 'weed_control', productPreference: 'chemical', affectedType: 'Setos', aboveTwoMeters: false }],
+      zones: [{ area: 5, intent: 'curative', curativeTarget: 'insects', productPreference: 'chemical', affectedType: 'Setos', aboveTwoMeters: false }],
       config: {
         ...baseConfig,
-        tratamientos_activos: ['herbicida']
+        tratamientos_activos: ['endoterapia'],
       },
       globalWaste: true
     });
@@ -75,7 +83,7 @@ describe('calculatePhytosanitaryQuote', () => {
       }],
       config: {
         ...baseConfig,
-        tratamientos_activos: ['insecticida', 'fungicida', 'herbicida', 'ecologico_preventivo', 'endoterapia']
+        tratamientos_activos: ['insecticida', 'fungicida', 'ecologico_preventivo', 'endoterapia']
       },
       globalWaste: false
     });

@@ -1,4 +1,5 @@
 import type { BookingData } from '../contexts/BookingContext';
+import type { BookingQuoteMetadata } from '../shared/bookingQuoteCore';
 import { sanitizeBookingPayload } from './bookingResumeStorage';
 import { supabase } from '../lib/supabase';
 
@@ -7,6 +8,7 @@ export interface QuoteSnapshot {
   estimatedHours: number;
   breakdown: Array<{ desc: string; price: number }>;
   warnings?: string[];
+  metadata?: BookingQuoteMetadata;
 }
 
 export interface ProviderQuotePreview extends QuoteSnapshot {

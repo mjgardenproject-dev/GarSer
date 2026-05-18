@@ -12,6 +12,7 @@ import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
+import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
 import { respondBookingRequest } from '../../utils/bookingRequestService';
 // Eliminado PromotionalFlyer
 
@@ -145,7 +146,10 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
 
         const mediaMap = await fetchBookingMediaMap(
           bookingsWithProfiles.map((b: any) => b.id),
-          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes]))
+          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes])),
+          {
+            statusByBooking: Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.status])),
+          }
         );
         const withMedia = bookingsWithProfiles.map((booking: any) => ({
           ...booking,
@@ -183,12 +187,19 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           response: status === 'confirmed' ? 'accept' : 'reject',
         });
       } else {
-        const { error } = await supabase
-          .from('bookings')
-          .update({ status })
-          .eq('id', bookingId);
+        if (status === 'completed') {
+          const result = await completeBookingAndCleanupMedia(bookingId);
+          if (result.cleanup?.status === 'failed') {
+            toast.error(result.cleanup.warning || 'La reserva se ha completado, pero la limpieza de fotos requiere revisión.');
+          }
+        } else {
+          const { error } = await supabase
+            .from('bookings')
+            .update({ status })
+            .eq('id', bookingId);
 
-        if (error) throw error;
+          if (error) throw error;
+        }
       }
 
       // Enviar mensaje automático según el estado

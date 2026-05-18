@@ -25,31 +25,51 @@ describe('bookingResumeStorage', () => {
     const payload = sanitizeBookingPayload({
       address: 'Calle Mayor 10',
       photos: [file],
+      uploadedPhotoUrls: ['blob:http://localhost/foto-1', 'https://example.com/foto.jpg'],
+      bookingPhotoContract: {
+        schemaVersion: 'booking_photo_v1',
+        items: [
+          { id: 'url:blob:http://localhost/foto-1', url: 'blob:http://localhost/foto-1' },
+          { id: 'url:https://example.com/foto.jpg', url: 'https://example.com/foto.jpg' },
+        ],
+      },
       servicesData: {
         lawn: {
           files: [file],
-          uploadedPhotoUrls: ['https://example.com/foto.jpg'],
+          uploadedPhotoUrls: ['blob:http://localhost/foto-2', 'https://example.com/foto.jpg'],
+          photoUrls: ['blob:http://localhost/foto-3', 'https://example.com/foto.jpg'],
         },
       },
     }) as any;
 
     expect(payload.photos).toEqual([]);
+    expect(payload.uploadedPhotoUrls).toEqual(['https://example.com/foto.jpg']);
     expect(payload.servicesData.lawn.files).toEqual([]);
     expect(payload.servicesData.lawn.uploadedPhotoUrls).toEqual(['https://example.com/foto.jpg']);
+    expect(payload.servicesData.lawn.photoUrls).toEqual(['https://example.com/foto.jpg']);
+    expect(payload.bookingPhotoContract.schemaVersion).toBe('booking_photo_v1');
+    expect(payload.bookingPhotoContract.items).toHaveLength(1);
   });
 
   it('detecta rutas no serializables del draft para informar al reanudar', () => {
     const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
     const paths = collectNonSerializablePaths({
       photos: [file],
+      uploadedPhotoUrls: ['blob:http://localhost/foto-1'],
       servicesData: {
         lawn: {
           files: [file],
+          photoUrls: ['blob:http://localhost/foto-2'],
         },
       },
     });
 
-    expect(paths).toEqual(['photos[]', 'servicesData.lawn.files[]']);
+    expect(paths).toEqual([
+      'photos[]',
+      'uploadedPhotoUrls[]',
+      'servicesData.lawn.files[]',
+      'servicesData.lawn.photoUrls[]',
+    ]);
   });
 
   it('escribe y lee el resume canónico del wizard', () => {

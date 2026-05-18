@@ -1,9 +1,8 @@
-import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import PhytosanitaryLicenseUpload from '../PhytosanitaryLicenseUpload';
 import { useAuth } from '../../../contexts/AuthContext';
-import { supabase } from '../../../lib/supabase';
 import toast from 'react-hot-toast';
 
 // Mocks de dependencias
@@ -42,6 +41,10 @@ global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
 global.URL.revokeObjectURL = vi.fn();
 
 describe('PhytosanitaryLicenseUpload QA Suite', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     (useAuth as any).mockReturnValue({
@@ -108,7 +111,7 @@ describe('PhytosanitaryLicenseUpload QA Suite', () => {
     expect(submitButton).toHaveProperty('disabled', true);
 
     // Marcar la declaración de responsabilidad legal
-    const checkbox = screen.getByRole('checkbox');
+    const checkbox = screen.getAllByRole('checkbox')[0];
     fireEvent.click(checkbox);
 
     // El botón ya debe ser clicable

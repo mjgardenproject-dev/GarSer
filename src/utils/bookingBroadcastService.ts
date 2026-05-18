@@ -1,4 +1,4 @@
-import { persistBookingMedia, uploadBookingPhotos } from './bookingMediaService';
+import { persistBookingMedia, prepareBookingMediaForPersistence } from './bookingMediaService';
 import { createAtomicBooking } from './bookingAtomicService';
 import { createBroadcastBookingRequests } from './bookingRequestService';
 import { reportBookingEvent } from './bookingTelemetry';
@@ -18,18 +18,36 @@ interface BroadcastParams {
   operationId?: string;
 }
 
+const randomUuid = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `booking-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 export async function broadcastBookingRequest(params: BroadcastParams): Promise<void> {
   const startTime = `${String(params.startHour).padStart(2,'0')}:00`;
+  const operationId = params.operationId || randomUuid();
+  const bookingId = params.gardenerIds.length === 1 ? randomUuid() : undefined;
   let notesWithPhotos = params.notes || '';
   let uploadedMedia: Array<{ storageBucket?: string; storagePath?: string }> = [];
 
   if (params.photoFiles && params.photoFiles.length > 0) {
     try {
-      uploadedMedia = await uploadBookingPhotos({
+      uploadedMedia = await prepareBookingMediaForPersistence({
         clientId: params.clientId,
         date: params.date,
         startHour: params.startHour,
-        files: params.photoFiles,
+        localFiles: params.photoFiles,
+        bookingId,
+        operationId,
+        telemetryContext: {
+          scope: 'booking_broadcast_service',
+          clientId: params.clientId,
+          serviceId: params.primaryServiceId,
+          gardenerCount: params.gardenerIds.length,
+        },
       });
     } catch (e) {
       console.warn('Error subiendo foto, continuando sin bloquear:', e);
@@ -51,6 +69,7 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
 
   if (params.gardenerIds.length === 1) {
     const booking = await createAtomicBooking({
+      bookingId,
       providerId: params.gardenerIds[0],
       serviceId: params.primaryServiceId,
       date: params.date,
@@ -62,7 +81,7 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
       pricingContext: { source: 'legacy-checkout' },
       travelFee,
       hourlyRate,
-      operationId: params.operationId,
+      operationId,
     });
 
     if (booking?.booking_id && uploadedMedia.length > 0) {
@@ -87,7 +106,7 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
     pricingContext: { source: 'broadcast-request' },
     travelFee,
     hourlyRate,
-    operationId: params.operationId,
+    operationId,
   });
 
   if (result?.booking_ids?.length > 0 && params.photoFiles && params.photoFiles.length > 0) {

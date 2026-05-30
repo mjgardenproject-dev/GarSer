@@ -1,18 +1,59 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  resolveSupabaseBrowserConfig,
+  type SupabaseRuntimeDiagnostics,
+} from './supabaseConfig';
 
-// Configuración exacta solicitada + patrón singleton para evitar recreación en HMR/F5
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY!;
-const globalForSupabase = globalThis as any;
+const globalForSupabase = globalThis as typeof globalThis & {
+  __supabaseClient?: ReturnType<typeof createClient>;
+  __supabaseRuntimeDiagnosticsLogged?: boolean;
+};
+
+export type { SupabaseRuntimeDiagnostics } from './supabaseConfig';
+
+function logSupabaseRuntimeDiagnostics(diagnostics: SupabaseRuntimeDiagnostics) {
+  if (!import.meta.env.DEV || globalForSupabase.__supabaseRuntimeDiagnosticsLogged) {
+    return;
+  }
+
+  globalForSupabase.__supabaseRuntimeDiagnosticsLogged = true;
+
+  if (diagnostics.warnings.length > 0) {
+    diagnostics.warnings.forEach((warning) => {
+      console.warn(`[supabase-runtime] ${warning}`);
+    });
+  } else {
+    console.info(
+      `[supabase-runtime] Cliente inicializado para projectRef=${diagnostics.urlProjectRef || 'desconocido'} con keyRole=${diagnostics.keyRole || 'desconocido'}.`
+    );
+  }
+}
+
+const runtimeConfig = resolveSupabaseBrowserConfig(import.meta.env);
+const { supabaseUrl: SUPABASE_URL, supabasePublicKey: SUPABASE_PUBLIC_KEY, diagnostics: runtimeDiagnostics } =
+  runtimeConfig;
+logSupabaseRuntimeDiagnostics(runtimeDiagnostics);
+
+function resolveSupabaseStorage() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+
+  if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis) {
+    return globalThis.localStorage;
+  }
+
+  return undefined;
+}
 
 export const supabase =
   globalForSupabase.__supabaseClient ||
-  createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  createClient(SUPABASE_URL, SUPABASE_PUBLIC_KEY, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storage: localStorage,
+      storage: resolveSupabaseStorage(),
     },
   });
 

@@ -94,10 +94,10 @@ El análisis con fotos sube imágenes al bucket `booking-photos`.
 
 Para crear el bucket automáticamente:
 
-1. Añade tu service role key en `.env`:
+1. Añade una variable de entorno **solo de administración local**:
 
    ```
-   VITE_SUPABASE_SERVICE_ROLE_KEY=eyJ... (clave de servicio)
+   SUPABASE_SERVICE_ROLE_KEY=eyJ... (clave de servicio)
    ```
 
 2. Ejecuta:
@@ -106,4 +106,9 @@ Para crear el bucket automáticamente:
    npm run create:bucket
    ```
 
-Esto creará el bucket `booking-photos` con acceso público y tipos permitidos (`jpeg`, `png`, `webp`). Si no lo creas, el análisis funcionará con texto (las fotos fallarán al subir).
+Esto creará el bucket `booking-photos` como **privado** y con tipos permitidos (`jpeg`, `png`, `webp`).
+
+Notas importantes:
+- No uses una `service role key` con prefijo `VITE_`: expondrías un secreto del backend al frontend.
+- El bucket no debe ser público en producción.
+- Las fotos de reserva deben servirse mediante URLs firmadas o acceso mediado por backend.

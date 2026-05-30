@@ -37,6 +37,15 @@ describe('bookingQuote', () => {
     expect(result.estimatedHours).toBe(2);
     expect(result.totalPrice).toBe(60);
     expect(result.breakdown).toEqual([]);
+    expect(result.economics).toMatchObject({
+      currency: 'EUR',
+      serviceGrossTotal: 60,
+      managementFee: 7.5,
+      payableNow: 7.5,
+      payableLater: 60,
+    });
+    expect(result.economics.serviceNetSubtotal).toBeCloseTo(49.59, 2);
+    expect(result.economics.serviceTaxAmount).toBeCloseTo(10.41, 2);
   });
 
   it('genera desglose coherente para arbustos con minimo global', () => {
@@ -76,6 +85,15 @@ describe('bookingQuote', () => {
     expect(result.breakdown).toEqual([
       { desc: '2 m2 de arbustos (medianas, descuidado)', price: 53 },
       { desc: 'Ajuste por importe mínimo global (80€)', price: 27 },
+    ]);
+    expect(result.economics.managementFee).toBe(10);
+    expect(result.economics.stripeLineItems).toEqual([
+      {
+        code: 'management_fee',
+        label: 'Gastos de gestión',
+        unitAmount: 10,
+        quantity: 1,
+      },
     ]);
   });
 

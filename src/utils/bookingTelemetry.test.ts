@@ -44,6 +44,7 @@ describe('bookingTelemetry', () => {
           event: 'booking.details_analysis_failed',
           level: 'error',
           source: 'web-client',
+          taxonomyVersion: 'booking_funnel_v1',
         }),
       })
     )
@@ -137,6 +138,53 @@ describe('bookingTelemetry', () => {
     )
 
     infoSpy.mockRestore()
+  })
+
+  it('marca cuando un evento catalogado llega sin el contexto obligatorio completo', () => {
+    reportBookingEvent('info', {
+      event: 'booking.quote_preview_loaded',
+      context: {
+        serviceId: 'svc-1',
+      },
+    })
+
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'booking-telemetry',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          event: 'booking.quote_preview_loaded',
+          taxonomyValid: false,
+          missingContext: ['selectedDate', 'providerCount'],
+        }),
+      }),
+    )
+  })
+
+  it('cataloga los eventos nuevos de pagos con fase y estado operativos', () => {
+    reportBookingEvent('warn', {
+      event: 'booking.payment_request_rejected',
+      context: {
+        action: 'prepare_payment',
+        reason: 'client_api_key_invalid',
+      },
+    })
+
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      'booking-telemetry',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          event: 'booking.payment_request_rejected',
+          phase: 'payment_request',
+          status: 'rejected',
+          taxonomyValid: true,
+          missingContext: [],
+          context: expect.objectContaining({
+            action: 'prepare_payment',
+            reason: 'client_api_key_invalid',
+          }),
+        }),
+      }),
+    )
   })
 
   it('reintenta el envío al sink cuando falla de forma transitoria', async () => {

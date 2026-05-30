@@ -1,33 +1,16 @@
-import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
+import { requireSupabaseAdminEnv } from './loadSupabaseAdminEnv.js';
 
-// Leer variables de entorno desde .env
-const envPath = '.env';
-if (!fs.existsSync(envPath)) {
-  console.error('❌ No se encontró .env en el directorio del proyecto.');
-  process.exit(1);
-}
-const envContent = fs.readFileSync(envPath, 'utf8');
-const envVars = {};
-envContent.split('\n').forEach(line => {
-  const separatorIndex = line.indexOf('=');
-  if (separatorIndex === -1) return;
-  const key = line.substring(0, separatorIndex).trim();
-  const value = line.substring(separatorIndex + 1).trim();
-  const v = value.replace(/^"|"$/g, '');
-  envVars[key] = v;
-});
+let supabaseUrl;
+let supabaseServiceKey;
 
-const supabaseUrl = envVars.VITE_SUPABASE_URL;
-const supabaseServiceKey = envVars.VITE_SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl) {
-  console.error('❌ Falta VITE_SUPABASE_URL en .env');
-  process.exit(1);
-}
-if (!supabaseServiceKey) {
-  console.error('❌ Falta VITE_SUPABASE_SERVICE_ROLE_KEY en .env');
-  console.error('ℹ️ Añade tu Service Role Key de Supabase en .env para poder insertar en la tabla services.');
+try {
+  ({ supabaseUrl, supabaseServiceRoleKey: supabaseServiceKey } = requireSupabaseAdminEnv());
+} catch (error) {
+  console.error(`❌ ${error.message}`);
+  console.error(
+    'ℹ️ Añade `SUPABASE_SERVICE_ROLE_KEY` en `.env` para poder insertar en la tabla `services` sin exponer secretos al navegador.'
+  );
   process.exit(1);
 }
 

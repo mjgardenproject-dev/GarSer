@@ -1,21 +1,13 @@
-import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
+import { requireSupabaseAdminEnv } from './loadSupabaseAdminEnv.js';
 
-// Read environment variables from .env file
-const envContent = fs.readFileSync('.env', 'utf8');
-const envVars = {};
-envContent.split('\n').forEach(line => {
-  const [key, value] = line.split('=');
-  if (key && value) {
-    envVars[key.trim()] = value.trim().replace(/^["']|["']$/g, '');
-  }
-});
+let supabaseUrl;
+let supabaseServiceKey;
 
-const supabaseUrl = envVars.VITE_SUPABASE_URL;
-const supabaseServiceKey = envVars.VITE_SUPABASE_SERVICE_ROLE_KEY || envVars.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Missing Supabase credentials in .env file');
+try {
+  ({ supabaseUrl, supabaseServiceRoleKey: supabaseServiceKey } = requireSupabaseAdminEnv());
+} catch (error) {
+  console.error(`❌ ${error.message}`);
   process.exit(1);
 }
 

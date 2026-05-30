@@ -14,6 +14,20 @@ export interface BookingQuoteLine {
   price: number;
 }
 
+export interface BookingQuoteEconomicLine {
+  code: string;
+  label: string;
+  amount: number;
+  kind: 'service' | 'tax' | 'fee' | 'adjustment';
+}
+
+export interface BookingStripeLineItem {
+  code: string;
+  label: string;
+  unitAmount: number;
+  quantity: number;
+}
+
 export interface BookingQuoteWarning {
   code: string;
   message: string;
@@ -41,12 +55,60 @@ export interface BookingQuotePalmCoverage {
   missingGroups: BookingQuotePalmGroupContext[];
 }
 
+export interface BookingQuoteSlotSelection {
+  date: string;
+  startHour: number;
+  startTime: string;
+  endTime: string;
+  durationHours: number;
+}
+
+export interface BookingAvailabilityCalendarDay {
+  date: string;
+  day: number;
+  disabled: boolean;
+  count: number;
+  availableStartHours?: number[];
+}
+
+export interface BookingQuoteAvailability {
+  requestedDate?: string;
+  windowEndDate?: string;
+  validStartHours: number[];
+  calendarDays?: BookingAvailabilityCalendarDay[];
+  earliestSlot?: BookingQuoteSlotSelection | null;
+  selectedSlot?: BookingQuoteSlotSelection | null;
+}
+
+export interface BookingQuoteEconomicBreakdown {
+  currency: 'EUR';
+  taxRate: number;
+  serviceGrossTotal: number;
+  serviceNetSubtotal: number;
+  serviceTaxAmount: number;
+  managementFee: number;
+  payableNow: number;
+  payableLater: number;
+  lines: BookingQuoteEconomicLine[];
+  stripeLineItems: BookingStripeLineItem[];
+}
+
+export interface BookingCustomerPaymentSummary {
+  reservationTotal: number;
+  serviceSubtotal: number;
+  reservationFee: number;
+  confirmationDeposit: number;
+  pendingToProfessional: number;
+}
+
 export interface BookingQuoteMetadata {
   pricingContext: BookingQuotePricingContext;
   palmCoverage?: BookingQuotePalmCoverage;
 }
 
 export interface SerializableBookingData {
+  address?: string;
+  description?: string;
   serviceIds?: string[];
   wasteRemoval?: boolean;
   aiQuantity?: number;
@@ -132,6 +194,8 @@ export interface BookingQuoteResult {
   breakdown: BookingQuoteLine[];
   warnings: BookingQuoteWarning[];
   metadata: BookingQuoteMetadata;
+  economics: BookingQuoteEconomicBreakdown;
+  availability?: BookingQuoteAvailability;
 }
 
 const DEFAULT_HEDGE_SURCHARGES = { media: 20, alta: 50 };
@@ -286,7 +350,30 @@ const EMPTY_DETAILED_PHYTOSANITARY_PRICING: PhytosanitaryDetailedPricing = {
   },
 };
 
+const BOOKING_TAX_RATE = 0.21;
+const BOOKING_MANAGEMENT_FEE_RATE = 0.125;
 const roundUp = (value: number) => Math.ceil(Number(value || 0));
+const roundCurrency = (value: number) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+export const getBookingCustomerPaymentSummary = (
+  economics?: BookingQuoteEconomicBreakdown | null
+): BookingCustomerPaymentSummary | null => {
+  if (!economics) return null;
+
+  const serviceSubtotal = roundCurrency(economics.serviceGrossTotal);
+  const reservationFee = roundCurrency(economics.managementFee);
+  const confirmationDeposit = roundCurrency(economics.payableNow);
+  const pendingToProfessional = roundCurrency(economics.payableLater);
+  const reservationTotal = roundCurrency(serviceSubtotal + reservationFee);
+
+  return {
+    reservationTotal,
+    serviceSubtotal,
+    reservationFee,
+    confirmationDeposit,
+    pendingToProfessional,
+  };
+};
 
 const toSafeNumber = (value: unknown): number => {
   const parsed = Number(value || 0);
@@ -369,6 +456,67 @@ const buildDefaultQuoteMetadata = (): BookingQuoteMetadata => ({
     palmGroups: [],
   },
 });
+
+const inferEconomicLineKind = (desc: string): BookingQuoteEconomicLine['kind'] => {
+  const normalized = String(desc || '').toLowerCase();
+  if (normalized.includes('ajuste')) return 'adjustment';
+  return 'service';
+};
+
+const buildQuoteEconomics = (
+  totalPrice: number,
+  breakdown: BookingQuoteLine[]
+): BookingQuoteEconomicBreakdown => {
+  const serviceGrossTotal = roundCurrency(totalPrice);
+  const serviceNetSubtotal = roundCurrency(serviceGrossTotal / (1 + BOOKING_TAX_RATE));
+  const serviceTaxAmount = roundCurrency(serviceGrossTotal - serviceNetSubtotal);
+  const managementFee = roundCurrency(serviceGrossTotal * BOOKING_MANAGEMENT_FEE_RATE);
+
+  return {
+    currency: 'EUR',
+    taxRate: BOOKING_TAX_RATE,
+    serviceGrossTotal,
+    serviceNetSubtotal,
+    serviceTaxAmount,
+    managementFee,
+    payableNow: managementFee,
+    payableLater: serviceGrossTotal,
+    lines: [
+      ...breakdown.map((line, index) => ({
+        code: `service_line_${index + 1}`,
+        label: line.desc,
+        amount: roundCurrency(line.price),
+        kind: inferEconomicLineKind(line.desc),
+      })),
+      {
+        code: 'service_subtotal',
+        label: 'Subtotal del servicio',
+        amount: serviceNetSubtotal,
+        kind: 'service',
+      },
+      {
+        code: 'service_tax',
+        label: 'IVA del servicio',
+        amount: serviceTaxAmount,
+        kind: 'tax',
+      },
+      {
+        code: 'management_fee',
+        label: 'Gastos de gestión',
+        amount: managementFee,
+        kind: 'fee',
+      },
+    ],
+    stripeLineItems: managementFee > 0
+      ? [{
+          code: 'management_fee',
+          label: 'Gastos de gestión',
+          unitAmount: managementFee,
+          quantity: 1,
+        }]
+      : [],
+  };
+};
 
 const getPalmBaseUnitPrice = (config: any, group: Pick<PalmPricingGroup, 'species' | 'height'>): number => {
   const useYield = config?.use_yield_calculation && config?.yield_units_per_hour && config?.hourly_rate;
@@ -567,7 +715,6 @@ const calculatePhytosanitaryQuote = (params: {
   globalWaste: boolean;
 }): PhytosanitaryQuoteResult => {
   const normalized = normalizePhytosanitaryPricingConfig(params.config as any);
-  const wastePercentage = Number(normalized.recargo_retirada?.percentage ?? normalized.waste_removal?.percentage ?? 0);
   const ecoModifierPercent = Number(normalized.pricing_modifiers?.eco?.percentage || 0);
   const comboTwoTreatmentsPercent = Number(normalized.pricing_modifiers?.combo?.two_treatments_percentage || 0);
   const comboThreePlusTreatmentsPercent = Number(normalized.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
@@ -783,7 +930,14 @@ export function buildAuthoritativeBookingQuote(params: {
   let metadata = buildDefaultQuoteMetadata();
 
   if (!config) {
-    return { totalPrice: 0, estimatedHours: 1, breakdown, warnings, metadata };
+    return {
+      totalPrice: 0,
+      estimatedHours: 1,
+      breakdown,
+      warnings,
+      metadata,
+      economics: buildQuoteEconomics(0, breakdown),
+    };
   }
 
   const pushWarning = (code: string, message: string) => {
@@ -1063,11 +1217,14 @@ export function buildAuthoritativeBookingQuote(params: {
     }
   }
 
+  const normalizedBreakdown = breakdown.filter((line) => line.price > 0 || line.desc.includes('verificación final del profesional'));
+
   return {
     totalPrice,
     estimatedHours,
-    breakdown: breakdown.filter((line) => line.price > 0 || line.desc.includes('verificación final del profesional')),
+    breakdown: normalizedBreakdown,
     warnings,
     metadata,
+    economics: buildQuoteEconomics(totalPrice, normalizedBreakdown),
   };
 }

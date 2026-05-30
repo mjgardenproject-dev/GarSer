@@ -30,7 +30,7 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
   const startTime = `${String(params.startHour).padStart(2,'0')}:00`;
   const operationId = params.operationId || randomUuid();
   const bookingId = params.gardenerIds.length === 1 ? randomUuid() : undefined;
-  let notesWithPhotos = params.notes || '';
+  const notesWithPhotos = params.notes || '';
   let uploadedMedia: Array<{ storageBucket?: string; storagePath?: string }> = [];
 
   if (params.photoFiles && params.photoFiles.length > 0) {
@@ -78,7 +78,7 @@ export async function broadcastBookingRequest(params: BroadcastParams): Promise<
       totalPrice: params.totalPrice,
       clientAddress: params.clientAddress,
       notes: notesWithPhotos,
-      pricingContext: { source: 'legacy-checkout' },
+      pricingContext: { source: 'single-provider-booking' },
       travelFee,
       hourlyRate,
       operationId,

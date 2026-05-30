@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase';
 import type { Service } from '../../types';
 import { getServiceImageFallbackUrl, getServiceImageUrl } from '../../utils/serviceImages';
 
+const MAX_MANUAL_RETRIES = 3;
+
 const ServicesPage: React.FC = () => {
   const location = useLocation();
   const { bookingData, setBookingData, saveProgress, setCurrentStep } = useBooking();
@@ -13,7 +15,8 @@ const ServicesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedServices, setSelectedServices] = useState<string[]>(bookingData.serviceIds);
-  const [imageFallbacks, setImageFallbacks] = useState<Record<string, string>>({});
+  const [manualRetryCount, setManualRetryCount] = useState(0);
+  const [imageStates, setImageStates] = useState<Record<string, 'fallback' | 'unavailable'>>({});
 
   useEffect(() => {
     fetchServices();
@@ -73,7 +76,8 @@ const ServicesPage: React.FC = () => {
       });
 
       setServices(merged as Service[]);
-      setImageFallbacks({});
+      setImageStates({});
+      setManualRetryCount(0);
     } catch (error) {
       console.error('Error fetching services:', error);
       setServices([]);
@@ -85,9 +89,21 @@ const ServicesPage: React.FC = () => {
 
   const handleImageError = (service: Service, currentSrc: string) => {
     const fallbackUrl = getServiceImageFallbackUrl(service.name);
-    if (currentSrc !== fallbackUrl) {
-      setImageFallbacks((prev) => ({ ...prev, [service.id]: fallbackUrl }));
+    setImageStates((prev) => {
+      if (prev[service.id] === 'unavailable') return prev;
+      if (currentSrc !== fallbackUrl && prev[service.id] !== 'fallback') {
+        return { ...prev, [service.id]: 'fallback' };
+      }
+      return { ...prev, [service.id]: 'unavailable' };
+    });
+  };
+
+  const handleRetry = () => {
+    if (loading || manualRetryCount >= MAX_MANUAL_RETRIES) {
+      return;
     }
+    setManualRetryCount((prev) => prev + 1);
+    void fetchServices();
   };
 
   const toggleService = (serviceId: string) => {
@@ -105,17 +121,6 @@ const ServicesPage: React.FC = () => {
     setCurrentStep(2);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando servicios…</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -125,7 +130,7 @@ const ServicesPage: React.FC = () => {
             type="button"
             onClick={() => setCurrentStep(0)}
             aria-label="Volver al paso de dirección"
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
           >
             <ChevronLeft aria-hidden="true" className="w-5 h-5 text-gray-600" />
           </button>
@@ -146,8 +151,7 @@ const ServicesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-md mx-auto px-3 py-3 pb-24">
+      <main className="max-w-md mx-auto px-3 py-3 pb-24" id="services-main">
         <div className="mb-3">
           <p className="text-sm font-medium text-gray-900">
             Selecciona el servicio que quieres reservar
@@ -160,63 +164,92 @@ const ServicesPage: React.FC = () => {
             <p className="mt-1 text-sm text-red-700">
               Reintenta ahora. Si el problema continúa, vuelve a intentarlo en unos minutos.
             </p>
+            <p className="mt-2 text-xs text-red-700">
+              {manualRetryCount < MAX_MANUAL_RETRIES
+                ? `Reintentos manuales restantes: ${MAX_MANUAL_RETRIES - manualRetryCount}.`
+                : 'Se han agotado los reintentos manuales en esta sesión. Vuelve atrás o recarga la página para reiniciar.'}
+            </p>
             <button
               type="button"
-              onClick={fetchServices}
-              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+              onClick={handleRetry}
+              disabled={loading || manualRetryCount >= MAX_MANUAL_RETRIES}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 [touch-action:manipulation]"
             >
               <RefreshCw aria-hidden="true" className="h-4 w-4" />
-              Reintentar carga
+              {loading ? 'Reintentando…' : manualRetryCount >= MAX_MANUAL_RETRIES ? 'Reintentos agotados' : 'Reintentar carga'}
             </button>
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          {services.map((service) => {
-            const isSelected = selectedServices.includes(service.id);
-            const imageUrl = imageFallbacks[service.id] || getServiceImageUrl(service, 800);
-            
-            return (
-              <button
-                key={service.id}
-                type="button"
-                onClick={() => toggleService(service.id)}
-                aria-pressed={isSelected}
-                aria-label={`Seleccionar ${service.name}`}
-                className={`relative rounded-xl overflow-hidden border transition-colors duration-200 h-[104px] w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${
-                  isSelected ? 'border-green-600 ring-2 ring-green-600' : 'border-gray-200'
-                }`}
-              >
-                <img
-                  src={imageUrl}
-                  alt=""
-                  width={800}
-                  height={450}
-                  loading="lazy"
-                  onError={(event) => handleImageError(service, event.currentTarget.src)}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/20 to-transparent" />
-                {imageFallbacks[service.id] && (
-                  <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white">
-                    <ImageOff aria-hidden="true" className="h-3 w-3" />
-                    Imagen alternativa
+        {loading ? (
+          <div className="grid grid-cols-2 gap-2 mb-4" aria-live="polite" aria-busy="true">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-[104px] w-full animate-pulse rounded-xl border border-gray-200 bg-white p-3">
+                <div className="h-full rounded-lg bg-gray-200" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {services.map((service) => {
+              const isSelected = selectedServices.includes(service.id);
+              const imageState = imageStates[service.id];
+              const fallbackUrl = getServiceImageFallbackUrl(service.name);
+              const imageUrl = imageState === 'fallback' ? fallbackUrl : getServiceImageUrl(service, 800);
+              const imageUnavailable = imageState === 'unavailable';
+
+              return (
+                <button
+                  key={service.id}
+                  type="button"
+                  onClick={() => toggleService(service.id)}
+                  aria-pressed={isSelected}
+                  aria-label={`Seleccionar ${service.name}`}
+                  className={`relative h-[104px] w-full overflow-hidden rounded-xl border transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation] ${
+                    isSelected ? 'border-green-600 ring-2 ring-green-600' : 'border-gray-200'
+                  }`}
+                >
+                  {!imageUnavailable ? (
+                    <img
+                      src={imageUrl}
+                      alt=""
+                      width={800}
+                      height={450}
+                      loading="lazy"
+                      onError={(event) => handleImageError(service, event.currentTarget.src)}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-gray-200 to-gray-300" />
+                  )}
+                  <div className={`absolute inset-0 ${imageUnavailable ? 'bg-gray-900/40' : 'bg-gradient-to-t from-black/40 via-black/20 to-transparent'}`} />
+                  {imageState === 'fallback' && (
+                    <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white">
+                      <ImageOff aria-hidden="true" className="h-3 w-3" />
+                      Imagen alternativa
+                    </div>
+                  )}
+                  {imageUnavailable && (
+                    <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white">
+                      <ImageOff aria-hidden="true" className="h-3 w-3" />
+                      Imagen no disponible
+                    </div>
+                  )}
+                  <div className="absolute inset-x-1 bottom-1 text-center">
+                    <h3 className="text-sm font-semibold text-white text-pretty">
+                      {service.name}
+                    </h3>
                   </div>
-                )}
-                <div className="absolute inset-x-1 bottom-1 text-center">
-                  <h3 className="text-white text-sm font-semibold text-pretty">
-                    {service.name}
-                  </h3>
-                </div>
-                {isSelected && (
-                  <div className="absolute top-2 right-2 bg-green-600 text-white rounded-full p-1">
-                    <Check aria-hidden="true" className="w-4 h-4" />
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                  {isSelected && (
+                    <div className="absolute top-2 right-2 rounded-full bg-green-600 p-1 text-white">
+                      <Check aria-hidden="true" className="w-4 h-4" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {!loading && !loadError && services.length === 0 && (
           <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
@@ -226,17 +259,16 @@ const ServicesPage: React.FC = () => {
             </p>
             <button
               type="button"
-              onClick={fetchServices}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+              onClick={handleRetry}
+              disabled={loading}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 [touch-action:manipulation]"
             >
               <RefreshCw aria-hidden="true" className="h-4 w-4" />
-              Reintentar
+              {loading ? 'Actualizando…' : 'Actualizar catálogo'}
             </button>
           </div>
         )}
-
-        
-      </div>
+      </main>
 
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
@@ -245,7 +277,7 @@ const ServicesPage: React.FC = () => {
             type="button"
             onClick={handleContinue}
             disabled={selectedServices.length === 0}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] motion-reduce:transform-none transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.02] hover:shadow-xl motion-reduce:transform-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 rounded-2xl [touch-action:manipulation]"
           >
             {selectedServices.length === 0
               ? 'Selecciona un servicio'

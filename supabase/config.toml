@@ -1,0 +1,11 @@
+[functions.booking-authority]
+verify_jwt = false
+
+[functions.booking-payment]
+verify_jwt = false
+
+[functions.booking-payment-webhook]
+verify_jwt = false
+
+[functions.booking-telemetry]
+verify_jwt = false

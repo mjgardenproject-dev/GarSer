@@ -1,6 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { AnalysisV2Envelope } from '../shared/analysisV2';
-import type { BookingQuoteMetadata } from '../shared/bookingQuoteCore';
+import type {
+  BookingQuoteAvailability,
+  BookingQuoteEconomicBreakdown,
+  BookingQuoteMetadata,
+} from '../shared/bookingQuoteCore';
+import type { BookingAuthoritativeQuoteSnapshot } from '../shared/bookingAuthoritativeSnapshot';
+import { normalizeAuthoritativeQuoteState } from '../shared/bookingAuthoritativeSnapshot';
 import type { BookingPhotoContract } from '../utils/bookingPhotoContract';
 import {
   clearBookingDraftPhotoCache,
@@ -8,11 +14,13 @@ import {
   syncBookingDraftPhotoCache,
 } from '../utils/bookingPhotoDraftCache';
 import {
+  claimBookingResumeForUser,
   clearBookingResumeStorage,
-  readAnyBookingResume,
+  readBookingResumeState,
   sanitizeBookingPayload,
-  writeBookingResume,
+  writeBookingResumeResult,
 } from '../utils/bookingResumeStorage';
+import { reportBookingEvent } from '../utils/bookingTelemetry';
 import { syncBookingPhotoContractWithLegacy } from '../utils/bookingPhotoContract';
 import { useAuth } from './AuthContext';
 
@@ -38,7 +46,10 @@ export interface BookingData {
   quotePricingVersion?: string;
   quoteProviderConfigVersion?: string;
   quoteWarnings?: string[];
+  authoritativeQuoteSnapshot?: BookingAuthoritativeQuoteSnapshot;
   quoteMetadata?: BookingQuoteMetadata;
+  quoteAvailability?: BookingQuoteAvailability;
+  quoteEconomics?: BookingQuoteEconomicBreakdown;
   aiQuantity?: number;
   aiUnit?: string;
   aiDifficulty?: number;
@@ -269,7 +280,14 @@ interface BookingContextType {
   bookingData: BookingData;
   currentStep: number;
   isLoading: boolean; // Estado de carga para evitar renderizar el paso 0 prematuramente
-  resumeWarning: { discardedPaths: string[]; restoredPhotoCount?: number } | null;
+  resumeWarning: {
+    kind: 'rehydrated_partial' | 'storage_degraded' | 'storage_failed' | 'invalid_resume';
+    title: string;
+    detail: string;
+    discardedPaths?: string[];
+    restoredPhotoCount?: number;
+    nonSerializablePaths?: string[];
+  } | null;
   setBookingData: (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => void;
   setCurrentStep: (step: number) => void;
   nextStep: () => void;
@@ -293,13 +311,6 @@ const initialBookingData: BookingData = {
   providerId: '',
   estimatedHours: 0,
   totalPrice: 0,
-  priceBreakdown: [],
-  quoteId: '',
-  quoteSignature: '',
-  quoteExpiresAt: '',
-  quotePricingVersion: '',
-  quoteProviderConfigVersion: '',
-  quoteWarnings: [],
   aiQuantity: 0,
   aiUnit: '',
   aiDifficulty: 1,
@@ -329,10 +340,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [bookingData, setBookingDataState] = useState<BookingData>(initialBookingData);
   const [currentStep, setCurrentStepState] = useState(0);
   const [isLoading, setIsLoading] = useState(true); // Inicialmente cargando
-  const [resumeWarning, setResumeWarning] = useState<{ discardedPaths: string[]; restoredPhotoCount?: number } | null>(null);
+  const [resumeWarning, setResumeWarning] = useState<BookingContextType['resumeWarning']>(null);
 
   const applyPhotoContractCompatibility = (data: BookingData): BookingData =>
-    syncBookingPhotoContractWithLegacy(data) as BookingData;
+    syncBookingPhotoContractWithLegacy(normalizeAuthoritativeQuoteState(data)) as BookingData;
 
   const setBookingData = (data: Partial<BookingData> | ((prev: BookingData) => Partial<BookingData>)) => {
     setBookingDataState(prev => {
@@ -395,7 +406,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setBookingDataState(initialBookingData);
     setCurrentStepState(0);
     setResumeWarning(null);
-    clearBookingResumeStorage();
+    clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
     void clearBookingDraftPhotoCache(user?.id);
   };
 
@@ -407,7 +418,53 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         currentStep,
         timestamp: new Date().toISOString(),
       };
-      writeBookingResume('draft', 'wizard', progress, { userId: user?.id });
+      const writeResult = writeBookingResumeResult('draft', 'wizard', progress, { userId: user?.id });
+      if (writeResult.error) {
+        reportBookingEvent('warn', {
+          event: 'booking.resume_persist_failed',
+          context: {
+            flow: 'wizard',
+            stage: 'draft',
+            reason: writeResult.error,
+            storage: writeResult.storage || 'none',
+            userId: user?.id,
+          },
+        });
+        setResumeWarning((previous) => {
+          if (previous?.kind === 'rehydrated_partial') return previous;
+          return {
+            kind: 'storage_failed',
+            title: 'Tu borrador no se ha podido guardar de forma segura',
+            detail:
+              writeResult.error === 'quota_exceeded'
+                ? 'El navegador ha rechazado el guardado por falta de espacio. Si recargas o cambias de cuenta, podrías perder avances recientes.'
+                : 'El navegador no ha permitido persistir el borrador. Evita recargar y termina el flujo antes de cerrar esta pestaña.',
+          };
+        });
+      } else if (writeResult.storage === 'sessionStorage') {
+        reportBookingEvent('warn', {
+          event: 'booking.resume_persist_degraded',
+          context: {
+            flow: 'wizard',
+            stage: 'draft',
+            storage: writeResult.storage,
+            userId: user?.id,
+          },
+        });
+        setResumeWarning((previous) => {
+          if (previous?.kind === 'rehydrated_partial') return previous;
+          return {
+            kind: 'storage_degraded',
+            title: 'Borrador guardado solo en esta pestaña',
+            detail:
+              'El navegador no ha permitido persistir el borrador en almacenamiento duradero. Si cierras esta pestaña o cambias de dispositivo, tendrás que reanudar desde cero.',
+          };
+        });
+      } else {
+        setResumeWarning((previous) =>
+          previous?.kind === 'storage_degraded' || previous?.kind === 'storage_failed' ? null : previous,
+        );
+      }
       void syncBookingDraftPhotoCache(bookingData, user?.id);
     } catch (e) {
       console.warn('Error saving booking progress:', e);
@@ -417,11 +474,30 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const loadProgress = () => {
     void (async () => {
       try {
-        const resume = readAnyBookingResume<{ bookingData?: BookingData; currentStep?: number } | BookingData>({
+        const resumeState = readBookingResumeState<{ bookingData?: BookingData; currentStep?: number } | BookingData>({
           userId: user?.id,
           flow: 'wizard',
           allowAnonFallback: true,
         });
+        const resume =
+          resumeState.record && resumeState.fromAnonFallback && user?.id
+            ? claimBookingResumeForUser({
+                userId: user.id,
+                record: resumeState.record,
+                sourceKey: resumeState.sourceKey,
+              }) || resumeState.record
+            : resumeState.record;
+        if (resumeState.fromAnonFallback && user?.id && resume) {
+          reportBookingEvent('info', {
+            event: 'booking.resume_restored',
+            context: {
+              flow: 'wizard',
+              stage: resume.stage,
+              userId: user.id,
+              restoredFrom: 'anon_fallback',
+            },
+          });
+        }
         const progress = resume?.flow === 'wizard' ? resume.payload : null;
         if (progress) {
           const savedData =
@@ -442,15 +518,67 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
             const missingPaths = restored.missingPaths;
             const discardedPaths = Array.from(new Set([...(missingPaths || [])]));
-            if (discardedPaths.length > 0) {
+            const nonSerializablePaths = Array.from(new Set(resume?.nonSerializablePaths || []));
+            if (discardedPaths.length > 0 || nonSerializablePaths.length > 0) {
+              reportBookingEvent('warn', {
+                event: 'booking.resume_restored',
+                context: {
+                  flow: 'wizard',
+                  stage: resume?.stage || 'draft',
+                  status: 'partial',
+                  discardedPathCount: discardedPaths.length,
+                  nonSerializablePathCount: nonSerializablePaths.length,
+                  userId: user?.id,
+                },
+              });
               setResumeWarning({
+                kind: 'rehydrated_partial',
+                title: 'Se ha recuperado tu borrador con límites explícitos',
+                detail:
+                  discardedPaths.length > 0
+                    ? 'Las fotos locales que seguían solo en este dispositivo se han intentado restaurar. Revisa qué imágenes faltan antes de continuar.'
+                    : 'Los datos serializables del borrador han vuelto, pero los archivos locales o URLs temporales no viajan de forma fiable entre refresh, login y retornos externos.',
                 discardedPaths,
                 restoredPhotoCount: restored.restoredCount,
+                nonSerializablePaths,
               });
             } else {
+              reportBookingEvent('info', {
+                event: 'booking.resume_restored',
+                context: {
+                  flow: 'wizard',
+                  stage: resume?.stage || 'draft',
+                  status: 'complete',
+                  userId: user?.id,
+                },
+              });
               setResumeWarning(null);
             }
+            return;
           }
+        }
+        setBookingDataState(initialBookingData);
+        setCurrentStepState(0);
+        if (resumeState.error === 'invalid_schema' || resumeState.error === 'version_mismatch') {
+          reportBookingEvent('warn', {
+            event: 'booking.resume_rejected',
+            context: {
+              flow: 'wizard',
+              stage: 'draft',
+              reason: resumeState.error,
+              userId: user?.id,
+            },
+          });
+          setResumeWarning({
+            kind: 'invalid_resume',
+            title: 'El borrador anterior se ha descartado por seguridad',
+            detail:
+              'El navegador contenía un estado incompatible, incompleto o de una versión anterior. Se ha ignorado para evitar rehidratar datos corruptos o de otra sesión.',
+          });
+        } else if (resumeState.error === 'expired') {
+          setResumeWarning(null);
+        } else {
+          setResumeWarning(null);
         }
       } catch (error) {
         console.warn('Error al cargar el progreso:', error);

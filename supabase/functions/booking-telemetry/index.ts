@@ -13,6 +13,18 @@ interface TelemetryPayload {
   timestamp?: string;
   source?: string;
   path?: string;
+  phase?: string;
+  status?: string;
+  errorType?: string;
+  correlationId?: string;
+  bookingId?: string;
+  operationId?: string;
+  serviceId?: string;
+  userId?: string;
+  scope?: string;
+  taxonomyVersion?: string;
+  taxonomyValid?: boolean;
+  missingContext?: string[];
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
@@ -36,9 +48,23 @@ function normalizeTelemetryPayload(payload: unknown): TelemetryPayload | null {
   return {
     level: level as TelemetryPayload['level'],
     event,
-    context: candidate.context && typeof candidate.context === 'object'
-      ? candidate.context as Record<string, unknown>
-      : {},
+    context: {
+      ...(candidate.context && typeof candidate.context === 'object'
+        ? candidate.context as Record<string, unknown>
+        : {}),
+      ...(typeof candidate.phase === 'string' ? { phase: candidate.phase } : {}),
+      ...(typeof candidate.status === 'string' ? { status: candidate.status } : {}),
+      ...(typeof candidate.errorType === 'string' ? { errorType: candidate.errorType } : {}),
+      ...(typeof candidate.correlationId === 'string' ? { correlationId: candidate.correlationId } : {}),
+      ...(typeof candidate.bookingId === 'string' ? { bookingId: candidate.bookingId } : {}),
+      ...(typeof candidate.operationId === 'string' ? { operationId: candidate.operationId } : {}),
+      ...(typeof candidate.serviceId === 'string' ? { serviceId: candidate.serviceId } : {}),
+      ...(typeof candidate.userId === 'string' ? { userId: candidate.userId } : {}),
+      ...(typeof candidate.scope === 'string' ? { scope: candidate.scope } : {}),
+      ...(typeof candidate.taxonomyVersion === 'string' ? { taxonomyVersion: candidate.taxonomyVersion } : {}),
+      ...(typeof candidate.taxonomyValid === 'boolean' ? { taxonomyValid: candidate.taxonomyValid } : {}),
+      ...(Array.isArray(candidate.missingContext) ? { missingContext: candidate.missingContext } : {}),
+    },
     timestamp: typeof candidate.timestamp === 'string' ? candidate.timestamp : undefined,
     source: typeof candidate.source === 'string' ? candidate.source : undefined,
     path: typeof candidate.path === 'string' ? candidate.path : undefined,
@@ -58,6 +84,35 @@ function resolveServiceRoleKey() {
   }
 
   return Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+}
+
+function resolveAllowedClientApiKeys() {
+  const keys = new Set<string>();
+  const modernPublishableKeys = Deno.env.get('SUPABASE_PUBLISHABLE_KEYS');
+
+  if (modernPublishableKeys) {
+    try {
+      const parsed = JSON.parse(modernPublishableKeys) as Record<string, string>;
+      Object.values(parsed)
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .forEach((value) => keys.add(value));
+    } catch {
+      // Fall back to legacy anon key below.
+    }
+  }
+
+  const legacyAnonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
+  if (legacyAnonKey) {
+    keys.add(legacyAnonKey);
+  }
+
+  return Array.from(keys);
+}
+
+function hasAllowedClientApiKey(req: Request, allowedApiKeys: string[]) {
+  const apiKey = String(req.headers.get('apikey') || '').trim();
+  return apiKey !== '' && allowedApiKeys.includes(apiKey);
 }
 
 async function resolveOptionalUserId(admin: ReturnType<typeof createClient>, req: Request) {
@@ -110,13 +165,22 @@ Deno.serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = resolveServiceRoleKey();
-    if (!supabaseUrl || !serviceRoleKey) {
+    const allowedApiKeys = resolveAllowedClientApiKeys();
+    if (!supabaseUrl || !serviceRoleKey || allowedApiKeys.length === 0) {
       console.error('[booking-telemetry] missing Supabase secrets');
       return jsonResponse({
         success: false,
         accepted: false,
         error: 'Telemetry sink unavailable.',
       }, 202);
+    }
+
+    if (!hasAllowedClientApiKey(req, allowedApiKeys)) {
+      return jsonResponse({
+        success: false,
+        accepted: false,
+        error: 'apikey no autorizada.',
+      }, 401);
     }
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {

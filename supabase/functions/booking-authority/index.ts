@@ -1,8 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   buildAuthoritativeBookingQuote,
+  type BookingAvailabilityCalendarDay,
+  type BookingQuoteAvailability,
   type SerializableBookingData,
   type BookingQuoteResult,
+  type BookingQuoteSlotSelection,
 } from '../../../src/shared/bookingQuoteCore.ts';
 
 const corsHeaders = {
@@ -30,6 +33,12 @@ type AvailabilityRow = {
   is_available: boolean;
 };
 
+type HoldBlockRow = {
+  gardener_id: string;
+  date: string;
+  hour_block: number;
+};
+
 type PriceRow = {
   gardener_id: string;
   additional_config: Record<string, unknown> | null;
@@ -54,6 +63,7 @@ interface AuthorityPayload {
   monthEnd?: string;
   windowDays?: number;
   ttlMinutes?: number;
+  startTime?: string;
   bookingInput?: SerializableBookingData;
   globalMinPrice?: number;
 }
@@ -80,6 +90,46 @@ const getMonthBounds = (monthDate: string) => {
 };
 
 const extractHour = (value: string) => Number.parseInt(String(value || '0').slice(0, 2), 10);
+const toIsoTime = (value?: string | null) => {
+  const text = String(value || '').trim();
+  if (/^\d{2}:\d{2}$/.test(text)) return `${text}:00`;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(text)) return text;
+  return '';
+};
+
+const buildSlotSelection = (
+  date: string,
+  startHour: number,
+  durationHours: number
+): BookingQuoteSlotSelection | null => {
+  if (!date || !Number.isFinite(startHour) || startHour < 0) return null;
+  const safeDuration = Math.max(1, Math.ceil(durationHours));
+  const startTime = `${String(startHour).padStart(2, '0')}:00:00`;
+  const endHour = startHour + safeDuration;
+  return {
+    date,
+    startHour,
+    startTime,
+    endTime: `${String(endHour).padStart(2, '0')}:00:00`,
+    durationHours: safeDuration,
+  };
+};
+
+const buildAvailabilityContract = (params: {
+  requestedDate?: string;
+  windowEndDate?: string;
+  validStartHours?: number[];
+  calendarDays?: BookingAvailabilityCalendarDay[];
+  earliestSlot?: BookingQuoteSlotSelection | null;
+  selectedSlot?: BookingQuoteSlotSelection | null;
+}): BookingQuoteAvailability => ({
+  requestedDate: params.requestedDate,
+  windowEndDate: params.windowEndDate,
+  validStartHours: params.validStartHours || [],
+  calendarDays: params.calendarDays,
+  earliestSlot: params.earliestSlot ?? null,
+  selectedSlot: params.selectedSlot ?? null,
+});
 
 const getValidStartHours = (hours: number[], duration: number) => {
   const sorted = Array.from(new Set(hours.filter((hour) => Number.isFinite(hour)))).sort((a, b) => a - b);
@@ -105,6 +155,35 @@ async function sha256(text: string) {
   const bytes = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest)).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+function resolveAllowedClientApiKeys() {
+  const keys = new Set<string>();
+  const modernPublishableKeys = Deno.env.get('SUPABASE_PUBLISHABLE_KEYS');
+
+  if (modernPublishableKeys) {
+    try {
+      const parsed = JSON.parse(modernPublishableKeys) as Record<string, string>;
+      Object.values(parsed)
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .forEach((value) => keys.add(value));
+    } catch {
+      // Fall back to legacy anon key below.
+    }
+  }
+
+  const legacyAnonKey = String(Deno.env.get('SUPABASE_ANON_KEY') || '').trim();
+  if (legacyAnonKey) {
+    keys.add(legacyAnonKey);
+  }
+
+  return Array.from(keys);
+}
+
+function hasAllowedClientApiKey(req: Request, allowedApiKeys: string[]) {
+  const apiKey = String(req.headers.get('apikey') || '').trim();
+  return apiKey !== '' && allowedApiKeys.includes(apiKey);
 }
 
 async function resolveUser(admin: ReturnType<typeof createClient>, req: Request) {
@@ -157,6 +236,15 @@ async function fetchAvailabilityRows(
   endDate: string
 ): Promise<AvailabilityRow[]> {
   if (providerIds.length === 0) return [];
+  try {
+    await admin.rpc('cleanup_expired_booking_payment_state', {
+      p_gardener_ids: providerIds,
+      p_start_date: startDate,
+      p_end_date: endDate,
+    });
+  } catch {
+    // No bloqueamos el funnel si falla la limpieza oportunista.
+  }
   const { data, error } = await admin
     .from('availability')
     .select('gardener_id, date, start_time, is_available')
@@ -168,7 +256,24 @@ async function fetchAvailabilityRows(
     .order('start_time', { ascending: true });
 
   if (error || !data) return [];
-  return data as AvailabilityRow[];
+
+  const { data: holdData } = await admin
+    .from('booking_schedule_hold_blocks')
+    .select('gardener_id, date, hour_block')
+    .in('gardener_id', providerIds)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  const heldSlots = new Set(
+    ((holdData || []) as HoldBlockRow[]).map((row) =>
+      `${row.gardener_id}|${toIsoDate(row.date)}|${Number(row.hour_block)}`
+    )
+  );
+
+  return (data as AvailabilityRow[]).filter((row) => {
+    const key = `${row.gardener_id}|${toIsoDate(row.date)}|${extractHour(row.start_time)}`;
+    return !heldSlots.has(key);
+  });
 }
 
 function buildAvailabilityIndex(rows: AvailabilityRow[]) {
@@ -192,6 +297,7 @@ async function buildQuotePreview(params: {
   providerConfig: Record<string, unknown> | null;
   globalMinPrice: number;
   providerConfigVersion: string;
+  availability?: BookingQuoteAvailability;
 }): Promise<QuotePreview> {
   const quote = buildAuthoritativeBookingQuote({
     bookingData: params.bookingInput,
@@ -205,12 +311,14 @@ async function buildQuotePreview(params: {
     breakdown: quote.breakdown,
     warnings: quote.warnings.map((item) => item.message),
     metadata: quote.metadata,
+    economics: quote.economics,
+    availability: params.availability,
     pricingVersion: PRICING_VERSION,
     providerConfigVersion: params.providerConfigVersion,
   };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -218,16 +326,21 @@ Deno.serve(async (req) => {
   try {
     const payload = (await req.json()) as AuthorityPayload;
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const allowedApiKeys = resolveAllowedClientApiKeys();
 
-    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+    if (!supabaseUrl || !serviceRoleKey || allowedApiKeys.length === 0) {
       throw new Error('Faltan secretos de Supabase para booking-authority.');
     }
 
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
-      global: { headers: { Authorization: req.headers.get('Authorization') || '' } },
-    });
+    if (!hasAllowedClientApiKey(req, allowedApiKeys)) {
+      return new Response(JSON.stringify({ error: 'apikey no autorizada.' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const admin = createClient(supabaseUrl, serviceRoleKey);
 
     const action = payload.action;
     const serviceId = String(payload.serviceId || '').trim();
@@ -268,24 +381,47 @@ Deno.serve(async (req) => {
           config: priceRow.additional_config,
         }));
 
+        const providerDates = availabilityIndex.get(providerId) || new Map<string, number[]>();
+        const selectedDateHours = providerDates.get(selectedDate) || [];
+        const selectedDateValidHours = getValidStartHours(selectedDateHours, 1);
+        let earliestSlot: BookingQuoteSlotSelection | null = null;
+
         const quote = await buildQuotePreview({
           bookingInput,
           providerId,
           providerConfig: priceRow.additional_config,
           globalMinPrice,
           providerConfigVersion,
+          availability: buildAvailabilityContract({
+            requestedDate: selectedDate,
+            windowEndDate: endDate,
+            validStartHours: selectedDateValidHours,
+          }),
         });
-        quotes[providerId] = quote;
-
-        const providerDates = availabilityIndex.get(providerId) || new Map<string, number[]>();
         earliestByProvider[providerId] = null;
         for (const [date, hours] of providerDates.entries()) {
           const validHours = getValidStartHours(hours, Math.max(1, Math.ceil(quote.estimatedHours)));
           if (validHours.length > 0) {
-            earliestByProvider[providerId] = { date, startHour: validHours[0] };
+            earliestSlot = buildSlotSelection(date, validHours[0], quote.estimatedHours);
+            earliestByProvider[providerId] = earliestSlot
+              ? { date: earliestSlot.date, startHour: earliestSlot.startHour }
+              : null;
             break;
           }
         }
+
+        quotes[providerId] = {
+          ...quote,
+          availability: buildAvailabilityContract({
+            requestedDate: selectedDate,
+            windowEndDate: endDate,
+            validStartHours: getValidStartHours(
+              selectedDateHours,
+              Math.max(1, Math.ceil(quote.estimatedHours))
+            ),
+            earliestSlot,
+          }),
+        };
       }
 
       return new Response(JSON.stringify({ quotes, earliestByProvider }), {
@@ -330,7 +466,19 @@ Deno.serve(async (req) => {
         Math.max(1, Math.ceil(quote.estimatedHours))
       );
 
-      return new Response(JSON.stringify({ quote, validHours }), {
+      return new Response(JSON.stringify({
+        quote: {
+          ...quote,
+          availability: buildAvailabilityContract({
+            requestedDate: date,
+            validStartHours: validHours,
+            earliestSlot: validHours.length > 0
+              ? buildSlotSelection(date, validHours[0], quote.estimatedHours)
+              : null,
+          }),
+        },
+        validHours,
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -370,9 +518,10 @@ Deno.serve(async (req) => {
       const availabilityRows = await fetchAvailabilityRows(admin, [providerId], start, end);
       const availabilityIndex = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
       const today = new Date().toISOString().slice(0, 10);
-      const days: Array<{ date: string; day: number; disabled: boolean; count: number }> = [];
+      const days: BookingAvailabilityCalendarDay[] = [];
       const cursor = new Date(`${start}T12:00:00Z`);
       const endCursor = new Date(`${end}T12:00:00Z`);
+      let earliestSlot: BookingQuoteSlotSelection | null = null;
 
       while (cursor <= endCursor) {
         const date = cursor.toISOString().slice(0, 10);
@@ -385,19 +534,36 @@ Deno.serve(async (req) => {
           day: cursor.getUTCDate(),
           disabled: date < today || validHours.length === 0,
           count: validHours.length,
+          availableStartHours: validHours,
         });
+        if (!earliestSlot && validHours.length > 0) {
+          earliestSlot = buildSlotSelection(date, validHours[0], quote.estimatedHours);
+        }
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
 
-      return new Response(JSON.stringify({ quote, days }), {
+      return new Response(JSON.stringify({
+        quote: {
+          ...quote,
+          availability: buildAvailabilityContract({
+            requestedDate: monthDate,
+            windowEndDate: end,
+            calendarDays: days,
+            earliestSlot,
+          }),
+        },
+        days,
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     if (action === 'create_quote') {
       const providerId = String(payload.providerId || '').trim();
-      if (!providerId) {
-        return new Response(JSON.stringify({ error: 'Falta providerId.' }), {
+      const date = toIsoDate(payload.date);
+      const startTime = toIsoTime(payload.startTime);
+      if (!providerId || !date || !startTime) {
+        return new Response(JSON.stringify({ error: 'Faltan providerId, date o startTime.' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -440,6 +606,28 @@ Deno.serve(async (req) => {
         });
       }
 
+      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
+      const validHours = getValidStartHours(
+        availabilityRows.map((row) => extractHour(row.start_time)),
+        Math.max(1, Math.ceil(quote.estimatedHours))
+      );
+      const selectedHour = extractHour(startTime);
+      if (!validHours.includes(selectedHour)) {
+        return new Response(JSON.stringify({ error: 'La franja seleccionada ya no está disponible para este presupuesto.' }), {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const availability = buildAvailabilityContract({
+        requestedDate: date,
+        validStartHours: validHours,
+        selectedSlot: buildSlotSelection(date, selectedHour, quote.estimatedHours),
+        earliestSlot: validHours.length > 0
+          ? buildSlotSelection(date, validHours[0], quote.estimatedHours)
+          : null,
+      });
+
       const ttlMinutes = Math.max(15, Math.min(24 * 60, Number(payload.ttlMinutes || 120)));
       const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
       const signature = await sha256(JSON.stringify({
@@ -448,12 +636,15 @@ Deno.serve(async (req) => {
         service_id: serviceId,
         pricing_version: PRICING_VERSION,
         provider_config_version: providerConfigVersion,
+        date,
+        start_time: startTime,
         booking_input: bookingInput,
         quote: {
           totalPrice: quote.totalPrice,
           estimatedHours: quote.estimatedHours,
           breakdown: quote.breakdown,
           warnings: quote.warnings,
+          economics: quote.economics,
         },
       }));
 
@@ -463,6 +654,8 @@ Deno.serve(async (req) => {
         breakdown: quote.breakdown,
         warnings: quote.warnings,
         metadata: quote.metadata,
+        economics: quote.economics,
+        availability,
         providerId,
         serviceId,
       };
@@ -478,11 +671,15 @@ Deno.serve(async (req) => {
           provider_config_version: providerConfigVersion,
           input_payload: bookingInput,
           pricing_snapshot: snapshot,
+          availability_snapshot: availability,
+          economic_snapshot: quote.economics,
           total_price: quote.totalPrice,
           estimated_hours: quote.estimatedHours,
           status: 'active',
           generated_at: new Date().toISOString(),
           expires_at: expiresAt,
+          selected_date: date,
+          selected_start_time: startTime,
         }, { onConflict: 'signature' })
         .select('id, expires_at')
         .single();
@@ -493,6 +690,7 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({
         ...quote,
+        availability,
         quoteId: data.id,
         signature,
         expiresAt: data.expires_at,
@@ -506,6 +704,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    console.error('booking-authority fatal error', error);
     const message = error instanceof Error ? error.message : 'Error interno en booking-authority.';
     return new Response(JSON.stringify({ error: message }), {
       status: 500,

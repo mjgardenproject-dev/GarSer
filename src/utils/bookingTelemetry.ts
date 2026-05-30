@@ -1,4 +1,9 @@
 import { supabase } from '../lib/supabase';
+import {
+  BOOKING_TELEMETRY_TAXONOMY_VERSION,
+  getBookingTelemetryDefinition,
+  getMissingBookingTelemetryContext,
+} from '../shared/bookingTelemetryCatalog';
 
 type BookingTelemetryLevel = 'info' | 'warn' | 'error';
 type TelemetryConsolePhase = 'event' | 'sink-retry' | 'sink-failed';
@@ -63,6 +68,8 @@ function trimString(value: string, maxLength = 500) {
 }
 
 function inferPhase(event: string) {
+  const definition = getBookingTelemetryDefinition(event);
+  if (definition) return definition.phase;
   if (event.includes('details_analysis')) return 'analysis';
   if (event.includes('photo_analysis_source')) return 'analysis_source';
   if (event.includes('photo_selection')) return 'selection';
@@ -77,6 +84,8 @@ function inferPhase(event: string) {
 }
 
 function inferStatus(level: BookingTelemetryLevel, event: string) {
+  const definition = getBookingTelemetryDefinition(event);
+  if (definition) return definition.status;
   if (event.endsWith('_started')) return 'started';
   if (event.endsWith('_succeeded')) return 'succeeded';
   if (event.endsWith('_failed')) return 'failed';
@@ -190,6 +199,7 @@ function buildTelemetryEntry(level: BookingTelemetryLevel, payload: BookingTelem
     ...(userId ? { userId } : {}),
     ...(serviceId ? { serviceId } : {}),
   };
+  const missingContext = getMissingBookingTelemetryContext(payload.event, enrichedContext);
 
   return {
     event: payload.event,
@@ -204,6 +214,9 @@ function buildTelemetryEntry(level: BookingTelemetryLevel, payload: BookingTelem
     operationId,
     userId,
     serviceId,
+    taxonomyVersion: BOOKING_TELEMETRY_TAXONOMY_VERSION,
+    taxonomyValid: missingContext.length === 0,
+    missingContext,
     level,
     timestamp: new Date().toISOString(),
     path: typeof window !== 'undefined' ? window.location.pathname : undefined,

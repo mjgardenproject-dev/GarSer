@@ -1,81 +1,43 @@
 import React, { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { writeBookingResume } from '../../utils/bookingResumeStorage';
-
-type LegacyCheckoutPayload = {
-  restrictedGardenerId?: string;
-  selectedAddress?: string;
-  selectedServiceIds?: string[];
-  description?: string;
-};
-
-const LEGACY_PENDING_CHECKOUT_KEY = 'pending_checkout';
-
-const readLegacyPayload = (): LegacyCheckoutPayload | null => {
-  try {
-    const raw =
-      localStorage.getItem(LEGACY_PENDING_CHECKOUT_KEY) ||
-      sessionStorage.getItem(LEGACY_PENDING_CHECKOUT_KEY);
-
-    if (!raw) {
-      return null;
-    }
-
-    return JSON.parse(raw) as LegacyCheckoutPayload;
-  } catch {
-    return null;
-  }
-};
-
-const clearLegacyPayload = () => {
-  try {
-    localStorage.removeItem(LEGACY_PENDING_CHECKOUT_KEY);
-    sessionStorage.removeItem(LEGACY_PENDING_CHECKOUT_KEY);
-  } catch {}
-};
+import { useAuth } from '../../contexts/AuthContext';
+import { clearLegacyCheckoutArtifacts } from '../../utils/bookingResumeStorage';
+import { reportBookingEvent } from '../../utils/bookingTelemetry';
 
 const LegacyCheckoutRedirect: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
-    const statePayload = (location.state as { payload?: LegacyCheckoutPayload } | null)?.payload;
-    const payload = statePayload || readLegacyPayload();
-    const primaryServiceId = payload?.selectedServiceIds?.length === 1 ? payload.selectedServiceIds[0] : undefined;
+    const statePayload = (location.state as { payload?: unknown } | null)?.payload;
+    const hadLegacyState = Boolean(statePayload) || location.state != null;
 
-    if (payload?.selectedAddress || primaryServiceId || payload?.description || payload?.restrictedGardenerId) {
-      const progress = {
-        bookingData: {
-          address: payload?.selectedAddress || '',
-          serviceIds: primaryServiceId ? [primaryServiceId] : [],
-          description: payload?.description || '',
-          restrictedGardenerId: payload?.restrictedGardenerId,
-        },
-        currentStep: primaryServiceId ? 2 : 0,
-        timestamp: new Date().toISOString(),
-      };
+    clearLegacyCheckoutArtifacts({
+      userId: user?.id,
+      includeAnonFallback: true,
+    });
 
-      writeBookingResume('draft', 'wizard', progress);
-    }
-
-    clearLegacyPayload();
+    reportBookingEvent('warn', {
+      event: 'booking.legacy_checkout_redirected',
+      context: {
+        userId: user?.id,
+        legacySource: hadLegacyState ? 'route_state' : 'legacy_route',
+        discardedLegacyState: hadLegacyState,
+        targetFlow: 'wizard',
+      },
+    });
 
     navigate('/reservar', {
       replace: true,
-      state: primaryServiceId
-        ? {
-            selectedServiceId: primaryServiceId,
-            restrictedGardenerId: payload?.restrictedGardenerId,
-          }
-        : undefined,
     });
-  }, [location.state, navigate]);
+  }, [location.state, navigate, user?.id]);
 
   return (
     <div className="flex items-center justify-center min-h-[50vh]">
       <div className="text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4" />
-        <p className="text-gray-600">Redirigiendo al flujo oficial de reserva…</p>
+        <p className="text-gray-600">Redirigiendo al flujo oficial de reserva con Stripe…</p>
       </div>
     </div>
   );

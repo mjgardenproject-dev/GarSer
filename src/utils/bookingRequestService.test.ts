@@ -4,6 +4,10 @@ const { rpcMock } = vi.hoisted(() => ({
   rpcMock: vi.fn(),
 }));
 
+vi.mock('./bookingTelemetry', () => ({
+  reportBookingEvent: vi.fn(),
+}));
+
 vi.mock('../lib/supabase', () => ({
   supabase: {
     rpc: rpcMock,

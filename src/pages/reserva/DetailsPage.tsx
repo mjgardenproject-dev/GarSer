@@ -60,6 +60,21 @@ import {
   type TreeSizeBand,
 } from './detailsPageAdapters';
 import {
+  getDetailsContinueDisabled,
+  getDetailsContinueLabel,
+  getDetailsServiceFlags,
+} from './detailsPagePresentation';
+import {
+  buildHedgeDevZone,
+  buildLawnDevZone,
+  buildPalmDevGroup,
+  buildPhytosanitaryDevZone,
+  buildShrubDevGroup,
+  buildTreeDevGroup,
+  buildWeedingDevZone,
+  isDetailsDevAnalysisEnabled,
+} from './detailsPageDevSeeds';
+import {
   getHighestOpenRangeThresholdForSpecies,
   getLowestRangeThresholdForSpecies,
   isHighestOpenRangeForSpecies,
@@ -407,6 +422,7 @@ const DetailsPage: React.FC = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gemini-2.0-flash');
   const [debugService, setDebugService] = useState<string>('');
+  const serviceFlags = useMemo(() => getDetailsServiceFlags(debugService), [debugService]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -538,9 +554,7 @@ const DetailsPage: React.FC = () => {
 
   const [, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
   const activeServiceId = bookingData.serviceIds?.[0] || '';
-  const isWeedingServiceSelected =
-    debugService.toLowerCase().includes('desbroce') ||
-    debugService.toLowerCase().includes('malas hierbas');
+  const isWeedingServiceSelected = serviceFlags.isWeeding;
 
   const mergeActiveServiceSnapshot = (
     prev: BookingData,
@@ -755,8 +769,12 @@ const DetailsPage: React.FC = () => {
     const fetchServiceName = async () => {
       if (bookingData.serviceIds?.[0]) {
         const { data } = await supabase.from('services').select('name').eq('id', bookingData.serviceIds[0]).single();
-        if (data) {
-          let sn = data.name;
+        const serviceRecord = data as { name?: unknown } | null;
+        const serviceName = typeof serviceRecord?.name === 'string'
+          ? serviceRecord.name
+          : '';
+        if (serviceName) {
+          let sn = serviceName;
           if (sn.toLowerCase().includes('fumigación') || sn.toLowerCase().includes('fumigacion') || sn.toLowerCase().includes('tratamientos fitosanitarios')) {
             sn = 'Servicios fitosanitarios';
           }
@@ -844,8 +862,7 @@ const DetailsPage: React.FC = () => {
 
   // Sync lawn zones to global state
   useEffect(() => {
-      const isLawnService = debugService.includes('Corte de césped') || debugService.includes('césped');
-      if (isLawnService && bookingData.lawnZones) {
+      if (serviceFlags.isLawn && bookingData.lawnZones) {
           // 1. Calculate Hours
           let totalHours = 0;
           let totalQty = 0;
@@ -877,12 +894,11 @@ const DetailsPage: React.FC = () => {
               });
           }
       }
-  }, [bookingData.lawnZones, debugService]);
+  }, [bookingData.lawnZones, serviceFlags.isLawn]);
 
   // Sync shrub groups to global state
   useEffect(() => {
-      const isShrubService = debugService.toLowerCase().includes('poda de plantas');
-      if (isShrubService && bookingData.shrubGroups) {
+      if (serviceFlags.isShrub && bookingData.shrubGroups) {
           let totalHours = 0;
           let totalQty = 0;
           bookingData.shrubGroups.forEach(g => {
@@ -908,12 +924,11 @@ const DetailsPage: React.FC = () => {
               });
           }
       }
-  }, [bookingData.shrubGroups, debugService]);
+  }, [bookingData.shrubGroups, serviceFlags.isShrub]);
 
   // Sync weeding zones to global state
   useEffect(() => {
-      const isWeedingService = debugService.toLowerCase().includes('desbroce') || debugService.toLowerCase().includes('malas hierbas');
-      if (isWeedingService && bookingData.weedingZones) {
+      if (serviceFlags.isWeeding && bookingData.weedingZones) {
           let totalHours = 0;
           let totalQty = 0;
           bookingData.weedingZones.forEach(z => {
@@ -940,7 +955,7 @@ const DetailsPage: React.FC = () => {
               });
           }
       }
-  }, [bookingData.weedingZones, debugService]);
+  }, [bookingData.weedingZones, serviceFlags.isWeeding]);
 
   const validatePhotoFiles = async (
     files: File[],
@@ -1271,9 +1286,7 @@ const DetailsPage: React.FC = () => {
   };
 
   const handleContinue = () => {
-    const isPhytosanitaryService = debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit');
-    const isWeedingService = debugService.toLowerCase().includes('desbroce') || debugService.toLowerCase().includes('malas hierbas');
-    if (isPhytosanitaryService) {
+    if (serviceFlags.isPhytosanitary) {
       const zones = bookingData.phytosanitaryZones || [];
       if (zones.length === 0) {
         toast.error('Añade al menos una zona para continuar.');
@@ -1290,7 +1303,7 @@ const DetailsPage: React.FC = () => {
       }
     }
 
-    if (isWeedingService) {
+    if (serviceFlags.isWeeding) {
       const zone = bookingData.weedingZones?.[0];
       const hasValidArea = Number(zone?.area || 0) > 0;
       const hasValidState = zone?.state === 'normal' || zone?.state === 'dificultad_media' || zone?.state === 'dificultad_alta';
@@ -1913,7 +1926,7 @@ const DetailsPage: React.FC = () => {
         setDebugLogs({...currentDebugInfo}); // Force update
         
         // Explicit UI Feedback for "No Tasks" (Lawn, etc)
-        if (debugService.toLowerCase().includes('césped') || debugService.toLowerCase().includes('cesped')) {
+        if (serviceFlags.isLawn) {
              setAnalysisError({
                  title: 'No se ha detectado césped',
                  message: 'No hemos podido delimitar una zona de césped clara. Por favor, añade la zona manualmente.',
@@ -2010,6 +2023,77 @@ const DetailsPage: React.FC = () => {
   };
 
   const serviceContent = getServiceContent();
+  const isDevAnalysisSeedEnabled = isDetailsDevAnalysisEnabled();
+
+  const applyDevAnalysisSeed = async () => {
+    if (!isDevAnalysisSeedEnabled) return;
+
+    setAnalysisError(null);
+
+    if (serviceFlags.isLawn) {
+      const currentZones = bookingData.lawnZones || [];
+      const baseZones = currentZones.length > 0 ? currentZones : [undefined];
+      const nextZones = baseZones.map((zone, index) => buildLawnDevZone(zone, index));
+      commitSimplePhotoCollectionPatch('lawnZones', nextZones, {}, { saveAfterCommit: true });
+      toast.success('Datos de prueba aplicados a césped');
+      return;
+    }
+
+    if (serviceFlags.isHedge) {
+      const currentZones = bookingData.hedgeZones || [];
+      const baseZones = currentZones.length > 0 ? currentZones : [undefined];
+      const nextZones = baseZones.map((zone, index) => buildHedgeDevZone(zone, index));
+      commitHedgeZones(nextZones, true);
+      toast.success('Datos de prueba aplicados a setos');
+      return;
+    }
+
+    if (serviceFlags.isPalm) {
+      const currentGroups = bookingData.palmGroups || [];
+      const baseGroups = currentGroups.length > 0 ? currentGroups : [undefined];
+      const nextGroups = baseGroups.map((group, index) => buildPalmDevGroup(group, index));
+      await updatePalmPricing(nextGroups);
+      saveProgress();
+      toast.success('Datos de prueba aplicados a palmeras');
+      return;
+    }
+
+    if (serviceFlags.isTree) {
+      const currentGroups = bookingData.treeGroups || [];
+      const baseGroups = currentGroups.length > 0 ? currentGroups : [undefined];
+      const nextGroups = baseGroups.map((group, index) => buildTreeDevGroup(group, index));
+      commitTreeGroups(nextGroups, calculateTotalTreeHours(nextGroups), true);
+      toast.success('Datos de prueba aplicados a árboles');
+      return;
+    }
+
+    if (serviceFlags.isShrub) {
+      const currentGroups = bookingData.shrubGroups || [];
+      const baseGroups = currentGroups.length > 0 ? currentGroups : [undefined];
+      const nextGroups = baseGroups.map((group, index) => buildShrubDevGroup(group, index));
+      commitShrubGroups(nextGroups, true);
+      toast.success('Datos de prueba aplicados a plantas y arbustos');
+      return;
+    }
+
+    if (serviceFlags.isPhytosanitary) {
+      const currentZones = bookingData.phytosanitaryZones || [];
+      const baseZones = currentZones.length > 0 ? currentZones : [undefined];
+      const nextZones = baseZones.map((zone, index) => buildPhytosanitaryDevZone(zone, index));
+      commitPhytosanitaryZones(nextZones, true);
+      toast.success('Datos de prueba aplicados a fitosanitarios');
+      return;
+    }
+
+    if (serviceFlags.isWeeding) {
+      const currentZones = bookingData.weedingZones || [];
+      const baseZones = currentZones.length > 0 ? currentZones : [undefined];
+      const nextZones = baseZones.map((zone, index) => buildWeedingDevZone(zone, index));
+      commitSimplePhotoCollectionPatch('weedingZones', nextZones, {}, { saveAfterCommit: true });
+      setWeedingManualConfirmed(true);
+      toast.success('Datos de prueba aplicados a desbroce');
+    }
+  };
 
   // --- NEW: Lawn Zone Logic ---
   const addLawnZone = () => {
@@ -3866,18 +3950,21 @@ const analyzeTreeGroup = async (id: string) => {
 
       {/* Main Content */}
       <div className="max-w-md mx-auto px-4 py-6 pb-24">
-        {resumeWarning?.discardedPaths?.length ? (
+        {resumeWarning ? (
           <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4" aria-live="polite">
             <div className="flex items-start gap-3">
               <Info aria-hidden="true" className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-amber-900">Se ha recuperado tu borrador</p>
-                <p className="mt-1 text-sm text-amber-800">
-                  {resumeWarning.restoredPhotoCount
-                    ? `Se han restaurado ${resumeWarning.restoredPhotoCount} foto${resumeWarning.restoredPhotoCount === 1 ? '' : 's'} local${resumeWarning.restoredPhotoCount === 1 ? '' : 'es'}, pero alguna imagen ya no estaba disponible en este dispositivo.`
-                    : 'Alguna foto local ya no estaba disponible en este dispositivo y no se ha podido recuperar automáticamente.'}{' '}
-                  Revisa las zonas con fotos pendientes y vuelve a subir cualquier imagen que falte antes de continuar.
-                </p>
+                <p className="text-sm font-semibold text-amber-900">{resumeWarning.title}</p>
+                <p className="mt-1 text-sm text-amber-800">{resumeWarning.detail}</p>
+                {resumeWarning.kind === 'rehydrated_partial' ? (
+                  <p className="mt-2 text-sm text-amber-800">
+                    {resumeWarning.restoredPhotoCount
+                      ? `Se han restaurado ${resumeWarning.restoredPhotoCount} foto${resumeWarning.restoredPhotoCount === 1 ? '' : 's'} local${resumeWarning.restoredPhotoCount === 1 ? '' : 'es'} desde este dispositivo. `
+                      : ''}
+                    Si vuelves atrás y falta alguna imagen, resúbela antes de volver a analizar o confirmar la reserva.
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -3897,26 +3984,45 @@ const analyzeTreeGroup = async (id: string) => {
             <h2 className="text-lg font-bold text-gray-900">
                 {serviceContent.title}
             </h2>
-            {(!debugService.includes('Corte de césped') && !debugService.includes('césped') && !debugService.toLowerCase().includes('desbroce') && !debugService.toLowerCase().includes('malas hierbas')) && (
+            {serviceFlags.showsPhotoCounter && (
                 <span className="text-sm text-gray-500">{photos.length}/5</span>
             )}
           </div>
           <p className="text-gray-600 text-sm mb-4">
             {serviceContent.description}
           </p>
+          {isDevAnalysisSeedEnabled ? (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">Modo desarrollo</p>
+                  <p className="text-xs text-amber-800">
+                    Inyecta datos de prueba equivalentes al resultado de un análisis real para probar pricing, tiempos y reserva sin subir fotos.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void applyDevAnalysisSeed();
+                  }}
+                  className="inline-flex items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100"
+                >
+                  Datos de prueba
+                </button>
+              </div>
+            </div>
+          ) : null}
 
              <div className="flex flex-col gap-4">
                {(() => {
-                   const normalizedServiceName = (debugService || '').toLowerCase();
-                   const isLawnService = normalizedServiceName.includes('corte de césped') || normalizedServiceName.includes('césped') || normalizedServiceName.includes('cesped');
-                   const isHedgeService = normalizedServiceName.includes('seto');
-                   const isTreeService = normalizedServiceName.includes('árbol') || normalizedServiceName.includes('arbol');
-                   const isPalmService = normalizedServiceName.includes('palmera');
-                   const isShrubService = normalizedServiceName.includes('poda de plantas') || (normalizedServiceName.includes('poda') && !isTreeService && !isPalmService);
-                   const isPhytosanitaryService = normalizedServiceName.includes('fitosanit');
-                   const isWeedingService = normalizedServiceName.includes('desbroce') || normalizedServiceName.includes('malas hierbas');
-                   
-                   if (isLawnService) {
+                   const isLawnService = serviceFlags.isLawn;
+                   const isHedgeService = serviceFlags.isHedge;
+                   const isTreeService = serviceFlags.isTree;
+                   const isPalmService = serviceFlags.isPalm;
+                   const isShrubService = serviceFlags.isShrub;
+                   const isPhytosanitaryService = serviceFlags.isPhytosanitary;
+                   const isWeedingService = serviceFlags.isWeeding;
+                   if (serviceFlags.isLawn) {
                      return (
                          <div className="space-y-6">
                              {/* Initial State: No zones */}
@@ -5397,7 +5503,7 @@ const analyzeTreeGroup = async (id: string) => {
               </div>
           )}
 
-          {!(debugService.includes('Corte de césped') || debugService.includes('césped') || debugService.includes('seto') || debugService.includes('Seto') || debugService.toLowerCase().includes('desbroce') || debugService.toLowerCase().includes('malas hierbas')) && (
+          {serviceFlags.showsGlobalAnalyzeButton && (
               <div className="flex flex-col gap-4 mb-4 mt-4 px-4 sm:px-0">
                 <div className="flex items-center justify-end sm:justify-end justify-center w-full gap-3">
                   <button
@@ -5667,9 +5773,7 @@ const analyzeTreeGroup = async (id: string) => {
       )}
 
       {(() => {
-        const lowerService = (debugService || '').toLowerCase();
-        const isWeedingService = lowerService.includes('desbroce') || lowerService.includes('malas hierbas');
-        if (!isWeedingService) return null;
+        if (!serviceFlags.isWeeding) return null;
         return (
           <div className="px-4 mb-28">
             <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -5696,45 +5800,16 @@ const analyzeTreeGroup = async (id: string) => {
         <div className="max-w-md mx-auto">
           <button
             onClick={handleContinue}
-            disabled={
-              (debugService === 'Poda de palmeras' && (!bookingData.estimatedHours || bookingData.estimatedHours <= 0))
-              || (
-                (debugService.toLowerCase().includes('fitosanit') || debugService.toLowerCase().includes('fitosanit'))
-                && (
-                  (bookingData.phytosanitaryZones || []).length === 0
-                  || (bookingData.phytosanitaryZones || []).some((zone) => getPhytosanitaryValidation(zone as any).issues.length > 0 || !isPhytosanitaryZoneAnalyzed(zone as any))
-                )
-              )
-              || (() => {
-                const lowerService = (debugService || '').toLowerCase();
-                const isWeedingService = lowerService.includes('desbroce') || lowerService.includes('malas hierbas');
-                if (!isWeedingService) return false;
-                const zone = bookingData.weedingZones?.[0];
-                const hasValidArea = Number(zone?.area || 0) > 0;
-                const hasValidState = zone?.state === 'normal' || zone?.state === 'dificultad_media' || zone?.state === 'dificultad_alta';
-                return !zone || !hasValidArea || !hasValidState || !weedingManualConfirmed;
-              })()
-            }
+            disabled={getDetailsContinueDisabled({
+              bookingData,
+              serviceFlags,
+              weedingManualConfirmed,
+              getPhytosanitaryValidation: (zone) => getPhytosanitaryValidation(zone as any),
+              isPhytosanitaryZoneAnalyzed: (zone) => isPhytosanitaryZoneAnalyzed(zone as any),
+            })}
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
-            {(() => {
-                const lowerService = (debugService || '').toLowerCase();
-                const isLawn = lowerService.includes('césped') || lowerService.includes('cesped');
-                const isHedge = lowerService.includes('seto');
-                const isPhytosanitary = lowerService.includes('fitosanit') || lowerService.includes('fitosanit');
-                if (isPhytosanitary) {
-                    const analyzedZones = (bookingData.phytosanitaryZones || []).filter((zone) => isPhytosanitaryZoneAnalyzed(zone as any)).length;
-                    return analyzedZones > 0 ? `Continuar con ${analyzedZones} zona${analyzedZones === 1 ? '' : 's'}` : 'Continuar';
-                }
-                if (isLawn || isHedge) {
-                    const zoneCount = isLawn
-                        ? (bookingData.lawnZones || []).filter((zone: any) => zone.analysisLevel === 1 || zone.analysisLevel === 2).length
-                        : (bookingData.hedgeZones || []).filter((zone: any) => zone.analysisLevel === 1 || zone.analysisLevel === 2).length;
-                    return zoneCount > 0 ? `Continuar con ${zoneCount} zona${zoneCount === 1 ? '' : 's'}` : 'Continuar';
-                }
-                const validTreeCount = (bookingData.treeGroups || []).filter(g => !((g as any).isFailed === true || g.analysisLevel === 3)).length;
-                return validTreeCount > 0 ? `Continuar con ${validTreeCount} árboles` : 'Continuar';
-            })()}
+            {getDetailsContinueLabel(bookingData, serviceFlags)}
           </button>
         </div>
       </div>

@@ -12,7 +12,7 @@ const ClientBookingLauncher: React.FC = () => {
   const firstName = (user?.user_metadata?.full_name as string | undefined)?.split(' ')[0];
 
   const handleNewBooking = () => {
-    clearBookingResumeStorage();
+    clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
     navigate('/reservar?start=1');
   };
 

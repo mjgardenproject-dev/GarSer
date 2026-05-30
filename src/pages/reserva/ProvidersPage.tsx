@@ -1,8 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBooking } from "../../contexts/BookingContext";
-import { ChevronLeft, Star, AlertTriangle, Sprout } from 'lucide-react';
+import { ChevronLeft, Star, AlertTriangle, Sprout, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import type { BookingQuoteMetadata, BookingQuotePalmCoverage, BookingQuotePalmGroupContext } from '../../shared/bookingQuoteCore';
+import {
+  buildAuthoritativeQuoteSnapshot,
+  clearAuthoritativeQuoteState,
+} from '../../shared/bookingAuthoritativeSnapshot';
+import type {
+  BookingQuoteAvailability,
+  BookingQuoteMetadata,
+  BookingQuotePalmCoverage,
+  BookingQuotePalmGroupContext,
+} from '../../shared/bookingQuoteCore';
+import { getBookingCustomerPaymentSummary } from '../../shared/bookingQuoteCore';
 import { PartialServiceModal } from './PartialServiceModal';
 import {
   fetchProviderMonthDays,
@@ -34,15 +44,50 @@ const ProvidersPage: React.FC = () => {
   const [earliestByProvider, setEarliestByProvider] = useState<Record<string, { date: string; startHour: number } | null>>({});
   const [loadError, setLoadError] = useState('');
   const [availabilityError, setAvailabilityError] = useState('');
+  const [providersReloadToken, setProvidersReloadToken] = useState(0);
+  const [emptyStateHint, setEmptyStateHint] = useState('');
+  const [requiresCertifiedLicense, setRequiresCertifiedLicense] = useState(false);
   const reqIdRef = useRef<number>(0);
-  const currencyFormatter = useMemo(() => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }), []);
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    []
+  );
   const monthFormatter = useMemo(() => new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }), []);
 
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
 
+  const buildTimeSlotLabel = (startHour: number, durationHours: number) => {
+    return `${String(startHour).padStart(2,'0')}:00 - ${String(startHour + durationHours).padStart(2,'0')}:00`;
+  };
+
   const clearSelectedTimeSlot = () => {
     setSelectedHour(null);
-    setBookingData((prev) => (prev.timeSlot ? { timeSlot: '' } : {}));
+    setBookingData((prev) => {
+      const hasSelectedSlot =
+        Boolean(prev.timeSlot) ||
+        Boolean(prev.quoteAvailability?.selectedSlot) ||
+        Boolean(prev.providerId) ||
+        Boolean(prev.quoteMetadata) ||
+        Boolean(prev.quoteEconomics?.serviceGrossTotal);
+
+      if (!hasSelectedSlot) {
+        return {};
+      }
+
+      return {
+        providerId: '',
+        timeSlot: '',
+        ...clearAuthoritativeQuoteState(),
+        quoteAvailability: {
+          requestedDate: prev.quoteAvailability?.requestedDate,
+          windowEndDate: prev.quoteAvailability?.windowEndDate,
+          validStartHours: [],
+          calendarDays: prev.quoteAvailability?.calendarDays,
+          earliestSlot: prev.quoteAvailability?.earliestSlot || null,
+          selectedSlot: null,
+        },
+      };
+    });
   };
 
   const getEstimatedHours = (providerId: string): number => {
@@ -96,10 +141,89 @@ const ProvidersPage: React.FC = () => {
     };
   };
 
+  const buildSelectedQuoteAvailability = (
+    quote: ProviderQuotePreview,
+    date: string,
+    startHour: number | null
+  ): BookingQuoteAvailability => {
+    const durationHours = Math.max(1, Math.ceil(Number(quote.estimatedHours || 1)));
+    const earliestSlot = quote.availability?.earliestSlot || null;
+
+    return {
+      requestedDate: date,
+      validStartHours: quote.availability?.validStartHours || [],
+      calendarDays: quote.availability?.calendarDays,
+      earliestSlot,
+      selectedSlot: startHour == null
+        ? null
+        : {
+            date,
+            startHour,
+            startTime: `${String(startHour).padStart(2, '0')}:00:00`,
+            endTime: `${String(startHour + durationHours).padStart(2, '0')}:00:00`,
+            durationHours,
+          },
+    };
+  };
+
+  const getPersistedSelectedHour = (providerId: string, date: string) => {
+    const selectedSlot = bookingData.quoteAvailability?.selectedSlot;
+    if (!selectedSlot) return null;
+    if (bookingData.providerId !== providerId) return null;
+    if (selectedSlot.date !== date) return null;
+    return Number.isFinite(selectedSlot.startHour) ? selectedSlot.startHour : null;
+  };
+
+  const persistSelectedQuoteSnapshot = (
+    providerId: string,
+    date: string,
+    startHour: number,
+    groupsToKeep?: NonNullable<typeof bookingData.palmGroups>
+  ) => {
+    const quote = previewQuotes[providerId];
+    if (!quote) {
+      toast.error('Todavía no se ha podido validar el presupuesto de este profesional.');
+      return false;
+    }
+
+    const durationHours = Math.max(1, Math.ceil(Number(quote.estimatedHours || 1)));
+    const effectiveGroupsToKeep = groupsToKeep ?? (bookingData.palmGroups || []);
+    const availability = buildSelectedQuoteAvailability(quote, date, startHour);
+    const authoritativeQuoteSnapshot = buildAuthoritativeQuoteSnapshot({
+      totalPrice: quote.totalPrice,
+      estimatedHours: quote.estimatedHours,
+      breakdown: quote.breakdown,
+      warnings: quote.warnings,
+      metadata: buildSelectedQuoteMetadata(quote, effectiveGroupsToKeep),
+      economics: quote.economics,
+      availability,
+      quoteId: quote.quoteId,
+      signature: quote.signature,
+      expiresAt: quote.expiresAt,
+      pricingVersion: quote.pricingVersion,
+      providerConfigVersion: quote.providerConfigVersion,
+    });
+
+    if (!authoritativeQuoteSnapshot) {
+      toast.error('No se ha podido construir el snapshot autoritativo del presupuesto. Recalcula la disponibilidad.');
+      return false;
+    }
+
+    setBookingData({
+      providerId,
+      palmGroups: effectiveGroupsToKeep,
+      preferredDate: date,
+      timeSlot: buildTimeSlotLabel(startHour, durationHours),
+      authoritativeQuoteSnapshot,
+    });
+
+    return true;
+  };
+
   const openAvailability = async (providerId: string) => {
     if (selectedProvider && selectedProvider !== providerId) clearSelectedTimeSlot();
     setSelectedProvider(providerId);
-    const earliest = earliestByProvider[providerId];
+    const earliest = previewQuotes[providerId]?.availability?.earliestSlot || earliestByProvider[providerId];
     const nextDate = earliest?.date || selectedDate;
     setSelectedDate(nextDate);
     setCalendarMonthDate(new Date(Number(nextDate.split('-')[0]), Number(nextDate.split('-')[1]) - 1, Number(nextDate.split('-')[2])));
@@ -119,10 +243,11 @@ const ProvidersPage: React.FC = () => {
       });
       if (reqIdRef.current === rid) {
         setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
-        setMonthDays(days);
+        setMonthDays(quote.availability?.calendarDays || days);
         const inMonth = new Date(Number(selectedDate.split('-')[0]), Number(selectedDate.split('-')[1]) - 1, Number(selectedDate.split('-')[2])).getMonth() === monthStart.getMonth();
-        if (!inMonth || !days.some((item) => item.date === selectedDate && item.count > 0)) {
-          const firstWith = days.find((item) => item.count > 0);
+        const nextCalendarDays = quote.availability?.calendarDays || days;
+        if (!inMonth || !nextCalendarDays.some((item) => item.date === selectedDate && item.count > 0)) {
+          const firstWith = nextCalendarDays.find((item) => item.count > 0);
           if (firstWith) setSelectedDate(firstWith.date);
         }
       }
@@ -134,6 +259,29 @@ const ProvidersPage: React.FC = () => {
       }
     } finally {
       if (reqIdRef.current === rid) setMonthLoading(false);
+    }
+  };
+
+  const loadValidHours = async (providerId: string, date: string) => {
+    setHoursLoading(true);
+    try {
+      const { quote, validHours: nextHours } = await fetchProviderValidHours({
+        bookingData,
+        serviceId: bookingData.serviceIds[0],
+        providerId,
+        date,
+        globalMinPrice,
+      });
+      setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
+      setValidHours(quote.availability?.validStartHours || nextHours);
+      setSelectedHour(null);
+      setAvailabilityError('');
+    } catch {
+      setValidHours([]);
+      setSelectedHour(null);
+      setAvailabilityError('No se pudieron calcular las horas válidas. Reintenta.');
+    } finally {
+      setHoursLoading(false);
     }
   };
 
@@ -164,26 +312,7 @@ const ProvidersPage: React.FC = () => {
   useEffect(() => {
     (async () => {
       if (!selectedProvider) return;
-      setHoursLoading(true);
-      try {
-        const { quote, validHours: nextHours } = await fetchProviderValidHours({
-          bookingData,
-          serviceId: bookingData.serviceIds[0],
-          providerId: selectedProvider,
-          date: selectedDate,
-          globalMinPrice,
-        });
-        setPreviewQuotes((prev) => ({ ...prev, [selectedProvider]: quote }));
-        setValidHours(nextHours);
-        setSelectedHour(null);
-        setAvailabilityError('');
-      } catch {
-        setValidHours([]);
-        setSelectedHour(null);
-        setAvailabilityError('No se pudieron calcular las horas válidas. Reintenta.');
-      } finally {
-        setHoursLoading(false);
-      }
+      await loadValidHours(selectedProvider, selectedDate);
     })();
   }, [
     selectedDate,
@@ -201,6 +330,7 @@ const ProvidersPage: React.FC = () => {
     const fetchProviders = async () => {
       setLoading(true);
       setLoadError('');
+      setEmptyStateHint('');
       try {
         const primaryServiceId = bookingData.serviceIds[0];
         
@@ -232,15 +362,18 @@ const ProvidersPage: React.FC = () => {
             .eq('id', primaryServiceId)
             .single();
 
-        setServiceName(serviceInfoData?.name || '');
-        setGlobalMinPrice(Number(serviceInfoData?.base_price || 0));
+        const serviceInfo = (serviceInfoData || null) as { name?: string; base_price?: number } | null;
 
-        const isPhytosanitaryChemical = serviceInfoData?.name === 'Servicios fitosanitarios' && 
+        setServiceName(serviceInfo?.name || '');
+        setGlobalMinPrice(Number(serviceInfo?.base_price || 0));
+
+        const isPhytosanitaryChemical = serviceInfo?.name === 'Servicios fitosanitarios' && 
           (bookingData.phytosanitaryZones || []).some((z: any) => z.productPreference !== 'ecological');
-        const isWeedingHerbicide = serviceInfoData?.name === 'Desbroce de malas hierbas' &&
+        const isWeedingHerbicide = serviceInfo?.name === 'Desbroce de malas hierbas' &&
           (bookingData.weedingZones || []).some((z: any) => z.applyHerbicide === true);
 
         const requiresChemical = isPhytosanitaryChemical || isWeedingHerbicide;
+        setRequiresCertifiedLicense(requiresChemical);
 
         let profilesQuery = supabase
           .from('gardener_profiles')
@@ -268,9 +401,21 @@ const ProvidersPage: React.FC = () => {
               providerIds: list.map((provider) => provider.user_id),
               selectedDate,
               windowDays: 14,
-              globalMinPrice: Number(serviceInfoData?.base_price || 0),
+              globalMinPrice: Number(serviceInfo?.base_price || 0),
             })
           : { quotes: {}, earliestByProvider: {} };
+
+        const nextEarliestByProvider = Object.fromEntries(
+          Object.entries(preview.quotes || {}).map(([providerId, quote]) => [
+            providerId,
+            quote.availability?.earliestSlot
+              ? {
+                  date: quote.availability.earliestSlot.date,
+                  startHour: quote.availability.earliestSlot.startHour,
+                }
+              : null,
+          ])
+        );
 
         list = list.filter((provider) => {
           const quote = preview.quotes?.[provider.user_id];
@@ -283,7 +428,7 @@ const ProvidersPage: React.FC = () => {
         });
 
         const earliestMap: Record<string, number> = {};
-        Object.entries(preview.earliestByProvider || {}).forEach(([providerId, earliest]) => {
+        Object.entries(nextEarliestByProvider).forEach(([providerId, earliest]) => {
           earliestMap[providerId] = earliest
             ? new Date(`${earliest.date}T${String(earliest.startHour).padStart(2, '0')}:00:00`).getTime()
             : Number.POSITIVE_INFINITY;
@@ -307,7 +452,12 @@ const ProvidersPage: React.FC = () => {
         });
         setProviders(list);
         setPreviewQuotes(preview.quotes || {});
-        setEarliestByProvider(preview.earliestByProvider || {});
+        setEarliestByProvider(nextEarliestByProvider);
+        setEmptyStateHint(
+          requiresChemical
+            ? 'Solo podemos mostrar profesionales con licencia fitosanitaria válida para este servicio.'
+            : 'Prueba otra fecha o revisa los detalles del servicio para ampliar opciones.'
+        );
         
         // Ensure selected provider is valid for the current filters
         const stillValid = list.some(p => p.user_id === selectedProvider);
@@ -328,6 +478,8 @@ const ProvidersPage: React.FC = () => {
         setProviders([]);
         setPreviewQuotes({});
         setEarliestByProvider({});
+        setEmptyStateHint('');
+        setRequiresCertifiedLicense(false);
         setLoadError('No se pudieron cargar los profesionales. Reintenta.');
       } finally {
         setLoading(false);
@@ -348,6 +500,7 @@ const ProvidersPage: React.FC = () => {
     bookingData.palmGroups ? JSON.stringify(bookingData.palmGroups.map(g => g.species)) : '', // Detect species changes in groups
     bookingData.lawnZones ? JSON.stringify(bookingData.lawnZones.map(z => ({s: z.species, q: z.quantity, st: z.state}))) : '',
     selectedDate,
+    providersReloadToken,
   ]);
 
   // Cargar disponibilidad del jardinero seleccionado para la fecha elegida
@@ -357,12 +510,18 @@ const ProvidersPage: React.FC = () => {
 
 
 
-  const computePrice = (gardenerId: string) => {
-    return Math.max(0, Number(previewQuotes[gardenerId]?.totalPrice || 0));
+  const computeReservationTotal = (gardenerId: string) => {
+    const summary = getBookingCustomerPaymentSummary(previewQuotes[gardenerId]?.economics);
+    return Math.max(0, Number(summary?.reservationTotal || 0));
   };
 
   const handleContinue = () => { 
     if (selectedProvider) { 
+      const selectedStartHour = selectedHour ?? getPersistedSelectedHour(selectedProvider, selectedDate);
+      if (selectedStartHour == null) {
+        toast.error('Selecciona una hora válida antes de continuar.');
+        return;
+      }
       const coverage = getPalmCoverage(selectedProvider);
       if (coverage && !coverage.isFull && coverage.missingGroups.length > 0) {
         setIsPartialModalOpen(true);
@@ -388,48 +547,76 @@ const ProvidersPage: React.FC = () => {
 
   const proceedWithBooking = (groupsToKeep: any[]) => {
     if (selectedProvider) {
-      const quote = previewQuotes[selectedProvider];
-      if (!quote) {
-        toast.error('Todavía no se ha podido validar el presupuesto de este profesional.');
+      const selectedStartHour = selectedHour ?? getPersistedSelectedHour(selectedProvider, selectedDate);
+      if (selectedStartHour == null) {
+        toast.error('Selecciona una hora válida antes de continuar.');
         return;
       }
-      const slotLabel = selectedHour != null
-        ? `${String(selectedHour).padStart(2,'0')}:00 - ${String(selectedHour + Math.max(1, Math.ceil(quote.estimatedHours))).padStart(2,'0')}:00`
-        : bookingData.timeSlot;
-      setBookingData({
-        providerId: selectedProvider,
-        palmGroups: groupsToKeep,
-        estimatedHours: quote.estimatedHours,
-        totalPrice: quote.totalPrice,
-        preferredDate: selectedDate,
-        timeSlot: slotLabel,
-        priceBreakdown: quote.breakdown,
-        quoteId: '',
-        quoteSignature: '',
-        quoteExpiresAt: '',
-        quotePricingVersion: quote.pricingVersion || '',
-        quoteProviderConfigVersion: quote.providerConfigVersion || '',
-        quoteWarnings: quote.warnings || [],
-        quoteMetadata: buildSelectedQuoteMetadata(quote, groupsToKeep),
-      });
+      if (!persistSelectedQuoteSnapshot(selectedProvider, selectedDate, selectedStartHour, groupsToKeep)) {
+        return;
+      }
       setCurrentStep(4); 
     } 
   };
 
   const handleSelectStartHour = (hour: number) => {
     if (!selectedProvider || !selectedDate) return;
-    const dur = getEstimatedHours(selectedProvider);
-    const endHour = hour + dur;
-    const label = `${String(hour).padStart(2,'0')}:00 - ${String(endHour).padStart(2,'0')}:00`;
-    setBookingData({ preferredDate: selectedDate, timeSlot: label });
+    persistSelectedQuoteSnapshot(selectedProvider, selectedDate, hour);
+  };
+
+  const handleRetryProviders = () => {
+    if (loading) return;
+    setProvidersReloadToken((prev) => prev + 1);
+  };
+
+  const handleRetryAvailability = () => {
+    if (!selectedProvider) return;
+    void rebuildMonth(selectedProvider, calendarMonthDate);
+    void loadValidHours(selectedProvider, selectedDate);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando jardineros…</p>
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
+            <div className="h-9 w-9 rounded-lg bg-gray-100" />
+            <div className="h-5 w-40 rounded bg-gray-200" />
+            <div className="w-9" />
+          </div>
+        </div>
+        <div className="bg-white">
+          <div className="max-w-md mx-auto px-4 py-3">
+            <div className="flex items-center space-x-2 text-sm text-gray-600">
+              <span>Paso 4 de 5</span>
+              <div className="flex-1 bg-gray-200 rounded-full h-1 w-24">
+                <div className="bg-green-600 h-1 rounded-full" style={{ width: '80%' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="max-w-md mx-auto px-4 py-6 pb-24">
+          <div className="mb-4 grid gap-3" aria-live="polite" aria-busy="true">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm animate-pulse">
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-full bg-gray-200" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-4 w-32 rounded bg-gray-200" />
+                    <div className="h-3 w-20 rounded bg-gray-100" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm animate-pulse">
+            <div className="mb-4 h-4 w-40 rounded bg-gray-200" />
+            <div className="grid grid-cols-7 gap-2">
+              {Array.from({ length: 14 }).map((_, index) => (
+                <div key={index} className="mx-auto h-10 w-10 rounded-full bg-gray-100" />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -444,7 +631,7 @@ const ProvidersPage: React.FC = () => {
             type="button"
             onClick={() => setCurrentStep(2)}
             aria-label="Volver al paso de detalles"
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
           >
             <ChevronLeft aria-hidden="true" className="w-5 h-5 text-gray-600" />
           </button>
@@ -467,13 +654,21 @@ const ProvidersPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6 pb-24">
+      <main className="max-w-md mx-auto px-4 py-6 pb-24" id="providers-main">
         {/* Carrusel de jardineros */}
       <div className="mb-4">
         {loadError && (
-          <div aria-live="polite" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {loadError}
+          <div aria-live="polite" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-medium text-red-900">No se ha podido cargar la lista de profesionales.</p>
+            <p className="mt-1">{loadError}</p>
+            <button
+              type="button"
+              onClick={handleRetryProviders}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+            >
+              <RefreshCw aria-hidden="true" className="h-4 w-4" />
+              Reintentar carga
+            </button>
           </div>
         )}
 
@@ -501,8 +696,32 @@ const ProvidersPage: React.FC = () => {
               No hay profesionales disponibles
             </h3>
             <p className="text-gray-600 mb-6 leading-relaxed">
-              Actualmente no hay ningún profesional cualificado disponible para este servicio en tu zona. Por favor, intenta nuevamente más tarde o prueba con otras opciones (ej. tratamientos ecológicos).
+              {requiresCertifiedLicense
+                ? 'Este servicio requiere una licencia fitosanitaria válida y ahora mismo no hay disponibilidad compatible en tu zona.'
+                : 'Ahora mismo no hay ningún profesional compatible con este servicio y tus filtros actuales.'}
             </p>
+            {emptyStateHint && (
+              <p className="mb-4 text-sm text-gray-500">
+                {emptyStateHint}
+              </p>
+            )}
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={handleRetryProviders}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+              >
+                <RefreshCw aria-hidden="true" className="h-4 w-4" />
+                Actualizar profesionales
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(2)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+              >
+                Revisar detalles del servicio
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex gap-3 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -510,6 +729,8 @@ const ProvidersPage: React.FC = () => {
               const selected = selectedProvider === p.user_id;
               const coverage = getPalmCoverage(p.user_id);
               const isPartial = coverage && !coverage.isFull;
+              const paymentSummary = getBookingCustomerPaymentSummary(previewQuotes[p.user_id]?.economics);
+              const reservationTotal = computeReservationTotal(p.user_id);
 
               return (
                 <button
@@ -517,7 +738,7 @@ const ProvidersPage: React.FC = () => {
                   type="button"
                   onClick={() => openAvailability(p.user_id)}
                   aria-pressed={selected}
-                  className={`min-w-[240px] bg-white rounded-2xl shadow-sm p-4 border-2 text-left relative transition-colors flex flex-col gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${
+                  className={`min-w-[240px] bg-white rounded-2xl shadow-sm p-4 border-2 text-left relative transition-colors flex flex-col gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation] ${
                     selected ? 'border-green-600 bg-green-50' : isPartial ? 'border-amber-300 bg-amber-50 hover:border-amber-400' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
@@ -538,17 +759,25 @@ const ProvidersPage: React.FC = () => {
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
-                      <div className="text-sm text-gray-700 font-medium">
-                        {(() => {
-                            const price = computePrice(p.user_id);
-                            if (price <= 0) return <span className="text-gray-400 font-normal">No disponible</span>;
-                            return (
-                              <div className="flex items-baseline gap-1">
-                                  <span>{currencyFormatter.format(price)}</span>
-                                  {isPartial && <span className="text-xs text-amber-700 font-normal">(parcial)</span>}
+                      <div className="mt-1">
+                        {reservationTotal <= 0 ? (
+                          <span className="text-sm text-gray-400 font-normal">No disponible</span>
+                        ) : (
+                          <>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                              Total de la reserva
+                            </div>
+                            <div className="mt-1 flex items-baseline gap-1.5 text-gray-900">
+                              <span className="text-lg font-semibold">{currencyFormatter.format(reservationTotal)}</span>
+                              {isPartial ? <span className="text-xs text-amber-700 font-normal">(parcial)</span> : null}
+                            </div>
+                            {paymentSummary ? (
+                              <div className="mt-1 text-xs text-gray-500">
+                                Incluye tarifa de reserva de {currencyFormatter.format(paymentSummary.reservationFee)}
                               </div>
-                            );
-                        })()}
+                            ) : null}
+                          </>
+                        )}
                       </div>
                       {previewQuotes[p.user_id]?.warnings && previewQuotes[p.user_id].warnings!.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -591,8 +820,17 @@ const ProvidersPage: React.FC = () => {
         {selectedProvider && (
         <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-200">
           {availabilityError && (
-            <div aria-live="polite" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {availabilityError}
+            <div aria-live="polite" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <p className="font-medium text-red-900">No se ha podido cargar la disponibilidad.</p>
+              <p className="mt-1">{availabilityError}</p>
+              <button
+                type="button"
+                onClick={handleRetryAvailability}
+                className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+              >
+                <RefreshCw aria-hidden="true" className="h-4 w-4" />
+                Reintentar disponibilidad
+              </button>
             </div>
           )}
           {/* Encabezado selector */}
@@ -655,7 +893,10 @@ const ProvidersPage: React.FC = () => {
                           key={d.date}
                           type="button"
                           disabled={d.disabled}
-                          onClick={() => setSelectedDate(d.date)}
+                          onClick={() => {
+                            if (selectedDate !== d.date) clearSelectedTimeSlot();
+                            setSelectedDate(d.date);
+                          }}
                           aria-label={`Seleccionar ${d.date}`}
                           className={`w-10 h-10 rounded-full flex items-center justify-center border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${d.disabled ? 'cursor-not-allowed opacity-40 border-gray-200 bg-gray-50 text-gray-400' : selected ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-800 border-gray-300 hover:bg-green-50'}`}
                         >
@@ -706,7 +947,7 @@ const ProvidersPage: React.FC = () => {
         </div>
         )}
 
-      </div>
+      </main>
 
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
@@ -714,7 +955,12 @@ const ProvidersPage: React.FC = () => {
           <button
             type="button"
             onClick={handleContinue}
-            disabled={!selectedProvider || !bookingData.timeSlot}
+            disabled={
+              !selectedProvider ||
+              !bookingData.quoteAvailability?.selectedSlot ||
+              bookingData.providerId !== selectedProvider ||
+              bookingData.quoteAvailability?.selectedSlot?.date !== selectedDate
+            }
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] motion-reduce:transform-none transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
             {selectedProvider 

@@ -7,7 +7,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, role: 'client' | 'gardener', applicationPayload?: any) => Promise<void>;
+  signUp: (email: string, password: string, role: 'client' | 'gardener', _applicationPayload?: any) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -42,6 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
+    let lastKnownUserId: string | null = null;
 
     const restoreSession = async () => {
       setLoading(true);
@@ -82,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (mounted && restoredUser) {
           setUser(restoredUser);
+          lastKnownUserId = restoredUser.id;
           console.log('✅ Session restored');
         } else {
           console.log('ℹ️ No active session');
@@ -102,6 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'TOKEN_REFRESHED': {
           console.log('🕒', ts(), event);
           setUser(u);
+          lastKnownUserId = u?.id ?? null;
           setLoading(false);
           break;
         }
@@ -127,11 +130,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             keysToRemove.forEach(k => localStorage.removeItem(k));
             
-            clearBookingResumeStorage();
+            clearBookingResumeStorage({ userId: lastKnownUserId, flow: 'wizard', includeAnonFallback: true });
           } catch (e) {
             console.error('Error cleaning up wizard progress:', e);
           }
 
+          lastKnownUserId = null;
           setUser(null);
           setLoading(false);
           break;
@@ -196,10 +200,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string, role: 'client' | 'gardener', applicationPayload?: any) => {
+  const signUp = async (email: string, password: string, role: 'client' | 'gardener', _applicationPayload?: any) => {
     // Eliminamos setLoading(true) para no desmontar AuthForm durante el proceso
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { requested_role: role, role: role } },
@@ -220,7 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await supabase.auth.signOut();
       clearAuthStorage();
-      clearBookingResumeStorage();
+      clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
       try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
       setUser(null);
       console.log('✅ Signed out');

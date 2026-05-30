@@ -1,27 +1,35 @@
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 
-// Read environment variables from .env file
-const envContent = fs.readFileSync('.env', 'utf8');
-const envVars = {};
-envContent.split('\n').forEach(line => {
-  const [key, value] = line.split('=');
-  if (key && value) {
-    envVars[key.trim()] = value.trim().replace(/^["]|["]$/g, '');
+function readLocalEnv() {
+  if (!fs.existsSync('.env')) {
+    return {};
   }
-});
 
-const supabaseUrl = envVars.VITE_SUPABASE_URL;
-const supabaseServiceKey = envVars.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  const envVars = {};
+  const envContent = fs.readFileSync('.env', 'utf8');
+  envContent.split('\n').forEach((line) => {
+    const [key, ...rest] = line.split('=');
+    if (!key || rest.length === 0) return;
+    envVars[key.trim()] = rest.join('=').trim().replace(/^["]|["]$/g, '');
+  });
+  return envVars;
+}
+
+const envVars = readLocalEnv();
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || envVars.SUPABASE_URL || envVars.VITE_SUPABASE_URL;
+const supabaseServiceKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  envVars.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl) {
-  console.error('❌ Missing VITE_SUPABASE_URL in .env');
+  console.error('❌ Missing SUPABASE_URL (or VITE_SUPABASE_URL for local fallback).');
   process.exit(1);
 }
 
 if (!supabaseServiceKey) {
-  console.error('❌ Missing VITE_SUPABASE_SERVICE_ROLE_KEY in .env');
-  console.error('ℹ️  Add your Supabase service role key to .env to manage Storage buckets.');
+  console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY.');
+  console.error('ℹ️  Use an admin-only environment variable for this script. Never expose a service role key with a VITE_ prefix.');
   process.exit(1);
 }
 
@@ -44,9 +52,9 @@ async function ensureBucket() {
       process.exit(0);
     }
 
-    console.log(`📦 Creating bucket '${bucketName}' (public)...`);
+    console.log(`📦 Creating bucket '${bucketName}' (private)...`);
     const { error: createError } = await supabase.storage.createBucket(bucketName, {
-      public: true,
+      public: false,
       fileSizeLimit: 10 * 1024 * 1024, // 10MB
       allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     });
@@ -56,8 +64,8 @@ async function ensureBucket() {
       process.exit(1);
     }
 
-    console.log(`🎉 Bucket '${bucketName}' created and set to public.`);
-    console.log('   Use this bucket for AI photo analysis and booking photos.');
+    console.log(`🎉 Bucket '${bucketName}' created as private.`);
+    console.log('   Booking media must be served via signed URLs, never public object URLs.');
     process.exit(0);
   } catch (err) {
     console.error('💥 Unexpected error:', err);

@@ -8,11 +8,17 @@ import { reportBookingEvent } from './bookingTelemetry';
 
 export interface ProviderQuotePreview extends BookingAuthoritativeQuoteSnapshot {
   providerId: string;
+  eligibility?: {
+    isEligible: boolean;
+    reason?: string;
+  };
 }
 
 export interface ProviderPreviewResponse {
   quotes: Record<string, ProviderQuotePreview>;
   earliestByProvider: Record<string, { date: string; startHour: number } | null>;
+  eligibleProviderIds?: string[];
+  exclusions?: Record<string, { code: string; message: string }>;
 }
 
 export interface ProviderMonthDay {
@@ -59,6 +65,7 @@ function pickSerializableBookingInput(bookingData: BookingData) {
   return sanitizeBookingPayload({
     serviceIds: bookingData.serviceIds,
     address: bookingData.address,
+    addressCoordinates: bookingData.addressCoordinates,
     description: bookingData.description,
     wasteRemoval: bookingData.wasteRemoval,
     aiQuantity: bookingData.aiQuantity,
@@ -149,7 +156,6 @@ export async function previewProviderQuotes(params: {
   providerIds: string[];
   selectedDate: string;
   windowDays?: number;
-  globalMinPrice?: number;
 }): Promise<ProviderPreviewResponse> {
   try {
     const response = await invokeAuthority<ProviderPreviewResponse>({
@@ -158,7 +164,6 @@ export async function previewProviderQuotes(params: {
       providerIds: params.providerIds,
       selectedDate: params.selectedDate,
       windowDays: params.windowDays ?? 14,
-      globalMinPrice: params.globalMinPrice ?? 0,
       bookingInput: pickSerializableBookingInput(params.bookingData),
     });
     reportBookingEvent('info', {
@@ -190,7 +195,6 @@ export async function fetchProviderValidHours(params: {
   serviceId: string;
   providerId: string;
   date: string;
-  globalMinPrice?: number;
 }): Promise<{ quote: ProviderQuotePreview; validHours: number[] }> {
   try {
     const response = await invokeAuthority<{ quote: ProviderQuotePreview; validHours: number[] }>({
@@ -198,7 +202,6 @@ export async function fetchProviderValidHours(params: {
       serviceId: params.serviceId,
       providerId: params.providerId,
       date: params.date,
-      globalMinPrice: params.globalMinPrice ?? 0,
       bookingInput: pickSerializableBookingInput(params.bookingData),
     });
     reportBookingEvent('info', {
@@ -230,7 +233,6 @@ export async function fetchProviderMonthDays(params: {
   serviceId: string;
   providerId: string;
   monthDate: string;
-  globalMinPrice?: number;
 }): Promise<{ quote: ProviderQuotePreview; days: ProviderMonthDay[] }> {
   try {
     const response = await invokeAuthority<{ quote: ProviderQuotePreview; days: ProviderMonthDay[] }>({
@@ -238,7 +240,6 @@ export async function fetchProviderMonthDays(params: {
       serviceId: params.serviceId,
       providerId: params.providerId,
       monthDate: params.monthDate,
-      globalMinPrice: params.globalMinPrice ?? 0,
       bookingInput: pickSerializableBookingInput(params.bookingData),
     });
     reportBookingEvent('info', {
@@ -271,7 +272,6 @@ export async function createAuthoritativeQuote(params: {
   providerId: string;
   selectedDate: string;
   startTime: string;
-  globalMinPrice?: number;
   ttlMinutes?: number;
 }): Promise<ProviderQuotePreview> {
   try {
@@ -282,7 +282,6 @@ export async function createAuthoritativeQuote(params: {
       date: params.selectedDate,
       startTime: params.startTime,
       ttlMinutes: params.ttlMinutes ?? 120,
-      globalMinPrice: params.globalMinPrice ?? 0,
       bookingInput: pickSerializableBookingInput(params.bookingData),
     });
     reportBookingEvent('info', {

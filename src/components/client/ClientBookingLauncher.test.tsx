@@ -13,10 +13,6 @@ vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => useAuthMock(),
 }));
 
-vi.mock('./ServiceCatalog', () => ({
-  default: () => <div>catalogo</div>,
-}));
-
 describe('ClientBookingLauncher', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -45,6 +41,7 @@ describe('ClientBookingLauncher', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('button', { name: 'Continuar reserva' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Continuar reserva' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Ver mis reservas' })).toBeTruthy();
   });
 });

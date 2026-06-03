@@ -1,16 +1,20 @@
 import { supabase } from '../lib/supabase';
 import { BufferService } from './bufferService';
-import { getCoordinatesFromAddress, calculateDistance } from './geolocation';
 import { addDays, format } from 'date-fns';
+import type { BookingData } from '../contexts/BookingContext';
+import { previewProviderQuotes } from './bookingAuthorityService';
 
 // Bypass temporal de filtros para diagnóstico: ignora servicio, distancia y disponibilidad
 const TEMP_DISABLE_FILTERS = false;
 
 interface GardenerProfile {
   user_id: string;
+  full_name?: string;
   address?: string;
   work_radius?: number;
-  services: string[];
+  max_distance?: number;
+  rating?: number;
+  total_reviews?: number;
   is_available?: boolean;
 }
 
@@ -20,12 +24,85 @@ export interface MergedSlot {
   gardenerIds: string[];
 }
 
-// Encuentra jardineros elegibles por servicio y cobertura
+function buildLegacyAuthorityInput(serviceIds: string[], clientAddress: string): BookingData {
+  return {
+    address: clientAddress,
+    serviceIds,
+    photos: [],
+    description: '',
+    preferredDate: '',
+    timeSlot: '',
+    providerId: '',
+    estimatedHours: 0,
+    totalPrice: 0,
+  };
+}
+
+async function fetchAuthorityEligibleGardeners(serviceIds: string[], clientAddress: string): Promise<GardenerProfile[]> {
+  if (!clientAddress) {
+    console.warn('[eligibility] Flujo legacy sin dirección de cliente: se fuerza fallo cerrado.');
+    return [];
+  }
+
+  if (serviceIds.length !== 1) {
+    console.warn('[eligibility] Flujo legacy multi-servicio aislado: booking-authority solo admite un servicio autoritativo.', {
+      serviceIds,
+    });
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('gardener_profiles')
+    .select('user_id, full_name, address, max_distance, work_radius, rating, total_reviews, is_available')
+    .eq('is_available', true);
+
+  if (error) {
+    console.warn('[eligibility] Error cargando perfiles legacy para revalidar con backend', { error });
+    return [];
+  }
+
+  const profiles = (data as GardenerProfile[]) || [];
+  if (profiles.length === 0) {
+    return [];
+  }
+
+  try {
+    const response = await previewProviderQuotes({
+      bookingData: buildLegacyAuthorityInput(serviceIds, clientAddress),
+      serviceId: serviceIds[0],
+      providerIds: profiles.map((profile) => profile.user_id),
+      selectedDate: format(new Date(), 'yyyy-MM-dd'),
+      windowDays: 14,
+    });
+
+    const eligibleIds = new Set(
+      (response.eligibleProviderIds || Object.keys(response.quotes || {})).filter(
+        (providerId) => response.quotes?.[providerId]?.eligibility?.isEligible !== false,
+      ),
+    );
+
+    return profiles
+      .filter((profile) => eligibleIds.has(profile.user_id))
+      .sort((a, b) => {
+        const ratingDiff = Number(b.rating || 0) - Number(a.rating || 0);
+        if (ratingDiff !== 0) return ratingDiff;
+        return Number(b.total_reviews || 0) - Number(a.total_reviews || 0);
+      });
+  } catch (error) {
+    console.warn('[eligibility] booking-authority rechazó el flujo legacy; se devuelve vacío para evitar doble fuente de verdad.', {
+      error,
+      serviceIds,
+    });
+    return [];
+  }
+}
+
+// Legacy compatibility only: la elegibilidad real debe venir de booking-authority.
 export async function findEligibleGardeners(serviceId: string, clientAddress: string): Promise<GardenerProfile[]> {
   if (TEMP_DISABLE_FILTERS) {
     const { data, error } = await supabase
       .from('gardener_profiles')
-      .select('*');
+      .select('user_id, full_name, address, max_distance, work_radius, rating, total_reviews, is_available');
     if (error) {
       console.warn('[eligibility] Error obteniendo todos los jardineros (bypass)', { error });
       return [];
@@ -35,63 +112,15 @@ export async function findEligibleGardeners(serviceId: string, clientAddress: st
     return list;
   }
 
-  const clientCoords = await getCoordinatesFromAddress(clientAddress);
-  if (!clientCoords) {
-    console.warn('[eligibility] Geocoding de cliente falló o no disponible', { clientAddress });
-    return [];
-  }
-
-  const { data: gardeners, error } = await supabase
-    .from('gardener_profiles')
-    .select('*')
-    .contains('services', [serviceId])
-    .eq('is_available', true);
-
-  let list: GardenerProfile[] = (gardeners as GardenerProfile[]) || [];
-  if (error) {
-    console.warn('[eligibility] Error en consulta de jardineros por servicio', { error });
-  }
-
-  // Fallback: si la consulta por contains no da resultados, traer disponibles y filtrar en cliente
-  if (!list || list.length === 0) {
-    const { data: allAvailable, error: fallbackError } = await supabase
-      .from('gardener_profiles')
-      .select('*')
-      .eq('is_available', true);
-    if (fallbackError) {
-      console.warn('[eligibility] Fallback consulta is_available falló', { fallbackError });
-      return [];
-    }
-    list = (allAvailable as GardenerProfile[]).filter(g => Array.isArray((g as any).services) && (g as any).services.includes(serviceId));
-    console.debug('[eligibility] Fallback aplicando filtro de servicio en cliente', { count: list.length });
-  }
-
-  const eligible: GardenerProfile[] = [];
-  for (const g of list as GardenerProfile[]) {
-    if (!g.address) {
-      console.debug('[eligibility] Jardinero sin dirección, descartado', { user_id: g.user_id });
-      continue;
-    }
-    const coords = await getCoordinatesFromAddress(g.address);
-    if (!coords) {
-      console.debug('[eligibility] Geocoding de jardinero falló, descartado', { user_id: g.user_id, address: g.address });
-      continue;
-    }
-    const distance = calculateDistance(clientCoords.lat, clientCoords.lng, coords.lat, coords.lng);
-    const radius = (g as any).max_distance ?? g.work_radius ?? 20;
-    const within = distance <= radius;
-    console.debug('[eligibility] Distancia vs radio', { user_id: g.user_id, distanceKm: Math.round(distance * 10) / 10, radiusKm: radius, within });
-    if (within) eligible.push(g);
-  }
-  return eligible;
+  return fetchAuthorityEligibleGardeners([serviceId], clientAddress);
 }
 
-// Encuentra jardineros elegibles que soporten TODOS los servicios seleccionados
+// Legacy compatibility only: los flujos multi-servicio no deben apoyarse en gardener_profiles.services.
 export async function findEligibleGardenersForServices(serviceIds: string[], clientAddress: string): Promise<GardenerProfile[]> {
   if (TEMP_DISABLE_FILTERS) {
     const { data, error } = await supabase
       .from('gardener_profiles')
-      .select('*');
+      .select('user_id, full_name, address, max_distance, work_radius, rating, total_reviews, is_available');
     if (error) {
       console.warn('[eligibility] Error obteniendo todos los jardineros (bypass, multi)', { error });
       return [];
@@ -101,60 +130,7 @@ export async function findEligibleGardenersForServices(serviceIds: string[], cli
     return list;
   }
 
-  const clientCoords = await getCoordinatesFromAddress(clientAddress);
-  if (!clientCoords) {
-    console.warn('[eligibility] Geocoding de cliente falló o no disponible', { clientAddress });
-    return [];
-  }
-
-  let list: GardenerProfile[] = [];
-  try {
-    const { data, error } = await supabase
-      .from('gardener_profiles')
-      .select('*')
-      .contains('services', serviceIds)
-      .eq('is_available', true);
-    if (error) throw error;
-    list = (data as GardenerProfile[]) || [];
-    console.log('[eligibility] Consulta por servicios múltiples', { requested: serviceIds, count: list.length });
-  } catch (e) {
-    console.warn('[eligibility] Error consultando jardineros por servicios múltiples, intento fallback:', e);
-    const { data: allAvailable, error: fallbackError } = await supabase
-      .from('gardener_profiles')
-      .select('*')
-      .eq('is_available', true);
-    if (fallbackError) {
-      console.warn('[eligibility] Fallback consulta is_available falló', { fallbackError });
-      return [];
-    }
-    list = ((allAvailable as GardenerProfile[]) || []).filter(g => {
-      const svcs = (g as any).services as string[];
-      return Array.isArray(svcs) && serviceIds.every(id => svcs.includes(id));
-    });
-    console.log('[eligibility] Fallback filtrado en cliente por servicios', { requested: serviceIds, count: list.length });
-  }
-
-  const eligible: GardenerProfile[] = [];
-  for (const g of list) {
-    const radiusKm = (g as any).max_distance ?? g.work_radius ?? 20;
-    if (!g.address) {
-      console.log('[eligibility] Jardinero sin dirección, asumiendo elegible (multi)', { user_id: g.user_id, radiusKm });
-      eligible.push(g);
-      continue;
-    }
-    const gardenerCoords = await getCoordinatesFromAddress(g.address);
-    if (!gardenerCoords) {
-      console.log('[eligibility] Geocoding de jardinero falló, asumiendo elegible (multi)', { user_id: g.user_id, address: g.address, radiusKm });
-      eligible.push(g);
-      continue;
-    }
-    const distKm = calculateDistance(clientCoords.lat, clientCoords.lng, gardenerCoords.lat, gardenerCoords.lng);
-    const within = distKm <= radiusKm;
-    console.log('[eligibility] Distancia vs radio (multi)', { user_id: g.user_id, distanceKm: Math.round(distKm * 10) / 10, radiusKm, within });
-    if (within) eligible.push(g);
-  }
-
-  return eligible;
+  return fetchAuthorityEligibleGardeners(serviceIds, clientAddress);
 }
 
 // Calcula todas las secuencias continuas de duración solicitada por jardinero y fusiona

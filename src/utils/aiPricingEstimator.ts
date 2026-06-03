@@ -127,7 +127,7 @@ interface EstimationInput {
     face_b_urls?: string[];
   };
   serviceName?: string; // Optional: Name of the primary service for specific prompting
-  model?: 'gpt-4o-mini' | 'gemini-2.0-flash'; // Nuevo selector de modelo
+  model?: 'gpt-4o-mini' | 'gemini-2.5-flash'; // Nuevo selector de modelo
   phytosanitary_scopes?: string[];
 }
 
@@ -185,7 +185,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
         hedge_faces: input.hedgeFaces,
         photo_count: input.photoCount,
         service_name: input.serviceName,
-        model: input.model || 'gemini-2.0-flash',
+        model: input.model || 'gemini-2.5-flash',
         phytosanitary_scopes: input.phytosanitary_scopes,
       },
     });
@@ -209,7 +209,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
       },
       sourcePhotoCount: input.photoCount,
       provider: 'google',
-      model: input.model || 'gemini-2.0-flash',
+      model: input.model || 'gemini-2.5-flash',
     });
     return { tareas, palmas, arboles, reasons, metricas_fitosanitarias, analysis_v2, rawResponse: data };
   } catch (e) {
@@ -219,7 +219,7 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
       legacyResponse: { tareas: [], reasons: ['EDGE_FUNCTION_INVOCATION_FAILED'] },
       sourcePhotoCount: input.photoCount,
       provider: 'internal',
-      model: input.model || 'gemini-2.0-flash',
+      model: input.model || 'gemini-2.5-flash',
     });
     return { tareas: [], analysis_v2, rawResponse: { exception: e } };
   }
@@ -266,7 +266,7 @@ export async function estimateServiceAutoQuote(params: {
   service: string; 
   imageUrl: string; 
   description?: string; 
-  model?: 'gpt-4o-mini' | 'gemini-2.0-flash';
+  model?: 'gpt-4o-mini' | 'gemini-2.5-flash';
   gardenerConfig?: any;
 }): Promise<AutoQuoteResponse | null> {
   try {
@@ -276,7 +276,7 @@ export async function estimateServiceAutoQuote(params: {
         service: params.service,
         image_url: params.imageUrl,
         description: '',
-        model: params.model || 'gemini-2.0-flash',
+        model: params.model || 'gemini-2.5-flash',
         gardener_config: params.gardenerConfig
       },
     });

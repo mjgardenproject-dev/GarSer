@@ -28,37 +28,30 @@ const canonical = [
   {
     name: 'Corte de césped',
     description: 'Mantenimiento regular para un césped sano y uniforme. Incluye corte, perfilado y limpieza.',
-    base_price: 30,
   },
   {
     name: 'Poda de plantas y arbustos',
     description: 'Poda profesional de plantas para favorecer el crecimiento y mantener la estética del jardín.',
-    base_price: 40,
   },
   {
     name: 'Corte de setos a máquina',
     description: 'Diseño y mantenimiento de setos con un acabado limpio y cuidado usando maquinaria adecuada.',
-    base_price: 35,
   },
   {
     name: 'Poda de árboles',
     description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
-    base_price: 55,
   },
   {
     name: 'Servicios fitosanitarios',
     description: 'Tratamientos específicos para proteger plantas y césped. El coste de los productos no está incluido.',
-    base_price: 50,
   },
   {
     name: 'Poda de palmeras',
     description: 'Poda y limpieza de palmeras, retirada de hojas secas y frutos.',
-    base_price: 60,
   },
   {
     name: 'Desbroce de malas hierbas',
     description: 'Limpieza y desbroce de terrenos con maleza, matorrales y malas hierbas.',
-    base_price: 45,
   },
 ];
 
@@ -86,7 +79,6 @@ async function enforceCanonicalServices() {
       .update({
         name: newName,
         description: 'Poda profesional de árboles para favorecer el crecimiento y mantener la seguridad. Incluye retirada de ramas.',
-        base_price: 55,
       })
       .eq('id', oldExisting.id);
     if (updError) {

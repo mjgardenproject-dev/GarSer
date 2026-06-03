@@ -425,7 +425,7 @@ describe('ConfirmationPage embedded payment flow', () => {
     })
   })
 
-  it('permite cerrar el sheet sin cancelar el intento preparado', async () => {
+  it('permite cerrar el pago y reabrirlo sin preparar un nuevo intento', async () => {
     render(<ConfirmationPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continuar al pago' }))
@@ -434,9 +434,15 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(mocks.cancelBookingPaymentAttempt).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog', { name: 'Pago seguro' })).toBeNull()
     expect(screen.queryByTestId('payment-element')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Reabrir pago' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reabrir pago' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Pago seguro' })).toBeTruthy()
+    expect(mocks.prepareBookingPayment).toHaveBeenCalledTimes(1)
   })
 
-  it('muestra éxito, cierra el sheet y deja la reserva completada en checkout', async () => {
+  it('muestra una vista final útil cuando la reserva queda confirmada', async () => {
     mocks.syncBookingPaymentAttempt.mockResolvedValueOnce(
       buildAttempt({
         status: 'booking_created',
@@ -459,7 +465,9 @@ describe('ConfirmationPage embedded payment flow', () => {
       expect(screen.queryByRole('dialog', { name: 'Pago seguro' })).toBeNull()
     }, { timeout: 1500 })
 
-    expect((await screen.findAllByText('Pago completado correctamente')).length).toBeGreaterThan(0)
+    expect(await screen.findByRole('heading', { name: 'Todo ha quedado listo' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ir a mis reservas' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ir al inicio' })).toBeTruthy()
     expect(mocks.toast.success).toHaveBeenCalledWith('Pago confirmado y reserva creada correctamente')
   })
 
@@ -478,7 +486,7 @@ describe('ConfirmationPage embedded payment flow', () => {
     })
   })
 
-  it('muestra la reserva confirmada cuando el retorno ya llega consolidado', async () => {
+  it('mantiene visible la vista final cuando el pago ya está consolidado hasta que el cliente actúe', async () => {
     mocks.locationSearch = '?payment_return=1&attempt_id=attempt-1'
     mocks.syncBookingPaymentAttempt.mockResolvedValueOnce(
       buildAttempt({
@@ -490,8 +498,39 @@ describe('ConfirmationPage embedded payment flow', () => {
 
     render(<ConfirmationPage />)
 
-    expect((await screen.findAllByText('Pago completado correctamente')).length).toBeGreaterThan(0)
+    expect(await screen.findByRole('heading', { name: 'Todo ha quedado listo' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ir a mis reservas' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Ir al inicio' })).toBeTruthy()
+    expect(mocks.navigate).not.toHaveBeenCalled()
     expect(mocks.clearBookingResumeStorage).toHaveBeenCalled()
     expect(mocks.toast.success).toHaveBeenCalledWith('Pago confirmado y reserva creada correctamente')
+  })
+
+  it('limpia la reanudacion de reserva antes de ir al inicio tras completar el pago', async () => {
+    mocks.locationSearch = '?payment_return=1&attempt_id=attempt-1'
+    mocks.syncBookingPaymentAttempt.mockResolvedValueOnce(
+      buildAttempt({
+        status: 'booking_created',
+        bookingId: 'booking-1',
+        terminal: true,
+      }),
+    )
+
+    render(<ConfirmationPage />)
+
+    expect(await screen.findByRole('heading', { name: 'Todo ha quedado listo' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al inicio' }))
+
+    expect(mocks.clearBookingResumeStorage).toHaveBeenCalledWith({
+      userId: 'user-1',
+      includeAnonFallback: true,
+      includeLegacy: true,
+    })
+    expect(mocks.resetBooking).toHaveBeenCalled()
+    expect(mocks.navigate).toHaveBeenCalledWith('/dashboard', {
+      replace: true,
+      state: { skipBookingResumeRedirect: true },
+    })
   })
 })

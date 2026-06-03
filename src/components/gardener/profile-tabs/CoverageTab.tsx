@@ -12,12 +12,14 @@ interface CoverageTabProps {
     address: string;
     max_distance: number;
   };
+  hasOperationalCoordinates?: boolean;
   onSave: (data: any) => void;
 }
 
 const CoverageTab: React.FC<CoverageTabProps> = ({ 
   loading,
   initialData,
+  hasOperationalCoordinates = false,
   onSave
 }) => {
   const { watch, setValue, getValues, formState: { errors } } = useFormContext();
@@ -51,6 +53,16 @@ const CoverageTab: React.FC<CoverageTabProps> = ({
       </div>
       
       <div className="space-y-6">
+        <div className={`rounded-xl border px-4 py-3 text-sm ${
+          hasOperationalCoordinates
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          {hasOperationalCoordinates
+            ? 'Cobertura validada: tu dirección base ya tiene coordenadas operativas para el filtrado de reservas.'
+            : 'Cobertura pendiente de validación operativa: guarda una dirección base resoluble para que los clientes puedan verte en providers.'}
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Dirección base</label>
           <AddressAutocomplete 

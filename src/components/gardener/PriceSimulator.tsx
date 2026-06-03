@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Calculator } from 'lucide-react';
 import { PhytosanitaryPricingConfig, Service } from '../../types';
 import { HEDGE_HEIGHT_BANDS } from './HedgePricingConfigurator';
-import { TreePricingConfig } from './TreePricingConfigurator';
+import { TreePruningServiceConfig } from '../../types/treePruning';
 import {
   buildAuthoritativeBookingQuote,
   type SerializableBookingData,
@@ -12,7 +12,7 @@ type SimulatorConfigs = {
   palmConfig?: any;
   lawnConfig?: any;
   hedgeConfig?: any;
-  treeConfig?: TreePricingConfig;
+  treePruningConfig?: TreePruningServiceConfig;
   shrubConfig?: any;
   phytosanitaryConfig?: PhytosanitaryPricingConfig;
   weedingConfig?: any;
@@ -84,7 +84,7 @@ const PriceSimulator: React.FC<PriceSimulatorProps> = ({ services, configs }) =>
     if (selectedService === 'Poda de palmeras') return configs.palmConfig;
     if (selectedService === 'Corte de césped') return configs.lawnConfig;
     if (selectedService === 'Corte de setos a máquina') return configs.hedgeConfig;
-    if (selectedService === 'Poda de árboles') return configs.treeConfig;
+    if (selectedService === 'Poda de árboles') return configs.treePruningConfig;
     if (selectedService === 'Poda de plantas y arbustos') return configs.shrubConfig;
     if (selectedService === 'Servicios fitosanitarios') return configs.phytosanitaryConfig;
     if (selectedService === 'Desbroce de malas hierbas') return configs.weedingConfig;

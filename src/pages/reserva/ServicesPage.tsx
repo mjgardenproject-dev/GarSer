@@ -125,7 +125,7 @@ const ServicesPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="mx-auto w-full px-4 py-4 sm:max-w-md flex items-center justify-between">
           <button
             type="button"
             onClick={() => setCurrentStep(0)}
@@ -141,7 +141,7 @@ const ServicesPage: React.FC = () => {
 
       {/* Progress Bar */}
       <div className="bg-white">
-        <div className="max-w-md mx-auto px-4 py-2">
+        <div className="mx-auto w-full px-4 py-2 sm:max-w-md">
           <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
             <span>Paso 2 de 5</span>
             <div className="flex-1 bg-gray-200 rounded-full h-1">
@@ -151,7 +151,7 @@ const ServicesPage: React.FC = () => {
         </div>
       </div>
 
-      <main className="max-w-md mx-auto px-3 py-3 pb-24" id="services-main">
+      <main className="mx-auto w-full px-3 py-3 pb-24 sm:max-w-md" id="services-main">
         <div className="mb-3">
           <p className="text-sm font-medium text-gray-900">
             Selecciona el servicio que quieres reservar
@@ -195,7 +195,7 @@ const ServicesPage: React.FC = () => {
               const isSelected = selectedServices.includes(service.id);
               const imageState = imageStates[service.id];
               const fallbackUrl = getServiceImageFallbackUrl(service.name);
-              const imageUrl = imageState === 'fallback' ? fallbackUrl : getServiceImageUrl(service, 800);
+              const imageUrl = imageState === 'fallback' ? fallbackUrl : getServiceImageUrl(service);
               const imageUnavailable = imageState === 'unavailable';
 
               return (
@@ -272,7 +272,7 @@ const ServicesPage: React.FC = () => {
 
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
-        <div className="max-w-md mx-auto">
+        <div className="mx-auto w-full sm:max-w-md">
           <button
             type="button"
             onClick={handleContinue}

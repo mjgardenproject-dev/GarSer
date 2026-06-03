@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -34,8 +34,15 @@ const AuthForm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState<'client' | 'gardener'>('client');
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const forceClientOnly: boolean = !!((location.state as any)?.forceClientOnly);
   const redirectTo: string | null = typeof (location.state as any)?.redirectTo === 'string' ? (location.state as any)?.redirectTo : null;
+  const requestedInitialMode =
+    ((location.state as any)?.initialMode as 'login' | 'signup' | undefined) ||
+    ((searchParams.get('mode') as 'login' | 'signup' | null) ?? undefined);
+  const requestedRole =
+    ((location.state as any)?.preselectedRole as 'client' | 'gardener' | undefined) ||
+    ((searchParams.get('role') as 'client' | 'gardener' | null) ?? undefined);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -183,6 +190,28 @@ const AuthForm = () => {
       setSelectedRole('client');
     }
   }, [forceClientOnly]);
+
+  useEffect(() => {
+    if (requestedInitialMode === 'signup') {
+      setIsLogin(false);
+    } else if (requestedInitialMode === 'login') {
+      setIsLogin(true);
+    }
+  }, [requestedInitialMode]);
+
+  useEffect(() => {
+    if (forceClientOnly) {
+      setSelectedRole('client');
+      return;
+    }
+
+    if (requestedRole === 'client' || requestedRole === 'gardener') {
+      setSelectedRole(requestedRole);
+      if (requestedRole === 'gardener') {
+        setIsLogin(false);
+      }
+    }
+  }, [forceClientOnly, requestedRole]);
 
   const isStepValid = (s: Step) => {
     if (s === 1) return fullName.trim().length > 0 && phoneLocal.trim().length > 0 && cityZone.trim().length > 0 && !!photoPreviewUrl;

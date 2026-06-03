@@ -28,6 +28,9 @@ import GardenerApplicationWizard from './components/gardener/GardenerApplication
 import GardenerStatusPage from './components/gardener/GardenerStatusPage';
 import BookingFlow from './pages/reserva/BookingFlow';
 import ConfirmationPage from './pages/reserva/ConfirmationPage';
+import PublicHomePage from './pages/public/PublicHomePage';
+import MarbellaLandingPage from './pages/public/MarbellaLandingPage';
+import GardenersLandingPage from './pages/public/GardenersLandingPage';
 import { supabase } from './lib/supabase';
 import { hasWizardResume } from './utils/bookingResumeStorage';
 
@@ -55,6 +58,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
     const isApplyPage = location.pathname === '/apply';
     const isAdminPage = location.pathname.startsWith('/admin');
+    const isMarketingPage =
+      location.pathname === '/' ||
+      location.pathname === '/marbella' ||
+      location.pathname === '/para-jardineros';
   
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
@@ -87,8 +94,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             .select('user_id')
             .eq('user_id', user.id)
             .maybeSingle();
+        const gardenerProfile = gp as { user_id?: string | null } | null;
             
-        if (gp?.user_id) {
+        if (gardenerProfile?.user_id) {
             setApplicationStatus('active');
             try { localStorage.setItem('gardenerApplicationStatus','active'); } catch {}
             setStatusLoaded(true);
@@ -104,17 +112,18 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
+        const latestApplication = app as { status?: string | null; review_comment?: string | null } | null;
 
         if (appError) console.error('Error fetching application:', appError);
 
-        setDenialReason((app?.review_comment as any) || '');
+        setDenialReason(latestApplication?.review_comment || '');
 
         const metaIntent = (user as any)?.user_metadata?.requested_role === 'gardener' || (user as any)?.user_metadata?.role === 'gardener';
         const lsRole = (()=>{ try { return localStorage.getItem('signup_role'); } catch { return null; } })();
         const gardenerIntent = metaIntent || lsRole === 'gardener';
         
         // Si no hay solicitud pero hay intención -> Draft/Null
-        if (!app && gardenerIntent) {
+        if (!latestApplication && gardenerIntent) {
             // Check LS for optimistic updates just in case
             const lsStatus = (()=>{ try { return localStorage.getItem('gardenerApplicationStatus') as any; } catch { return null; } })();
             const lsJust = (()=>{ try { return !!localStorage.getItem('gardenerApplicationJustSubmitted'); } catch { return false; } })();
@@ -129,7 +138,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         }
         
         // Calcular estado UI
-        const ui = toUiStatus(app?.status);
+        const ui = toUiStatus(latestApplication?.status);
         
         // Cachear en LS para futuro
         try {
@@ -199,7 +208,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {!isAuthPage && !isAdminPage && <Navbar applicationStatus={applicationStatus} />}
+      {!isAuthPage && !isAdminPage && !isMarketingPage && <Navbar applicationStatus={applicationStatus} />}
       
       {isAdminPage ? (
         <Routes>
@@ -215,7 +224,13 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           </Route>
         </Routes>
       ) : (
-        <main className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pb-16 sm:pb-0">
+        <main
+          className={
+            isBookingPage || isMarketingPage
+              ? 'w-full pb-16 sm:pb-0'
+              : 'mx-auto max-w-full px-3 pb-16 sm:max-w-7xl sm:px-6 sm:pb-0 lg:px-8'
+          }
+        >
           <Routes>
         <Route
           path="/"
@@ -223,10 +238,26 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             user ? (
               <Navigate to="/dashboard" replace />
             ) : (
-              <ErrorBoundary fallbackTitle="Error en la reserva" fallbackMessage="Si el problema persiste, vuelve al paso anterior y reintenta.">
-                <ClientBookingLauncher />
+              <ErrorBoundary fallbackTitle="Error al cargar la portada" fallbackMessage="Recarga la pagina para volver a intentarlo.">
+                <PublicHomePage />
               </ErrorBoundary>
             )
+          }
+        />
+        <Route
+          path="/marbella"
+          element={
+            <ErrorBoundary fallbackTitle="Error al cargar Marbella" fallbackMessage="Recarga la pagina para volver a intentarlo.">
+              <MarbellaLandingPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/para-jardineros"
+          element={
+            <ErrorBoundary fallbackTitle="Error al cargar la pagina profesional" fallbackMessage="Recarga la pagina para volver a intentarlo.">
+              <GardenersLandingPage />
+            </ErrorBoundary>
           }
         />
         <Route 
@@ -273,7 +304,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                 }
                 
                 // Rol de Cliente
-                if (hasWizardResume({ userId: user?.id, allowAnonFallback: true })) {
+                const skipBookingResumeRedirect =
+                  Boolean((location.state as { skipBookingResumeRedirect?: boolean } | null)?.skipBookingResumeRedirect);
+                if (!skipBookingResumeRedirect && hasWizardResume({ userId: user?.id, allowAnonFallback: true })) {
                   return <Navigate to="/reservar" replace />;
                 }
                 return (
@@ -450,7 +483,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         </Routes>
         </main>
       )}
-      {!isAuthPage && !isBookingPage && !isApplyPage && !isAdminPage && user && <BottomNav />}
+      {!isAuthPage && !isBookingPage && !isApplyPage && !isAdminPage && !isMarketingPage && user && <BottomNav />}
     </div>
   );
 };

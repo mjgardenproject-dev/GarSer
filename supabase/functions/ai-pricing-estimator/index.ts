@@ -33,7 +33,7 @@ interface Payload {
   mode?: 'auto_quote' | 'calculate_palm_pricing' | 'weeding_prompt_quality_check';
   service?: string; // nombre exacto del servicio
   image_url?: string; // http(s) o dataURL
-  model?: 'gpt-4o-mini' | 'gemini-2.0-flash';
+  model?: 'gpt-4o-mini' | 'gemini-2.0-flash' | 'gemini-2.5-flash';
   palms?: any[]; // Array for palm pricing calculation
   phytosanitary_scopes?: string[]; // Array of selected scopes for Fitosanitarios
   qa_runs?: number;
@@ -52,6 +52,7 @@ const PHYTOSANITARY_TREATMENTS: PhytosanitaryTreatment[] = [
 ];
 
 const PHYTOSANITARY_SERVICE_KEYS = ['fitosanit', 'fitosanit'];
+const DEFAULT_GEMINI_MODEL = (Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash').trim();
 
 function isPhytosanitaryService(serviceName?: string) {
   const lower = String(serviceName || '').toLowerCase();
@@ -78,6 +79,14 @@ function getPhytosanitaryScope(payload: Payload): string[] {
     return ['todo el jardin'];
   }
   return scopes;
+}
+
+function getSelectedGeminiModel(requestedModel?: string | null) {
+  if (requestedModel && requestedModel.startsWith('gemini-')) {
+    return requestedModel;
+  }
+
+  return DEFAULT_GEMINI_MODEL;
 }
 
 function filterPhytosanitaryMetricsByScope(metrics: any, scopes: string[]) {
@@ -835,7 +844,7 @@ async function fetchImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
-async function callGemini(messages: any[]) {
+async function callGemini(messages: any[], requestedModel?: string | null) {
   const apiKey = Deno.env.get('GOOGLE_API_KEY');
   if (!apiKey) {
     return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerAuthMissing] };
@@ -900,8 +909,8 @@ async function callGemini(messages: any[]) {
     generationConfig
   };
 
-  const MODEL_NAME = 'gemini-2.0-flash';
-  console.log(`Calling Gemini Model: ${MODEL_NAME}`);
+  const modelName = getSelectedGeminiModel(requestedModel);
+  console.log(`Calling Gemini Model: ${modelName}`);
 
   // Implement exponential backoff retry logic for 429
   let attempts = 0;
@@ -910,7 +919,7 @@ async function callGemini(messages: any[]) {
   while (attempts < maxAttempts) {
     attempts++;
     try {
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`, {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -941,7 +950,7 @@ async function callGemini(messages: any[]) {
       }
 
       const txt = await resp.text();
-      console.error(`Gemini API Error (${resp.status} - ${MODEL_NAME}):`, txt);
+      console.error(`Gemini API Error (${resp.status} - ${modelName}):`, txt);
       
       return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerRequestFailed] };
     } catch (networkError) {
@@ -978,7 +987,7 @@ function buildResponseWithAnalysisV2(
     legacyResponse,
     sourcePhotoCount: payload.photo_count,
     provider,
-    model: payload.model || 'gemini-2.0-flash',
+    model: getSelectedGeminiModel(payload.model),
     modelParams: getAnalysisModelParams(),
   });
 
@@ -990,7 +999,7 @@ function buildResponseWithAnalysisV2(
         legacyResponse: { reasons: [STANDARD_TECHNICAL_REASONS.analysisValidationFailed, ...validationErrors] },
         sourcePhotoCount: payload.photo_count,
         provider: 'internal',
-        model: payload.model || 'gemini-2.0-flash',
+        model: getSelectedGeminiModel(payload.model),
         modelParams: {
           ...getAnalysisModelParams(),
           validation_failed: true,
@@ -1022,7 +1031,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     // Nuevo modo: auto‑presupuesto por servicio único
     if (payload.mode === 'auto_quote' && payload.service && payload.image_url) {
       const messages = buildAutoQuoteMessages(payload);
-      const analysis = await callGemini(messages);
+      const analysis = await callGemini(messages, payload.model);
 
       const servicio = analysis?.servicio as string | undefined;
       const cantidad = Number(analysis?.cantidad ?? 0);
@@ -1054,7 +1063,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
       for (let i = 0; i < runs; i++) {
         const messages = buildMessages(qaPayload);
-        const ai = await callGemini(messages);
+        const ai = await callGemini(messages, payload.model);
         rawRuns.push({
           index: i + 1,
           parsed: parseWeedingResult(ai),
@@ -1103,7 +1112,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const messages = buildMessages(payload);
     
     // SOLO GEMINI
-    const ai = await callGemini(messages);
+    const ai = await callGemini(messages, payload.model);
 
     if (isPhytosanitaryService(payload.service_name)) {
       // Devolver la respuesta limpia, ya agregada por Gemini, pero con el middleware de filtrado de scopes

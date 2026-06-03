@@ -3,7 +3,7 @@ import type {
   BookingQuoteEconomicBreakdown,
   BookingQuoteMetadata,
   BookingQuoteSlotSelection,
-} from './bookingQuoteCore';
+} from './bookingQuoteCore.ts';
 
 export interface BookingAuthoritativeQuoteSnapshot {
   totalPrice: number;
@@ -95,17 +95,17 @@ export function buildAuthoritativeQuoteSnapshot(input: {
   return {
     totalPrice: deriveTotalPrice({
       totalPrice: input.totalPrice,
-      economics: input.economics,
+      economics: input.economics!,
     }),
     estimatedHours: deriveEstimatedHours({
       estimatedHours: input.estimatedHours,
-      availability: input.availability,
+      availability: input.availability!,
     }),
     breakdown: normalizeBreakdown(input.breakdown),
     warnings: normalizeWarnings(input.warnings),
-    metadata: input.metadata,
-    economics: input.economics,
-    availability: input.availability,
+    metadata: input.metadata!,
+    economics: input.economics!,
+    availability: input.availability!,
     quoteId: input.quoteId,
     signature: input.signature,
     expiresAt: input.expiresAt,

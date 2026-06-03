@@ -295,6 +295,13 @@ function isValidBookingDataPayload(value: unknown): value is Record<string, unkn
 
   const validators: Array<[string, (input: unknown) => boolean]> = [
     ['address', (input) => typeof input === 'string'],
+    ['addressCoordinates', (input) =>
+      input == null
+      || (
+        isPlainObject(input)
+        && isFiniteNumber(input.lat)
+        && isFiniteNumber(input.lng)
+      )],
     ['serviceIds', isStringArray],
     ['restrictedGardenerId', (input) => input == null || typeof input === 'string'],
     ['photos', Array.isArray],

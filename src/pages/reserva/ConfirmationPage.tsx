@@ -1,4 +1,4 @@
-import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { useBooking } from "../../contexts/BookingContext";
@@ -11,6 +11,8 @@ import {
   X,
   AlertTriangle,
   CheckCircle2,
+  ArrowRight,
+  Home,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStripePromise } from '../../lib/stripeClient';
@@ -88,7 +90,6 @@ type PreCheckoutFailureState = {
 
 type EmbeddedStripePaymentFormProps = {
   attemptId: string;
-  amountLabel: string;
   disabled?: boolean;
   onSubmittingChange: (value: boolean) => void;
   onReadyChange: (value: boolean) => void;
@@ -101,7 +102,6 @@ type EmbeddedStripePaymentFormHandle = {
 
 const EmbeddedStripePaymentForm = React.forwardRef<EmbeddedStripePaymentFormHandle, EmbeddedStripePaymentFormProps>(({
   attemptId,
-  amountLabel,
   disabled = false,
   onSubmittingChange,
   onReadyChange,
@@ -168,10 +168,6 @@ const EmbeddedStripePaymentForm = React.forwardRef<EmbeddedStripePaymentFormHand
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500">
-        Paga {amountLabel} con tarjeta o con el metodo compatible que Stripe muestre en tu dispositivo.
-      </p>
-
       <PaymentElement
         options={{ layout: 'tabs' }}
         onReady={() => setIsElementReady(true)}
@@ -347,10 +343,20 @@ const ConfirmationPage: React.FC = () => {
     window.location.reload();
   };
 
-  const handleGoToBookings = () => {
+  const clearCompletedBookingState = useCallback(() => {
+    clearBookingResumeStorage({ userId: user?.id, includeAnonFallback: true, includeLegacy: true });
     resetBooking();
-    navigate('/bookings');
-  };
+  }, [resetBooking, user?.id]);
+
+  const handleGoToBookings = useCallback((replace = false) => {
+    clearCompletedBookingState();
+    navigate('/bookings', replace ? { replace: true } : undefined);
+  }, [clearCompletedBookingState, navigate]);
+
+  const handleGoToDashboard = useCallback((replace = false) => {
+    clearCompletedBookingState();
+    navigate('/dashboard', replace ? { replace: true, state: { skipBookingResumeRedirect: true } } : { state: { skipBookingResumeRedirect: true } });
+  }, [clearCompletedBookingState, navigate]);
 
   const finalizeBookingCreated = (attempt: BookingPaymentAttemptSummary | null) => {
     if (!attempt?.bookingId) return;
@@ -361,7 +367,7 @@ const ConfirmationPage: React.FC = () => {
     }
 
     bookingCreatedHandledRef.current = dedupeKey;
-    clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
+    clearBookingResumeStorage({ userId: user?.id, includeAnonFallback: true, includeLegacy: true });
     toast.success('Pago confirmado y reserva creada correctamente');
   };
 
@@ -1462,6 +1468,28 @@ const ConfirmationPage: React.FC = () => {
       };
     }
 
+    if (showInlinePaymentForm && !isPaymentSheetOpen) {
+      return {
+        tone: 'blue',
+        eyebrow: 'Pago listo',
+        title: 'Tu pago sigue preparado',
+        detail: 'Puedes volver al formulario seguro sin recargar ni iniciar otro intento.',
+        instructions: [
+          paymentHoldLabel
+            ? `Reabre el pago antes del ${paymentHoldLabel} para mantener este horario.`
+            : 'Reabre el pago cuando quieras mientras el horario siga retenido.',
+        ],
+        actions: [
+          {
+            label: 'Reabrir pago',
+            onClick: () => void openPaymentSheet(),
+            variant: 'primary',
+            disabled: isPreparingPayment,
+          },
+        ],
+      };
+    }
+
     if (showInlinePaymentForm) {
       return {
         tone: 'blue',
@@ -1515,6 +1543,7 @@ const ConfirmationPage: React.FC = () => {
     paymentHoldLabel,
     preCheckoutFailure,
     quoteExpired,
+    isPaymentSheetOpen,
     showInlinePaymentForm,
     user,
     preCheckoutFailure,
@@ -1577,13 +1606,13 @@ const ConfirmationPage: React.FC = () => {
     Boolean(preCheckoutFailure) ||
     quoteExpired ||
     isResolvingPaymentReturn ||
-    paymentAttempt?.status === 'booking_created' ||
     paymentAttempt?.status === 'processing' ||
     paymentAttempt?.status === 'failed' ||
     paymentAttempt?.status === 'cancelled' ||
     paymentAttempt?.status === 'expired' ||
     holdExpired ||
     isPostPaymentSettlementPending;
+  const showSuccessView = paymentAttempt?.status === 'booking_created' && !isPaymentSheetOpen;
   const paymentActionLabel = primaryFooterAction?.label
     || (isResolvingPaymentReturn
       ? 'Comprobando pago…'
@@ -1619,17 +1648,19 @@ const ConfirmationPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <main className="mx-auto max-w-lg px-4 py-4 pb-32 sm:pb-36" id="confirmation-main">
-        <div className="mb-3 flex justify-start">
-          <button
-            type="button"
-            onClick={() => setCurrentStep(3)}
-            aria-label="Volver al paso de selección de jardinero"
-            className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
-          >
-            Cambiar horario
-          </button>
-        </div>
+      <main className="mx-auto w-full px-4 py-4 pb-32 sm:max-w-lg sm:pb-36" id="confirmation-main">
+        {!showSuccessView ? (
+          <div className="mb-3 flex justify-start">
+            <button
+              type="button"
+              onClick={() => setCurrentStep(3)}
+              aria-label="Volver al paso de selección de jardinero"
+              className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
+            >
+              Cambiar horario
+            </button>
+          </div>
+        ) : null}
 
         {resumeNotice ? (
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3" aria-live="polite">
@@ -1657,6 +1688,70 @@ const ConfirmationPage: React.FC = () => {
           </div>
         )}
 
+        {showSuccessView ? (
+          <section className="mb-4 rounded-[28px] bg-white p-6 shadow-sm" aria-labelledby="booking-success-title">
+            <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 aria-hidden="true" className="h-9 w-9 text-emerald-600" />
+              </div>
+              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Reserva confirmada</p>
+              <h1 id="booking-success-title" className="mt-3 text-2xl font-semibold text-gray-950 text-balance">
+                Todo ha quedado listo
+              </h1>
+              <p className="mt-3 text-sm leading-6 text-gray-600">
+                Tu adelanto se ha confirmado y ya puedes seguir la reserva desde tu panel.
+              </p>
+            </div>
+
+            <div className="mt-6 rounded-3xl border border-gray-100 bg-gray-50/80 p-4">
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm text-gray-500">Servicio</span>
+                  <span className="max-w-[14rem] text-right text-sm font-medium text-gray-900">{displayServices}</span>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm text-gray-500">Fecha</span>
+                  <span className="max-w-[14rem] text-right text-sm font-medium text-gray-900">
+                    {formattedDate} a las {formatSlotLabel(selectedQuoteSlot)}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm text-gray-500">Profesional</span>
+                  <span className="max-w-[14rem] text-right text-sm font-medium text-gray-900">{gardenerName || 'Jardinero'}</span>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm text-gray-500">Pagado ahora</span>
+                  <span className="text-sm font-semibold text-emerald-700 tabular-nums">{payableNowLabel}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-3">
+              <button
+                type="button"
+                onClick={() => handleGoToBookings(true)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 px-5 py-4 text-base font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.01] hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+              >
+                Ir a mis reservas
+                <ArrowRight aria-hidden="true" className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleGoToDashboard(true)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-5 py-4 text-base font-semibold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+              >
+                Ir al inicio
+                <Home aria-hidden="true" className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mt-4 text-center text-xs leading-5 text-gray-500" aria-live="polite">
+              Puedes salir de esta pantalla cuando quieras desde uno de los botones superiores.
+            </p>
+          </section>
+        ) : null}
+
+        {!showSuccessView ? (
         <div className="mb-4 rounded-3xl bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-base font-semibold text-gray-900">Resumen de la reserva</h2>
 
@@ -1789,8 +1884,9 @@ const ConfirmationPage: React.FC = () => {
             </div>
           </div>
         </div>
+        ) : null}
 
-        {!user && (
+        {!showSuccessView && !user && (
           <div className="mb-4 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="mb-3">
               <h2 className="text-base font-semibold text-gray-900">Accede para continuar</h2>
@@ -1862,7 +1958,7 @@ const ConfirmationPage: React.FC = () => {
           </div>
         )}
 
-        {showInlinePaymentStatus ? (
+        {!showSuccessView && showInlinePaymentStatus ? (
           <div className={`mb-4 rounded-2xl border p-4 ${paymentExperienceStyle.card}`} aria-live="polite">
             <div className="flex items-start gap-3">
               {paymentExperienceIcon}
@@ -1879,7 +1975,7 @@ const ConfirmationPage: React.FC = () => {
           </div>
         ) : null}
 
-        {(quoteExpiryLabel || paymentHoldLabel) && (
+        {!showSuccessView && (quoteExpiryLabel || paymentHoldLabel) && (
           <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
             {paymentHoldLabel ? (
               <p>Horario retenido hasta el {paymentHoldLabel}.</p>
@@ -1893,7 +1989,7 @@ const ConfirmationPage: React.FC = () => {
 
       {showStickyFooter ? (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-3 pb-[calc(0.875rem+env(safe-area-inset-bottom))] z-50">
-          <div className="mx-auto max-w-lg">
+          <div className="mx-auto w-full sm:max-w-lg">
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Pagas ahora</p>
@@ -1935,48 +2031,47 @@ const ConfirmationPage: React.FC = () => {
             type="button"
             aria-label="Cerrar ventana de pago"
             onClick={closePaymentSheet}
-            className="fixed inset-0 z-40 bg-gray-950/20 backdrop-blur-[2px]"
+            className="fixed inset-0 z-40 hidden bg-gray-950/16 backdrop-blur-[2px] sm:block"
           />
-          <div className="fixed inset-x-0 bottom-0 top-[8vh] z-50 overflow-x-hidden">
+          <div className="fixed inset-0 z-50 bg-white sm:bg-transparent sm:p-4">
             <div
               role="dialog"
               aria-modal="true"
               aria-labelledby="payment-sheet-title"
-              className="mx-auto flex h-full max-w-lg flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl overscroll-contain transition-[opacity,transform] duration-300 motion-reduce:transition-none motion-reduce:transform-none sm:mt-4 sm:h-[calc(92vh-1rem)] sm:rounded-[32px]"
+              className="mx-auto flex h-full max-w-lg flex-col bg-white overscroll-contain sm:max-h-[calc(100vh-2rem)] sm:overflow-hidden sm:rounded-[32px] sm:shadow-2xl"
             >
-              <div className="flex justify-center px-5 pt-3">
-                <span aria-hidden="true" className="h-1.5 w-12 rounded-full bg-gray-300" />
-              </div>
-
-              <div className="flex items-start justify-between gap-4 px-5 pb-2 pt-3">
-                <div className="min-w-0">
-                  <p id="payment-sheet-title" className="text-lg font-semibold text-gray-950 text-balance">
+              <div className="border-b border-gray-100 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] sm:px-5 sm:pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    ref={paymentSheetCloseButtonRef}
+                    type="button"
+                    onClick={closePaymentSheet}
+                    aria-label="Cerrar pago"
+                    disabled={!canClosePaymentSheet}
+                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+                  >
+                    <X aria-hidden="true" className="h-5 w-5" />
+                  </button>
+                  <p id="payment-sheet-title" className="min-w-0 flex-1 text-center text-base font-semibold text-gray-950 text-balance">
                     Pago seguro
                   </p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Confirma el adelanto sin salir de GarSer.
+                  <div aria-hidden="true" className="h-9 w-9 shrink-0" />
+                </div>
+
+                <div className="mt-4 flex items-end justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pagas ahora</p>
+                    <p className="mt-1 text-4xl font-bold leading-none text-gray-950 tabular-nums">{payableNowLabel}</p>
+                  </div>
+                  <p className="max-w-[9rem] text-right text-xs leading-5 text-gray-500" translate="no">
+                    Pago procesado con Stripe
                   </p>
                 </div>
-                <button
-                  ref={paymentSheetCloseButtonRef}
-                  type="button"
-                  onClick={closePaymentSheet}
-                  aria-label="Cerrar pago"
-                  disabled={!canClosePaymentSheet}
-                  className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
-                >
-                  <X aria-hidden="true" className="h-5 w-5" />
-                </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-5 pb-6 pt-2">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pagas ahora</p>
-                  <p className="mt-1 text-3xl font-bold leading-none text-gray-950 tabular-nums">{payableNowLabel}</p>
-                </div>
-
+              <div className="flex-1 overflow-y-auto px-4 pb-32 pt-5 sm:px-5">
                 {isPreparingPayment && !showInlinePaymentForm ? (
-                  <div className="flex min-h-[14rem] items-center">
+                  <div className="flex min-h-[16rem] items-center justify-center">
                     <div className="flex items-center gap-3 text-sm text-gray-600" aria-live="polite" role="status">
                       <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-green-600" />
                       Estamos preparando el formulario seguro de pago…
@@ -1985,12 +2080,11 @@ const ConfirmationPage: React.FC = () => {
                 ) : null}
 
                 {showInlinePaymentForm && stripePromise && stripeElementsOptions && paymentAttempt?.attemptId ? (
-                  <div className="mt-6">
+                  <div className="mx-auto max-w-md pt-1">
                     <Elements key={paymentClientSecret || 'stripe-elements'} stripe={stripePromise} options={stripeElementsOptions}>
                       <EmbeddedStripePaymentForm
                         ref={paymentFormRef}
                         attemptId={paymentAttempt.attemptId}
-                        amountLabel={payableNowLabel}
                         disabled={isPreparingPayment || isResolvingPaymentReturn || isPaymentSheetSuccess}
                         onReadyChange={setIsPaymentFormReady}
                         onSubmittingChange={setIsSubmittingInlinePayment}
@@ -2022,17 +2116,7 @@ const ConfirmationPage: React.FC = () => {
                 ) : null}
               </div>
 
-              <div className="border-t border-gray-100 bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3">
-                <div className="mb-3 flex items-end justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Pagas ahora</p>
-                    <p className="mt-1 text-2xl font-semibold text-gray-950 tabular-nums">{payableNowLabel}</p>
-                  </div>
-                  <p className="max-w-[10rem] text-right text-xs leading-5 text-gray-500">
-                    Pago seguro dentro de GarSer
-                  </p>
-                </div>
-
+              <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-100 bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:static sm:px-5">
                 <button
                   type="button"
                   onClick={ctaOnClick}

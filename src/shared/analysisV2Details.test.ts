@@ -65,7 +65,7 @@ describe('analysisV2Details', () => {
 
     expect(technicalPresentation.status).toBe('technical_error');
     expect(technicalPresentation.isTechnicalError).toBe(true);
-    expect(technicalPresentation.badgeLabel).toBe('Error técnico controlado');
+    expect(technicalPresentation.badgeLabel).toBe('Revision no disponible');
 
     const failed = adaptLegacyAnalysisToV2({
       serviceName: 'Poda de árboles',

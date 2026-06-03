@@ -10,7 +10,6 @@ export type { BookingQuoteLine, BookingQuoteResult };
 export function buildBookingQuote(params: {
   bookingData: BookingData;
   providerConfig: any;
-  globalMinPrice?: number;
 }): BookingQuoteResult {
   return buildAuthoritativeBookingQuote(params);
 }

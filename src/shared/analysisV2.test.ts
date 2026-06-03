@@ -235,7 +235,7 @@ describe('adaptLegacyAnalysisToV2', () => {
 
     expect(analysis.analysis_status).toBe('technical_error');
     expect(analysis.error_code).toBe('PROVIDER_RATE_LIMIT');
-    expect(analysis.error_message_safe).toBe('El proveedor de analisis esta temporalmente saturado.');
+    expect(analysis.error_message_safe).toBe('Ahora mismo no hemos podido revisar las fotos. Puedes intentarlo de nuevo en unos minutos.');
     expect(analysis.quality_reasons).toContain('ANALYSIS_TECHNICAL_FAILURE');
     expect(validateAnalysisV2(analysis)).toEqual([]);
   });

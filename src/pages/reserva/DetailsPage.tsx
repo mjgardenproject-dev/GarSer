@@ -420,7 +420,7 @@ const DetailsPage: React.FC = () => {
       setDescription(bookingData.description);
   }, [bookingData.description]);
   const [analyzing, setAnalyzing] = useState(false);
-  const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.0-flash'>('gemini-2.0-flash');
+  const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.5-flash'>('gemini-2.5-flash');
   const [debugService, setDebugService] = useState<string>('');
   const serviceFlags = useMemo(() => getDetailsServiceFlags(debugService), [debugService]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -3922,7 +3922,7 @@ const analyzeTreeGroup = async (id: string) => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="mx-auto w-full px-4 py-4 sm:max-w-md flex items-center justify-between">
           <button
             type="button"
             onClick={() => setCurrentStep(1)}
@@ -3938,7 +3938,7 @@ const analyzeTreeGroup = async (id: string) => {
 
       {/* Progress Bar */}
       <div className="bg-white">
-        <div className="max-w-md mx-auto px-4 py-3">
+        <div className="mx-auto w-full px-4 py-3 sm:max-w-md">
           <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
             <span>Paso 3 de 5</span>
             <div className="flex-1 bg-gray-200 rounded-full h-1">
@@ -3949,7 +3949,7 @@ const analyzeTreeGroup = async (id: string) => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6 pb-24">
+      <div className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md">
         {resumeWarning ? (
           <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4" aria-live="polite">
             <div className="flex items-start gap-3">
@@ -5797,7 +5797,7 @@ const analyzeTreeGroup = async (id: string) => {
 
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
-        <div className="max-w-md mx-auto">
+        <div className="mx-auto w-full sm:max-w-md">
           <button
             onClick={handleContinue}
             disabled={getDetailsContinueDisabled({

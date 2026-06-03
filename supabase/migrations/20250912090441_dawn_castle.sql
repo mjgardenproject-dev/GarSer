@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS services (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   description text NOT NULL,
-  base_price decimal(10,2) NOT NULL,
+  hourly_rate decimal(10,2),
   icon text DEFAULT 'leaf',
   image_id text,
   created_at timestamptz DEFAULT now()
@@ -107,16 +107,16 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at timestamptz DEFAULT now()
 );
 
--- Insertar servicios iniciales
-INSERT INTO services (name, description, base_price, image_id) VALUES
-('Corte de césped', 'Mantenimiento regular para un césped sano y uniforme. Incluye corte, perfilado de bordes y limpieza de residuos.', 30.00, '416978'),
-('Arreglo general del jardín', 'Labores de labranza, poda básica y puesta a punto de las zonas verdes. Servicio integral de mantenimiento.', 45.00, '1301856'),
-('Poda de árboles y arbustos', 'Poda profesional para favorecer el crecimiento y mantener la estética del jardín. Incluye limpieza de ramas.', 40.00, '1301856'),
-('Recorte de setos', 'Diseño y mantenimiento de setos con un acabado limpio y cuidado. Formas geométricas y naturales.', 35.00, '1301856'),
-('Servicios fitosanitarios y control de plagas', 'Tratamientos específicos para proteger plantas y césped. El coste de los productos no está incluido.', 50.00, '416978'),
-('Plantación de nuevas especies', 'Incorporación y añadido de plantas al gusto del cliente. El coste de las plantas no está incluido.', 40.00, '1301856'),
-('Instalación de sistemas de riego automático', 'Optimización del consumo de agua y comodidad en el riego. El coste del material no está incluido.', 80.00, '416978'),
-('Fertilización y abonado', 'Aplicación de nutrientes para mejorar la salud y desarrollo de las plantas. El coste de productos no está incluido.', 35.00, '1301856');
+-- Insertar servicios iniciales sin reintroducir pricing legacy de catálogo
+INSERT INTO services (name, description, image_id, hourly_rate) VALUES
+('Corte de césped', 'Mantenimiento regular para un césped sano y uniforme. Incluye corte, perfilado de bordes y limpieza de residuos.', '416978', 30.00),
+('Arreglo general del jardín', 'Labores de labranza, poda básica y puesta a punto de las zonas verdes. Servicio integral de mantenimiento.', '1301856', 45.00),
+('Poda de árboles y arbustos', 'Poda profesional para favorecer el crecimiento y mantener la estética del jardín. Incluye limpieza de ramas.', '1301856', 40.00),
+('Recorte de setos', 'Diseño y mantenimiento de setos con un acabado limpio y cuidado. Formas geométricas y naturales.', '1301856', 35.00),
+('Servicios fitosanitarios y control de plagas', 'Tratamientos específicos para proteger plantas y césped. El coste de los productos no está incluido.', '416978', 50.00),
+('Plantación de nuevas especies', 'Incorporación y añadido de plantas al gusto del cliente. El coste de las plantas no está incluido.', '1301856', 40.00),
+('Instalación de sistemas de riego automático', 'Optimización del consumo de agua y comodidad en el riego. El coste del material no está incluido.', '416978', 80.00),
+('Fertilización y abonado', 'Aplicación de nutrientes para mejorar la salud y desarrollo de las plantas. El coste de productos no está incluido.', '1301856', 35.00);
 
 -- Habilitar RLS
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;

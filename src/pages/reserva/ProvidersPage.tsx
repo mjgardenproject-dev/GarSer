@@ -39,7 +39,6 @@ const ProvidersPage: React.FC = () => {
   const [monthLoading, setMonthLoading] = useState(false);
   const [hoursLoading, setHoursLoading] = useState(false);
   const [serviceName, setServiceName] = useState('');
-  const [globalMinPrice, setGlobalMinPrice] = useState(0);
   const [previewQuotes, setPreviewQuotes] = useState<Record<string, ProviderQuotePreview>>({});
   const [earliestByProvider, setEarliestByProvider] = useState<Record<string, { date: string; startHour: number } | null>>({});
   const [loadError, setLoadError] = useState('');
@@ -174,6 +173,16 @@ const ProvidersPage: React.FC = () => {
     return Number.isFinite(selectedSlot.startHour) ? selectedSlot.startHour : null;
   };
 
+  const getEligibleProviderIds = (quotes: Record<string, ProviderQuotePreview>, explicitIds?: string[]) => {
+    if (Array.isArray(explicitIds) && explicitIds.length > 0) {
+      return explicitIds.filter((providerId) => quotes[providerId]?.eligibility?.isEligible !== false);
+    }
+
+    return Object.entries(quotes)
+      .filter(([, quote]) => quote?.eligibility?.isEligible !== false)
+      .map(([providerId]) => providerId);
+  };
+
   const persistSelectedQuoteSnapshot = (
     providerId: string,
     date: string,
@@ -239,7 +248,6 @@ const ProvidersPage: React.FC = () => {
         serviceId: bookingData.serviceIds[0],
         providerId,
         monthDate: fmt(new Date(monthStart.getFullYear(), monthStart.getMonth(), 1)),
-        globalMinPrice,
       });
       if (reqIdRef.current === rid) {
         setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
@@ -270,7 +278,6 @@ const ProvidersPage: React.FC = () => {
         serviceId: bookingData.serviceIds[0],
         providerId,
         date,
-        globalMinPrice,
       });
       setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
       setValidHours(quote.availability?.validStartHours || nextHours);
@@ -336,9 +343,8 @@ const ProvidersPage: React.FC = () => {
         
         const query = supabase
           .from('gardener_service_prices')
-          .select('gardener_id, service_id, price_per_unit, additional_config')
-          .eq('service_id', primaryServiceId)
-          .eq('active', true);
+          .select('gardener_id')
+          .eq('service_id', primaryServiceId);
           
         if (bookingData.palmSpecies) {
           // Filter by species in JSONB config
@@ -358,14 +364,13 @@ const ProvidersPage: React.FC = () => {
         // Determinar si se requiere licencia (Fitosanitarios químicos)
         const { data: serviceInfoData } = await supabase
             .from('services')
-            .select('name, base_price')
+            .select('name')
             .eq('id', primaryServiceId)
             .single();
 
-        const serviceInfo = (serviceInfoData || null) as { name?: string; base_price?: number } | null;
+        const serviceInfo = (serviceInfoData || null) as { name?: string } | null;
 
         setServiceName(serviceInfo?.name || '');
-        setGlobalMinPrice(Number(serviceInfo?.base_price || 0));
 
         const isPhytosanitaryChemical = serviceInfo?.name === 'Servicios fitosanitarios' && 
           (bookingData.phytosanitaryZones || []).some((z: any) => z.productPreference !== 'ecological');
@@ -375,38 +380,34 @@ const ProvidersPage: React.FC = () => {
         const requiresChemical = isPhytosanitaryChemical || isWeedingHerbicide;
         setRequiresCertifiedLicense(requiresChemical);
 
-        let profilesQuery = supabase
-          .from('gardener_profiles')
-          .select('user_id, full_name, avatar_url, rating_average, rating_count, has_phytosanitary_license')
-          .in('user_id', gardenerIds);
-
-        // Filtro estricto en Backend (Capa 1)
-        if (requiresChemical) {
-          profilesQuery = profilesQuery.eq('has_phytosanitary_license', true);
-        }
-
-        const { data: profiles } = await profilesQuery;
-        
-        let list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
-
-        // Filtro estricto en Frontend (Capa 2)
-        if (requiresChemical) {
-          list = list.filter(p => (p as any).has_phytosanitary_license === true);
-        }
-
-        const preview = list.length > 0
+        const preview = gardenerIds.length > 0
           ? await previewProviderQuotes({
               bookingData,
               serviceId: primaryServiceId,
-              providerIds: list.map((provider) => provider.user_id),
+              providerIds: gardenerIds,
               selectedDate,
               windowDays: 14,
-              globalMinPrice: Number(serviceInfo?.base_price || 0),
             })
-          : { quotes: {}, earliestByProvider: {} };
+          : { quotes: {}, earliestByProvider: {}, eligibleProviderIds: [] };
+
+        const eligibleProviderIds = getEligibleProviderIds(preview.quotes || {}, preview.eligibleProviderIds);
+        const exclusionCodes = Object.values(preview.exclusions || {}).map((exclusion) => exclusion.code);
+        const { data: profiles } = eligibleProviderIds.length > 0
+          ? await supabase
+              .from('gardener_profiles')
+              .select('user_id, full_name, avatar_url, rating_average, rating_count, has_phytosanitary_license')
+              .in('user_id', eligibleProviderIds)
+          : { data: [] };
+
+        let list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
+
+        const eligibleQuoteEntries = Object.entries(preview.quotes || {}).filter(([providerId]) =>
+          eligibleProviderIds.includes(providerId)
+        );
+        const nextPreviewQuotes = Object.fromEntries(eligibleQuoteEntries);
 
         const nextEarliestByProvider = Object.fromEntries(
-          Object.entries(preview.quotes || {}).map(([providerId, quote]) => [
+          eligibleQuoteEntries.map(([providerId, quote]) => [
             providerId,
             quote.availability?.earliestSlot
               ? {
@@ -416,16 +417,6 @@ const ProvidersPage: React.FC = () => {
               : null,
           ])
         );
-
-        list = list.filter((provider) => {
-          const quote = preview.quotes?.[provider.user_id];
-          if (!quote) return false;
-          if (bookingData.palmGroups && bookingData.palmGroups.length > 0) {
-            const coverage = quote.metadata?.palmCoverage;
-            return Number(quote.totalPrice || 0) > 0 && Number(coverage?.coveredCount || 0) > 0;
-          }
-          return Number(quote.totalPrice || 0) > 0;
-        });
 
         const earliestMap: Record<string, number> = {};
         Object.entries(nextEarliestByProvider).forEach(([providerId, earliest]) => {
@@ -451,12 +442,20 @@ const ProvidersPage: React.FC = () => {
           return ta - tb;
         });
         setProviders(list);
-        setPreviewQuotes(preview.quotes || {});
+        setPreviewQuotes(nextPreviewQuotes);
         setEarliestByProvider(nextEarliestByProvider);
         setEmptyStateHint(
           requiresChemical
             ? 'Solo podemos mostrar profesionales con licencia fitosanitaria válida para este servicio.'
-            : 'Prueba otra fecha o revisa los detalles del servicio para ampliar opciones.'
+            : eligibleProviderIds.length === 0
+              ? exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_coordinates')
+                ? 'Ningún profesional tiene una dirección operativa validada para filtrar la cobertura. Revisa su perfil de cobertura.'
+                : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'outside_coverage')
+                  ? 'No hay profesionales cuyo radio operativo cubra la dirección indicada.'
+                  : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'no_reservable_availability')
+                    ? 'No hay huecos reservables válidos para la duración estimada en la fecha consultada.'
+                    : 'La elegibilidad y disponibilidad se validan en backend. Prueba otra fecha o revisa los detalles del servicio.'
+              : 'Prueba otra fecha o revisa los detalles del servicio para ampliar opciones.'
         );
         
         // Ensure selected provider is valid for the current filters
@@ -579,14 +578,14 @@ const ProvidersPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="bg-white shadow-sm border-b border-gray-200">
-          <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="mx-auto grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center gap-3 px-4 py-4 sm:max-w-md">
             <div className="h-9 w-9 rounded-lg bg-gray-100" />
-            <div className="h-5 w-40 rounded bg-gray-200" />
-            <div className="w-9" />
+            <div className="h-5 w-40 max-w-full justify-self-center rounded bg-gray-200" />
+            <div className="h-9 w-9" />
           </div>
         </div>
         <div className="bg-white">
-          <div className="max-w-md mx-auto px-4 py-3">
+          <div className="mx-auto w-full px-4 py-3 sm:max-w-md">
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <span>Paso 4 de 5</span>
               <div className="flex-1 bg-gray-200 rounded-full h-1 w-24">
@@ -595,7 +594,7 @@ const ProvidersPage: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="max-w-md mx-auto px-4 py-6 pb-24">
+        <div className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md">
           <div className="mb-4 grid gap-3" aria-live="polite" aria-busy="true">
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm animate-pulse">
@@ -626,25 +625,25 @@ const ProvidersPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="mx-auto grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center gap-3 px-4 py-4 sm:max-w-md">
           <button
             type="button"
             onClick={() => setCurrentStep(2)}
             aria-label="Volver al paso de detalles"
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
           >
             <ChevronLeft aria-hidden="true" className="w-5 h-5 text-gray-600" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">
+          <h1 className="min-w-0 text-center text-base font-semibold text-gray-900 truncate">
             {serviceName ? (bookingData.palmSpecies && serviceName.toLowerCase().includes('palmera') ? `${serviceName}: ${bookingData.palmSpecies}` : serviceName) : 'Jardineros'}
           </h1>
-          {/* Botón de cancelar reserva movido al layout principal en BookingFlow */}
+          <div aria-hidden="true" className="h-9 w-9" />
         </div>
       </div>
 
       {/* Progreso */}
       <div className="bg-white">
-        <div className="max-w-md mx-auto px-4 py-3">
+        <div className="mx-auto w-full px-4 py-3 sm:max-w-md">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <span>Paso 4 de 5</span>
             <div className="flex-1 bg-gray-200 rounded-full h-1 w-24">
@@ -654,7 +653,7 @@ const ProvidersPage: React.FC = () => {
         </div>
       </div>
 
-      <main className="max-w-md mx-auto px-4 py-6 pb-24" id="providers-main">
+      <main className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md" id="providers-main">
         {/* Carrusel de jardineros */}
       <div className="mb-4">
         {loadError && (
@@ -951,7 +950,7 @@ const ProvidersPage: React.FC = () => {
 
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
-        <div className="max-w-md mx-auto">
+        <div className="mx-auto w-full sm:max-w-md">
           <button
             type="button"
             onClick={handleContinue}

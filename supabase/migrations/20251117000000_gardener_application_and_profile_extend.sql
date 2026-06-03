@@ -70,12 +70,53 @@ ALTER TABLE gardener_profiles
   ADD COLUMN IF NOT EXISTS declaration_truth boolean DEFAULT false,
   ADD COLUMN IF NOT EXISTS accept_terms boolean DEFAULT false;
 
--- Añadir servicio "Poda de palmeras"
-INSERT INTO services (name, description, base_price, image_id)
-VALUES (
-  'Poda de palmeras',
-  'Poda y mantenimiento de palmeras, incluyendo limpieza de hojas y seguridad en altura. El coste de equipos especiales no está incluido.',
-  60.00,
-  '1301856'
-)
-ON CONFLICT (name) DO NOTHING;
+-- Añadir servicio "Poda de palmeras" sin depender de columnas legacy de pricing
+DO $$
+DECLARE
+  v_has_hourly_rate boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'services'
+      AND column_name = 'hourly_rate'
+  ) INTO v_has_hourly_rate;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.services
+    WHERE name = 'Poda de palmeras'
+  ) THEN
+    IF v_has_hourly_rate THEN
+      UPDATE public.services
+      SET description = 'Poda y mantenimiento de palmeras, incluyendo limpieza de hojas y seguridad en altura. El coste de equipos especiales no está incluido.',
+          image_id = '1301856',
+          hourly_rate = COALESCE(hourly_rate, 60.00)
+      WHERE name = 'Poda de palmeras';
+    ELSE
+      UPDATE public.services
+      SET description = 'Poda y mantenimiento de palmeras, incluyendo limpieza de hojas y seguridad en altura. El coste de equipos especiales no está incluido.',
+          image_id = '1301856'
+      WHERE name = 'Poda de palmeras';
+    END IF;
+  ELSE
+    IF v_has_hourly_rate THEN
+      INSERT INTO public.services (name, description, image_id, hourly_rate)
+      VALUES (
+        'Poda de palmeras',
+        'Poda y mantenimiento de palmeras, incluyendo limpieza de hojas y seguridad en altura. El coste de equipos especiales no está incluido.',
+        '1301856',
+        60.00
+      );
+    ELSE
+      INSERT INTO public.services (name, description, image_id)
+      VALUES (
+        'Poda de palmeras',
+        'Poda y mantenimiento de palmeras, incluyendo limpieza de hojas y seguridad en altura. El coste de equipos especiales no está incluido.',
+        '1301856'
+      );
+    END IF;
+  END IF;
+END
+$$;

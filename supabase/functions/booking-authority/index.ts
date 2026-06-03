@@ -3,10 +3,19 @@ import {
   buildAuthoritativeBookingQuote,
   type BookingAvailabilityCalendarDay,
   type BookingQuoteAvailability,
-  type SerializableBookingData,
   type BookingQuoteResult,
+  type SerializableBookingData,
   type BookingQuoteSlotSelection,
 } from '../../../src/shared/bookingQuoteCore.ts';
+import {
+  buildSlotSelection,
+  evaluateOperationalEligibility,
+  getClientCoordinates,
+  getProviderCoordinates,
+  getValidStartHours,
+  type ProviderExclusionCode,
+} from '../../../src/shared/bookingEligibilityCore.ts';
+import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,9 +55,17 @@ type PriceRow = {
   created_at?: string | null;
 };
 
-type ServiceRow = {
-  id: string;
-  base_price: number | null;
+type ProviderProfileRow = {
+  user_id: string;
+  address?: string | null;
+  max_distance: number | null;
+  operational_latitude: number | null;
+  operational_longitude: number | null;
+};
+
+type ProviderExclusion = {
+  code: ProviderExclusionCode;
+  message: string;
 };
 
 interface AuthorityPayload {
@@ -65,7 +82,6 @@ interface AuthorityPayload {
   ttlMinutes?: number;
   startTime?: string;
   bookingInput?: SerializableBookingData;
-  globalMinPrice?: number;
 }
 
 const toIsoDate = (value?: string | null) => {
@@ -97,24 +113,6 @@ const toIsoTime = (value?: string | null) => {
   return '';
 };
 
-const buildSlotSelection = (
-  date: string,
-  startHour: number,
-  durationHours: number
-): BookingQuoteSlotSelection | null => {
-  if (!date || !Number.isFinite(startHour) || startHour < 0) return null;
-  const safeDuration = Math.max(1, Math.ceil(durationHours));
-  const startTime = `${String(startHour).padStart(2, '0')}:00:00`;
-  const endHour = startHour + safeDuration;
-  return {
-    date,
-    startHour,
-    startTime,
-    endTime: `${String(endHour).padStart(2, '0')}:00:00`,
-    durationHours: safeDuration,
-  };
-};
-
 const buildAvailabilityContract = (params: {
   requestedDate?: string;
   windowEndDate?: string;
@@ -131,25 +129,14 @@ const buildAvailabilityContract = (params: {
   selectedSlot: params.selectedSlot ?? null,
 });
 
-const getValidStartHours = (hours: number[], duration: number) => {
-  const sorted = Array.from(new Set(hours.filter((hour) => Number.isFinite(hour)))).sort((a, b) => a - b);
-  const set = new Set(sorted);
-  const valid: number[] = [];
-  for (const hour of sorted) {
-    let fits = true;
-    for (let step = 0; step < duration; step += 1) {
-      if (!set.has(hour + step)) {
-        fits = false;
-        break;
-      }
-    }
-    if (fits) valid.push(hour);
-  }
-  return valid;
-};
-
 const normalizeProviderIds = (providerIds?: string[]) =>
   Array.from(new Set((providerIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+
+const buildErrorResponse = (status: number, code: string, message: string) =>
+  new Response(JSON.stringify({ error: message, code }), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
 async function sha256(text: string) {
   const bytes = new TextEncoder().encode(text);
@@ -196,18 +183,67 @@ async function resolveUser(admin: ReturnType<typeof createClient>, req: Request)
   return data.user;
 }
 
-async function fetchServiceRow(
+async function fetchProviderProfiles(
   admin: ReturnType<typeof createClient>,
-  serviceId: string
-): Promise<ServiceRow | null> {
+  providerIds: string[],
+): Promise<Record<string, ProviderProfileRow>> {
+  if (providerIds.length === 0) return {};
   const { data, error } = await admin
-    .from('services')
-    .select('id, base_price')
-    .eq('id', serviceId)
-    .single();
+    .from('gardener_profiles')
+    .select('user_id, address, max_distance, operational_latitude, operational_longitude')
+    .in('user_id', providerIds);
 
-  if (error || !data) return null;
-  return data as ServiceRow;
+  if (error || !data) return {};
+  return Object.fromEntries(
+    (data as ProviderProfileRow[]).map((row) => [String(row.user_id), row]),
+  );
+}
+
+async function ensureProviderOperationalCoordinates(
+  admin: ReturnType<typeof createClient>,
+  providerId: string,
+  profile?: ProviderProfileRow,
+): Promise<ProviderProfileRow | undefined> {
+  if (!profile) return profile;
+  if (getProviderCoordinates(profile)) return profile;
+
+  const address = String(profile.address || '').trim();
+  const googleApiKey = String(Deno.env.get('GOOGLE_API_KEY') || '').trim();
+  if (!address || !googleApiKey) {
+    return profile;
+  }
+
+  const resolvedCoordinates = await geocodeAddressWithGoogleApi({
+    address,
+    apiKey: googleApiKey,
+  });
+
+  if (!resolvedCoordinates) {
+    return profile;
+  }
+
+  const nextProfile: ProviderProfileRow = {
+    ...profile,
+    operational_latitude: resolvedCoordinates.lat,
+    operational_longitude: resolvedCoordinates.lng,
+  };
+
+  try {
+    const { error } = await admin
+      .from('gardener_profiles')
+      .update({
+        operational_latitude: resolvedCoordinates.lat,
+        operational_longitude: resolvedCoordinates.lng,
+      })
+      .eq('user_id', providerId);
+    if (error) {
+      return profile;
+    }
+  } catch {
+    return profile;
+  }
+
+  return nextProfile;
 }
 
 async function fetchPriceRows(
@@ -295,14 +331,12 @@ async function buildQuotePreview(params: {
   bookingInput: SerializableBookingData;
   providerId: string;
   providerConfig: Record<string, unknown> | null;
-  globalMinPrice: number;
   providerConfigVersion: string;
   availability?: BookingQuoteAvailability;
 }): Promise<QuotePreview> {
   const quote = buildAuthoritativeBookingQuote({
     bookingData: params.bookingInput,
     providerConfig: params.providerConfig,
-    globalMinPrice: params.globalMinPrice,
   });
   return {
     providerId: params.providerId,
@@ -312,9 +346,84 @@ async function buildQuotePreview(params: {
     warnings: quote.warnings.map((item) => item.message),
     metadata: quote.metadata,
     economics: quote.economics,
+    eligibility: quote.eligibility,
     availability: params.availability,
     pricingVersion: PRICING_VERSION,
     providerConfigVersion: params.providerConfigVersion,
+  };
+}
+
+async function evaluateProviderEligibility(params: {
+  admin: ReturnType<typeof createClient>;
+  bookingInput: SerializableBookingData;
+  providerId: string;
+  priceRow?: PriceRow;
+  profile?: ProviderProfileRow;
+  providerDates: Map<string, number[]>;
+  requestedDate: string;
+  windowEndDate: string;
+  restrictToRequestedDate?: boolean;
+}): Promise<
+  | {
+      eligible: true;
+      quote: QuotePreview;
+      providerConfigVersion: string;
+      validHoursForRequestedDate: number[];
+      earliestSlot: BookingQuoteSlotSelection;
+    }
+  | {
+      eligible: false;
+      exclusion: ProviderExclusion;
+    }
+> {
+  const providerConfigVersion = await sha256(JSON.stringify({
+    updated_at: params.priceRow?.updated_at || params.priceRow?.created_at || '',
+    config: params.priceRow?.additional_config || null,
+  }));
+  const resolvedProfile = await ensureProviderOperationalCoordinates(
+    params.admin,
+    params.providerId,
+    params.profile,
+  );
+  const evaluation = evaluateOperationalEligibility({
+    bookingInput: params.bookingInput,
+    providerConfig: params.priceRow?.additional_config || null,
+    providerConfigVersion,
+    profile: resolvedProfile,
+    providerDates: params.providerDates,
+    requestedDate: params.requestedDate,
+    windowEndDate: params.windowEndDate,
+    restrictToRequestedDate: params.restrictToRequestedDate,
+  });
+
+  if (!evaluation.eligible) {
+    return {
+      eligible: false,
+      exclusion: evaluation.exclusion,
+    };
+  }
+
+  const quote = await buildQuotePreview({
+    bookingInput: params.bookingInput,
+    providerId: params.providerId,
+    providerConfig: params.priceRow?.additional_config || null,
+    providerConfigVersion,
+  });
+
+  return {
+    eligible: true,
+    quote: {
+      ...quote,
+      availability: buildAvailabilityContract({
+        requestedDate: params.requestedDate,
+        windowEndDate: params.windowEndDate,
+        validStartHours: evaluation.validHoursForRequestedDate,
+        earliestSlot: evaluation.earliestSlot,
+      }),
+    },
+    providerConfigVersion,
+    validHoursForRequestedDate: evaluation.validHoursForRequestedDate,
+    earliestSlot: evaluation.earliestSlot,
   };
 }
 
@@ -345,17 +454,10 @@ Deno.serve(async (req: Request) => {
     const action = payload.action;
     const serviceId = String(payload.serviceId || '').trim();
     const bookingInput = (payload.bookingInput || {}) as SerializableBookingData;
-    const fallbackMinPrice = Math.max(0, Number(payload.globalMinPrice || 0));
 
     if (!action || !serviceId) {
-      return new Response(JSON.stringify({ error: 'Faltan action o serviceId.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return buildErrorResponse(400, 'missing_action_or_service', 'Faltan action o serviceId.');
     }
-
-    const service = await fetchServiceRow(admin, serviceId);
-    const globalMinPrice = Math.max(fallbackMinPrice, Number(service?.base_price || 0));
 
     if (action === 'preview_providers') {
       const providerIds = normalizeProviderIds(payload.providerIds);
@@ -363,68 +465,42 @@ Deno.serve(async (req: Request) => {
       const windowDays = Math.max(1, Math.min(31, Number(payload.windowDays || 14)));
       const endDate = addDays(selectedDate, windowDays - 1);
       const priceRows = await fetchPriceRows(admin, serviceId, providerIds);
+      const providerProfiles = await fetchProviderProfiles(admin, providerIds);
       const availabilityRows = await fetchAvailabilityRows(admin, providerIds, selectedDate, endDate);
       const availabilityIndex = buildAvailabilityIndex(availabilityRows);
 
       const quotes: Record<string, QuotePreview> = {};
       const earliestByProvider: Record<string, { date: string; startHour: number } | null> = {};
+      const exclusions: Record<string, ProviderExclusion> = {};
+      const eligibleProviderIds: string[] = [];
 
       for (const providerId of providerIds) {
-        const priceRow = priceRows[providerId];
-        if (!priceRow?.additional_config) {
+        const evaluation = await evaluateProviderEligibility({
+          admin,
+          bookingInput,
+          providerId,
+          priceRow: priceRows[providerId],
+          profile: providerProfiles[providerId],
+          providerDates: availabilityIndex.get(providerId) || new Map<string, number[]>(),
+          requestedDate: selectedDate,
+          windowEndDate: endDate,
+        });
+
+        if (!evaluation.eligible) {
+          exclusions[providerId] = evaluation.exclusion;
           earliestByProvider[providerId] = null;
           continue;
         }
 
-        const providerConfigVersion = await sha256(JSON.stringify({
-          updated_at: priceRow.updated_at || priceRow.created_at || '',
-          config: priceRow.additional_config,
-        }));
-
-        const providerDates = availabilityIndex.get(providerId) || new Map<string, number[]>();
-        const selectedDateHours = providerDates.get(selectedDate) || [];
-        const selectedDateValidHours = getValidStartHours(selectedDateHours, 1);
-        let earliestSlot: BookingQuoteSlotSelection | null = null;
-
-        const quote = await buildQuotePreview({
-          bookingInput,
-          providerId,
-          providerConfig: priceRow.additional_config,
-          globalMinPrice,
-          providerConfigVersion,
-          availability: buildAvailabilityContract({
-            requestedDate: selectedDate,
-            windowEndDate: endDate,
-            validStartHours: selectedDateValidHours,
-          }),
-        });
-        earliestByProvider[providerId] = null;
-        for (const [date, hours] of providerDates.entries()) {
-          const validHours = getValidStartHours(hours, Math.max(1, Math.ceil(quote.estimatedHours)));
-          if (validHours.length > 0) {
-            earliestSlot = buildSlotSelection(date, validHours[0], quote.estimatedHours);
-            earliestByProvider[providerId] = earliestSlot
-              ? { date: earliestSlot.date, startHour: earliestSlot.startHour }
-              : null;
-            break;
-          }
-        }
-
-        quotes[providerId] = {
-          ...quote,
-          availability: buildAvailabilityContract({
-            requestedDate: selectedDate,
-            windowEndDate: endDate,
-            validStartHours: getValidStartHours(
-              selectedDateHours,
-              Math.max(1, Math.ceil(quote.estimatedHours))
-            ),
-            earliestSlot,
-          }),
+        quotes[providerId] = evaluation.quote;
+        eligibleProviderIds.push(providerId);
+        earliestByProvider[providerId] = {
+          date: evaluation.earliestSlot.date,
+          startHour: evaluation.earliestSlot.startHour,
         };
       }
 
-      return new Response(JSON.stringify({ quotes, earliestByProvider }), {
+      return new Response(JSON.stringify({ quotes, earliestByProvider, eligibleProviderIds, exclusions }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -433,51 +509,34 @@ Deno.serve(async (req: Request) => {
       const providerId = String(payload.providerId || '').trim();
       const date = toIsoDate(payload.date);
       if (!providerId || !date) {
-        return new Response(JSON.stringify({ error: 'Faltan providerId o date.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return buildErrorResponse(400, 'missing_provider_or_date', 'Faltan providerId o date.');
       }
 
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
-      const priceRow = priceRows[providerId];
-      if (!priceRow?.additional_config) {
-        return new Response(JSON.stringify({ quote: null, validHours: [] }), {
+      const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
+      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
+      const providerDates = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const evaluation = await evaluateProviderEligibility({
+        admin,
+        bookingInput,
+        providerId,
+        priceRow: priceRows[providerId],
+        profile: providerProfiles[providerId],
+        providerDates,
+        requestedDate: date,
+        windowEndDate: date,
+        restrictToRequestedDate: true,
+      });
+
+      if (!evaluation.eligible) {
+        return new Response(JSON.stringify({ quote: null, validHours: [], exclusion: evaluation.exclusion }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      const providerConfigVersion = await sha256(JSON.stringify({
-        updated_at: priceRow.updated_at || priceRow.created_at || '',
-        config: priceRow.additional_config,
-      }));
-
-      const quote = await buildQuotePreview({
-        bookingInput,
-        providerId,
-        providerConfig: priceRow.additional_config,
-        globalMinPrice,
-        providerConfigVersion,
-      });
-
-      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
-      const validHours = getValidStartHours(
-        availabilityRows.map((row) => extractHour(row.start_time)),
-        Math.max(1, Math.ceil(quote.estimatedHours))
-      );
-
       return new Response(JSON.stringify({
-        quote: {
-          ...quote,
-          availability: buildAvailabilityContract({
-            requestedDate: date,
-            validStartHours: validHours,
-            earliestSlot: validHours.length > 0
-              ? buildSlotSelection(date, validHours[0], quote.estimatedHours)
-              : null,
-          }),
-        },
-        validHours,
+        quote: evaluation.quote,
+        validHours: evaluation.validHoursForRequestedDate,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -487,36 +546,31 @@ Deno.serve(async (req: Request) => {
       const providerId = String(payload.providerId || '').trim();
       const monthDate = toIsoDate(payload.monthDate) || toIsoDate(payload.selectedDate);
       if (!providerId || !monthDate) {
-        return new Response(JSON.stringify({ error: 'Faltan providerId o monthDate.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return buildErrorResponse(400, 'missing_provider_or_month', 'Faltan providerId o monthDate.');
       }
 
       const { start, end } = getMonthBounds(monthDate);
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
-      const priceRow = priceRows[providerId];
-      if (!priceRow?.additional_config) {
-        return new Response(JSON.stringify({ quote: null, days: [] }), {
+      const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
+      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], start, end);
+      const availabilityIndex = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const evaluation = await evaluateProviderEligibility({
+        admin,
+        bookingInput,
+        providerId,
+        priceRow: priceRows[providerId],
+        profile: providerProfiles[providerId],
+        providerDates: availabilityIndex,
+        requestedDate: start,
+        windowEndDate: end,
+      });
+
+      if (!evaluation.eligible) {
+        return new Response(JSON.stringify({ quote: null, days: [], exclusion: evaluation.exclusion }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      const providerConfigVersion = await sha256(JSON.stringify({
-        updated_at: priceRow.updated_at || priceRow.created_at || '',
-        config: priceRow.additional_config,
-      }));
-
-      const quote = await buildQuotePreview({
-        bookingInput,
-        providerId,
-        providerConfig: priceRow.additional_config,
-        globalMinPrice,
-        providerConfigVersion,
-      });
-
-      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], start, end);
-      const availabilityIndex = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
       const today = new Date().toISOString().slice(0, 10);
       const days: BookingAvailabilityCalendarDay[] = [];
       const cursor = new Date(`${start}T12:00:00Z`);
@@ -528,7 +582,7 @@ Deno.serve(async (req: Request) => {
         const hours = availabilityIndex.get(date) || [];
         const validHours = date < today
           ? []
-          : getValidStartHours(hours, Math.max(1, Math.ceil(quote.estimatedHours)));
+          : getValidStartHours(hours, Math.max(1, Math.ceil(evaluation.quote.estimatedHours)));
         days.push({
           date,
           day: cursor.getUTCDate(),
@@ -537,14 +591,14 @@ Deno.serve(async (req: Request) => {
           availableStartHours: validHours,
         });
         if (!earliestSlot && validHours.length > 0) {
-          earliestSlot = buildSlotSelection(date, validHours[0], quote.estimatedHours);
+          earliestSlot = buildSlotSelection(date, validHours[0], evaluation.quote.estimatedHours);
         }
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
 
       return new Response(JSON.stringify({
         quote: {
-          ...quote,
+          ...evaluation.quote,
           availability: buildAvailabilityContract({
             requestedDate: monthDate,
             windowEndDate: end,
@@ -563,68 +617,51 @@ Deno.serve(async (req: Request) => {
       const date = toIsoDate(payload.date);
       const startTime = toIsoTime(payload.startTime);
       if (!providerId || !date || !startTime) {
-        return new Response(JSON.stringify({ error: 'Faltan providerId, date o startTime.' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return buildErrorResponse(400, 'missing_quote_slot', 'Faltan providerId, date o startTime.');
       }
 
       const user = await resolveUser(admin, req);
       if (!user) {
-        return new Response(JSON.stringify({ error: 'Debes iniciar sesión para generar un presupuesto confirmado.' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return buildErrorResponse(401, 'auth_required', 'Debes iniciar sesión para generar un presupuesto confirmado.');
       }
 
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
-      const priceRow = priceRows[providerId];
-      if (!priceRow?.additional_config) {
-        return new Response(JSON.stringify({ error: 'No existe configuración activa para este profesional.' }), {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      const providerConfigVersion = await sha256(JSON.stringify({
-        updated_at: priceRow.updated_at || priceRow.created_at || '',
-        config: priceRow.additional_config,
-      }));
-
-      const quote = await buildQuotePreview({
+      const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
+      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
+      const providerDates = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const evaluation = await evaluateProviderEligibility({
+        admin,
         bookingInput,
         providerId,
-        providerConfig: priceRow.additional_config,
-        globalMinPrice,
-        providerConfigVersion,
+        priceRow: priceRows[providerId],
+        profile: providerProfiles[providerId],
+        providerDates,
+        requestedDate: date,
+        windowEndDate: date,
+        restrictToRequestedDate: true,
       });
 
-      if (quote.totalPrice <= 0) {
-        return new Response(JSON.stringify({ error: 'No se pudo generar un presupuesto válido para este profesional.' }), {
-          status: 422,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      if (!evaluation.eligible) {
+        const status = evaluation.exclusion.code === 'outside_coverage' ? 403 : 422;
+        return buildErrorResponse(status, evaluation.exclusion.code, evaluation.exclusion.message);
       }
 
-      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
-      const validHours = getValidStartHours(
-        availabilityRows.map((row) => extractHour(row.start_time)),
-        Math.max(1, Math.ceil(quote.estimatedHours))
-      );
+      const validHours = evaluation.validHoursForRequestedDate;
       const selectedHour = extractHour(startTime);
       if (!validHours.includes(selectedHour)) {
-        return new Response(JSON.stringify({ error: 'La franja seleccionada ya no está disponible para este presupuesto.' }), {
-          status: 409,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return buildErrorResponse(
+          409,
+          'no_reservable_availability',
+          'La franja seleccionada ya no está disponible para este presupuesto.',
+        );
       }
 
       const availability = buildAvailabilityContract({
         requestedDate: date,
         validStartHours: validHours,
-        selectedSlot: buildSlotSelection(date, selectedHour, quote.estimatedHours),
+        selectedSlot: buildSlotSelection(date, selectedHour, evaluation.quote.estimatedHours),
         earliestSlot: validHours.length > 0
-          ? buildSlotSelection(date, validHours[0], quote.estimatedHours)
+          ? buildSlotSelection(date, validHours[0], evaluation.quote.estimatedHours)
           : null,
       });
 
@@ -635,30 +672,34 @@ Deno.serve(async (req: Request) => {
         provider_id: providerId,
         service_id: serviceId,
         pricing_version: PRICING_VERSION,
-        provider_config_version: providerConfigVersion,
+        provider_config_version: evaluation.providerConfigVersion,
         date,
         start_time: startTime,
         booking_input: bookingInput,
         quote: {
-          totalPrice: quote.totalPrice,
-          estimatedHours: quote.estimatedHours,
-          breakdown: quote.breakdown,
-          warnings: quote.warnings,
-          economics: quote.economics,
+          totalPrice: evaluation.quote.totalPrice,
+          estimatedHours: evaluation.quote.estimatedHours,
+          breakdown: evaluation.quote.breakdown,
+          warnings: evaluation.quote.warnings,
+          economics: evaluation.quote.economics,
         },
       }));
 
       const snapshot = {
-        totalPrice: quote.totalPrice,
-        estimatedHours: quote.estimatedHours,
-        breakdown: quote.breakdown,
-        warnings: quote.warnings,
-        metadata: quote.metadata,
-        economics: quote.economics,
+        totalPrice: evaluation.quote.totalPrice,
+        estimatedHours: evaluation.quote.estimatedHours,
+        breakdown: evaluation.quote.breakdown,
+        warnings: evaluation.quote.warnings,
+        metadata: evaluation.quote.metadata,
+        economics: evaluation.quote.economics,
+        eligibility: evaluation.quote.eligibility,
         availability,
         providerId,
         serviceId,
       };
+
+      const clientCoordinates = getClientCoordinates(bookingInput);
+      const providerCoordinates = getProviderCoordinates(providerProfiles[providerId]);
 
       const { data, error } = await admin
         .from('booking_quotes')
@@ -668,18 +709,22 @@ Deno.serve(async (req: Request) => {
           service_id: serviceId,
           signature,
           pricing_version: PRICING_VERSION,
-          provider_config_version: providerConfigVersion,
+          provider_config_version: evaluation.providerConfigVersion,
           input_payload: bookingInput,
           pricing_snapshot: snapshot,
           availability_snapshot: availability,
-          economic_snapshot: quote.economics,
-          total_price: quote.totalPrice,
-          estimated_hours: quote.estimatedHours,
+          economic_snapshot: evaluation.quote.economics,
+          total_price: evaluation.quote.totalPrice,
+          estimated_hours: evaluation.quote.estimatedHours,
           status: 'active',
           generated_at: new Date().toISOString(),
           expires_at: expiresAt,
           selected_date: date,
           selected_start_time: startTime,
+          client_latitude: clientCoordinates?.lat ?? null,
+          client_longitude: clientCoordinates?.lng ?? null,
+          provider_latitude: providerCoordinates?.lat ?? null,
+          provider_longitude: providerCoordinates?.lng ?? null,
         }, { onConflict: 'signature' })
         .select('id, expires_at')
         .single();
@@ -689,7 +734,7 @@ Deno.serve(async (req: Request) => {
       }
 
       return new Response(JSON.stringify({
-        ...quote,
+        ...evaluation.quote,
         availability,
         quoteId: data.id,
         signature,

@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, MapPin, Navigation } from 'lucide-react';
 import AddressAutocomplete from '../../components/common/AddressAutocomplete';
-import { getAddressFromCoordinates } from '../../utils/geolocation';
+import { getAddressFromCoordinates, getCoordinatesFromAddress } from '../../utils/geolocation';
 
 const AddressPage: React.FC = () => {
   const navigate = useNavigate();
   const { bookingData, setBookingData, saveProgress, setCurrentStep } = useBooking();
   const [address, setAddress] = useState(bookingData.address);
+  const [addressCoordinates, setAddressCoordinates] = useState(bookingData.addressCoordinates || null);
   const [isLocating, setIsLocating] = useState(false);
   const [addressError, setAddressError] = useState('');
 
@@ -18,6 +19,7 @@ const AddressPage: React.FC = () => {
 
   const handleAddressSelected = (addr: string) => {
     setAddress(addr);
+    setAddressCoordinates(null);
     setAddressError('');
   };
 
@@ -38,6 +40,7 @@ const AddressPage: React.FC = () => {
             return;
           }
           setAddress(resolvedAddress);
+          setAddressCoordinates({ lat: latitude, lng: longitude });
           setAddressError('');
         } catch (error) {
           setAddressError('No se pudo obtener la dirección');
@@ -53,7 +56,7 @@ const AddressPage: React.FC = () => {
     );
   };
 
-  const validateAndContinue = () => {
+  const validateAndContinue = async () => {
     if (!address.trim()) {
       setAddressError('Por favor, introduce una dirección');
       return;
@@ -66,7 +69,20 @@ const AddressPage: React.FC = () => {
       return;
     }
 
-    setBookingData({ address });
+    let resolvedCoordinates = addressCoordinates;
+    if (!resolvedCoordinates) {
+      resolvedCoordinates = await getCoordinatesFromAddress(address.trim());
+    }
+
+    if (!resolvedCoordinates) {
+      setAddressError('No se pudo validar la dirección en el mapa. Selecciona una dirección sugerida o usa tu ubicación actual.');
+      return;
+    }
+
+    setBookingData({
+      address,
+      addressCoordinates: resolvedCoordinates,
+    });
     saveProgress();
     setCurrentStep(1);
   };
@@ -75,7 +91,7 @@ const AddressPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="mx-auto w-full px-4 py-4 sm:max-w-md flex items-center justify-between">
           <button
             type="button"
             onClick={() => {
@@ -93,7 +109,7 @@ const AddressPage: React.FC = () => {
 
       {/* Progress Bar */}
       <div className="bg-white">
-        <div className="max-w-md mx-auto px-4 py-3">
+        <div className="mx-auto w-full px-4 py-3 sm:max-w-md">
           <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
             <span>Paso 1 de 5</span>
             <div className="flex-1 bg-gray-200 rounded-full h-1">
@@ -104,7 +120,7 @@ const AddressPage: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6 pb-24">
+      <div className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md">
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-4">
           <h2 className="text-xl font-bold text-gray-900 mb-2">
             ¿Dónde está tu jardín?
@@ -165,7 +181,7 @@ const AddressPage: React.FC = () => {
 
       {/* Fixed CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
-        <div className="max-w-md mx-auto">
+        <div className="mx-auto w-full sm:max-w-md">
           <button
             type="button"
             onClick={validateAndContinue}

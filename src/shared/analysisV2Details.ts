@@ -207,9 +207,9 @@ export const getAnalysisPresentation = (
       isFailed: true,
       isTechnicalError: true,
       tone: 'technical_error',
-      badgeLabel: 'Error técnico controlado',
-      title: 'No se ha podido completar el análisis',
-      message: analysis?.error_message_safe || observations[0] || 'Ha ocurrido un error técnico controlado durante el análisis.',
+      badgeLabel: 'Revision no disponible',
+      title: 'No hemos podido revisar las fotos',
+      message: analysis?.error_message_safe || observations[0] || 'No hemos podido revisar las fotos en este momento.',
       observations,
     };
   }

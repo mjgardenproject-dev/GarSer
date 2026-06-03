@@ -21,6 +21,8 @@ export interface Profile {
 export interface GardenerProfile extends Profile {
   services: string[];
   max_distance: number;
+  operational_latitude?: number | null;
+  operational_longitude?: number | null;
   rating: number;
   total_reviews: number;
   description: string;
@@ -47,7 +49,6 @@ export interface Service {
   id: string;
   name: string;
   description: string;
-  base_price: number;
   pricing_method: 'per_hour' | 'per_quantity';
   hourly_rate?: number;
   icon: string;

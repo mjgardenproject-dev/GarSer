@@ -37,19 +37,16 @@ vi.mock('../../lib/supabase', () => ({
         return {
           select: () => ({
             eq(field: string) {
-              if (field === 'active') {
+              if (field === 'service_id') {
                 return Promise.resolve({
                   data: [
                     {
                       gardener_id: 'gardener-1',
-                      service_id: 'svc-1',
-                      price_per_unit: 120,
-                      additional_config: {},
                     },
                   ],
                 });
               }
-              return this;
+              return Promise.resolve({ data: [] });
             },
           }),
         };
@@ -62,7 +59,6 @@ vi.mock('../../lib/supabase', () => ({
               single: async () => ({
                 data: {
                   name: 'Corte de césped',
-                  base_price: 40,
                 },
               }),
             }),
@@ -159,6 +155,10 @@ describe('ProvidersPage', () => {
       },
       selectedSlot: null,
     },
+    eligibility: {
+      isEligible: true,
+      reasons: [],
+    },
   };
 
   beforeEach(() => {
@@ -186,6 +186,7 @@ describe('ProvidersPage', () => {
       quotes: {
         'gardener-1': quote,
       },
+      eligibleProviderIds: ['gardener-1'],
       earliestByProvider: {
         'gardener-1': {
           date: '2026-05-20',
@@ -213,6 +214,18 @@ describe('ProvidersPage', () => {
     expect(await screen.findByText('Total de la reserva')).toBeTruthy();
     expect(screen.getByText('177,75 €')).toBeTruthy();
     expect(screen.getByText('Incluye tarifa de reserva de 19,75 €')).toBeTruthy();
+  });
+
+  it('consume el preview backend sin reenviar minimos globales legacy', async () => {
+    render(<ProvidersPage />);
+
+    await waitFor(() => {
+      expect(mocks.previewProviderQuotes).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          globalMinPrice: expect.anything(),
+        }),
+      );
+    });
   });
 
   it('persiste el snapshot autoritativo al seleccionar una franja válida', async () => {

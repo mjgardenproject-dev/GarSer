@@ -41,6 +41,10 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
+vi.mock('../../utils/marketingAssets', () => ({
+  getMarketingAssetUrl: (slot: string) => `https://cdn.example.com/${slot}.webp`,
+}))
+
 import ServicesPage from './ServicesPage'
 
 describe('ServicesPage', () => {
@@ -78,7 +82,7 @@ describe('ServicesPage', () => {
     })
   })
 
-  it('degrada desde imagen alternativa a placeholder si la imagen sigue fallando', async () => {
+  it('muestra placeholder si falla la imagen canonica de marketing del servicio', async () => {
     mocks.fetchServices.mockResolvedValue({
       data: [
         {
@@ -98,12 +102,6 @@ describe('ServicesPage', () => {
     const image = container.querySelector('img')
     expect(image).toBeTruthy()
     fireEvent.error(image as HTMLImageElement)
-
-    expect(await screen.findByText('Imagen alternativa')).toBeTruthy()
-
-    const fallbackImage = container.querySelector('img')
-    expect(fallbackImage).toBeTruthy()
-    fireEvent.error(fallbackImage as HTMLImageElement)
 
     expect(await screen.findByText('Imagen no disponible')).toBeTruthy()
   })

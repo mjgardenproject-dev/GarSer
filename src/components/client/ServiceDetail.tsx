@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Star, Clock, MapPin, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Service } from '../../types';
@@ -10,10 +10,6 @@ const ServiceDetail = () => {
   const navigate = useNavigate();
   const [service, setService] = useState<Service | null>(null);
   const [loading, setLoading] = useState(true);
-  const currencyFormatter = useMemo(
-    () => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }),
-    []
-  );
 
   useEffect(() => {
     if (serviceId) {
@@ -22,6 +18,11 @@ const ServiceDetail = () => {
   }, [serviceId]);
 
   const fetchService = async () => {
+    if (!serviceId) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('services')
@@ -30,7 +31,7 @@ const ServiceDetail = () => {
         .single();
 
       if (error) throw error;
-      let s = data;
+      let s = data as Service;
       if (s && (s.name.toLowerCase().includes('fumigación') || s.name.toLowerCase().includes('fumigacion') || s.name.toLowerCase().includes('tratamientos fitosanitarios'))) {
         s = { ...s, name: 'Servicios fitosanitarios' };
       }
@@ -92,7 +93,7 @@ const ServiceDetail = () => {
         {/* Service Image */}
         <div className="h-64 md:h-80 bg-gradient-to-br from-green-400 to-green-600 relative">
           <img
-            src={getServiceImageUrl(service, 1200)}
+            src={getServiceImageUrl(service)}
             alt={service.name}
             width={1200}
             height={640}
@@ -184,15 +185,15 @@ const ServiceDetail = () => {
               <div className="bg-gray-50 rounded-xl p-6 lg:sticky lg:top-6">
                 <div className="text-center mb-6">
                   <div className="text-3xl font-bold text-gray-900 mb-2">
-                    {currencyFormatter.format(service.base_price)}
+                    Presupuesto personalizado
                   </div>
-                  <p className="text-gray-600">Referencia inicial del servicio</p>
+                  <p className="text-gray-600">La oferta final depende del profesional elegible y de la configuracion validada en backend.</p>
                 </div>
 
                 <div className="space-y-3 mb-6 text-sm text-gray-600">
                   <div className="flex justify-between">
-                    <span>Base orientativa:</span>
-                    <span>{currencyFormatter.format(service.base_price)}</span>
+                    <span>Tarifa:</span>
+                    <span>Segun profesional</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Desplazamiento:</span>
@@ -205,7 +206,7 @@ const ServiceDetail = () => {
                   <hr className="my-2" />
                   <div className="flex justify-between font-semibold text-gray-900">
                     <span>Precio mostrado:</span>
-                    <span>Referencia inicial</span>
+                    <span>Sin importe fijo de catalogo</span>
                   </div>
                 </div>
 
@@ -218,7 +219,7 @@ const ServiceDetail = () => {
                 </button>
 
                 <p className="text-xs text-gray-500 text-center mt-3">
-                  El precio final se calculará según la duración seleccionada
+                  El precio final se confirma con elegibilidad, disponibilidad y configuracion real del profesional
                 </p>
               </div>
             </div>

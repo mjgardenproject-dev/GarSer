@@ -343,6 +343,8 @@ export const ANALYSIS_CONTRACT_INVENTORY: Record<AnalysisService, AnalysisInvent
   },
 };
 
+const CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE = 'No hemos podido revisar las fotos en este momento.';
+
 export const ANALYSIS_CLIENT_OBSERVATION_CATALOG: Record<AnalysisQualityReasonCode, AnalysisClientObservation> = {
   ELEMENT_NOT_FULLY_VISIBLE: { code: 'ELEMENT_NOT_FULLY_VISIBLE', severity: 'warning', default_copy: 'No se ve el elemento completo en las fotos disponibles.' },
   LOW_LIGHT: { code: 'LOW_LIGHT', severity: 'warning', default_copy: 'La iluminacion limita parte del analisis visual.' },
@@ -354,18 +356,18 @@ export const ANALYSIS_CLIENT_OBSERVATION_CATALOG: Record<AnalysisQualityReasonCo
   ELEMENTS_NOT_DETECTED: { code: 'ELEMENTS_NOT_DETECTED', severity: 'critical', default_copy: 'No se detecta con fiabilidad el elemento a analizar.' },
   CONFLICTING_ANGLES: { code: 'CONFLICTING_ANGLES', severity: 'warning', default_copy: 'Las fotos muestran angulos conflictivos para una medicion exacta.' },
   INSUFFICIENT_COVERAGE: { code: 'INSUFFICIENT_COVERAGE', severity: 'critical', default_copy: 'La cobertura fotografica no permite un analisis fiable.' },
-  ANALYSIS_TECHNICAL_FAILURE: { code: 'ANALYSIS_TECHNICAL_FAILURE', severity: 'critical', default_copy: 'Se ha producido un error tecnico controlado durante el analisis.' },
+  ANALYSIS_TECHNICAL_FAILURE: { code: 'ANALYSIS_TECHNICAL_FAILURE', severity: 'critical', default_copy: CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE },
   SERVICE_SPECIFIC_NOTE: { code: 'SERVICE_SPECIFIC_NOTE', severity: 'info', default_copy: 'Se ha registrado una observacion especifica del servicio.' },
 };
 
 export const ANALYSIS_TECHNICAL_ERROR_CATALOG: Record<AnalysisTechnicalErrorCode, AnalysisTechnicalErrorDescriptor> = {
-  PROVIDER_AUTH_MISSING: { safe_message: 'Falta configuracion del proveedor de analisis.' },
-  PROVIDER_RATE_LIMIT: { safe_message: 'El proveedor de analisis esta temporalmente saturado.' },
-  PROVIDER_REQUEST_FAILED: { safe_message: 'La llamada al proveedor de analisis ha fallado.' },
-  MODEL_OUTPUT_INVALID: { safe_message: 'La respuesta del modelo no cumple el formato esperado.' },
-  ANALYSIS_VALIDATION_FAILED: { safe_message: 'La respuesta del analisis no supera la validacion interna.' },
-  EDGE_FUNCTION_INVOCATION_FAILED: { safe_message: 'No se ha podido invocar el servicio de analisis.' },
-  INTERNAL_ERROR: { safe_message: 'Se ha producido un error interno controlado.' },
+  PROVIDER_AUTH_MISSING: { safe_message: CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE },
+  PROVIDER_RATE_LIMIT: { safe_message: 'Ahora mismo no hemos podido revisar las fotos. Puedes intentarlo de nuevo en unos minutos.' },
+  PROVIDER_REQUEST_FAILED: { safe_message: CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE },
+  MODEL_OUTPUT_INVALID: { safe_message: CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE },
+  ANALYSIS_VALIDATION_FAILED: { safe_message: CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE },
+  EDGE_FUNCTION_INVOCATION_FAILED: { safe_message: CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE },
+  INTERNAL_ERROR: { safe_message: CLIENT_VISIBLE_ANALYSIS_ERROR_MESSAGE },
 };
 
 export interface AdaptAnalysisV2Options {

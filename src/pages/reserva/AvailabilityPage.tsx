@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, Calendar, Clock, MapPin } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 
 interface AvailabilitySlot {
   id: string;
@@ -15,7 +13,6 @@ interface AvailabilitySlot {
 }
 
 const AvailabilityPage: React.FC = () => {
-  const navigate = useNavigate();
   const { bookingData, setBookingData, saveProgress, setCurrentStep } = useBooking();
   const [selectedDate, setSelectedDate] = useState<string>(bookingData.preferredDate || '');
   const [selectedSlot, setSelectedSlot] = useState<string>(bookingData.timeSlot || '');
@@ -144,7 +141,7 @@ const AvailabilityPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6 flex items-center justify-between">
+        <div className="mx-auto w-full px-2.5 py-4 sm:max-w-3xl sm:p-6 md:max-w-4xl lg:px-6 flex items-center justify-between">
           <button
             onClick={() => setCurrentStep(3)}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -158,7 +155,7 @@ const AvailabilityPage: React.FC = () => {
 
       {/* Progress Bar */}
       <div className="bg-white">
-        <div className="max-w-md mx-auto px-4 py-3">
+        <div className="mx-auto w-full px-4 py-3 sm:max-w-md">
           <div className="flex items-center space-x-2 text-sm text-gray-600 mb-2">
             <span>Paso 4 de 5</span>
             <div className="flex-1 bg-gray-200 rounded-full h-1">
@@ -169,7 +166,7 @@ const AvailabilityPage: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 py-6">
+      <div className="mx-auto w-full px-4 py-6 sm:max-w-md">
         <div className="mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-2">
             ¿Cuándo necesitas el servicio?
@@ -292,7 +289,7 @@ const AvailabilityPage: React.FC = () => {
 
       {/* Sticky CTA */}
       <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        <div className="max-w-md mx-auto">
+        <div className="mx-auto w-full sm:max-w-md">
           <button
             onClick={handleContinue}
             disabled={!selectedDate || !selectedSlot}

@@ -31,11 +31,11 @@ describe('bookingQuote', () => {
         hourly_rate: 30,
         yield_m2_per_hour: 100,
       },
-      globalMinPrice: 40,
     });
 
     expect(result.estimatedHours).toBe(2);
     expect(result.totalPrice).toBe(60);
+    expect(result.eligibility).toEqual({ isEligible: true });
     expect(result.breakdown).toEqual([]);
     expect(result.economics).toMatchObject({
       currency: 'EUR',
@@ -48,7 +48,7 @@ describe('bookingQuote', () => {
     expect(result.economics.serviceTaxAmount).toBeCloseTo(10.41, 2);
   });
 
-  it('genera desglose coherente para arbustos con minimo global', () => {
+  it('aplica solo el mínimo individual del jardinero para arbustos', () => {
     const result = buildBookingQuote({
       bookingData: {
         address: 'Calle Luna 8',
@@ -78,13 +78,13 @@ describe('bookingQuote', () => {
         yield_m2_per_hour: { pequeñas: 40, medianas: 20, grandes: 10 },
         minimum_price: 80,
       },
-      globalMinPrice: 50,
     });
 
     expect(result.totalPrice).toBe(80);
+    expect(result.eligibility).toEqual({ isEligible: true });
     expect(result.breakdown).toEqual([
       { desc: '2 m2 de arbustos (medianas, descuidado)', price: 53 },
-      { desc: 'Ajuste por importe mínimo global (80€)', price: 27 },
+      { desc: 'Ajuste por importe mínimo (80€)', price: 27 },
     ]);
     expect(result.economics.managementFee).toBe(10);
     expect(result.economics.stripeLineItems).toEqual([
@@ -97,7 +97,7 @@ describe('bookingQuote', () => {
     ]);
   });
 
-  it('usa metadatos autoritativos para cobertura parcial de palmeras y horas solo de grupos soportados', () => {
+  it('falla cerrado cuando la configuración de palmeras no cubre todos los grupos solicitados', () => {
     const result = buildBookingQuote({
       bookingData: {
         address: 'Calle Palma 12',
@@ -137,15 +137,18 @@ describe('bookingQuote', () => {
         waste_removal: { percentage: 0 },
         minimum_price: 0,
       },
-      globalMinPrice: 0,
     });
 
-    expect(result.totalPrice).toBe(120);
-    expect(result.estimatedHours).toBe(1.5);
+    expect(result.totalPrice).toBe(0);
+    expect(result.estimatedHours).toBe(0);
+    expect(result.eligibility).toEqual({
+      isEligible: false,
+      reason: 'partial_palm_coverage',
+    });
     expect(result.warnings).toEqual([
       {
-        code: 'palm_terminal_range',
-        message: 'Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.',
+        code: 'partial_palm_coverage',
+        message: 'La configuración del profesional no cubre todas las palmeras solicitadas.',
       },
     ]);
     expect(result.metadata.palmCoverage).toEqual({
@@ -163,9 +166,7 @@ describe('bookingQuote', () => {
         },
       ],
     });
-    expect(result.breakdown).toEqual([
-      { desc: '2x Phoenix (0-5) · verificación final del profesional', price: 0 },
-    ]);
+    expect(result.breakdown).toEqual([]);
   });
 
   it('calcula horas de poda de arboles desde el motor autoritativo compartido', () => {
@@ -203,11 +204,11 @@ describe('bookingQuote', () => {
           formacion: { small: 4, medium: 2, large: 1 },
         },
       },
-      globalMinPrice: 0,
     });
 
     expect(result.totalPrice).toBe(242);
     expect(result.estimatedHours).toBe(2.5);
     expect(result.warnings).toEqual([]);
+    expect(result.eligibility).toEqual({ isEligible: true });
   });
 });

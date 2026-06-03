@@ -1,5 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  evaluateOperationalEligibility,
+  type ProviderProfileLike,
+} from '../../../src/shared/bookingEligibilityCore.ts';
+import {
   BOOKING_PAYMENT_HOLD_MINUTES,
   buildAuthoritativeBookingStripeLineItems,
   buildBookingPaymentGatewaySyncEventId,
@@ -7,6 +11,8 @@ import {
   isInFlightPaymentAttemptStatus,
   validateBookingStripeMetadataIntegrity,
 } from '../../../src/shared/bookingPaymentCore.ts';
+import type { SerializableBookingData } from '../../../src/shared/bookingQuoteCore.ts';
+import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
 import {
   BookingPaymentHttpError,
   classifyBookingPaymentError,
@@ -73,6 +79,49 @@ type AttemptRow = {
   gateway_response?: Record<string, unknown> | null;
   last_error_code?: string | null;
   last_error_message?: string | null;
+};
+
+type QuoteRow = {
+  id: string;
+  client_id: string;
+  gardener_id: string;
+  service_id: string;
+  signature: string;
+  status: string;
+  expires_at?: string | null;
+  selected_date?: string | null;
+  selected_start_time?: string | null;
+  total_price: number;
+  estimated_hours: number;
+  provider_config_version?: string | null;
+  input_payload: SerializableBookingData | null;
+  pricing_snapshot?: Record<string, unknown> | null;
+  economic_snapshot?: Record<string, unknown> | null;
+};
+
+type ActivePriceRow = {
+  gardener_id: string;
+  additional_config: Record<string, unknown> | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
+type AvailabilityRow = {
+  gardener_id: string;
+  date: string;
+  start_time: string;
+  is_available: boolean;
+};
+
+type HoldBlockRow = {
+  hold_id: string;
+  gardener_id: string;
+  date: string;
+  hour_block: number;
+};
+
+type ActiveHoldRow = {
+  id: string;
 };
 
 function resolveServiceRoleKey() {
@@ -283,6 +332,328 @@ async function getAttemptRow(
 
   if (error) throw error;
   return (data as AttemptRow | null) || null;
+}
+
+async function getQuoteRow(
+  admin: ReturnType<typeof createClient>,
+  quoteId: string,
+): Promise<QuoteRow | null> {
+  const { data, error } = await admin
+    .from('booking_quotes')
+    .select(`
+      id,
+      client_id,
+      gardener_id,
+      service_id,
+      signature,
+      status,
+      expires_at,
+      selected_date,
+      selected_start_time,
+      total_price,
+      estimated_hours,
+      provider_config_version,
+      input_payload,
+      pricing_snapshot,
+      economic_snapshot
+    `)
+    .eq('id', quoteId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as QuoteRow | null) || null;
+}
+
+async function getActivePriceRow(
+  admin: ReturnType<typeof createClient>,
+  gardenerId: string,
+  serviceId: string,
+): Promise<ActivePriceRow | null> {
+  const { data, error } = await admin
+    .from('gardener_service_prices')
+    .select('gardener_id, additional_config, updated_at, created_at')
+    .eq('gardener_id', gardenerId)
+    .eq('service_id', serviceId)
+    .eq('active', true)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as ActivePriceRow | null) || null;
+}
+
+async function getProviderProfile(
+  admin: ReturnType<typeof createClient>,
+  gardenerId: string,
+): Promise<(ProviderProfileLike & { address?: string | null }) | null> {
+  const { data, error } = await admin
+    .from('gardener_profiles')
+    .select('address, max_distance, operational_latitude, operational_longitude')
+    .eq('user_id', gardenerId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as (ProviderProfileLike & { address?: string | null }) | null) || null;
+}
+
+async function ensureProviderOperationalCoordinates(
+  admin: ReturnType<typeof createClient>,
+  gardenerId: string,
+  profile?: (ProviderProfileLike & { address?: string | null }) | null,
+): Promise<(ProviderProfileLike & { address?: string | null }) | null> {
+  if (!profile) return null;
+  if (Number.isFinite(Number(profile.operational_latitude)) && Number.isFinite(Number(profile.operational_longitude))) {
+    return profile;
+  }
+
+  const address = String(profile.address || '').trim();
+  const googleApiKey = String(Deno.env.get('GOOGLE_API_KEY') || '').trim();
+  if (!address || !googleApiKey) {
+    return profile;
+  }
+
+  const resolvedCoordinates = await geocodeAddressWithGoogleApi({
+    address,
+    apiKey: googleApiKey,
+  });
+
+  if (!resolvedCoordinates) {
+    return profile;
+  }
+
+  try {
+    const { error } = await admin
+      .from('gardener_profiles')
+      .update({
+        operational_latitude: resolvedCoordinates.lat,
+        operational_longitude: resolvedCoordinates.lng,
+      })
+      .eq('user_id', gardenerId);
+
+    if (error) {
+      return profile;
+    }
+  } catch {
+    return profile;
+  }
+
+  return {
+    ...profile,
+    operational_latitude: resolvedCoordinates.lat,
+    operational_longitude: resolvedCoordinates.lng,
+  };
+}
+
+const toIsoDate = (value?: string | null) => {
+  const text = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
+};
+
+const extractHour = (value?: string | null) => Number.parseInt(String(value || '0').slice(0, 2), 10);
+
+async function sha256(text: string) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function buildAvailabilityIndex(rows: AvailabilityRow[]) {
+  const providerDates = new Map<string, number[]>();
+  rows.forEach((row) => {
+    const date = toIsoDate(row.date);
+    if (!date || !row.is_available) return;
+    const hours = providerDates.get(date) || [];
+    hours.push(extractHour(row.start_time));
+    providerDates.set(date, hours);
+  });
+  return providerDates;
+}
+
+async function fetchAvailabilityRowsForQuote(
+  admin: ReturnType<typeof createClient>,
+  params: {
+    gardenerId: string;
+    date: string;
+    excludeHoldIds?: string[];
+  },
+): Promise<AvailabilityRow[]> {
+  try {
+    await admin.rpc('cleanup_expired_booking_payment_state', {
+      p_gardener_ids: [params.gardenerId],
+      p_start_date: params.date,
+      p_end_date: params.date,
+    });
+  } catch {
+    // No bloqueamos el pago por fallos de limpieza oportunista.
+  }
+
+  const { data, error } = await admin
+    .from('availability')
+    .select('gardener_id, date, start_time, is_available')
+    .eq('gardener_id', params.gardenerId)
+    .eq('date', params.date)
+    .eq('is_available', true)
+    .order('start_time', { ascending: true });
+
+  if (error || !data) return [];
+
+  const { data: holdData } = await admin
+    .from('booking_schedule_hold_blocks')
+    .select('hold_id, gardener_id, date, hour_block')
+    .eq('gardener_id', params.gardenerId)
+    .eq('date', params.date);
+
+  const excludedHoldIds = new Set((params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean));
+  const heldSlots = new Set(
+    ((holdData || []) as HoldBlockRow[])
+      .filter((row) => !excludedHoldIds.has(String(row.hold_id)))
+      .map((row) => `${row.gardener_id}|${toIsoDate(row.date)}|${Number(row.hour_block)}`),
+  );
+
+  return (data as AvailabilityRow[]).filter((row) => {
+    const key = `${row.gardener_id}|${toIsoDate(row.date)}|${extractHour(row.start_time)}`;
+    return !heldSlots.has(key);
+  });
+}
+
+async function getActiveHoldIdsForQuote(
+  admin: ReturnType<typeof createClient>,
+  quoteId: string,
+): Promise<string[]> {
+  const { data, error } = await admin
+    .from('booking_schedule_holds')
+    .select('id')
+    .eq('quote_id', quoteId)
+    .eq('status', 'active')
+    .gt('expires_at', new Date().toISOString());
+
+  if (error || !data) return [];
+  return (data as ActiveHoldRow[]).map((row) => row.id);
+}
+
+function assertQuoteEconomicsStillMatch(params: {
+  quote: QuoteRow;
+  totalPrice: number;
+  estimatedHours: number;
+  payableNow: number;
+}) {
+  const persistedPayableNow = Number(asRecord(params.quote.economic_snapshot).payableNow || 0);
+  const persistedTotalPrice = Number(params.quote.total_price || 0);
+  const persistedEstimatedHours = Number(params.quote.estimated_hours || 0);
+
+  if (
+    Math.round(persistedTotalPrice) !== Math.round(params.totalPrice)
+    || Math.round(persistedEstimatedHours * 100) !== Math.round(params.estimatedHours * 100)
+    || Math.round(persistedPayableNow * 100) !== Math.round(params.payableNow * 100)
+  ) {
+    throw new BookingPaymentHttpError({
+      status: 422,
+      code: 'invalid_quote_state',
+      message: 'El presupuesto ya no coincide con la configuración operativa actual. Debes regenerar el presupuesto antes de pagar.',
+    });
+  }
+}
+
+async function revalidateQuoteBeforePayment(
+  admin: ReturnType<typeof createClient>,
+  params: {
+    quoteId: string;
+    userId: string;
+  },
+) {
+  const quote = await getQuoteRow(admin, params.quoteId);
+  if (!quote) {
+    throw new BookingPaymentHttpError({
+      status: 404,
+      code: 'not_found',
+      message: 'El presupuesto seleccionado ya no esta disponible.',
+    });
+  }
+
+  if (quote.client_id !== params.userId) {
+    throw new BookingPaymentHttpError({
+      status: 403,
+      code: 'quote_forbidden',
+      message: 'El presupuesto no pertenece a la sesion autenticada.',
+    });
+  }
+
+  const selectedDate = toIsoDate(quote.selected_date);
+  if (!selectedDate || !asString(quote.selected_start_time)) {
+    throw new BookingPaymentHttpError({
+      status: 422,
+      code: 'invalid_quote_state',
+      message: 'Debes regenerar el presupuesto antes de iniciar el checkout.',
+    });
+  }
+
+  const [priceRow, profile, excludedHoldIds] = await Promise.all([
+    getActivePriceRow(admin, quote.gardener_id, quote.service_id),
+    getProviderProfile(admin, quote.gardener_id),
+    getActiveHoldIdsForQuote(admin, quote.id),
+  ]);
+
+  const providerConfigVersion = await sha256(JSON.stringify({
+    updated_at: priceRow?.updated_at || priceRow?.created_at || '',
+    config: priceRow?.additional_config || null,
+  }));
+
+  const availabilityRows = await fetchAvailabilityRowsForQuote(admin, {
+    gardenerId: quote.gardener_id,
+    date: selectedDate,
+    excludeHoldIds: excludedHoldIds,
+  });
+  const resolvedProfile = await ensureProviderOperationalCoordinates(admin, quote.gardener_id, profile);
+
+  const evaluation = evaluateOperationalEligibility({
+    bookingInput: (quote.input_payload || {}) as SerializableBookingData,
+    providerConfig: priceRow?.additional_config || null,
+    providerConfigVersion,
+    profile: resolvedProfile,
+    providerDates: buildAvailabilityIndex(availabilityRows),
+    requestedDate: selectedDate,
+    windowEndDate: selectedDate,
+    restrictToRequestedDate: true,
+  });
+
+  if (!evaluation.eligible) {
+    const status = evaluation.exclusion.code === 'no_reservable_availability' ? 409 : 422;
+    const code = evaluation.exclusion.code === 'no_reservable_availability'
+      ? 'slot_unavailable'
+      : 'invalid_quote_state';
+    const message = evaluation.exclusion.code === 'no_reservable_availability'
+      ? 'La franja seleccionada ya no esta disponible para iniciar el pago.'
+      : `El presupuesto ya no es elegible (${evaluation.exclusion.code}). Debes regenerar el presupuesto antes de pagar.`;
+    throw new BookingPaymentHttpError({ status, code, message });
+  }
+
+  const selectedHour = extractHour(quote.selected_start_time);
+  if (!evaluation.validHoursForRequestedDate.includes(selectedHour)) {
+    throw new BookingPaymentHttpError({
+      status: 409,
+      code: 'slot_unavailable',
+      message: 'La franja seleccionada ya no esta disponible para iniciar el pago.',
+    });
+  }
+
+  if (asString(quote.provider_config_version) !== evaluation.providerConfigVersion) {
+    throw new BookingPaymentHttpError({
+      status: 422,
+      code: 'invalid_quote_state',
+      message: 'La configuración del profesional ha cambiado. Debes regenerar el presupuesto antes de pagar.',
+    });
+  }
+
+  assertQuoteEconomicsStillMatch({
+    quote,
+    totalPrice: evaluation.quote.totalPrice,
+    estimatedHours: evaluation.quote.estimatedHours,
+    payableNow: Number(evaluation.quote.economics.payableNow || 0),
+  });
+
+  return {
+    quote,
+    evaluation,
+  };
 }
 
 async function getOwnedAttemptRow(
@@ -932,6 +1303,7 @@ Deno.serve(async (req: Request) => {
     const requestedAttemptId = asString(payload.attemptId);
     const quoteId = asString(payload.quoteId);
     let attempt: AttemptRow | null = null;
+    let revalidatedQuoteId = quoteId;
 
     if (requestedAttemptId) {
       attempt = await getOwnedAttemptRow(dbAdmin, { userId: user.id, attemptId: requestedAttemptId });
@@ -942,6 +1314,7 @@ Deno.serve(async (req: Request) => {
           message: 'Intento de pago no encontrado.',
         });
       }
+      revalidatedQuoteId = attempt.quote_id;
     } else {
       if (!quoteId) {
         throw new BookingPaymentHttpError({
@@ -951,6 +1324,11 @@ Deno.serve(async (req: Request) => {
         });
       }
       contextQuoteId = quoteId;
+
+      await revalidateQuoteBeforePayment(dbAdmin, {
+        quoteId,
+        userId: user.id,
+      });
 
       const prepareResult = await dbAdmin.rpc('prepare_booking_payment_attempt_for_client', {
         p_quote_id: quoteId,
@@ -979,6 +1357,29 @@ Deno.serve(async (req: Request) => {
     contextQuoteId = attempt.quote_id;
     contextProviderId = attempt.gardener_id;
     contextServiceId = attempt.service_id;
+
+    try {
+      await revalidateQuoteBeforePayment(dbAdmin, {
+        quoteId: revalidatedQuoteId || attempt.quote_id,
+        userId: user.id,
+      });
+    } catch (error) {
+      const classified = classifyBookingPaymentError(error, 422);
+      if (isInFlightPaymentAttemptStatus(attempt.status)) {
+        await releaseAttempt(dbAdmin, {
+          attemptId: attempt.id,
+          nextStatus: 'reconciliation_required',
+          reason: classified.code,
+          paymentIntentId: attempt.stripe_payment_intent_id || null,
+          gatewayPayload: {
+            revalidatedFrom: 'booking-payment:prepare_payment',
+            revalidationCode: classified.code,
+            revalidationMessage: classified.message,
+          },
+        });
+      }
+      throw classified;
+    }
 
     if (isExpired(attempt.payment_expires_at) && isInFlightPaymentAttemptStatus(attempt.status)) {
       const summary = await releaseAttempt(dbAdmin, {

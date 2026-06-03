@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, MapPin, DollarSign } from 'lucide-react';
+import { Calendar, Clock, MapPin } from 'lucide-react';
 import { format, addDays, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { TimeBlock, AvailabilityBlock } from '../../types';
 import { generateDailyTimeBlocks } from '../../utils/availabilityService';
 import { getAvailableBlocksWithBuffer } from '../../utils/bufferService';
-import { getCoordinatesFromAddress, calculateDistance } from '../../utils/geolocation';
-import { supabase } from '../../lib/supabase';
+import { findEligibleGardeners } from '../../utils/mergedAvailabilityService';
 import toast from 'react-hot-toast';
 
 interface TimeBlockSelectorProps {
@@ -27,7 +26,6 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
   onDateChange
 }) => {
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
-  const [availableBlocks, setAvailableBlocks] = useState<AvailabilityBlock[]>([]);
   const [loading, setLoading] = useState(false);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [availableGardeners, setAvailableGardeners] = useState<string[]>([]);
@@ -48,79 +46,24 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
 
   useEffect(() => {
     // Sync selectedBlockIds with selectedBlocks prop
-    const blockIds = selectedBlocks.map(block => block.id);
+    const blockIds = selectedBlocks
+      .map((block) => block.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
     setSelectedBlockIds(blockIds);
   }, [selectedBlocks]);
 
   const fetchAvailableGardeners = async () => {
-    // Permitir cargar jardineros aunque aún no haya dirección, para mostrar opciones básicas
-    if (!serviceId) return;
+    if (!serviceId || !clientAddress) {
+      setAvailableGardeners([]);
+      setGardenerDetails([]);
+      return;
+    }
 
     try {
-      // Get gardeners who offer this service with complete information
-      const { data: gardeners, error } = await supabase
-        .from('gardener_profiles')
-        .select(`
-          user_id,
-          full_name,
-          rating,
-          total_reviews,
-          max_distance,
-          address
-        `)
-        .contains('services', [serviceId])
-        .eq('is_available', true)
-        .order('rating', { ascending: false })
-        .limit(5); // Maximum 5 gardeners
-
-      if (error) throw error;
-
-      // Filter by distance if client address is provided
-      let filteredGardeners = gardeners || [];
-      
-      if (clientAddress && gardeners) {
-        const clientCoords = await getCoordinatesFromAddress(clientAddress);
-        if (clientCoords) {
-          const gardenersWithDistance = [];
-          
-          for (const gardener of gardeners) {
-            if (gardener.address) {
-              const gardenerCoords = await getCoordinatesFromAddress(gardener.address);
-              if (gardenerCoords) {
-                const distance = calculateDistance(
-                  clientCoords.lat,
-                  clientCoords.lng,
-                  gardenerCoords.lat,
-                  gardenerCoords.lng
-                );
-                
-                const maxRange = gardener.max_distance || 25;
-                if (distance <= maxRange) {
-                  gardenersWithDistance.push({
-                    ...gardener,
-                    distance
-                  });
-                }
-              }
-            }
-          }
-          
-          // Sort by rating first, then by distance
-          gardenersWithDistance.sort((a, b) => {
-            if (b.rating !== a.rating) {
-              return (b.rating || 0) - (a.rating || 0);
-            }
-            return (a.distance || 0) - (b.distance || 0);
-          });
-          
-          filteredGardeners = gardenersWithDistance;
-        }
-      }
-
+      const eligibleGardeners = await findEligibleGardeners(serviceId, clientAddress);
+      const filteredGardeners = eligibleGardeners.slice(0, 5);
       const gardenerIds = filteredGardeners.map(g => g.user_id);
       setAvailableGardeners(gardenerIds);
-      
-      // Store complete gardener information for UI display
       setGardenerDetails(filteredGardeners);
     } catch (error) {
       console.error('Error fetching available gardeners:', error);
@@ -156,7 +99,8 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
               date: dateStr,
               hour_block: block.hour,
               is_available: true,
-              created_at: new Date().toISOString()
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
             });
           }
         });
@@ -166,13 +110,6 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
       
       setGardenerAvailability(gardenerAvailabilityMap);
       
-      // For backward compatibility, create a consolidated view
-      const allAvailableBlocks: AvailabilityBlock[] = [];
-      gardenerAvailabilityMap.forEach((blocks) => {
-        allAvailableBlocks.push(...blocks);
-      });
-      
-      setAvailableBlocks(allAvailableBlocks);
       console.log(`Loaded availability for ${gardenerAvailabilityMap.size} gardeners on ${dateStr}`);
     } catch (error) {
       console.error('Error fetching available blocks:', error);
@@ -191,15 +128,6 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
     setAvailableDates(dates);
   };
 
-  const isBlockAvailable = (blockId: string): boolean => {
-    const hour = parseInt(blockId.replace('time-', ''));
-    return availableBlocks.some(block => block.hour_block === hour && block.is_available);
-  };
-
-  const isBlockSelected = (blockId: string): boolean => {
-    return selectedBlockIds.includes(blockId);
-  };
-
   const toggleGardenerBlockSelection = (gardenerId: string, hour: number) => {
     const blockId = `gardener-${gardenerId}-time-${hour}`;
     
@@ -209,20 +137,21 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
         const newSelection = [blockId];
         setSelectedGardenerId(gardenerId);
         
-        const selectedTimeBlocks = newSelection.map(id => {
+        const selectedTimeBlocks = newSelection.reduce<TimeBlock[]>((acc, id) => {
           const hourFromId = parseInt(id.split('-time-')[1]);
           const timeBlock = timeBlocks.find(tb => tb.hour === hourFromId);
-          if (timeBlock) {
-            return {
-              ...timeBlock,
-              id: id,
-              gardener_id: gardenerId,
-              start_time: `${hourFromId.toString().padStart(2, '0')}:00`,
-              end_time: `${(hourFromId + 1).toString().padStart(2, '0')}:00`
-            };
+          if (!timeBlock) {
+            return acc;
           }
-          return null;
-        }).filter(Boolean);
+
+          acc.push({
+            ...timeBlock,
+            id,
+            start_time: `${hourFromId.toString().padStart(2, '0')}:00`,
+            end_time: `${(hourFromId + 1).toString().padStart(2, '0')}:00`
+          });
+          return acc;
+        }, []);
         
         onBlocksChange(selectedTimeBlocks);
         return newSelection;
@@ -241,84 +170,25 @@ const TimeBlockSelector: React.FC<TimeBlockSelectorProps> = ({
       }
       
       // Get selected time blocks with details
-      const selectedTimeBlocks = newSelection.map(id => {
+      const selectedTimeBlocks = newSelection.reduce<TimeBlock[]>((acc, id) => {
         const hourFromId = parseInt(id.split('-time-')[1]);
         const timeBlock = timeBlocks.find(tb => tb.hour === hourFromId);
-        if (timeBlock) {
-          return {
-            ...timeBlock,
-            id: id,
-            gardener_id: gardenerId,
-            start_time: `${hourFromId.toString().padStart(2, '0')}:00`,
-            end_time: `${(hourFromId + 1).toString().padStart(2, '0')}:00`
-          };
+        if (!timeBlock) {
+          return acc;
         }
-        return null;
-      }).filter(Boolean);
-      
-      // Get selected gardener details
-      const selectedGardener = gardenerDetails.find(g => g.user_id === gardenerId);
-      
-      // Pass both time blocks and gardener information
-      onBlocksChange(selectedTimeBlocks, selectedGardener);
-      return newSelection;
-    });
-  };
 
-  const toggleBlockSelection = (blockId: string) => {
-    if (!isBlockAvailable(blockId)) {
-      toast.error('Este horario no está disponible');
-      return;
-    }
+        acc.push({
+          ...timeBlock,
+          id,
+          start_time: `${hourFromId.toString().padStart(2, '0')}:00`,
+          end_time: `${(hourFromId + 1).toString().padStart(2, '0')}:00`
+        });
+        return acc;
+      }, []);
 
-    setSelectedBlockIds(prev => {
-      const newSelection = prev.includes(blockId)
-        ? prev.filter(id => id !== blockId)
-        : [...prev, blockId].sort();
-      
-      // Obtener bloques seleccionados con detalles
-      const selectedTimeBlocks = newSelection.map(id => {
-        const hour = parseInt(id.replace('time-', ''));
-        const timeBlock = timeBlocks.find(tb => tb.hour === hour);
-        if (timeBlock) {
-          return {
-            ...timeBlock,
-            id: id,
-            start_time: `${hour.toString().padStart(2, '0')}:00`,
-            end_time: `${(hour + 1).toString().padStart(2, '0')}:00`
-          };
-        }
-        return null;
-      }).filter(Boolean);
-      
-      // Notificar al componente padre
       onBlocksChange(selectedTimeBlocks);
-      
       return newSelection;
     });
-  };
-
-  const getBlockStatus = (blockId: string) => {
-    if (isBlockSelected(blockId)) {
-      return 'selected';
-    }
-    if (isBlockAvailable(blockId)) {
-      return 'available';
-    }
-    return 'unavailable';
-  };
-
-  const getBlockStyles = (status: string) => {
-    switch (status) {
-      case 'selected':
-        return 'bg-green-500 border-green-600 text-white shadow-lg transform scale-105';
-      case 'available':
-        return 'bg-white border-green-300 text-green-700 hover:bg-green-50 hover:border-green-400';
-      case 'unavailable':
-        return 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed';
-      default:
-        return 'bg-gray-100 border-gray-300 text-gray-400';
-    }
   };
 
   const clearSelection = () => {

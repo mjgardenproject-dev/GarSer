@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { adaptLegacyAnalysisToV2 } from '../../shared/analysisV2';
@@ -102,7 +101,7 @@ describe('ServiceResultCard', () => {
       />,
     );
 
-    expect(screen.getByText('Error técnico controlado')).toBeTruthy();
-    expect(screen.getByText('Se ha producido un error interno controlado.')).toBeTruthy();
+    expect(screen.getByText('Revision no disponible')).toBeTruthy();
+    expect(screen.getByText('No hemos podido revisar las fotos en este momento.')).toBeTruthy();
   });
 });

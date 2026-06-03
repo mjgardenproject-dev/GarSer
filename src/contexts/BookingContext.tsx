@@ -26,6 +26,10 @@ import { useAuth } from './AuthContext';
 
 export interface BookingData {
   address: string;
+  addressCoordinates?: {
+    lat: number;
+    lng: number;
+  };
   serviceIds: string[];
   restrictedGardenerId?: string;
   photos: File[];
@@ -302,6 +306,7 @@ interface BookingContextType {
 
 const initialBookingData: BookingData = {
   address: '',
+  addressCoordinates: undefined,
   serviceIds: [],
   photos: [],
   bookingPhotoContract: { schemaVersion: 'booking_photo_v1', items: [] },

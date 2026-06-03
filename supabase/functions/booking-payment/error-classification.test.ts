@@ -43,6 +43,21 @@ describe('booking-payment error classification', () => {
     });
   });
 
+  it('clasifica quotes que han perdido elegibilidad como invalid_quote_state', () => {
+    const error = Object.assign(new Error('Error al ejecutar la función RPC.'), {
+      code: 'P0001',
+      details: 'El presupuesto ya no es elegible (outside_coverage). Debes regenerar el presupuesto antes de pagar.',
+    });
+
+    const classified = classifyBookingPaymentError(error, 422);
+
+    expect(classified).toMatchObject({
+      status: 422,
+      code: 'invalid_quote_state',
+      message: 'El presupuesto ya no es elegible (outside_coverage). Debes regenerar el presupuesto antes de pagar.',
+    });
+  });
+
   it('extrae diagnósticos enriquecidos para telemetría y logs', () => {
     const diagnostics = extractBookingPaymentErrorDiagnostics(
       Object.assign(new Error('[object Object]'), {

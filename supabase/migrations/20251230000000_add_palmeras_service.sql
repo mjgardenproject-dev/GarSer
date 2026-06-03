@@ -9,10 +9,48 @@ BEGIN
 END $$;
 
 -- 2. Insertar el servicio "Poda de palmeras"
-INSERT INTO public.services (name, description, base_price)
-VALUES (
-  'Poda de palmeras',
-  'Poda y limpieza de palmeras, retirada de hojas secas y frutos.',
-  60
-)
-ON CONFLICT (name) DO NOTHING;
+DO $$
+DECLARE
+  v_has_hourly_rate boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'services'
+      AND column_name = 'hourly_rate'
+  ) INTO v_has_hourly_rate;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.services
+    WHERE name = 'Poda de palmeras'
+  ) THEN
+    IF v_has_hourly_rate THEN
+      UPDATE public.services
+      SET description = 'Poda y limpieza de palmeras, retirada de hojas secas y frutos.',
+          hourly_rate = COALESCE(hourly_rate, 60)
+      WHERE name = 'Poda de palmeras';
+    ELSE
+      UPDATE public.services
+      SET description = 'Poda y limpieza de palmeras, retirada de hojas secas y frutos.'
+      WHERE name = 'Poda de palmeras';
+    END IF;
+  ELSE
+    IF v_has_hourly_rate THEN
+      INSERT INTO public.services (name, description, hourly_rate)
+      VALUES (
+        'Poda de palmeras',
+        'Poda y limpieza de palmeras, retirada de hojas secas y frutos.',
+        60
+      );
+    ELSE
+      INSERT INTO public.services (name, description)
+      VALUES (
+        'Poda de palmeras',
+        'Poda y limpieza de palmeras, retirada de hojas secas y frutos.'
+      );
+    END IF;
+  END IF;
+END
+$$;

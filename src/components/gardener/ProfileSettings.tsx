@@ -4,24 +4,20 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useForm, FormProvider } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Save, User, MapPin, Phone, Briefcase, Star, ArrowLeft } from 'lucide-react';
-import { Service, GardenerProfile, PhytosanitaryPricingConfig } from '../../types';
+import { User, ArrowLeft } from 'lucide-react';
+import {
+  Service,
+  GardenerProfile,
+  LawnPricingConfig,
+  HedgePricingConfig,
+  PalmPricingConfig,
+  ShrubPricingConfig,
+  PhytosanitaryPricingConfig,
+  WeedingPricingConfig,
+} from '../../types';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
-import AddressAutocomplete from '../common/AddressAutocomplete';
-import DistanceMapSelector from '../common/DistanceMapSelector';
-import PalmPricingConfigurator, { PalmPricingConfig } from './PalmPricingConfigurator';
-import LawnPricingConfigurator, { LawnPricingConfig } from './LawnPricingConfigurator';
-import HedgePricingConfigurator, { HedgePricingConfig } from './HedgePricingConfigurator';
-import TreePricingConfigurator, { TreePricingConfig } from './TreePricingConfigurator';
-import TreePruningConfigurator from './TreePruningConfigurator';
 import { TreePruningServiceConfig } from '../../types/treePruning';
-import ShrubPricingConfigurator, { ShrubPricingConfig } from './ShrubPricingConfigurator';
-import PhytosanitaryPricingConfigurator from './PhytosanitaryPricingConfigurator';
-import WeedingPricingConfigurator from './WeedingPricingConfigurator';
-import PhytosanitaryLicenseUpload from './PhytosanitaryLicenseUpload';
-import StandardServiceConfig, { StandardPricingConfig } from './StandardServiceConfig';
-import ServiceItem from './ServiceItem';
 import PriceSimulator from './PriceSimulator';
 import UnsavedChangesModal from '../common/UnsavedChangesModal';
 import ProfileSidebar from './profile-tabs/ProfileSidebar';
@@ -39,6 +35,7 @@ import {
 } from '../../utils/serviceValidation';
 // import { isTreePruningConfigValid } from '../../domain/treePruning';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
+import { getCoordinatesFromAddress } from '../../utils/geolocation';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
 const ALLOWED_SERVICE_NAMES = [
@@ -101,13 +98,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [palmConfig, setPalmConfig] = useState<PalmPricingConfig | undefined>(undefined);
   const [lawnConfig, setLawnConfig] = useState<LawnPricingConfig | undefined>(undefined);
   const [hedgeConfig, setHedgeConfig] = useState<HedgePricingConfig | undefined>(undefined);
-  const [treeConfig, setTreeConfig] = useState<TreePricingConfig | undefined>(undefined);
-    const [treePruningConfig, setTreePruningConfig] = useState<TreePruningServiceConfig | undefined>(undefined);
+  const [treePruningConfig, setTreePruningConfig] = useState<TreePruningServiceConfig | undefined>(undefined);
   const [shrubConfig, setShrubConfig] = useState<ShrubPricingConfig | undefined>(undefined);
   const [phytosanitaryConfig, setPhytosanitaryConfig] = useState<PhytosanitaryPricingConfig | undefined>(undefined);
   const [weedingConfig, setWeedingConfig] = useState<WeedingPricingConfig | undefined>(undefined);
-  const [standardConfigs, setStandardConfigs] = useState<Record<string, StandardPricingConfig>>({});
-  const [servicePrices, setServicePrices] = useState<Record<string, number>>({}); // Base prices for standard services
   const [licenseStatus, setLicenseStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
 
   // Refactor State
@@ -209,14 +203,13 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     }
   });
 
-  const { register, handleSubmit, setValue, watch, formState: { errors } } = methods;
+  const { handleSubmit, setValue, watch } = methods;
 
   const watchedServices = watch('services') || [];
 
   useEffect(() => {
     fetchServices();
     fetchGardenerProfile();
-    fetchServicePrices();
   }, [user]);
 
   // Deep comparison helper (simple JSON based for this use case)
@@ -266,34 +259,119 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       updateDirtyState('Desbroce de malas hierbas', weedingConfig);
   }, [weedingConfig, savedConfigs]);
 
-
-  const fetchServicePrices = async () => {
-    if (!user?.id) return;
-    try {
-      const { data, error } = await supabase
-        .from('gardener_service_prices')
-        .select('service_id, price_per_unit, additional_config')
-        .eq('gardener_id', user.id);
-      if (error) throw error;
-      
-      const prices: Record<string, number> = {};
-      const configs: Record<string, StandardPricingConfig> = {};
-      const saved: Record<string, any> = {};
-
-      // Need to map service_id to service_name to store in savedConfigs by name (or by ID)
-      // Since services might not be loaded yet, we'll store by ID first or wait.
-      // Better to store by ID in savedConfigs to avoid name lookup issues.
-      // BUT our updateDirtyState uses names because switch(service.name) is easier.
-      // Let's use ID for savedConfigs to be safe, but we need service list to map ID->Name for the effect hooks?
-      // Actually, let's wait for services to be loaded.
-      // fetchServicePrices depends on services? No.
-      // But loadConfigs DOES.
-      
-      // Let's store raw data and process it in loadConfigs
-    } catch (e) {
-      console.error('Error fetching service prices:', e);
+  const normalizeServiceConfig = (serviceName: string, config: unknown) => {
+    if (serviceName === 'Servicios fitosanitarios') {
+      return ensurePhytosanitaryPersistedConfig(config as PhytosanitaryPricingConfig | undefined);
     }
+    return config;
   };
+
+  const getServiceConfig = useCallback((service: Service, overrideConfig?: unknown) => {
+    if (overrideConfig !== undefined) {
+      return normalizeServiceConfig(service.name, overrideConfig);
+    }
+
+    switch (service.name) {
+      case 'Poda de palmeras':
+        return palmConfig;
+      case 'Corte de césped':
+        return lawnConfig;
+      case 'Corte de setos a máquina':
+        return hedgeConfig;
+      case 'Poda de árboles':
+        return treePruningConfig;
+      case 'Poda de plantas y arbustos':
+        return shrubConfig;
+      case 'Servicios fitosanitarios':
+        return ensurePhytosanitaryPersistedConfig(phytosanitaryConfig);
+      case 'Desbroce de malas hierbas':
+        return weedingConfig;
+      default:
+        return undefined;
+    }
+  }, [hedgeConfig, lawnConfig, palmConfig, phytosanitaryConfig, shrubConfig, treePruningConfig, weedingConfig]);
+
+  const isServiceConfigValid = useCallback((service: Service, configOverride?: unknown) => {
+    const config = getServiceConfig(service, configOverride);
+
+    switch (service.name) {
+      case 'Poda de palmeras':
+        return isPalmConfigValid(config as PalmPricingConfig | undefined);
+      case 'Corte de césped':
+        return isLawnConfigValid(config as LawnPricingConfig | undefined);
+      case 'Corte de setos a máquina':
+        return isHedgeConfigValid(config as HedgePricingConfig | undefined);
+      case 'Poda de árboles':
+        return isTreePruningConfigValid(config as TreePruningServiceConfig | undefined);
+      case 'Poda de plantas y arbustos':
+        return isShrubConfigValid(config as ShrubPricingConfig | undefined);
+      case 'Servicios fitosanitarios':
+        return isPhytosanitaryConfigValid(config as PhytosanitaryPricingConfig | undefined);
+      case 'Desbroce de malas hierbas':
+        return isWeedingConfigValid(config as WeedingPricingConfig | undefined);
+      default:
+        return false;
+    }
+  }, [getServiceConfig]);
+
+  const buildServicePricePayload = useCallback((service: Service, active: boolean, overrideConfig?: unknown) => ({
+    gardener_id: user?.id,
+    service_id: service.id,
+    unit_type: (service as any).measurement || 'area',
+    price_per_unit: 0,
+    currency: 'EUR',
+    active,
+    additional_config: getServiceConfig(service, overrideConfig),
+  }), [getServiceConfig, user?.id]);
+
+  const syncLegacyServicesProjection = useCallback(async (nextServices: string[]) => {
+    if (!user?.id) return false;
+
+    const { error } = await (supabase.from('gardener_profiles') as any)
+      .update({ services: nextServices })
+      .eq('user_id', user.id);
+
+    if (error) {
+      throw error;
+    }
+
+    setGardenerProfile((prev) => (prev ? { ...prev, services: nextServices } : prev));
+    setValue('services', nextServices);
+    return true;
+  }, [setValue, user?.id]);
+
+  const persistGardenerProfile = useCallback(async (profileData: Record<string, unknown>) => {
+    if (!user?.id) {
+      throw new Error('No hay usuario autenticado para guardar el perfil.');
+    }
+
+    const { user_id: _ignoredUserId, ...updatePayload } = profileData;
+
+    const { data: updatedProfile, error: updateError } = await (supabase.from('gardener_profiles') as any)
+      .update(updatePayload)
+      .eq('user_id', user.id)
+      .select('user_id')
+      .maybeSingle();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    if (updatedProfile) {
+      return updatedProfile;
+    }
+
+    const { data: insertedProfile, error: insertError } = await (supabase.from('gardener_profiles') as any)
+      .insert(profileData)
+      .select('user_id')
+      .single();
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    return insertedProfile;
+  }, [user?.id]);
 
   // Combined loader for configs
   useEffect(() => {
@@ -302,21 +380,20 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       
       const { data } = await supabase
         .from('gardener_service_prices')
-        .select('service_id, additional_config, price_per_unit')
+        .select('service_id, additional_config, active')
         .eq('gardener_id', user.id);
         
       if (data) {
         const newSavedConfigs: Record<string, any> = {};
-        const newPrices: Record<string, number> = {};
+        const activeServiceIds: string[] = [];
 
         data.forEach((row: any) => {
           const service = services.find(s => s.id === row.service_id);
           if (!service) return;
+          if (row.active === true) {
+            activeServiceIds.push(service.id);
+          }
 
-          newPrices[service.id] = row.price_per_unit;
-
-          // Store saved config by Service Name for easier mapping with the effects above
-          // Or keep using ID. Let's use Service Name for consistency with the switch below.
           if (service.name === 'Servicios fitosanitarios') {
             const normalized = normalizePhytosanitaryPricingConfig(row.additional_config as PhytosanitaryPricingConfig | undefined);
             const persisted = ensurePhytosanitaryPersistedConfig(normalized);
@@ -334,17 +411,16 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               case 'Poda de árboles': setTreePruningConfig(row.additional_config as TreePruningServiceConfig); break;
               case 'Poda de plantas y arbustos': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
               case 'Desbroce de malas hierbas': setWeedingConfig(row.additional_config as WeedingPricingConfig); break;
-              default: 
-                  setStandardConfigs(prev => ({ ...prev, [service.id]: row.additional_config }));
+              default:
                   break;
           }
         });
         setSavedConfigs(newSavedConfigs);
-        setServicePrices(newPrices);
+        setValue('services', activeServiceIds);
       }
     };
     loadConfigs();
-  }, [user?.id, services]);
+  }, [services, setValue, user?.id]);
 
   const fetchServices = async () => {
     try {
@@ -367,8 +443,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const fetchGardenerProfile = async () => {
     if (!user) return;
     try {
-      const { data, error } = await supabase
-        .from('gardener_profiles')
+      const { data, error } = await (supabase.from('gardener_profiles') as any)
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
@@ -376,13 +451,13 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       if (error) throw error;
 
       if (data) {
-        setGardenerProfile(data);
-        setValue('full_name', data.full_name);
-        setValue('phone', data.phone);
-        setValue('address', data.address);
-        setValue('description', data.description);
-        setValue('max_distance', data.max_distance);
-        setValue('services', data.services || []);
+        const profile = data as GardenerProfile;
+        setGardenerProfile(profile);
+        setValue('full_name', profile.full_name);
+        setValue('phone', profile.phone);
+        setValue('address', profile.address);
+        setValue('description', profile.description);
+        setValue('max_distance', profile.max_distance);
       }
     } catch (error) {
       console.error('Error fetching gardener profile:', error);
@@ -482,66 +557,32 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     
     if (!service || !user) return;
 
-    if (isActive) {
-        // Deactivating
-        // Update DB immediately
-        const newServices = currentServices.filter(id => id !== serviceId);
-        
-        try {
-            const { error } = await supabase
-                .from('gardener_profiles')
-                .update({ services: newServices })
-                .eq('user_id', user.id);
-            
-            if (error) throw error;
-            
-            setValue('services', newServices);
-            toast.success(`Servicio "${service.name}" desactivado`);
-        } catch (e) {
-            console.error(e);
-            toast.error("Error al desactivar servicio");
-        }
-    } else {
-        // Activating - Check Validation First
-        let isValid = false;
-        
-        switch(service.name) {
-            case 'Poda de palmeras': isValid = isPalmConfigValid(palmConfig); break;
-            case 'Corte de césped': isValid = isLawnConfigValid(lawnConfig); break;
-            case 'Corte de setos a máquina': isValid = isHedgeConfigValid(hedgeConfig); break;
-            case 'Poda de árboles': 
-                isValid = isTreePruningConfigValid(treePruningConfig);
-                break;
-            case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(shrubConfig); break;
-            case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(phytosanitaryConfig); break;
-            case 'Desbroce de malas hierbas': isValid = isWeedingConfigValid(weedingConfig); break;
-            default: isValid = true; // Fallback for standard
-        }
+    if (!isActive && !isServiceConfigValid(service)) {
+      checkUnsavedAndAction(serviceId, 'expand');
+      toast.error(`Configuración incompleta para ${service.name}`);
+      return;
+    }
 
-        if (isValid) {
-            // Update DB immediately
-            const newServices = [...currentServices, serviceId];
-            try {
-                const { error } = await supabase
-                    .from('gardener_profiles')
-                    .update({ services: newServices })
-                    .eq('user_id', user.id);
-                
-                if (error) throw error;
-                
-                setValue('services', newServices);
-                toast.success(`Servicio "${service.name}" activado`);
-            } catch (e) {
-                console.error(e);
-                toast.error("Error al activar servicio");
-            }
-        } else {
-            // Invalid: Expand and show error
-            // If another service is open and dirty, we might trigger the modal?
-            // "Despliega la configuración automáticamente"
-            checkUnsavedAndAction(serviceId, 'expand');
-            toast.error(`Configuración incompleta para ${service.name}`);
-        }
+    const nextServices = isActive
+      ? currentServices.filter(id => id !== serviceId)
+      : [...currentServices, serviceId];
+
+    try {
+      const payload = buildServicePricePayload(service, !isActive);
+      const { error } = await (supabase.from('gardener_service_prices') as any).upsert(payload, {
+        onConflict: 'gardener_id,service_id',
+      });
+      if (error) throw error;
+
+      await syncLegacyServicesProjection(nextServices);
+      setSavedConfigs((prev) => ({
+        ...prev,
+        [service.name]: payload.additional_config,
+      }));
+      toast.success(`Servicio "${service.name}" ${isActive ? 'desactivado' : 'activado'}`);
+    } catch (e) {
+      console.error(e);
+      toast.error(`Error al ${isActive ? 'desactivar' : 'activar'} servicio`);
     }
   };
 
@@ -549,65 +590,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
   const saveServiceConfigInternal = async (service: Service): Promise<boolean> => {
       if (!user) return false;
-      
-      let configToSave;
-      let setConfigFunc;
-      
-      switch(service.name) {
-        case 'Poda de palmeras': configToSave = palmConfig; setConfigFunc = setPalmConfig; break;
-        case 'Corte de césped': configToSave = lawnConfig; setConfigFunc = setLawnConfig; break;
-        case 'Corte de setos a máquina': configToSave = hedgeConfig; setConfigFunc = setHedgeConfig; break;
-        case 'Poda de árboles': configToSave = treePruningConfig; setConfigFunc = setTreePruningConfig; break;
-        case 'Poda de plantas y arbustos': configToSave = shrubConfig; setConfigFunc = setShrubConfig; break;
-        case 'Servicios fitosanitarios': configToSave = ensurePhytosanitaryPersistedConfig(phytosanitaryConfig); setConfigFunc = setPhytosanitaryConfig; break;
-        case 'Desbroce de malas hierbas': configToSave = weedingConfig; setConfigFunc = setWeedingConfig; break;
-        default: return false;
-      }
-
-      const payload = {
-        gardener_id: user.id,
-        service_id: service.id,
-        unit_type: (service as any).measurement || 'area',
-        price_per_unit: 0, // Ignored for specialized services
-        currency: 'EUR',
-        active: true, // Always mark as active in prices table (doesn't mean active in profile)
-        additional_config: configToSave
-      };
+      const isActive = watchedServices.includes(service.id);
+      const payload = buildServicePricePayload(service, isActive);
 
       try {
-        const { error } = await supabase.from('gardener_service_prices').upsert(payload);
+        const { error } = await (supabase.from('gardener_service_prices') as any).upsert(payload, {
+          onConflict: 'gardener_id,service_id',
+        });
         if (error) throw error;
         
-        // Update Saved Configs
-        setSavedConfigs(prev => ({ ...prev, [service.name]: configToSave }));
-        toast.success(`Configuración guardada`);
-        
-        // Auto-Activate if Valid
-        // Check if currently active
-        const currentServices = watchedServices || [];
-        if (!currentServices.includes(service.id)) {
-            // Check validity again
-            let isValid = false;
-            switch(service.name) {
-                case 'Poda de palmeras': isValid = isPalmConfigValid(configToSave as PalmPricingConfig); break;
-                case 'Corte de césped': isValid = isLawnConfigValid(configToSave as LawnPricingConfig); break;
-                case 'Corte de setos a máquina': isValid = isHedgeConfigValid(configToSave as HedgePricingConfig); break;
-                case 'Poda de árboles': 
-                isValid = isTreePruningConfigValid(configToSave as TreePruningServiceConfig);
-                break;
-                case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(configToSave as ShrubPricingConfig); break;
-                case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(configToSave as PhytosanitaryPricingConfig); break;
-                case 'Desbroce de malas hierbas': isValid = isWeedingConfigValid(configToSave as WeedingPricingConfig); break;
-            }
-
-            if (isValid) {
-                 const newServices = [...currentServices, service.id];
-                 await supabase.from('gardener_profiles').update({ services: newServices }).eq('user_id', user.id);
-                 setValue('services', newServices);
-                 toast.success("Servicio activado automáticamente");
-            }
-        }
-
+        setSavedConfigs(prev => ({ ...prev, [service.name]: payload.additional_config }));
+        toast.success(isActive ? 'Configuración guardada y servicio sincronizado' : 'Configuración guardada');
         return true;
       } catch (error) {
         console.error(`Error saving ${service.name}:`, error);
@@ -619,7 +612,6 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const handleWrapperSave = async (serviceName: string, config: any) => {
       const service = services.find(s => s.name === serviceName);
       if (service) {
-          // Update local state first to ensure it matches what is being saved
            switch(serviceName) {
                 case 'Poda de palmeras': setPalmConfig(config); break;
                 case 'Corte de césped': setLawnConfig(config); break;
@@ -629,58 +621,19 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 case 'Desbroce de malas hierbas': setWeedingConfig(config); break;
             case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(config)); break;
            }
-          // Small delay to ensure state update propagates? 
-          // Actually, passing 'config' directly to save function is safer than relying on state
-          // But saveServiceConfigInternal uses state.
-          // Let's modify saveServiceConfigInternal to accept config optionally or just update state before calling.
-          // Since React state updates are async, we should use the config passed in arg.
-          
-          // Re-implementing specific save logic here to use the ARGUMENT config
+
           if (!user) return;
-          const payload = {
-            gardener_id: user.id,
-            service_id: service.id,
-            unit_type: (service as any).measurement || 'area',
-            price_per_unit: 0,
-            currency: 'EUR',
-            active: true,
-            additional_config: serviceName === 'Servicios fitosanitarios' ? ensurePhytosanitaryPersistedConfig(config) : config
-          };
+          const isActive = watchedServices.includes(service.id);
+          const payload = buildServicePricePayload(service, isActive, config);
           
           try {
-             const { error } = await supabase.from('gardener_service_prices').upsert(payload);
+             const { error } = await (supabase.from('gardener_service_prices') as any).upsert(payload, {
+               onConflict: 'gardener_id,service_id',
+             });
              if (error) throw error;
              
              setSavedConfigs(prev => ({ ...prev, [serviceName]: payload.additional_config }));
-             toast.success(`Configuración guardada`);
-
-             // Auto activate check logic...
-             const currentServices = watchedServices || [];
-             if (!currentServices.includes(service.id)) {
-                 let isValid = false;
-                 switch(serviceName) {
-                    case 'Poda de palmeras': isValid = isPalmConfigValid(config); break;
-                    case 'Corte de césped': isValid = isLawnConfigValid(config); break;
-                    case 'Corte de setos a máquina': isValid = isHedgeConfigValid(config); break;
-                    case 'Poda de árboles': 
-                isValid = !!treePruningConfig && 
-                          (treePruningConfig.formacion?.small ?? 0) > 0 && 
-                          (treePruningConfig.formacion?.medium ?? 0) > 0 &&
-                          (treePruningConfig.estructural?.small ?? 0) > 0 && 
-                          (treePruningConfig.estructural?.medium ?? 0) > 0 &&
-                          (treePruningConfig.minimumPrice ?? 0) > 0;
-                break;
-                    case 'Poda de plantas y arbustos': isValid = isShrubConfigValid(config); break;
-                    case 'Servicios fitosanitarios': isValid = isPhytosanitaryConfigValid(config); break;
-                    case 'Desbroce de malas hierbas': isValid = isWeedingConfigValid(config); break;
-                 }
-                 if (isValid) {
-                     const newServices = [...currentServices, service.id];
-                     await supabase.from('gardener_profiles').update({ services: newServices }).eq('user_id', user.id);
-                     setValue('services', newServices);
-                     toast.success("Servicio activado automáticamente");
-                 }
-             }
+             toast.success(isActive ? 'Configuración guardada y servicio sincronizado' : 'Configuración guardada');
           } catch(e) {
               console.error(e);
               toast.error("Error al guardar");
@@ -699,13 +652,33 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     if (!user) return;
     setLoading(true);
     try {
+        const normalizedAddress = String(data.address || '').trim();
+        const shouldRefreshCoordinates =
+          normalizedAddress !== String(gardenerProfile?.address || '').trim()
+          || !Number.isFinite(Number(gardenerProfile?.operational_latitude))
+          || !Number.isFinite(Number(gardenerProfile?.operational_longitude));
+
+        const resolvedCoordinates = shouldRefreshCoordinates
+          ? await getCoordinatesFromAddress(normalizedAddress)
+          : {
+              lat: Number(gardenerProfile?.operational_latitude),
+              lng: Number(gardenerProfile?.operational_longitude),
+            };
+
+        if (!resolvedCoordinates) {
+            toast.error('No se pudo validar la dirección base en el mapa. Selecciona una dirección sugerida válida antes de guardar.');
+            return;
+        }
+
         const profileData = {
             user_id: user.id,
             full_name: data.full_name,
             phone: data.phone,
-            address: data.address,
+            address: normalizedAddress,
             description: data.description,
             max_distance: data.max_distance,
+            operational_latitude: resolvedCoordinates.lat,
+            operational_longitude: resolvedCoordinates.lng,
             // We DO NOT update services list here, we preserve existing or current form state
             // But actually services are in 'data' from useForm
             services: watchedServices, // Preserve current state
@@ -714,15 +687,14 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             total_reviews: gardenerProfile?.total_reviews || 0
         };
 
-        const { error } = await supabase.from('gardener_profiles').upsert(profileData, { onConflict: 'user_id' });
-        if (error) throw error;
+        await persistGardenerProfile(profileData);
         
         const mainProfileData = {
             full_name: data.full_name,
             phone: data.phone,
-            address: data.address
+            address: normalizedAddress
         };
-        await supabase.from('profiles').update(mainProfileData).eq('user_id', user.id);
+        await (supabase.from('profiles') as any).update(mainProfileData).eq('user_id', user.id);
         
         toast.success("Información personal guardada");
         fetchGardenerProfile();
@@ -739,16 +711,15 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   // and NOT when user toggles checkboxes (watchedServices changes).
   const sortedServices = useMemo(() => {
       return [...services].sort((a, b) => {
-          const initialServices = gardenerProfile?.services || [];
-          const aActive = initialServices.includes(a.id);
-          const bActive = initialServices.includes(b.id);
+          const aActive = watchedServices.includes(a.id);
+          const bActive = watchedServices.includes(b.id);
           
           if (aActive && !bActive) return -1;
           if (!aActive && bActive) return 1;
           
           return a.name.localeCompare(b.name); // Keep alphabetical within groups
       });
-  }, [services, gardenerProfile]);
+  }, [services, watchedServices]);
 
   const handleTabChange = (tab: string) => {
     setSearchParams({ tab });
@@ -814,6 +785,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                   <CoverageTab 
                     loading={loading} 
                     initialData={coverageInitialData}
+                    hasOperationalCoordinates={
+                      Number.isFinite(Number(gardenerProfile?.operational_latitude))
+                      && Number.isFinite(Number(gardenerProfile?.operational_longitude))
+                    }
                     onSave={onSaveProfileInfo}
                   />
                 </div>
@@ -857,7 +832,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                         palmConfig,
                         lawnConfig,
                         hedgeConfig,
-                        treeConfig,
+                        treePruningConfig,
                         shrubConfig,
                         phytosanitaryConfig,
                         weedingConfig

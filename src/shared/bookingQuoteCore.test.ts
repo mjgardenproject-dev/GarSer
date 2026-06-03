@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { getBookingCustomerPaymentSummary } from './bookingQuoteCore';
+import {
+  buildAuthoritativeBookingQuote,
+  getBookingCustomerPaymentSummary,
+} from './bookingQuoteCore';
 
 describe('getBookingCustomerPaymentSummary', () => {
   it('deriva el resumen de pago visible al cliente sin alterar el contrato económico', () => {
@@ -28,5 +31,109 @@ describe('getBookingCustomerPaymentSummary', () => {
 
   it('devuelve null si todavía no hay datos económicos disponibles', () => {
     expect(getBookingCustomerPaymentSummary(null)).toBeNull();
+  });
+});
+
+describe('buildAuthoritativeBookingQuote', () => {
+  it.each([
+    {
+      title: 'falla cerrado si el cesped por horas no tiene tarifa horaria',
+      bookingData: {
+        serviceIds: ['svc-lawn'],
+        lawnZones: [{ quantity: 120, state: 'normal' }],
+      },
+      providerConfig: {
+        pricing_method: 'per_hour',
+        yield_m2_per_hour: 100,
+      },
+      reason: 'missing_pricing_config',
+      message: 'El servicio de césped por horas requiere una tarifa horaria válida.',
+    },
+    {
+      title: 'falla cerrado si los setos no tienen rendimiento para la altura solicitada',
+      bookingData: {
+        serviceIds: ['svc-hedge'],
+        hedgeZones: [{ type: 'cipres', height: '2-4m', length: 15, state: 'normal', faces_to_trim: 2 }],
+      },
+      providerConfig: {
+        pricing_matrix: { '2-4m': 18 },
+        yield_ml_per_hour: { '0-2m': 30 },
+      },
+      reason: 'missing_yield_config',
+      message: 'El servicio de setos requiere rendimientos configurados para cada altura ofertada.',
+    },
+    {
+      title: 'falla cerrado si el desbroce con herbicida no tiene tarifa de herbicida',
+      bookingData: {
+        serviceIds: ['svc-weeding'],
+        weedingZones: [{ area: 80, state: 'normal', applyHerbicide: true }],
+      },
+      providerConfig: {
+        precio_desbroce_m2: 1.4,
+        yield_m2_per_hour: 90,
+      },
+      reason: 'missing_pricing_config',
+      message: 'El desbroce con herbicida requiere una tarifa de herbicida válida.',
+    },
+    {
+      title: 'falla cerrado si la poda de arboles no tiene configuracion completa',
+      bookingData: {
+        serviceIds: ['svc-tree'],
+        treeGroups: [{ id: 'tree-1', pruningType: 'estructural', aiSizeBand: 'large', analysisLevel: 1 }],
+      },
+      providerConfig: {
+        estructural: { small: 50, medium: 100, large: 180 },
+      },
+      reason: 'invalid_tree_config',
+      message: 'La poda de árboles requiere una configuración completa de precios y dificultad.',
+    },
+    {
+      title: 'falla cerrado si fitosanitarios no tiene tratamientos activos',
+      bookingData: {
+        serviceIds: ['svc-phyto'],
+        phytosanitaryZones: [{ area: 60, affectedType: 'Césped', intent: 'preventive' }],
+      },
+      providerConfig: {
+        tratamientos_activos: [],
+        yields: { cesped_m2_per_hour: 100 },
+      },
+      reason: 'missing_treatment_config',
+      message: 'Los servicios fitosanitarios requieren tratamientos activos configurados.',
+    },
+    {
+      title: 'falla cerrado si fitosanitarios deja tarifas incompletas tras normalizar el desglose',
+      bookingData: {
+        serviceIds: ['svc-phyto'],
+        phytosanitaryZones: [{ area: 60, affectedType: 'Césped', intent: 'curative', curativeTarget: 'insects' }],
+      },
+      providerConfig: {
+        tratamientos_activos: ['insecticida'],
+        yields: { cesped_m2_per_hour: 100 },
+        superficies_plantas: {
+          hasta_100m2: { insecticida: 0, fungicida: 0, ecologico_preventivo: 0 },
+          mas_de_100m2: { insecticida: 0, fungicida: 0, ecologico_preventivo: 0 },
+        },
+      },
+      reason: 'missing_pricing_config',
+      message: 'Los servicios fitosanitarios tienen tratamientos o tarifas incompletos para la solicitud.',
+    },
+  ])('$title', ({ bookingData, providerConfig, reason, message }) => {
+    const result = buildAuthoritativeBookingQuote({
+      bookingData: bookingData as Parameters<typeof buildAuthoritativeBookingQuote>[0]['bookingData'],
+      providerConfig,
+    });
+
+    expect(result.totalPrice).toBe(0);
+    expect(result.estimatedHours).toBe(0);
+    expect(result.eligibility).toEqual({
+      isEligible: false,
+      reason,
+    });
+    expect(result.warnings).toEqual([
+      {
+        code: reason,
+        message,
+      },
+    ]);
   });
 });

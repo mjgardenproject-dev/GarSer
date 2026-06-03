@@ -7,6 +7,7 @@ import {
 } from '../domain/pricingEngine.ts';
 import { isHighestOpenRangeForSpecies } from '../domain/speciesBusinessRules.ts';
 import { calculateTreePruningQuoteForTrees } from '../domain/pricing/treePruningPricing.ts';
+import type { PhytosanitaryYields } from '../types/index.ts';
 import type { TreePruningServiceConfig } from '../types/treePruning.ts';
 
 export interface BookingQuoteLine {
@@ -31,6 +32,21 @@ export interface BookingStripeLineItem {
 export interface BookingQuoteWarning {
   code: string;
   message: string;
+}
+
+export type BookingEligibilityFailureCode =
+  | 'missing_provider_config'
+  | 'missing_service_payload'
+  | 'missing_pricing_config'
+  | 'missing_yield_config'
+  | 'missing_treatment_config'
+  | 'partial_palm_coverage'
+  | 'invalid_tree_config'
+  | 'unsupported_request';
+
+export interface BookingQuoteEligibility {
+  isEligible: boolean;
+  reason?: BookingEligibilityFailureCode;
 }
 
 export interface BookingQuotePalmGroupContext {
@@ -108,6 +124,10 @@ export interface BookingQuoteMetadata {
 
 export interface SerializableBookingData {
   address?: string;
+  addressCoordinates?: {
+    lat: number;
+    lng: number;
+  };
   description?: string;
   serviceIds?: string[];
   wasteRemoval?: boolean;
@@ -195,20 +215,12 @@ export interface BookingQuoteResult {
   warnings: BookingQuoteWarning[];
   metadata: BookingQuoteMetadata;
   economics: BookingQuoteEconomicBreakdown;
+  eligibility: BookingQuoteEligibility;
   availability?: BookingQuoteAvailability;
 }
 
 const DEFAULT_HEDGE_SURCHARGES = { media: 20, alta: 50 };
-const DEFAULT_SHRUB_PRICES = { pequeñas: 10, medianas: 15, grandes: 25 };
 const DEFAULT_SHRUB_SURCHARGES = { media: 20, alta: 50 };
-const DEFAULT_DURATION_YIELDS = {
-  cesped_m2_per_hour: 200,
-  setos_ml_per_hour: 50,
-  palmeras_units_per_hour: 4,
-  arboles_units_per_hour: 4,
-  plantas_m2_per_hour: 100,
-  endoterapia_units_per_hour: 2,
-};
 
 type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
 type PhytosanitaryTreatment = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
@@ -354,6 +366,7 @@ const BOOKING_TAX_RATE = 0.21;
 const BOOKING_MANAGEMENT_FEE_RATE = 0.125;
 const roundUp = (value: number) => Math.ceil(Number(value || 0));
 const roundCurrency = (value: number) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const hasPositiveNumber = (value: unknown) => Number.isFinite(Number(value)) && Number(value) > 0;
 
 export const getBookingCustomerPaymentSummary = (
   economics?: BookingQuoteEconomicBreakdown | null
@@ -381,6 +394,23 @@ const toSafeNumber = (value: unknown): number => {
   return parsed;
 };
 
+const buildIneligibleQuote = (
+  code: BookingEligibilityFailureCode,
+  message: string,
+  metadata: BookingQuoteMetadata = buildDefaultQuoteMetadata(),
+): BookingQuoteResult => ({
+  totalPrice: 0,
+  estimatedHours: 0,
+  breakdown: [],
+  warnings: [{ code, message }],
+  metadata,
+  economics: buildQuoteEconomics(0, []),
+  eligibility: {
+    isEligible: false,
+    reason: code,
+  },
+});
+
 const getDurationMultiplier = (state: string) => {
   const normalized = String(state || 'normal').toLowerCase();
   if (normalized.includes('muy') && normalized.includes('descuidad')) return 1.7;
@@ -392,13 +422,13 @@ const getDurationMultiplier = (state: string) => {
 
 const buildShrubBreakdown = (bookingData: SerializableBookingData, config: any, globalWaste: boolean): BookingQuoteLine[] => {
   const lines: BookingQuoteLine[] = [];
-  const priceTable = config?.prices_per_m2 || DEFAULT_SHRUB_PRICES;
+  const priceTable = config?.prices_per_m2 || {};
   const surcharges = config?.condition_surcharges || DEFAULT_SHRUB_SURCHARGES;
   const wastePercent = Number(config?.waste_removal?.percentage || 0);
 
   (bookingData.shrubGroups || []).forEach((group: any) => {
     const size = (group.size || 'pequeñas') as keyof typeof priceTable;
-    const unitPrice = Number(priceTable[size] || DEFAULT_SHRUB_PRICES.pequeñas);
+    const unitPrice = Number(priceTable[size] || 0);
     const area = Number(group.area || 0);
     const state = String(group.state || 'normal').toLowerCase();
     let surchargePercent = 0;
@@ -456,6 +486,50 @@ const buildDefaultQuoteMetadata = (): BookingQuoteMetadata => ({
     palmGroups: [],
   },
 });
+
+const hasRequestedBookingWork = (bookingData: SerializableBookingData) =>
+  Boolean(
+    bookingData.lawnZones?.length ||
+      bookingData.hedgeZones?.length ||
+      bookingData.palmGroups?.length ||
+      bookingData.treeGroups?.length ||
+      bookingData.shrubGroups?.length ||
+      bookingData.phytosanitaryZones?.length ||
+      bookingData.weedingZones?.length,
+  );
+
+const getRequestedPhytosanitaryYieldKeys = (zones: SerializableBookingData['phytosanitaryZones']) => {
+  const required = new Set<keyof PhytosanitaryYields>();
+  (zones || []).forEach((zone) => {
+    const metrics = zone.analysisMetrics;
+    if (metrics) {
+      if (metrics.cesped_m2) required.add('cesped_m2_per_hour');
+      if (metrics.seto_bajo_medio_ml || metrics.seto_alto_ml) required.add('setos_ml_per_hour');
+      if (
+        metrics.palmeras_ducha_peq_ud ||
+        metrics.palmeras_ducha_med_ud ||
+        metrics.palmeras_ducha_alta_ud ||
+        metrics.palmeras_cirugia_ud
+      ) {
+        required.add('palmeras_units_per_hour');
+      }
+      if (metrics.palmeras_endoterapia_troncos_ud) required.add('endoterapia_units_per_hour');
+      if (metrics.arboles_peq_ud || metrics.arboles_med_ud || metrics.arboles_gran_ud) {
+        required.add('arboles_units_per_hour');
+      }
+      if (metrics.plantas_superficie_calculada_m2) required.add('plantas_m2_per_hour');
+      return;
+    }
+
+    const affectedType = zone?.affectedType;
+    if (affectedType === 'Palmeras') required.add('palmeras_units_per_hour');
+    else if (affectedType === 'Árboles') required.add('arboles_units_per_hour');
+    else if (affectedType === 'Setos') required.add('setos_ml_per_hour');
+    else if (affectedType === 'Césped') required.add('cesped_m2_per_hour');
+    else required.add('plantas_m2_per_hour');
+  });
+  return Array.from(required);
+};
 
 const inferEconomicLineKind = (desc: string): BookingQuoteEconomicLine['kind'] => {
   const normalized = String(desc || '').toLowerCase();
@@ -920,9 +994,8 @@ const calculatePhytosanitaryQuote = (params: {
 export function buildAuthoritativeBookingQuote(params: {
   bookingData: SerializableBookingData;
   providerConfig: any;
-  globalMinPrice?: number;
 }): BookingQuoteResult {
-  const { bookingData, providerConfig, globalMinPrice = 0 } = params;
+  const { bookingData, providerConfig } = params;
   const config = providerConfig;
   const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
   const breakdown: BookingQuoteLine[] = [];
@@ -930,14 +1003,19 @@ export function buildAuthoritativeBookingQuote(params: {
   let metadata = buildDefaultQuoteMetadata();
 
   if (!config) {
-    return {
-      totalPrice: 0,
-      estimatedHours: 1,
-      breakdown,
-      warnings,
+    return buildIneligibleQuote(
+      'missing_provider_config',
+      'El profesional no tiene una configuración operativa válida para este servicio.',
       metadata,
-      economics: buildQuoteEconomics(0, breakdown),
-    };
+    );
+  }
+
+  if (!hasRequestedBookingWork(bookingData)) {
+    return buildIneligibleQuote(
+      'missing_service_payload',
+      'Faltan datos operativos del servicio para calcular un presupuesto autoritativo.',
+      metadata,
+    );
   }
 
   const pushWarning = (code: string, message: string) => {
@@ -961,6 +1039,13 @@ export function buildAuthoritativeBookingQuote(params: {
   }));
   if (bookingData.palmGroups?.length) {
     metadata = buildPalmQuoteMetadata(bookingData.palmGroups, palmGroups, config);
+    if (!metadata.palmCoverage?.isFull) {
+      return buildIneligibleQuote(
+        'partial_palm_coverage',
+        'La configuración del profesional no cubre todas las palmeras solicitadas.',
+        metadata,
+      );
+    }
   }
   const pricedPalmGroups = palmGroups.filter((_, index) => metadata.pricingContext.palmGroups[index]?.isPriced);
 
@@ -982,8 +1067,142 @@ export function buildAuthoritativeBookingQuote(params: {
       ? calculateTreePruningQuoteForTrees(config, validTrees, globalWaste)
       : null;
 
+  if (bookingData.treeGroups?.length) {
+    if (!isTreePruningConfig(config)) {
+      return buildIneligibleQuote(
+        'invalid_tree_config',
+        'La poda de árboles requiere una configuración completa de precios y dificultad.',
+        metadata,
+      );
+    }
+    if (validTrees.length === 0 || !treeQuote?.isProfessionalSuitable) {
+      return buildIneligibleQuote(
+        'invalid_tree_config',
+        'La configuración del profesional no permite cotizar los árboles solicitados.',
+        metadata,
+      );
+    }
+  }
+
   if (bookingData.lawnZones?.length) {
-    const yieldM2 = Number(config.yield_m2_per_hour || 150);
+    const usesHourlyPricing = config.pricing_method === 'per_hour';
+    if (!hasPositiveNumber(config.yield_m2_per_hour)) {
+      return buildIneligibleQuote(
+        'missing_yield_config',
+        'El servicio de césped requiere rendimiento por m2/hora configurado.',
+        metadata,
+      );
+    }
+    if (usesHourlyPricing) {
+      if (!hasPositiveNumber(config.hourly_rate)) {
+        return buildIneligibleQuote(
+          'missing_pricing_config',
+          'El servicio de césped por horas requiere una tarifa horaria válida.',
+          metadata,
+        );
+      }
+    } else if (!hasPositiveNumber(config.price_per_m2)) {
+      return buildIneligibleQuote(
+        'missing_pricing_config',
+        'El servicio de césped requiere un precio por m2 válido.',
+        metadata,
+      );
+    }
+  }
+
+  if (bookingData.hedgeZones?.length) {
+    const yields = config.yield_ml_per_hour || {};
+    for (const zone of bookingData.hedgeZones) {
+      const height = zone.height || '0-2m';
+      const base = Number(config.pricing_matrix?.[height] || config.species_prices?.[zone.type]?.[height] || 0);
+      if (!(base > 0)) {
+        return buildIneligibleQuote(
+          'missing_pricing_config',
+          'El servicio de setos requiere una matriz de precios completa para la altura solicitada.',
+          metadata,
+        );
+      }
+      if (!hasPositiveNumber(yields[height])) {
+        return buildIneligibleQuote(
+          'missing_yield_config',
+          'El servicio de setos requiere rendimientos configurados para cada altura ofertada.',
+          metadata,
+        );
+      }
+    }
+  }
+
+  if (bookingData.weedingZones?.length) {
+    if (!hasPositiveNumber(config.precio_desbroce_m2)) {
+      return buildIneligibleQuote(
+        'missing_pricing_config',
+        'El desbroce requiere un precio por m2 válido.',
+        metadata,
+      );
+    }
+    if (!hasPositiveNumber(config.yield_m2_per_hour)) {
+      return buildIneligibleQuote(
+        'missing_yield_config',
+        'El desbroce requiere un rendimiento por m2/hora válido.',
+        metadata,
+      );
+    }
+    if ((bookingData.weedingZones || []).some((zone) => zone.applyHerbicide) && !hasPositiveNumber(config.precio_herbicida_m2)) {
+      return buildIneligibleQuote(
+        'missing_pricing_config',
+        'El desbroce con herbicida requiere una tarifa de herbicida válida.',
+        metadata,
+      );
+    }
+  }
+
+  if (bookingData.shrubGroups?.length) {
+    const pricesPerM2 = config.prices_per_m2 || {};
+    const yieldsBySize = config.yield_m2_per_hour || {};
+    for (const group of bookingData.shrubGroups) {
+      const size = String(group.size || 'pequeñas');
+      if (!hasPositiveNumber(pricesPerM2[size])) {
+        return buildIneligibleQuote(
+          'missing_pricing_config',
+          'La poda de arbustos requiere precios válidos por tamaño.',
+          metadata,
+        );
+      }
+      if (!hasPositiveNumber(yieldsBySize[size])) {
+        return buildIneligibleQuote(
+          'missing_yield_config',
+          'La poda de arbustos requiere rendimientos válidos por tamaño.',
+          metadata,
+        );
+      }
+    }
+  }
+
+  if (bookingData.phytosanitaryZones?.length) {
+    const normalizedPhytosanitary = normalizePhytosanitaryPricingConfig(config);
+    const activeTreatments = normalizedPhytosanitary.tratamientos_activos || [];
+    if (activeTreatments.length === 0) {
+      return buildIneligibleQuote(
+        'missing_treatment_config',
+        'Los servicios fitosanitarios requieren tratamientos activos configurados.',
+        metadata,
+      );
+    }
+    const yields = config.yields || {};
+    const missingYield = getRequestedPhytosanitaryYieldKeys(bookingData.phytosanitaryZones).find(
+      (key) => !hasPositiveNumber(yields[key]),
+    );
+    if (missingYield) {
+      return buildIneligibleQuote(
+        'missing_yield_config',
+        'Los servicios fitosanitarios requieren rendimientos completos para el trabajo solicitado.',
+        metadata,
+      );
+    }
+  }
+
+  if (bookingData.lawnZones?.length) {
+    const yieldM2 = Number(config.yield_m2_per_hour);
     bookingData.lawnZones.forEach((zone) => {
       if (zone.quantity > 0) totalHours += (zone.quantity / yieldM2) * getDurationMultiplier(zone.state);
     });
@@ -993,7 +1212,7 @@ export function buildAuthoritativeBookingQuote(params: {
     const yields = config.yield_ml_per_hour || {};
     bookingData.hedgeZones.forEach((zone) => {
       const height = zone.height || '0-2m';
-      const yieldMl = Number(yields[height] || yields['0-2m'] || 15);
+      const yieldMl = Number(yields[height]);
       const length = Number(zone.length || 0);
       const faces = Number(zone.faces_to_trim || 1);
       totalHours += (length * faces / yieldMl) * getDurationMultiplier(zone.state || 'normal');
@@ -1028,44 +1247,44 @@ export function buildAuthoritativeBookingQuote(params: {
   }
 
   if (bookingData.weedingZones?.length) {
-    const yieldM2 = Number(config.yield_m2_per_hour || 100);
+    const yieldM2 = Number(config.yield_m2_per_hour);
     bookingData.weedingZones.forEach((zone) => {
       totalHours += (Number(zone.area || 0) / yieldM2) * getDurationMultiplier(zone.state || 'normal');
     });
   }
 
   if (bookingData.shrubGroups?.length) {
-    const yields = config.yield_m2_per_hour || DEFAULT_SHRUB_PRICES;
+    const yields = config.yield_m2_per_hour || {};
     bookingData.shrubGroups.forEach((group) => {
       const size = (group.size || 'pequeñas') as keyof typeof yields;
-      const yieldM2 = Number(yields[size] || 20);
+      const yieldM2 = Number(yields[size] || 0);
       totalHours += (Number(group.area || 0) / yieldM2) * getDurationMultiplier(group.state || 'normal');
     });
   }
 
   if (bookingData.phytosanitaryZones?.length) {
-    const yields = config.yields || DEFAULT_DURATION_YIELDS;
+    const yields = config.yields || {};
     bookingData.phytosanitaryZones.forEach((zone: any) => {
       const metrics = zone.analysisMetrics;
       if (metrics) {
-        if (metrics.cesped_m2) totalHours += metrics.cesped_m2 / Number(yields.cesped_m2_per_hour || DEFAULT_DURATION_YIELDS.cesped_m2_per_hour);
-        if (metrics.seto_bajo_medio_ml) totalHours += metrics.seto_bajo_medio_ml / Number(yields.setos_ml_per_hour || DEFAULT_DURATION_YIELDS.setos_ml_per_hour);
-        if (metrics.seto_alto_ml) totalHours += metrics.seto_alto_ml / Number(yields.setos_ml_per_hour || DEFAULT_DURATION_YIELDS.setos_ml_per_hour);
-        if (metrics.palmeras_ducha_peq_ud) totalHours += metrics.palmeras_ducha_peq_ud / Number(yields.palmeras_units_per_hour || DEFAULT_DURATION_YIELDS.palmeras_units_per_hour);
-        if (metrics.palmeras_ducha_med_ud) totalHours += metrics.palmeras_ducha_med_ud / Number(yields.palmeras_units_per_hour || DEFAULT_DURATION_YIELDS.palmeras_units_per_hour);
-        if (metrics.palmeras_ducha_alta_ud) totalHours += metrics.palmeras_ducha_alta_ud / Number(yields.palmeras_units_per_hour || DEFAULT_DURATION_YIELDS.palmeras_units_per_hour);
-        if (metrics.palmeras_cirugia_ud) totalHours += metrics.palmeras_cirugia_ud / Number(yields.palmeras_units_per_hour || DEFAULT_DURATION_YIELDS.palmeras_units_per_hour);
-        if (metrics.palmeras_endoterapia_troncos_ud) totalHours += metrics.palmeras_endoterapia_troncos_ud / Number(yields.endoterapia_units_per_hour || DEFAULT_DURATION_YIELDS.endoterapia_units_per_hour);
-        if (metrics.arboles_peq_ud) totalHours += metrics.arboles_peq_ud / Number(yields.arboles_units_per_hour || DEFAULT_DURATION_YIELDS.arboles_units_per_hour);
-        if (metrics.arboles_med_ud) totalHours += metrics.arboles_med_ud / Number(yields.arboles_units_per_hour || DEFAULT_DURATION_YIELDS.arboles_units_per_hour);
-        if (metrics.arboles_gran_ud) totalHours += metrics.arboles_gran_ud / Number(yields.arboles_units_per_hour || DEFAULT_DURATION_YIELDS.arboles_units_per_hour);
+        if (metrics.cesped_m2) totalHours += metrics.cesped_m2 / Number(yields.cesped_m2_per_hour || 0);
+        if (metrics.seto_bajo_medio_ml) totalHours += metrics.seto_bajo_medio_ml / Number(yields.setos_ml_per_hour || 0);
+        if (metrics.seto_alto_ml) totalHours += metrics.seto_alto_ml / Number(yields.setos_ml_per_hour || 0);
+        if (metrics.palmeras_ducha_peq_ud) totalHours += metrics.palmeras_ducha_peq_ud / Number(yields.palmeras_units_per_hour || 0);
+        if (metrics.palmeras_ducha_med_ud) totalHours += metrics.palmeras_ducha_med_ud / Number(yields.palmeras_units_per_hour || 0);
+        if (metrics.palmeras_ducha_alta_ud) totalHours += metrics.palmeras_ducha_alta_ud / Number(yields.palmeras_units_per_hour || 0);
+        if (metrics.palmeras_cirugia_ud) totalHours += metrics.palmeras_cirugia_ud / Number(yields.palmeras_units_per_hour || 0);
+        if (metrics.palmeras_endoterapia_troncos_ud) totalHours += metrics.palmeras_endoterapia_troncos_ud / Number(yields.endoterapia_units_per_hour || 0);
+        if (metrics.arboles_peq_ud) totalHours += metrics.arboles_peq_ud / Number(yields.arboles_units_per_hour || 0);
+        if (metrics.arboles_med_ud) totalHours += metrics.arboles_med_ud / Number(yields.arboles_units_per_hour || 0);
+        if (metrics.arboles_gran_ud) totalHours += metrics.arboles_gran_ud / Number(yields.arboles_units_per_hour || 0);
       } else if (zone.area > 0) {
         const affectedType = zone.affectedType;
-        if (affectedType === 'Palmeras') totalHours += zone.area / Number(yields.palmeras_units_per_hour || DEFAULT_DURATION_YIELDS.palmeras_units_per_hour);
-        else if (affectedType === 'Árboles') totalHours += zone.area / Number(yields.arboles_units_per_hour || DEFAULT_DURATION_YIELDS.arboles_units_per_hour);
-        else if (affectedType === 'Setos') totalHours += zone.area / Number(yields.setos_ml_per_hour || DEFAULT_DURATION_YIELDS.setos_ml_per_hour);
-        else if (affectedType === 'Césped') totalHours += zone.area / Number(yields.cesped_m2_per_hour || DEFAULT_DURATION_YIELDS.cesped_m2_per_hour);
-        else totalHours += zone.area / Number(yields.plantas_m2_per_hour || DEFAULT_DURATION_YIELDS.plantas_m2_per_hour);
+        if (affectedType === 'Palmeras') totalHours += zone.area / Number(yields.palmeras_units_per_hour || 0);
+        else if (affectedType === 'Árboles') totalHours += zone.area / Number(yields.arboles_units_per_hour || 0);
+        else if (affectedType === 'Setos') totalHours += zone.area / Number(yields.setos_ml_per_hour || 0);
+        else if (affectedType === 'Césped') totalHours += zone.area / Number(yields.cesped_m2_per_hour || 0);
+        else totalHours += zone.area / Number(yields.plantas_m2_per_hour || 0);
       }
     });
   }
@@ -1076,8 +1295,7 @@ export function buildAuthoritativeBookingQuote(params: {
   const applyMinimumPrice = (calculatedPrice: number) => {
     const rounded = roundUp(calculatedPrice);
     const gardenerMin = Number(config?.minimum_price || config?.minimumPrice || config?.importe_minimo || 0);
-    const effectiveMin = Math.max(gardenerMin, globalMinPrice);
-    if (effectiveMin > 0 && rounded > 0 && rounded < effectiveMin) return roundUp(effectiveMin);
+    if (gardenerMin > 0 && rounded > 0 && rounded < gardenerMin) return roundUp(gardenerMin);
     return rounded;
   };
 
@@ -1088,7 +1306,7 @@ export function buildAuthoritativeBookingQuote(params: {
 
   let totalPrice = 0;
 
-  if (config.pricing_method === 'per_hour' && Number(config.hourly_rate || 0) > 0 && !hasTreeOrPalm) {
+    if (config.pricing_method === 'per_hour' && Number(config.hourly_rate || 0) > 0 && !hasTreeOrPalm) {
     totalPrice = applyMinimumPrice(estimatedHours * Number(config.hourly_rate));
   } else {
     let total = 0;
@@ -1169,10 +1387,10 @@ export function buildAuthoritativeBookingQuote(params: {
 
     if (bookingData.shrubGroups?.length) {
       let shrubTotal = 0;
-      const pricesPerM2 = config.prices_per_m2 || DEFAULT_SHRUB_PRICES;
+      const pricesPerM2 = config.prices_per_m2 || {};
       bookingData.shrubGroups.forEach((group) => {
         const size = (group.size || 'pequeñas') as keyof typeof pricesPerM2;
-        const pricePerM2 = Number(pricesPerM2[size] || DEFAULT_SHRUB_PRICES.pequeñas);
+        const pricePerM2 = Number(pricesPerM2[size] || 0);
         const state = String(group.state || 'normal').toLowerCase();
         const surcharges = config.condition_surcharges || DEFAULT_SHRUB_SURCHARGES;
         let statePercent = 0;
@@ -1205,13 +1423,20 @@ export function buildAuthoritativeBookingQuote(params: {
           price: roundUp(phytosanitaryQuote.minimumFee),
         });
       }
+      if (phytosanitaryQuote.breakdown.some((item) => item.reason)) {
+        return buildIneligibleQuote(
+          'missing_pricing_config',
+          'Los servicios fitosanitarios tienen tratamientos o tarifas incompletos para la solicitud.',
+          metadata,
+        );
+      }
     }
 
     totalPrice = applyMinimumPrice(total);
     const currentBreakdownTotal = breakdown.reduce((sum, line) => sum + line.price, 0);
     if (totalPrice > 0 && breakdown.length > 0 && currentBreakdownTotal > 0 && totalPrice > currentBreakdownTotal) {
       breakdown.push({
-        desc: `Ajuste por importe mínimo${globalMinPrice > 0 ? ` global (${roundUp(Math.max(Number(config?.minimum_price || config?.minimumPrice || config?.importe_minimo || 0), globalMinPrice))}€)` : ''}`,
+        desc: `Ajuste por importe mínimo (${roundUp(Number(config?.minimum_price || config?.minimumPrice || config?.importe_minimo || 0))}€)`,
         price: totalPrice - currentBreakdownTotal,
       });
     }
@@ -1226,5 +1451,8 @@ export function buildAuthoritativeBookingQuote(params: {
     warnings,
     metadata,
     economics: buildQuoteEconomics(totalPrice, normalizedBreakdown),
+    eligibility: {
+      isEligible: totalPrice > 0,
+    },
   };
 }

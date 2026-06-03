@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, Star, Clock, Euro } from 'lucide-react';
+import { Search, MapPin, Star, Clock } from 'lucide-react';
 import { Service } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { getServiceImageFallbackUrl, getServiceImageUrl } from '../../utils/serviceImages';
@@ -10,10 +10,6 @@ const ServiceCatalog = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const currencyFormatter = useMemo(
-    () => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }),
-    []
-  );
 
   // Catálogo limitado a servicios canónicos de la IA
   const ALLOWED_SERVICE_NAMES = [
@@ -138,7 +134,7 @@ const ServiceCatalog = () => {
             {/* Service Image */}
             <div className="h-40 sm:h-48 bg-gradient-to-br from-green-400 to-green-600 relative overflow-hidden">
               <img
-                src={getServiceImageUrl(service, 800)}
+                src={getServiceImageUrl(service)}
                 alt={service.name}
                 width={800}
                 height={480}
@@ -147,9 +143,8 @@ const ServiceCatalog = () => {
                 className="w-full h-full object-cover"
               />
               <div className="absolute top-4 right-4 bg-white bg-opacity-90 backdrop-blur-sm rounded-full px-3 py-1">
-                <div className="flex items-center text-sm font-semibold text-gray-900">
-                  <Euro aria-hidden="true" className="w-4 h-4 mr-1" />
-                  {currencyFormatter.format(service.base_price)}
+                <div className="text-sm font-semibold text-gray-900">
+                  Precio personalizado
                 </div>
               </div>
             </div>
@@ -169,6 +164,10 @@ const ServiceCatalog = () => {
                   A domicilio
                 </div>
               </div>
+
+              <p className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs sm:text-sm text-gray-600">
+                El importe final se calcula en la reserva según el profesional, la configuracion del servicio y la disponibilidad real.
+              </p>
 
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <div className="flex items-center">

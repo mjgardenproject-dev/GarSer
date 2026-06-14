@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
 import { ShieldAlert } from 'lucide-react';
+import { fetchCurrentUserProfileRole, isAdminRole } from '../../lib/adminAccess';
 
 interface AdminProtectedRouteProps {
   children: React.ReactNode;
@@ -23,40 +23,14 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
         return;
       }
 
-      // Hardcoded list fallback (as used in previous AdminRoute)
-      const defaultAdminEmails = [
-        'admin@jardineria.com',
-        'developer@jardineria.com',
-        'mjgardenproject@gmail.com',
-        'migardenproject@gmail.com'
-      ];
-      const envAdminEmailsRaw = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [];
-      const adminEmails = Array.from(new Set([
-        ...defaultAdminEmails,
-        ...envAdminEmailsRaw
-      ].map(e => (e || '').trim().toLowerCase())));
-
-      if (adminEmails.includes((user.email || '').trim().toLowerCase())) {
-        if (mounted) {
-          setIsAdmin(true);
-          setChecking(false);
-        }
-        return;
-      }
-
-      // Check DB Profile
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        
+        const role = await fetchCurrentUserProfileRole(user.id);
         if (mounted) {
-          setIsAdmin(!error && data?.role === 'admin');
+          setIsAdmin(isAdminRole(role));
           setChecking(false);
         }
       } catch (err) {
+        console.error('Error checking admin role:', err);
         if (mounted) {
           setIsAdmin(false);
           setChecking(false);
@@ -82,7 +56,11 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
     );
   }
 
-  if (!user || isAdmin === false) {
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  if (isAdmin === false) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center border border-red-100">

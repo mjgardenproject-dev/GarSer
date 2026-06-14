@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import ServicePricePreview from './ServicePricePreview';
 import { createPortal } from 'react-dom';
 import { AlertCircle, AlertTriangle, Bug, ChevronDown, Leaf, Palmtree, Save, Scissors, Sprout, TreePine, Info } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
@@ -18,6 +17,7 @@ import {
   normalizePhytosanitaryPricingConfig,
   toPersistedPhytosanitaryConfig
 } from '../../utils/phytosanitaryConfig';
+import { getPrecioPorHora } from '../../utils/hourlyPricing';
 
 const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
 const isInvalid = (v: any) => v === undefined || v === null || v === '';
@@ -93,7 +93,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
 
   const renderEuroInput = (id: string, valueNum: number, onValueChange: (num: number) => void, customClass?: string) => {
     return (
-      <div className="w-24">
+      <div className="w-full max-w-[7.5rem]">
         <UnifiedNumericInput
           value={valueNum}
           autoSelect
@@ -112,7 +112,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
 
   const renderPercentageInput = (id: string, valueNum: number, onValueChange: (num: number) => void) => {
     return (
-      <div className="w-20">
+      <div className="w-[6.5rem]">
         <UnifiedNumericInput
           value={valueNum}
           autoSelect
@@ -155,7 +155,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
     const errors: string[] = [];
     
     if (cfg.pricing_method === 'per_hour') {
-      if (isInvalid(cfg.hourly_rate)) errors.push('hourly_rate');
+      if (isInvalid(cfg.precioPorHora)) errors.push('precioPorHora');
     } else {
       const requiredPricingFields: Array<[string, number]> = [
         ['cesped_preventivo', det.cesped.preventivo],
@@ -284,6 +284,19 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
         </div>
       </div>
 
+      <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex items-center justify-between">
+          <div className="pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Precio mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full max-w-[7.5rem] shrink-0">
+            {renderEuroInput('servicio_minimo', Number(config.importe_minimo || config.minimum_price || 0), setGlobalMinimum)}
+          </div>
+        </div>
+      </div>
+
       <hr className="border-gray-200 my-8" />
 
       {/* Método de Cobro */}
@@ -320,6 +333,30 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
         </p>
       </div>
 
+      {config.pricing_method === 'per_hour' && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full uppercase">Económico</span>
+          </div>
+          <div className="grid grid-cols-1 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">precioPorHora (€/h)</label>
+              <div className="w-full sm:w-[7.5rem]">
+                <UnifiedNumericInput
+                  value={config.precioPorHora}
+                  autoSelect
+                  onChange={(val) => updateConfig({ ...config, precioPorHora: val })}
+                  suffix="€/h"
+                  hasError={validationErrors.includes('precioPorHora')}
+                />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Tarifa económica aplicada a las horas estimadas según el rendimiento.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Velocidad de trabajo (Obligatorio) */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
@@ -328,27 +365,13 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
         </div>
         
         <div className="space-y-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
-          {config.pricing_method === 'per_hour' && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Precio por Hora (€/h)</label>
-              <div className="w-32">
-                <UnifiedNumericInput
-                  value={config.hourly_rate}
-                  autoSelect
-                  onChange={(val) => updateConfig({ ...config, hourly_rate: val })}
-                  suffix="€/h"
-                  hasError={validationErrors.includes('hourly_rate')}
-                />
-              </div>
-            </div>
-          )}
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-400 uppercase">Césped (m²/h)</label>
               <UnifiedNumericInput
                 value={config.yields?.cesped_m2_per_hour}
                 autoSelect
+                suffix="m²/h"
                 onChange={(v) => updateConfig({ ...config, yields: { ...config.yields!, cesped_m2_per_hour: v } })}
                 hasError={validationErrors.includes('yield_cesped')}
               />
@@ -358,6 +381,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
               <UnifiedNumericInput
                 value={config.yields?.setos_ml_per_hour}
                 autoSelect
+                suffix="ml/h"
                 onChange={(v) => updateConfig({ ...config, yields: { ...config.yields!, setos_ml_per_hour: v } })}
                 hasError={validationErrors.includes('yield_setos')}
               />
@@ -367,15 +391,17 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
               <UnifiedNumericInput
                 value={config.yields?.plantas_m2_per_hour}
                 autoSelect
+                suffix="m²/h"
                 onChange={(v) => updateConfig({ ...config, yields: { ...config.yields!, plantas_m2_per_hour: v } })}
                 hasError={validationErrors.includes('yield_plantas')}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-400 uppercase">Árboles (ud/h)</label>
+              <label className="text-xs font-bold text-gray-400 uppercase">Árboles (arb/h)</label>
               <UnifiedNumericInput
                 value={config.yields?.arboles_units_per_hour}
                 autoSelect
+                suffix="arb/h"
                 onChange={(v) => updateConfig({ ...config, yields: { ...config.yields!, arboles_units_per_hour: v } })}
                 hasError={validationErrors.includes('yield_arboles')}
               />
@@ -385,6 +411,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
               <UnifiedNumericInput
                 value={config.yields?.palmeras_units_per_hour}
                 autoSelect
+                suffix="ud/h"
                 onChange={(v) => updateConfig({ ...config, yields: { ...config.yields!, palmeras_units_per_hour: v } })}
                 hasError={validationErrors.includes('yield_palmeras')}
               />
@@ -394,11 +421,19 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
               <UnifiedNumericInput
                 value={config.yields?.endoterapia_units_per_hour}
                 autoSelect
+                suffix="ud/h"
                 onChange={(v) => updateConfig({ ...config, yields: { ...config.yields!, endoterapia_units_per_hour: v } })}
                 hasError={validationErrors.includes('yield_endoterapia')}
               />
             </div>
           </div>
+          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && (
+            <div className="p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
+              <p className="text-xs text-blue-800">
+                <span className="font-semibold">Regla de cálculo:</span> tiempo estimado por rendimiento x `precioPorHora`.
+              </p>
+            </div>
+          )}
           <p className="text-xs text-gray-500 mt-2 italic">
             Configura tus rendimientos por hora para cada tipo de tratamiento. Estos valores se utilizan para calcular la duración estimada del servicio y gestionar tu calendario.
           </p>
@@ -606,7 +641,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
                 type="number"
                 min="0"
                 step="0.1"
-                className={`w-20 h-10 px-3 border rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('modifier_eco') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                className={`h-10 w-[6.5rem] px-3 pr-8 border rounded-lg text-right text-base sm:text-sm tabular-nums focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('modifier_eco') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                 value={Number(config.pricing_modifiers?.eco?.percentage || 0) === 0 ? '' : Number(config.pricing_modifiers?.eco?.percentage || 0)}
                 placeholder="-"
                 onChange={(e) => {
@@ -630,7 +665,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
                 type="number"
                 min="0"
                 step="0.1"
-                className={`w-20 h-10 px-3 border rounded-lg text-right text-base sm:text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('modifier_combo') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                className={`h-10 w-[6.5rem] px-3 pr-8 border rounded-lg text-right text-base sm:text-sm tabular-nums focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('modifier_combo') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
                 value={Number(config.pricing_modifiers?.combo?.two_treatments_percentage || 0) === 0 ? '' : Number(config.pricing_modifiers?.combo?.two_treatments_percentage || 0)}
                 placeholder="-"
                 onChange={(e) => {
@@ -646,21 +681,6 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
         </div>
       </div>
 
-      <hr className="border-gray-200 my-8" />
-
-      <div>
-        <div className="flex items-center justify-between">
-          <div className="pr-2">
-            <span className="text-sm font-medium text-gray-900 block">Precio mínimo del servicio</span>
-            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-          </div>
-          <div className="w-24">
-            {renderEuroInput('servicio_minimo', Number(config.importe_minimo || config.minimum_price || 0), setGlobalMinimum)}
-          </div>
-        </div>
-      </div>
-
-      <ServicePricePreview serviceName="Servicios fitosanitarios" config={config} />
     </div>
   );
 };

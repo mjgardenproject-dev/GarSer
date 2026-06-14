@@ -6,6 +6,7 @@ import {
   PhytosanitaryType,
   LegacyPhytosanitaryType
 } from '../types';
+import { getPrecioPorHora } from './hourlyPricing';
 
 const emptyBaseMatrix = (): PhytosanitaryMatrixBase => ({ insecticida: 0, fungicida: 0, ecologico_preventivo: 0 });
 const emptyNoHerbMatrix = (): PhytosanitaryMatrixNoHerb => ({ insecticida: 0, fungicida: 0, ecologico_preventivo: 0 });
@@ -47,6 +48,7 @@ export const EMPTY_DETAILED_PHYTOSANITARY_PRICING: PhytosanitaryDetailedPricing 
 
 export const EMPTY_PHYTOSANITARY_CONFIG: PhytosanitaryPricingConfig = {
   version: 'phytosanitary_v2',
+  precioPorHora: 0,
   importe_minimo: 0,
   tratamientos_activos: [],
   superficies_plantas: {
@@ -68,6 +70,14 @@ export const EMPTY_PHYTOSANITARY_CONFIG: PhytosanitaryPricingConfig = {
   recargo_retirada: { percentage: 0 },
   minimum_price: 0,
   minimum_fee: 0,
+  yields: {
+    cesped_m2_per_hour: 0,
+    setos_ml_per_hour: 0,
+    palmeras_units_per_hour: 0,
+    arboles_units_per_hour: 0,
+    plantas_m2_per_hour: 0,
+    endoterapia_units_per_hour: 0
+  },
   waste_removal: { percentage: 0 },
   pricing_modifiers: {
     eco: { percentage: 0 },
@@ -155,11 +165,13 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
     const inferredEco = Number(raw.pricing_modifiers?.eco?.percentage || 0);
     const inferredComboTwo = Number(raw.pricing_modifiers?.combo?.two_treatments_percentage || 0);
     const inferredComboThreePlus = Number(raw.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
+    const precioPorHora = getPrecioPorHora(raw);
 
     return {
       ...EMPTY_PHYTOSANITARY_CONFIG,
       ...raw,
       version: 'phytosanitary_v2',
+      precioPorHora,
       importe_minimo: inferredMin,
       minimum_price: inferredMin,
       minimum_fee: inferredMin,
@@ -231,8 +243,10 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
 
 export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfig): PhytosanitaryPricingConfig => {
   const normalized = normalizePhytosanitaryPricingConfig(config);
+  const { hourly_rate: _legacyHourlyRate, ...normalizedWithoutLegacyHourlyRate } = normalized;
   const detailed = normalizeDetailedPhytosanitaryPricing(normalized.detailed_pricing);
   const inferredMin = Number(normalized.minimum_fee ?? normalized.importe_minimo ?? normalized.minimum_price ?? 0);
+  const precioPorHora = getPrecioPorHora(normalized);
   const normalizedEcoModifier = Number(normalized.pricing_modifiers?.eco?.percentage || 0);
   const normalizedComboTwoModifier = Number(normalized.pricing_modifiers?.combo?.two_treatments_percentage || 0);
   const normalizedComboThreeModifier = Number(normalized.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
@@ -246,8 +260,9 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
   const maxCirugia = Math.max(Number(detailed.palmeras.pequenas_cirugia || 0), Number(detailed.palmeras.medianas_cirugia || 0), Number(detailed.palmeras.altas_cirugia || 0));
 
   return {
-    ...normalized,
+    ...normalizedWithoutLegacyHourlyRate,
     version: 'phytosanitary_v2',
+    precioPorHora,
     importe_minimo: inferredMin,
     minimum_price: inferredMin,
     minimum_fee: inferredMin,

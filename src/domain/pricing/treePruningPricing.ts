@@ -57,7 +57,8 @@ function canHandleTree(config: TreePruningServiceConfig, pruningType: PruningSer
   if (band === 'small' || band === 'medium') return true;
   // Si el árbol es 'large' o 'over_9', el profesional debe tener configurado el rango 'large'
   const pricing = pruningType === 'estructural' ? config.estructural : config.formacion;
-  return pricing.large !== undefined && pricing.large > 0;
+  const yields = pruningType === 'estructural' ? config.yield_units_per_hour.estructural : config.yield_units_per_hour.formacion;
+  return pricing.large !== undefined && pricing.large > 0 && yields.large !== undefined && yields.large > 0;
 }
 
 export function calculateTreePruningQuoteForTrees(

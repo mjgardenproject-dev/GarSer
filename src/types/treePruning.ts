@@ -12,14 +12,14 @@ export type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
 export interface TreeHeightBandPricing {
   small: number; // Hasta 3m (incl.)
   medium: number; // >3m y hasta 5m (incl.)
-  large: number; // >5m y hasta 9m (incl.)
+  large?: number; // >5m y hasta 9m (incl.), opcional si el profesional no atiende grandes alturas
 }
 
 /**
  * Configuración completa del servicio de Poda de árboles para un profesional.
  *
- * Todos los rangos de altura (small, medium, large) son obligatorios para garantizar
- * que el profesional pueda atender cualquier solicitud estándar y para cálculos de tiempo.
+ * Los rangos small y medium son obligatorios. El rango large es opcional y define si el
+ * profesional acepta árboles grandes (>5m) y muy grandes (>9m).
  */
 export interface TreePruningServiceConfig {
   minimumPrice: number; // Precio mínimo de la reserva

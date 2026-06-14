@@ -68,37 +68,45 @@ const AdminDashboard: React.FC = () => {
     fetchDashboardData();
   }, []);
 
+  const formatNumber = (num: number) => new Intl.NumberFormat('es-ES').format(num);
+  const formatCurrency = (num: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
+
   const stats = [
-    { title: 'Usuarios Totales', value: data.totalUsers.toString(), icon: Users, color: 'text-blue-500' },
-    { title: 'Servicios Activos', value: data.activeServices.toString(), icon: Briefcase, color: 'text-purple-500' },
-    { title: 'Certificados Pendientes', value: data.pendingCertificates.toString(), icon: Leaf, color: 'text-green-500' },
-    { title: 'Ingresos Totales', value: `€${data.totalRevenue.toFixed(2)}`, icon: TrendingUp, color: 'text-emerald-500' },
+    { title: 'Usuarios Totales', value: formatNumber(data.totalUsers), icon: Users, color: 'text-blue-500' },
+    { title: 'Servicios Activos', value: formatNumber(data.activeServices), icon: Briefcase, color: 'text-purple-500' },
+    { title: 'Certificados Pendientes', value: formatNumber(data.pendingCertificates), icon: Leaf, color: 'text-green-500' },
+    { title: 'Ingresos Totales', value: formatCurrency(data.totalRevenue), icon: TrendingUp, color: 'text-emerald-500' },
   ];
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Dashboard Administrativo</h2>
-      <p className="text-gray-600">Bienvenido al panel de control central.</p>
+      <header>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard Administrativo</h1>
+        <p className="text-gray-600 mt-1">Bienvenido al panel de control central.</p>
+      </header>
       
-      {loading ? (
-        <div className="flex items-center justify-center p-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map((stat, i) => (
-            <div key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-500 mb-1">{stat.title}</p>
-                <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
-              </div>
-              <div className={`p-4 bg-gray-50 rounded-full ${stat.color}`}>
-                <stat.icon className="w-8 h-8" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div aria-live="polite">
+        {loading ? (
+          <div className="flex items-center justify-center p-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" aria-hidden="true"></div>
+            <span className="sr-only">Cargando datos del dashboard…</span>
+          </div>
+        ) : (
+          <section aria-label="Estadísticas generales" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {stats.map((stat, i) => (
+              <article key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
+                <div>
+                  <h2 className="text-sm font-medium text-gray-500 mb-1">{stat.title}</h2>
+                  <p className="text-3xl font-bold text-gray-900" style={{ fontVariantNumeric: 'tabular-nums' }}>{stat.value}</p>
+                </div>
+                <div className={`p-4 bg-gray-50 rounded-full ${stat.color}`}>
+                  <stat.icon className="w-8 h-8" aria-hidden="true" />
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+      </div>
     </div>
   );
 };

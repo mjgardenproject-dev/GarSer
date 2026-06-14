@@ -83,15 +83,15 @@ const StandardServiceConfig: React.FC<StandardServiceConfigProps> = ({ value, on
           <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Estado del Jardín</h4>
           <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100">
             
-            <div className="flex items-center justify-between">
-              <span className="text-gray-700 text-sm font-medium">Descuidado</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 text-gray-700 text-sm font-medium">Descuidado</span>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-sm font-medium">+</span>
                 <input
                   type="number"
                   min="0"
                   max="500"
-                  className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
+                  className="h-9 w-[6.5rem] px-3 pr-8 border border-gray-300 rounded-lg text-right text-sm tabular-nums focus:ring-2 focus:ring-green-500"
                   value={config.condition_surcharges.descuidado}
                   onChange={(e) => handleChange({
                     ...config,
@@ -105,15 +105,15 @@ const StandardServiceConfig: React.FC<StandardServiceConfigProps> = ({ value, on
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-gray-700 text-sm font-medium">Muy Descuidado</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 text-gray-700 text-sm font-medium">Muy Descuidado</span>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-sm font-medium">+</span>
                 <input
                   type="number"
                   min="0"
                   max="500"
-                  className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
+                  className="h-9 w-[6.5rem] px-3 pr-8 border border-gray-300 rounded-lg text-right text-sm tabular-nums focus:ring-2 focus:ring-green-500"
                   value={config.condition_surcharges.muy_descuidado}
                   onChange={(e) => handleChange({
                     ...config,
@@ -134,8 +134,8 @@ const StandardServiceConfig: React.FC<StandardServiceConfigProps> = ({ value, on
         <div>
           <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wide mb-3">Retirada de Restos</h4>
           <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-100 h-full">
-            <div className="flex items-center justify-between h-full">
-              <div className="pr-2">
+            <div className="flex items-center justify-between gap-3 h-full">
+              <div className="min-w-0 pr-2">
                 <span className="text-gray-700 text-sm font-medium block">Recargo por retirada</span>
                 <p className="text-xs text-gray-500 mt-1">Se aplica si el cliente lo solicita.</p>
               </div>
@@ -145,7 +145,7 @@ const StandardServiceConfig: React.FC<StandardServiceConfigProps> = ({ value, on
                   type="number"
                   min="0"
                   max="500"
-                  className="w-16 h-9 px-2 border border-gray-300 rounded-lg text-right text-sm focus:ring-2 focus:ring-green-500"
+                  className="h-9 w-[6.5rem] px-3 pr-8 border border-gray-300 rounded-lg text-right text-sm tabular-nums focus:ring-2 focus:ring-green-500"
                   value={config.waste_removal.percentage}
                   onChange={(e) => handleChange({
                     ...config,

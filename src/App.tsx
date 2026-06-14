@@ -32,6 +32,7 @@ import PublicHomePage from './pages/public/PublicHomePage';
 import MarbellaLandingPage from './pages/public/MarbellaLandingPage';
 import GardenersLandingPage from './pages/public/GardenersLandingPage';
 import { supabase } from './lib/supabase';
+import { fetchCurrentUserProfileRole, AppProfileRole } from './lib/adminAccess';
 import { hasWizardResume } from './utils/bookingResumeStorage';
 
 import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
@@ -66,6 +67,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
   const [statusLoaded, setStatusLoaded] = useState(false);
+  const [profileRole, setProfileRole] = useState<AppProfileRole>(null);
 
   useEffect(() => {
     // Si está cargando auth, esperamos
@@ -74,6 +76,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     // Si no hay usuario, reseteamos y marcamos como cargado
     if (!user?.id) {
         setApplicationStatus(null);
+        setProfileRole(null);
         setStatusLoaded(true);
         return;
     }
@@ -84,6 +87,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
     const fetchStatus = async () => {
       try {
+        const currentRole = await fetchCurrentUserProfileRole(user.id);
+        setProfileRole(currentRole);
+
         // Optimización: Hacemos una única llamada compuesta o paralela si es posible
         // Primero verificamos perfil activo (es lo más común para usuarios establecidos)
         
@@ -160,6 +166,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   // Strict Redirect Logic
   useEffect(() => {
     if (authLoading || !statusLoaded || !user) return;
+
+    // Los administradores no deben ser forzados a seguir los flujos de jardinero (como /apply o /status)
+    if (profileRole === 'admin') return;
 
     const isGardenerIntent = (user?.user_metadata?.role === 'gardener' || 
                              user?.user_metadata?.requested_role === 'gardener' ||
@@ -265,6 +274,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           element={
             <ProtectedRoute>
               {(() => {
+                if (profileRole === 'admin') {
+                  return <Navigate to="/admin/dashboard" replace />;
+                }
+
                 const metaIntent = (user as any)?.user_metadata?.role === 'gardener' || (user as any)?.user_metadata?.requested_role === 'gardener';
                 const lsRole = (()=>{ try { return localStorage.getItem('signup_role'); } catch { return null; } })();
                 const baseIntent = metaIntent || lsRole === 'gardener' || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
@@ -407,6 +420,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             <ProtectedRoute>
               {/* Mostrar lista distinta según el rol sin depender del perfil */}
               {(() => {
+                if (profileRole === 'admin') {
+                  return <Navigate to="/admin/dashboard" replace />;
+                }
                 const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
                 const effectiveRole = fallbackRole;
                 if (effectiveRole === 'gardener') {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculatePhytosanitaryQuote } from './serviceValidation';
+import { calculatePhytosanitaryQuote, isTreePruningConfigValid } from './serviceValidation';
 
 const baseConfig = {
   version: 'phytosanitary_v2' as const,
@@ -159,5 +159,39 @@ describe('Phytosanitary Photo Validation', () => {
     expect(testValidation(3).length).toBe(0);
     expect(testValidation(5).length).toBe(0);
     expect(testValidation(6)).toContain('No puedes analizar más de 5 fotos por zona.');
+  });
+});
+
+describe('isTreePruningConfigValid', () => {
+  it('acepta configuraciones sin banda large cuando precios y yields son consistentes', () => {
+    expect(
+      isTreePruningConfigValid({
+        minimumPrice: 80,
+        formacion: { small: 40, medium: 70 },
+        estructural: { small: 50, medium: 90 },
+        difficultyIncrease: 25,
+        wasteRemovalMultiplier: 10,
+        yield_units_per_hour: {
+          formacion: { small: 4, medium: 2 },
+          estructural: { small: 2, medium: 1 },
+        },
+      } as any)
+    ).toBe(true);
+  });
+
+  it('rechaza configuraciones con large definido solo en precio o solo en yield', () => {
+    expect(
+      isTreePruningConfigValid({
+        minimumPrice: 80,
+        formacion: { small: 40, medium: 70, large: 120 },
+        estructural: { small: 50, medium: 90 },
+        difficultyIncrease: 25,
+        wasteRemovalMultiplier: 10,
+        yield_units_per_hour: {
+          formacion: { small: 4, medium: 2 },
+          estructural: { small: 2, medium: 1 },
+        },
+      } as any)
+    ).toBe(false);
   });
 });

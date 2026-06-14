@@ -137,95 +137,96 @@ const RoleMonitor = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-3">
-            <Shield className="h-8 w-8 text-blue-600" />
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Monitor de Roles</h1>
-              <p className="text-gray-600">Supervisión y corrección automática de inconsistencias</p>
-            </div>
-          </div>
-          <button
-            onClick={checkAllRoles}
-            disabled={loading}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            <span>Verificar Roles</span>
-          </button>
-        </div>
-
-        {/* Estadísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="flex items-center space-x-3">
-              <Users className="h-6 w-6 text-blue-600" />
-              <div>
-                <p className="text-sm text-blue-600">Total Usuarios</p>
-                <p className="text-2xl font-bold text-blue-900">{stats.totalUsers}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-green-50 p-4 rounded-lg">
-            <div className="flex items-center space-x-3">
-              <CheckCircle className="h-6 w-6 text-green-600" />
-              <div>
-                <p className="text-sm text-green-600">Roles Consistentes</p>
-                <p className="text-2xl font-bold text-green-900">{stats.consistentUsers}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-red-50 p-4 rounded-lg">
-            <div className="flex items-center space-x-3">
-              <AlertTriangle className="h-6 w-6 text-red-600" />
-              <div>
-                <p className="text-sm text-red-600">Inconsistencias</p>
-                <p className="text-2xl font-bold text-red-900">{stats.inconsistentUsers}</p>
-              </div>
-            </div>
+    <div className="p-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+        <div className="flex items-center gap-3">
+          <Shield className="w-8 h-8 text-blue-600 shrink-0" aria-hidden="true" />
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">Supervisión Automática</h3>
+            <p className="text-sm text-gray-600">Detección y corrección de inconsistencias</p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={checkAllRoles}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <span>Verificar Roles</span>
+        </button>
+      </div>
 
-        {/* Lista de inconsistencias */}
+      {/* Estadísticas */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center gap-3">
+          <div className="p-3 bg-blue-100 text-blue-600 rounded-lg shrink-0">
+            <Users className="w-6 h-6" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-blue-800">Total Usuarios</p>
+            <p className="text-2xl font-bold text-blue-900">{stats.totalUsers}</p>
+          </div>
+        </div>
+        
+        <div className="bg-green-50 p-4 rounded-xl border border-green-100 flex items-center gap-3">
+          <div className="p-3 bg-green-100 text-green-600 rounded-lg shrink-0">
+            <CheckCircle className="w-6 h-6" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-green-800">Roles Consistentes</p>
+            <p className="text-2xl font-bold text-green-900">{stats.consistentUsers}</p>
+          </div>
+        </div>
+        
+        <div className="bg-red-50 p-4 rounded-xl border border-red-100 flex items-center gap-3">
+          <div className="p-3 bg-red-100 text-red-600 rounded-lg shrink-0">
+            <AlertTriangle className="w-6 h-6" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-red-800">Inconsistencias</p>
+            <p className="text-2xl font-bold text-red-900">{stats.inconsistentUsers}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Lista de inconsistencias */}
+      <div aria-live="polite">
         {inconsistencies.length > 0 && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Inconsistencias Detectadas</h2>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
+              <h4 className="text-base font-semibold text-gray-900">Inconsistencias Detectadas</h4>
               <button
+                type="button"
                 onClick={fixAllInconsistencies}
                 disabled={loading}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors"
               >
                 Corregir Todas
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3">
               {inconsistencies.map((inconsistency, index) => (
-                <div key={index} className="border border-red-200 rounded-lg p-4 bg-red-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium text-gray-900">{inconsistency.full_name}</h3>
-                      <p className="text-sm text-gray-600">
-                        Rol actual: <span className="font-medium text-red-600">{inconsistency.profile_role}</span>
-                        {' → '}
-                        Rol esperado: <span className="font-medium text-green-600">{inconsistency.expected_role}</span>
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {inconsistency.has_gardener_profile ? 'Tiene perfil de jardinero' : 'No tiene perfil de jardinero'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => fixInconsistency(inconsistency)}
-                      className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
-                    >
-                      Corregir
-                    </button>
+                <div key={index} className="border border-red-200 rounded-xl p-4 bg-red-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <h5 className="font-semibold text-gray-900 truncate" title={inconsistency.full_name}>{inconsistency.full_name}</h5>
+                    <p className="text-sm text-gray-700 mt-1">
+                      Rol actual: <span className="font-medium text-red-700">{inconsistency.profile_role}</span>
+                      <span className="mx-2 text-gray-400">→</span>
+                      Rol esperado: <span className="font-medium text-green-700">{inconsistency.expected_role}</span>
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {inconsistency.has_gardener_profile ? 'Tiene perfil de jardinero' : 'No tiene perfil de jardinero'}
+                    </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => fixInconsistency(inconsistency)}
+                    className="shrink-0 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors w-full sm:w-auto"
+                  >
+                    Corregir
+                  </button>
                 </div>
               ))}
             </div>
@@ -233,10 +234,10 @@ const RoleMonitor = () => {
         )}
 
         {inconsistencies.length === 0 && !loading && (
-          <div className="text-center py-8">
-            <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">¡Todos los roles están consistentes!</h3>
-            <p className="text-gray-600">No se encontraron inconsistencias en la base de datos.</p>
+          <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-100">
+            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" aria-hidden="true" />
+            <h4 className="text-base font-medium text-gray-900 mb-1">¡Todos los roles están consistentes!</h4>
+            <p className="text-sm text-gray-600">No se encontraron inconsistencias en la base de datos.</p>
           </div>
         )}
       </div>

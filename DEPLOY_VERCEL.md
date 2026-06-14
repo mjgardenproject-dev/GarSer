@@ -36,10 +36,17 @@ git push -u origin main
 En el panel de Vercel, ve a Settings > Environment Variables y agrega:
 
 ```
-VITE_SUPABASE_URL = https://hleqspdnjfswrmozjkai.supabase.co
-VITE_SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhsZXFzcGRuamZzd3Jtb3pqa2FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1OTI1MjQsImV4cCI6MjA3MzE2ODUyNH0.WFVv7I5xFdIGsj40ln3Wt4qltMO9fFcmSdKLkoRlvEE
-VITE_GOOGLE_MAPS_API_KEY = AIzaSyBxq8Jh-pzlfAvG-H8f_t67SWUdxlhyZ14
+VITE_SUPABASE_URL = https://tu-proyecto.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY = sb_publishable_xxxxx
+# Compatibilidad legacy si tu proyecto aun usa anon JWT
+VITE_SUPABASE_ANON_KEY = eyJ...opcional...
+VITE_GOOGLE_MAPS_API_KEY = AIza...restringida-por-dominio...
 ```
+
+Notas importantes:
+- `VITE_*` son variables publicas del frontend, no secretos.
+- No pongas `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `STRIPE_SECRET_KEY` ni secretos equivalentes en Vercel como variables del frontend.
+- Los secretos de backend deben vivir en Supabase Secrets, Edge Functions o en el entorno server-side que los consuma.
 
 ### 5. Desplegar
 - Haz clic en "Deploy"

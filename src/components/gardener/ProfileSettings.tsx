@@ -18,7 +18,6 @@ import {
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { TreePruningServiceConfig } from '../../types/treePruning';
-import PriceSimulator from './PriceSimulator';
 import UnsavedChangesModal from '../common/UnsavedChangesModal';
 import ProfileSidebar from './profile-tabs/ProfileSidebar';
 import PersonalTab from './profile-tabs/PersonalTab';
@@ -824,21 +823,6 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     savedConfigs={savedConfigs}
                     licenseStatus={licenseStatus}
                   />
-                  
-                  <div className="mt-8 pt-8 border-t">
-                    <PriceSimulator
-                      services={sortedServices}
-                      configs={{
-                        palmConfig,
-                        lawnConfig,
-                        hedgeConfig,
-                        treePruningConfig,
-                        shrubConfig,
-                        phytosanitaryConfig,
-                        weedingConfig
-                      }}
-                    />
-                  </div>
                 </div>
               )}
             </form>

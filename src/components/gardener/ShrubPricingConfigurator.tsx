@@ -6,7 +6,7 @@ import { ShrubPricingConfig, ShrubSize } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import ServicePricePreview from './ServicePricePreview';
+import { getPrecioPorHora } from '../../utils/hourlyPricing';
 
 const EMPTY_CONFIG: ShrubPricingConfig = {
   prices_per_m2: { pequeñas: '' as any, medianas: '' as any, grandes: '' as any },
@@ -14,7 +14,7 @@ const EMPTY_CONFIG: ShrubPricingConfig = {
   minimum_price: '' as any,
   yield_m2_per_hour: { pequeñas: '' as any, medianas: '' as any, grandes: '' as any },
   pricing_method: 'per_quantity',
-  hourly_rate: '' as any
+  precioPorHora: '' as any
 };
 
 const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
@@ -51,6 +51,8 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     return {
       ...EMPTY_CONFIG,
       ...value,
+      hourly_rate: undefined,
+      precioPorHora: getVal(value.precioPorHora ?? value.hourly_rate),
       minimum_price: getVal(value.minimum_price),
       prices_per_m2: {
         pequeñas: getVal(value.prices_per_m2?.pequeñas),
@@ -95,7 +97,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     const sizes: ShrubSize[] = ['pequeñas', 'medianas', 'grandes'];
     
     if (cfg.pricing_method === 'per_hour') {
-      if (isInvalid(cfg.hourly_rate)) errors.push('hourly_rate');
+      if (isInvalid(cfg.precioPorHora)) errors.push('precioPorHora');
     } else {
       sizes.forEach(s => {
         if (isInvalid(cfg.prices_per_m2[s])) errors.push(s);
@@ -183,6 +185,26 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         </div>
       </div>
 
+      <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full max-w-[7.5rem] shrink-0">
+            <UnifiedNumericInput
+                value={config.minimum_price}
+                autoSelect
+                onChange={handleMinimumPriceChange}
+                hasError={validationErrors.includes('minimum_price')}
+              />
+          </div>
+        </div>
+      </div>
+
+      <hr className="border-gray-200 my-8" />
+
       {/* Método de Cobro */}
       <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-8">
         <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Método de Cobro</h4>
@@ -217,6 +239,30 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         </p>
       </div>
 
+      {config.pricing_method === 'per_hour' && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full uppercase">Económico</span>
+          </div>
+          <div className="grid grid-cols-1 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">precioPorHora (€/h)</label>
+              <div className="w-full sm:w-[7.5rem]">
+                <UnifiedNumericInput
+                  value={config.precioPorHora}
+                  autoSelect
+                  onChange={(val) => onChange({ ...config, precioPorHora: val })}
+                  suffix="€/h"
+                  hasError={validationErrors.includes('precioPorHora')}
+                />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Coste económico aplicado a la duración estimada del servicio.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Velocidad de trabajo (Obligatorio) */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
@@ -225,30 +271,16 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         </div>
         
         <div className="space-y-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
-          {config.pricing_method === 'per_hour' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Precio por Hora (€/h)</label>
-              <div className="w-32">
-                <UnifiedNumericInput
-                  value={config.hourly_rate}
-                  autoSelect
-                  onChange={(val) => onChange({ ...config, hourly_rate: val })}
-                  suffix="€/h"
-                  hasError={validationErrors.includes('hourly_rate')}
-                />
-              </div>
-            </div>
-          )}
-
           <p className="text-sm font-medium text-gray-700 mb-3">Velocidad de trabajo (m²/h):</p>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="min-w-0 space-y-1">
               <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 mb-2">
                 Pequeñas <span className="block text-[10px] text-gray-400 font-normal">(0-1m)</span>
               </label>
               <UnifiedNumericInput
                 value={config.yield_m2_per_hour.pequeñas}
                 autoSelect
+                suffix="m²/h"
                 onChange={(val) => onChange({
                   ...config,
                   yield_m2_per_hour: { ...config.yield_m2_per_hour, pequeñas: val }
@@ -256,13 +288,14 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                 hasError={validationErrors.includes('yield_pequeñas')}
               />
             </div>
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 mb-2">
                 Medianas <span className="block text-[10px] text-gray-400 font-normal">(1-2m)</span>
               </label>
               <UnifiedNumericInput
                 value={config.yield_m2_per_hour.medianas}
                 autoSelect
+                suffix="m²/h"
                 onChange={(val) => onChange({
                   ...config,
                   yield_m2_per_hour: { ...config.yield_m2_per_hour, medianas: val }
@@ -270,13 +303,14 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                 hasError={validationErrors.includes('yield_medianas')}
               />
             </div>
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <label className="block text-[11px] leading-[1.15] text-center font-medium text-gray-500 mb-2">
                 Grandes <span className="block text-[10px] text-gray-400 font-normal">(2-3m)</span>
               </label>
               <UnifiedNumericInput
                 value={config.yield_m2_per_hour.grandes}
                 autoSelect
+                suffix="m²/h"
                 onChange={(val) => onChange({
                   ...config,
                   yield_m2_per_hour: { ...config.yield_m2_per_hour, grandes: val }
@@ -286,7 +320,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             </div>
           </div>
           
-          {config.pricing_method === 'per_hour' && config.hourly_rate && (
+          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && (
             <div className="p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
               <p className="text-xs font-semibold text-blue-800 mb-2 uppercase">Precios unitarios equivalentes (€/m²):</p>
               <div className="grid grid-cols-3 gap-2">
@@ -294,7 +328,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                   const y = config.yield_m2_per_hour?.[size];
                   return (
                     <div key={size} className="text-[11px] text-blue-700">
-                      <span className="font-medium">{size}:</span> {y && y > 0 ? (config.hourly_rate! / y).toFixed(2) : '--'}€
+                      <span className="font-medium">{size}:</span> {y && y > 0 ? (getPrecioPorHora(config) / y).toFixed(2) : '--'}€
                     </div>
                   );
                 })}
@@ -351,14 +385,14 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
       <div>
         <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Gestión de Residuos</h4>
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div className="pr-4">
+            <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 pr-4">
                     <span className="text-sm font-medium text-gray-900 block">Recargo por retirada</span>
                     <span className="text-xs text-gray-500 mt-1 block">Incremento sobre el total si el cliente lo solicita.</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-gray-400 text-sm font-medium">+</span>
-                  <div className="w-20 flex-shrink-0">
+                  <div className="w-[6.5rem] flex-shrink-0">
                       <UnifiedNumericInput
                           value={config.waste_removal.percentage}
                           autoSelect
@@ -371,27 +405,6 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         </div>
       </div>
 
-      <hr className="border-gray-200 my-8" />
-
-      <div className="border-t border-gray-100 pt-6">
-        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
-        <div className="flex items-center justify-between">
-          <div className="pr-2">
-            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
-            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-          </div>
-          <div className="w-24">
-            <UnifiedNumericInput
-                value={config.minimum_price}
-                autoSelect
-                onChange={handleMinimumPriceChange}
-                hasError={validationErrors.includes('minimum_price')}
-              />
-          </div>
-        </div>
-      </div>
-
-      <ServicePricePreview serviceName="Poda de plantas y arbustos" config={config} />
     </div>
   );
 };

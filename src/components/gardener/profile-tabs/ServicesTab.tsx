@@ -87,7 +87,7 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
         title={`Configurar ${slideOverService?.name || ''}`}
       >
         {slideOverService && (
-          <div className="pb-8">
+          <div className="pb-[calc(8rem+env(safe-area-inset-bottom))] sm:pb-12">
             {slideOverService.name === 'Poda de palmeras' && (
               <PalmPricingConfigurator 
                 value={configs.palmConfig} 

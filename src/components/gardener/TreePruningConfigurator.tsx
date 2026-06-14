@@ -1,11 +1,9 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Trash2, Info } from 'lucide-react';
-import { deepEqual } from '../../utils/deepEqual';
 import { TreePruningServiceConfig } from '../../types/treePruning';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import ServicePricePreview from './ServicePricePreview';
 
 const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
 const isInvalid = (v: any) => v === undefined || v === null || v === '';
@@ -19,6 +17,11 @@ interface Props {
 
 export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
+  const hasLargeBandConfigured = (cfg?: TreePruningServiceConfig) =>
+    cfg?.estructural?.large !== undefined ||
+    cfg?.formacion?.large !== undefined ||
+    cfg?.yield_units_per_hour?.estructural?.large !== undefined ||
+    cfg?.yield_units_per_hour?.formacion?.large !== undefined;
 
   const normalizedInitialConfig: TreePruningServiceConfig = useMemo(() => {
     return {
@@ -51,13 +54,11 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
   }, [initialConfig]);
 
   const [config, setConfig] = useState<TreePruningServiceConfig>(normalizedInitialConfig);
-  const [showLargeOption, setShowLargeOption] = useState<boolean>(
-    initialConfig?.estructural?.large !== undefined || initialConfig?.formacion?.large !== undefined
-  );
+  const [showLargeOption, setShowLargeOption] = useState<boolean>(hasLargeBandConfigured(initialConfig));
   useEffect(() => {
     if (value) {
       setConfig(value);
-      setShowLargeOption(value.estructural?.large !== undefined || value.formacion?.large !== undefined);
+      setShowLargeOption(hasLargeBandConfigured(value));
     }
   }, [value]);
 
@@ -115,18 +116,6 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
     onChange(newConfig);
   };
 
-  const handleSave = async (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    
-    const errors = validateConfig(config);
-    setValidationErrors(errors);
-    if (errors.length > 0) return;
-    
-    if (onSave) {
-      await onSave(config);
-    }
-  };
-
   const handleBandChange = (
     pruningType: 'estructural' | 'formacion',
     band: 'small' | 'medium' | 'large',
@@ -158,6 +147,18 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
     if (config.formacion.large === undefined) {
       updates.formacion = { ...config.formacion, large: 0 };
     }
+    if (config.yield_units_per_hour.estructural.large === undefined || config.yield_units_per_hour.formacion.large === undefined) {
+      updates.yield_units_per_hour = {
+        estructural: {
+          ...config.yield_units_per_hour.estructural,
+          large: config.yield_units_per_hour.estructural.large ?? 0,
+        },
+        formacion: {
+          ...config.yield_units_per_hour.formacion,
+          large: config.yield_units_per_hour.formacion.large ?? 0,
+        },
+      };
+    }
     if (Object.keys(updates).length > 0) {
       updateConfig(updates);
     }
@@ -168,13 +169,17 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
     updateConfig({
       formacion: { ...config.formacion, large: undefined },
       estructural: { ...config.estructural, large: undefined },
+      yield_units_per_hour: {
+        formacion: { ...config.yield_units_per_hour.formacion, large: undefined },
+        estructural: { ...config.yield_units_per_hour.estructural, large: undefined },
+      },
     });
-    setValidationErrors(prev => prev.filter(x => !x.endsWith('.large')));
+    setValidationErrors(prev => prev.filter(x => !x.endsWith('.large') && !x.endsWith('_large')));
   };
 
   const renderEuroInput = (id: string, valueNum: number | undefined, onValueChange: (num: number) => void) => {
     return (
-      <div className="w-full sm:w-24 mt-2 sm:mt-0">
+      <div className="w-full sm:w-[7.5rem] mt-2 sm:mt-0">
         <UnifiedNumericInput
           value={valueNum}
           autoSelect
@@ -189,7 +194,7 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
     return (
       <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
         <span className="text-gray-400 text-sm font-medium hidden sm:inline">+</span>
-        <div className="w-full sm:w-20">
+        <div className="w-full sm:w-[6.5rem]">
           <UnifiedNumericInput
             value={valueNum}
             autoSelect
@@ -238,6 +243,19 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
         </div>
       </div>
 
+      <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between">
+          <div className="pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full sm:w-[7.5rem] mt-3 sm:mt-0">
+            {renderEuroInput('minimumPrice', config.minimumPrice, (v) => updateConfig({ minimumPrice: v }))}
+          </div>
+        </div>
+      </div>
+
       <hr className="border-gray-200 my-8" />
 
       {/* Velocidad de trabajo (Obligatorio) */}
@@ -250,13 +268,14 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
         <div className="space-y-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             <div>
-              <h5 className="text-xs font-bold text-gray-400 uppercase mb-3">Velocidad de trabajo Poda Formación (uds/h)</h5>
+              <h5 className="text-xs font-bold text-gray-400 uppercase mb-3">Velocidad de trabajo Poda Formación (arb/h)</h5>
               <div className="space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                   <span className="text-sm text-gray-600">Pequeño</span>
-                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                  <div className="w-full sm:w-[7.5rem] mt-2 sm:mt-0">
                     <UnifiedNumericInput
                       value={config.yield_units_per_hour?.formacion?.small}
+                      suffix="arb/h"
                       onChange={(v) => updateConfig({ 
                         yield_units_per_hour: { 
                           ...config.yield_units_per_hour!, 
@@ -269,9 +288,10 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                   <span className="text-sm text-gray-600">Mediano</span>
-                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                  <div className="w-full sm:w-[7.5rem] mt-2 sm:mt-0">
                     <UnifiedNumericInput
                       value={config.yield_units_per_hour?.formacion?.medium}
+                      suffix="arb/h"
                       onChange={(v) => updateConfig({ 
                         yield_units_per_hour: { 
                           ...config.yield_units_per_hour!, 
@@ -285,9 +305,10 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
                 {showLargeOption && (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                     <span className="text-sm text-gray-600">Grande</span>
-                    <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                    <div className="w-full sm:w-[7.5rem] mt-2 sm:mt-0">
                       <UnifiedNumericInput
                         value={config.yield_units_per_hour?.formacion?.large}
+                        suffix="arb/h"
                         onChange={(v) => updateConfig({ 
                           yield_units_per_hour: { 
                             ...config.yield_units_per_hour!, 
@@ -302,13 +323,14 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
               </div>
             </div>
             <div>
-              <h5 className="text-xs font-bold text-gray-400 uppercase mb-3">Velocidad de trabajo Poda Estructural (uds/h)</h5>
+              <h5 className="text-xs font-bold text-gray-400 uppercase mb-3">Velocidad de trabajo Poda Estructural (arb/h)</h5>
               <div className="space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                   <span className="text-sm text-gray-600">Pequeño</span>
-                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                  <div className="w-full sm:w-[7.5rem] mt-2 sm:mt-0">
                     <UnifiedNumericInput
                       value={config.yield_units_per_hour?.estructural?.small}
+                      suffix="arb/h"
                       onChange={(v) => updateConfig({ 
                         yield_units_per_hour: { 
                           ...config.yield_units_per_hour!, 
@@ -321,9 +343,10 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                   <span className="text-sm text-gray-600">Mediano</span>
-                  <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                  <div className="w-full sm:w-[7.5rem] mt-2 sm:mt-0">
                     <UnifiedNumericInput
                       value={config.yield_units_per_hour?.estructural?.medium}
+                      suffix="arb/h"
                       onChange={(v) => updateConfig({ 
                         yield_units_per_hour: { 
                           ...config.yield_units_per_hour!, 
@@ -337,9 +360,10 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
                 {showLargeOption && (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                     <span className="text-sm text-gray-600">Grande</span>
-                    <div className="w-full sm:w-24 mt-2 sm:mt-0">
+                    <div className="w-full sm:w-[7.5rem] mt-2 sm:mt-0">
                       <UnifiedNumericInput
                         value={config.yield_units_per_hour?.estructural?.large}
+                        suffix="arb/h"
                         onChange={(v) => updateConfig({ 
                           yield_units_per_hour: { 
                             ...config.yield_units_per_hour!, 
@@ -476,22 +500,6 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
         </div>
       </div>
 
-      <hr className="border-gray-200 my-8" />
-
-      <div>
-        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Configuración Global</h4>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between">
-          <div className="pr-2">
-            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
-            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-          </div>
-          <div className="w-full sm:w-24 mt-3 sm:mt-0">
-            {renderEuroInput('minimumPrice', config.minimumPrice, (v) => updateConfig({ minimumPrice: v }))}
-          </div>
-        </div>
-      </div>
-
-      <ServicePricePreview serviceName="Poda de árboles" config={config} />
     </div>
   );
 };

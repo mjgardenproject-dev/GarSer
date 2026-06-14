@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Leaf, LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings } from 'lucide-react';
+import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
+import { fetchCurrentUserProfileRole, isAdminRole, type AppProfileRole } from '../../lib/adminAccess';
 
 interface NavbarProps {
   applicationStatus?: 'pending' | 'active' | 'denied' | null;
@@ -12,6 +12,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   const { user, signOut } = useAuth();
   const [logoError, setLogoError] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [userRole, setUserRole] = useState<AppProfileRole>(null);
   
   // Use prop if available, otherwise default to null (or we could keep local state if prop is undefined)
   // Since App always passes it, we can rely on prop.
@@ -30,18 +31,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
     }
   };
 
-  const defaultAdminEmails = [
-    'admin@jardineria.com',
-    'developer@jardineria.com',
-    'mjgardenproject@gmail.com',
-    'migardenproject@gmail.com'
-  ];
-  const envAdminEmailsRaw = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [];
-  const adminEmails = Array.from(new Set([
-    ...defaultAdminEmails,
-    ...envAdminEmailsRaw
-  ].map(e => (e || '').trim().toLowerCase())));
-  const isAdmin = adminEmails.includes((user?.email || '').trim().toLowerCase());
+  const isAdmin = isAdminRole(userRole);
   
   const showRoleBadge = isAdmin || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
   const roleBadgeLabel = isAdmin
@@ -54,27 +44,35 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
           ? 'Jardinero (no aceptado)'
           : '';
           
-  const [userRole, setUserRole] = useState<string | null>(null);
-
   useEffect(() => {
-    const checkAdmin = async () => {
+    let mounted = true;
+
+    const loadUserRole = async () => {
       try {
-        if (!user?.id) return;
-        const { data } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .maybeSingle();
-        setUserRole(data?.role || null);
-        console.log('🔎 Navbar admin check', {
-          email: (user?.email || '').trim().toLowerCase(),
-          isAdmin,
-          role: data?.role,
-          adminEmails
-        });
-      } catch {}
+        if (!user?.id) {
+          if (mounted) {
+            setUserRole(null);
+          }
+          return;
+        }
+
+        const role = await fetchCurrentUserProfileRole(user.id);
+        if (mounted) {
+          setUserRole(role);
+        }
+      } catch (error) {
+        console.error('Error loading navbar role:', error);
+        if (mounted) {
+          setUserRole(null);
+        }
+      }
     };
-    checkAdmin();
+
+    loadUserRole();
+
+    return () => {
+      mounted = false;
+    };
   }, [user?.id]);
 
   const isApplyPage = location.pathname === '/apply';

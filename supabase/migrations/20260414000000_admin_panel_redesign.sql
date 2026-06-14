@@ -7,7 +7,7 @@ ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' CHECK (status IN ('active'
 
 -- 2. Create Audit Logs table for Administrative Actions
 CREATE TABLE IF NOT EXISTS admin_audit_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     admin_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     action_type TEXT NOT NULL,
     target_table TEXT,

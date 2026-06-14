@@ -1,0 +1,56 @@
+{
+  "http_status": 200,
+  "body": {
+    "tareas": [],
+    "reasons": [
+      "PROVIDER_REQUEST_FAILED"
+    ],
+    "analysis_v2": {
+      "service": "Corte de c\u00e9sped",
+      "schema_version": "analysis_v2",
+      "analysis_status": "technical_error",
+      "analysis_level": 3,
+      "quality_summary_code": "TECHNICAL_FAILURE",
+      "quality_reasons": [
+        "ANALYSIS_TECHNICAL_FAILURE"
+      ],
+      "client_observations": [
+        {
+          "code": "ANALYSIS_TECHNICAL_FAILURE",
+          "severity": "critical",
+          "default_copy": "Se ha producido un error tecnico controlado durante el analisis."
+        }
+      ],
+      "internal_reasoning": {
+        "summary": "Adaptado desde contrato legacy para Corte de c\u00e9sped.",
+        "evidence": [
+          "PROVIDER_REQUEST_FAILED"
+        ],
+        "deduplication": "No hay \u00edndices expl\u00edcitos en el contrato legacy.",
+        "consistency_checks": [
+          "Campos de pricing preservados: superficie_m2, estado_jardin",
+          "Campos de tiempo preservados: superficie_m2, estado_jardin"
+        ]
+      },
+      "deduplication_summary": "Sin \u00edndices de im\u00e1genes expl\u00edcitos en el payload legacy.",
+      "service_metrics": {
+        "superficie_m2": 0,
+        "estado_jardin": null
+      },
+      "source_photo_count": 1,
+      "analyzed_photo_indices": [],
+      "provider": "google",
+      "model": "gemini-2.0-flash",
+      "model_params": {
+        "temperature": 0,
+        "top_p": 1,
+        "top_k": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
+        "response_mime_type": "application/json"
+      },
+      "error_code": "PROVIDER_REQUEST_FAILED",
+      "error_message_safe": "La llamada al proveedor de analisis ha fallado."
+    }
+  }
+}

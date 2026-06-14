@@ -50,6 +50,7 @@ export interface Service {
   name: string;
   description: string;
   pricing_method: 'per_hour' | 'per_quantity';
+  precioPorHora?: number;
   hourly_rate?: number;
   icon: string;
   image_id?: string; // ID de imagen opcional
@@ -224,6 +225,7 @@ export interface LawnPricingConfig {
   selected_species?: LawnSpecies[];
   species_prices?: Record<string, any>;
   pricing_method?: 'per_quantity' | 'per_hour';
+  precioPorHora?: number;
   hourly_rate?: number;
   yield_m2_per_hour?: number;
 }
@@ -248,6 +250,7 @@ export interface HedgePricingConfig {
   species_prices?: Record<string, any>;
   selected_types?: string[];
   pricing_method?: 'per_quantity' | 'per_hour';
+  precioPorHora?: number;
   hourly_rate?: number;
   yield_ml_per_hour?: Record<HedgeHeightBand, number>;
 }
@@ -277,6 +280,10 @@ export interface PalmPricingConfig {
   };
   minimum_price: number;
   selected_species?: PalmSpecies[];
+  pricing_method?: 'per_quantity' | 'per_hour';
+  precioPorHora?: number;
+  hourly_rate?: number;
+  use_yield_calculation?: boolean; // Legacy flag superseded by pricing_method
   yield_units_per_hour: Record<PalmSpecies, Record<string, number>>;
 }
 
@@ -293,6 +300,7 @@ export interface ShrubPricingConfig {
   };
   minimum_price: number;
   pricing_method?: 'per_quantity' | 'per_hour';
+  precioPorHora?: number;
   hourly_rate?: number;
   yield_m2_per_hour: {
     pequeñas: number;
@@ -404,6 +412,7 @@ export interface PhytosanitaryYields {
 export interface PhytosanitaryPricingConfig {
   version?: 'phytosanitary_v2';
   pricing_method?: 'per_quantity' | 'per_hour';
+  precioPorHora?: number;
   hourly_rate?: number;
   importe_minimo?: number;
   tratamientos_activos?: PhytosanitaryType[];

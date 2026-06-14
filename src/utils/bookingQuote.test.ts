@@ -28,7 +28,7 @@ describe('bookingQuote', () => {
       } as any,
       providerConfig: {
         pricing_method: 'per_hour',
-        hourly_rate: 30,
+        precioPorHora: 30,
         yield_m2_per_hour: 100,
       },
     });

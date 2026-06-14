@@ -26,6 +26,10 @@ export const UnifiedNumericInput: React.FC<Props> = ({
   autoSelect = false
 }) => {
   const [localValue, setLocalValue] = useState('');
+  const normalizedSuffix = suffix?.trim() ?? '';
+  const suffixPaddingRight = normalizedSuffix
+    ? `${Math.max(2.75, Math.min(4.5, 1.5 + normalizedSuffix.length * 0.55))}rem`
+    : '0.75rem';
 
   // Sync from prop
   useEffect(() => {
@@ -85,20 +89,21 @@ export const UnifiedNumericInput: React.FC<Props> = ({
   };
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full min-w-[6.5rem]">
       <div className="relative w-full">
         <input
           id={id}
           type="text"
           inputMode="decimal"
           disabled={disabled}
-          className={`w-full h-11 pl-3 pr-8 border rounded-lg text-right text-sm transition-all focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${
+          className={`w-full min-w-[6.5rem] h-11 pl-3 border rounded-lg text-right text-sm tabular-nums transition-all focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${
             hasError 
               ? 'border-red-400 bg-red-50 focus:ring-red-500 focus:border-red-500' 
               : localValue !== '' 
                 ? 'border-gray-300 bg-white' 
                 : 'border-gray-200 bg-gray-50'
           } ${className}`}
+          style={{ paddingRight: suffixPaddingRight }}
           value={localValue}
           placeholder={placeholder}
           onChange={handleChange}
@@ -109,8 +114,8 @@ export const UnifiedNumericInput: React.FC<Props> = ({
             }
           }}
         />
-        {suffix && (
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 leading-none text-gray-400 text-sm font-medium">
+        {normalizedSuffix && (
+          <span className="pointer-events-none absolute right-3 top-1/2 max-w-[45%] -translate-y-1/2 truncate leading-none text-gray-400 text-sm font-medium">
             {suffix}
           </span>
         )}

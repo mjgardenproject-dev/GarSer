@@ -7,10 +7,10 @@ import {
   HedgeHeightBand,
   PhytosanitaryPricingConfig
 } from '../types';
-import { TreePricingConfig } from '../components/gardener/TreePricingConfigurator';
 import { TreePruningServiceConfig } from '../types/treePruning';
 import { z } from 'zod';
 import { normalizePhytosanitaryPricingConfig, toPersistedPhytosanitaryConfig } from './phytosanitaryConfig';
+import { getPrecioPorHora, getPricingMethod } from './hourlyPricing';
 
 export const PHYTOSANITARY_TREATMENTS = ['insecticida', 'fungicida', 'ecologico_preventivo', 'endoterapia'] as const;
 export type PhytosanitaryTreatment = typeof PHYTOSANITARY_TREATMENTS[number];
@@ -32,6 +32,9 @@ type PhytosanitaryNoHerbicidePriceMatrix = Record<PhytosanitaryWithoutHerbicide,
 
 export interface PhytosanitaryV2PricingConfig {
   version: 'phytosanitary_v2';
+  pricing_method?: PricingMethod;
+  precioPorHora?: number;
+  hourly_rate?: number;
   importe_minimo: number;
   minimum_fee?: number;
   tratamientos_activos: PhytosanitaryTreatment[];
@@ -71,11 +74,20 @@ export interface PhytosanitaryV2PricingConfig {
       three_plus_treatments_percentage: number;
     };
   };
+  yields: {
+    cesped_m2_per_hour: number;
+    setos_ml_per_hour: number;
+    palmeras_units_per_hour: number;
+    arboles_units_per_hour: number;
+    plantas_m2_per_hour: number;
+    endoterapia_units_per_hour: number;
+  };
 }
 
 export const phytosanitaryV2Schema = z.object({
   version: z.literal('phytosanitary_v2'),
   pricing_method: pricingMethodSchema.default('per_quantity'),
+  precioPorHora: z.number().nonnegative().optional(),
   hourly_rate: z.number().nonnegative().optional(),
   importe_minimo: z.number().nonnegative(),
   tratamientos_activos: z.array(z.enum(PHYTOSANITARY_TREATMENTS)).min(1),
@@ -143,11 +155,11 @@ export const phytosanitaryV2Schema = z.object({
     }).optional()
   }).optional()
 }).superRefine((data, ctx) => {
-  if (data.pricing_method === 'per_hour' && (!data.hourly_rate || data.hourly_rate <= 0)) {
+  if (data.pricing_method === 'per_hour' && getPrecioPorHora(data) <= 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "La tarifa horaria es obligatoria para el método de cobro por hora",
-      path: ["hourly_rate"]
+      path: ["precioPorHora"]
     });
   }
 });
@@ -238,6 +250,8 @@ export const mapLegacyPhytosanitaryConfigToV2 = (legacy: PhytosanitaryPricingCon
 
   return {
     version: 'phytosanitary_v2',
+    pricing_method: legacy.pricing_method || 'per_quantity',
+    precioPorHora: getPrecioPorHora(legacy),
     importe_minimo: Number(legacy.minimum_price || 0),
     minimum_fee: Number(legacy.minimum_fee || legacy.minimum_price || 0),
     tratamientos_activos: active.length > 0 ? active : ['ecologico_preventivo'],
@@ -274,6 +288,14 @@ export const mapLegacyPhytosanitaryConfigToV2 = (legacy: PhytosanitaryPricingCon
         two_treatments_percentage: Number(legacy.pricing_modifiers?.combo?.two_treatments_percentage || 0),
         three_plus_treatments_percentage: Number(legacy.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0)
       }
+    },
+    yields: {
+      cesped_m2_per_hour: Number(legacy.yields?.cesped_m2_per_hour || 0),
+      setos_ml_per_hour: Number(legacy.yields?.setos_ml_per_hour || 0),
+      palmeras_units_per_hour: Number(legacy.yields?.palmeras_units_per_hour || 0),
+      arboles_units_per_hour: Number(legacy.yields?.arboles_units_per_hour || 0),
+      plantas_m2_per_hour: Number(legacy.yields?.plantas_m2_per_hour || 0),
+      endoterapia_units_per_hour: Number(legacy.yields?.endoterapia_units_per_hour || 0)
     }
   };
 };
@@ -715,7 +737,7 @@ export const isLawnConfigValid = (config: LawnPricingConfig | undefined): boolea
   
   const pricingMethod = config.pricing_method || 'per_quantity';
   if (pricingMethod === 'per_hour') {
-    if (!config.hourly_rate || config.hourly_rate <= 0) return false;
+    if (getPrecioPorHora(config) <= 0) return false;
   } else {
     if (!config.price_per_m2 || config.price_per_m2 <= 0) return false;
   }
@@ -732,9 +754,9 @@ export const isPalmConfigValid = (config: PalmPricingConfig | undefined): boolea
   if (!config.selected_species || config.selected_species.length === 0) return false;
   if ((config.minimum_price || 0) <= 0) return false;
 
-  const pricingMethod = config.pricing_method || 'per_quantity';
+  const pricingMethod = getPricingMethod(config, { allowLegacyYieldCalculation: true });
   if (pricingMethod === 'per_hour') {
-    if (!config.hourly_rate || config.hourly_rate <= 0) return false;
+    if (getPrecioPorHora(config) <= 0) return false;
   }
 
   const PALM_SPECIES = [
@@ -793,7 +815,7 @@ export const isHedgeConfigValid = (config: HedgePricingConfig | undefined): bool
 
   const pricingMethod = config.pricing_method || 'per_quantity';
   if (pricingMethod === 'per_hour') {
-    if (!config.hourly_rate || config.hourly_rate <= 0) return false;
+    if (getPrecioPorHora(config) <= 0) return false;
   }
 
   const activeHeights: HedgeHeightBand[] = config.specialist_enabled
@@ -850,21 +872,35 @@ export const isTreePruningConfigValid = (config: TreePruningServiceConfig | unde
   if (!config) return false;
   if ((config.minimumPrice || 0) <= 0) return false;
 
-  const checkBands = (band: any) => {
+  const checkRequiredBands = (band: any) => {
     if (!band) return false;
     if ((band.small || 0) <= 0) return false;
     if ((band.medium || 0) <= 0) return false;
-    if ((band.large || 0) <= 0) return false;
     return true;
   };
 
-  if (!checkBands(config.formacion)) return false;
-  if (!checkBands(config.estructural)) return false;
+  const checkOptionalLargeBand = (band: any) => {
+    if (!band) return false;
+    if (band.large === undefined) return true;
+    return Number(band.large) > 0;
+  };
+
+  if (!checkRequiredBands(config.formacion)) return false;
+  if (!checkRequiredBands(config.estructural)) return false;
+  if (!checkOptionalLargeBand(config.formacion)) return false;
+  if (!checkOptionalLargeBand(config.estructural)) return false;
 
   // Validate yields (mandatory and > 0)
   if (!config.yield_units_per_hour) return false;
-  if (!checkBands(config.yield_units_per_hour.formacion)) return false;
-  if (!checkBands(config.yield_units_per_hour.estructural)) return false;
+  if (!checkRequiredBands(config.yield_units_per_hour.formacion)) return false;
+  if (!checkRequiredBands(config.yield_units_per_hour.estructural)) return false;
+  if (!checkOptionalLargeBand(config.yield_units_per_hour.formacion)) return false;
+  if (!checkOptionalLargeBand(config.yield_units_per_hour.estructural)) return false;
+
+  const supportsLargeFormation = Number(config.formacion.large || 0) > 0;
+  const supportsLargeStructural = Number(config.estructural.large || 0) > 0;
+  if (supportsLargeFormation !== (Number(config.yield_units_per_hour.formacion.large || 0) > 0)) return false;
+  if (supportsLargeStructural !== (Number(config.yield_units_per_hour.estructural.large || 0) > 0)) return false;
 
   if ((config.difficultyIncrease || 0) <= 0) return false;
   if ((config.wasteRemovalMultiplier || 0) <= 0) return false;
@@ -879,7 +915,7 @@ export const isShrubConfigValid = (config: ShrubPricingConfig | undefined): bool
 
   const pricingMethod = config.pricing_method || 'per_quantity';
   if (pricingMethod === 'per_hour') {
-    if (!config.hourly_rate || config.hourly_rate <= 0) return false;
+    if (getPrecioPorHora(config) <= 0) return false;
   } else {
     if (!config.prices_per_m2) return false;
     const { pequeñas, medianas, grandes } = config.prices_per_m2;
@@ -931,7 +967,7 @@ export const isPhytosanitaryConfigValid = (config: PhytosanitaryPricingConfig | 
 
     const pricingMethod = parsedV2.pricing_method || 'per_quantity';
     if (pricingMethod === 'per_hour') {
-      if (!parsedV2.hourly_rate || parsedV2.hourly_rate <= 0) return false;
+      if (getPrecioPorHora(parsedV2) <= 0) return false;
     }
 
     if (pricingMethod === 'per_quantity') {

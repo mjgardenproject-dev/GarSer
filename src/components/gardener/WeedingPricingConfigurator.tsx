@@ -2,10 +2,8 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import ServicePricePreview from './ServicePricePreview';
-import { Save, AlertTriangle, AlertCircle, Info, Leaf } from 'lucide-react';
-import { deepEqual } from '../../utils/deepEqual';
-import { WeedingPricingConfig } from '../../utils/serviceValidation';
+import { AlertTriangle, Info } from 'lucide-react';
+import { WeedingPricingConfig } from '../../types';
 
 const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
 const isInvalid = (v: any) => v === undefined || v === null || v === '';
@@ -76,8 +74,6 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
     };
   }, [initialConfig]);
 
-  const isDirty = useMemo(() => !deepEqual(config, normalizedInitialConfig), [config, normalizedInitialConfig]);
-
   const updateConfig = (updates: Partial<WeedingPricingConfig>) => {
     onChange({ ...config, ...updates });
   };
@@ -145,7 +141,7 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
 
   const renderPercentageInput = (id: string, valueNum: number, onValueChange: (num: number) => void) => {
     return (
-      <div className="w-20 flex items-center gap-2 shrink-0">
+      <div className="w-[6.5rem] flex items-center gap-2 shrink-0">
         <span className="text-gray-400 text-sm font-medium">+</span>
         <UnifiedNumericInput
           value={valueNum}
@@ -198,6 +194,31 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
         </div>
       </div>
 
+      <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full max-w-[7.5rem] shrink-0">
+            <UnifiedNumericInput
+              value={config.importe_minimo}
+              autoSelect
+              onChange={(v) => {
+                updateConfig({ importe_minimo: v });
+                if (validationErrors.includes('importe_minimo')) {
+                  setValidationErrors((prev) => prev.filter((x) => x !== 'importe_minimo'));
+                }
+              }}
+              hasError={validationErrors.includes('importe_minimo')}
+            />
+          </div>
+        </div>
+      </div>
+
+      <hr className="border-gray-200 my-8" />
+
       {/* Herbicide License Warning */}
       {isHerbicideEnabled && (!licenseStatus || licenseStatus === 'rejected') && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3">
@@ -221,7 +242,7 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Velocidad de trabajo (m²/h)</label>
-            <div className="w-32">
+            <div className="w-full sm:w-[7.5rem]">
               <UnifiedNumericInput
                 value={config.yield_m2_per_hour}
                 autoSelect
@@ -243,12 +264,12 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
               Tarifa Base de Desbroce (Precio Fijo)
             </h4>
             
-            <div className="flex items-center justify-between">
-              <div className="pr-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 pr-2">
                 <span className="text-sm font-medium text-gray-900 block">Precio desbroce (por m²)</span>
                 <p className="text-xs text-gray-500 mt-1">Dificultad Normal: Terreno regular, maleza ligera (&lt; 30cm) y sin obstáculos relevantes.</p>
               </div>
-              <div className="w-24">
+              <div className="w-full max-w-[7.5rem] shrink-0">
                 {renderEuroInput('precio_desbroce_m2', config.precio_desbroce_m2 || 0, (v) => updateConfig({ precio_desbroce_m2: v }))}
               </div>
             </div>
@@ -290,11 +311,11 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
 
         {isHerbicideEnabled && (
           <div className="mt-4 pt-4">
-            <div className="flex items-center justify-between">
-              <div className="pr-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 pr-2">
                 <span className="text-sm font-medium text-gray-900 block">Precio herbicida (por m²)</span>
               </div>
-              <div className="w-24">
+              <div className="w-full max-w-[7.5rem] shrink-0">
                 {renderEuroInput('precio_herbicida_m2', config.precio_herbicida_m2 || 0, (v) => updateConfig({ precio_herbicida_m2: v }))}
               </div>
             </div>
@@ -307,18 +328,9 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
       {/* Surcharges Section */}
       <div>
         <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Suplementos y Dificultad</h4>
-        <p className="text-xs text-gray-500 mt-1 mb-4">Incrementos porcentuales aplicables al precio base del desbroce.</p>
-        <div className="mb-4 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
-          <p className="text-xs text-gray-700">
-            <span className="font-semibold text-gray-900">Dificultad Normal:</span> Terreno regular, maleza ligera (&lt; 30cm) y sin obstáculos relevantes.
-          </p>
-          <p className="text-xs text-gray-700">
-            <span className="font-semibold text-gray-900">Dificultad Media:</span> Zonas con pendiente, terreno irregular o maleza herbácea densa (&gt; 30cm).
-          </p>
-          <p className="text-xs text-gray-700">
-            <span className="font-semibold text-gray-900">Dificultad Alta:</span> Zonas de difícil acceso, maleza leñosa/zarzas, o presencia de piedras/escombros.
-          </p>
-        </div>
+        <p className="text-xs text-gray-500 mt-1 mb-4">
+          Incrementos porcentuales aplicables al precio base del desbroce. La definicion oficial de cada nivel de dificultad es la que aparece junto a su configurador numerico.
+        </p>
         
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
@@ -347,32 +359,6 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
         </div>
       </div>
 
-      <hr className="border-gray-200 my-8" />
-
-      <div>
-        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
-        <div className="flex items-center justify-between">
-          <div className="pr-2">
-            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
-            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-          </div>
-          <div className="w-24">
-            <UnifiedNumericInput
-              value={config.importe_minimo}
-              autoSelect
-              onChange={(v) => {
-                updateConfig({ importe_minimo: v });
-                if (validationErrors.includes('importe_minimo')) {
-                  setValidationErrors((prev) => prev.filter((x) => x !== 'importe_minimo'));
-                }
-              }}
-              hasError={validationErrors.includes('importe_minimo')}
-            />
-          </div>
-        </div>
-      </div>
-
-      <ServicePricePreview serviceName="Desbroce de malas hierbas" config={config} />
     </div>
   );
 };

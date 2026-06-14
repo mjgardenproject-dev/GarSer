@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchCurrentUserProfileRole, isAdminRole, type AppProfileRole } from '../../lib/adminAccess';
 
 interface AdminRouteProps {
   children: React.ReactNode;
@@ -11,9 +12,48 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
   children, 
   allowInDevelopment = true 
 }) => {
-  const { user, profile, loading } = useAuth();
+  const { user, loading } = useAuth();
+  const [profileRole, setProfileRole] = useState<AppProfileRole>(null);
+  const [checkingRole, setCheckingRole] = useState(true);
 
-  if (loading) {
+  useEffect(() => {
+    let mounted = true;
+
+    const resolveRole = async () => {
+      if (!user) {
+        if (mounted) {
+          setProfileRole(null);
+          setCheckingRole(false);
+        }
+        return;
+      }
+
+      try {
+        const role = await fetchCurrentUserProfileRole(user.id);
+        if (mounted) {
+          setProfileRole(role);
+        }
+      } catch (error) {
+        console.error('Error resolving admin role:', error);
+        if (mounted) {
+          setProfileRole(null);
+        }
+      } finally {
+        if (mounted) {
+          setCheckingRole(false);
+        }
+      }
+    };
+
+    setCheckingRole(true);
+    resolveRole();
+
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id]);
+
+  if (loading || checkingRole) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-green-600"></div>
@@ -33,27 +73,13 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
     return <>{children}</>;
   }
 
-  // En producción, verificar roles específicos
-  const defaultAdminEmails = [
-    'admin@jardineria.com',
-    'developer@jardineria.com',
-    'mjgardenproject@gmail.com',
-    'migardenproject@gmail.com'
-  ];
-  const envAdminEmailsRaw = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [];
-  const adminEmails = Array.from(new Set([
-    ...defaultAdminEmails,
-    ...envAdminEmailsRaw
-  ].map(e => (e || '').trim().toLowerCase())));
-  
-  const isAdmin = profile?.role === 'admin' || 
-                  adminEmails.includes((user?.email || '').trim().toLowerCase());
+  const isAdmin = isAdminRole(profileRole);
 
   if (!isAdmin) {
     console.warn('🚫 AdminRoute: Acceso denegado. Usuario no es administrador:', {
       userId: user.id,
       email: user.email,
-      role: profile?.role
+      role: profileRole
     });
     
     return (
@@ -80,7 +106,7 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
   console.log('✅ AdminRoute: Acceso permitido para administrador:', {
     userId: user.id,
     email: user.email,
-    role: profile?.role
+    role: profileRole
   });
 
   return <>{children}</>;

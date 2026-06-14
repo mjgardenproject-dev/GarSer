@@ -38,13 +38,20 @@ npm run preview
 
 ## 🌐 Variables de Entorno
 
-Crea un archivo `.env` con:
+Crea un archivo `.env` local con solo configuracion publica del frontend:
 
 ```env
 VITE_SUPABASE_URL=tu_url_de_supabase
-VITE_SUPABASE_ANON_KEY=tu_clave_anonima_de_supabase
+VITE_SUPABASE_PUBLISHABLE_KEY=tu_clave_publica_de_supabase
+# Compatibilidad legacy si aun no has migrado a publishable key.
+VITE_SUPABASE_ANON_KEY=
 VITE_GOOGLE_MAPS_API_KEY=tu_clave_de_google_maps
 ```
+
+Reglas de seguridad:
+- Todo `VITE_*` termina embebido en el bundle del navegador.
+- No pongas `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `STRIPE_SECRET_KEY` ni ningun secreto de backend en variables `VITE_*`.
+- Usa `.env.example` como plantilla y gestiona los secretos reales en Supabase Secrets o en tu proveedor de despliegue.
 
 ## 📦 Despliegue
 
@@ -65,28 +72,15 @@ Ver [DEPLOY_VERCEL.md](./DEPLOY_VERCEL.md) para instrucciones detalladas.
 ## 📄 Licencia
 
 Este proyecto está bajo la Licencia MIT.
-## 🔧 IA de Estimación (Setup rápido)
+## 🔧 IA de Estimación
 
-Para que el botón "Analizar con IA" funcione sin configurar endpoints:
+El flujo correcto para produccion es server-side:
 
-1. Añade tu clave de OpenAI en `.env`:
+1. Crea el secreto `OPENAI_API_KEY` en Supabase.
+2. Despliega la Edge Function `supabase/functions/ai-pricing-estimator`.
+3. Reinicia o redeploya el frontend si has cambiado configuracion relacionada.
 
-   ```
-   VITE_OPENAI_API_KEY=sk-xxxx
-   ```
-
-2. Reinicia `npm run dev`.
-
-El sistema primero intentará invocar la función Edge `ai-pricing-estimator` en Supabase (si la despliegas), y si no está disponible, usará tu `VITE_OPENAI_API_KEY` directamente desde el navegador (solo recomendado para desarrollo).
-
-### (Opcional) Desplegar la función segura en Supabase
-
-Si prefieres no exponer la clave en el cliente:
-
-- En Supabase, crea el secreto: `OPENAI_API_KEY`.
-- Despliega la función que ya está en `supabase/functions/ai-pricing-estimator`.
-
-El frontend invocará esta función automáticamente (no necesitas añadir endpoints).
+No uses `VITE_OPENAI_API_KEY` en el navegador. Exponer la clave del proveedor IA al cliente es una mala practica y rompe el modelo de seguridad.
 
 ## 🗂️ Bucket de fotos (opcional)
 
@@ -94,7 +88,7 @@ El análisis con fotos sube imágenes al bucket `booking-photos`.
 
 Para crear el bucket automáticamente:
 
-1. Añade una variable de entorno **solo de administración local**:
+1. Añade una variable de entorno **solo de administracion local o backend**:
 
    ```
    SUPABASE_SERVICE_ROLE_KEY=eyJ... (clave de servicio)

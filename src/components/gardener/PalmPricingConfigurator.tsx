@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { AlertCircle, AlertTriangle, Info, Check, Trash2 } from 'lucide-react';
-import { deepEqual } from '../../utils/deepEqual';
-import { PalmPricingConfig, PalmSpecies, PalmCondition, WasteRemovalOption } from '../../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { AlertCircle, Info, Trash2 } from 'lucide-react';
+import { PalmPricingConfig, PalmSpecies, PalmCondition } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import ServicePricePreview from './ServicePricePreview';
+import { getPricingMethod } from '../../utils/hourlyPricing';
 
 export type PalmHeight = string;
 
@@ -43,6 +41,8 @@ const EMPTY_CONFIG: PalmPricingConfig = {
   waste_removal: { option: 'not_included', percentage: '' as any },
   minimum_price: '' as any,
   selected_species: [],
+  pricing_method: 'per_quantity',
+  precioPorHora: '' as any,
   yield_units_per_hour: {
     'Phoenix canariensis': { '0-4': 0, '4-10': 0, '>10': 0 },
     'Phoenix dactylifera': { '0-5': 0, '5-10': 0, '10-15': 0, '>15': 0 },
@@ -70,9 +70,7 @@ interface Props {
 }
 
 const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
-  const [touchedCells, setTouchedCells] = useState<Record<string, boolean>>({});
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Clear global error when validation errors are resolved
@@ -106,6 +104,9 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     const merged = {
         ...EMPTY_CONFIG,
         ...value,
+        pricing_method: getPricingMethod(value, { allowLegacyYieldCalculation: true }),
+        hourly_rate: undefined,
+        precioPorHora: getVal(value.precioPorHora ?? value.hourly_rate),
         minimum_price: getVal(value.minimum_price),
         species_prices: { ...EMPTY_CONFIG.species_prices, ...value.species_prices },
         height_prices: { ...EMPTY_CONFIG.height_prices, ...value.height_prices },
@@ -185,43 +186,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
       });
   };
 
-  // Helper to identify groups
-  const getMultipliers = (species: PalmSpecies): Record<string, number> => {
-    // Phoenix canariensis (Tronco muy grueso, espinas muy peligrosas, copa enorme)
-    if (species === 'Phoenix canariensis') {
-      return { '0-4': 1, '4-10': 1.80, '>10': 3.00 }; // Base, +80%, +200%
-    }
-    // Phoenix dactylifera (Alta, espinas peligrosas pero tronco más fino que canariensis)
-    if (species === 'Phoenix dactylifera') {
-      return { '0-5': 1, '5-10': 1.60, '10-15': 2.40, '>15': 3.50 };
-    }
-    // Washingtonia (Crecen muy rápido, falda enorme de hojas secas, trabajo en altura vertical)
-    if (species === 'Washingtonia robusta/filifera') {
-      return { '0-4': 1, '4-12': 1.50, '12-20': 2.20, '>20': 3.00 };
-    }
-    // Syagrus (Tronco liso, fácil de trepar, poca copa)
-    if (species === 'Syagrus romanzoffiana') {
-      return { '0-5': 1, '5-10': 1.30, '>10': 1.80 };
-    }
-    // Trachycarpus (Tronco peludo, normalmente bajitas, muy fáciles)
-    if (species === 'Trachycarpus fortunei') {
-      return { '0-3': 1, '3-6': 1.40, '>6': 2.00 };
-    }
-    // Roystonea regia (Tronco liso como cemento, hojas muy pesadas)
-    if (species === 'Roystonea regia') {
-      return { '0-6': 1, '>6': 1.60 };
-    }
-    return {};
-  };
-
-  const calculateSuggestion = (species: PalmSpecies, height: PalmHeight, basePrice: number) => {
-    if (!basePrice || basePrice <= 0) return 0;
-    const m = getMultipliers(species);
-    const multiplier = m[height] || 1;
-    if (multiplier === 1) return 0; // Si no hay multiplicador definido, no sugerir nada
-    return Math.round(basePrice * multiplier);
-  };
-
   const handlePriceChange = (species: PalmSpecies, height: PalmHeight, newPrice: number) => {
     const currentHeights = { ...(config.height_prices[species] || {}) };
     currentHeights[height] = newPrice;
@@ -234,12 +198,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         newSpeciesPrices[species] = newPrice;
     }
 
-    // Marcar celda como tocada para no volver a mostrar sugerencia
-    setTouchedCells(prev => ({
-      ...prev,
-      [`${species}-${height}`]: true
-    }));
-
     onChange({
       ...config,
       species_prices: newSpeciesPrices,
@@ -248,10 +206,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         [species]: currentHeights
       }
     });
-  };
-
-  const applySuggestion = (species: PalmSpecies, height: PalmHeight, suggestedPrice: number) => {
-    handlePriceChange(species, height, suggestedPrice);
   };
 
   const handleConditionSurchargeChange = (condition: PalmCondition, percentage: number) => {
@@ -264,69 +218,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     });
   };
 
-  const handleReset = () => {
-    setShowResetModal(true);
-  };
-
-  const confirmReset = async () => {
-    setShowResetModal(false);
-    onChange(EMPTY_CONFIG);
-    setValidationErrors([]);
-    setTouchedCells({});
-    
-    // Si tenemos función de guardado, sincronizamos con DB inmediatamente
-    if (onSave) {
-      try {
-        setIsSaving(true);
-        await onSave(EMPTY_CONFIG);
-      } catch (error) {
-        console.error('Error al resetear en DB:', error);
-      } finally {
-        setIsSaving(false);
-      }
-    }
-  };
-
-  const cancelReset = () => {
-    setShowResetModal(false);
-  };
-
-  // Determine if dirty
-  const isDirty = useMemo(() => {
-    // Si no hay configuración inicial guardada, comparamos con la vacía
-    // Pero si initialConfig es undefined, puede significar que no se ha cargado aún o que no existe.
-    // Asumiremos que si se pasa initialConfig, se usa. Si es undefined, se asume EMPTY.
-    const baseToCompare = initialConfig || EMPTY_CONFIG;
-
-    // Procesar igual que config para normalizar
-    const processedBase = {
-        ...EMPTY_CONFIG,
-        ...baseToCompare,
-        species_prices: { ...EMPTY_CONFIG.species_prices, ...baseToCompare.species_prices },
-        height_prices: { ...EMPTY_CONFIG.height_prices, ...baseToCompare.height_prices },
-        condition_surcharges: { ...EMPTY_CONFIG.condition_surcharges, ...baseToCompare.condition_surcharges },
-        waste_removal: { ...EMPTY_CONFIG.waste_removal, ...baseToCompare.waste_removal },
-        access_difficulty: baseToCompare.access_difficulty ?? EMPTY_CONFIG.access_difficulty,
-        phytosanitary: baseToCompare.phytosanitary ?? EMPTY_CONFIG.phytosanitary,
-        trunk_finish: baseToCompare.trunk_finish ?? EMPTY_CONFIG.trunk_finish,
-        selected_species: baseToCompare.selected_species || [],
-        yield_units_per_hour: baseToCompare.yield_units_per_hour || EMPTY_CONFIG.yield_units_per_hour
-    };
-    
-    // Misma lógica de migración para selected_species
-    if (baseToCompare.selected_species === undefined) {
-        const detectedSpecies: PalmSpecies[] = [];
-        Object.entries(processedBase.species_prices).forEach(([species, price]) => {
-            if ((price as number) > 0) detectedSpecies.push(species as PalmSpecies);
-        });
-        if (detectedSpecies.length > 0) {
-            processedBase.selected_species = detectedSpecies;
-        }
-    }
-
-    return !deepEqual(config, processedBase);
-  }, [config, initialConfig]);
-
   const validateConfig = useCallback((cfg: PalmPricingConfig): string[] => {
     // Validación: Todos los campos de especies seleccionadas deben tener precio > 0
     const errors: string[] = [];
@@ -334,6 +225,10 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     
     if (isInvalid(cfg.minimum_price)) {
       errors.push('minimum_price');
+    }
+
+    if (cfg.pricing_method === 'per_hour' && isInvalid(cfg.precioPorHora)) {
+      errors.push('precioPorHora');
     }
 
     if (selected.length > 0) {
@@ -380,44 +275,10 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     validate: validateConfig
   });
 
-  const renderCell = (species: PalmSpecies, height: PalmHeight, basePrice: number) => {
-     // Get current value
+  const renderCell = (species: PalmSpecies, height: PalmHeight) => {
      const speciesHeights = config.height_prices[species];
      const value = speciesHeights?.[height] ?? 0;
      const hasError = validationErrors.includes(`${species}-${height}`);
-     
-     // Calculate suggestion
-     const isTouched = touchedCells[`${species}-${height}`];
-     // Sugerencia solo si: activado, no tocado, valor es 0, y hay precio base
-     const suggestion = (showSuggestions && !isTouched && value === 0 && basePrice > 0) 
-        ? calculateSuggestion(species, height, basePrice) 
-        : null;
-
-     if (suggestion && suggestion > 0) {
-         return (
-             <div className="w-full relative">
-                 <UnifiedNumericInput
-                    value={value}
-                    onChange={(newVal) => {
-                        handlePriceChange(species, height, newVal);
-                        if (hasError) {
-                            setValidationErrors(prev => prev.filter(err => err !== `${species}-${height}`));
-                        }
-                    }}
-                    hasError={hasError}
-                  />
-                  <div 
-                    className="mt-1.5 mx-auto w-fit flex items-center justify-center gap-1 text-[11px] text-blue-600 bg-blue-50 py-0.5 px-2 rounded cursor-pointer hover:bg-blue-100 transition-colors shadow-sm border border-blue-100"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      applySuggestion(species, height, suggestion);
-                    }}
-                  >
-                    <span className="font-semibold">Sugerido: {suggestion}€</span>
-                  </div>
-             </div>
-         );
-     }
      return (
         <div className="w-full">
              <UnifiedNumericInput
@@ -470,29 +331,84 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             </div>
             <SaveStatusIndicator status={status} />
         </div>
-        
-        {/* Switch Sugerencias */}
-        <div className="flex items-center justify-between w-full md:w-auto gap-3 bg-gray-50 p-3 rounded-lg md:bg-transparent md:p-0 border border-gray-100 md:border-0">
-            <span className="text-sm font-medium text-gray-700">Mostrar sugerencias de precios</span>
-            <button
-              type="button"
-              onClick={() => setShowSuggestions(!showSuggestions)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2 ${
-                showSuggestions ? 'bg-green-600' : 'bg-gray-200'
-              }`}
-              role="switch"
-              aria-checked={showSuggestions}
-            >
-              <span
-                aria-hidden="true"
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  showSuggestions ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
+      </div>
+
+      <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex items-center justify-between">
+          <div className="pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full max-w-[7.5rem] shrink-0">
+            <UnifiedNumericInput
+              value={config.minimum_price}
+              autoSelect
+              onChange={(val) => onChange({ ...config, minimum_price: val })}
+              hasError={validationErrors.includes('minimum_price')}
+            />
+          </div>
         </div>
       </div>
 
+      <hr className="border-gray-200 my-8" />
+
+      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Método de Cobro</h4>
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => onChange({ ...config, pricing_method: 'per_quantity' })}
+            className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
+              config.pricing_method === 'per_quantity'
+                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+            }`}
+          >
+            Por Cantidad (€/ud)
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ ...config, pricing_method: 'per_hour' })}
+            className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
+              config.pricing_method === 'per_hour'
+                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+            }`}
+          >
+            Por Hora (€/h)
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-3">
+          {config.pricing_method === 'per_hour'
+            ? 'El precio base de poda se calcula mediante rendimiento por especie/altura y tu tarifa horaria.'
+            : 'El precio base se calcula con tus tarifas fijas por especie y altura.'}
+        </p>
+      </div>
+
+      {config.pricing_method === 'per_hour' && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full uppercase">Económico</span>
+          </div>
+          <div className="grid grid-cols-1 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">precioPorHora (€/h)</label>
+              <div className="w-full sm:w-[7.5rem]">
+                <UnifiedNumericInput
+                  value={config.precioPorHora}
+                  autoSelect
+                  onChange={(val) => onChange({ ...config, precioPorHora: val })}
+                  suffix="€/h"
+                  hasError={validationErrors.includes('precioPorHora')}
+                />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Tarifa económica aplicada al tiempo estimado según el rendimiento configurado.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Velocidad de trabajo (Obligatorio) */}
       <div className="mb-8">
@@ -526,6 +442,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                             <UnifiedNumericInput
                               value={config.yield_units_per_hour?.[species]?.[range]}
                               autoSelect
+                              suffix="ud/h"
                               onChange={(val) => {
                                 const next = { ...(config.yield_units_per_hour || {}) };
                                 if (!next[species]) next[species] = {};
@@ -561,12 +478,13 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                   const isSupported = SPECIES_RANGES[species].includes(range);
                   if (!isSupported) return null;
                   return (
-                    <div key={range} className="flex justify-between items-center">
-                      <span className="text-xs text-gray-600">{range}m</span>
-                      <div className="w-24">
+                    <div key={range} className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 text-xs text-gray-600">{range}m</span>
+                      <div className="w-full max-w-[7.5rem] shrink-0">
                         <UnifiedNumericInput
                           value={config.yield_units_per_hour?.[species]?.[range]}
                           autoSelect
+                          suffix="ud/h"
                           onChange={(val) => {
                             const next = { ...(config.yield_units_per_hour || {}) };
                             if (!next[species]) next[species] = {};
@@ -603,7 +521,9 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               <div className="flex flex-col gap-1 mb-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Especies de palmeras (Precio Fijo)</h4>
+                      <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                        {config.pricing_method === 'per_hour' ? 'Especies de palmeras activas' : 'Especies de palmeras (Precio Fijo)'}
+                      </h4>
                       <span className="flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200 font-semibold">
                           <AlertCircle className="w-3 h-3" />
                           Solo profesionales
@@ -642,7 +562,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                     <div className="divide-y divide-slate-100">
                         {activePalms.map((species) => {
                           const speciesRanges = SPECIES_RANGES[species] || [];
-                          const p0_5 = config.height_prices[species]?.[speciesRanges[0]] ?? 0;
                           return (
                             <div key={species} className="pt-3 pb-2 md:p-4 hover:bg-gray-50 transition-colors">
                               <div className="flex flex-col md:gap-4">
@@ -667,20 +586,21 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                                     </button>
                                 </div>
 
-                                {/* Inputs Grid */}
-                                <div className={`grid grid-cols-1 ${speciesRanges.length === 2 ? 'md:grid-cols-2' : speciesRanges.length === 3 ? 'md:grid-cols-3' : speciesRanges.length === 4 ? 'md:grid-cols-4' : 'md:grid-cols-1'} gap-3 px-3 pb-3 border-t border-slate-100 pt-3 md:pt-0 md:gap-4 md:px-0 md:pb-0 md:border-t-0`}>
-                                    {speciesRanges.map((range, idx) => (
-                                        <div key={range} className={`space-y-1 md:space-y-2 ${idx < speciesRanges.length - 1 ? 'md:border-r md:border-gray-200 md:pr-2' : ''} flex flex-row items-center justify-between md:block`}>
-                                            <label className="block text-[13px] leading-[1.15] text-left md:text-center font-medium text-gray-500">
-                                              <span className="block">{range}m</span>
-                                              <span className="block text-[11px] text-gray-400">€/palmera</span>
-                                            </label>
-                                            <div className="w-24 md:w-full">
-                                                {renderCell(species, range, idx === 0 ? 0 : p0_5)}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                {config.pricing_method === 'per_quantity' && (
+                                  <div className={`grid grid-cols-1 ${speciesRanges.length === 2 ? 'md:grid-cols-2' : speciesRanges.length === 3 ? 'md:grid-cols-3' : speciesRanges.length === 4 ? 'md:grid-cols-4' : 'md:grid-cols-1'} gap-3 px-3 pb-3 border-t border-slate-100 pt-3 md:pt-0 md:gap-4 md:px-0 md:pb-0 md:border-t-0`}>
+                                      {speciesRanges.map((range, idx) => (
+                                          <div key={range} className={`space-y-1 md:space-y-2 ${idx < speciesRanges.length - 1 ? 'md:border-r md:border-gray-200 md:pr-2' : ''} flex flex-row items-center justify-between md:block`}>
+                                              <label className="block text-[13px] leading-[1.15] text-left md:text-center font-medium text-gray-500">
+                                                <span className="block">{range}m</span>
+                                                <span className="block text-[11px] text-gray-400">€/palmera</span>
+                                              </label>
+                                              <div className="w-full min-w-[7.5rem]">
+                                                  {renderCell(species, range)}
+                                              </div>
+                                          </div>
+                                      ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -694,8 +614,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                 )}
               </div>
             </div>
-            
-            <p className="text-xs text-gray-500">* Activa las sugerencias para ver precios recomendados basados en el precio base.</p>
           </div>
           <hr className="border-gray-200 my-8" />
 
@@ -728,7 +646,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-sm font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.condition_surcharges['descuidado']}
                     autoSelect
@@ -755,7 +673,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-sm font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.condition_surcharges['muy_descuidado']}
                     autoSelect
@@ -787,7 +705,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-gray-400 text-sm font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.access_difficulty}
                     autoSelect
@@ -805,7 +723,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-gray-400 text-sm font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.phytosanitary}
                     autoSelect
@@ -823,7 +741,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-gray-400 text-sm font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.trunk_finish}
                     autoSelect
@@ -849,7 +767,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-gray-400 text-sm font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.waste_removal.percentage}
                     autoSelect
@@ -875,33 +793,12 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         </div>
       </div>
 
-      <hr className="border-gray-200 my-8" />
-
-      <div className="border-t border-gray-100 pt-6">
-        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
-        <div className="flex items-center justify-between">
-          <div className="pr-2">
-            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
-            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-          </div>
-          <div className="w-24">
-            <UnifiedNumericInput
-              value={config.minimum_price}
-              autoSelect
-              onChange={(val) => onChange({ ...config, minimum_price: val })}
-              hasError={validationErrors.includes('minimum_price')}
-            />
-          </div>
-        </div>
-      </div>
-      
       {/* 6. Resumen Informativo Final */}
       <div className="mt-6 pt-4 border-t border-gray-100 text-xs text-gray-500 text-center">
         <p>Estas tarifas se usan como base para generar presupuestos automáticos en la plataforma.</p>
         <p>Pueden ajustarse posteriormente en cada servicio individual.</p>
       </div>
 
-      <ServicePricePreview serviceName="Poda de palmeras" config={config} />
     </div>
   );
 };

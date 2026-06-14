@@ -6,7 +6,7 @@ import { LawnPricingConfig, LawnSpecies, LawnRange } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import ServicePricePreview from './ServicePricePreview';
+import { getPrecioPorHora } from '../../utils/hourlyPricing';
 
 type LegacyLawnRange = '0-50' | '50-200' | '200+';
 
@@ -18,7 +18,7 @@ const EMPTY_CONFIG: LawnPricingConfig = {
   selected_species: [],
   species_prices: {},
   pricing_method: 'per_quantity',
-  hourly_rate: '' as any,
+  precioPorHora: '' as any,
   yield_m2_per_hour: '' as any
 };
 
@@ -65,6 +65,8 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
     return {
       ...next,
+      hourly_rate: undefined,
+      precioPorHora: getVal(incoming.precioPorHora ?? incoming.hourly_rate),
       price_per_m2: price_per_m2 > 0 ? price_per_m2 : getVal(incoming.price_per_m2),
       minimum_price: getVal(incoming.minimum_price),
       condition_surcharges: {
@@ -113,7 +115,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
   const validateConfig = useCallback((cfg: LawnPricingConfig): string[] => {
     const errors: string[] = [];
     if (cfg.pricing_method === 'per_hour') {
-      if (isInvalid(cfg.hourly_rate)) errors.push('hourly_rate');
+      if (isInvalid(cfg.precioPorHora)) errors.push('precioPorHora');
     } else {
       if (isInvalid(cfg.price_per_m2)) errors.push('price_per_m2');
     }
@@ -177,6 +179,26 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         </div>
       </div>
 
+      <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full max-w-[7.5rem] shrink-0">
+            <UnifiedNumericInput
+                value={config.minimum_price}
+                autoSelect
+                onChange={handleMinimumPriceChange}
+                hasError={validationErrors.includes('minimum_price')}
+              />
+          </div>
+        </div>
+      </div>
+
+      <hr className="border-gray-200 my-8" />
+
       {/* Método de Cobro */}
       <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-8">
         <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Método de Cobro</h4>
@@ -211,6 +233,30 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         </p>
       </div>
 
+      {config.pricing_method === 'per_hour' && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full uppercase">Económico</span>
+          </div>
+          <div className="grid grid-cols-1 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">precioPorHora (€/h)</label>
+              <div className="w-full sm:w-[7.5rem]">
+                <UnifiedNumericInput
+                  value={config.precioPorHora}
+                  autoSelect
+                  onChange={(val) => onChange({ ...config, precioPorHora: val })}
+                  suffix="€/h"
+                  hasError={validationErrors.includes('precioPorHora')}
+                />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Tarifa económica por cada hora efectiva de trabajo.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Velocidad de trabajo (Obligatorio) */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
@@ -220,7 +266,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Velocidad de trabajo (m²/h)</label>
-            <div className="w-32">
+            <div className="w-full sm:w-[7.5rem]">
               <UnifiedNumericInput
                 value={config.yield_m2_per_hour}
                 autoSelect
@@ -231,26 +277,11 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             </div>
             <p className="text-[10px] text-gray-500 mt-1">¿Cuántos m² puedes cortar en una hora?</p>
           </div>
-          
-          {config.pricing_method === 'per_hour' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Precio por Hora (€/h)</label>
-              <div className="w-32">
-                <UnifiedNumericInput
-                  value={config.hourly_rate}
-                  autoSelect
-                  onChange={(val) => onChange({ ...config, hourly_rate: val })}
-                  suffix="€/h"
-                  hasError={validationErrors.includes('hourly_rate')}
-                />
-              </div>
-            </div>
-          )}
 
-          {config.pricing_method === 'per_hour' && config.hourly_rate && config.yield_m2_per_hour && config.yield_m2_per_hour > 0 && (
+          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && config.yield_m2_per_hour && config.yield_m2_per_hour > 0 && (
             <div className="md:col-span-2 p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
               <p className="text-xs text-blue-800">
-                <span className="font-semibold">Nota:</span> Con este rendimiento y precio por hora, tu tarifa equivalente es de <span className="font-bold">{(config.hourly_rate / config.yield_m2_per_hour).toFixed(2)}€/m²</span>.
+                <span className="font-semibold">Nota:</span> Con esta velocidad y tu `precioPorHora`, la tarifa equivalente es <span className="font-bold">{(getPrecioPorHora(config) / config.yield_m2_per_hour).toFixed(2)}€/m²</span>.
               </p>
             </div>
           )}
@@ -263,11 +294,11 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
         <>
           <div>
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Tarifa por m² (Precio Fijo)</h4>
-            <div className="flex items-center justify-between">
-              <div className="pr-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 pr-2">
                 <span className="text-sm font-medium text-gray-900 block">Precio por m²</span>
               </div>
-              <div className="w-24">
+              <div className="w-full max-w-[7.5rem] shrink-0">
                 <UnifiedNumericInput
                   value={config.price_per_m2}
                   autoSelect
@@ -293,11 +324,11 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             <div>
               <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Suplementos por estado</h4>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900 block">Descuidado</span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 text-sm font-medium text-gray-900 block">Descuidado</span>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-400 text-sm font-medium">+</span>
-                    <div className="w-20">
+                    <div className="w-[6.5rem] shrink-0">
                       <UnifiedNumericInput
                         value={config.condition_surcharges.descuidado}
                         autoSelect
@@ -307,11 +338,11 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-900 block">Muy Descuidado</span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0 text-sm font-medium text-gray-900 block">Muy Descuidado</span>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-400 text-sm font-medium">+</span>
-                    <div className="w-20">
+                    <div className="w-[6.5rem] shrink-0">
                       <UnifiedNumericInput
                         value={config.condition_surcharges.muy_descuidado}
                         autoSelect
@@ -328,14 +359,14 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             <div>
               <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Gestión de Residuos</h4>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="pr-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 pr-2">
                     <span className="text-sm font-medium text-gray-900 block">Retirada de restos</span>
                     <p className="text-xs text-gray-500 mt-1">Incremento si el cliente lo solicita</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-400 text-sm font-medium">+</span>
-                    <div className="w-20">
+                    <div className="w-[6.5rem] shrink-0">
                       <UnifiedNumericInput
                         value={config.waste_removal.percentage}
                         autoSelect
@@ -350,27 +381,6 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
           </div>
       </div>
 
-      <hr className="border-gray-200 my-8" />
-
-      <div>
-        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
-        <div className="flex items-center justify-between">
-          <div className="pr-2">
-            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
-            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-          </div>
-          <div className="w-24">
-            <UnifiedNumericInput
-                value={config.minimum_price}
-                autoSelect
-                onChange={handleMinimumPriceChange}
-                hasError={validationErrors.includes('minimum_price')}
-              />
-          </div>
-        </div>
-      </div>
-
-      <ServicePricePreview serviceName="Corte de césped" config={config} />
     </div>
   );
 };

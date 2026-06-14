@@ -17,16 +17,13 @@
 - **Protección**: Solo para usuarios administradores
 - **Condiciones**:
   - En desarrollo: Acceso permitido si `allowInDevelopment=true`
-  - En producción: Solo usuarios con rol `admin` o emails autorizados
+  - En producción: Solo usuarios con `profiles.role = 'admin'`
 
 ### Variables de Entorno de Seguridad
 
 ```env
 # Habilitar rutas de debug en producción (NO recomendado)
 VITE_ENABLE_DEBUG_ROUTES=false
-
-# Emails de administradores autorizados
-VITE_ADMIN_EMAILS=admin@jardineria.com,developer@jardineria.com
 ```
 
 ### Configuración por Entorno
@@ -51,8 +48,8 @@ const isLocalhost = window.location.hostname === 'localhost';
 
 ### 2. Verificación de Roles
 ```typescript
-const adminEmails = import.meta.env.VITE_ADMIN_EMAILS?.split(',') || [];
-const isAdmin = profile?.role === 'admin' || adminEmails.includes(profile?.email);
+const role = await fetchCurrentUserProfileRole(user.id);
+const isAdmin = role === 'admin';
 ```
 
 ### 3. Páginas de Error Seguras
@@ -73,7 +70,7 @@ Cuando un usuario intenta acceder a una ruta protegida:
 console.warn('🚫 AdminRoute: Acceso denegado', {
   userId: user.id,
   email: user.email,
-  role: profile?.role
+  role
 });
 ```
 
@@ -86,16 +83,16 @@ console.warn('🚫 AdminRoute: Acceso denegado', {
 
 ### Para Producción
 - [ ] Confirmar `VITE_ENABLE_DEBUG_ROUTES=false`
-- [ ] Verificar lista de emails de administradores
+- [ ] Verificar que el rol admin se gestiona en `profiles` o claims server-side
 - [ ] Probar que las rutas de debug estén bloqueadas
 - [ ] Confirmar que solo administradores accedan a `/role-monitor`
 
 ## 🔧 Mantenimiento
 
 ### Agregar Nuevo Administrador
-1. Agregar email a `VITE_ADMIN_EMAILS` en variables de entorno
-2. O asignar rol `admin` en la base de datos
-3. Reiniciar la aplicación
+1. Asignar rol `admin` en la base de datos o mediante claims server-side
+2. Confirmar que las policies RLS reconocen ese rol
+3. Forzar refresco de sesion si el cliente ya estaba autenticado
 
 ### Habilitar Debug en Producción (NO recomendado)
 1. Establecer `VITE_ENABLE_DEBUG_ROUTES=true`
@@ -105,7 +102,7 @@ console.warn('🚫 AdminRoute: Acceso denegado', {
 ## ⚠️ Advertencias
 
 1. **NUNCA** habilitar rutas de debug en producción permanentemente
-2. **SIEMPRE** verificar la lista de administradores antes del despliegue
+2. **SIEMPRE** verificar el origen server-side del rol admin antes del despliegue
 3. **MONITOREAR** los logs de acceso a rutas administrativas
 4. **ROTAR** las credenciales de administrador regularmente
 

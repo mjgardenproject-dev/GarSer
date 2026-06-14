@@ -6,7 +6,7 @@ import { HedgePricingConfig, HedgeHeightBand } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import ServicePricePreview from './ServicePricePreview';
+import { getPrecioPorHora } from '../../utils/hourlyPricing';
 
 export const HEDGE_HEIGHT_BANDS: HedgeHeightBand[] = ['0-2m', '2-4m', '4-6m'];
 
@@ -21,7 +21,7 @@ const EMPTY_CONFIG: HedgePricingConfig = {
   waste_removal: { percentage: '' as any },
   minimum_price: '' as any,
   pricing_method: 'per_quantity',
-  hourly_rate: '' as any,
+  precioPorHora: '' as any,
   yield_ml_per_hour: {
     '0-2m': '' as any,
     '2-4m': '' as any,
@@ -151,6 +151,8 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     return {
       ...EMPTY_CONFIG,
       ...value,
+      hourly_rate: undefined,
+      precioPorHora: getVal(value.precioPorHora ?? value.hourly_rate),
       minimum_price: getVal(value.minimum_price),
       specialist_enabled: legacySpecialist,
       pricing_matrix: {
@@ -218,7 +220,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
   const validateConfig = useCallback((cfg: HedgePricingConfig): string[] => {
     const errors: string[] = [];
     if (cfg.pricing_method === 'per_hour') {
-      if (isInvalid(cfg.hourly_rate)) errors.push('hourly_rate');
+      if (isInvalid(cfg.precioPorHora)) errors.push('precioPorHora');
     } else {
       activeHeightBands.forEach((band) => {
         if (isInvalid(cfg.pricing_matrix?.[band])) errors.push(band);
@@ -329,6 +331,26 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
       </div>
 
       <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 pr-2">
+            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
+            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
+          </div>
+          <div className="w-full max-w-[7.5rem] shrink-0">
+            <UnifiedNumericInput
+              value={config.minimum_price}
+              autoSelect
+              onChange={handleMinimumPriceChange}
+              hasError={validationErrors.includes('minimum_price')}
+            />
+          </div>
+        </div>
+      </div>
+
+      <hr className="border-gray-200 my-8" />
+
+      <div className="mb-8">
         <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Activar columna 4-6m</h4>
         <div className="flex items-start justify-between gap-3 bg-white p-4 border border-gray-200 rounded-xl shadow-sm">
           <div>
@@ -379,6 +401,30 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         </p>
       </div>
 
+      {config.pricing_method === 'per_hour' && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full uppercase">Económico</span>
+          </div>
+          <div className="grid grid-cols-1 gap-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">precioPorHora (€/h)</label>
+              <div className="w-full sm:w-[7.5rem]">
+                <UnifiedNumericInput
+                  value={config.precioPorHora}
+                  autoSelect
+                  onChange={(val) => onChange({ ...config, precioPorHora: val })}
+                  suffix="€/h"
+                  hasError={validationErrors.includes('precioPorHora')}
+                />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Tarifa económica aplicada a las horas estimadas del trabajo.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Velocidad de trabajo (Obligatorio) */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
@@ -386,33 +432,23 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full uppercase">Obligatorio</span>
         </div>
         <div className="space-y-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
-          {config.pricing_method === 'per_hour' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Precio por Hora (€/h)</label>
-              <div className="w-32">
-                <UnifiedNumericInput
-                  value={config.hourly_rate}
-                  autoSelect
-                  onChange={(val) => onChange({ ...config, hourly_rate: val })}
-                  suffix="€/h"
-                  hasError={validationErrors.includes('hourly_rate')}
-                />
-              </div>
-            </div>
-          )}
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Velocidad de trabajo por tramo (ml/h por cara)</label>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {activeHeightBands.map((band) => (
-                <div key={band}>
+                <div key={band} className="min-w-0">
                   <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">{band}</label>
                   <UnifiedNumericInput
                     value={config.yield_ml_per_hour?.[band]}
                     autoSelect
                     onChange={(val) => onChange({
                       ...config,
-                      yield_ml_per_hour: { ...(config.yield_ml_per_hour || {}), [band]: val }
+                      yield_ml_per_hour: {
+                        '0-2m': config.yield_ml_per_hour?.['0-2m'] ?? ('' as any),
+                        '2-4m': config.yield_ml_per_hour?.['2-4m'] ?? ('' as any),
+                        '4-6m': config.yield_ml_per_hour?.['4-6m'] ?? ('' as any),
+                        [band]: val
+                      }
                     })}
                     suffix="ml/h"
                     hasError={validationErrors.includes(`yield_${band}`)}
@@ -423,7 +459,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             <p className="text-[10px] text-gray-500 mt-2">¿Cuántos metros lineales por cara puedes cortar en una hora para cada altura?</p>
           </div>
 
-          {config.pricing_method === 'per_hour' && config.hourly_rate && (
+          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && (
             <div className="p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
               <p className="text-xs font-semibold text-blue-800 mb-2 uppercase">Precios unitarios equivalentes (€/ml):</p>
               <div className="grid grid-cols-3 gap-2">
@@ -431,7 +467,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                   const y = config.yield_ml_per_hour?.[band];
                   return (
                     <div key={band} className="text-[11px] text-blue-700">
-                      <span className="font-medium">{band}:</span> {y && y > 0 ? (config.hourly_rate! / y).toFixed(2) : '--'}€
+                      <span className="font-medium">{band}:</span> {y && y > 0 ? (getPrecioPorHora(config) / y).toFixed(2) : '--'}€
                     </div>
                   );
                 })}
@@ -472,7 +508,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Suplemento por Dificultad de Corte</h4>
           <p className="text-xs text-gray-500 mt-1 mb-4">Recargo único global sobre el subtotal de metros según la dificultad.</p>
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <span className="block text-sm font-medium text-gray-900">Normal</span>
                 <span className="text-xs text-gray-500">Seto plano, conserva forma, brotes nuevos.</span>
@@ -484,9 +520,9 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                 <span className="block text-sm font-medium text-gray-900">Media</span>
                 <span className="text-xs text-gray-500">Pérdida de geometría, esfuerzo extra para líneas rectas.</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <span className="text-gray-400 font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.condition_surcharges?.media || 0}
                     autoSelect
@@ -497,14 +533,14 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                 </div>
               </div>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex-1 pr-4">
                 <span className="block text-sm font-medium text-gray-900">Alta</span>
                 <span className="text-xs text-gray-500">Crecimiento descontrolado, ramas muy gruesas, uso de herramientas pesadas.</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <span className="text-gray-400 font-medium">+</span>
-                <div className="w-20">
+                <div className="w-[6.5rem]">
                   <UnifiedNumericInput
                     value={config.condition_surcharges?.alta || 0}
                     autoSelect
@@ -521,11 +557,11 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         <div>
           <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Gestión de Residuos</h4>
           <p className="text-xs text-gray-500 mt-1 mb-4">Recargo opcional si el cliente solicita la retirada de restos.</p>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-900">Recargo por retirada</span>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 text-sm font-medium text-gray-900">Recargo por retirada</span>
+            <div className="flex items-center gap-2 shrink-0">
               <span className="text-gray-400 font-medium">+</span>
-              <div className="w-20">
+              <div className="w-[6.5rem]">
                 <UnifiedNumericInput
                   value={config.waste_removal?.percentage || 0}
                   autoSelect
@@ -539,27 +575,6 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         </div>
       </div>
 
-      <hr className="border-gray-200 my-8" />
-
-      <div>
-        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Precio mínimo</h4>
-        <div className="flex items-center justify-between gap-3">
-          <div className="pr-2">
-            <span className="text-sm font-medium text-gray-900 block">Importe mínimo del servicio</span>
-            <p className="text-xs text-gray-500 mt-1">Se aplica al final del cálculo del precio.</p>
-          </div>
-          <div className="w-24">
-            <UnifiedNumericInput
-              value={config.minimum_price}
-              autoSelect
-              onChange={handleMinimumPriceChange}
-              hasError={validationErrors.includes('minimum_price')}
-            />
-          </div>
-        </div>
-      </div>
-
-      <ServicePricePreview serviceName="Corte de setos a máquina" config={config} />
     </div>
   );
 };

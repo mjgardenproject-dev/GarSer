@@ -1,5 +1,5 @@
 import {
-  calculatePalmHoursEngine,
+  calculatePalmHoursFromConfig,
   calculatePriceFromYield,
   calculatePalmPriceEngine,
   findPalmPrice,
@@ -9,6 +9,7 @@ import { isHighestOpenRangeForSpecies } from '../domain/speciesBusinessRules.ts'
 import { calculateTreePruningQuoteForTrees } from '../domain/pricing/treePruningPricing.ts';
 import type { PhytosanitaryYields } from '../types/index.ts';
 import type { TreePruningServiceConfig } from '../types/treePruning.ts';
+import { getPrecioPorHora, getPricingMethod } from '../utils/hourlyPricing.ts';
 
 export interface BookingQuoteLine {
   desc: string;
@@ -593,10 +594,14 @@ const buildQuoteEconomics = (
 };
 
 const getPalmBaseUnitPrice = (config: any, group: Pick<PalmPricingGroup, 'species' | 'height'>): number => {
-  const useYield = config?.use_yield_calculation && config?.yield_units_per_hour && config?.hourly_rate;
+  const precioPorHora = getPrecioPorHora(config);
+  const useYield =
+    getPricingMethod(config, { allowLegacyYieldCalculation: true }) === 'per_hour' &&
+    config?.yield_units_per_hour &&
+    precioPorHora > 0;
   if (useYield) {
     const yieldPerUnit = Number(config?.yield_units_per_hour?.[group.species]?.[group.height] || 0);
-    return calculatePriceFromYield(1, yieldPerUnit, Number(config?.hourly_rate || 0));
+    return calculatePriceFromYield(1, yieldPerUnit, precioPorHora);
   }
   return findPalmPrice(config, group.species, group.height);
 };
@@ -1085,7 +1090,7 @@ export function buildAuthoritativeBookingQuote(params: {
   }
 
   if (bookingData.lawnZones?.length) {
-    const usesHourlyPricing = config.pricing_method === 'per_hour';
+    const usesHourlyPricing = getPricingMethod(config) === 'per_hour';
     if (!hasPositiveNumber(config.yield_m2_per_hour)) {
       return buildIneligibleQuote(
         'missing_yield_config',
@@ -1094,7 +1099,7 @@ export function buildAuthoritativeBookingQuote(params: {
       );
     }
     if (usesHourlyPricing) {
-      if (!hasPositiveNumber(config.hourly_rate)) {
+      if (!hasPositiveNumber(getPrecioPorHora(config))) {
         return buildIneligibleQuote(
           'missing_pricing_config',
           'El servicio de césped por horas requiere una tarifa horaria válida.',
@@ -1111,16 +1116,27 @@ export function buildAuthoritativeBookingQuote(params: {
   }
 
   if (bookingData.hedgeZones?.length) {
+    const pricingMethod = getPricingMethod(config);
     const yields = config.yield_ml_per_hour || {};
     for (const zone of bookingData.hedgeZones) {
       const height = zone.height || '0-2m';
-      const base = Number(config.pricing_matrix?.[height] || config.species_prices?.[zone.type]?.[height] || 0);
-      if (!(base > 0)) {
-        return buildIneligibleQuote(
-          'missing_pricing_config',
-          'El servicio de setos requiere una matriz de precios completa para la altura solicitada.',
-          metadata,
-        );
+      if (pricingMethod === 'per_hour') {
+        if (!hasPositiveNumber(getPrecioPorHora(config))) {
+          return buildIneligibleQuote(
+            'missing_pricing_config',
+            'El servicio de setos por horas requiere una tarifa horaria válida.',
+            metadata,
+          );
+        }
+      } else {
+        const base = Number(config.pricing_matrix?.[height] || config.species_prices?.[zone.type]?.[height] || 0);
+        if (!(base > 0)) {
+          return buildIneligibleQuote(
+            'missing_pricing_config',
+            'El servicio de setos requiere una matriz de precios completa para la altura solicitada.',
+            metadata,
+          );
+        }
       }
       if (!hasPositiveNumber(yields[height])) {
         return buildIneligibleQuote(
@@ -1157,11 +1173,19 @@ export function buildAuthoritativeBookingQuote(params: {
   }
 
   if (bookingData.shrubGroups?.length) {
+    const pricingMethod = getPricingMethod(config);
     const pricesPerM2 = config.prices_per_m2 || {};
     const yieldsBySize = config.yield_m2_per_hour || {};
+    if (pricingMethod === 'per_hour' && !hasPositiveNumber(getPrecioPorHora(config))) {
+      return buildIneligibleQuote(
+        'missing_pricing_config',
+        'La poda de arbustos por horas requiere una tarifa horaria válida.',
+        metadata,
+      );
+    }
     for (const group of bookingData.shrubGroups) {
       const size = String(group.size || 'pequeñas');
-      if (!hasPositiveNumber(pricesPerM2[size])) {
+      if (pricingMethod !== 'per_hour' && !hasPositiveNumber(pricesPerM2[size])) {
         return buildIneligibleQuote(
           'missing_pricing_config',
           'La poda de arbustos requiere precios válidos por tamaño.',
@@ -1220,17 +1244,7 @@ export function buildAuthoritativeBookingQuote(params: {
   }
 
   if (palmGroups.length) {
-    const palmHours = calculatePalmHoursEngine(
-      pricedPalmGroups.flatMap((group) =>
-        Array.from({ length: Math.max(0, Math.trunc(Number(group.quantity || 0))) }, () => ({
-          especie: group.species,
-          altura: group.height,
-          estado: group.state,
-          nivel_analisis: 2,
-        }))
-      )
-    );
-    totalHours += Number(palmHours.tiempoTotalEstimado || 0);
+    totalHours += Number(calculatePalmHoursFromConfig(pricedPalmGroups, config, globalWaste) || 0);
 
     metadata.pricingContext.palmGroups.forEach((group) => {
       if (group.isPriced && group.quantity > 0 && group.isTerminalOpenRange) {
@@ -1305,9 +1319,10 @@ export function buildAuthoritativeBookingQuote(params: {
   });
 
   let totalPrice = 0;
+  const precioPorHora = getPrecioPorHora(config);
 
-    if (config.pricing_method === 'per_hour' && Number(config.hourly_rate || 0) > 0 && !hasTreeOrPalm) {
-    totalPrice = applyMinimumPrice(estimatedHours * Number(config.hourly_rate));
+  if (getPricingMethod(config) === 'per_hour' && precioPorHora > 0 && !hasTreeOrPalm) {
+    totalPrice = applyMinimumPrice(estimatedHours * precioPorHora);
   } else {
     let total = 0;
 

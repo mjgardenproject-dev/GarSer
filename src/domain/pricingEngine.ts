@@ -37,6 +37,8 @@ export const getWasteMultiplier = (hasWasteRemoval: boolean, wasteRemovalPercent
 };
 
 // Generic safe price applier
+import { getPrecioPorHora, getPricingMethod } from '../utils/hourlyPricing.ts';
+
 export const applyMinimumPrice = (calculatedPrice: number, minimumPrice: number): number => {
   if (calculatedPrice <= 0) return 0;
   return Math.max(calculatedPrice, minimumPrice);
@@ -63,14 +65,14 @@ export const calculateLawnPrice = (
 ): number => {
   let totalHours = 0;
   let totalPrice = 0;
-
-  const useYield = config.use_yield_calculation && config.yield_m2_per_hour && config.hourly_rate;
+  const precioPorHora = getPrecioPorHora(config);
+  const useYield = getPricingMethod(config) === 'per_hour' && config.yield_m2_per_hour && precioPorHora > 0;
 
   zones.forEach(z => {
     if (z.quantity > 0) {
       const diff = getConditionMultiplier(z.state);
       if (useYield) {
-        totalPrice += calculatePriceFromYield(z.quantity, config.yield_m2_per_hour, config.hourly_rate, diff);
+        totalPrice += calculatePriceFromYield(z.quantity, config.yield_m2_per_hour, precioPorHora, diff);
       } else {
         totalHours += (z.quantity / 150) * diff;
       }
@@ -215,19 +217,6 @@ export const isPalmGroupInTerminalOpenRange = (group: Pick<PalmPricingGroup, 'sp
   return isHighestOpenRangeForSpecies(group.species, group.height);
 };
 
-const parseRangeLowerBound = (range: string): number => {
-  const normalized = String(range || '').replace(/\s+/g, '');
-  if (!normalized) return Number.POSITIVE_INFINITY;
-  if (normalized.includes('+') || normalized.includes('>')) {
-    const value = parseFloat(normalized.replace(/[^\d.]/g, ''));
-    return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
-  }
-  const matches = normalized.match(/(\d+(?:\.\d+)?)/g);
-  if (!matches || matches.length === 0) return Number.POSITIVE_INFINITY;
-  const min = parseFloat(matches[0]);
-  return Number.isFinite(min) ? min : Number.POSITIVE_INFINITY;
-};
-
 const normalizeHeightRange = (value: string): string => {
   return String(value || '')
     .toLowerCase()
@@ -320,6 +309,70 @@ export const findPalmPrice = (config: any, species: string, height: string): num
     return 0;
 };
 
+const getPalmStatePercent = (config: any, state: string): number => {
+  const surcharges = config.condition_surcharges || { normal: 0, descuidada: 20, muy_descuidada: 50 };
+  const isVeryNeglected = state.includes('muy') && (state.includes('descuidado') || state.includes('descuidada'));
+  const isNeglected = state.includes('descuidado') || state.includes('descuidada') || state.includes('mal estado');
+
+  if (isVeryNeglected) {
+    return surcharges.muy_descuidado ?? surcharges.muy_descuidada ?? surcharges.overgrown ?? 0;
+  }
+  if (isNeglected) {
+    return surcharges.descuidado ?? surcharges.descuidada ?? surcharges.neglected ?? 0;
+  }
+
+  return surcharges.normal ?? 0;
+};
+
+export const calculatePalmHoursFromConfig = (
+  groups: PalmPricingGroup[],
+  config: any,
+  globalWasteRemoval: boolean
+): number => {
+  const pricingMethod = getPricingMethod(config, { allowLegacyYieldCalculation: true });
+  if (pricingMethod !== 'per_hour' || !config?.yield_units_per_hour || getPrecioPorHora(config) <= 0) {
+    return calculatePalmHoursEngine(
+      groups.flatMap((group) =>
+        Array.from({ length: Math.max(0, Math.trunc(Number(group.quantity || 0))) }, () => ({
+          especie: group.species,
+          altura: group.height,
+          estado: group.state,
+          nivel_analisis: 2,
+        }))
+      )
+    ).tiempoTotalEstimado;
+  }
+
+  let totalHours = 0;
+
+  for (const group of groups) {
+    const quantity = Math.max(0, Number(group.quantity || 0));
+    if (quantity <= 0) continue;
+
+    const yieldForSpecies = Number(config.yield_units_per_hour?.[group.species]?.[group.height] || 0);
+    if (!(yieldForSpecies > 0)) continue;
+
+    const state = (group.state || 'normal').toLowerCase();
+    const stateMult = 1 + (getPalmStatePercent(config, state) / 100);
+
+    const wastePercent = globalWasteRemoval
+      ? (config.wasteRemovalModifier !== undefined ? config.wasteRemovalModifier : (config.waste_removal?.percentage || 0))
+      : 0;
+    const wasteMult = 1 + (Number(wastePercent || 0) / 100);
+
+    const lowestRangeThreshold = getLowestRangeThresholdForSpecies(group.species);
+    const canApplyAccessDifficulty = !areSameHeightRanges(group.height, lowestRangeThreshold);
+    const accessMult =
+      canApplyAccessDifficulty && group.hasAccessDifficulty && config.access_difficulty
+        ? 1 + (Number(config.access_difficulty || 0) / 100)
+        : 1;
+
+    totalHours += (quantity / yieldForSpecies) * stateMult * wasteMult * accessMult;
+  }
+
+  return Math.round(totalHours * 100) / 100;
+};
+
 export function calculatePalmPriceEngine(
   groups: PalmPricingGroup[],
   config: any,
@@ -328,13 +381,17 @@ export function calculatePalmPriceEngine(
   if (!config) return 0;
   
   let total = 0;
-  const useYield = config.use_yield_calculation && config.yield_units_per_hour && config.hourly_rate;
+  const precioPorHora = getPrecioPorHora(config);
+  const useYield =
+    getPricingMethod(config, { allowLegacyYieldCalculation: true }) === 'per_hour' &&
+    config.yield_units_per_hour &&
+    precioPorHora > 0;
 
   for (const group of groups) {
     let basePrice = 0;
     if (useYield) {
       const yieldForSpecies = config.yield_units_per_hour[group.species]?.[group.height] || 0;
-      basePrice = calculatePriceFromYield(1, yieldForSpecies, config.hourly_rate);
+      basePrice = calculatePriceFromYield(1, yieldForSpecies, precioPorHora);
     } else {
       basePrice = findPalmPrice(config, group.species, group.height);
     }
@@ -343,17 +400,7 @@ export function calculatePalmPriceEngine(
 
     // Condition Surcharge
     const state = (group.state || 'normal').toLowerCase();
-    const surcharges = config.condition_surcharges || { normal: 0, descuidada: 20, muy_descuidada: 50 };
-    let statePercent = 0;
-    
-    if (state.includes('muy') && (state.includes('descuidado') || state.includes('descuidada') || state.includes('mal'))) {
-        statePercent = surcharges.muy_descuidado ?? surcharges.muy_descuidada ?? surcharges.overgrown ?? 0;
-    } else if (state.includes('descuidado') || state.includes('descuidada') || state.includes('mal')) {
-        statePercent = surcharges.descuidado ?? surcharges.descuidada ?? surcharges.neglected ?? 0;
-    } else {
-        statePercent = surcharges.normal ?? 0;
-    }
-    
+    const statePercent = getPalmStatePercent(config, state);
     const stateMult = 1 + (statePercent / 100);
 
     // Waste Removal

@@ -136,4 +136,77 @@ describe('buildAuthoritativeBookingQuote', () => {
       },
     ]);
   });
+
+  it('cotiza setos en modo per_hour sin exigir pricing_matrix', () => {
+    const result = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-hedge'],
+        hedgeZones: [{ type: 'cipres', height: '2-4m', length: 20, state: 'normal', faces_to_trim: 2 }],
+      } as any,
+      providerConfig: {
+        pricing_method: 'per_hour',
+        precioPorHora: 40,
+        minimum_price: 0,
+        condition_surcharges: { media: 20, alta: 50 },
+        waste_removal: { percentage: 0 },
+        yield_ml_per_hour: { '0-2m': 25, '2-4m': 20, '4-6m': 10 },
+      },
+    });
+
+    expect(result.eligibility).toEqual({ isEligible: true });
+    expect(result.estimatedHours).toBe(2);
+    expect(result.totalPrice).toBe(80);
+  });
+
+  it('cotiza arbustos en modo per_hour sin exigir prices_per_m2', () => {
+    const result = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-shrub'],
+        shrubGroups: [{ id: 'shrub-1', size: 'medianas', area: 20, state: 'descuidado' }],
+      } as any,
+      providerConfig: {
+        pricing_method: 'per_hour',
+        precioPorHora: 50,
+        minimum_price: 0,
+        waste_removal: { percentage: 0 },
+        yield_m2_per_hour: { pequeñas: 30, medianas: 20, grandes: 10 },
+      },
+    });
+
+    expect(result.eligibility).toEqual({ isEligible: true });
+    expect(result.estimatedHours).toBe(1.5);
+    expect(result.totalPrice).toBe(75);
+  });
+
+  it('cotiza palmeras en modo per_hour usando pricing_method como contrato canónico', () => {
+    const result = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-palm'],
+        palmGroups: [
+          {
+            id: 'palm-1',
+            species: 'Phoenix canariensis',
+            height: '0-4',
+            quantity: 2,
+            state: 'normal',
+            isTerminalOpenRange: false,
+          },
+        ],
+      } as any,
+      providerConfig: {
+        pricing_method: 'per_hour',
+        precioPorHora: 40,
+        minimum_price: 0,
+        condition_surcharges: { normal: 0, descuidado: 20, muy_descuidado: 50 },
+        waste_removal: { percentage: 0 },
+        yield_units_per_hour: {
+          'Phoenix canariensis': { '0-4': 2 },
+        },
+      },
+    });
+
+    expect(result.eligibility).toEqual({ isEligible: true });
+    expect(result.estimatedHours).toBe(1);
+    expect(result.totalPrice).toBe(40);
+  });
 });

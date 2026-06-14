@@ -2671,7 +2671,7 @@ const DetailsPage: React.FC = () => {
               selectedServiceIds: bookingData.serviceIds,
               photoUrls: finalUrls,
               hedgeFaces,
-              serviceName: 'Corte de setos a máquina',
+              serviceName: 'Corte de setos',
               model: aiModel
           };
 
@@ -2680,7 +2680,7 @@ const DetailsPage: React.FC = () => {
           
           // Initialize Debug Info
           const currentDebugInfo: AnalysisDebugInfo = {
-              service: 'Corte de setos a máquina',
+              service: 'Corte de setos',
               model: aiModel,
               promptInputs: debugInputs,
               rawResponse: res.rawResponse,
@@ -2778,7 +2778,7 @@ const DetailsPage: React.FC = () => {
             photoCount: zone.faceA.photoUrls.length + zone.faceB.photoUrls.length,
           });
           setDebugLogs(prev => appendDebugError(
-            prev || createDebugInfo({ service: 'Corte de setos a máquina', model: aiModel, promptInputs: {} }),
+            prev || createDebugInfo({ service: 'Corte de setos', model: aiModel, promptInputs: {} }),
             e
           ));
 

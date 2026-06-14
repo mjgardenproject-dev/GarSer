@@ -104,12 +104,12 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
                 onSave={(c) => handleWrapperSave('Corte de césped', c)} 
               />
             )}
-            {slideOverService.name === 'Corte de setos a máquina' && (
+            {slideOverService.name === 'Corte de setos' && (
               <HedgePricingConfigurator 
                 value={configs.hedgeConfig} 
-                initialConfig={savedConfigs['Corte de setos a máquina']}
+                initialConfig={savedConfigs['Corte de setos']}
                 onChange={setConfigs.setHedgeConfig} 
-                onSave={(c) => handleWrapperSave('Corte de setos a máquina', c)} 
+                onSave={(c) => handleWrapperSave('Corte de setos', c)} 
               />
             )}
             {slideOverService.name === 'Poda de árboles' && (

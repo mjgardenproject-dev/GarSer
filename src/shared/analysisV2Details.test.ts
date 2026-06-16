@@ -175,7 +175,7 @@ describe('analysisV2Details', () => {
 
   it('mantiene mensajes de carga específicos por servicio en el patrón común', () => {
     expect(getAnalysisLoadingMessage('Corte de césped')).toBe('Analizando zona de césped...');
-    expect(getAnalysisLoadingMessage('Corte de setos')).toBe('Analizando zona de setos...');
+    expect(getAnalysisLoadingMessage('Poda de setos')).toBe('Analizando zona de setos...');
     expect(getAnalysisLoadingMessage('Poda de palmeras')).toBe('Analizando palmeras...');
     expect(getAnalysisLoadingMessage('Poda de árboles')).toBe('Analizando árboles...');
     expect(getAnalysisLoadingMessage('Poda de plantas y arbustos')).toBe('Analizando plantas y arbustos...');

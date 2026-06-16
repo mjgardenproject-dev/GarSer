@@ -34,7 +34,7 @@ const canonical = [
     description: 'Poda profesional de plantas para favorecer el crecimiento y mantener la estética del jardín.',
   },
   {
-    name: 'Corte de setos',
+    name: 'Poda de setos',
     description: 'Diseño y mantenimiento de setos con un acabado limpio y cuidado usando maquinaria adecuada.',
   },
   {
@@ -91,9 +91,9 @@ async function enforceCanonicalServices() {
     existingByNorm.set(newNorm1, { ...oldExisting1, name: newName1 });
   }
 
-  // Renombre 2: Corte de setos
-  const oldName2 = 'Corte de setos a máquina';
-  const newName2 = 'Corte de setos';
+  // Renombre 2: Poda de setos
+  const oldName2 = 'Poda de setos a máquina';
+  const newName2 = 'Poda de setos';
   const oldNorm2 = normalize(oldName2);
   const newNorm2 = normalize(newName2);
   const oldExisting2 = existingByNorm.get(oldNorm2);

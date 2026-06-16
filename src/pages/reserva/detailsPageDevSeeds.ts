@@ -96,7 +96,7 @@ export function buildHedgeDevZone(existing?: Partial<HedgeZone>, index = 0): Hed
   const allPhotoUrls = [...faceA.photoUrls, ...faceB.photoUrls];
   const selectedIndices = [0, 1];
   const legacyTask = {
-    tipo_servicio: 'Corte de setos',
+    tipo_servicio: 'Poda de setos',
     longitud_m: 18,
     altura_m: 2.2,
     tipo_seto: '1-2m',
@@ -119,7 +119,7 @@ export function buildHedgeDevZone(existing?: Partial<HedgeZone>, index = 0): Hed
     },
   };
   const analysis = adaptLegacyAnalysisToV2({
-    serviceName: 'Corte de setos',
+    serviceName: 'Poda de setos',
     sourcePhotoCount: allPhotoUrls.length,
     legacyResponse: { tareas: [legacyTask] },
     provider: DEV_PROVIDER,

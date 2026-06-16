@@ -15,7 +15,7 @@ const ServiceCatalog = () => {
   const ALLOWED_SERVICE_NAMES = [
     'Corte de césped',
     'Poda de plantas y arbustos',
-    'Corte de setos',
+    'Poda de setos',
     'Poda de árboles',
     'Servicios fitosanitarios',
     'Poda de palmeras',

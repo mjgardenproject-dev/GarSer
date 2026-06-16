@@ -49,11 +49,11 @@ describe('adaptLegacyAnalysisToV2', () => {
 
   it('preserva cálculo consolidado de setos sin perder resumen de medición', () => {
     const analysis = adaptLegacyAnalysisToV2({
-      serviceName: 'Corte de setos',
+      serviceName: 'Poda de setos',
       sourcePhotoCount: 2,
       legacyResponse: {
         tareas: [{
-          tipo_servicio: 'Corte de setos',
+          tipo_servicio: 'Poda de setos',
           longitud_m: 12,
           altura_m: 2.5,
           tipo_seto: '2-4m',
@@ -274,9 +274,9 @@ describe('adaptLegacyAnalysisToV2', () => {
         },
       },
       {
-        serviceName: 'Corte de setos',
+        serviceName: 'Poda de setos',
         legacyResponse: {
-          tareas: [{ tipo_servicio: 'Corte de setos', longitud_m: 8, altura_m: 2, tipo_seto: '0-2m', estado_seto: 'media', caras: 1, nivel_analisis: 2, observaciones: ['LOW_LIGHT'] }],
+          tareas: [{ tipo_servicio: 'Poda de setos', longitud_m: 8, altura_m: 2, tipo_seto: '0-2m', estado_seto: 'media', caras: 1, nivel_analisis: 2, observaciones: ['LOW_LIGHT'] }],
         },
       },
       {
@@ -341,9 +341,9 @@ describe('adaptLegacyAnalysisToV2', () => {
         },
       },
       {
-        serviceName: 'Corte de setos',
+        serviceName: 'Poda de setos',
         legacyResponse: {
-          tareas: [{ tipo_servicio: 'Corte de setos', longitud_m: 0, altura_m: 0, tipo_seto: null, estado_seto: null, caras: 1, nivel_analisis: 3, observaciones: ['ELEMENTS_NOT_DETECTED'] }],
+          tareas: [{ tipo_servicio: 'Poda de setos', longitud_m: 0, altura_m: 0, tipo_seto: null, estado_seto: null, caras: 1, nivel_analisis: 3, observaciones: ['ELEMENTS_NOT_DETECTED'] }],
         },
       },
       {

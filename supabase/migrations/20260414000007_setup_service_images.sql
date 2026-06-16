@@ -41,11 +41,11 @@ FROM public.services
 WHERE name ILIKE '%Corte de césped%' OR name ILIKE '%Corte de cesped%'
 ON CONFLICT (service_id) DO NOTHING;
 
--- Corte de setos
+-- Poda de setos
 INSERT INTO public.service_images (service_id, image_url)
 SELECT id, 'https://hleqspdnjfswrmozjkai.supabase.co/storage/v1/object/public/service-backgrounds/corte%20de%20setos.jpeg'
 FROM public.services 
-WHERE name ILIKE '%Corte de setos%'
+WHERE name ILIKE '%Poda de setos%'
 ON CONFLICT (service_id) DO NOTHING;
 
 -- Tratamientos fitosanitarios

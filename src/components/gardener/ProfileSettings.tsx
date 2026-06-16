@@ -40,7 +40,7 @@ import { getCoordinatesFromAddress } from '../../utils/geolocation';
 const ALLOWED_SERVICE_NAMES = [
   'Corte de césped',
   'Poda de plantas y arbustos',
-  'Corte de setos',
+  'Poda de setos',
   'Poda de árboles',
   'Servicios fitosanitarios',
   'Poda de palmeras',
@@ -239,7 +239,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   }, [lawnConfig, savedConfigs]);
 
   useEffect(() => {
-      updateDirtyState('Corte de setos', hedgeConfig);
+      updateDirtyState('Poda de setos', hedgeConfig);
   }, [hedgeConfig, savedConfigs]);
   
   useEffect(() => {
@@ -275,7 +275,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         return palmConfig;
       case 'Corte de césped':
         return lawnConfig;
-      case 'Corte de setos':
+      case 'Poda de setos':
         return hedgeConfig;
       case 'Poda de árboles':
         return treePruningConfig;
@@ -298,7 +298,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         return isPalmConfigValid(config as PalmPricingConfig | undefined);
       case 'Corte de césped':
         return isLawnConfigValid(config as LawnPricingConfig | undefined);
-      case 'Corte de setos':
+      case 'Poda de setos':
         return isHedgeConfigValid(config as HedgePricingConfig | undefined);
       case 'Poda de árboles':
         return isTreePruningConfigValid(config as TreePruningServiceConfig | undefined);
@@ -406,7 +406,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
           switch(service.name) {
               case 'Poda de palmeras': setPalmConfig(row.additional_config as PalmPricingConfig); break;
               case 'Corte de césped': setLawnConfig(row.additional_config as LawnPricingConfig); break;
-              case 'Corte de setos': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
+              case 'Poda de setos': setHedgeConfig(row.additional_config as HedgePricingConfig); break;
               case 'Poda de árboles': setTreePruningConfig(row.additional_config as TreePruningServiceConfig); break;
               case 'Poda de plantas y arbustos': setShrubConfig(row.additional_config as ShrubPricingConfig); break;
               case 'Desbroce de malas hierbas': setWeedingConfig(row.additional_config as WeedingPricingConfig); break;
@@ -531,7 +531,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
               switch(service.name) {
                 case 'Poda de palmeras': setPalmConfig(saved); break;
                 case 'Corte de césped': setLawnConfig(saved); break;
-                case 'Corte de setos': setHedgeConfig(saved); break;
+                case 'Poda de setos': setHedgeConfig(saved); break;
                 case 'Poda de árboles': setTreePruningConfig(saved); break;
                 case 'Poda de plantas y arbustos': setShrubConfig(saved); break;
                 case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(saved)); break;
@@ -614,7 +614,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
            switch(serviceName) {
                 case 'Poda de palmeras': setPalmConfig(config); break;
                 case 'Corte de césped': setLawnConfig(config); break;
-                case 'Corte de setos': setHedgeConfig(config); break;
+                case 'Poda de setos': setHedgeConfig(config); break;
                 case 'Poda de árboles': setTreePruningConfig(config); break;
                 case 'Poda de plantas y arbustos': setShrubConfig(config); break;
                 case 'Desbroce de malas hierbas': setWeedingConfig(config); break;

@@ -30,7 +30,7 @@ describe('new_prompts SSOT backend', () => {
 
   it('etiqueta caras de setos y reutiliza el mismo ensamblador para auto_quote', () => {
     const hedgeAssembly = buildAnalysisPromptAssembly({
-      service_name: 'Corte de setos',
+      service_name: 'Poda de setos',
       hedge_faces: {
         face_a_urls: ['https://example.com/hedge-a.jpg'],
         face_b_urls: ['https://example.com/hedge-b.jpg'],
@@ -41,7 +41,7 @@ describe('new_prompts SSOT backend', () => {
       ? hedgeUserContent.filter((part) => part.type === 'text').map((part) => part.text)
       : [];
 
-    expect(hedgeAssembly.service).toBe('Corte de setos');
+    expect(hedgeAssembly.service).toBe('Poda de setos');
     expect(hedgeTextParts).toContain('FACE_A:');
     expect(hedgeTextParts).toContain('FACE_B:');
 

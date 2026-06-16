@@ -79,7 +79,7 @@ export const DETERMINISTIC_PROMPT_SETTINGS: PromptModelSettings = {
 const FLEXIBLE_SERVICE_MAP: Record<string, AnalysisService> = {
   cesped: 'Corte de césped',
   césped: 'Corte de césped',
-  seto: 'Corte de setos',
+  seto: 'Poda de setos',
   palmera: 'Poda de palmeras',
   arbol: 'Poda de árboles',
   árbol: 'Poda de árboles',
@@ -181,8 +181,8 @@ const PROMPT_MODULES: Record<AnalysisService, PromptModule> = {
       '}',
     ].join('\n'),
   },
-  'Corte de setos': {
-    service: 'Corte de setos',
+  'Poda de setos': {
+    service: 'Poda de setos',
     maxImages: 4,
     imageMode: 'hedge_faces',
     objective: [
@@ -210,7 +210,7 @@ const PROMPT_MODULES: Record<AnalysisService, PromptModule> = {
       '  },',
       '  "tareas": [',
       '    {',
-      '      "tipo_servicio": "Corte de setos",',
+      '      "tipo_servicio": "Poda de setos",',
       '      "longitud_m": number,',
       '      "altura_m": number,',
       '      "tipo_seto": "0-2m" | "2-4m" | "4-6m" | null,',

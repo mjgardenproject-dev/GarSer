@@ -2,7 +2,7 @@ export const ANALYSIS_V2_SCHEMA_VERSION = 'analysis_v2' as const;
 
 export const ANALYSIS_SERVICES = [
   'Corte de césped',
-  'Corte de setos',
+  'Poda de setos',
   'Poda de palmeras',
   'Poda de árboles',
   'Poda de plantas y arbustos',
@@ -149,7 +149,7 @@ export interface WeedingServiceMetrics {
 
 export type ServiceMetricsByService = {
   'Corte de césped': LawnServiceMetrics;
-  'Corte de setos': HedgeServiceMetrics;
+  'Poda de setos': HedgeServiceMetrics;
   'Poda de palmeras': PalmServiceMetrics;
   'Poda de árboles': TreeServiceMetrics;
   'Poda de plantas y arbustos': ShrubServiceMetrics;
@@ -251,7 +251,7 @@ export const ANALYSIS_CONTRACT_INVENTORY: Record<AnalysisService, AnalysisInvent
     time_fields: ['superficie_m2', 'estado_jardin'],
     analysis_v2_metrics: ['service_metrics.superficie_m2', 'service_metrics.estado_jardin'],
   },
-  'Corte de setos': {
+  'Poda de setos': {
     legacy_sources: [
       'tareas[0].longitud_m',
       'tareas[0].altura_m',
@@ -691,7 +691,7 @@ export const adaptLegacyAnalysisToV2 = (options: AdaptAnalysisV2Options): Analys
 
   const adaptedByService = (() => {
     switch (service) {
-      case 'Corte de setos':
+      case 'Poda de setos':
         return adaptHedgeMetrics(legacy);
       case 'Poda de palmeras':
         return adaptPalmMetrics(legacy);
@@ -777,7 +777,7 @@ export const validateAnalysisV2 = (analysis: AnalysisV2Envelope): string[] => {
       if (metrics.superficie_m2 < 0) errors.push('lawn.superficie_m2 inválido');
       break;
     }
-    case 'Corte de setos': {
+    case 'Poda de setos': {
       const metrics = analysis.service_metrics as HedgeServiceMetrics;
       if (metrics.longitud_m < 0) errors.push('hedge.longitud_m inválido');
       if (metrics.altura_m < 0) errors.push('hedge.altura_m inválido');

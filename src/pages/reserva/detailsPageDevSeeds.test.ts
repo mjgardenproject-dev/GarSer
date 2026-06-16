@@ -29,7 +29,7 @@ describe('detailsPageDevSeeds', () => {
     expect(zone.faces_to_trim).toBe(2);
     expect(zone.faceA?.photoUrls?.length).toBe(1);
     expect(zone.faceB?.photoUrls?.length).toBe(1);
-    expect(zone.analysisV2?.service).toBe('Corte de setos');
+    expect(zone.analysisV2?.service).toBe('Poda de setos');
   });
 
   it('genera un grupo de palmeras analizado', () => {

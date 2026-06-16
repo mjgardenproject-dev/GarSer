@@ -2671,7 +2671,7 @@ const DetailsPage: React.FC = () => {
               selectedServiceIds: bookingData.serviceIds,
               photoUrls: finalUrls,
               hedgeFaces,
-              serviceName: 'Corte de setos',
+              serviceName: 'Poda de setos',
               model: aiModel
           };
 
@@ -2680,7 +2680,7 @@ const DetailsPage: React.FC = () => {
           
           // Initialize Debug Info
           const currentDebugInfo: AnalysisDebugInfo = {
-              service: 'Corte de setos',
+              service: 'Poda de setos',
               model: aiModel,
               promptInputs: debugInputs,
               rawResponse: res.rawResponse,
@@ -2694,7 +2694,7 @@ const DetailsPage: React.FC = () => {
 
           if (analysis || (res.tareas && res.tareas.length > 0)) {
               const t = res.tareas?.[0] || {};
-              const hedgeMetrics = analysis?.service === 'Corte de setos' ? analysis.service_metrics as any : null;
+              const hedgeMetrics = analysis?.service === 'Poda de setos' ? analysis.service_metrics as any : null;
               const resumen = hedgeMetrics?.resumen_medicion || t.resumen_medicion || {};
               const faceDetails = hedgeMetrics?.detalle_caras || resolveHedgeFaceDetails(t);
               const caraA = faceDetails?.cara_a || {};
@@ -2770,7 +2770,7 @@ const DetailsPage: React.FC = () => {
       } catch (e: any) {
           reportDetailsPageIssue({
             event: 'booking.details_analysis_failed',
-            service: 'Corte de setos',
+            service: 'Poda de setos',
             error: e,
             serviceId: bookingData.serviceIds?.[0],
             zoneId: id,
@@ -2778,12 +2778,12 @@ const DetailsPage: React.FC = () => {
             photoCount: zone.faceA.photoUrls.length + zone.faceB.photoUrls.length,
           });
           setDebugLogs(prev => appendDebugError(
-            prev || createDebugInfo({ service: 'Corte de setos', model: aiModel, promptInputs: {} }),
+            prev || createDebugInfo({ service: 'Poda de setos', model: aiModel, promptInputs: {} }),
             e
           ));
 
           const failureFields = buildAnalysisFailureFields({
-            serviceName: 'Corte de setos',
+            serviceName: 'Poda de setos',
             selectedIndices: zone.selectedIndices,
             totalPhotoCount: (zone.photoUrls || []).length
           });
@@ -4294,7 +4294,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                            analysis={zone.analysisV2}
                                                            analysisLevel={zone.analysisLevel}
                                                            observations={zone.observations}
-                                                           loadingMessage={getAnalysisLoadingMessage('Corte de setos')}
+                                                           loadingMessage={getAnalysisLoadingMessage('Poda de setos')}
                                                            onRetryAnalysis={() => analyzeHedgeZone(zone.id)}
                                                            maxPhotos={5}
                                                            onToggleSelection={(i) => toggleHedgePhotoSelection(zone.id, faceBlock.key, i)}

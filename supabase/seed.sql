@@ -6,7 +6,7 @@ ON CONFLICT (service_id) DO NOTHING;
 
 INSERT INTO public.service_images (service_id, image_url)
 SELECT id, 'https://hleqspdnjfswrmozjkai.supabase.co/storage/v1/object/public/service-backgrounds/corte%20de%20setos.jpeg'
-FROM public.services WHERE name ILIKE '%Recorte de setos%' OR name ILIKE '%Corte de setos%'
+FROM public.services WHERE name ILIKE '%Recorte de setos%' OR name ILIKE '%Poda de setos%'
 ON CONFLICT (service_id) DO NOTHING;
 
 INSERT INTO public.service_images (service_id, image_url)

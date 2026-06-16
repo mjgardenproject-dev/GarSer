@@ -273,7 +273,7 @@ export const getAnalysisLoadingMessage = (service: AnalysisService) => {
   switch (service) {
     case 'Corte de césped':
       return 'Analizando zona de césped...';
-    case 'Corte de setos':
+    case 'Poda de setos':
       return 'Analizando zona de setos...';
     case 'Poda de palmeras':
       return 'Analizando palmeras...';

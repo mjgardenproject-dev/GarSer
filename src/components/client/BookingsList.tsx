@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, Clock, MapPin, MessageCircle, Star, ArrowLeft, ChevronDown } from 'lucide-react';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from '../chat/ChatWindow';
@@ -295,6 +296,10 @@ const BookingsList = () => {
                             accept: true,
                             operationId: crypto.randomUUID(),
                           });
+                          reportBookingEvent('info', {
+                            event: 'booking.price_discrepancy_resolved',
+                            context: { bookingId: booking.id, resolution: 'accepted' },
+                          });
                           fetchBookings();
                         } catch (error) {
                           console.error('Error accepting price:', error);
@@ -312,6 +317,10 @@ const BookingsList = () => {
                             bookingId: booking.id,
                             accept: false,
                             operationId: crypto.randomUUID(),
+                          });
+                          reportBookingEvent('info', {
+                            event: 'booking.price_discrepancy_resolved',
+                            context: { bookingId: booking.id, resolution: 'rejected' },
                           });
                           fetchBookings();
                         } catch (error) {

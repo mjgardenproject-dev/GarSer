@@ -137,6 +137,56 @@ export const BOOKING_TELEMETRY_CATALOG: Record<string, BookingTelemetryDefinitio
     status: 'confirmed',
     requiredContext: ['attemptId', 'bookingId', 'quoteId', 'providerId', 'serviceId'],
   },
+  'booking.manual_entry_started': {
+    phase: 'manual_entry',
+    status: 'started',
+    requiredContext: ['serviceId', 'serviceKey'],
+  },
+  'booking.manual_entry_step_completed': {
+    phase: 'manual_entry',
+    status: 'step_completed',
+    requiredContext: ['serviceKey', 'stepId'],
+  },
+  'booking.manual_entry_abandoned': {
+    phase: 'manual_entry',
+    status: 'abandoned',
+    requiredContext: ['serviceKey', 'stepId'],
+  },
+  'booking.manual_entry_consent_accepted': {
+    phase: 'manual_entry',
+    status: 'consent_accepted',
+    requiredContext: ['serviceKey', 'legalVersion'],
+  },
+  'booking.manual_entry_submitted': {
+    phase: 'manual_entry',
+    status: 'submitted',
+    requiredContext: ['serviceKey', 'itemCount'],
+  },
+  'booking.manual_entry_submit_failed': {
+    phase: 'manual_entry',
+    status: 'failed',
+    requiredContext: ['serviceKey', 'reason'],
+  },
+  'booking.manual_validation_rejected': {
+    phase: 'manual_entry',
+    status: 'rejected',
+    requiredContext: ['serviceKey', 'reason'],
+  },
+  'booking.manual_input_mode_changed': {
+    phase: 'manual_entry',
+    status: 'mode_changed',
+    requiredContext: ['serviceKey', 'mode'],
+  },
+  'booking.price_discrepancy_proposed': {
+    phase: 'price_discrepancy',
+    status: 'proposed',
+    requiredContext: ['bookingId', 'proposedTotalPrice'],
+  },
+  'booking.price_discrepancy_resolved': {
+    phase: 'price_discrepancy',
+    status: 'resolved',
+    requiredContext: ['bookingId', 'resolution'],
+  },
   'booking.request_responded': {
     phase: 'request_response',
     status: 'succeeded',

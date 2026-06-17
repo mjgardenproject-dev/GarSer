@@ -131,6 +131,17 @@ export interface SerializableBookingData {
   };
   description?: string;
   serviceIds?: string[];
+  /** Provenance of the service variables. The engine ignores it; the server uses it to gate manual validation. */
+  dataInputMode?: 'photos' | 'manual';
+  manualDeclarationId?: string;
+  /** Auditable consent captured at manual submission (stored in the signed quote snapshot). */
+  manualConsent?: {
+    legalVersion: string;
+    legalHash: string;
+    acceptedText: string;
+    acceptedAt: string;
+    declaredVariables: Record<string, unknown>;
+  };
   wasteRemoval?: boolean;
   aiQuantity?: number;
   lawnSpecies?: string;

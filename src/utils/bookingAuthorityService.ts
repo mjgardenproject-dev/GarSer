@@ -67,6 +67,9 @@ function pickSerializableBookingInput(bookingData: BookingData) {
     address: bookingData.address,
     addressCoordinates: bookingData.addressCoordinates,
     description: bookingData.description,
+    dataInputMode: bookingData.dataInputMode,
+    manualDeclarationId: bookingData.manualDeclarationId,
+    manualConsent: bookingData.manualConsent,
     wasteRemoval: bookingData.wasteRemoval,
     aiQuantity: bookingData.aiQuantity,
     aiDifficulty: bookingData.aiDifficulty,
@@ -115,6 +118,26 @@ function extractBackendMessage(payload: unknown) {
   return '';
 }
 
+function extractAuthorityStatus(error: unknown): number | undefined {
+  const candidate = error as { status?: number; context?: Response } | null;
+  if (typeof candidate?.status === 'number') return candidate.status;
+  if (typeof candidate?.context?.status === 'number') return candidate.context.status;
+  return undefined;
+}
+
+function isTransientAuthorityError(error: unknown): boolean {
+  const status = extractAuthorityStatus(error);
+  // 5xx ⇒ the function did not process the request (boot failure / overload).
+  if (status && status >= 500) return true;
+  // No HTTP status ⇒ network/fetch failure before reaching the function.
+  if (!status) {
+    const name = String((error as { name?: string })?.name || '');
+    const message = String((error as { message?: string })?.message || '').toLowerCase();
+    return name.includes('FunctionsFetchError') || message.includes('fetch') || message.includes('network');
+  }
+  return false;
+}
+
 async function normalizeAuthorityError(error: unknown) {
   const candidate = error as {
     message?: string;
@@ -123,16 +146,23 @@ async function normalizeAuthorityError(error: unknown) {
     status?: number;
     context?: Response;
   };
-  const status = typeof candidate?.status === 'number' ? candidate.status : candidate?.context?.status;
+  const status = extractAuthorityStatus(error);
   const responseBody = await readFunctionErrorBody(candidate?.context);
   const backendMessage = extractBackendMessage(responseBody);
-  const fallbackMessage =
-    typeof candidate?.message === 'string' && candidate.message.trim()
-      ? candidate.message.trim()
-      : 'No se pudo revalidar el presupuesto con el backend.';
+
+  // Never surface raw backend text for server-side failures (avoids leaking
+  // stack traces / internals). Show a safe, actionable message instead.
+  const isServerError = typeof status === 'number' && status >= 500;
+  const isNetworkError = typeof status !== 'number';
+  const safeMessage = isServerError || isNetworkError
+    ? 'El servicio de presupuestos no está disponible ahora mismo. Espera unos segundos y vuelve a intentarlo.'
+    : (backendMessage
+        || (typeof candidate?.message === 'string' && candidate.message.trim()
+          ? candidate.message.trim()
+          : 'No se pudo revalidar el presupuesto con el backend.'));
 
   return new BookingAuthorityError({
-    message: backendMessage || fallbackMessage,
+    message: safeMessage,
     status,
     code: candidate?.code || candidate?.name,
     backendMessage: backendMessage || undefined,
@@ -140,14 +170,27 @@ async function normalizeAuthorityError(error: unknown) {
   });
 }
 
+const AUTHORITY_MAX_ATTEMPTS = 3;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function invokeAuthority<T>(body: Record<string, unknown>): Promise<T> {
-  try {
-    const { data, error } = await supabase.functions.invoke('booking-authority', { body });
-    if (error) throw error;
-    return data as T;
-  } catch (error) {
-    throw await normalizeAuthorityError(error);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= AUTHORITY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const { data, error } = await supabase.functions.invoke('booking-authority', { body });
+      if (error) throw error;
+      return data as T;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientAuthorityError(error) || attempt === AUTHORITY_MAX_ATTEMPTS) {
+        break;
+      }
+      // Exponential backoff with jitter: ~300ms, ~700ms.
+      const backoff = 300 * 2 ** (attempt - 1) + Math.floor(Math.random() * 150);
+      await sleep(backoff);
+    }
   }
+  throw await normalizeAuthorityError(lastError);
 }
 
 export async function previewProviderQuotes(params: {
@@ -264,6 +307,32 @@ export async function fetchProviderMonthDays(params: {
     });
     throw error;
   }
+}
+
+export interface RecalculatedCorrection {
+  totalPrice: number;
+  estimatedHours: number;
+  breakdown: Array<{ desc: string; price: number }>;
+  warnings: string[];
+  eligibility: { isEligible: boolean; reason?: string };
+}
+
+/**
+ * Re-quote a booking from gardener-corrected variables using the authoritative
+ * engine on the server. Does not mutate the booking; the caller proposes the
+ * returned total via `proposeBookingPriceChange` (explicit client acceptance).
+ */
+export async function recalculateBookingCorrection(params: {
+  serviceId: string;
+  providerId: string;
+  correctedBookingInput: Record<string, unknown>;
+}): Promise<RecalculatedCorrection> {
+  return invokeAuthority<RecalculatedCorrection>({
+    action: 'recalculate_correction',
+    serviceId: params.serviceId,
+    providerId: params.providerId,
+    bookingInput: params.correctedBookingInput,
+  });
 }
 
 export async function createAuthoritativeQuote(params: {

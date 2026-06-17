@@ -82,6 +82,19 @@ import {
   supportsPhytosanitaryForSpecies,
   supportsTrunkPeelingForSpecies
 } from '../../domain/speciesBusinessRules';
+import { ManualEntryChoice, type DataInputMode } from '../../components/booking/manual/ManualEntryChoice';
+import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../../components/booking/manual/ManualEntryWizard';
+import {
+  MANUAL_ENTRY_SURVEYS,
+  resolveManualServiceKey,
+} from '../../shared/manualEntry/manualEntrySchema';
+import { validateManualBookingInput } from '../../shared/manualEntry/manualEntryValidation';
+import { buildConsentRecord, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
+import { buildManualBookingPatch } from './manualEntryBuilders';
+import { recordManualDeclaration, ManualDeclarationError } from '../../utils/bookingManualDeclarationService';
+import { isManualBookingInputEnabled } from '../../utils/manualEntryFeatureFlag';
+import { reportBookingEvent } from '../../utils/bookingTelemetry';
+import { useAuth } from '../../contexts/AuthContext';
 // import { TreeBookingGroup } from '../../domain/treePruning';
 // import { TreePruningBooking } from '../../components/client/TreePruningBooking';
 
@@ -423,6 +436,15 @@ const DetailsPage: React.FC = () => {
   const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.5-flash'>('gemini-2.5-flash');
   const [debugService, setDebugService] = useState<string>('');
   const serviceFlags = useMemo(() => getDetailsServiceFlags(debugService), [debugService]);
+  const { user } = useAuth();
+  // --- Manual entry (alternativa a fotos) ---
+  const manualFlowEnabled = isManualBookingInputEnabled();
+  const manualServiceKey = useMemo(() => resolveManualServiceKey(debugService), [debugService]);
+  const manualSurvey = manualServiceKey ? MANUAL_ENTRY_SURVEYS[manualServiceKey] : null;
+  const dataInputMode: DataInputMode = bookingData.dataInputMode === 'manual' ? 'manual' : 'photos';
+  const isManualActive = manualFlowEnabled && !!manualServiceKey && dataInputMode === 'manual';
+  const [manualSubmitting, setManualSubmitting] = useState(false);
+  const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -555,6 +577,14 @@ const DetailsPage: React.FC = () => {
   const [, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
   const activeServiceId = bookingData.serviceIds?.[0] || '';
   const isWeedingServiceSelected = serviceFlags.isWeeding;
+  const persistedManualDraft = (bookingData.servicesData?.[activeServiceId] as { manualDraft?: ManualWizardSubmitPayload } | undefined)?.manualDraft;
+
+  const handleManualDraftChange = (payload: ManualWizardSubmitPayload) => {
+    setManualDraft(payload);
+    if (activeServiceId) {
+      updateServiceData(activeServiceId, { manualDraft: payload });
+    }
+  };
 
   const mergeActiveServiceSnapshot = (
     prev: BookingData,
@@ -1283,6 +1313,101 @@ const DetailsPage: React.FC = () => {
       }
     }
     saveProgress();
+  };
+
+  const handleSelectInputMode = (mode: DataInputMode) => {
+    commitDetailsPatch({ dataInputMode: mode }, { saveAfterCommit: true });
+    reportBookingEvent('info', {
+      event: 'booking.manual_input_mode_changed',
+      context: { serviceId: activeServiceId, serviceKey: manualServiceKey || 'unknown', mode },
+    });
+    if (mode === 'manual') {
+      reportBookingEvent('info', {
+        event: 'booking.manual_entry_started',
+        context: { serviceId: activeServiceId, serviceKey: manualServiceKey || 'unknown' },
+      });
+    }
+  };
+
+  const handleManualSubmit = async (payload: ManualWizardSubmitPayload) => {
+    if (!manualServiceKey) return;
+    const { patch, declaredVariables } = buildManualBookingPatch({
+      serviceKey: manualServiceKey,
+      items: payload.items,
+      wasteRemoval: payload.wasteRemoval,
+    });
+
+    // Client-side authoritative validation (the server re-validates on create_quote).
+    const validation = validateManualBookingInput(manualServiceKey, patch as any);
+    if (!validation.ok) {
+      toast.error(validation.errors[0]?.message || 'Revisa los datos introducidos.');
+      reportBookingEvent('warn', {
+        event: 'booking.manual_validation_rejected',
+        context: { serviceKey: manualServiceKey, reason: validation.errors[0]?.code || 'invalid' },
+      });
+      return;
+    }
+
+    setManualSubmitting(true);
+    try {
+      const consent = buildConsentRecord();
+      let declarationId: string | undefined;
+
+      // Best-effort dedicated audit row when authenticated. Auditability is also
+      // guaranteed via the durable `manualConsent` embedded in the booking payload.
+      if (user?.id) {
+        try {
+          const result = await recordManualDeclaration({
+            serviceId: activeServiceId,
+            serviceName: debugService,
+            declaredVariables,
+            bookingInput: patch as Record<string, unknown>,
+          });
+          declarationId = result.declarationId;
+        } catch (declError) {
+          if (declError instanceof ManualDeclarationError && declError.validationErrors?.length) {
+            toast.error(declError.message);
+            reportBookingEvent('warn', {
+              event: 'booking.manual_validation_rejected',
+              context: { serviceKey: manualServiceKey, reason: 'server_validation' },
+            });
+            setManualSubmitting(false);
+            return;
+          }
+          reportBookingEvent('warn', {
+            event: 'booking.manual_entry_submit_failed',
+            context: { serviceKey: manualServiceKey, reason: 'declaration_persist_failed' },
+          });
+        }
+      }
+
+      const fullPatch: Partial<BookingData> = {
+        ...patch,
+        manualDeclarationId: declarationId,
+        manualConsent: { ...consent, declaredVariables },
+        photos: [],
+        description,
+      };
+      commitDetailsPatch(fullPatch, { saveAfterCommit: true });
+      if (activeServiceId) {
+        updateServiceData(activeServiceId, { ...fullPatch, manualDraft: null });
+      }
+
+      reportBookingEvent('info', {
+        event: 'booking.manual_entry_submitted',
+        context: { serviceKey: manualServiceKey, itemCount: payload.items.length },
+      });
+      saveProgress();
+      setCurrentStep(3);
+    } catch (error) {
+      toast.error('No hemos podido guardar tus datos. Inténtalo de nuevo.');
+      reportBookingEvent('error', {
+        event: 'booking.manual_entry_submit_failed',
+        context: { serviceKey: manualServiceKey, reason: 'unexpected' },
+      });
+    } finally {
+      setManualSubmitting(false);
+    }
   };
 
   const handleContinue = () => {
@@ -3978,6 +4103,36 @@ const analyzeTreeGroup = async (id: string) => {
           </div>
         ) : null}
 
+        {manualFlowEnabled && manualServiceKey ? (
+          <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} />
+        ) : null}
+
+        {isManualActive && manualSurvey ? (
+          <ManualEntryWizard
+            survey={manualSurvey}
+            submitting={manualSubmitting}
+            initialItems={manualDraft?.items ?? persistedManualDraft?.items}
+            initialWasteRemoval={manualDraft?.wasteRemoval ?? persistedManualDraft?.wasteRemoval ?? bookingData.wasteRemoval}
+            onDraftChange={handleManualDraftChange}
+            onStepComplete={(stepId) =>
+              reportBookingEvent('info', {
+                event: 'booking.manual_entry_step_completed',
+                context: { serviceKey: manualServiceKey, stepId },
+              })
+            }
+            onConsentAccepted={() =>
+              reportBookingEvent('info', {
+                event: 'booking.manual_entry_consent_accepted',
+                context: { serviceKey: manualServiceKey, legalVersion: MANUAL_ENTRY_LEGAL_VERSION },
+              })
+            }
+            onSubmit={handleManualSubmit}
+            onSwitchToPhotos={() => handleSelectInputMode('photos')}
+          />
+        ) : null}
+
+        <div className={isManualActive ? 'hidden' : 'contents'}>
+
         {/* Photo Upload */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-4">
@@ -5793,9 +5948,12 @@ const analyzeTreeGroup = async (id: string) => {
         );
       })()}
 
+        </div>{/* end photos-mode gate */}
+
       </div>
 
-      {/* Fixed CTA */}
+      {/* Fixed CTA (hidden in manual mode; the wizard owns its own confirm) */}
+      {!isManualActive && (
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
         <div className="mx-auto w-full sm:max-w-md">
           <button
@@ -5813,6 +5971,7 @@ const analyzeTreeGroup = async (id: string) => {
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 };

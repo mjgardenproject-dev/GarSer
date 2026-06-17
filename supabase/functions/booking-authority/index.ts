@@ -16,6 +16,7 @@ import {
   type ProviderExclusionCode,
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
+import { validateManualSerializableInput } from '../../../src/shared/manualEntry/manualEntryValidation.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -69,7 +70,7 @@ type ProviderExclusion = {
 };
 
 interface AuthorityPayload {
-  action?: 'preview_providers' | 'valid_hours' | 'month_days' | 'create_quote';
+  action?: 'preview_providers' | 'valid_hours' | 'month_days' | 'create_quote' | 'recalculate_correction';
   serviceId?: string;
   providerIds?: string[];
   providerId?: string;
@@ -459,6 +460,71 @@ Deno.serve(async (req: Request) => {
       return buildErrorResponse(400, 'missing_action_or_service', 'Faltan action o serviceId.');
     }
 
+    // Authoritative server-side validation of manually-declared variables.
+    // Runs before any pricing so out-of-range values are rejected (never truncated).
+    // Inert for the photo flow (dataInputMode !== 'manual').
+    if ((bookingInput as { dataInputMode?: string }).dataInputMode === 'manual') {
+      const { data: serviceRow } = await admin
+        .from('services')
+        .select('name')
+        .eq('id', serviceId)
+        .maybeSingle();
+      const serviceName = (serviceRow as { name?: string } | null)?.name || '';
+      const manualValidation = validateManualSerializableInput({
+        serviceName,
+        dataInputMode: 'manual',
+        bookingInput: bookingInput as Record<string, unknown>,
+      });
+      if (!manualValidation.ok) {
+        return new Response(
+          JSON.stringify({
+            error: 'Algunos datos introducidos están fuera de los valores permitidos.',
+            code: 'manual_input_invalid',
+            validationErrors: manualValidation.errors,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
+
+    // Re-quote a booking from gardener-corrected variables using the SAME engine.
+    // Returns the recomputed total; the gardener then proposes it via the existing
+    // price-change RPC (explicit client acceptance), keeping the engine the only
+    // source of price truth and the acceptance flow intact.
+    if (action === 'recalculate_correction') {
+      const providerId = String(payload.providerId || '').trim();
+      if (!providerId) {
+        return buildErrorResponse(400, 'missing_provider', 'Falta el identificador del profesional.');
+      }
+      const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
+      const providerConfig = priceRows[providerId]?.additional_config || null;
+      if (!providerConfig) {
+        return buildErrorResponse(409, 'missing_provider_config', 'El profesional no tiene una configuración de precios activa para este servicio.');
+      }
+      const quote = buildAuthoritativeBookingQuote({ bookingData: bookingInput, providerConfig });
+      if (!quote.eligibility.isEligible || !(quote.totalPrice > 0)) {
+        return new Response(
+          JSON.stringify({
+            error: 'No se ha podido recalcular un precio válido con las variables corregidas.',
+            code: 'recalculation_ineligible',
+            eligibility: quote.eligibility,
+          }),
+          { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          totalPrice: quote.totalPrice,
+          estimatedHours: quote.estimatedHours,
+          breakdown: quote.breakdown,
+          economics: quote.economics,
+          warnings: quote.warnings.map((item) => item.message),
+          eligibility: quote.eligibility,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
     if (action === 'preview_providers') {
       const providerIds = normalizeProviderIds(payload.providerIds);
       const selectedDate = toIsoDate(payload.selectedDate) || new Date().toISOString().slice(0, 10);
@@ -749,11 +815,15 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    // Log the real cause server-side (Supabase function logs); never echo raw
+    // error text to the client to avoid leaking internals.
     console.error('booking-authority fatal error', error);
-    const message = error instanceof Error ? error.message : 'Error interno en booking-authority.';
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: 'Error interno del servicio de presupuestos.', code: 'internal' }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    );
   }
 });

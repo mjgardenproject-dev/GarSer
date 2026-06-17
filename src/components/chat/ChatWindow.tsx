@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { proposeBookingPriceChange, respondBookingPriceChange, PriceChangeStatus } from '../../utils/bookingPriceChangeService';
+import { reportBookingEvent } from '../../utils/bookingTelemetry';
 
 interface ChatMessage {
   id: string;
@@ -295,6 +296,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
         bookingId,
         accept,
         operationId: crypto.randomUUID(),
+      });
+      reportBookingEvent('info', {
+        event: 'booking.price_discrepancy_resolved',
+        context: { bookingId, resolution: accept ? 'accepted' : 'rejected' },
       });
       toast.success(accept ? 'Nuevo precio aceptado' : 'Propuesta rechazada');
       await fetchBookingMeta();

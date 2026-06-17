@@ -8,6 +8,12 @@ import { es } from 'date-fns/locale';
 import { toast } from 'react-hot-toast';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { proposeBookingPriceChange } from '../../utils/bookingPriceChangeService';
+import { fetchDeclaredVariables, recordVariableRevision } from '../../utils/bookingVariableRevisionService';
+import { MANUAL_ENTRY_STRINGS } from '../../shared/manualEntry/strings';
+import { recalculateBookingCorrection, isBookingAuthorityError } from '../../utils/bookingAuthorityService';
+import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../../components/booking/manual/ManualEntryWizard';
+import { MANUAL_ENTRY_SURVEYS, resolveManualServiceKey } from '../../shared/manualEntry/manualEntrySchema';
+import { buildManualBookingPatch } from '../../pages/reserva/manualEntryBuilders';
 import { expireStaleBookingRequests, respondBookingRequest } from '../../utils/bookingRequestService';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
 
@@ -22,6 +28,8 @@ interface BookingRequestWithDetails {
   notes?: string;
   status: 'pending' | 'confirmed' | 'cancelled' | 'expired' | 'accepted' | 'rejected';
   total_price?: number;
+  data_input_mode?: 'photos' | 'manual' | null;
+  manual_declaration_id?: string | null;
   price_change_status?: 'none' | 'pending_client_acceptance' | 'accepted' | 'rejected' | 'expired';
   pricing_context?: {
     service_type?: string;
@@ -59,6 +67,46 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { amount: string; reason: string; loading?: boolean }>>({});
+  // On-site variable correction (manual bookings): recompute price with the engine.
+  const [correctionFor, setCorrectionFor] = useState<BookingRequestWithDetails | null>(null);
+  const [correctionLoading, setCorrectionLoading] = useState(false);
+  const [correctionVars, setCorrectionVars] = useState<Record<string, Record<string, unknown>>>({});
+
+  const handleCorrectionSubmit = async (request: BookingRequestWithDetails, payload: ManualWizardSubmitPayload) => {
+    const serviceKey = resolveManualServiceKey(request.services?.name);
+    if (!serviceKey || !user?.id) return;
+    setCorrectionLoading(true);
+    try {
+      const { patch, declaredVariables } = buildManualBookingPatch({
+        serviceKey,
+        items: payload.items,
+        wasteRemoval: payload.wasteRemoval,
+      });
+      const result = await recalculateBookingCorrection({
+        serviceId: request.service_id,
+        providerId: user.id,
+        correctedBookingInput: patch as Record<string, unknown>,
+      });
+      // Drop the authoritative recomputed total into the existing proposal input.
+      setPriceDrafts((prev) => ({
+        ...prev,
+        [request.id]: {
+          amount: String(result.totalPrice),
+          reason: prev[request.id]?.reason || 'Medidas reales verificadas en el jardín',
+        },
+      }));
+      setCorrectionVars((prev) => ({ ...prev, [request.id]: declaredVariables }));
+      setCorrectionFor(null);
+      toast.success(`Precio recalculado: €${result.totalPrice}. Revisa el motivo y envía la propuesta.`);
+    } catch (error: any) {
+      const message = isBookingAuthorityError(error)
+        ? error.backendMessage || error.message
+        : (error?.message || 'No se pudo recalcular el precio.');
+      toast.error(message);
+    } finally {
+      setCorrectionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!user?.id) return;
@@ -158,6 +206,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         notes: booking.notes,
         status: booking.status,
         total_price: booking.total_price,
+        data_input_mode: booking.data_input_mode,
+        manual_declaration_id: booking.manual_declaration_id,
         price_change_status: booking.price_change_status,
         pricing_context: booking.pricing_context,
         created_at: booking.created_at,
@@ -276,6 +326,25 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         reason: draft.reason,
         operationId: crypto.randomUUID(),
       });
+
+      // Audit trail for discrepancy analysis (manual bookings carry declared variables).
+      if (request.data_input_mode === 'manual') {
+        const originalVariables = request.manual_declaration_id ? await fetchDeclaredVariables(request.id) : null;
+        await recordVariableRevision({
+          bookingId: request.id,
+          authorRole: 'gardener',
+          reason: draft.reason,
+          originalTotalPrice: request.total_price ?? null,
+          proposedTotalPrice: value,
+          originalVariables,
+          correctedVariables: correctionVars[request.id] ?? null,
+        });
+        reportBookingEvent('info', {
+          event: 'booking.price_discrepancy_proposed',
+          context: { bookingId: request.id, proposedTotalPrice: value },
+        });
+      }
+
       toast.success('Propuesta de precio enviada al cliente.');
       await fetchBookingRequests();
     } catch (error: any) {
@@ -380,6 +449,15 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         <User className="w-4 h-4 mr-1" />
                         {request.client_profile?.full_name}
                       </p>
+                      {request.data_input_mode === 'manual' && (
+                        <div className="mt-2">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-100 border border-amber-200 px-2 py-1 rounded-full">
+                            <AlertCircle className="w-3 h-3" />
+                            {MANUAL_ENTRY_STRINGS.gardener.manualBadge}
+                          </span>
+                          <p className="text-xs text-gray-500 mt-1">{MANUAL_ENTRY_STRINGS.gardener.correctionHint}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="sm:text-right sm:shrink-0">
@@ -441,6 +519,15 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                 {request.status === 'pending' && request.price_change_status !== 'pending_client_acceptance' && (
                   <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50">
                     <p className="text-sm font-medium text-blue-900 mb-2">Modificar precio y enviar propuesta al cliente</p>
+                    {request.data_input_mode === 'manual' && resolveManualServiceKey(request.services?.name) && (
+                      <button
+                        type="button"
+                        onClick={() => setCorrectionFor(request)}
+                        className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded px-1"
+                      >
+                        Recalcular con las medidas reales del jardín
+                      </button>
+                    )}
                     {request.pricing_context?.service_type === 'palm_pruning' && request.pricing_context?.allows_price_change !== true && (
                       <p className="text-xs text-amber-700 mb-2">
                         Cambio de precio no permitido: esta reserva de palmeras no está en el último rango abierto de especie.
@@ -529,6 +616,43 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
             ))}
           </div>
         )}
+
+      {correctionFor && (() => {
+        const serviceKey = resolveManualServiceKey(correctionFor.services?.name);
+        const survey = serviceKey ? MANUAL_ENTRY_SURVEYS[serviceKey] : null;
+        if (!survey) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900">Recalcular medidas reales</h3>
+                <button
+                  type="button"
+                  onClick={() => setCorrectionFor(null)}
+                  aria-label="Cerrar"
+                  className="p-2 rounded-lg hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <div className="p-4">
+                <p className="text-sm text-gray-500 mb-4">
+                  Introduce las medidas reales que has comprobado en el jardín. El precio se recalculará con tu
+                  configuración y podrás enviar la propuesta al cliente para que la acepte.
+                </p>
+                <ManualEntryWizard
+                  survey={survey}
+                  submitting={correctionLoading}
+                  requireConsent={false}
+                  showSwitchToPhotos={false}
+                  submitLabel="Recalcular precio"
+                  onSubmit={(payload) => handleCorrectionSubmit(correctionFor, payload)}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

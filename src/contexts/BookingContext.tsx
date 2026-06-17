@@ -72,6 +72,16 @@ export interface BookingData {
   palmState?: string;
   palmWasteRemoval?: boolean; // Legacy field, kept for compatibility but now superseded by global wasteRemoval
   wasteRemoval?: boolean; // New global field for all services
+  // Manual entry flow (alternativa a fotos)
+  dataInputMode?: 'photos' | 'manual'; // How the service variables were captured
+  manualDeclarationId?: string; // Links to booking_manual_declarations audit row
+  manualConsent?: {
+    legalVersion: string;
+    legalHash: string;
+    acceptedText: string;
+    acceptedAt: string;
+    declaredVariables: Record<string, unknown>;
+  }; // Durable, auditable consent captured at manual submission (travels into the signed quote snapshot)
   palmGroups?: Array<{
     id: string;
     species: string;
@@ -99,6 +109,7 @@ export interface BookingData {
     needsPhytosanitary?: boolean;
     needsTrunkFinish?: boolean;
     hasAccessDifficulty?: boolean;
+    inputSource?: 'ai' | 'manual';
   }>;
   uploadedPhotoUrls?: string[];
   isAnalyzing?: boolean;
@@ -118,6 +129,7 @@ export interface BookingData {
     selectedIndices?: number[];
     analyzedIndices?: number[];
     analysisV2?: AnalysisV2Envelope;
+    inputSource?: 'ai' | 'manual';
   }>;
   // New Service-Specific Fields
   hedgeFaces?: {
@@ -169,6 +181,7 @@ export interface BookingData {
     selectedIndices?: number[];
     analyzedIndices?: number[];
     analysisV2?: AnalysisV2Envelope;
+    inputSource?: 'ai' | 'manual';
   }>;
   treeGroups?: Array<{
     id: string;
@@ -186,6 +199,7 @@ export interface BookingData {
     isFailed?: boolean;
     estimatedHours?: number;
     analysisV2?: AnalysisV2Envelope;
+    inputSource?: 'ai' | 'manual';
   }>;
   shrubGroups?: Array<{
     id: string;
@@ -202,6 +216,7 @@ export interface BookingData {
     selectedIndices?: number[];
     analyzedIndices?: number[];
     analysisV2?: AnalysisV2Envelope;
+    inputSource?: 'ai' | 'manual';
   }>;
   phytosanitaryZones?: Array<{
     id: string;
@@ -237,6 +252,7 @@ export interface BookingData {
     observations?: string[];
     isFailed?: boolean;
     analysisV2?: AnalysisV2Envelope;
+    inputSource?: 'ai' | 'manual';
   }>;
   weedingZones?: Array<{
     id: string;
@@ -253,6 +269,7 @@ export interface BookingData {
     observations?: string[];
     isFailed?: boolean;
     analysisV2?: AnalysisV2Envelope;
+    inputSource?: 'ai' | 'manual';
   }>;
   // Per-service isolated state storage
   servicesData?: Record<string, {

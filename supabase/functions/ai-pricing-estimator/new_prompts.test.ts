@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAnalysisPromptAssembly,
-  buildAutoQuotePromptAssembly,
   DETERMINISTIC_PROMPT_SETTINGS,
 } from './new_prompts';
 
@@ -28,7 +27,7 @@ describe('new_prompts SSOT backend', () => {
     });
   });
 
-  it('etiqueta caras de setos y reutiliza el mismo ensamblador para auto_quote', () => {
+  it('etiqueta caras de setos (FACE_A / FACE_B) en el contenido del usuario', () => {
     const hedgeAssembly = buildAnalysisPromptAssembly({
       service_name: 'Poda de setos',
       hedge_faces: {
@@ -44,14 +43,5 @@ describe('new_prompts SSOT backend', () => {
     expect(hedgeAssembly.service).toBe('Poda de setos');
     expect(hedgeTextParts).toContain('FACE_A:');
     expect(hedgeTextParts).toContain('FACE_B:');
-
-    const autoQuoteAssembly = buildAutoQuotePromptAssembly({
-      service: 'Corte de césped',
-      image_url: 'https://example.com/lawn.jpg',
-      description: 'Cesped trasero',
-    });
-
-    expect(autoQuoteAssembly.service).toBe('Corte de césped');
-    expect(Array.isArray(autoQuoteAssembly.messages[1].content)).toBe(true);
   });
 });

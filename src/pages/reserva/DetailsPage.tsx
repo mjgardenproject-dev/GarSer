@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
-import { ChevronLeft, Trash2, Wand2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
+import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
@@ -262,6 +262,22 @@ const normalizePalmState = (estado?: string): 'normal' | 'descuidado' | 'muy_des
     return 'normal';
 };
 
+// Resume las palmeras detectadas por especie y altura para que el cliente
+// pueda confirmar cuántas quiere podar (la IA propone, el cliente decide).
+const summarizeDetectedPalms = (palms: Array<{ especie?: string | null; altura?: string | null }>): string => {
+    if (!palms || palms.length === 0) return '';
+    const counts = new Map<string, number>();
+    palms.forEach((p) => {
+        const especie = p?.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Palmera';
+        const altura = p?.altura ? ` (${p.altura} m)` : '';
+        const key = `${especie}${altura}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+        .map(([label, count]) => `${count}× ${label}`)
+        .join(', ');
+};
+
 const applyPalmSpeciesRules = (group: PalmGroup): PalmGroup => {
   const hasPhytosanitary = supportsPhytosanitaryForSpecies(group.species)
     ? Boolean(group.hasPhytosanitary ?? group.needsPhytosanitary)
@@ -451,7 +467,6 @@ const DetailsPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
-  const [showRetryModal, setShowRetryModal] = useState(false);
   const [isImageStackExpanded, setIsImageStackExpanded] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Escaneando terreno...');
   const [confirmState, setConfirmState] = useState<{
@@ -1613,35 +1628,40 @@ const DetailsPage: React.FC = () => {
       // Handle Palm Analysis Results
       if (debugService === 'Poda de palmeras') {
           if (res.palmas && res.palmas.length > 0) {
-            const newGroups = res.palmas.map((p, idx) => {
-                 // Map AI relative index back to global index
-                 const globalIndex = indexMap[p.indice_imagen];
-                 const originalUrl = photoUrls[globalIndex];
-                 
-                 const speciesMapped = p.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Desconocida';
-                 return {
-                    id: `ai-${Date.now()}-${idx}`,
-                    species: speciesMapped,
-                    height: p.altura,
-                    quantity: 1, // Default to 1, user must confirm
-                    state: normalizePalmState(p.estado),
-                    wasteRemoval: true,
-                    hasPhytosanitary: supportsPhytosanitaryForSpecies(speciesMapped),
-                    photoUrl: originalUrl || undefined,
-                    imageIndex: globalIndex,
-                    analysisLevel: p.nivel_analisis,
-                    observations: p.observaciones
-                };
-            });
-            
+            // La IA PROPONE: no creamos una zona por palmera. Tomamos la principal
+            // y el cliente confirma la cantidad (por defecto 1, sin inflar precio).
+            const detectedPalms = res.palmas.filter(
+                (p) => Number(p?.nivel_analisis) !== 3 && !!p?.especie && String(p.especie) !== 'No detectada'
+            );
+            const primary = detectedPalms[0] || res.palmas[0];
+            const globalIndex = indexMap[primary.indice_imagen];
+            const originalUrl = photoUrls[globalIndex];
+            const speciesMapped = primary.especie ? primary.especie.charAt(0).toUpperCase() + primary.especie.slice(1) : 'Desconocida';
+
+            const newGroup = {
+                id: `ai-${Date.now()}-0`,
+                species: speciesMapped,
+                height: primary.altura,
+                quantity: 1, // Default to 1, user must confirm
+                state: normalizePalmState(primary.estado),
+                wasteRemoval: true,
+                hasPhytosanitary: supportsPhytosanitaryForSpecies(speciesMapped),
+                photoUrl: originalUrl || undefined,
+                imageIndex: globalIndex,
+                analysisLevel: primary.nivel_analisis,
+                observations: primary.observaciones,
+                aiDetectedCount: detectedPalms.length,
+                aiDetectedSummary: summarizeDetectedPalms(detectedPalms),
+            };
+
             // Merge with existing palms not in current analysis batch
             const oldGroups = (bookingData.palmGroups || []).filter(g => {
                 // Keep if imageIndex is NOT in indicesToProcess
                 return g.imageIndex !== undefined && !indicesToProcess.includes(g.imageIndex);
             });
-            
-            const mergedGroups = [...oldGroups, ...newGroups];
-            
+
+            const mergedGroups = [...oldGroups, newGroup];
+
             // Calculate estimated hours via Backend (Strict requirement)
             await updatePalmPricing(mergedGroups);
             
@@ -3171,8 +3191,14 @@ const DetailsPage: React.FC = () => {
           };
           setDebugLogs(currentDebugInfo);
 
-          const palms = Array.isArray(res.palmas) ? res.palmas : [];
-          const p0 = palms[0];
+          const allPalms = Array.isArray(res.palmas) ? res.palmas : [];
+          // Solo palmeras realmente detectadas (excluye fallos / "No detectada").
+          const detectedPalms = allPalms.filter(
+            (p) => Number(p?.nivel_analisis) !== 3 && !!p?.especie && String(p.especie) !== 'No detectada'
+          );
+          // La IA PROPONE: no creamos zonas automáticas. Tomamos la palmera principal
+          // y dejamos que el cliente confirme la cantidad (por defecto 1, sin inflar precio).
+          const p0 = detectedPalms[0] || allPalms[0];
           const commonAnalysis = buildAnalysisCommonFields({
             analysis,
             analysisLevel: p0?.nivel_analisis,
@@ -3184,32 +3210,16 @@ const DetailsPage: React.FC = () => {
           group.species = p0?.especie ? p0.especie.charAt(0).toUpperCase() + p0.especie.slice(1) : (group.species || 'Desconocida');
           group.height = p0?.altura || group.height;
           group.state = normalizePalmState(p0?.estado);
+          group.quantity = Math.max(1, Number(group.quantity) || 1);
           group.analysisV2 = commonAnalysis.analysisV2;
           group.analysisLevel = commonAnalysis.analysisLevel;
           group.observations = commonAnalysis.observations;
           (group as any).isFailed = commonAnalysis.isFailed;
           (group as any).analyzedIndices = commonAnalysis.analyzedIndices;
           (group as any).hasPhytosanitary = supportsPhytosanitaryForSpecies(group.species);
+          (group as any).aiDetectedCount = detectedPalms.length;
+          (group as any).aiDetectedSummary = summarizeDetectedPalms(detectedPalms);
           groups[idx] = group;
-
-          for (let i = 1; i < palms.length; i++) {
-              const p = palms[i];
-              groups.push({
-                  id: `palm-ai-${Date.now()}-${i}`,
-                  species: p.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Desconocida',
-                  height: p.altura,
-                  quantity: 1,
-                  state: normalizePalmState(p.estado),
-                  wasteRemoval: true,
-                  hasPhytosanitary: supportsPhytosanitaryForSpecies(p.especie ? p.especie.charAt(0).toUpperCase() + p.especie.slice(1) : 'Desconocida'),
-                  analysisLevel: commonAnalysis.analysisLevel,
-                  observations: commonAnalysis.observations,
-                  analysisV2: commonAnalysis.analysisV2,
-                  photoUrls: [...photoUrls],
-                  analyzedIndices: commonAnalysis.analyzedIndices,
-                  isFailed: commonAnalysis.isFailed
-              } as any);
-          }
 
           await updatePalmPricing(groups);
           commitPalmGroups(groups, true);
@@ -4659,6 +4669,14 @@ const analyzeTreeGroup = async (id: string) => {
                                                         observations={zone.observations}
                                                         onDelete={() => removePalmGroup(zone.id)}
                                                     >
+                                                        {/* Propuesta de la IA: detección como sugerencia, el cliente confirma la cantidad */}
+                                                        {Number((zone as any).aiDetectedCount || 0) > 1 && (
+                                                            <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mt-3">
+                                                                La IA ha detectado <span className="font-semibold">{(zone as any).aiDetectedCount} palmeras</span> en estas fotos
+                                                                {(zone as any).aiDetectedSummary ? <> ({(zone as any).aiDetectedSummary})</> : null}.
+                                                                Confirma cuántas quieres podar ajustando la cantidad. Si hay especies o alturas distintas, añade un grupo aparte.
+                                                            </div>
+                                                        )}
                                                         {/* Line 3: Quantity (Editable) */}
                                                         <div className="text-xs text-gray-600 flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
                                                             <span className="font-medium text-gray-700">Cantidad de palmeras idénticas:</span>
@@ -5814,40 +5832,6 @@ const analyzeTreeGroup = async (id: string) => {
             rows={3}
           />
       </div>
-
-      {/* Retry Modal */}
-      {showRetryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
-                <div className="flex flex-col items-center text-center mb-6">
-                    <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
-                        <Wand2 className="w-6 h-6 text-amber-600" />
-                    </div>
-                    <h3 className="text-lg font-bold text-gray-900 mb-2">¿Reintentar análisis?</h3>
-                    <p className="text-sm text-gray-600">
-                        Sentimos que el análisis no haya salido como esperabas. Puedes reintentarlo para comprobar si el nuevo resultado se ajusta mejor.
-                    </p>
-                </div>
-                <div className="flex flex-col gap-3">
-                    <button 
-                        onClick={() => {
-                            setShowRetryModal(false);
-                            runAIAnalysis();
-                        }}
-                        className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium transition-colors"
-                    >
-                        Reintentar análisis
-                    </button>
-                    <button 
-                        onClick={() => setShowRetryModal(false)}
-                        className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-colors"
-                    >
-                        Cancelar
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
 
       {/* Waste Removal Warning Modal */}
       {showWasteModal && (

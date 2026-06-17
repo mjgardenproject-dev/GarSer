@@ -13,6 +13,8 @@ import { reportBookingEvent } from '../../utils/bookingTelemetry'
 
 export type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9'
 
+export type PhytosanitaryPlantasSize = 'pequenas' | 'medianas' | 'grandes' | null
+
 export type PhytosanitaryAnalysisMetrics = {
   cesped_m2: number
   seto_bajo_medio_ml: number
@@ -25,6 +27,10 @@ export type PhytosanitaryAnalysisMetrics = {
   arboles_peq_ud: number
   arboles_med_ud: number
   arboles_gran_ud: number
+  herbicida_poca_densidad_m2: number
+  herbicida_mucha_densidad_m2: number
+  plantas_superficie_calculada_m2: number
+  plantas_tamano_dominante: PhytosanitaryPlantasSize
   observaciones_ia: string[]
 }
 
@@ -40,6 +46,10 @@ export const EMPTY_PHYTOSANITARY_ANALYSIS_METRICS: PhytosanitaryAnalysisMetrics 
   arboles_peq_ud: 0,
   arboles_med_ud: 0,
   arboles_gran_ud: 0,
+  herbicida_poca_densidad_m2: 0,
+  herbicida_mucha_densidad_m2: 0,
+  plantas_superficie_calculada_m2: 0,
+  plantas_tamano_dominante: null,
   observaciones_ia: [],
 }
 
@@ -93,7 +103,7 @@ const TREE_SIZE_BAND_FALLBACK_METERS: Record<TreeSizeBand, number> = {
   over_9: 9.5,
 }
 
-const PHYTOSANITARY_METRIC_KEYS: Array<keyof Omit<PhytosanitaryAnalysisMetrics, 'observaciones_ia'>> = [
+const PHYTOSANITARY_METRIC_KEYS: Array<keyof Omit<PhytosanitaryAnalysisMetrics, 'observaciones_ia' | 'plantas_tamano_dominante'>> = [
   'cesped_m2',
   'seto_bajo_medio_ml',
   'seto_alto_ml',
@@ -105,6 +115,9 @@ const PHYTOSANITARY_METRIC_KEYS: Array<keyof Omit<PhytosanitaryAnalysisMetrics, 
   'arboles_peq_ud',
   'arboles_med_ud',
   'arboles_gran_ud',
+  'herbicida_poca_densidad_m2',
+  'herbicida_mucha_densidad_m2',
+  'plantas_superficie_calculada_m2',
 ]
 
 function normalizeErrorMessage(error: unknown) {
@@ -508,6 +521,14 @@ export function toPhytosanitaryMetricNumber(value: unknown) {
   return Math.max(0, parsed)
 }
 
+export function normalizePhytosanitaryPlantasSize(value: unknown): PhytosanitaryPlantasSize {
+  const normalized = String(value || '').toLowerCase().trim()
+  if (normalized.includes('grande')) return 'grandes'
+  if (normalized.includes('mediana')) return 'medianas'
+  if (normalized.includes('peque')) return 'pequenas'
+  return null
+}
+
 export function sumPhytosanitaryMetrics(metrics: PhytosanitaryAnalysisMetrics) {
   return PHYTOSANITARY_METRIC_KEYS.reduce(
     (total, key) => total + Number(metrics[key] || 0),
@@ -654,6 +675,9 @@ export function adaptPhytosanitaryAnalysisResult(params: {
         key,
         toPhytosanitaryMetricNumber(canonicalMetrics?.[key] ?? legacyMetrics?.[key] ?? 0),
       ])
+    ),
+    plantas_tamano_dominante: normalizePhytosanitaryPlantasSize(
+      canonicalMetrics?.plantas_tamano_dominante ?? legacyMetrics?.plantas_tamano_dominante
     ),
     observaciones_ia: commonFields.observations,
   }

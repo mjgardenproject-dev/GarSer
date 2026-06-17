@@ -192,6 +192,55 @@ describe('detailsPageAdapters', () => {
     expect(patch.observations).toEqual(['Revisar altura.'])
   })
 
+  it('conserva las métricas de plantas y herbicida que consume el pricing fitosanitario', () => {
+    const patch = adaptPhytosanitaryAnalysisResult({
+      analysis: {
+        service: 'Servicios fitosanitarios',
+        schema_version: 'analysis_v2',
+        analysis_status: 'success',
+        analysis_level: 1,
+        quality_summary_code: 'READY_FOR_PRICING',
+        quality_reasons: [],
+        client_observations: [],
+        internal_reasoning: { summary: 'ok' },
+        deduplication_summary: 'ok',
+        service_metrics: {
+          cesped_m2: 0,
+          seto_bajo_medio_ml: 0,
+          seto_alto_ml: 0,
+          palmeras_ducha_peq_ud: 0,
+          palmeras_ducha_med_ud: 0,
+          palmeras_ducha_alta_ud: 0,
+          palmeras_cirugia_ud: 0,
+          palmeras_endoterapia_troncos_ud: 0,
+          arboles_peq_ud: 0,
+          arboles_med_ud: 0,
+          arboles_gran_ud: 0,
+          herbicida_poca_densidad_m2: 8,
+          herbicida_mucha_densidad_m2: 0,
+          plantas_superficie_calculada_m2: 30,
+          plantas_tamano_dominante: 'medianas',
+          observaciones_ia: [],
+        },
+        source_photo_count: 1,
+        analyzed_photo_indices: [0],
+        provider: null,
+        model: null,
+        model_params: {},
+        error_code: null,
+        error_message_safe: null,
+      },
+      selectedIndices: [0],
+      totalPhotoCount: 1,
+    })
+
+    expect(patch.analysisMetrics.plantas_superficie_calculada_m2).toBe(30)
+    expect(patch.analysisMetrics.plantas_tamano_dominante).toBe('medianas')
+    expect(patch.analysisMetrics.herbicida_poca_densidad_m2).toBe(8)
+    // area incluye ahora la superficie de plantas y herbicida (proxy de "analizado")
+    expect(patch.area).toBe(38)
+  })
+
   it('añade fotos a una colección manteniendo la selección implícita previa', () => {
     const createObjectUrl = vi.fn((file: File) => `blob:${file.name}`)
     vi.stubGlobal('URL', {

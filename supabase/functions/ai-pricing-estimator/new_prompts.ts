@@ -546,15 +546,3 @@ export function buildAnalysisPromptAssembly(payload: PromptPayload): PromptAssem
     ],
   };
 }
-
-export function buildAutoQuotePromptAssembly(input: {
-  service: string;
-  image_url: string;
-  description?: string;
-}): PromptAssembly {
-  return buildAnalysisPromptAssembly({
-    service_name: input.service,
-    description: input.description,
-    photo_urls: [input.image_url],
-  });
-}

@@ -99,6 +99,9 @@ export interface BookingData {
     analysisLevel?: number;
     observations?: string[];
     analysisV2?: AnalysisV2Envelope;
+    // Propuesta de la IA: nº de palmeras detectadas y resumen, para que el cliente confirme la cantidad.
+    aiDetectedCount?: number;
+    aiDetectedSummary?: string;
     hasPhytosanitary?: boolean;
     hasTrunkPeeling?: boolean;
     lowestRangeThreshold?: string;

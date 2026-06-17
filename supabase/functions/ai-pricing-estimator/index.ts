@@ -1,7 +1,6 @@
-// Supabase Edge Function: IA de estimación y auto‑presupuesto
-// Requiere configurar el secreto OPENAI_API_KEY
+// Supabase Edge Function: análisis visual de jardines con Gemini para estimación de presupuesto.
+// Requiere configurar el secreto GOOGLE_API_KEY (opcional: GEMINI_MODEL).
 declare const Deno: any;
-import * as cfg from './config.ts';
 import {
   adaptLegacyAnalysisToV2,
   validateAnalysisV2,
@@ -9,7 +8,6 @@ import {
 } from '../../../src/shared/analysisV2.ts';
 import {
   buildAnalysisPromptAssembly,
-  buildAutoQuotePromptAssembly,
   DETERMINISTIC_PROMPT_SETTINGS,
 } from './new_prompts.ts';
 
@@ -29,15 +27,11 @@ interface Payload {
   };
   photo_count?: number;
   service_name?: string; // Nombre del servicio (opcional, para lógica específica)
-  // Nuevo modo de auto‑presupuesto por servicio
-  mode?: 'auto_quote' | 'calculate_palm_pricing' | 'weeding_prompt_quality_check';
-  service?: string; // nombre exacto del servicio
-  image_url?: string; // http(s) o dataURL
-  model?: 'gpt-4o-mini' | 'gemini-2.0-flash' | 'gemini-2.5-flash';
+  mode?: 'calculate_palm_pricing' | 'weeding_prompt_quality_check';
+  model?: 'gemini-2.0-flash' | 'gemini-2.5-flash';
   palms?: any[]; // Array for palm pricing calculation
   phytosanitary_scopes?: string[]; // Array of selected scopes for Fitosanitarios
   qa_runs?: number;
-  gardener_config?: any; // Configuración personalizada del jardinero
 }
 
 type PhytosanitaryTreatment = 'insecticida' | 'fungicida' | 'herbicida' | 'ecologico_preventivo' | 'endoterapia' | 'inconclusive';
@@ -298,6 +292,15 @@ const STANDARD_TECHNICAL_REASONS = {
   edgeInvocationFailed: 'EDGE_FUNCTION_INVOCATION_FAILED',
 } as const;
 
+const TECHNICAL_REASON_SET = new Set<string>(Object.values(STANDARD_TECHNICAL_REASONS));
+
+// Distingue un fallo técnico real (proveedor caído, JSON ilegible, rate limit…)
+// de una respuesta válida del modelo que simplemente no detectó el elemento.
+function hasTechnicalFailure(ai: any): boolean {
+  const reasons = Array.isArray(ai?.reasons) ? ai.reasons : [];
+  return reasons.some((reason: unknown) => TECHNICAL_REASON_SET.has(String(reason)));
+}
+
 type WeedingState = 'normal' | 'dificultad_media' | 'dificultad_alta';
 
 interface WeedingNormalizedTask {
@@ -481,55 +484,6 @@ function buildMessages(payload: Payload) {
   return buildAnalysisPromptAssembly(payload).messages;
 }
 
-function buildAutoQuoteMessages(payload: Payload) {
-  return buildAutoQuotePromptAssembly({
-    service: payload.service || '',
-    image_url: payload.image_url || '',
-    description: payload.description,
-  }).messages;
-}
-
-async function callOpenAI(messages: any[]) {
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) {
-    return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerAuthMissing] };
-  }
-
-  const body = {
-    model: 'gpt-4o-mini',
-    messages,
-    temperature: DETERMINISTIC_PROMPT_SETTINGS.temperature,
-    top_p: DETERMINISTIC_PROMPT_SETTINGS.topP,
-    frequency_penalty: DETERMINISTIC_PROMPT_SETTINGS.frequencyPenalty,
-    presence_penalty: DETERMINISTIC_PROMPT_SETTINGS.presencePenalty,
-    response_format: { type: 'json_object' },
-  };
-
-  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!resp.ok) {
-    const txt = await resp.text();
-    console.error('OpenAI error:', txt);
-    return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.providerRequestFailed] };
-  }
-
-  const data = await resp.json();
-  const content = data?.choices?.[0]?.message?.content || '{}';
-  try {
-    const parsed = JSON.parse(content);
-    return parsed;
-  } catch {
-    return { tareas: [], reasons: [STANDARD_TECHNICAL_REASONS.modelOutputInvalid] };
-  }
-}
-
 function heuristicTasks(payload: Payload) {
   // Cuando falla la IA, no devolvemos datos inventados.
   // Devolvemos una señal clara de error para que el frontend pida reintentar.
@@ -666,13 +620,13 @@ function buildPhytosanitaryTasksFromDetectedElements(ai: any, payload: Payload):
 
   // Surfaces / Lawns
   const surfacesArr = Array.isArray(detected?.surfaces_plants) ? detected.surfaces_plants : (detected?.surfaces_plants ? [detected.surfaces_plants] : []);
-  surfacesArr.forEach((surface: any) => {
+  surfacesArr.forEach((surface: any, surfaceIndex: number) => {
     const area = Number.isFinite(Number(surface?.estimated_area_m2))
       ? Math.max(0, Number(surface.estimated_area_m2))
       : mapSeverityToArea(String(surface?.estimated_severity || 'unknown'));
     if (area > 0) {
       pushTask({
-        ai_ref_id: surface.ai_ref_id || `surface_${Math.random().toString(36).substring(7)}`,
+        ai_ref_id: surface.ai_ref_id || `surface_${surfaceIndex}`,
         tipo_afectado: 'Plantas bajas',
         cantidad_o_superficie: area,
         unidad: 'm2',
@@ -685,12 +639,12 @@ function buildPhytosanitaryTasksFromDetectedElements(ai: any, payload: Payload):
 
   // Hedges
   const hedgesArr = Array.isArray(detected?.hedges) ? detected.hedges : [];
-  hedgesArr.forEach((hedge: any) => {
+  hedgesArr.forEach((hedge: any, hedgeIndex: number) => {
     const ml = Math.round(toNonNegativeNumber(hedge.ml));
     const band = String(hedge.size_band || 'bajos_medios').toLowerCase();
     if (ml > 0) {
       pushTask({
-        ai_ref_id: hedge.ai_ref_id || `hedge_${Math.random().toString(36).substring(7)}`,
+        ai_ref_id: hedge.ai_ref_id || `hedge_${hedgeIndex}`,
         tipo_afectado: 'Setos',
         cantidad_o_superficie: ml,
         unidad: 'ml',
@@ -703,10 +657,10 @@ function buildPhytosanitaryTasksFromDetectedElements(ai: any, payload: Payload):
 
   // Trees
   const treesArr = Array.isArray(detected?.trees) ? detected.trees : [];
-  treesArr.forEach((tree: any) => {
+  treesArr.forEach((tree: any, treeIndex: number) => {
     const band = String(tree.size_band || 'pequenos').toLowerCase();
     pushTask({
-      ai_ref_id: tree.ai_ref_id || `tree_${Math.random().toString(36).substring(7)}`,
+      ai_ref_id: tree.ai_ref_id || `tree_${treeIndex}`,
       tipo_afectado: 'Árboles',
       cantidad_o_superficie: 1,
       unidad: 'unidades',
@@ -718,11 +672,11 @@ function buildPhytosanitaryTasksFromDetectedElements(ai: any, payload: Payload):
 
   // Palms
   const palmsArr = Array.isArray(detected?.palms) ? detected.palms : [];
-  palmsArr.forEach((palm: any) => {
+  palmsArr.forEach((palm: any, palmIndex: number) => {
     const band = String(palm.size_band || 'pequenas').toLowerCase();
     const palmSurgery = Boolean(palm.surgery_recommended);
     pushTask({
-      ai_ref_id: palm.ai_ref_id || `palm_${Math.random().toString(36).substring(7)}`,
+      ai_ref_id: palm.ai_ref_id || `palm_${palmIndex}`,
       tipo_afectado: 'Palmeras',
       cantidad_o_superficie: 1,
       unidad: 'unidades',
@@ -1028,25 +982,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     const payload = (await req.json()) as Payload;
 
-    // Nuevo modo: auto‑presupuesto por servicio único
-    if (payload.mode === 'auto_quote' && payload.service && payload.image_url) {
-      const messages = buildAutoQuoteMessages(payload);
-      const analysis = await callGemini(messages, payload.model);
-
-      const servicio = analysis?.servicio as string | undefined;
-      const cantidad = Number(analysis?.cantidad ?? 0);
-      const unidad = analysis?.unidad as string | undefined;
-      const dificultad = Number(analysis?.dificultad ?? 1) as 1 | 2 | 3;
-
-      const out = {
-        analysis: { servicio, cantidad, unidad, dificultad },
-        version: 'v1-gemini-only',
-        reasons: analysis.reasons || []
-      };
-      return new Response(JSON.stringify(out), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    // Nuevo modo: cálculo de precios de palmeras
+    // Modo: cálculo de precios de palmeras
     if (payload.mode === 'calculate_palm_pricing' && Array.isArray(payload.palms)) {
         const result = calculatePalmEstimation(payload.palms);
         return new Response(JSON.stringify(result), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -1188,7 +1124,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (payload.service_name === 'Poda de plantas y arbustos' && tareas.length > 0) {
         const mergedTasks: Record<string, any> = {};
         
-        tareas.forEach((task: any) => {
+        tareas.forEach((task: any, taskIndex: number) => {
             if (task.tipo_servicio === 'Poda de plantas y arbustos') {
                 const normalizedLevel = [1, 2, 3].includes(Number(task.nivel_analisis))
                   ? Number(task.nivel_analisis)
@@ -1245,7 +1181,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             } else {
                 // If mixed services (unlikely but possible), keep them separate or handle accordingly
                 // For now, just append with a unique key or skip merging logic for non-matching types
-                const key = `OTHER_${Math.random()}`;
+                const key = `OTHER_${taskIndex}`;
                 mergedTasks[key] = task;
             }
         });
@@ -1259,10 +1195,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
     
-    const h = heuristicTasks(payload);
+    // Sin tareas: distinguir fallo técnico (reintentar) de "no se detectó nada"
+    // (respuesta válida sin elementos → el cliente necesita mejores fotos).
+    const noResultReasons = hasTechnicalFailure(ai)
+      ? ai.reasons
+      : ['ELEMENTS_NOT_DETECTED'];
     return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, {
-      ...h,
-      reasons: ai.reasons || [STANDARD_TECHNICAL_REASONS.modelOutputInvalid]
+      tareas: [],
+      reasons: noResultReasons,
     })), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

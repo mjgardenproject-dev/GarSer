@@ -6,6 +6,11 @@ al análisis por fotos con IA, dentro de la misma página de detalles de la rese
 El dato manual viaja por **el mismo motor de cálculo** que el flujo de fotos
 (`buildAuthoritativeBookingQuote`), así que el origen (IA o manual) es indistinguible para el pricing.
 
+> **Servicios "manual-only".** Algunos servicios nunca usaron análisis por fotos (hoy: *Desbroce de
+> malas hierbas*). Para ellos **no se muestra el selector foto/manual**: se usa directamente su formulario
+> manual existente. Se controla con `MANUAL_ONLY_SERVICE_KEYS` / `isManualOnlyService()` en
+> `manualEntrySchema.ts`, que `DetailsPage` usa para calcular `manualChoiceAvailable`.
+
 ---
 
 ## Activar / desactivar (feature flag)

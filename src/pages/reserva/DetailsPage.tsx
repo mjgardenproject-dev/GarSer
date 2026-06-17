@@ -87,6 +87,7 @@ import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../../compone
 import {
   MANUAL_ENTRY_SURVEYS,
   resolveManualServiceKey,
+  isManualOnlyService,
 } from '../../shared/manualEntry/manualEntrySchema';
 import { validateManualBookingInput } from '../../shared/manualEntry/manualEntryValidation';
 import { buildConsentRecord, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
@@ -441,8 +442,10 @@ const DetailsPage: React.FC = () => {
   const manualFlowEnabled = isManualBookingInputEnabled();
   const manualServiceKey = useMemo(() => resolveManualServiceKey(debugService), [debugService]);
   const manualSurvey = manualServiceKey ? MANUAL_ENTRY_SURVEYS[manualServiceKey] : null;
+  // Desbroce (y futuros servicios manual-only) no usan fotos → sin selector foto/manual.
+  const manualChoiceAvailable = manualFlowEnabled && !!manualServiceKey && !isManualOnlyService(manualServiceKey);
   const dataInputMode: DataInputMode = bookingData.dataInputMode === 'manual' ? 'manual' : 'photos';
-  const isManualActive = manualFlowEnabled && !!manualServiceKey && dataInputMode === 'manual';
+  const isManualActive = manualChoiceAvailable && dataInputMode === 'manual';
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -4103,7 +4106,7 @@ const analyzeTreeGroup = async (id: string) => {
           </div>
         ) : null}
 
-        {manualFlowEnabled && manualServiceKey ? (
+        {manualChoiceAvailable ? (
           <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} />
         ) : null}
 

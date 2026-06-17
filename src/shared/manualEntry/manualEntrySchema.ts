@@ -39,6 +39,17 @@ export const MANUAL_SERVICE_KEYS: ManualServiceKey[] = [
   'weeding',
 ];
 
+/**
+ * Services that NEVER used photo/AI analysis — their booking flow is manual by
+ * nature. For these, the "photos vs manual" chooser is meaningless and must NOT
+ * be shown; their existing manual form is used directly.
+ */
+export const MANUAL_ONLY_SERVICE_KEYS: ManualServiceKey[] = ['weeding'];
+
+export function isManualOnlyService(key: ManualServiceKey | null | undefined): boolean {
+  return !!key && MANUAL_ONLY_SERVICE_KEYS.includes(key);
+}
+
 export type ManualFieldType = 'integer' | 'number' | 'enum' | 'boolean';
 export type ManualFieldUi = 'stepper' | 'slider' | 'cards' | 'toggle';
 

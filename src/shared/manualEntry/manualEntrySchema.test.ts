@@ -6,6 +6,7 @@ import {
   getManualSurvey,
   getPalmHeightRanges,
   getVisibleFields,
+  isManualOnlyService,
   resolveManualServiceKey,
 } from './manualEntrySchema';
 
@@ -45,6 +46,20 @@ describe('survey integrity', () => {
   it('getManualSurvey resolves by service name', () => {
     expect(getManualSurvey('Corte de césped')?.serviceKey).toBe('lawn');
     expect(getManualSurvey('nope')).toBeNull();
+  });
+});
+
+describe('manual-only services (no photo/manual chooser)', () => {
+  it('marks only weeding as manual-only', () => {
+    expect(isManualOnlyService('weeding')).toBe(true);
+    (['lawn', 'hedge', 'tree', 'palm', 'shrub', 'phytosanitary'] as const).forEach((key) => {
+      expect(isManualOnlyService(key)).toBe(false);
+    });
+  });
+
+  it('is safe for null/undefined', () => {
+    expect(isManualOnlyService(null)).toBe(false);
+    expect(isManualOnlyService(undefined)).toBe(false);
   });
 });
 

@@ -1,9 +1,0 @@
-{
-  "http_status": 200,
-  "body": {
-    "tiempoPreparacion": 0.5,
-    "tiempoPodaBruto": 1,
-    "factorEficiencia": 1,
-    "tiempoTotalEstimado": 1.5
-  }
-}

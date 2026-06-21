@@ -53,3 +53,6 @@ ehthumbs.db
 
 # Trae IDE
 .trae/
+
+# Claude Code (local config, memory, skills — no pertenece al repo compartido)
+.claude/

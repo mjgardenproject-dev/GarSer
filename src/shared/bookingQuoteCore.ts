@@ -306,8 +306,6 @@ interface PhytosanitaryNormalizedConfig {
       precio_unico: number;
     };
   };
-  waste_removal: { percentage: number };
-  recargo_retirada: { percentage: number };
   pricing_modifiers: {
     eco: { percentage: number };
     combo: {
@@ -709,7 +707,6 @@ const normalizeDetailedPhytosanitaryPricing = (raw?: any): PhytosanitaryDetailed
 const normalizePhytosanitaryPricingConfig = (raw?: any): PhytosanitaryNormalizedConfig => {
   const detailed = normalizeDetailedPhytosanitaryPricing(raw?.detailed_pricing);
   const inferredMin = Number(raw?.minimum_fee ?? raw?.importe_minimo ?? raw?.minimum_price ?? 0);
-  const inferredWaste = Number(raw?.recargo_retirada?.percentage || raw?.waste_removal?.percentage || 0);
   const inferredEco = Number(raw?.pricing_modifiers?.eco?.percentage || 0);
   const inferredComboTwo = Number(raw?.pricing_modifiers?.combo?.two_treatments_percentage || 0);
   const inferredComboThree = Number(raw?.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
@@ -763,8 +760,6 @@ const normalizePhytosanitaryPricingConfig = (raw?: any): PhytosanitaryNormalized
         precio_unico: Number(raw?.palmeras?.endoterapia?.precio_unico || detailed.palmeras.pequenas_cirugia || 0),
       },
     },
-    waste_removal: { percentage: inferredWaste },
-    recargo_retirada: { percentage: inferredWaste },
     pricing_modifiers: {
       eco: { percentage: inferredEco },
       combo: {
@@ -1238,19 +1233,21 @@ export function buildAuthoritativeBookingQuote(params: {
 
   if (bookingData.lawnZones?.length) {
     const yieldM2 = Number(config.yield_m2_per_hour);
+    const lawnWasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
     bookingData.lawnZones.forEach((zone) => {
-      if (zone.quantity > 0) totalHours += (zone.quantity / yieldM2) * getDurationMultiplier(zone.state);
+      if (zone.quantity > 0) totalHours += (zone.quantity / yieldM2) * getDurationMultiplier(zone.state) * lawnWasteMult;
     });
   }
 
   if (bookingData.hedgeZones?.length) {
     const yields = config.yield_ml_per_hour || {};
+    const hedgeWasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
     bookingData.hedgeZones.forEach((zone) => {
       const height = zone.height || '0-2m';
       const yieldMl = Number(yields[height]);
       const length = Number(zone.length || 0);
       const faces = Number(zone.faces_to_trim || 1);
-      totalHours += (length * faces / yieldMl) * getDurationMultiplier(zone.state || 'normal');
+      totalHours += (length * faces / yieldMl) * getDurationMultiplier(zone.state || 'normal') * hedgeWasteMult;
     });
   }
 
@@ -1280,10 +1277,11 @@ export function buildAuthoritativeBookingQuote(params: {
 
   if (bookingData.shrubGroups?.length) {
     const yields = config.yield_m2_per_hour || {};
+    const shrubWasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
     bookingData.shrubGroups.forEach((group) => {
       const size = (group.size || 'pequeñas') as keyof typeof yields;
       const yieldM2 = Number(yields[size] || 0);
-      totalHours += (Number(group.area || 0) / yieldM2) * getDurationMultiplier(group.state || 'normal');
+      totalHours += (Number(group.area || 0) / yieldM2) * getDurationMultiplier(group.state || 'normal') * shrubWasteMult;
     });
   }
 

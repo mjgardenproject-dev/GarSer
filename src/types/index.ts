@@ -432,9 +432,7 @@ export interface PhytosanitaryPricingConfig {
     tradicional: { hasta_3m: number; mas_de_3m: number };
     endoterapia: { precio_unico: number };
   };
-  recargo_retirada?: { percentage: number };
   type_prices?: Record<string, Partial<Record<LegacyPhytosanitaryRange, number>>>;
-  waste_removal?: { percentage: number };
   minimum_price?: number;
   minimum_fee?: number;
   pricing_modifiers?: PhytosanitaryPricingModifiers;

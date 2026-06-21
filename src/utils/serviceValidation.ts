@@ -59,12 +59,6 @@ export interface PhytosanitaryV2PricingConfig {
       precio_unico: number;
     };
   };
-  recargo_retirada?: {
-    percentage: number;
-  };
-  waste_removal?: {
-    percentage: number;
-  };
   pricing_modifiers?: {
     eco?: {
       percentage: number;
@@ -144,8 +138,6 @@ export const phytosanitaryV2Schema = z.object({
     plantas_m2_per_hour: z.number().positive(),
     endoterapia_units_per_hour: z.number().positive(),
   }),
-  recargo_retirada: z.object({ percentage: z.number().nonnegative() }).optional(),
-  waste_removal: z.object({ percentage: z.number().nonnegative() }).optional(),
   minimum_fee: z.number().nonnegative().optional(),
   pricing_modifiers: z.object({
     eco: z.object({ percentage: z.number() }).optional(),
@@ -276,12 +268,6 @@ export const mapLegacyPhytosanitaryConfigToV2 = (legacy: PhytosanitaryPricingCon
         precio_unico: 0
       }
     },
-    recargo_retirada: {
-      percentage: Number(legacy.waste_removal?.percentage || 0)
-    },
-    waste_removal: {
-      percentage: Number(legacy.waste_removal?.percentage || 0)
-    },
     pricing_modifiers: {
       eco: { percentage: Number(legacy.pricing_modifiers?.eco?.percentage || 0) },
       combo: {
@@ -408,15 +394,11 @@ export const calculatePhytosanitaryQuote = (params: {
     return { total: 0, final_price: 0, totalBeforeMinimum: 0, minimumFeeApplied: false, minimumFee: 0, breakdown: [] };
   }
 
-  const wastePercentage = Number(
-    normalized.recargo_retirada?.percentage ??
-    normalized.waste_removal?.percentage ??
-    0
-  );
   const ecoModifierPercent = Number(normalized.pricing_modifiers?.eco?.percentage || 0);
   const comboTwoTreatmentsPercent = Number(normalized.pricing_modifiers?.combo?.two_treatments_percentage || 0);
   const comboThreePlusTreatmentsPercent = Number(normalized.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
-  const wasteMult = 1; // Fitosanitarios no generan restos verdes
+  const wastePercentage = 0; // Fitosanitarios no generan restos verdes
+  const wasteMult = 1;
   const breakdown: PhytosanitaryQuoteBreakdownItem[] = [];
   let totalBeforeMinimum = 0;
 

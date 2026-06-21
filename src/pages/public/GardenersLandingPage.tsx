@@ -7,17 +7,18 @@ import MarketingImageSlot from '../../components/public/MarketingImageSlot';
 import PublicFooter from '../../components/public/PublicFooter';
 import PublicHeader from '../../components/public/PublicHeader';
 import {
-  PUBLIC_CONTACT_EMAIL,
   SITE_URL,
   gardenersContent,
   gardenersFaqs,
   pageSeo,
 } from '../../config/publicSiteContent';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
 
 const GardenersLandingPage: React.FC = () => {
   const navigate = useNavigate();
   const seo = pageSeo.gardeners;
+  const { settings } = useAppSettings();
 
   const jsonLd = useMemo(
     () => [
@@ -31,7 +32,7 @@ const GardenersLandingPage: React.FC = () => {
         provider: {
           '@type': 'Organization',
           name: 'GarSer',
-          email: PUBLIC_CONTACT_EMAIL || undefined,
+          email: settings.contactEmail || undefined,
         },
       },
       {
@@ -65,7 +66,7 @@ const GardenersLandingPage: React.FC = () => {
         ],
       },
     ],
-    [seo.path, seo.title],
+    [seo.path, seo.title, settings.contactEmail],
   );
 
   const handleGardenerSignup = () => {

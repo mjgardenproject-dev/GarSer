@@ -1,9 +1,15 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-import { PUBLIC_CONTACT_EMAIL, costaDelSolZones } from '../../config/publicSiteContent';
+import { costaDelSolZones } from '../../config/publicSiteContent';
+import { useAppSettings } from '../../hooks/useAppSettings';
 
 const PublicFooter: React.FC = () => {
+  const { settings } = useAppSettings();
+  const contactEmail = settings.contactEmail;
+  const contactPhone = settings.contactPhone;
+  const phoneHref = contactPhone ? `tel:${contactPhone.replace(/\s+/g, '')}` : '';
+
   return (
     <footer className="border-t border-slate-200 bg-slate-950 text-slate-200">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[1.2fr,1fr,1fr] lg:px-8">
@@ -13,11 +19,18 @@ const PublicFooter: React.FC = () => {
           <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">
             La portada publica y la zona de cliente comparten una misma idea: empezar una reserva rapido, retomarla si ya la dejaste abierta y no perderte entre pantallas tecnicas.
           </p>
-          {PUBLIC_CONTACT_EMAIL ? (
-            <a className="mt-5 inline-flex text-sm font-medium text-emerald-300 hover:text-emerald-200" href={`mailto:${PUBLIC_CONTACT_EMAIL}`}>
-              {PUBLIC_CONTACT_EMAIL}
-            </a>
-          ) : null}
+          <div className="mt-5 flex flex-col gap-2">
+            {contactEmail ? (
+              <a className="inline-flex w-fit text-sm font-medium text-emerald-300 hover:text-emerald-200" href={`mailto:${contactEmail}`}>
+                {contactEmail}
+              </a>
+            ) : null}
+            {contactPhone ? (
+              <a className="inline-flex w-fit text-sm font-medium text-emerald-300 hover:text-emerald-200" href={phoneHref}>
+                {contactPhone}
+              </a>
+            ) : null}
+          </div>
         </div>
 
         <div>

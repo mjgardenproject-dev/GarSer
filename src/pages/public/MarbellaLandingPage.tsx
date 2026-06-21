@@ -5,7 +5,8 @@ import SeoHead from '../../components/common/SeoHead';
 import CustomerExperienceSections from '../../components/public/CustomerExperienceSections';
 import PublicFooter from '../../components/public/PublicFooter';
 import PublicHeader from '../../components/public/PublicHeader';
-import { PUBLIC_CONTACT_EMAIL, SITE_URL, marbellaFaqs, pageSeo } from '../../config/publicSiteContent';
+import { SITE_URL, marbellaFaqs, pageSeo } from '../../config/publicSiteContent';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { clearBookingResumeStorage, hasWizardResume } from '../../utils/bookingResumeStorage';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
 
@@ -13,6 +14,7 @@ const MarbellaLandingPage: React.FC = () => {
   const navigate = useNavigate();
   const canResume = hasWizardResume({ allowAnonFallback: true });
   const seo = pageSeo.marbella;
+  const { settings } = useAppSettings();
 
   const jsonLd = useMemo(
     () => [
@@ -26,7 +28,7 @@ const MarbellaLandingPage: React.FC = () => {
         provider: {
           '@type': 'Organization',
           name: 'GarSer',
-          email: PUBLIC_CONTACT_EMAIL || undefined,
+          email: settings.contactEmail || undefined,
         },
       },
       {
@@ -60,7 +62,7 @@ const MarbellaLandingPage: React.FC = () => {
         ],
       },
     ],
-    [seo.path, seo.title],
+    [seo.path, seo.title, settings.contactEmail],
   );
 
   const handleNewBooking = () => {

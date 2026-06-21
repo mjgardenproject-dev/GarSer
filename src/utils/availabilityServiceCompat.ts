@@ -223,9 +223,9 @@ export async function getAvailableDates(gardenerId: string, startDate: string, e
 
 export async function setDefaultAvailability(gardenerId: string, date: string) {
   try {
-    // Set default availability from 8 AM to 6 PM (8-17 hour blocks)
-    const defaultHours = Array.from({ length: 10 }, (_, i) => i + 8); // 8, 9, 10, ..., 17
-    
+    // Set default availability from 7 AM to 8 PM (block start hours 7-19)
+    const defaultHours = Array.from({ length: 13 }, (_, i) => i + 7); // 7, 8, ..., 19
+
     await setGardenerAvailability(gardenerId, date, defaultHours);
     
     return { success: true };
@@ -263,10 +263,33 @@ export async function applyRecurringSchedule(
 ) {
   try {
     console.log(`Applying recurring schedule for gardener ${gardenerId} for ${weeksToMaintain} weeks`);
-    
+
     const startDate = new Date();
     const endDate = addDays(startDate, weeksToMaintain * 7);
-    
+    const startStr = format(startDate, 'yyyy-MM-dd');
+    const endStr = format(endDate, 'yyyy-MM-dd');
+
+    // Fetch confirmed bookings in the range to avoid overwriting them.
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('date, start_time, duration_hours')
+      .eq('gardener_id', gardenerId)
+      .in('status', ['confirmed', 'in_progress'])
+      .gte('date', startStr)
+      .lte('date', endStr);
+
+    // Build a map of date → Set<hour> for all booked slots.
+    const bookedByDate: Record<string, Set<number>> = {};
+    for (const booking of (bookings || [])) {
+      const hour = parseInt(String(booking.start_time || '08:00').split(':')[0], 10);
+      const duration = Number(booking.duration_hours || 1);
+      const dateKey = String(booking.date).slice(0, 10);
+      if (!bookedByDate[dateKey]) bookedByDate[dateKey] = new Set();
+      for (let h = hour; h < hour + duration; h++) {
+        bookedByDate[dateKey].add(h);
+      }
+    }
+
     const datesToProcess: Date[] = [];
     let currentDate = startDate;
     while (currentDate <= endDate) {
@@ -274,7 +297,7 @@ export async function applyRecurringSchedule(
       currentDate = addDays(currentDate, 1);
     }
 
-    // Process in chunks to avoid overwhelming the server/connection
+    // Process in chunks to avoid overwhelming the server/connection.
     const CHUNK_SIZE = 7;
     for (let i = 0; i < datesToProcess.length; i += CHUNK_SIZE) {
       const chunk = datesToProcess.slice(i, i + CHUNK_SIZE);
@@ -282,14 +305,18 @@ export async function applyRecurringSchedule(
         const dayOfWeek = date.getDay(); // 0 (Sunday) to 6 (Saturday)
         const hours = scheduleMatrix[dayOfWeek];
         const dateStr = format(date, 'yyyy-MM-dd');
-        
-        // If we have hours for this day, set them. 
-        // If not, we should clear the day (set empty array)
         const hoursList = hours ? Array.from(hours) : [];
         await setGardenerAvailability(gardenerId, dateStr, hoursList);
+
+        // Re-block any confirmed bookings that fall on this day so the
+        // DELETE+INSERT in setGardenerAvailability doesn't expose them.
+        const bookedHours = Array.from(bookedByDate[dateStr] || []);
+        if (bookedHours.length > 0) {
+          await blockTimeSlots(gardenerId, dateStr, bookedHours);
+        }
       }));
     }
-    
+
     console.log('Successfully applied recurring schedule');
     return { success: true };
   } catch (error) {

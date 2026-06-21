@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyRecurringSchedule } from '../../utils/availabilityService';
-import { Save, Clock, Calendar, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { Save, Clock, Calendar, AlertTriangle, CheckCircle2, Info, History } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Tipos
@@ -24,8 +24,11 @@ const DAYS_OF_WEEK = [
   { label: 'D', value: 0, full: 'Domingo' },
 ];
 
-// Horas del día (8:00 a 20:00)
-const WORK_HOURS = Array.from({ length: 12 }, (_, i) => i + 8); // [8, 9, ..., 19]
+// Horas de inicio de bloque seleccionables: 7:00 .. 19:00.
+// Cada bloque dura 1 hora, por lo que el bloque "19:00" cubre 19:00–20:00.
+const BLOCK_START_HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // [7, 8, ..., 19]
+// Horas de FIN seleccionables (límite exclusivo): 8:00 .. 20:00.
+const END_HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // [8, 9, ..., 20]
 
 export default function RecurringScheduleManager({ onChangePending, registerSaveHandler }: { onChangePending?: (pending: boolean) => void; registerSaveHandler?: (fn: () => Promise<boolean>) => void; }) {
   const { user } = useAuth();
@@ -34,13 +37,16 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [dirty, setDirty] = useState(false);
 
-  // Estado del Paso 1: Generador
-  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]); // L-V por defecto
+  // Estado del Paso 1: Generador.
+  // Por defecto NO hay días seleccionados: la UI solo resalta lo realmente
+  // configurado/guardado. Las horas son únicamente valores neutros del selector
+  // (no pintan nada hasta que el jardinero elige días o se cargan datos de BD).
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [startHour, setStartHour] = useState(9);
   const [endHour, setEndHour] = useState(17);
 
   // Estado del Paso 2: Matriz de horario (Source of Truth)
-  // Mapa: día (0-6) -> Set de horas activas (8-19)
+  // Mapa: día (0-6) -> Set de horas activas (7-19)
   const [scheduleMatrix, setScheduleMatrix] = useState<Record<number, Set<number>>>({});
 
   // Estado de Configuración
@@ -109,7 +115,7 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
   const fetchData = async () => {
     try {
       setLoading(true);
-      
+
       // 1. Cargar horarios recurrentes existentes
       const { data: schedData, error: schedError } = await supabase
         .from('recurring_schedules')
@@ -136,9 +142,9 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
           const start = parseInt(row.start_time.substring(0, 2));
           const end = parseInt(row.end_time.substring(0, 2));
           const day = row.day_of_week;
-          
+
           if (!matrix[day]) matrix[day] = new Set();
-          
+
           for (let h = start; h < end; h++) {
             matrix[day].add(h);
           }
@@ -146,7 +152,18 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
       }
       setScheduleMatrix(matrix);
 
-      // 4. Establecer configuración
+      // 4. Sincronizar los controles del generador con los datos cargados
+      const activeDays = DAYS_OF_WEEK.map(d => d.value).filter(day => (matrix[day]?.size ?? 0) > 0);
+      if (activeDays.length > 0) {
+        const allHours = activeDays.flatMap(day => Array.from(matrix[day] || []));
+        const inferredStart = Math.min(...allHours);
+        const inferredEnd = Math.max(...allHours) + 1; // end is exclusive in the generator
+        setSelectedDays(activeDays);
+        setStartHour(inferredStart);
+        setEndHour(inferredEnd);
+      }
+
+      // 5. Establecer configuración
       if (settData) {
         setSettings({
           weeks_to_maintain: settData.weeks_to_maintain || 4,
@@ -303,13 +320,39 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
 
   return (
     <div className="space-y-8">
-      
+
+      {/* PANEL DE AYUDA: cómo funciona el horario */}
+      <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 w-9 h-9 rounded-full bg-green-100 flex items-center justify-center">
+            <Info className="w-5 h-5 text-green-700" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-green-900 mb-2">Cómo funciona tu horario</h3>
+            <ol className="space-y-1.5 text-sm text-green-900/90 list-decimal list-inside marker:font-semibold">
+              <li><span className="font-semibold">Elige días y franja base</span> arriba para rellenar el calendario de golpe.</li>
+              <li><span className="font-semibold">Ajusta horas sueltas</span> tocando las casillas: lo que quede en verde es tu horario real.</li>
+              <li><span className="font-semibold">Define las reglas</span> de antelación y guarda. El horario se renueva solo cada día.</li>
+            </ol>
+            <div className="mt-3 space-y-1 text-xs text-green-800/80">
+              <p>• Este <span className="font-semibold">horario fijo</span> es tu plantilla semanal y se aplica automáticamente a las próximas semanas.</p>
+              <p>• Para excepciones de una semana concreta (un día libre, una hora extra puntual) usa la pestaña <span className="font-semibold">«Ajustes puntuales»</span>: modifican tu base sin cambiar la plantilla.</p>
+              <p>• Cada casilla es un bloque de <span className="font-semibold">1 hora</span>. Puedes ofrecer desde las <span className="font-semibold">7:00</span> hasta las <span className="font-semibold">20:00</span>.</p>
+              <p>• Tus clientes solo verán y podrán reservar exactamente las horas que dejes en verde.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* SECCIÓN 1: CREA TU HORARIO FIJO */}
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <Clock className="w-5 h-5 text-green-600" />
           Crea tu horario fijo
         </h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Marca tus días habituales y la franja base (de 7:00 a 20:00). Se rellenará el calendario de abajo, que podrás afinar a mano.
+        </p>
         
         <div className="grid gap-6 md:grid-cols-2">
           {/* Selector de Días */}
@@ -358,10 +401,10 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
                     const val = parseInt(e.target.value);
                     handleGeneratorChange(selectedDays, val, Math.max(val + 1, endHour));
                   }}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500"
+                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-3 text-sm focus:ring-green-500 focus:border-green-500"
                 >
-                  {WORK_HOURS.slice(0, -1).map(h => (
-                    <option key={h} value={h}>{h}:00</option>
+                  {BLOCK_START_HOURS.map(h => (
+                    <option key={h} value={h} disabled={h >= endHour}>{h.toString().padStart(2, '0')}:00</option>
                   ))}
                 </select>
               </div>
@@ -374,10 +417,10 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
                     const val = parseInt(e.target.value);
                     handleGeneratorChange(selectedDays, Math.min(startHour, val - 1), val);
                   }}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-green-500 focus:border-green-500"
+                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-3 text-sm focus:ring-green-500 focus:border-green-500"
                 >
-                  {WORK_HOURS.map(h => (
-                    <option key={h} value={h} disabled={h <= startHour}>{h}:00</option>
+                  {END_HOURS.map(h => (
+                    <option key={h} value={h} disabled={h <= startHour}>{h.toString().padStart(2, '0')}:00</option>
                   ))}
                 </select>
               </div>
@@ -418,7 +461,7 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
               </div>
 
               {/* Bloques por hora x día */}
-              {WORK_HOURS.map((hour) => (
+              {BLOCK_START_HOURS.map((hour) => (
                 <div key={hour} className="grid md:grid-cols-7 gap-2 md:min-w-[720px]">
                   {DAYS_OF_WEEK.map((day) => {
                     const isActive = scheduleMatrix[day.value]?.has(hour);
@@ -459,25 +502,25 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
                 ))}
 
                 {/* Grid de horas (filas) */}
-                {WORK_HOURS.map((hour) => (
+                {BLOCK_START_HOURS.map((hour) => (
                   <React.Fragment key={`row-${hour}`}>
                     {DAYS_OF_WEEK.map((day) => {
                       const isActive = scheduleMatrix[day.value]?.has(hour);
-                      
+
                       return (
                         <button
                           key={`mob-${day.value}-${hour}`}
                           onClick={() => toggleMatrixCell(day.value, hour)}
                           className={`
-                            h-9 rounded-md border-2 transition-all duration-200 
-                            flex items-center justify-center font-bold text-xs
-                            ${isActive 
-                              ? 'bg-green-100 border-green-400 text-green-900 hover:bg-green-200' 
+                            h-9 rounded-md border-2 transition-all duration-200
+                            flex items-center justify-center font-bold text-[10px]
+                            ${isActive
+                              ? 'bg-green-100 border-green-400 text-green-900 hover:bg-green-200'
                               : 'bg-gray-50 border-gray-300 text-gray-900 hover:bg-gray-100'
                             }
                           `}
                         >
-                          {hour.toString().padStart(2, '0')}
+                          {hour.toString().padStart(2, '0')}h
                         </button>
                       );
                     })}
@@ -485,6 +528,18 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
                 ))}
               </div>
             </div>
+        </div>
+
+        {/* Leyenda */}
+        <div className="flex items-center gap-4 text-xs text-gray-600 mt-2">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded bg-green-100 border-2 border-green-400" />
+            <span>Activo</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded bg-gray-50 border-2 border-gray-300" />
+            <span>Inactivo</span>
+          </div>
         </div>
       </section>
 
@@ -496,13 +551,13 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
         </h2>
 
         <div className="grid gap-8 md:grid-cols-2">
-          {/* Adelanto (Weeks to maintain) */}
+          {/* Horizonte de generación (Weeks to maintain) */}
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-900">
-              ¿Con cuánta antelación quieres mostrar tu agenda?
+              ¿Cuántas semanas de agenda quieres generar?
             </label>
             <p className="text-xs text-gray-500">
-              Tu calendario estará siempre abierto por este tiempo.
+              Al guardar, se creará disponibilidad automática para este período. Los clientes solo podrán reservar dentro de este rango.
             </p>
             <select
               value={settings.weeks_to_maintain}
@@ -525,7 +580,7 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
               Antelación mínima para recibir reservas
             </label>
             <p className="text-xs text-gray-500">
-              Los clientes no podrán reservar antes de este tiempo.
+              Los clientes no podrán reservar una franja que esté dentro de este plazo. Las franjas ya pasadas se ocultan automáticamente.
             </p>
             <select
               value={settings.min_notice_hours}
@@ -535,7 +590,7 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
               }}
               className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-green-500 focus:border-green-500 shadow-sm"
             >
-              <option value={0}>Sin restricción (Inmediato)</option>
+              <option value={0}>Sin restricción (inmediato)</option>
               <option value={24}>24 horas antes</option>
               <option value={48}>48 horas antes</option>
               <option value={72}>3 días antes</option>
@@ -543,17 +598,29 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
             </select>
           </div>
         </div>
+
+        {/* Último guardado */}
+        {settings.last_generated_date && (
+          <div className="mt-4 flex items-center gap-2 text-xs text-gray-500">
+            <History className="w-3.5 h-3.5 shrink-0" />
+            <span>Última generación hasta: <span className="font-medium text-gray-700">{settings.last_generated_date}</span></span>
+          </div>
+        )}
       </section>
 
       {/* SECCIÓN 4: GUARDADO */}
-      <div className="pt-4 pb-8">
+      <div className="pt-4 pb-8 sticky bottom-0 bg-white/90 backdrop-blur-sm pb-safe">
         <button
           onClick={() => setShowConfirmation(true)}
-          disabled={saving}
-          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-4 px-6 text-lg rounded-xl font-bold shadow-lg shadow-green-600/20 transform transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-3"
+          disabled={saving || !dirty}
+          className={`w-full py-4 px-6 text-lg rounded-xl font-bold shadow-lg transform transition-all duration-200 flex items-center justify-center gap-3 ${
+            dirty
+              ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-green-600/20 hover:scale-[1.01] active:scale-[0.99]'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+          }`}
         >
           <Save className="w-6 h-6" />
-          Guardar horario fijo
+          {dirty ? 'Guardar horario fijo' : 'Sin cambios pendientes'}
         </button>
       </div>
 

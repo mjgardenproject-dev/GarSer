@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateOperationalEligibility } from './bookingEligibilityCore';
+import { evaluateOperationalEligibility, getValidStartHours } from './bookingEligibilityCore';
 
 const bookingInput = {
   address: 'Calle Verde 1',
@@ -200,5 +200,25 @@ describe('bookingEligibilityCore', () => {
       endTime: '11:00:00',
       durationHours: 2,
     });
+  });
+});
+
+describe('getValidStartHours (bordes del rango 7:00–20:00)', () => {
+  it('permite empezar a las 7:00 (nuevo mínimo) con duración 1h', () => {
+    expect(getValidStartHours([7, 8, 9], 1)).toEqual([7, 8, 9]);
+  });
+
+  it('ofrece el bloque 19:00 (19:00–20:00) para servicios de 1h', () => {
+    expect(getValidStartHours([18, 19], 1)).toEqual([18, 19]);
+  });
+
+  it('NO ofrece start 19:00 con 2h porque el bloque 20:00 no existe (sin slots fantasma)', () => {
+    // Solo 18 es válido: 18+19 caben; 19 necesitaría el bloque 20:00 inexistente.
+    expect(getValidStartHours([18, 19], 2)).toEqual([18]);
+  });
+
+  it('respeta la contigüidad: un hueco rompe la franja reservable', () => {
+    // 7 y 8 son contiguos (válidos para 2h). 10 está aislado, no cabe 2h.
+    expect(getValidStartHours([7, 8, 10], 2)).toEqual([7]);
   });
 });

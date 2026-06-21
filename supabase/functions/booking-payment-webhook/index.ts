@@ -609,6 +609,23 @@ async function processStripeEvent(
 
     if (error) throw error;
     const summaryStatus = String(data?.status || '');
+
+    // Emails transaccionales de confirmación (cliente + jardinero).
+    // Estrictamente NO bloqueante: cualquier fallo se traga aquí y NUNCA
+    // afecta al procesamiento del pago ni a la respuesta del webhook.
+    if (summaryStatus === 'booking_created') {
+      const confirmedBookingId = asString(asRecord(data).bookingId);
+      if (confirmedBookingId) {
+        try {
+          await admin.functions.invoke('booking-confirmation-email', {
+            body: { bookingId: confirmedBookingId },
+          });
+        } catch (emailError) {
+          console.error('booking-confirmation-email dispatch fallido (no bloqueante):', emailError);
+        }
+      }
+    }
+
     return {
       status: 'processed' as const,
       attemptId,

@@ -60,5 +60,5 @@ ehthumbs.db
 # Local debug artifacts (probes, capture logs)
 .dbg/
 
-# Claude Code local-only settings (mantener fuera del repo)
-.claude/settings.local.json
+# Claude Code (local config, memory, skills — no pertenece al repo compartido)
+.claude/

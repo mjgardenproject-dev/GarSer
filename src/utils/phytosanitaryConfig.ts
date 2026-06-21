@@ -67,7 +67,6 @@ export const EMPTY_PHYTOSANITARY_CONFIG: PhytosanitaryPricingConfig = {
     tradicional: { hasta_3m: 0, mas_de_3m: 0 },
     endoterapia: { precio_unico: 0 }
   },
-  recargo_retirada: { percentage: 0 },
   minimum_price: 0,
   minimum_fee: 0,
   yields: {
@@ -78,7 +77,6 @@ export const EMPTY_PHYTOSANITARY_CONFIG: PhytosanitaryPricingConfig = {
     plantas_m2_per_hour: 0,
     endoterapia_units_per_hour: 0
   },
-  waste_removal: { percentage: 0 },
   pricing_modifiers: {
     eco: { percentage: 0 },
     combo: { two_treatments_percentage: 0, three_plus_treatments_percentage: 0 }
@@ -161,7 +159,6 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
     const v2Treatments = (raw.tratamientos_activos || []).filter(Boolean);
     const legacyFromV2 = v2Treatments.map(toLegacyType).filter(Boolean) as LegacyPhytosanitaryType[];
     const inferredMin = Number(raw.minimum_fee ?? raw.importe_minimo ?? raw.minimum_price ?? 0);
-    const inferredWaste = Number(raw.recargo_retirada?.percentage || raw.waste_removal?.percentage || 0);
     const inferredEco = Number(raw.pricing_modifiers?.eco?.percentage || 0);
     const inferredComboTwo = Number(raw.pricing_modifiers?.combo?.two_treatments_percentage || 0);
     const inferredComboThreePlus = Number(raw.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
@@ -196,8 +193,6 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
           precio_unico: Number(raw.palmeras?.endoterapia?.precio_unico || 0)
         }
       },
-      recargo_retirada: { percentage: inferredWaste },
-      waste_removal: { percentage: inferredWaste },
       pricing_modifiers: {
         eco: { percentage: inferredEco },
         combo: {
@@ -227,8 +222,6 @@ export const normalizePhytosanitaryPricingConfig = (raw?: PhytosanitaryPricingCo
     importe_minimo: Number(raw.minimum_price || 0),
     minimum_price: Number(raw.minimum_price || 0),
     minimum_fee: Number(raw.minimum_price || 0),
-    recargo_retirada: { percentage: Number(raw.waste_removal?.percentage || 0) },
-    waste_removal: { percentage: Number(raw.waste_removal?.percentage || 0) },
     pricing_modifiers: {
       eco: { percentage: 0 },
       combo: { two_treatments_percentage: 0, three_plus_treatments_percentage: 0 }
@@ -266,7 +259,6 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
     importe_minimo: inferredMin,
     minimum_price: inferredMin,
     minimum_fee: inferredMin,
-    waste_removal: { percentage: Number(normalized.recargo_retirada?.percentage || 0) },
     pricing_modifiers: {
       eco: { percentage: normalizedEcoModifier },
       combo: {

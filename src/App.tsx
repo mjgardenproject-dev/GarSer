@@ -41,6 +41,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import ServicesManagement from './pages/admin/ServicesManagement';
 import PhytosanitaryManagement from './pages/admin/PhytosanitaryManagement';
 import UserManagement from './pages/admin/UserManagement';
+import AdminSettings from './pages/admin/AdminSettings';
 
 const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   if (!db) return null;
@@ -227,7 +228,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             <Route path="services" element={<ServicesManagement />} />
             <Route path="phytosanitary" element={<PhytosanitaryManagement />} />
             <Route path="users" element={<UserManagement />} />
-            <Route path="settings" element={<div className="p-8 text-center text-gray-500">Configuración en construcción</div>} />
+            <Route path="settings" element={<AdminSettings />} />
             <Route path="applications" element={<Navigate to="/admin/users" replace />} />
             <Route path="licenses" element={<Navigate to="/admin/phytosanitary" replace />} />
           </Route>

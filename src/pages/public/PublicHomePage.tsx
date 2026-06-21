@@ -6,12 +6,12 @@ import CustomerExperienceSections from '../../components/public/CustomerExperien
 import PublicFooter from '../../components/public/PublicFooter';
 import PublicHeader from '../../components/public/PublicHeader';
 import {
-  PUBLIC_CONTACT_EMAIL,
   SITE_URL,
   costaDelSolZones,
   generalHomeFaqs,
   pageSeo,
 } from '../../config/publicSiteContent';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { clearBookingResumeStorage, hasWizardResume } from '../../utils/bookingResumeStorage';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
 
@@ -19,6 +19,7 @@ const PublicHomePage: React.FC = () => {
   const navigate = useNavigate();
   const canResume = hasWizardResume({ allowAnonFallback: true });
   const seo = pageSeo.general;
+  const { settings } = useAppSettings();
 
   const jsonLd = useMemo(
     () => [
@@ -27,7 +28,7 @@ const PublicHomePage: React.FC = () => {
         '@type': 'Organization',
         name: 'GarSer',
         url: SITE_URL,
-        email: PUBLIC_CONTACT_EMAIL || undefined,
+        email: settings.contactEmail || undefined,
         areaServed: costaDelSolZones,
       },
       {
@@ -43,7 +44,7 @@ const PublicHomePage: React.FC = () => {
         })),
       },
     ],
-    [],
+    [settings.contactEmail],
   );
 
   const handleNewBooking = () => {

@@ -203,7 +203,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({ field, value, answers, er
 
   return (
     <div role="radiogroup" aria-label={field.label}>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2">
         {options.map((option) => {
           const Icon = resolveIcon(option.icon);
           const isSelected = selectedValue === option.value;

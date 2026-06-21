@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
-import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
+import { ChevronLeft, ChevronDown, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
@@ -402,6 +402,204 @@ function TreeAccessDifficultyToggle({
   );
 }
 
+/**
+ * Nota para el jardinero, aislada en su propio componente con estado local.
+ * Teclear aquí solo re-renderiza este textarea, no toda la página de Detalles
+ * (~5.900 líneas). El valor se publica al padre vía `onChange`, que únicamente
+ * actualiza una ref, por lo que el padre no se re-renderiza en cada pulsación.
+ */
+const GardenerNote: React.FC<{ defaultValue: string; onChange: (value: string) => void }> = ({ defaultValue, onChange }) => {
+  const [value, setValue] = useState(defaultValue);
+  // Re-sincroniza si la nota cambia desde fuera (p. ej. cambio de servicio/contexto).
+  useEffect(() => { setValue(defaultValue); }, [defaultValue]);
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => { setValue(e.target.value); onChange(e.target.value); }}
+      placeholder="Ej: cuidado con el perro; entra por la puerta lateral…"
+      className="w-full p-4 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-base bg-gray-50"
+      rows={3}
+    />
+  );
+};
+
+interface LawnZoneCardProps {
+    zone: any;
+    index: number;
+    uploadingIndices?: Set<number>;
+    isAnalyzing: boolean;
+    loadingMessage: string;
+    onAddPhotos: (zoneId: string, e: React.ChangeEvent<HTMLInputElement>) => void;
+    onToggleSelection: (zoneId: string, i: number) => void;
+    onRemovePhoto: (zoneId: string, i: number) => void;
+    onAnalyze: (zoneId: string) => void;
+    onRemoveZone: (zoneId: string) => void;
+    onDeleteResult: (zoneId: string) => void;
+}
+
+/**
+ * Tarjeta de una zona de césped, extraída y memoizada. Recibe callbacks estables
+ * (vía ref en el padre), de modo que al cambiar una zona solo se re-renderiza la suya.
+ * Cuando la zona ya está analizada, se colapsa a un resumen con botón "Editar".
+ * No cambia ninguna lógica de negocio: solo encapsula el render y añade el colapso.
+ */
+const LawnZoneCard = React.memo(({
+    zone,
+    index,
+    uploadingIndices,
+    isAnalyzing,
+    loadingMessage,
+    onAddPhotos,
+    onToggleSelection,
+    onRemovePhoto,
+    onAnalyze,
+    onRemoveZone,
+    onDeleteResult,
+}: LawnZoneCardProps) => {
+    const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
+        analysisLevel: zone.analysisLevel,
+        isFailed: zone.isFailed,
+        observations: zone.observations,
+        analyzedIndices: zone.analyzedIndices,
+    }) || zone.quantity > 0;
+    const isFailedResult = hasCanonicalAnalysisFailure(zone.analysisV2, {
+        analysisLevel: zone.analysisLevel,
+        isFailed: zone.isFailed,
+        observations: zone.observations,
+    });
+    const allPhotos = zone.photoUrls || [];
+    const [expanded, setExpanded] = useState(false);
+    const collapsible = isAnalyzed && !isFailedResult;
+    const showFull = !collapsible || expanded || isAnalyzing;
+
+    const resultStats = [
+        { label: 'Superficie', value: `${zone.quantity} m²` },
+        { label: 'Estado', value: <span className="capitalize">{zone.state}</span> },
+    ];
+
+    return (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
+                        {index + 1}
+                    </div>
+                    <h3 className="font-semibold text-gray-900">Zona de Césped {index + 1}</h3>
+                    <span className="text-xs text-gray-500 ml-1 font-normal">({allPhotos.length}/5 fotos)</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    {collapsible && (
+                        <button
+                            type="button"
+                            onClick={() => setExpanded((v) => !v)}
+                            aria-expanded={expanded}
+                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-green-700 hover:bg-green-50 hover:text-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
+                        >
+                            {expanded ? 'Ocultar' : 'Editar'}
+                            <ChevronDown aria-hidden className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => onRemoveZone(zone.id)}
+                        className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors [touch-action:manipulation]"
+                        title={isAnalyzed ? 'Eliminar resultado de análisis' : 'Eliminar zona'}
+                    >
+                        <Trash2 className="w-5 h-5" />
+                    </button>
+                </div>
+            </div>
+
+            {showFull ? (
+                <>
+                    {/* Photos Area for this Zone */}
+                    <ZonePhotoGallery
+                        photos={allPhotos}
+                        photoIds={normalizePhotoIdentityList(zone)}
+                        uploadingIndices={uploadingIndices}
+                        selectedIndices={getDefaultSelectedPhotoIndices(allPhotos.length, zone.selectedIndices)}
+                        analyzedIndices={getCanonicalAnalyzedPhotoIndices(zone.analysisV2, {
+                            analyzedIndices: zone.analyzedIndices,
+                            selectedIndices: zone.selectedIndices,
+                            totalPhotoCount: allPhotos.length,
+                        })}
+                        isAnalyzing={isAnalyzing}
+                        isAnalyzed={isAnalyzed}
+                        analysis={zone.analysisV2}
+                        analysisLevel={zone.analysisLevel}
+                        observations={zone.observations}
+                        loadingMessage={loadingMessage}
+                        onRetryAnalysis={() => onAnalyze(zone.id)}
+                        onToggleSelection={(i) => onToggleSelection(zone.id, i)}
+                        onRemovePhoto={(i) => onRemovePhoto(zone.id, i)}
+                        onAddPhotos={(e) => onAddPhotos(zone.id, e)}
+                    />
+
+                    {/* Actions / Results */}
+                    <div className="mt-2">
+                        {!isAnalyzed && allPhotos.length > 0 && (
+                            <ZoneActionButton
+                                onClick={() => onAnalyze(zone.id)}
+                                isAnalyzing={isAnalyzing}
+                                isAnalyzed={isAnalyzed}
+                                disabled={isAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0)}
+                            />
+                        )}
+                        {allPhotos.length === 0 && (
+                            <p className="text-xs text-center text-amber-600 mt-2 mb-4">
+                                Añade al menos una foto para analizar
+                            </p>
+                        )}
+                    </div>
+
+                    {isAnalyzed && (
+                        <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                            {isFailedResult ? (
+                                <AnalysisFailedCard
+                                    analysis={zone.analysisV2}
+                                    message={zone.observations?.[0]}
+                                    onReanalyze={() => onAnalyze(zone.id)}
+                                />
+                            ) : (
+                                <>
+                                    <ServiceResultCard
+                                        title={zone.species || 'Césped general'}
+                                        analysis={zone.analysisV2}
+                                        analysisLevel={zone.analysisLevel}
+                                        stats={resultStats}
+                                        observations={zone.observations}
+                                        onDelete={() => onDeleteResult(zone.id)}
+                                    />
+                                    <div className="mt-3">
+                                        <ZoneActionButton
+                                            onClick={() => onAnalyze(zone.id)}
+                                            isAnalyzing={isAnalyzing}
+                                            isAnalyzed={isAnalyzed}
+                                            disabled={isAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </>
+            ) : (
+                <ServiceResultCard
+                    title={zone.species || 'Césped general'}
+                    analysis={zone.analysisV2}
+                    analysisLevel={zone.analysisLevel}
+                    stats={resultStats}
+                    observations={zone.observations}
+                    onDelete={() => onDeleteResult(zone.id)}
+                />
+            )}
+        </div>
+    );
+});
+
+LawnZoneCard.displayName = 'LawnZoneCard';
+
 const DetailsPage: React.FC = () => {
   const {
     bookingData,
@@ -438,16 +636,20 @@ const DetailsPage: React.FC = () => {
       // Skip sync if currently uploading
       if (uploadingIndices.size > 0) return;
 
-      if (bookingData.photos && bookingData.photos.length > 0) setPhotos(bookingData.photos);
-      else if (primaryMainPhotoUrls.length > 0) setPhotos(primaryMainPhotoUrls);
-      else setPhotos([]);
+      const next = (bookingData.photos && bookingData.photos.length > 0)
+        ? bookingData.photos
+        : (primaryMainPhotoUrls.length > 0 ? primaryMainPhotoUrls : []);
+      // Evita repintar la galería si el contenido no cambió (mismo orden y mismas refs).
+      setPhotos((prev) =>
+        prev.length === next.length && prev.every((p, i) => p === next[i]) ? prev : next
+      );
   }, [bookingData.photos, primaryMainPhotoUrls, uploadingIndices.size]);
 
-  const [description, setDescription] = useState(bookingData.description);
-  
-  // Sync description when bookingData changes (e.g. context switch)
+  const descriptionRef = useRef<string>(bookingData.description ?? '');
+
+  // Mantener la ref de la nota sincronizada con cambios externos (p. ej. cambio de contexto).
   useEffect(() => {
-      setDescription(bookingData.description);
+      descriptionRef.current = bookingData.description ?? '';
   }, [bookingData.description]);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.5-flash'>('gemini-2.5-flash');
@@ -469,6 +671,26 @@ const DetailsPage: React.FC = () => {
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [isImageStackExpanded, setIsImageStackExpanded] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Escaneando terreno...');
+
+  // Callbacks estables para las tarjetas de zona (memoización): apuntan siempre al
+  // handler más reciente vía ref, sin recrearse, para que React.memo pueda saltarse
+  // el render de las zonas que no cambian. No altera ningún handler ni su lógica.
+  const lawnCb = useRef<{
+    toggle: (id: string, i: number) => void;
+    remove: (id: string, i: number) => void;
+    add: (id: string, e: React.ChangeEvent<HTMLInputElement>) => void;
+    analyze: (id: string) => void;
+    removeZone: (id: string) => void;
+    deleteResult: (id: string) => void;
+  } | null>(null);
+  const lawnHandlers = useMemo(() => ({
+    onAddPhotos: (id: string, e: React.ChangeEvent<HTMLInputElement>) => lawnCb.current?.add(id, e),
+    onToggleSelection: (id: string, i: number) => lawnCb.current?.toggle(id, i),
+    onRemovePhoto: (id: string, i: number) => lawnCb.current?.remove(id, i),
+    onAnalyze: (id: string) => lawnCb.current?.analyze(id),
+    onRemoveZone: (id: string) => lawnCb.current?.removeZone(id),
+    onDeleteResult: (id: string) => lawnCb.current?.deleteResult(id),
+  }), []);
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean;
     title: string;
@@ -1404,7 +1626,7 @@ const DetailsPage: React.FC = () => {
         manualDeclarationId: declarationId,
         manualConsent: { ...consent, declaredVariables },
         photos: [],
-        description,
+        description: descriptionRef.current,
       };
       commitDetailsPatch(fullPatch, { saveAfterCommit: true });
       if (activeServiceId) {
@@ -1486,13 +1708,13 @@ const DetailsPage: React.FC = () => {
     }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
-    setBookingData({ photos: filePhotos, description });
+    setBookingData({ photos: filePhotos, description: descriptionRef.current });
     
     // Explicit persist before leaving
     if (bookingData.serviceIds?.[0]) {
         updateServiceData(bookingData.serviceIds[0], {
             photos: filePhotos,
-            description,
+            description: descriptionRef.current,
             // Ensure all current context is saved
             aiTasks: bookingData.aiTasks,
             estimatedHours: bookingData.estimatedHours,
@@ -2325,6 +2547,21 @@ const DetailsPage: React.FC = () => {
              updateServiceData(bookingData.serviceIds[0], { lawnZones: newZones });
         }
         saveProgress();
+      }
+    });
+  };
+
+  const deleteLawnResult = (zoneId: string) => {
+    openConfirm({
+      title: '¿Eliminar resultado?',
+      message: 'Se borrarán los datos del análisis, pero las fotos se mantendrán para poder re-analizar.',
+      onConfirm: () => {
+        const zones = [...(bookingData.lawnZones || [])];
+        const idx = zones.findIndex(z => z.id === zoneId);
+        if (idx !== -1) {
+          zones[idx] = resetAnalysisCommonFields({ ...zones[idx], quantity: 0, species: '', state: 'normal' });
+          commitSimplePhotoCollectionPatch('lawnZones', zones);
+        }
       }
     });
   };
@@ -4056,6 +4293,16 @@ const analyzeTreeGroup = async (id: string) => {
 
   // --- End New Logic ---
 
+  // Mantener la ref de callbacks de césped apuntando a los handlers actuales (cada render).
+  lawnCb.current = {
+    toggle: toggleLawnPhotoSelection,
+    remove: removePhotoFromZone,
+    add: handleLawnFileSelect,
+    analyze: analyzeLawnZone,
+    removeZone: removeLawnZone,
+    deleteResult: deleteLawnResult,
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -4210,131 +4457,17 @@ const analyzeTreeGroup = async (id: string) => {
                                  </div>
                              )}
 
-                             {(bookingData.lawnZones || []).map((zone, idx) => {
-                                const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
-                                  analysisLevel: zone.analysisLevel,
-                                  isFailed: zone.isFailed,
-                                  observations: zone.observations,
-                                  analyzedIndices: zone.analyzedIndices
-                                }) || zone.quantity > 0;
-                                const isFailedResult = hasCanonicalAnalysisFailure(zone.analysisV2, {
-                                  analysisLevel: zone.analysisLevel,
-                                  isFailed: zone.isFailed,
-                                  observations: zone.observations
-                                });
-                                const allPhotos = zone.photoUrls || [];
-                                const isZoneAnalyzing = lawnAnalyzingZoneIds.has(zone.id);
-
-                                return (
-                                     <div key={zone.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                                         {/* Header */}
-                                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-100">
-                                             <div className="flex items-center gap-2">
-                                                 <div className="w-6 h-6 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-xs font-bold">
-                                                     {idx + 1}
-                                                 </div>
-                                                 <h3 className="font-semibold text-gray-900">Zona de Césped {idx + 1}</h3>
-                                                <span className="text-xs text-gray-500 ml-1 font-normal">({allPhotos.length}/5 fotos)</span>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                 <button 
-                                                     onClick={() => removeLawnZone(zone.id)}
-                                                     className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"
-                                                     title={isAnalyzed ? "Eliminar resultado de análisis" : "Eliminar zona"}
-                                                 >
-                                                     <Trash2 className="w-5 h-5" />
-                                                 </button>
-                                             </div>
-                                         </div>
-
-                                         {/* Photos Area for this Zone */}
-                                         <ZonePhotoGallery
-                                             photos={allPhotos}
-                                             photoIds={normalizePhotoIdentityList(zone)}
-                                             uploadingIndices={lawnUploads[zone.id]}
-                                            selectedIndices={getDefaultSelectedPhotoIndices(allPhotos.length, zone.selectedIndices)}
-                                            analyzedIndices={getCanonicalAnalyzedPhotoIndices(zone.analysisV2, {
-                                              analyzedIndices: zone.analyzedIndices,
-                                              selectedIndices: zone.selectedIndices,
-                                              totalPhotoCount: allPhotos.length
-                                            })}
-                                             isAnalyzing={isZoneAnalyzing}
-                                             isAnalyzed={isAnalyzed}
-                                             analysis={zone.analysisV2}
-                                             analysisLevel={zone.analysisLevel}
-                                             observations={zone.observations}
-                                             loadingMessage={getAnalysisLoadingMessage('Corte de césped')}
-                                             onRetryAnalysis={() => analyzeLawnZone(zone.id)}
-                                             onToggleSelection={(i) => toggleLawnPhotoSelection(zone.id, i)}
-                                             onRemovePhoto={(i) => removePhotoFromZone(zone.id, i)}
-                                             onAddPhotos={(e) => handleLawnFileSelect(zone.id, e)}
-                                         />
-
-                                         {/* Actions / Results */}
-                                         <div className="mt-2">
-                                             {!isAnalyzed && allPhotos.length > 0 && (
-                                                 <ZoneActionButton
-                                                     onClick={() => analyzeLawnZone(zone.id)}
-                                                     isAnalyzing={isZoneAnalyzing}
-                                                     isAnalyzed={isAnalyzed}
-                                                     disabled={isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0)}
-                                                 />
-                                             )}
-                                             {allPhotos.length === 0 && (
-                                                 <p className="text-xs text-center text-amber-600 mt-2 mb-4">
-                                                     Añade al menos una foto para analizar
-                                                 </p>
-                                             )}
-                                         </div>
-
-                                         {isAnalyzed && (
-                                             <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                               {isFailedResult ? (
-                                                    <AnalysisFailedCard 
-                                                        analysis={zone.analysisV2}
-                                                        message={zone.observations?.[0]} 
-                                                        onReanalyze={() => analyzeLawnZone(zone.id)} 
-                                                    />
-                                                ) : (
-                                                    <ServiceResultCard
-                                                        title={zone.species || 'Césped general'}
-                                                        analysis={zone.analysisV2}
-                                                        analysisLevel={zone.analysisLevel}
-                                                        stats={[
-                                                            { label: 'Superficie', value: `${zone.quantity} m²` },
-                                                            { label: 'Estado', value: <span className="capitalize">{zone.state}</span> }
-                                                        ]}
-                                                        observations={zone.observations}
-                                                        onDelete={() => {
-                                                            openConfirm({
-                                                                title: '¿Eliminar resultado?',
-                                                                message: 'Se borrarán los datos del análisis, pero las fotos se mantendrán para poder re-analizar.',
-                                                                onConfirm: () => {
-                                                                    const zones = [...(bookingData.lawnZones || [])];
-                                                                    const idx = zones.findIndex(z => z.id === zone.id);
-                                                                    if (idx !== -1) {
-                                                                        zones[idx] = resetAnalysisCommonFields({ ...zones[idx], quantity: 0, species: '', state: 'normal' });
-                                                                        commitSimplePhotoCollectionPatch('lawnZones', zones);
-                                                                    }
-                                                                }
-                                                            });
-                                                        }}
-                                                    />
-                                                )}
-                                                
-                                                <div className="mt-3">
-                                                    <ZoneActionButton
-                                                         onClick={() => analyzeLawnZone(zone.id)}
-                                                         isAnalyzing={isZoneAnalyzing}
-                                                         isAnalyzed={isAnalyzed}
-                                                         disabled={isZoneAnalyzing || (zone.selectedIndices !== undefined && zone.selectedIndices.length === 0) || allPhotos.length === 0}
-                                                     />
-                                                </div>
-                                             </div>
-                                         )}
-                                     </div>
-                                 );
-                             })}
+                             {(bookingData.lawnZones || []).map((zone, idx) => (
+                                 <LawnZoneCard
+                                     key={zone.id}
+                                     zone={zone}
+                                     index={idx}
+                                     uploadingIndices={lawnUploads[zone.id]}
+                                     isAnalyzing={lawnAnalyzingZoneIds.has(zone.id)}
+                                     loadingMessage={getAnalysisLoadingMessage('Corte de césped')}
+                                     {...lawnHandlers}
+                                 />
+                             ))}
 
                              {(() => {
                                  const lawnZones = bookingData.lawnZones || [];
@@ -5205,7 +5338,7 @@ const analyzeTreeGroup = async (id: string) => {
                                 <div className="space-y-3">
                                   <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Contexto del tratamiento</div>
                                   <div>
-                                    <label className="text-xs text-gray-500 block mb-2">Alcance del tratamiento</label>
+                                    <label className="text-sm font-medium text-gray-600 block mb-2">Alcance del tratamiento</label>
                                     <div className="flex flex-wrap gap-2">
                                       {PHYTOSANITARY_SCOPE_OPTIONS.map((option) => {
                                         const currentScope = Array.isArray((zone as any).scope) ? (zone as any).scope : [(zone as any).scope].filter(Boolean);
@@ -5260,7 +5393,7 @@ const analyzeTreeGroup = async (id: string) => {
                                     </div>
                                   </div>
                                   <div>
-                                      <label className="text-xs text-gray-500 block mb-1">Tipo de tratamiento contextual</label>
+                                      <label className="text-sm font-medium text-gray-600 block mb-1">Tipo de tratamiento contextual</label>
                                       <select
                                         value={(zone as any).requestedTreatment || ''}
                                         onChange={(e) => {
@@ -5280,7 +5413,7 @@ const analyzeTreeGroup = async (id: string) => {
 
                                           commitPhytosanitaryZones(next);
                                         }}
-                                        className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white"
+                                        className="w-full p-2.5 border border-gray-300 rounded-lg text-base bg-white"
                                       >
                                         <option value="">Seleccionar</option>
                                         {PHYTOSANITARY_REQUEST_TREATMENT_OPTIONS.map((option) => (
@@ -5292,6 +5425,7 @@ const analyzeTreeGroup = async (id: string) => {
                                     <span className="text-sm">Quiero opción ecológica</span>
                                     <input
                                       type="checkbox"
+                                      className="h-5 w-5 accent-green-600 shrink-0"
                                       checked={Boolean((zone as any).wantsEco)}
                                       disabled={(zone as any).type?.includes('endoterapia')}
                                       onChange={(e) => {
@@ -5824,12 +5958,9 @@ const analyzeTreeGroup = async (id: string) => {
                  No afecta al precio
               </span>
           </div>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej: cuidado con el perro; entra por la puerta lateral…"
-            className="w-full p-4 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm bg-gray-50"
-            rows={3}
+          <GardenerNote
+            defaultValue={bookingData.description ?? ''}
+            onChange={(value) => { descriptionRef.current = value; }}
           />
       </div>
 
@@ -5952,7 +6083,7 @@ const analyzeTreeGroup = async (id: string) => {
               getPhytosanitaryValidation: (zone) => getPhytosanitaryValidation(zone as any),
               isPhytosanitaryZoneAnalyzed: (zone) => isPhytosanitaryZoneAnalyzed(zone as any),
             })}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
             {getDetailsContinueLabel(bookingData, serviceFlags)}
           </button>

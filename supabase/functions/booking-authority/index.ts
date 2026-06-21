@@ -328,6 +328,47 @@ function buildAvailabilityIndex(rows: AvailabilityRow[]) {
   return byProvider;
 }
 
+// Fetches min_notice_hours per provider from recurring_availability_settings.
+// Returns 0 for providers without a setting (no restriction).
+async function fetchMinNoticeSettings(
+  admin: ReturnType<typeof createClient>,
+  providerIds: string[],
+): Promise<Record<string, number>> {
+  if (providerIds.length === 0) return {};
+  const { data } = await admin
+    .from('recurring_availability_settings')
+    .select('gardener_id, min_notice_hours')
+    .in('gardener_id', providerIds);
+  if (!data) return {};
+  return Object.fromEntries(
+    (data as { gardener_id: string; min_notice_hours: number | null }[]).map((row) => [
+      String(row.gardener_id),
+      Math.max(0, Number(row.min_notice_hours ?? 0)),
+    ]),
+  );
+}
+
+// Removes from a provider's date map any hour whose slot datetime is within
+// minNoticeHours of nowMs (server UTC milliseconds).
+// Slots are interpreted as UTC start times: {date}T{HH}:00:00Z.
+function applyMinNoticeFilter(
+  providerDates: Map<string, number[]>,
+  minNoticeHours: number,
+  nowMs: number,
+): Map<string, number[]> {
+  if (minNoticeHours <= 0) return providerDates;
+  const cutoffMs = nowMs + minNoticeHours * 3_600_000;
+  const filtered = new Map<string, number[]>();
+  providerDates.forEach((hours, date) => {
+    const validHours = hours.filter((hour) => {
+      const slotMs = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00Z`).getTime();
+      return slotMs >= cutoffMs;
+    });
+    if (validHours.length > 0) filtered.set(date, validHours);
+  });
+  return filtered;
+}
+
 async function buildQuotePreview(params: {
   bookingInput: SerializableBookingData;
   providerId: string;
@@ -534,6 +575,8 @@ Deno.serve(async (req: Request) => {
       const providerProfiles = await fetchProviderProfiles(admin, providerIds);
       const availabilityRows = await fetchAvailabilityRows(admin, providerIds, selectedDate, endDate);
       const availabilityIndex = buildAvailabilityIndex(availabilityRows);
+      const noticeSettings = await fetchMinNoticeSettings(admin, providerIds);
+      const nowMs = Date.now();
 
       const quotes: Record<string, QuotePreview> = {};
       const earliestByProvider: Record<string, { date: string; startHour: number } | null> = {};
@@ -541,13 +584,15 @@ Deno.serve(async (req: Request) => {
       const eligibleProviderIds: string[] = [];
 
       for (const providerId of providerIds) {
+        const rawDates = availabilityIndex.get(providerId) || new Map<string, number[]>();
+        const providerDates = applyMinNoticeFilter(rawDates, noticeSettings[providerId] ?? 0, nowMs);
         const evaluation = await evaluateProviderEligibility({
           admin,
           bookingInput,
           providerId,
           priceRow: priceRows[providerId],
           profile: providerProfiles[providerId],
-          providerDates: availabilityIndex.get(providerId) || new Map<string, number[]>(),
+          providerDates,
           requestedDate: selectedDate,
           windowEndDate: endDate,
         });
@@ -581,7 +626,9 @@ Deno.serve(async (req: Request) => {
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
-      const providerDates = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
+      const rawDates = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const providerDates = applyMinNoticeFilter(rawDates, noticeSettings[providerId] ?? 0, Date.now());
       const evaluation = await evaluateProviderEligibility({
         admin,
         bookingInput,
@@ -619,7 +666,11 @@ Deno.serve(async (req: Request) => {
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const availabilityRows = await fetchAvailabilityRows(admin, [providerId], start, end);
-      const availabilityIndex = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
+      const nowMs = Date.now();
+      const minNotice = noticeSettings[providerId] ?? 0;
+      const rawIndex = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const availabilityIndex = applyMinNoticeFilter(rawIndex, minNotice, nowMs);
       const evaluation = await evaluateProviderEligibility({
         admin,
         bookingInput,
@@ -694,14 +745,16 @@ Deno.serve(async (req: Request) => {
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
-      const providerDates = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
+      const rawDatesForQuote = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
+      const providerDatesForQuote = applyMinNoticeFilter(rawDatesForQuote, noticeSettings[providerId] ?? 0, Date.now());
       const evaluation = await evaluateProviderEligibility({
         admin,
         bookingInput,
         providerId,
         priceRow: priceRows[providerId],
         profile: providerProfiles[providerId],
-        providerDates,
+        providerDates: providerDatesForQuote,
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,

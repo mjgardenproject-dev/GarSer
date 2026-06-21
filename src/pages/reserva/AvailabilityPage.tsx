@@ -43,8 +43,8 @@ const AvailabilityPage: React.FC = () => {
         date.setDate(today.getDate() + i);
         const dateStr = date.toISOString().split('T')[0];
         
-        // Generar slots cada hora de 9:00 a 18:00
-        for (let hour = 9; hour <= 18; hour++) {
+        // Generar slots cada hora de 7:00 a 19:00 (bloques de inicio; fin hasta 20:00)
+        for (let hour = 7; hour <= 19; hour++) {
           if (Math.random() > 0.3) { // 70% de disponibilidad
             mockAvailability.push({
               id: `${dateStr}-${hour}`,

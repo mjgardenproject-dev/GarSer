@@ -127,7 +127,7 @@ export class BufferService {
 
         // Crear bloques de tiempo base
         const baseBlocks: TimeBlock[] = [];
-        for (let hour = 8; hour <= 19; hour++) {
+        for (let hour = 7; hour <= 19; hour++) {
           const isAvailable = availableHours.has(hour);
           baseBlocks.push({
             hour,
@@ -168,7 +168,7 @@ export class BufferService {
       return aHour - bHour;
     });
 
-    // Buscar el próximo slot disponible
+    // Buscar el próximo slot disponible (bloques de inicio 7:00 .. 19:00)
     for (let hour = requestedStartHour; hour <= 19; hour++) {
       const hasConflict = sortedBookings.some(booking => {
         const bookingStartHour = parseInt(booking.start_time.split(':')[0]);

@@ -15,6 +15,10 @@ vi.mock('../../contexts/BookingContext', () => ({
   useBooking: () => mocks.useBooking(),
 }))
 
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({ user: null, loading: false }),
+}))
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({

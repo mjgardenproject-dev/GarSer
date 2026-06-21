@@ -3,12 +3,12 @@ import * as compatService from './availabilityServiceCompat';
 import { AvailabilityBlock, TimeBlock } from '../types';
 import { format, addDays, startOfDay, parseISO } from 'date-fns';
 
-// Generar bloques de tiempo para un día (8:00 AM a 8:00 PM)
+// Generar bloques de tiempo para un día (7:00 AM a 8:00 PM)
 export function generateDailyTimeBlocks(): TimeBlock[] {
   const blocks: TimeBlock[] = [];
-  
-  // Solo generar bloques de 8:00 a 19:00 (8:00-9:00 hasta 19:00-20:00)
-  for (let hour = 8; hour <= 19; hour++) {
+
+  // Generar bloques de inicio de 7:00 a 19:00 (7:00-8:00 hasta 19:00-20:00)
+  for (let hour = 7; hour <= 19; hour++) {
     blocks.push({
       hour,
       label: `${hour.toString().padStart(2, '0')}:00`,

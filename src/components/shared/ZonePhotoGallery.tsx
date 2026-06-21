@@ -192,7 +192,7 @@ export const ZonePhotoGallery: React.FC<ZonePhotoGalleryProps> = ({
         <div className="mb-4">
             <div className="mb-2 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
                         <span>{emptyText} ({photos.length})</span>
                         {headerBadge && (
                             <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-semibold ${headerBadge.className}`}>
@@ -201,7 +201,7 @@ export const ZonePhotoGallery: React.FC<ZonePhotoGalleryProps> = ({
                         )}
                     </div>
                     {photos.length > 0 && (
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                             <span>{selectionSummary}</span>
                             {analyzedSummary && <span>{analyzedSummary}</span>}
                         </div>
@@ -234,7 +234,7 @@ export const ZonePhotoGallery: React.FC<ZonePhotoGalleryProps> = ({
                         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                         <div className="min-w-0">
                             <p className="font-medium">{presentation.title}</p>
-                            <p className="text-xs opacity-90">{presentation.message}</p>
+                            <p className="text-sm opacity-90">{presentation.message}</p>
                         </div>
                     </div>
                     {onRetryAnalysis && (
@@ -254,7 +254,7 @@ export const ZonePhotoGallery: React.FC<ZonePhotoGalleryProps> = ({
             )}
 
             {!hasFailedResult && hasCanonicalResult && (
-                <div className={`mb-3 rounded-xl border px-3 py-2.5 text-xs ${
+                <div className={`mb-3 rounded-xl border px-3 py-2.5 text-sm ${
                     hasPendingSelectionChanges
                         ? 'border-amber-200 bg-amber-50 text-amber-800'
                         : 'border-emerald-200 bg-emerald-50 text-emerald-800'
@@ -296,7 +296,7 @@ export const ZonePhotoGallery: React.FC<ZonePhotoGalleryProps> = ({
                             />
                         </div>
                     ))}
-                    <div className="absolute bottom-2 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] font-medium text-gray-700 shadow-sm z-20 translate-y-1 group-hover:-translate-y-1 transition-transform border border-gray-100 flex items-center gap-1.5">
+                    <div className="absolute bottom-2 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-medium text-gray-700 shadow-sm z-20 translate-y-1 group-hover:-translate-y-1 transition-transform border border-gray-100 flex items-center gap-1.5">
                         <Image className="w-3 h-3" />
                         Editar fotos
                     </div>
@@ -332,7 +332,7 @@ export const ZonePhotoGallery: React.FC<ZonePhotoGalleryProps> = ({
                                    )}
                                    
                                     {isAnalyzedPhoto && (
-                                        <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
+                                        <div className="absolute bottom-1 left-1 bg-green-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
                                             Analizada
                                         </div>
                                     )}
@@ -362,7 +362,7 @@ export const ZonePhotoGallery: React.FC<ZonePhotoGalleryProps> = ({
                                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-green-100 transition-colors mb-1">
                                     <Image className="w-4 h-4 text-gray-500 group-hover:text-green-600" />
                                 </div>
-                                <span className="text-[10px] font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
+                                <span className="text-xs font-medium text-gray-500 group-hover:text-green-700">Añadir foto</span>
                                 <input 
                                     key={`zone-photo-input-${fileInputKey}`}
                                     type="file" 

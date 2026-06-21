@@ -56,11 +56,11 @@ export const ServiceResultCard: React.FC<ServiceResultCardProps> = ({
             
             <div className="flex justify-between items-start">
                 <div className="min-w-0">
-                    <h4 className="font-semibold text-gray-900 text-sm">
+                    <h4 className="font-semibold text-gray-900 text-base">
                         {title}
                     </h4>
-                    
-                    <div className="flex items-center flex-wrap gap-2 text-xs text-gray-600 mt-1">
+
+                    <div className="flex items-center flex-wrap gap-2 text-sm text-gray-600 mt-1">
                         {stats.map((stat, index) => (
                             <React.Fragment key={index}>
                                 <span>
@@ -75,11 +75,11 @@ export const ServiceResultCard: React.FC<ServiceResultCardProps> = ({
 
                     {(analysisLevel !== undefined || analysis) && (
                         <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeClass}`}>
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass}`}>
                                 {presentation.badgeLabel}
                             </span>
                             {presentation.status === 'partial' && (
-                                <span className="text-[11px] text-gray-500">
+                                <span className="text-xs text-gray-500">
                                     La estimación sigue siendo utilizable para presupuesto.
                                 </span>
                             )}
@@ -99,7 +99,7 @@ export const ServiceResultCard: React.FC<ServiceResultCardProps> = ({
             </div>
 
             {resolvedObservations.length > 0 && (
-                <div className="mt-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-600 border border-gray-100">
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm text-gray-600 border border-gray-100">
                     <div className="font-medium mb-1 text-gray-700">Observaciones:</div>
                     <ul className="list-disc list-inside space-y-0.5 ml-1">
                         {resolvedObservations.map((obs, k) => (

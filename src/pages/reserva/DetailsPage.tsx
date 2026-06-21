@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
-import { ChevronLeft, ChevronDown, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
+import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
@@ -468,9 +468,6 @@ const LawnZoneCard = React.memo(({
         observations: zone.observations,
     });
     const allPhotos = zone.photoUrls || [];
-    const [expanded, setExpanded] = useState(false);
-    const collapsible = isAnalyzed && !isFailedResult;
-    const showFull = !collapsible || expanded || isAnalyzing;
 
     const resultStats = [
         { label: 'Superficie', value: `${zone.quantity} m²` },
@@ -488,18 +485,7 @@ const LawnZoneCard = React.memo(({
                     <h3 className="font-semibold text-gray-900">Zona de Césped {index + 1}</h3>
                     <span className="text-xs text-gray-500 ml-1 font-normal">({allPhotos.length}/5 fotos)</span>
                 </div>
-                <div className="flex items-center gap-1">
-                    {collapsible && (
-                        <button
-                            type="button"
-                            onClick={() => setExpanded((v) => !v)}
-                            aria-expanded={expanded}
-                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-green-700 hover:bg-green-50 hover:text-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
-                        >
-                            {expanded ? 'Ocultar' : 'Editar'}
-                            <ChevronDown aria-hidden className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                        </button>
-                    )}
+                <div className="flex gap-2">
                     <button
                         type="button"
                         onClick={() => onRemoveZone(zone.id)}
@@ -511,8 +497,7 @@ const LawnZoneCard = React.memo(({
                 </div>
             </div>
 
-            {showFull ? (
-                <>
+            <>
                     {/* Photos Area for this Zone */}
                     <ZonePhotoGallery
                         photos={allPhotos}
@@ -584,16 +569,6 @@ const LawnZoneCard = React.memo(({
                         </div>
                     )}
                 </>
-            ) : (
-                <ServiceResultCard
-                    title={zone.species || 'Césped general'}
-                    analysis={zone.analysisV2}
-                    analysisLevel={zone.analysisLevel}
-                    stats={resultStats}
-                    observations={zone.observations}
-                    onDelete={() => onDeleteResult(zone.id)}
-                />
-            )}
         </div>
     );
 });

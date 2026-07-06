@@ -348,9 +348,32 @@ async function fetchMinNoticeSettings(
   );
 }
 
+// Availability slots are stored in the gardener's local wall-clock time
+// (Europe/Madrid). Converting them to epoch requires the zone's UTC offset at
+// that date, which varies with DST (+01:00 winter, +02:00 summer).
+const AVAILABILITY_TIME_ZONE = 'Europe/Madrid';
+
+function getTimeZoneOffsetMinutes(timeZone: string, at: Date): number {
+  const formatted = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'longOffset',
+  })
+    .formatToParts(at)
+    .find((part) => part.type === 'timeZoneName')?.value || 'GMT+00:00';
+  const match = formatted.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  if (!match) return 0;
+  const sign = match[1] === '-' ? -1 : 1;
+  return sign * (Number(match[2]) * 60 + Number(match[3] || 0));
+}
+
+function localSlotEpochMs(date: string, hour: number): number {
+  const utcGuess = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00Z`).getTime();
+  const offsetMinutes = getTimeZoneOffsetMinutes(AVAILABILITY_TIME_ZONE, new Date(utcGuess));
+  return utcGuess - offsetMinutes * 60_000;
+}
+
 // Removes from a provider's date map any hour whose slot datetime is within
 // minNoticeHours of nowMs (server UTC milliseconds).
-// Slots are interpreted as UTC start times: {date}T{HH}:00:00Z.
 function applyMinNoticeFilter(
   providerDates: Map<string, number[]>,
   minNoticeHours: number,
@@ -360,10 +383,7 @@ function applyMinNoticeFilter(
   const cutoffMs = nowMs + minNoticeHours * 3_600_000;
   const filtered = new Map<string, number[]>();
   providerDates.forEach((hours, date) => {
-    const validHours = hours.filter((hour) => {
-      const slotMs = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00Z`).getTime();
-      return slotMs >= cutoffMs;
-    });
+    const validHours = hours.filter((hour) => localSlotEpochMs(date, hour) >= cutoffMs);
     if (validHours.length > 0) filtered.set(date, validHours);
   });
   return filtered;

@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateOperationalEligibility, getValidStartHours } from './bookingEligibilityCore';
+import {
+  evaluateOperationalEligibility,
+  getClientCoordinates,
+  getProviderCoordinates,
+  getValidStartHours,
+} from './bookingEligibilityCore';
+import type { SerializableBookingData } from './bookingQuoteCore';
 
-const bookingInput = {
+const bookingInput: SerializableBookingData = {
   address: 'Calle Verde 1',
   addressCoordinates: { lat: 40.4168, lng: -3.7038 },
   serviceIds: ['svc-lawn'],
@@ -12,9 +18,9 @@ const bookingInput = {
       state: 'normal',
     },
   ],
-} as const;
+};
 
-const twoHourBookingInput = {
+const twoHourBookingInput: SerializableBookingData = {
   ...bookingInput,
   lawnZones: [
     {
@@ -22,7 +28,7 @@ const twoHourBookingInput = {
       state: 'normal',
     },
   ],
-} as const;
+};
 
 const providerConfig = {
   pricing_method: 'per_hour',
@@ -84,6 +90,54 @@ describe('bookingEligibilityCore', () => {
         message: 'La dirección del cliente queda fuera del radio operativo del profesional.',
       },
     });
+  });
+
+  it('trata coordenadas (0,0) — null island — como ausentes para permitir re-geocodificación', () => {
+    expect(getProviderCoordinates({
+      max_distance: 25,
+      operational_latitude: 0,
+      operational_longitude: 0,
+    })).toBeNull();
+    expect(getClientCoordinates({
+      addressCoordinates: { lat: 0, lng: 0 },
+    } as never)).toBeNull();
+
+    const result = evaluateOperationalEligibility({
+      bookingInput: twoHourBookingInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile: {
+        max_distance: 25,
+        operational_latitude: 0,
+        operational_longitude: 0,
+      },
+      providerDates: new Map([
+        ['2026-06-15', [9, 10]],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+      restrictToRequestedDate: true,
+    });
+
+    expect(result).toEqual({
+      eligible: false,
+      exclusion: {
+        code: 'missing_coordinates',
+        message: 'No se han podido resolver las coordenadas operativas para validar la cobertura.',
+      },
+    });
+  });
+
+  it('rechaza coordenadas fuera de rango pero acepta lat o lng 0 individuales', () => {
+    const profile = (lat: number, lng: number) => ({
+      max_distance: 25,
+      operational_latitude: lat,
+      operational_longitude: lng,
+    });
+    expect(getProviderCoordinates(profile(95, -3.7))).toBeNull();
+    expect(getProviderCoordinates(profile(40.4, 190))).toBeNull();
+    expect(getProviderCoordinates(profile(0, -3.7))).toEqual({ lat: 0, lng: -3.7 });
+    expect(getProviderCoordinates(profile(40.4, 0))).toEqual({ lat: 40.4, lng: 0 });
   });
 
   it('excluye providers cuando faltan coordenadas operativas del jardinero', () => {

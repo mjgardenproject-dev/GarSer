@@ -264,6 +264,17 @@ export async function applyRecurringSchedule(
   try {
     console.log(`Applying recurring schedule for gardener ${gardenerId} for ${weeksToMaintain} weeks`);
 
+    // Guard: an empty template must never wipe existing availability. The loop
+    // below DELETEs each day's availability before re-inserting; with no hours
+    // it would erase manual weekly availability and leave nothing, silently
+    // removing the gardener from search. "No template" = leave availability as-is.
+    const totalScheduledHours = Object.values(scheduleMatrix || {})
+      .reduce((sum, hours) => sum + (hours?.size ?? 0), 0);
+    if (totalScheduledHours === 0) {
+      console.warn('applyRecurringSchedule: empty schedule matrix; skipping to avoid wiping availability');
+      return { success: true };
+    }
+
     const startDate = new Date();
     const endDate = addDays(startDate, weeksToMaintain * 7);
     const startStr = format(startDate, 'yyyy-MM-dd');

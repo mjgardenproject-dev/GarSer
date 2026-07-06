@@ -46,25 +46,24 @@ const buildProviderExclusion = (
   message,
 });
 
-export const getClientCoordinates = (bookingInput: SerializableBookingData) => {
-  const rawLat = bookingInput?.addressCoordinates?.lat;
-  const rawLng = bookingInput?.addressCoordinates?.lng;
+// (0,0) — "null island" — solo puede venir de un guardado fallido, nunca de una
+// dirección real de servicio; tratarlo como coordenadas ausentes permite que el
+// backend re-geocodifique y repare el perfil.
+const toValidCoordinates = (rawLat: unknown, rawLng: unknown) => {
   if (rawLat == null || rawLng == null || rawLat === '' || rawLng === '') return null;
   const lat = Number(rawLat);
   const lng = Number(rawLng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat === 0 && lng === 0) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
   return { lat, lng };
 };
 
-export const getProviderCoordinates = (profile?: ProviderProfileLike | null) => {
-  const rawLat = profile?.operational_latitude;
-  const rawLng = profile?.operational_longitude;
-  if (rawLat == null || rawLng == null || rawLat === '' || rawLng === '') return null;
-  const lat = Number(rawLat);
-  const lng = Number(rawLng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { lat, lng };
-};
+export const getClientCoordinates = (bookingInput: SerializableBookingData) =>
+  toValidCoordinates(bookingInput?.addressCoordinates?.lat, bookingInput?.addressCoordinates?.lng);
+
+export const getProviderCoordinates = (profile?: ProviderProfileLike | null) =>
+  toValidCoordinates(profile?.operational_latitude, profile?.operational_longitude);
 
 export const calculateDistanceKm = (
   a: { lat: number; lng: number },

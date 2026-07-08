@@ -6,7 +6,7 @@ import { getAnalysisPresentation } from '../../shared/analysisV2Details';
 export interface ServiceResultCardProps {
     title: string;
     analysisLevel?: number;
-    stats: Array<{ label: string; value: React.ReactNode }>;
+    stats?: Array<{ label: string; value: React.ReactNode }>;
     observations?: string[];
     analysis?: AnalysisV2Envelope;
     onDelete?: () => void;
@@ -16,7 +16,7 @@ export interface ServiceResultCardProps {
 export const ServiceResultCard: React.FC<ServiceResultCardProps> = ({
     title,
     analysisLevel,
-    stats,
+    stats = [],
     observations,
     analysis,
     onDelete,

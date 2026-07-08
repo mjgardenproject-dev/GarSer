@@ -80,6 +80,40 @@ describe('adaptLegacyAnalysisToV2', () => {
     expect(validateAnalysisV2(analysis)).toEqual([]);
   });
 
+  it('preserva confidences y referencia de escala de setos', () => {
+    const analysis = adaptLegacyAnalysisToV2({
+      serviceName: 'Poda de setos',
+      sourcePhotoCount: 1,
+      legacyResponse: {
+        tareas: [{
+          tipo_servicio: 'Poda de setos',
+          longitud_m: 15,
+          altura_m: 1.8,
+          tipo_seto: '0-2m',
+          estado_seto: 'alta',
+          caras: 1,
+          longitud_confidence: 0.85,
+          altura_confidence: 1.4, // fuera de rango: debe quedar en 1
+          estado_confidence: -0.2, // fuera de rango: debe quedar en 0
+          referencia_escala: 'valla de jardín ≈ 1,2 m',
+          nivel_analisis: 1,
+        }],
+      },
+    });
+
+    const metrics = analysis.service_metrics as HedgeServiceMetrics;
+    expect(metrics).toMatchObject({
+      longitud_m: 15,
+      tipo_seto: '0-2m',
+      estado_seto: 'alta',
+      longitud_confidence: 0.85,
+      altura_confidence: 1,
+      estado_confidence: 0,
+      referencia_escala: 'valla de jardín ≈ 1,2 m',
+    });
+    expect(validateAnalysisV2(analysis)).toEqual([]);
+  });
+
   it('preserva especies, alturas y estado de palmeras', () => {
     const analysis = adaptLegacyAnalysisToV2({
       serviceName: 'Poda de palmeras',

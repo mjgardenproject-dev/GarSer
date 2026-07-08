@@ -468,6 +468,22 @@ function normalizeShrubSize(value: unknown): ShrubSize | null {
 // Superficie plausible máxima de macizos residenciales (post-validación anti-alucinación).
 const SHRUB_MAX_PLAUSIBLE_AREA_M2 = 500;
 
+// Rangos plausibles de setos residenciales (post-validación anti-alucinación).
+const HEDGE_MAX_PLAUSIBLE_HEIGHT_M = 8;
+const HEDGE_MAX_PLAUSIBLE_LENGTH_M = 200;
+
+type HedgeState = 'normal' | 'media' | 'alta';
+
+// El motor cobra condition_surcharges.media/alta según este estado.
+function normalizeHedgeState(value: unknown): HedgeState | null {
+  const normalized = String(value || '').toLowerCase().trim();
+  if (!normalized) return null;
+  if (normalized.includes('alta') || normalized.includes('muy')) return 'alta';
+  if (normalized.includes('media') || normalized.includes('descuidad')) return 'media';
+  if (normalized.includes('normal')) return 'normal';
+  return null;
+}
+
 type ShrubState = 'normal' | 'descuidado' | 'muy descuidado';
 
 function normalizeShrubState(value: unknown): ShrubState | null {
@@ -1182,7 +1198,38 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     let tareas = Array.isArray(ai?.tareas) ? ai.tareas : [];
-    
+
+    // Post-validación de setos: clamps de confidences, estado normalizado y plausibilidad.
+    if (payload.service_name === 'Poda de setos' && tareas.length > 0) {
+      tareas = tareas.map((task: any) => {
+        if (task?.tipo_servicio !== 'Poda de setos') return task;
+        let normalizedLevel = [1, 2, 3].includes(Number(task.nivel_analisis)) ? Number(task.nivel_analisis) : 3;
+        const normalizedObs = Array.isArray(task.observaciones)
+          ? task.observaciones.filter((item: unknown) => typeof item === 'string')
+          : [];
+        const altura = Number(task.altura_m);
+        const longitud = Number(task.longitud_m);
+        // Anti-alucinación: fuera de rango plausible → revisión, nunca forzar el valor.
+        if (
+          normalizedLevel < 3 &&
+          ((Number.isFinite(altura) && altura > HEDGE_MAX_PLAUSIBLE_HEIGHT_M) ||
+            (Number.isFinite(longitud) && longitud > HEDGE_MAX_PLAUSIBLE_LENGTH_M))
+        ) {
+          normalizedLevel = 2;
+          if (!normalizedObs.includes('AMBIGUOUS_SIZE')) normalizedObs.push('AMBIGUOUS_SIZE');
+        }
+        return {
+          ...task,
+          nivel_analisis: normalizedLevel,
+          estado_seto: normalizeHedgeState(task.estado_seto),
+          longitud_confidence: clampConfidence(task.longitud_confidence),
+          altura_confidence: clampConfidence(task.altura_confidence),
+          estado_confidence: clampConfidence(task.estado_confidence),
+          observaciones: normalizedObs.length > 0 ? normalizedObs : task.observaciones ?? null,
+        };
+      });
+    }
+
     // Post-processing: normalize + merge "Poda de plantas y arbustos" tasks
     if (payload.service_name === 'Poda de plantas y arbustos' && tareas.length > 0) {
         const mergedTasks: Record<string, any> = {};

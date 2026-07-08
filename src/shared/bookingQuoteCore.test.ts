@@ -205,6 +205,62 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(veryNeglected.estimatedHours).toBeGreaterThanOrEqual(normal.estimatedHours);
   });
 
+  it('cobra la segunda cara del seto exactamente una vez (length_pricing_m es la longitud base)', () => {
+    const providerConfig = {
+      pricing_method: 'per_quantity',
+      pricing_matrix: { '0-2m': 3, '2-4m': 5, '4-6m': 8 },
+      yield_ml_per_hour: { '0-2m': 30, '2-4m': 20, '4-6m': 10 },
+      condition_surcharges: { media: 20, alta: 50 },
+      waste_removal: { percentage: 0 },
+      minimum_price: 0,
+    };
+
+    const oneFace = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-hedge'],
+        hedgeZones: [{ id: 'hedge-1', type: '2-4m', height: '2-4m', length: 40, length_pricing_m: 40, faces_to_trim: 1, state: 'normal' }],
+      } as any,
+      providerConfig,
+    });
+    const twoFaces = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-hedge'],
+        hedgeZones: [{ id: 'hedge-1', type: '2-4m', height: '2-4m', length: 40, length_pricing_m: 40, faces_to_trim: 2, state: 'normal' }],
+      } as any,
+      providerConfig,
+    });
+
+    // 40 ml × 5 €/ml = 200 €; dos caras = exactamente el doble (400 €), nunca 4×.
+    expect(oneFace.totalPrice).toBe(200);
+    expect(twoFaces.totalPrice).toBe(400);
+    // Las horas también: 40/20 = 2h vs 80/20 = 4h.
+    expect(oneFace.estimatedHours).toBe(2);
+    expect(twoFaces.estimatedHours).toBe(4);
+  });
+
+  it('aplica el recargo de estado del seto (media/alta) cuando la zona lleva state', () => {
+    const providerConfig = {
+      pricing_method: 'per_quantity',
+      pricing_matrix: { '0-2m': 3, '2-4m': 5, '4-6m': 8 },
+      yield_ml_per_hour: { '0-2m': 30, '2-4m': 20, '4-6m': 10 },
+      condition_surcharges: { media: 20, alta: 50 },
+      waste_removal: { percentage: 0 },
+      minimum_price: 0,
+    };
+    const build = (state: string) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-hedge'],
+        hedgeZones: [{ id: 'hedge-1', type: '2-4m', height: '2-4m', length: 10, length_pricing_m: 10, faces_to_trim: 1, state }],
+      } as any,
+      providerConfig,
+    });
+
+    // 50 € base; media +20% → 60 €; alta +50% → 75 €.
+    expect(build('normal').totalPrice).toBe(50);
+    expect(build('media').totalPrice).toBe(60);
+    expect(build('alta').totalPrice).toBe(75);
+  });
+
   it('cotiza setos en modo per_hour sin exigir pricing_matrix', () => {
     const result = buildAuthoritativeBookingQuote({
       bookingData: {

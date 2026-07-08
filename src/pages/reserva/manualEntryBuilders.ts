@@ -25,6 +25,7 @@ import {
   supportsPhytosanitaryForSpecies,
   supportsTrunkPeelingForSpecies,
 } from '../../domain/speciesBusinessRules';
+import { mapHedgeHeightToBand } from '../../domain/hedgeBusinessRules';
 import {
   adaptLawnAnalysisResult,
   adaptShrubAnalysisResult,
@@ -89,11 +90,8 @@ function buildLawnZones(items: ManualAnswers[]) {
   });
 }
 
-function hedgeBandFromHeight(altura: number): '0-2m' | '2-4m' | '4-6m' {
-  if (altura <= 2) return '0-2m';
-  if (altura <= 4) return '2-4m';
-  return '4-6m';
-}
+// SSOT de bandas: src/domain/hedgeBusinessRules.ts (mismas claves que la config del jardinero).
+const hedgeBandFromHeight = mapHedgeHeightToBand;
 
 function buildHedgeZones(items: ManualAnswers[]) {
   return items.map((answers, index) => {

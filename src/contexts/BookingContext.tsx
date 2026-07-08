@@ -181,6 +181,12 @@ export interface BookingData {
     length: number; // meters
     access: 'normal' | 'medio' | 'dificil';
     state?: string;
+    // true cuando el estado (media/alta) fue propuesto por la IA y aún no lo confirmó el cliente.
+    stateProposedByAI?: boolean;
+    // Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente.
+    longitudConfidence?: number | null;
+    alturaConfidence?: number | null;
+    estadoConfidence?: number | null;
     wasteRemoval: boolean;
     photoIds?: string[];
     photoUrls?: string[];

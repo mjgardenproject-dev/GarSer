@@ -99,7 +99,7 @@ export function buildHedgeDevZone(existing?: Partial<HedgeZone>, index = 0): Hed
     tipo_servicio: 'Poda de setos',
     longitud_m: 18,
     altura_m: 2.2,
-    tipo_seto: '1-2m',
+    tipo_seto: '2-4m',
     estado_seto: 'normal',
     caras: 2,
     nivel_analisis: 1,
@@ -113,8 +113,8 @@ export function buildHedgeDevZone(existing?: Partial<HedgeZone>, index = 0): Hed
       base_longitud_m: 18,
       base_altura_m: 2.2,
       caras_recortar: 2,
-      longitud_calculo_m: 36,
-      altura_calculo_m: 4.4,
+      longitud_calculo_m: 18,
+      altura_calculo_m: 2.2,
       metodo: 'dev_seed',
     },
   };
@@ -136,12 +136,13 @@ export function buildHedgeDevZone(existing?: Partial<HedgeZone>, index = 0): Hed
 
   return {
     id: existing?.id || `dev-hedge-${index + 1}`,
-    category: '2-3m',
-    type: '2-3m',
-    height: '2-3m',
+    // Bandas del motor ('0-2m'|'2-4m'|'4-6m') y longitud BASE (el motor multiplica por caras).
+    category: '2-4m',
+    type: '2-4m',
+    height: '2-4m',
     length: 18,
-    length_pricing_m: 36,
-    height_pricing_m: 4.4,
+    length_pricing_m: 18,
+    height_pricing_m: 2.2,
     faces_to_trim: 2,
     hasBackFaceTrim: true,
     state: 'normal',

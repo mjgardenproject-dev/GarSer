@@ -131,6 +131,11 @@ export interface HedgeServiceMetrics {
   tipo_seto: string | null;
   estado_seto: string | null;
   caras: number;
+  /** Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente. */
+  longitud_confidence?: number | null;
+  altura_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
   detalle_caras?: {
     cara_a?: HedgeFaceMetrics;
     cara_b?: HedgeFaceMetrics;
@@ -204,6 +209,9 @@ export interface LegacyAiTask {
   altura_m?: number | null;
   tipo_seto?: string | null;
   estado_seto?: string | null;
+  /** Confidences de setos (0-1); comparten estado_confidence/referencia_escala con arbustos. */
+  longitud_confidence?: number | null;
+  altura_confidence?: number | null;
   caras?: number | null;
   detalle_caras?: HedgeServiceMetrics['detalle_caras'];
   resumen_medicion?: HedgeSummaryMetrics;
@@ -613,6 +621,10 @@ const adaptHedgeMetrics = (legacy: LegacyAnalysisResponse) => {
     tipo_seto: normalizeString(task?.tipo_seto),
     estado_seto: normalizeString(task?.estado_seto),
     caras: Math.max(1, Math.round(toSafeNumber(task?.caras, 1))),
+    longitud_confidence: toConfidence(task?.longitud_confidence),
+    altura_confidence: toConfidence(task?.altura_confidence),
+    estado_confidence: toConfidence(task?.estado_confidence),
+    referencia_escala: normalizeString(task?.referencia_escala),
     detalle_caras: task?.detalle_caras,
     resumen_medicion: task?.resumen_medicion,
   };

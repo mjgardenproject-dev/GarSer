@@ -98,6 +98,27 @@ describe('new_prompts SSOT backend', () => {
     expect(systemPrompt).toContain('"referencia_escala"');
   });
 
+  it('el prompt de setos incluye procedimiento, estado operativo, confidences y rangos plausibles', () => {
+    const assembly = buildAnalysisPromptAssembly({
+      service_name: 'Poda de setos',
+      hedge_faces: { face_a_urls: ['https://example.com/hedge-a.jpg'] },
+    });
+
+    const systemPrompt = String(assembly.messages[0].content);
+    expect(assembly.service).toBe('Poda de setos');
+    expect(systemPrompt).toContain('PROCEDURE');
+    expect(systemPrompt).toContain('STATE DEFINITIONS');
+    expect(systemPrompt).toContain('PLAUSIBLE RANGES');
+    expect(systemPrompt).toContain('CONFIDENCE CALIBRATION');
+    expect(systemPrompt).toContain('"longitud_confidence"');
+    expect(systemPrompt).toContain('"altura_confidence"');
+    expect(systemPrompt).toContain('"estado_confidence"');
+    expect(systemPrompt).toContain('"referencia_escala"');
+    // Las bandas y estados siguen siendo los enums exactos del motor.
+    expect(systemPrompt).toContain('"0-2m" | "2-4m" | "4-6m"');
+    expect(systemPrompt).toContain('"normal" | "media" | "alta"');
+  });
+
   it('etiqueta caras de setos (FACE_A / FACE_B) en el contenido del usuario', () => {
     const hedgeAssembly = buildAnalysisPromptAssembly({
       service_name: 'Poda de setos',

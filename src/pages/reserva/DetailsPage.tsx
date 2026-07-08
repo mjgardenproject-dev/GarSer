@@ -86,6 +86,15 @@ import {
   supportsPhytosanitaryForSpecies,
   supportsTrunkPeelingForSpecies
 } from '../../domain/speciesBusinessRules';
+import {
+  HEDGE_BAND_LABELS,
+  HEDGE_HEIGHT_BANDS,
+  HEDGE_STATE_LABELS,
+  mapHedgeHeightToBand,
+  normalizeHedgeState as normalizeHedgeStateValue,
+  type HedgeHeightBand,
+  type HedgeState,
+} from '../../domain/hedgeBusinessRules';
 import { ManualEntryChoice, type DataInputMode } from '../../components/booking/manual/ManualEntryChoice';
 import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../../components/booking/manual/ManualEntryWizard';
 import {
@@ -1724,6 +1733,13 @@ const DetailsPage: React.FC = () => {
         return;
       }
     }
+    if (debugService === 'Poda de setos') {
+      const validHedges = (bookingData.hedgeZones || []).filter((z: any) => !(z.isFailed === true || z.analysisLevel === 3));
+      if (validHedges.length === 0 || !validHedges.some((z: any) => Number(z.length) > 0)) {
+        toast.error('Analiza al menos una zona de setos con longitud válida para continuar.');
+        return;
+      }
+    }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
     setBookingData({ photos: filePhotos, description: descriptionRef.current });
@@ -2059,10 +2075,11 @@ const DetailsPage: React.FC = () => {
                 const baseLength = Number(resumen.base_longitud_m ?? t.longitud_m ?? 0);
                 const baseHeight = Number(resumen.base_altura_m ?? t.altura_m ?? 0);
                 const facesToTrim = Number(resumen.caras_recortar ?? numericFaces ?? (hasFaceBInResult ? 2 : 1)) >= 2 ? 2 : 1;
-                const pricingLength = Number(resumen.longitud_calculo_m ?? (baseLength * facesToTrim));
-                const pricingHeight = Number(resumen.altura_calculo_m ?? (baseHeight * facesToTrim));
+                // length_pricing_m = longitud BASE: el motor ya multiplica por faces_to_trim.
+                const pricingLength = baseLength;
+                const pricingHeight = baseHeight;
                 const hCat = resolveHedgeHeightBand(baseHeight);
-                const state = t.estado_seto || 'normal';
+                const state = normalizeHedgeStateValue(t.estado_seto);
                 const baseObservations = Number(t.nivel_analisis || 1) >= 2 ? (t.observaciones || []) : [];
                 const observations = baseHeight > 7.5
                   ? [...baseObservations, 'Altura detectada superior a 7.5m, revisar manualmente por seguridad.']
@@ -2387,8 +2404,8 @@ const DetailsPage: React.FC = () => {
     }
     if (lower.includes('seto')) {
         return {
-            title: 'Fotos de los setos',
-            description: 'Sube fotos que muestren la longitud y altura de los setos.'
+            title: 'Fotos de tus setos',
+            description: 'Sube 1-3 fotos por cara: el seto completo desde 3-5 m (Cara A es la delantera y obligatoria; Cara B solo si también quieres recortar la trasera). Hazlas de día y con el sol a tu espalda. Truco: si alguien se pone al lado del seto calculamos la altura y la longitud con más precisión. Después del análisis podrás confirmar las medidas y cuántas caras recortar.'
         };
     }
     if (lower.includes('árbol') || lower.includes('arbol')) {
@@ -2825,12 +2842,10 @@ const DetailsPage: React.FC = () => {
   };
 
   // --- Hedge Logic ---
-  const resolveHedgeHeightBand = (heightM: number): '0-1m' | '1-2m' | '2-4m' | '4-6m' => {
-    if (heightM <= 1) return '0-1m';
-    if (heightM <= 2) return '1-2m';
-    if (heightM <= 4) return '2-4m';
-    return '4-6m';
-  };
+  // SSOT: las claves de pricing_matrix/yield_ml_per_hour del jardinero son '0-2m'|'2-4m'|'4-6m'.
+  // La versión anterior devolvía '0-1m'/'1-2m' (bandas inexistentes en el motor) y excluía
+  // a todos los jardineros para setos ≤2m analizados con fotos.
+  const resolveHedgeHeightBand = (heightM: number): HedgeHeightBand => mapHedgeHeightToBand(heightM);
 
   const resolveHedgeFaceDetails = (task: any) => {
     if (task?.detalle_caras && typeof task.detalle_caras === 'object') return task.detalle_caras;
@@ -2854,9 +2869,9 @@ const DetailsPage: React.FC = () => {
     setAnalysisError(null);
     const newZone = {
         id: `hedge-${Date.now()}`,
-        category: '1-2m',
-        type: '1-2m',
-        height: '1-2m',
+        category: '0-2m',
+        type: '0-2m',
+        height: '0-2m',
         length: 0,
         state: 'normal',
         access: 'normal' as const, // Legacy
@@ -2876,6 +2891,21 @@ const DetailsPage: React.FC = () => {
     };
     const newZones = [...(bookingData.hedgeZones || []), newZone];
     commitHedgeZones(newZones, true);
+  };
+
+  const updateHedgeZone = (id: string, updates: Partial<NonNullable<BookingData['hedgeZones']>[number]>) => {
+    const zones = [...(bookingData.hedgeZones || [])];
+    const idx = zones.findIndex((z) => z.id === id);
+    if (idx === -1) return;
+    const next = { ...zones[idx], ...updates } as any;
+    // Mantener coherentes los campos derivados que consume el motor.
+    if (updates.length !== undefined) next.length_pricing_m = Number(updates.length) || 0;
+    if (updates.height !== undefined) {
+      next.category = updates.height;
+      next.type = updates.height;
+    }
+    zones[idx] = next;
+    commitHedgeZones(zones, true);
   };
 
   const removeHedgeZone = (id: string) => {
@@ -3119,8 +3149,11 @@ const DetailsPage: React.FC = () => {
               const facesToTrim: 1 | 2 = facesToTrimValue >= 2 ? 2 : 1;
               const baseLength = Number(resumen.base_longitud_m ?? hedgeMetrics?.longitud_m ?? t.longitud_m ?? 0);
               const baseHeight = Number(resumen.base_altura_m ?? hedgeMetrics?.altura_m ?? t.altura_m ?? 0);
-              const pricingLength = Number(resumen.longitud_calculo_m ?? (baseLength * facesToTrim));
-              const pricingHeight = Number(resumen.altura_calculo_m ?? (baseHeight * facesToTrim));
+              // IMPORTANTE: length_pricing_m debe ser la longitud BASE (sin caras). El motor
+              // ya multiplica por faces_to_trim; guardar longitud×caras aquí duplicaba el
+              // cobro de la segunda cara (base × L×2 × 2). El flujo manual siempre guardó la base.
+              const pricingLength = baseLength;
+              const pricingHeight = baseHeight;
               const commonAnalysis = buildAnalysisCommonFields({
                 analysis,
                 analysisLevel: t.nivel_analisis,
@@ -3140,7 +3173,13 @@ const DetailsPage: React.FC = () => {
               zone.faces_to_trim = facesToTrim;
               zone.hasBackFaceTrim = hasFaceB;
               zone.height = heightBand;
-              zone.state = hedgeMetrics?.estado_seto || t.estado_seto || 'normal';
+              // La IA PROPONE el estado; el recargo (media/alta) solo se consolida cuando
+              // el cliente lo confirma o corrige en la card editable.
+              zone.state = normalizeHedgeStateValue(hedgeMetrics?.estado_seto || t.estado_seto);
+              (zone as any).stateProposedByAI = zone.state !== 'normal';
+              (zone as any).longitudConfidence = toNullableConfidence(hedgeMetrics?.longitud_confidence ?? (t as any).longitud_confidence);
+              (zone as any).alturaConfidence = toNullableConfidence(hedgeMetrics?.altura_confidence ?? (t as any).altura_confidence);
+              (zone as any).estadoConfidence = toNullableConfidence(hedgeMetrics?.estado_confidence ?? (t as any).estado_confidence);
               zone.access = 'normal'; // Legacy
               zone.analysisV2 = commonAnalysis.analysisV2;
               zone.analysisLevel = commonAnalysis.analysisLevel;
@@ -4690,17 +4729,107 @@ const analyzeTreeGroup = async (id: string) => {
                                                     />
                                                 ) : (
                                                     <ServiceResultCard
-                                                        title={zone.type || '1-2m'}
+                                                        title={`Seto ${HEDGE_BAND_LABELS[(zone.height as HedgeHeightBand)] ? HEDGE_BAND_LABELS[zone.height as HedgeHeightBand].toLowerCase() : zone.height}`}
                                                         analysis={zone.analysisV2}
                                                         analysisLevel={zone.analysisLevel}
-                                                        stats={[
-                                                            { label: 'Longitud', value: `${zone.length} m` },
-                                                            { label: 'Altura', value: zone.height },
-                                                            { label: 'Estado', value: <span className="capitalize">{zone.state || 'normal'}</span> },
-                                                            { label: 'Caras analizadas', value: Number((zone as any).faces_to_trim ?? (zone.hasBackFaceTrim ? 2 : 1)) }
-                                                        ]}
                                                         observations={zone.observations}
-                                                    />
+                                                    >
+                                                        {/* Resumen editable: la IA propone longitud/altura/estado y el cliente confirma o corrige. Las caras las decide SIEMPRE el cliente. */}
+                                                        {(() => {
+                                                            const zoneAny = zone as any;
+                                                            const lowLengthConfidence = zoneAny.longitudConfidence != null && zoneAny.longitudConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+                                                            const lowHeightConfidence = zoneAny.alturaConfidence != null && zoneAny.alturaConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+                                                            const currentState = normalizeHedgeStateValue(zone.state);
+                                                            const currentFaces: 1 | 2 = Number(zoneAny.faces_to_trim) >= 2 ? 2 : 1;
+                                                            return (
+                                                                <div className="mt-3 space-y-3">
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Longitud (m)</label>
+                                                                            <input
+                                                                                type="number"
+                                                                                min="1"
+                                                                                value={zone.length || ''}
+                                                                                onChange={(e) => updateHedgeZone(zone.id, { length: Math.max(0, Number(e.target.value) || 0) })}
+                                                                                className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                            />
+                                                                            {lowLengthConfidence && (
+                                                                                <p className="text-[11px] text-amber-700 mt-1">
+                                                                                    Revisa la longitud: en las fotos no había una referencia de escala clara. Truco: cuéntala a pasos (1 paso ≈ 0,8 m).
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Altura del seto</label>
+                                                                            <select
+                                                                                value={zone.height}
+                                                                                onChange={(e) => updateHedgeZone(zone.id, { height: e.target.value })}
+                                                                                className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                            >
+                                                                                {!HEDGE_HEIGHT_BANDS.includes(zone.height as HedgeHeightBand) && (
+                                                                                    <option value={zone.height}>{zone.height}</option>
+                                                                                )}
+                                                                                {HEDGE_HEIGHT_BANDS.map((band) => (
+                                                                                    <option key={band} value={band}>{HEDGE_BAND_LABELS[band]}</option>
+                                                                                ))}
+                                                                            </select>
+                                                                            {lowHeightConfidence && (
+                                                                                <p className="text-[11px] text-amber-700 mt-1">
+                                                                                    Revisa la altura: influye en el precio y en qué jardineros pueden hacer el trabajo.
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-medium text-gray-700 mb-1">¿Cuántas caras quieres recortar?</label>
+                                                                        <div className="flex gap-2">
+                                                                            {([1, 2] as const).map((faces) => (
+                                                                                <button
+                                                                                    key={faces}
+                                                                                    type="button"
+                                                                                    onClick={() => updateHedgeZone(zone.id, { faces_to_trim: faces, hasBackFaceTrim: faces === 2 } as any)}
+                                                                                    className={`flex-1 py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                                                                                        currentFaces === faces
+                                                                                            ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                                                            : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                                                                    }`}
+                                                                                >
+                                                                                    {faces === 1 ? '1 cara (solo la delantera)' : '2 caras (delantera y trasera)'}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                        <p className="text-[11px] text-gray-500 mt-1">
+                                                                            Recortar las dos caras duplica los metros de trabajo.
+                                                                        </p>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Estado del seto</label>
+                                                                        <div className="flex gap-2">
+                                                                            {(['normal', 'media', 'alta'] as HedgeState[]).map((stateOption) => (
+                                                                                <button
+                                                                                    key={stateOption}
+                                                                                    type="button"
+                                                                                    onClick={() => updateHedgeZone(zone.id, { state: stateOption, stateProposedByAI: false } as any)}
+                                                                                    className={`flex-1 py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                                                                                        currentState === stateOption
+                                                                                            ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                                                            : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                                                                    }`}
+                                                                                >
+                                                                                    {HEDGE_STATE_LABELS[stateOption]}
+                                                                                </button>
+                                                                            ))}
+                                                                        </div>
+                                                                        {zoneAny.stateProposedByAI && currentState !== 'normal' && (
+                                                                            <p className="text-[11px] text-amber-700 mt-1">
+                                                                                Estado propuesto por la IA según tus fotos. Puede aplicar un recargo del profesional: confírmalo o corrígelo.
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </ServiceResultCard>
                                                 )}
                                             </div>
                                         )}

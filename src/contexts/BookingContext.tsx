@@ -558,8 +558,16 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               ? (progress as { currentStep?: number }).currentStep
               : 0;
           if (savedData && savedStep !== undefined) {
+            // Ensure new array fields always exist (for backwards compatibility with old saved states)
+            const normalizedData = {
+              ...initialBookingData,
+              ...savedData,
+              palmGroups: Array.isArray(savedData?.palmGroups) ? savedData.palmGroups : [],
+              treeGroups: Array.isArray(savedData?.treeGroups) ? savedData.treeGroups : [],
+              shrubGroups: Array.isArray(savedData?.shrubGroups) ? savedData.shrubGroups : [],
+            };
             const restored = await restoreBookingDraftPhotoCache(
-              applyPhotoContractCompatibility({ ...initialBookingData, ...savedData }),
+              applyPhotoContractCompatibility(normalizedData),
               user?.id,
             );
             setBookingDataState(restored.restoredData as BookingData);

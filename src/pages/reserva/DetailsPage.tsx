@@ -303,6 +303,14 @@ const PALM_STATE_OPTIONS: Array<{ value: 'normal' | 'descuidado' | 'muy_descuida
     { value: 'muy_descuidado', label: 'Muy descuidada' },
 ];
 
+// Estados de césped: el motor mapea 'descuidado'/'muy descuidado' (con espacio) a
+// condition_surcharges.descuidado/muy_descuidado. Mismos literales que la entrada manual.
+const LAWN_STATE_OPTIONS: Array<{ value: 'normal' | 'descuidado' | 'muy descuidado'; label: string }> = [
+    { value: 'normal', label: 'Normal' },
+    { value: 'descuidado', label: 'Descuidado' },
+    { value: 'muy descuidado', label: 'Muy descuidado' },
+];
+
 // Umbral por debajo del cual pedimos al cliente que revise el campo (regla E07 del flujo).
 const PALM_CONFIDENCE_REVIEW_THRESHOLD = 0.8;
 
@@ -479,6 +487,7 @@ interface LawnZoneCardProps {
     onAnalyze: (zoneId: string) => void;
     onRemoveZone: (zoneId: string) => void;
     onDeleteResult: (zoneId: string) => void;
+    onUpdateZone: (zoneId: string, updates: Record<string, unknown>) => void;
 }
 
 /**
@@ -499,6 +508,7 @@ const LawnZoneCard = React.memo(({
     onAnalyze,
     onRemoveZone,
     onDeleteResult,
+    onUpdateZone,
 }: LawnZoneCardProps) => {
     const isAnalyzed = hasCanonicalAnalysisResult(zone.analysisV2, {
         analysisLevel: zone.analysisLevel,
@@ -513,10 +523,12 @@ const LawnZoneCard = React.memo(({
     });
     const allPhotos = zone.photoUrls || [];
 
-    const resultStats = [
-        { label: 'Superficie', value: `${zone.quantity} m²` },
-        { label: 'Estado', value: <span className="capitalize">{zone.state}</span> },
-    ];
+    const lowAreaConfidence = zone.superficieConfidence != null && zone.superficieConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+    const currentLawnState = String(zone.state || 'normal').toLowerCase().includes('muy')
+        ? 'muy descuidado'
+        : String(zone.state || 'normal').toLowerCase().includes('descuidad')
+            ? 'descuidado'
+            : 'normal';
 
     return (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -596,10 +608,52 @@ const LawnZoneCard = React.memo(({
                                         title={zone.species || 'Césped general'}
                                         analysis={zone.analysisV2}
                                         analysisLevel={zone.analysisLevel}
-                                        stats={resultStats}
                                         observations={zone.observations}
                                         onDelete={() => onDeleteResult(zone.id)}
-                                    />
+                                    >
+                                        {/* Resumen editable: la IA propone superficie/estado y el cliente confirma o corrige */}
+                                        <div className="mt-3 space-y-3">
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-700 mb-1">Superficie (m²)</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    value={zone.quantity || ''}
+                                                    onChange={(e) => onUpdateZone(zone.id, { quantity: Math.max(0, parseInt(e.target.value) || 0) })}
+                                                    className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                />
+                                                {lowAreaConfidence && (
+                                                    <p className="text-[11px] text-amber-700 mt-1">
+                                                        Revisa la superficie: en las fotos no había una referencia de escala clara. Influye en el precio.
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-700 mb-1">Estado del césped</label>
+                                                <div className="flex gap-2">
+                                                    {LAWN_STATE_OPTIONS.map((option) => (
+                                                        <button
+                                                            key={option.value}
+                                                            type="button"
+                                                            onClick={() => onUpdateZone(zone.id, { state: option.value, stateProposedByAI: false })}
+                                                            className={`flex-1 py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                                                                currentLawnState === option.value
+                                                                    ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                                    : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            {option.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                {zone.stateProposedByAI && currentLawnState !== 'normal' && (
+                                                    <p className="text-[11px] text-amber-700 mt-1">
+                                                        Estado propuesto por la IA según tus fotos. Puede aplicar un recargo del profesional: confírmalo o corrígelo.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </ServiceResultCard>
                                     <div className="mt-3">
                                         <ZoneActionButton
                                             onClick={() => onAnalyze(zone.id)}
@@ -701,6 +755,7 @@ const DetailsPage: React.FC = () => {
     analyze: (id: string) => void;
     removeZone: (id: string) => void;
     deleteResult: (id: string) => void;
+    updateZone: (id: string, updates: Record<string, unknown>) => void;
   } | null>(null);
   const lawnHandlers = useMemo(() => ({
     onAddPhotos: (id: string, e: React.ChangeEvent<HTMLInputElement>) => lawnCb.current?.add(id, e),
@@ -709,6 +764,7 @@ const DetailsPage: React.FC = () => {
     onAnalyze: (id: string) => lawnCb.current?.analyze(id),
     onRemoveZone: (id: string) => lawnCb.current?.removeZone(id),
     onDeleteResult: (id: string) => lawnCb.current?.deleteResult(id),
+    onUpdateZone: (id: string, updates: Record<string, unknown>) => lawnCb.current?.updateZone(id, updates),
   }), []);
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean;
@@ -1740,6 +1796,13 @@ const DetailsPage: React.FC = () => {
         return;
       }
     }
+    if (debugService === 'Corte de césped') {
+      const validLawns = (bookingData.lawnZones || []).filter((z: any) => !(z.isFailed === true || z.analysisLevel === 3));
+      if (validLawns.length === 0 || !validLawns.some((z: any) => Number(z.quantity) > 0)) {
+        toast.error('Analiza al menos una zona de césped con superficie válida para continuar.');
+        return;
+      }
+    }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
     setBookingData({ photos: filePhotos, description: descriptionRef.current });
@@ -2398,8 +2461,8 @@ const DetailsPage: React.FC = () => {
     }
     if (lower.includes('césped') || lower.includes('cesped')) {
         return {
-            title: 'Fotos del césped',
-            description: 'Sube fotos de la zona de césped a cortar. Intenta mostrar la altura actual y los bordes.'
+            title: 'Fotos de tu césped',
+            description: 'Sube 1-3 fotos por zona: el césped completo desde una esquina (que se vean los bordes) y, si puedes, un detalle de la altura de la hierba. Hazlas de día y con el sol a tu espalda. Truco: si en la foto sale una puerta, valla o mesa de jardín calculamos los metros con más precisión. Después del análisis podrás confirmar la superficie y el estado.'
         };
     }
     if (lower.includes('seto')) {
@@ -2546,6 +2609,14 @@ const DetailsPage: React.FC = () => {
     }
     
     saveProgress(); // Ensure persistence
+  };
+
+  const updateLawnZone = (zoneId: string, updates: Record<string, unknown>) => {
+    const zones = [...(bookingData.lawnZones || [])];
+    const idx = zones.findIndex(z => z.id === zoneId);
+    if (idx === -1) return;
+    zones[idx] = { ...zones[idx], ...updates } as (typeof zones)[number];
+    commitSimplePhotoCollectionPatch('lawnZones', zones, {}, { saveAfterCommit: true });
   };
 
   const removeLawnZone = (zoneId: string) => {
@@ -4394,6 +4465,7 @@ const analyzeTreeGroup = async (id: string) => {
     analyze: analyzeLawnZone,
     removeZone: removeLawnZone,
     deleteResult: deleteLawnResult,
+    updateZone: updateLawnZone,
   };
 
   return (

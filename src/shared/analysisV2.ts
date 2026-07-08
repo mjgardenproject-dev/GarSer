@@ -123,6 +123,10 @@ export interface PhytosanitaryServiceMetrics {
 export interface LawnServiceMetrics {
   superficie_m2: number;
   estado_jardin: string | null;
+  /** Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente. */
+  superficie_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
 }
 
 export interface HedgeServiceMetrics {
@@ -606,6 +610,9 @@ const adaptLawnMetrics = (legacy: LegacyAnalysisResponse) => {
     metrics: {
       superficie_m2: toNonNegativeNumber(task?.superficie_m2),
       estado_jardin: normalizeString(task?.estado_jardin),
+      superficie_confidence: toConfidence(task?.superficie_confidence),
+      estado_confidence: toConfidence(task?.estado_confidence),
+      referencia_escala: normalizeString(task?.referencia_escala),
     } satisfies LawnServiceMetrics,
     level: normalizeLevel(task?.nivel_analisis, legacy.reasons?.length ? 3 : 1),
     observations: uniqueStrings([task?.observaciones || [], legacy.reasons || []]),

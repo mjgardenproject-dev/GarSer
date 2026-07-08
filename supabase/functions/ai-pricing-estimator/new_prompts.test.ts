@@ -98,6 +98,24 @@ describe('new_prompts SSOT backend', () => {
     expect(systemPrompt).toContain('"referencia_escala"');
   });
 
+  it('el prompt de césped incluye procedimiento, estado operativo, confidences y rango plausible', () => {
+    const assembly = buildAnalysisPromptAssembly({
+      service_name: 'Corte de césped',
+      photo_urls: ['https://example.com/lawn-1.jpg'],
+    });
+
+    const systemPrompt = String(assembly.messages[0].content);
+    expect(assembly.service).toBe('Corte de césped');
+    expect(systemPrompt).toContain('PROCEDURE');
+    expect(systemPrompt).toContain('STATE DEFINITIONS');
+    expect(systemPrompt).toContain('PLAUSIBLE AREA RANGE');
+    expect(systemPrompt).toContain('CONFIDENCE CALIBRATION');
+    expect(systemPrompt).toContain('"superficie_confidence"');
+    expect(systemPrompt).toContain('"estado_confidence"');
+    expect(systemPrompt).toContain('"referencia_escala"');
+    expect(systemPrompt).toContain('"normal" | "descuidado" | "muy descuidado"');
+  });
+
   it('el prompt de setos incluye procedimiento, estado operativo, confidences y rangos plausibles', () => {
     const assembly = buildAnalysisPromptAssembly({
       service_name: 'Poda de setos',

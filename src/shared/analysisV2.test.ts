@@ -80,6 +80,34 @@ describe('adaptLegacyAnalysisToV2', () => {
     expect(validateAnalysisV2(analysis)).toEqual([]);
   });
 
+  it('preserva confidences y referencia de escala de césped', () => {
+    const analysis = adaptLegacyAnalysisToV2({
+      serviceName: 'Corte de césped',
+      sourcePhotoCount: 1,
+      legacyResponse: {
+        tareas: [{
+          tipo_servicio: 'Corte de césped',
+          superficie_m2: 120,
+          estado_jardin: 'muy descuidado',
+          superficie_confidence: 0.9,
+          estado_confidence: 1.7, // fuera de rango: debe quedar en 1
+          referencia_escala: 'puerta ≈ 2 m',
+          nivel_analisis: 1,
+        }],
+      },
+    });
+
+    const metrics = analysis.service_metrics as LawnServiceMetrics;
+    expect(metrics).toMatchObject({
+      superficie_m2: 120,
+      estado_jardin: 'muy descuidado',
+      superficie_confidence: 0.9,
+      estado_confidence: 1,
+      referencia_escala: 'puerta ≈ 2 m',
+    });
+    expect(validateAnalysisV2(analysis)).toEqual([]);
+  });
+
   it('preserva confidences y referencia de escala de setos', () => {
     const analysis = adaptLegacyAnalysisToV2({
       serviceName: 'Poda de setos',

@@ -205,6 +205,29 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(veryNeglected.estimatedHours).toBeGreaterThanOrEqual(normal.estimatedHours);
   });
 
+  it('aplica el recargo de estado del césped cuando la zona lleva state', () => {
+    const providerConfig = {
+      pricing_method: 'per_quantity',
+      price_per_m2: 0.5,
+      yield_m2_per_hour: 100,
+      condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
+      waste_removal: { percentage: 0 },
+      minimum_price: 0,
+    };
+    const build = (state: string) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-lawn'],
+        lawnZones: [{ id: 'lawn-1', species: 'Césped general', quantity: 200, state }],
+      } as any,
+      providerConfig,
+    });
+
+    // 200 m² × 0,5 €/m² = 100 €; descuidado +20% → 120 €; muy descuidado +50% → 150 €.
+    expect(build('normal').totalPrice).toBe(100);
+    expect(build('descuidado').totalPrice).toBe(120);
+    expect(build('muy descuidado').totalPrice).toBe(150);
+  });
+
   it('cobra la segunda cara del seto exactamente una vez (length_pricing_m es la longitud base)', () => {
     const providerConfig = {
       pricing_method: 'per_quantity',

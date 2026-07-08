@@ -570,9 +570,25 @@ export function adaptLawnAnalysisResult(params: {
   const legacyTask = params.legacyTask || {}
   const lawnMetrics = params.analysis?.service === 'Corte de césped' ? params.analysis.service_metrics as any : null
 
+  const rawLawnState = String(lawnMetrics?.estado_jardin || legacyTask.estado_jardin || '').toLowerCase()
+  const lawnState = rawLawnState.includes('muy')
+    ? 'muy descuidado'
+    : rawLawnState.includes('descuidad')
+      ? 'descuidado'
+      : 'normal'
+  const toLawnConfidence = (value: unknown): number | null => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return null
+    return Math.min(1, Math.max(0, parsed))
+  }
+
   return {
     species: 'Césped general',
-    state: lawnMetrics?.estado_jardin || legacyTask.estado_jardin || 'normal',
+    state: lawnState,
+    // La IA PROPONE el estado; el recargo solo se consolida cuando el cliente lo confirma.
+    stateProposedByAI: lawnState !== 'normal',
+    superficieConfidence: toLawnConfidence(lawnMetrics?.superficie_confidence ?? legacyTask.superficie_confidence),
+    estadoConfidence: toLawnConfidence(lawnMetrics?.estado_confidence ?? legacyTask.estado_confidence),
     quantity: Number(lawnMetrics?.superficie_m2 ?? legacyTask.superficie_m2 ?? 0),
     ...buildAnalysisCommonFields({
       analysis: params.analysis,

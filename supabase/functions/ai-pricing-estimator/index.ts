@@ -472,6 +472,21 @@ const SHRUB_MAX_PLAUSIBLE_AREA_M2 = 500;
 const HEDGE_MAX_PLAUSIBLE_HEIGHT_M = 8;
 const HEDGE_MAX_PLAUSIBLE_LENGTH_M = 200;
 
+// Superficie plausible máxima de un césped doméstico (post-validación anti-alucinación).
+const LAWN_MAX_PLAUSIBLE_AREA_M2 = 2000;
+
+type LawnState = 'normal' | 'descuidado' | 'muy descuidado';
+
+// El motor cobra condition_surcharges.descuidado/muy_descuidado según este estado.
+function normalizeLawnState(value: unknown): LawnState | null {
+  const normalized = String(value || '').toLowerCase().trim();
+  if (!normalized) return null;
+  if (normalized.includes('muy')) return 'muy descuidado';
+  if (normalized.includes('descuidad')) return 'descuidado';
+  if (normalized.includes('normal')) return 'normal';
+  return null;
+}
+
 type HedgeState = 'normal' | 'media' | 'alta';
 
 // El motor cobra condition_surcharges.media/alta según este estado.
@@ -1198,6 +1213,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     let tareas = Array.isArray(ai?.tareas) ? ai.tareas : [];
+
+    // Post-validación de césped: clamps de confidences, estado normalizado y plausibilidad.
+    if (payload.service_name === 'Corte de césped' && tareas.length > 0) {
+      tareas = tareas.map((task: any) => {
+        if (task?.tipo_servicio !== 'Corte de césped') return task;
+        let normalizedLevel = [1, 2, 3].includes(Number(task.nivel_analisis)) ? Number(task.nivel_analisis) : 3;
+        const normalizedObs = Array.isArray(task.observaciones)
+          ? task.observaciones.filter((item: unknown) => typeof item === 'string')
+          : [];
+        const superficie = Number(task.superficie_m2);
+        // Anti-alucinación: un césped doméstico rara vez supera 2000 m² → revisión, nunca forzar.
+        if (normalizedLevel < 3 && Number.isFinite(superficie) && superficie > LAWN_MAX_PLAUSIBLE_AREA_M2) {
+          normalizedLevel = 2;
+          if (!normalizedObs.includes('AMBIGUOUS_SIZE')) normalizedObs.push('AMBIGUOUS_SIZE');
+        }
+        return {
+          ...task,
+          nivel_analisis: normalizedLevel,
+          estado_jardin: normalizedLevel === 3 ? null : normalizeLawnState(task.estado_jardin),
+          superficie_confidence: clampConfidence(task.superficie_confidence),
+          estado_confidence: clampConfidence(task.estado_confidence),
+          observaciones: normalizedObs.length > 0 ? normalizedObs : task.observaciones ?? null,
+        };
+      });
+    }
 
     // Post-validación de setos: clamps de confidences, estado normalizado y plausibilidad.
     if (payload.service_name === 'Poda de setos' && tareas.length > 0) {

@@ -128,6 +128,11 @@ export interface BookingData {
     id: string;
     species: string;
     state: string; // "normal" | "descuidado" | "muy descuidado"
+    // true cuando el estado (descuidado/muy descuidado) fue propuesto por la IA y aún no lo confirmó el cliente.
+    stateProposedByAI?: boolean;
+    // Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente.
+    superficieConfidence?: number | null;
+    estadoConfidence?: number | null;
     quantity: number; // m2
     wasteRemoval: boolean;
     photoIds?: string[];

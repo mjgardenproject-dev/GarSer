@@ -261,7 +261,11 @@ export interface BookingData {
     type: string;
     area: number; // m2
     scope?: string[] | string;
-    requestedTreatment?: 'insecticida' | 'fungicida' | 'combo';
+    // Campos canónicos del motor de precios (bookingQuoteCore deriva los tratamientos de aquí).
+    intent?: 'preventive' | 'curative' | 'weed_control';
+    curativeTarget?: 'insects' | 'fungus' | 'both';
+    productPreference?: 'chemical' | 'ecological';
+    requestedTreatment?: 'insecticida' | 'fungicida' | 'combo' | 'endoterapia';
     wantsEco?: boolean;
     affectedType?: 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
     aboveTwoMeters?: boolean;

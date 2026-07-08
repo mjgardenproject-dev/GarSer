@@ -98,6 +98,23 @@ describe('new_prompts SSOT backend', () => {
     expect(systemPrompt).toContain('"referencia_escala"');
   });
 
+  it('el prompt fitosanitario incluye procedimiento, definiciones de tamaños y rangos plausibles', () => {
+    const assembly = buildAnalysisPromptAssembly({
+      service_name: 'Servicios fitosanitarios',
+      photo_urls: ['https://example.com/phyto-1.jpg'],
+      phytosanitary_scopes: ['palmeras'],
+    });
+
+    const systemPrompt = String(assembly.messages[0].content);
+    expect(systemPrompt).toContain('PROCEDURE');
+    // Los cortes de tamaño son los mismos que el configurador de precios del jardinero.
+    expect(systemPrompt).toContain('SIZE DEFINITIONS');
+    expect(systemPrompt).toContain('3.5 m');
+    expect(systemPrompt).toContain('2.5 m');
+    expect(systemPrompt).toContain('PLAUSIBLE RANGES');
+    expect(systemPrompt).toContain('AMBIGUOUS_SIZE');
+  });
+
   it('el prompt de desbroce incluye procedimiento, estados operativos, confidences y rango plausible', () => {
     const assembly = buildAnalysisPromptAssembly({
       service_name: 'Desbroce de malas hierbas',

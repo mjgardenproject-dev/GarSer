@@ -1,7 +1,7 @@
 export type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
 export type PhytosanitaryTreatmentValue = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
 export type PhytosanitaryScope = 'todo_jardin' | 'palmeras' | 'arboles' | 'cesped' | 'setos' | 'plantas';
-export type PhytosanitaryRequestTreatment = 'insecticida' | 'fungicida' | 'combo';
+export type PhytosanitaryRequestTreatment = 'insecticida' | 'fungicida' | 'combo' | 'endoterapia';
 
 export type PhytosanitaryAnalysisMetrics = {
   cesped_m2: number;

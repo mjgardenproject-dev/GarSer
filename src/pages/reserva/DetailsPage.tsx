@@ -115,7 +115,7 @@ import { useAuth } from '../../contexts/AuthContext';
 type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
 type PhytosanitaryTreatmentValue = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
 type PhytosanitaryScope = 'todo_jardin' | 'palmeras' | 'arboles' | 'cesped' | 'setos' | 'plantas';
-type PhytosanitaryRequestTreatment = 'insecticida' | 'fungicida' | 'combo';
+type PhytosanitaryRequestTreatment = 'insecticida' | 'fungicida' | 'combo' | 'endoterapia';
 type PhytosanitaryMetricKey = Exclude<keyof PhytosanitaryAnalysisMetrics, 'observaciones_ia'>;
 
 const PHYTOSANITARY_SCOPE_OPTIONS: Array<{ value: PhytosanitaryScope; label: string; affectedType: PhytosanitaryAffectedType }> = [
@@ -149,6 +149,46 @@ const buildPhytosanitaryZoneType = (
     return wantsEco ? 'insecticida+fungicida+ecologico_preventivo' : 'insecticida+fungicida';
   }
   return wantsEco ? `${requested}+ecologico_preventivo` : requested;
+};
+
+type PhytosanitaryIntent = 'preventive' | 'curative';
+
+// Sincroniza los campos canónicos que consume el motor (intent/curativeTarget/
+// productPreference/type) a partir de lo que el cliente responde en la UI de fotos.
+// Sin esto, el motor caía al default preventivo+insecticida: los curativos se cobraban
+// con tarifa preventiva y los modificadores eco/combo no se aplicaban nunca.
+const syncPhytosanitaryTreatmentFields = (zone: any) => {
+  const intent: PhytosanitaryIntent | undefined = zone.intent;
+  const requested: PhytosanitaryRequestTreatment | undefined = zone.requestedTreatment;
+  const wantsEco = Boolean(zone.wantsEco);
+
+  zone.productPreference = wantsEco ? 'ecological' : 'chemical';
+
+  if (requested === 'endoterapia') {
+    // La endoterapia es una técnica propia (inyección en tronco, precio único por tronco).
+    zone.intent = 'curative';
+    zone.curativeTarget = 'insects';
+    zone.type = 'endoterapia';
+    zone.wantsEco = false;
+    zone.productPreference = 'chemical';
+    return;
+  }
+
+  if (intent === 'preventive') {
+    zone.curativeTarget = undefined;
+    zone.requestedTreatment = undefined;
+    zone.type = wantsEco ? 'ecologico_preventivo' : 'preventivo';
+    return;
+  }
+
+  if (intent === 'curative') {
+    zone.curativeTarget = requested === 'combo' ? 'both' : requested === 'fungicida' ? 'fungus' : requested ? 'insects' : undefined;
+    zone.type = buildPhytosanitaryZoneType(zone.scope, requested, wantsEco);
+    return;
+  }
+
+  zone.curativeTarget = undefined;
+  zone.type = '';
 };
 
 const treeBandLabel = (band?: TreeSizeBand | null): string => {
@@ -4093,6 +4133,7 @@ const analyzeTreeGroup = async (id: string) => {
         type: '',
         area: 0,
         scope: undefined as PhytosanitaryScope | undefined,
+        intent: undefined as PhytosanitaryIntent | undefined,
         requestedTreatment: undefined as PhytosanitaryRequestTreatment | undefined,
         wantsEco: false,
         affectedType: undefined as 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras' | undefined,
@@ -4183,6 +4224,7 @@ const analyzeTreeGroup = async (id: string) => {
 
   const getPhytosanitaryValidation = (zone: {
     scope?: string | string[];
+    intent?: PhytosanitaryIntent;
     requestedTreatment?: PhytosanitaryRequestTreatment;
     wantsEco?: boolean;
     affectedType?: PhytosanitaryAffectedType;
@@ -4202,8 +4244,11 @@ const analyzeTreeGroup = async (id: string) => {
     const scopeArray = Array.isArray(zone.scope) ? zone.scope : [zone.scope].filter(Boolean) as string[];
 
     if (scopeArray.length === 0) issues.push('Selecciona el alcance del tratamiento.');
-    if (!zone.requestedTreatment) {
-      issues.push('Selecciona el tipo de tratamiento contextual.');
+    if (!zone.intent) {
+      issues.push('Indica si el tratamiento es preventivo o curativo.');
+    }
+    if (zone.intent === 'curative' && !zone.requestedTreatment) {
+      issues.push('Indica qué quieres combatir (insectos, hongos o ambos).');
     }
     if (!zone.affectedType) issues.push('Selecciona la vegetación afectada.');
     if (!zone.type) issues.push('Selecciona el tratamiento solicitado.');
@@ -4217,6 +4262,21 @@ const analyzeTreeGroup = async (id: string) => {
     }
 
     return { issues, warnings };
+  };
+
+  // La IA propone las cantidades; el cliente puede corregirlas antes del checkout
+  // (patrón de confirmación: antes solo se podían borrar, no corregir).
+  const updatePhytosanitaryMetricItem = (zoneId: string, metricKey: PhytosanitaryMetricKey, value: number) => {
+    const zones = [...(bookingData.phytosanitaryZones || [])];
+    const idx = zones.findIndex(z => z.id === zoneId);
+    if (idx === -1) return;
+    const zone = { ...zones[idx] };
+    const metrics = { ...((zone as any).analysisMetrics || EMPTY_PHYTOSANITARY_ANALYSIS_METRICS) } as PhytosanitaryAnalysisMetrics;
+    metrics[metricKey] = Math.max(0, Number.isFinite(value) ? value : 0);
+    (zone as any).analysisMetrics = metrics;
+    zone.area = Math.max(0, sumPhytosanitaryMetrics(metrics));
+    zones[idx] = zone;
+    commitPhytosanitaryZones(zones);
   };
 
   const removePhytosanitaryMetricItem = (zoneId: string, metricKey: PhytosanitaryMetricKey) => {
@@ -4360,7 +4420,8 @@ const analyzeTreeGroup = async (id: string) => {
             legacyTask: res.tareas?.[0],
             legacyMetrics: resData.metricas_fitosanitarias,
             selectedIndices: indicesToAnalyze,
-            totalPhotoCount: allUrls.length
+            totalPhotoCount: allUrls.length,
+            treatmentType: zone.type
           }));
           currentDebugInfo.finalAnalysisData = {
             zoneId: zone.id,
@@ -5870,12 +5931,16 @@ const analyzeTreeGroup = async (id: string) => {
                                               }
                                               
                                               (z as any).scope = nextScope;
-                                              
+
                                               const firstScopeOption = PHYTOSANITARY_SCOPE_OPTIONS.find(o => nextScope.includes(o.value));
                                               z.affectedType = firstScopeOption?.affectedType;
-                                              
-                                              z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
-                                              
+
+                                              // La endoterapia solo aplica a palmeras: si el alcance deja de incluirlas, se limpia.
+                                              if ((z as any).requestedTreatment === 'endoterapia' && z.affectedType !== 'Palmeras') {
+                                                (z as any).requestedTreatment = undefined;
+                                              }
+                                              syncPhytosanitaryTreatmentFields(z);
+
                                               if (isPhytosanitaryZoneAnalyzed(z)) {
                                                 Object.assign(z, resetAnalysisCommonFields({
                                                   ...z,
@@ -5896,16 +5961,58 @@ const analyzeTreeGroup = async (id: string) => {
                                     </div>
                                   </div>
                                   <div>
-                                      <label className="text-sm font-medium text-gray-600 block mb-1">Tipo de tratamiento contextual</label>
+                                      <label className="text-sm font-medium text-gray-600 block mb-2">¿Es un tratamiento preventivo o curativo?</label>
+                                      <div className="flex gap-2">
+                                        {([
+                                          { value: 'preventive', label: 'Preventivo', hint: 'No hay plaga: quiero proteger' },
+                                          { value: 'curative', label: 'Curativo', hint: 'Hay una plaga u hongo activo' },
+                                        ] as Array<{ value: PhytosanitaryIntent; label: string; hint: string }>).map((option) => {
+                                          const isActive = (zone as any).intent === option.value;
+                                          return (
+                                            <button
+                                              key={option.value}
+                                              type="button"
+                                              onClick={() => {
+                                                const next = [...(bookingData.phytosanitaryZones || [])];
+                                                const z = next.find(x => x.id === zone.id);
+                                                if (!z) return;
+                                                (z as any).intent = option.value;
+                                                if (option.value === 'preventive') (z as any).requestedTreatment = undefined;
+                                                syncPhytosanitaryTreatmentFields(z);
+                                                if (isPhytosanitaryZoneAnalyzed(z)) {
+                                                  Object.assign(z, resetAnalysisCommonFields({
+                                                    ...z,
+                                                    analysisMetrics: undefined,
+                                                    area: 0,
+                                                  }));
+                                                }
+                                                commitPhytosanitaryZones(next);
+                                              }}
+                                              className={`flex-1 py-2 px-2 rounded-lg border text-left transition-colors ${
+                                                isActive
+                                                  ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                  : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                              }`}
+                                            >
+                                              <span className="block text-sm font-medium">{option.label}</span>
+                                              <span className="block text-[11px] opacity-80">{option.hint}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                  </div>
+                                  {(zone as any).intent === 'curative' && (
+                                    <div>
+                                      <label className="text-sm font-medium text-gray-600 block mb-1">¿Qué quieres combatir?</label>
                                       <select
                                         value={(zone as any).requestedTreatment || ''}
                                         onChange={(e) => {
                                           const next = [...(bookingData.phytosanitaryZones || [])];
                                           const z = next.find(x => x.id === zone.id);
                                           if (!z) return;
-                                          (z as any).requestedTreatment = e.target.value as PhytosanitaryRequestTreatment;
-                                          z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
-                                          
+                                          (z as any).requestedTreatment = (e.target.value || undefined) as PhytosanitaryRequestTreatment | undefined;
+                                          syncPhytosanitaryTreatmentFields(z);
+
                                           if (isPhytosanitaryZoneAnalyzed(z)) {
                                             Object.assign(z, resetAnalysisCommonFields({
                                               ...z,
@@ -5919,11 +6026,15 @@ const analyzeTreeGroup = async (id: string) => {
                                         className="w-full p-2.5 border border-gray-300 rounded-lg text-base bg-white"
                                       >
                                         <option value="">Seleccionar</option>
-                                        {PHYTOSANITARY_REQUEST_TREATMENT_OPTIONS.map((option) => (
-                                          <option key={option.value} value={option.value}>{option.label}</option>
-                                        ))}
+                                        <option value="insecticida">Insectos (insecticida)</option>
+                                        <option value="fungicida">Hongos (fungicida)</option>
+                                        <option value="combo">Ambos (insecticida + fungicida)</option>
+                                        {zone.affectedType === 'Palmeras' && (
+                                          <option value="endoterapia">Endoterapia (inyección en el tronco, para picudo)</option>
+                                        )}
                                       </select>
                                     </div>
+                                  )}
                                   <label className={`flex items-center justify-between p-3 rounded-lg border ${(zone as any).type?.includes('endoterapia') ? 'bg-gray-50 text-gray-400 border-gray-200' : 'bg-white border-gray-300'}`}>
                                     <span className="text-sm">Quiero opción ecológica</span>
                                     <input
@@ -5936,8 +6047,8 @@ const analyzeTreeGroup = async (id: string) => {
                                         const z = next.find(x => x.id === zone.id);
                                         if (!z) return;
                                         (z as any).wantsEco = e.target.checked;
-                                        z.type = buildPhytosanitaryZoneType((z as any).scope, (z as any).requestedTreatment, (z as any).wantsEco);
-                                        
+                                        syncPhytosanitaryTreatmentFields(z);
+
                                         if (isPhytosanitaryZoneAnalyzed(z)) {
                                           Object.assign(z, resetAnalysisCommonFields({
                                             ...z,
@@ -6045,15 +6156,26 @@ const analyzeTreeGroup = async (id: string) => {
                                                                               const fieldDef = fields.find(f => f.key === item.key);
                                                                               return (
                                                                                   <div key={item.key} className="flex items-center justify-between gap-3 bg-white/70 border border-gray-200 rounded-lg px-3 py-2">
-                                                                                      <div className="text-sm text-gray-800">
-                                                                                          {fieldDef?.label || item.label}: <span className="font-semibold">{item.value} {fieldDef?.unit || item.unit}</span>
+                                                                                      <div className="text-sm text-gray-800 min-w-0 flex-1">
+                                                                                          {fieldDef?.label || item.label}
                                                                                       </div>
-                                                                                      <button
-                                                                                          onClick={() => removePhytosanitaryMetricItem(zone.id, item.key)}
-                                                                                          className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
-                                                                                      >
-                                                                                          <Trash2 className="w-4 h-4" />
-                                                                                      </button>
+                                                                                      <div className="flex items-center gap-1.5 shrink-0">
+                                                                                          <input
+                                                                                              type="number"
+                                                                                              min="0"
+                                                                                              value={item.value}
+                                                                                              onChange={(e) => updatePhytosanitaryMetricItem(zone.id, item.key, Number(e.target.value))}
+                                                                                              className="w-16 text-sm text-right border border-gray-300 rounded-lg px-1.5 py-1 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                                              aria-label={`Cantidad de ${fieldDef?.label || item.label}`}
+                                                                                          />
+                                                                                          <span className="text-xs text-gray-500 w-6">{fieldDef?.unit || item.unit}</span>
+                                                                                          <button
+                                                                                              onClick={() => removePhytosanitaryMetricItem(zone.id, item.key)}
+                                                                                              className="text-red-600 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
+                                                                                          >
+                                                                                              <Trash2 className="w-4 h-4" />
+                                                                                          </button>
+                                                                                      </div>
                                                                                   </div>
                                                                               );
                                                                           })}

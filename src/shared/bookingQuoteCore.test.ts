@@ -205,6 +205,74 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(veryNeglected.estimatedHours).toBeGreaterThanOrEqual(normal.estimatedHours);
   });
 
+  it('fitosanitarios: deriva curativo/eco/combo desde type cuando faltan los campos canónicos (flujo fotos legacy)', () => {
+    const providerConfig = {
+      tratamientos_activos: ['insecticida', 'fungicida', 'ecologico_preventivo'],
+      yields: { cesped_m2_per_hour: 100 },
+      detailed_pricing: {
+        cesped: { preventivo: 0.5, curativo: 1 },
+      },
+      pricing_modifiers: {
+        eco: { percentage: 10 },
+        combo: { two_treatments_percentage: 20, three_plus_treatments_percentage: 30 },
+      },
+      minimum_fee: 0,
+    };
+    const build = (zone: Record<string, unknown>) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-phyto'],
+        phytosanitaryZones: [{
+          id: 'fum-1',
+          affectedType: 'Césped',
+          area: 100,
+          analysisMetrics: { cesped_m2: 100 },
+          ...zone,
+        }],
+      } as any,
+      providerConfig,
+    });
+
+    // Zona legacy con solo type (sin intent/curativeTarget/productPreference):
+    // fungicida → tarifa CURATIVA (100 × 1 = 100), no la preventiva (50).
+    expect(build({ type: 'fungicida' }).totalPrice).toBe(100);
+    // combo → curativa + recargo de 2 tratamientos: 100 × 1.2 = 120.
+    expect(build({ type: 'insecticida+fungicida' }).totalPrice).toBe(120);
+    // eco preventivo → tarifa preventiva + modificador eco: 50 × 1.1 = 55.
+    expect(build({ type: 'ecologico_preventivo' }).totalPrice).toBe(55);
+    // Con campos canónicos (flujo manual/nuevo): curativo eco aplica el % eco sin alterar el combo.
+    expect(build({ type: 'fungicida+ecologico_preventivo', intent: 'curative', curativeTarget: 'fungus', productPreference: 'ecological' }).totalPrice).toBe(110);
+  });
+
+  it('fitosanitarios: la endoterapia solicitada se cobra por tronco, sin arrastrar la ducha base', () => {
+    const providerConfig = {
+      tratamientos_activos: ['insecticida', 'fungicida', 'ecologico_preventivo', 'endoterapia'],
+      yields: { palmeras_units_per_hour: 2, endoterapia_units_per_hour: 4 },
+      detailed_pricing: {
+        palmeras: { pequenas_preventivo: 30, medianas_preventivo: 50, altas_preventivo: 80 },
+      },
+      palmeras: { endoterapia: { precio_unico: 45 } },
+      pricing_modifiers: { eco: { percentage: 10 }, combo: { two_treatments_percentage: 20, three_plus_treatments_percentage: 30 } },
+      minimum_fee: 0,
+    };
+    const result = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-phyto'],
+        phytosanitaryZones: [{
+          id: 'fum-1',
+          affectedType: 'Palmeras',
+          type: 'endoterapia',
+          area: 3,
+          // El adaptador ya trasvasó las 3 palmeras detectadas a troncos de endoterapia.
+          analysisMetrics: { palmeras_endoterapia_troncos_ud: 3 },
+        }],
+      } as any,
+      providerConfig,
+    });
+
+    // 3 troncos × 45 € = 135 €, sin sumar tarifas de ducha ni combos espurios.
+    expect(result.totalPrice).toBe(135);
+  });
+
   it('incluye la retirada de restos en las horas del desbroce (no solo en el precio)', () => {
     const providerConfig = {
       precio_desbroce_m2: 1,

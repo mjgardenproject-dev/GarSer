@@ -811,26 +811,57 @@ const calculatePhytosanitaryQuote = (params: {
   (params.zones || []).forEach((zone, index) => {
     const qty = Number(zone?.area || 0);
     const affected = normalizePhytosanitaryAffectedType(zone?.affectedType);
-    const intent = zone?.intent || 'preventive';
+    // Fallback de derivación desde zone.type (flujo de fotos legacy): las zonas creadas
+    // en DetailsPage guardaban el tratamiento en `type` ('fungicida', 'insecticida+fungicida',
+    // '…+ecologico_preventivo', 'endoterapia') sin rellenar intent/curativeTarget/
+    // productPreference, así que TODAS caían al default preventivo+insecticida: los
+    // curativos se cobraban con tarifa preventiva y los modificadores eco/combo jamás
+    // se aplicaban. El type es inequívoco para fungicida/combo/eco/endoterapia.
+    const typeStr = String(zone?.type || '').toLowerCase();
+    const typeHasInsecticide = typeStr.includes('insecticida');
+    const typeHasFungicide = typeStr.includes('fungicida');
+    const derivedIntent: 'preventive' | 'curative' | undefined =
+      typeHasInsecticide && typeHasFungicide ? 'curative'
+        : typeHasFungicide ? 'curative'
+          : undefined;
+    const derivedTarget: 'insects' | 'fungus' | 'both' | undefined =
+      typeHasInsecticide && typeHasFungicide ? 'both'
+        : typeHasFungicide ? 'fungus'
+          : undefined;
+
+    const intent = zone?.intent || derivedIntent || 'preventive';
     const isCurative = intent === 'curative';
     const isWeedControl = intent === 'weed_control';
-    const isEco = zone?.productPreference === 'ecological';
-    const isComboTreatment = zone?.curativeTarget === 'both';
+    const curativeTarget = zone?.curativeTarget || (isCurative ? derivedTarget || 'insects' : undefined);
+    const isEco = zone?.productPreference
+      ? zone.productPreference === 'ecological'
+      : typeStr.includes('ecologico_preventivo');
+    const isComboTreatment = curativeTarget === 'both';
+    // Endoterapia pura: el cliente pidió solo la inyección en tronco (precio único por
+    // tronco); no debe arrastrar además el tratamiento de ducha base.
+    const isEndoOnlyRequest =
+      affected === 'Palmeras' && typeStr.includes('endoterapia') && !typeHasInsecticide && !typeHasFungicide;
     const requestedTreatments: PhytosanitaryTreatment[] = [];
 
-    if (isWeedControl) {
+    if (isEndoOnlyRequest) {
+      // Solo endoterapia (se añade abajo).
+    } else if (isWeedControl) {
       requestedTreatments.push('ecologico_preventivo');
     } else if (isEco && !isCurative) {
       requestedTreatments.push('ecologico_preventivo');
     } else if (isCurative) {
-      if (zone?.curativeTarget === 'insects' || isComboTreatment) requestedTreatments.push('insecticida');
-      if (zone?.curativeTarget === 'fungus' || isComboTreatment) requestedTreatments.push('fungicida');
+      if (curativeTarget === 'insects' || isComboTreatment) requestedTreatments.push('insecticida');
+      if (curativeTarget === 'fungus' || isComboTreatment) requestedTreatments.push('fungicida');
     } else {
       requestedTreatments.push('insecticida');
     }
 
-    if (affected === 'Palmeras' && (zone?.analysisMetrics?.palmeras_cirugia_ud || zone?.analysisMetrics?.palmeras_endoterapia_troncos_ud)) {
-      requestedTreatments.push('endoterapia');
+    // Endoterapia: la solicita el cliente (type) o la detecta el análisis (troncos/cirugía).
+    if (
+      affected === 'Palmeras' &&
+      (typeStr.includes('endoterapia') || zone?.analysisMetrics?.palmeras_cirugia_ud || zone?.analysisMetrics?.palmeras_endoterapia_troncos_ud)
+    ) {
+      if (!requestedTreatments.includes('endoterapia')) requestedTreatments.push('endoterapia');
     }
 
     const unitLabel: 'm2' | 'ml' | 'ud' = affected === 'Palmeras' || affected === 'Árboles' ? 'ud' : (affected === 'Setos' ? 'ml' : 'm2');
@@ -889,7 +920,9 @@ const calculatePhytosanitaryQuote = (params: {
         return;
       }
 
-      const ecoApplied = requestedTreatments.includes('ecologico_preventivo');
+      // El recargo eco es una preferencia de producto: aplica también en curativos eco,
+      // sin convertirse en un tratamiento extra (no altera el conteo del combo).
+      const ecoApplied = isEco || requestedTreatments.includes('ecologico_preventivo');
       const comboPercent = requestedTreatments.length >= 3
         ? comboThreePlusTreatmentsPercent
         : (requestedTreatments.length === 2 ? comboTwoTreatmentsPercent : 0);
@@ -969,7 +1002,7 @@ const calculatePhytosanitaryQuote = (params: {
     }
 
     const subtotal = unitPrice * qty;
-    const ecoApplied = effectiveTreatments.includes('ecologico_preventivo');
+    const ecoApplied = isEco || effectiveTreatments.includes('ecologico_preventivo');
     const comboPercent = effectiveTreatments.length >= 3
       ? comboThreePlusTreatmentsPercent
       : (effectiveTreatments.length === 2 ? comboTwoTreatmentsPercent : 0);

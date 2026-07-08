@@ -698,6 +698,8 @@ export function adaptPhytosanitaryAnalysisResult(params: {
   legacyMetrics?: Record<string, any> | null
   selectedIndices: number[]
   totalPhotoCount: number
+  /** zone.type: si incluye 'endoterapia', las palmeras detectadas se cobran por tronco. */
+  treatmentType?: string
 }) {
   const legacyTask = params.legacyTask || {}
   const legacyMetrics = params.legacyMetrics || {}
@@ -724,6 +726,22 @@ export function adaptPhytosanitaryAnalysisResult(params: {
       canonicalMetrics?.plantas_tamano_dominante ?? legacyMetrics?.plantas_tamano_dominante
     ),
     observaciones_ia: commonFields.observations,
+  }
+
+  // Endoterapia: la IA cuenta palmeras (por tamaño de ducha), pero si el cliente pidió
+  // endoterapia el motor cobra por tronco inyectado (precio único, sin tamaño). Se
+  // trasvasa el conteo a troncos para que el subservicio se cobre por lo solicitado.
+  if (String(params.treatmentType || '').toLowerCase().includes('endoterapia')) {
+    const detectedPalms =
+      Number(metrics.palmeras_ducha_peq_ud || 0) +
+      Number(metrics.palmeras_ducha_med_ud || 0) +
+      Number(metrics.palmeras_ducha_alta_ud || 0)
+    if (detectedPalms > 0) {
+      metrics.palmeras_endoterapia_troncos_ud = detectedPalms
+      metrics.palmeras_ducha_peq_ud = 0
+      metrics.palmeras_ducha_med_ud = 0
+      metrics.palmeras_ducha_alta_ud = 0
+    }
   }
 
   return {

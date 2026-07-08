@@ -596,10 +596,21 @@ export function adaptTreeAnalysisResult(params: {
   const treeMetrics = params.analysis?.service === 'Poda de árboles' ? params.analysis.service_metrics as any : null
   const canonicalTree = treeMetrics?.arboles?.[0]
   const sizeBand = normalizeTreeSizeBand(canonicalTree?.size_band ?? legacyTree.size_band)
+  const aiHeight = Number(canonicalTree?.altura_m ?? legacyTree.altura_m)
+  const toConfidence = (value: unknown): number | null => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return null
+    return Math.min(1, Math.max(0, parsed))
+  }
 
   return {
     aiSizeBand: sizeBand ?? undefined,
-    aiHeightMeters: sizeBand ? treeSizeBandToLegacyMeters(sizeBand) : 0,
+    // Altura real estimada por la IA; el valor legacy por banda queda como fallback.
+    aiHeightMeters: Number.isFinite(aiHeight) && aiHeight > 0
+      ? aiHeight
+      : (sizeBand ? treeSizeBandToLegacyMeters(sizeBand) : 0),
+    sizeBandConfidence: toConfidence(canonicalTree?.size_band_confidence ?? legacyTree.size_band_confidence),
+    alturaConfidence: toConfidence(canonicalTree?.altura_confidence ?? legacyTree.altura_confidence),
     difficultyHigh: typeof params.difficultyHigh === 'boolean' ? params.difficultyHigh : undefined,
     ...buildAnalysisCommonFields({
       analysis: params.analysis,
@@ -634,9 +645,26 @@ export function adaptShrubAnalysisResult(params: {
       ? Math.max(0, Math.round(legacyTotal * (legacyPercent / 100)))
       : 0
 
+  const rawState = String(shrubMetrics?.estado_plantas || legacyTask.estado_plantas || '').toLowerCase()
+  const state: 'normal' | 'descuidado' | 'muy_descuidado' = rawState.includes('muy')
+    ? 'muy_descuidado'
+    : rawState.includes('descuidad')
+      ? 'descuidado'
+      : 'normal'
+  const toConfidence = (value: unknown): number | null => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return null
+    return Math.min(1, Math.max(0, parsed))
+  }
+
   return {
     area: Math.max(0, Number(shrubMetrics?.superficie_m2 ?? legacyTask.superficie_m2 ?? fallbackM2 ?? 0)),
     size,
+    state,
+    stateProposedByAI: state !== 'normal',
+    superficieConfidence: toConfidence(shrubMetrics?.superficie_confidence ?? legacyTask.superficie_confidence),
+    tamanoConfidence: toConfidence(shrubMetrics?.tamano_confidence ?? legacyTask.tamano_confidence),
+    estadoConfidence: toConfidence(shrubMetrics?.estado_confidence ?? legacyTask.estado_confidence),
     ...buildAnalysisCommonFields({
       analysis: params.analysis,
       analysisLevel: legacyTask.nivel_analisis,

@@ -197,6 +197,27 @@ const SHRUB_SIZE_OPTIONS: ManualEnumOption[] = [
   },
 ];
 
+const SHRUB_STATE_OPTIONS: ManualEnumOption[] = [
+  {
+    value: 'normal',
+    label: 'Normal',
+    help: 'Formas definidas, brotes cortos y sin madera seca visible.',
+    icon: 'Sprout',
+  },
+  {
+    value: 'descuidado',
+    label: 'Descuidadas',
+    help: 'Brotes largos e irregulares, bordes invadiendo caminos o césped.',
+    icon: 'Wheat',
+  },
+  {
+    value: 'muy descuidado',
+    label: 'Muy descuidadas',
+    help: 'Formas perdidas, madera seca visible o invasión de malas hierbas.',
+    icon: 'Trees',
+  },
+];
+
 const TREE_SIZE_OPTIONS: ManualEnumOption[] = [
   { value: 'small', label: 'Pequeño (0-3 m)', help: 'Hasta la altura de una planta baja o puerta.', icon: 'Sprout' },
   { value: 'medium', label: 'Mediano (3-5 m)', help: 'Aproximadamente la altura de una planta de un edificio.', icon: 'TreeDeciduous' },
@@ -580,6 +601,11 @@ export const MANUAL_ENTRY_SURVEYS: Record<ManualServiceKey, ManualServiceSurvey>
         id: 'size',
         title: '¿De qué tamaño son las plantas predominantes?',
         fields: [{ key: 'tamano_dominante', type: 'enum', ui: 'cards', label: 'Tamaño dominante', options: SHRUB_SIZE_OPTIONS }],
+      },
+      {
+        id: 'state',
+        title: '¿En qué estado están las plantas?',
+        fields: [{ key: 'estado_plantas', type: 'enum', ui: 'cards', label: 'Estado de las plantas', options: SHRUB_STATE_OPTIONS }],
       },
     ],
   },

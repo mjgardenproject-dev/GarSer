@@ -137,6 +137,74 @@ describe('buildAuthoritativeBookingQuote', () => {
     ]);
   });
 
+  it('multiplica precio y horas de árboles por la cantidad confirmada del grupo', () => {
+    const providerConfig = {
+      formacion: { small: 40, medium: 80, large: 150 },
+      estructural: { small: 50, medium: 100, large: 180 },
+      yield_units_per_hour: {
+        formacion: { small: 2, medium: 1, large: 0.5 },
+        estructural: { small: 2, medium: 1, large: 0.5 },
+      },
+      difficultyIncrease: 30,
+      wasteRemovalMultiplier: 0,
+      minimumPrice: 0,
+    };
+
+    const single = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-tree'],
+        treeGroups: [{ id: 'tree-1', pruningType: 'shaping', aiSizeBand: 'medium', analysisLevel: 1 }],
+      } as any,
+      providerConfig,
+    });
+    const triple = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-tree'],
+        treeGroups: [{ id: 'tree-1', pruningType: 'shaping', quantity: 3, aiSizeBand: 'medium', analysisLevel: 1 }],
+      } as any,
+      providerConfig,
+    });
+
+    expect(single.eligibility).toEqual({ isEligible: true });
+    expect(triple.eligibility).toEqual({ isEligible: true });
+    // Formación mediana: 80 €/árbol y 1 árbol/hora → 3 unidades = 3× precio y horas.
+    expect(single.totalPrice).toBe(80);
+    expect(triple.totalPrice).toBe(240);
+    expect(triple.estimatedHours).toBe(3);
+  });
+
+  it('aplica el recargo de estado de arbustos cuando el grupo lleva state', () => {
+    const providerConfig = {
+      pricing_method: 'per_quantity',
+      prices_per_m2: { pequeñas: 2, medianas: 4, grandes: 6 },
+      yield_m2_per_hour: { pequeñas: 30, medianas: 20, grandes: 10 },
+      condition_surcharges: { media: 20, alta: 50 },
+      waste_removal: { percentage: 0 },
+      minimum_price: 0,
+    };
+
+    const normal = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-shrub'],
+        shrubGroups: [{ id: 'shrub-1', size: 'medianas', area: 10, state: 'normal' }],
+      } as any,
+      providerConfig,
+    });
+    const veryNeglected = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-shrub'],
+        shrubGroups: [{ id: 'shrub-1', size: 'medianas', area: 10, state: 'muy_descuidado' }],
+      } as any,
+      providerConfig,
+    });
+
+    // 10 m² × 4 €/m² = 40 €; muy descuidado aplica surcharges.alta (50%) → 60 €.
+    expect(normal.totalPrice).toBe(40);
+    expect(veryNeglected.totalPrice).toBe(60);
+    // Las horas también escalan: 10/20 = 0.5h → ×1.7 (muy descuidado) = 0.85 → redondeo a 1h.
+    expect(veryNeglected.estimatedHours).toBeGreaterThanOrEqual(normal.estimatedHours);
+  });
+
   it('cotiza setos en modo per_hour sin exigir pricing_matrix', () => {
     const result = buildAuthoritativeBookingQuote({
       bookingData: {

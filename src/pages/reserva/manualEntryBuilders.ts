@@ -257,10 +257,12 @@ function buildShrubGroups(items: ManualAnswers[]) {
   return items.map((answers, index) => {
     const superficie = num(answers.superficie_m2);
     const size = (sanitizeString(answers.tamano_dominante) || 'pequeñas') as 'pequeñas' | 'medianas' | 'grandes';
+    const estado = sanitizeString(answers.estado_plantas) || 'normal';
     const legacyTask = {
       tipo_servicio: 'Poda de plantas y arbustos',
       superficie_m2: superficie,
       tamano_dominante: size,
+      estado_plantas: estado,
       nivel_analisis: 1,
       observaciones: [],
       indices_imagenes: [],
@@ -277,8 +279,10 @@ function buildShrubGroups(items: ManualAnswers[]) {
       wasteRemoval: true,
       inputSource: 'manual' as const,
       ...emptyPhotoCollection(),
-      // adapter supplies area / size from the legacy task
+      // adapter supplies area / size / state from the legacy task
       ...adaptShrubAnalysisResult({ analysis, legacyTask, selectedIndices: [], totalPhotoCount: 0 }),
+      // Estado declarado por el cliente: no necesita re-confirmación.
+      stateProposedByAI: false,
     };
   });
 }

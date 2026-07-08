@@ -137,6 +137,11 @@ export interface EstimationResult {
     indice_imagen: number;
     especie: 'Phoenix canariensis' | 'Phoenix dactylifera' | 'Washingtonia robusta/filifera' | 'Syagrus romanzoffiana' | 'Trachycarpus fortunei' | 'Roystonea regia';
     altura: string;
+    altura_m?: number;
+    especie_confidence?: number | null;
+    altura_confidence?: number | null;
+    estado_confidence?: number | null;
+    referencia_escala?: string | null;
     estado?: string;
     nivel_analisis?: number;
     observaciones?: string[];
@@ -156,6 +161,9 @@ export interface EstimationResult {
     especie?: string;
     altura?: string;
     size_band?: 'small' | 'medium' | 'large' | 'over_9';
+    size_band_confidence?: number | null;
+    altura_confidence?: number | null;
+    referencia_escala?: string | null;
     altura_m?: number;
     // Legacy field; business logic should not depend on IA difficulty.
     dificultad_alta?: boolean;

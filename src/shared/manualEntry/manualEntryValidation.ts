@@ -135,6 +135,7 @@ const GARDEN_STATES = ['normal', 'descuidado', 'muy descuidado'];
 const HEDGE_STATES = ['normal', 'media', 'alta'];
 const WEEDING_STATES = ['normal', 'dificultad_media', 'dificultad_alta'];
 const SHRUB_SIZES = ['pequeñas', 'medianas', 'grandes'];
+const SHRUB_STATES = ['normal', 'descuidado', 'muy descuidado', 'muy_descuidado'];
 const TREE_BANDS = ['small', 'medium', 'large', 'over_9'];
 const TREE_PRUNING = ['structural', 'shaping', 'estructural', 'formacion'];
 const PALM_STATES = ['normal', 'descuidado', 'muy descuidado', 'muy_descuidado'];
@@ -257,6 +258,7 @@ export function validateManualBookingInput(
       groups.forEach((group, index) => {
         pushRange(errors, `shrubGroups[${index}].area`, group.area, MANUAL_RANGES.shrub.superficie_m2, 'la superficie de arbustos');
         pushEnum(errors, `shrubGroups[${index}].size`, group.size, SHRUB_SIZES, 'el tamaño de los arbustos');
+        pushEnum(errors, `shrubGroups[${index}].state`, group.state ?? 'normal', SHRUB_STATES, 'el estado de las plantas', true);
       });
       break;
     }

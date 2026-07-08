@@ -173,6 +173,7 @@ export interface SerializableBookingData {
   treeGroups?: Array<{
     id: string;
     pruningType: string;
+    quantity?: number;
     aiSizeBand?: 'small' | 'medium' | 'large' | 'over_9';
     difficultyHigh?: boolean;
     analysisLevel?: number;
@@ -1065,13 +1066,15 @@ export function buildAuthoritativeBookingQuote(params: {
     .flatMap((tree: any) => {
       const sizeBand = resolveTreeBand(tree);
       if (!sizeBand) return [];
-      return [{
-        id: String(tree.id),
+      // Cantidad confirmada por el cliente: un grupo puede representar N árboles idénticos.
+      const quantity = Math.max(1, Math.trunc(Number(tree.quantity) || 1));
+      return Array.from({ length: quantity }, (_, unitIndex) => ({
+        id: unitIndex === 0 ? String(tree.id) : `${tree.id}-${unitIndex}`,
         pruningType: mapTreePruningType(tree.pruningType),
         sizeBand,
         dificultad_alta: Boolean(tree.difficultyHigh),
         nivel_analisis: tree.analysisLevel,
-      }];
+      }));
     }) || [];
   const treeQuote =
     validTrees.length > 0 && isTreePruningConfig(config)

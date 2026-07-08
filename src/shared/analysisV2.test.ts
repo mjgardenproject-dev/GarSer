@@ -117,6 +117,69 @@ describe('adaptLegacyAnalysisToV2', () => {
     expect(validateAnalysisV2(analysis)).toEqual([]);
   });
 
+  it('preserva banda de altura, confidences y referencia de escala de palmeras', () => {
+    const analysis = adaptLegacyAnalysisToV2({
+      serviceName: 'Poda de palmeras',
+      sourcePhotoCount: 1,
+      legacyResponse: {
+        palmas: [
+          {
+            indice_imagen: 0,
+            especie: 'Washingtonia robusta/filifera',
+            altura_m: 9,
+            altura: '4-12',
+            estado: 'normal',
+            especie_confidence: 0.95,
+            altura_confidence: 1.7, // fuera de rango: debe quedar en 1
+            estado_confidence: -0.2, // fuera de rango: debe quedar en 0
+            referencia_escala: 'puerta de garaje ≈ 2 m',
+            nivel_analisis: 1,
+          },
+        ],
+      },
+    });
+
+    const metrics = analysis.service_metrics as PalmServiceMetrics;
+    expect(metrics.palmas[0]).toMatchObject({
+      altura_banda: '4-12',
+      especie_confidence: 0.95,
+      altura_confidence: 1,
+      estado_confidence: 0,
+      referencia_escala: 'puerta de garaje ≈ 2 m',
+    });
+    expect(validateAnalysisV2(analysis)).toEqual([]);
+  });
+
+  it('preserva confidences y referencia de escala de árboles', () => {
+    const analysis = adaptLegacyAnalysisToV2({
+      serviceName: 'Poda de árboles',
+      sourcePhotoCount: 1,
+      legacyResponse: {
+        arboles: [
+          {
+            indice_imagen: 0,
+            size_band: 'medium',
+            altura_m: 4.2,
+            size_band_confidence: 0.85,
+            altura_confidence: 1.4, // fuera de rango: debe quedar en 1
+            referencia_escala: 'persona ≈ 1,70 m',
+            nivel_analisis: 1,
+          },
+        ],
+      },
+    });
+
+    const metrics = analysis.service_metrics as { arboles: Array<Record<string, unknown>> };
+    expect(metrics.arboles[0]).toMatchObject({
+      size_band: 'medium',
+      altura_m: 4.2,
+      size_band_confidence: 0.85,
+      altura_confidence: 1,
+      referencia_escala: 'persona ≈ 1,70 m',
+    });
+    expect(validateAnalysisV2(analysis)).toEqual([]);
+  });
+
   it('preserva bands y horas de árboles', () => {
     const analysis = adaptLegacyAnalysisToV2({
       serviceName: 'Poda de árboles',
@@ -161,6 +224,38 @@ describe('adaptLegacyAnalysisToV2', () => {
     const metrics = analysis.service_metrics as ShrubServiceMetrics;
     expect(metrics.superficie_m2).toBe(10);
     expect(metrics.tamano_dominante).toBe('medianas');
+    expect(validateAnalysisV2(analysis)).toEqual([]);
+  });
+
+  it('preserva estado, confidences y referencia de escala de arbustos', () => {
+    const analysis = adaptLegacyAnalysisToV2({
+      serviceName: 'Poda de plantas y arbustos',
+      sourcePhotoCount: 1,
+      legacyResponse: {
+        tareas: [{
+          tipo_servicio: 'Poda de plantas y arbustos',
+          superficie_m2: 18,
+          tamano_dominante: 'medianas',
+          estado_plantas: 'muy descuidado',
+          superficie_confidence: 0.9,
+          tamano_confidence: 1.6, // fuera de rango: debe quedar en 1
+          estado_confidence: -0.5, // fuera de rango: debe quedar en 0
+          referencia_escala: 'valla de jardín ≈ 1,2 m',
+          nivel_analisis: 1,
+        }],
+      },
+    });
+
+    const metrics = analysis.service_metrics as ShrubServiceMetrics;
+    expect(metrics).toMatchObject({
+      superficie_m2: 18,
+      tamano_dominante: 'medianas',
+      estado_plantas: 'muy descuidado',
+      superficie_confidence: 0.9,
+      tamano_confidence: 1,
+      estado_confidence: 0,
+      referencia_escala: 'valla de jardín ≈ 1,2 m',
+    });
     expect(validateAnalysisV2(analysis)).toEqual([]);
   });
 

@@ -82,6 +82,12 @@ export interface PalmMetric {
   especie: string;
   altura_m: number;
   estado: string | null;
+  /** Banda de altura de precio ('0-4', '4-10', '>10'…) calculada en el edge según la especie. */
+  altura_banda?: string | null;
+  especie_confidence?: number | null;
+  altura_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
 }
 
 export interface TreeMetric {
@@ -90,6 +96,9 @@ export interface TreeMetric {
   altura_m?: number | null;
   tipo_arbol?: string | null;
   horas_estimadas?: number | null;
+  size_band_confidence?: number | null;
+  altura_confidence?: number | null;
+  referencia_escala?: string | null;
 }
 
 export interface PhytosanitaryServiceMetrics {
@@ -140,6 +149,12 @@ export interface TreeServiceMetrics {
 export interface ShrubServiceMetrics {
   superficie_m2: number;
   tamano_dominante: string | null;
+  /** Estado propuesto por la IA; el cliente lo confirma antes del checkout. */
+  estado_plantas?: string | null;
+  superficie_confidence?: number | null;
+  tamano_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
 }
 
 export interface WeedingServiceMetrics {
@@ -199,6 +214,12 @@ export interface LegacyAiTask {
   tamano_dominante?: string | null;
   tamano_total_jardin_m2?: number | null;
   porcentaje_superficie_plantas?: number | null;
+  /** Estado del macizo de plantas/arbustos (activa condition_surcharges media/alta del motor). */
+  estado_plantas?: string | null;
+  superficie_confidence?: number | null;
+  tamano_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
   metricas_fitosanitarias?: Partial<PhytosanitaryServiceMetrics> | null;
   nivel_analisis?: number | null;
   observaciones?: string[] | null;
@@ -209,7 +230,13 @@ export interface LegacyPalmResult {
   indice_imagen?: number | null;
   especie?: string | null;
   altura_m?: number | null;
+  /** Banda de altura de precio calculada por el edge según la especie. */
+  altura?: string | null;
   estado?: string | null;
+  especie_confidence?: number | null;
+  altura_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
   nivel_analisis?: number | null;
   observaciones?: string[] | null;
   tipo_acceso?: string | null;
@@ -222,6 +249,9 @@ export interface LegacyTreeResult {
   especie?: string | null;
   altura_m?: number | null;
   size_band?: TreeMetric['size_band'] | null;
+  size_band_confidence?: number | null;
+  altura_confidence?: number | null;
+  referencia_escala?: string | null;
   tipo_arbol?: string | null;
   horas_estimadas?: number | null;
   nivel_analisis?: number | null;
@@ -600,6 +630,12 @@ const adaptHedgeMetrics = (legacy: LegacyAnalysisResponse) => {
   };
 };
 
+const toConfidence = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(1, Math.max(0, parsed));
+};
+
 const adaptPalmMetrics = (legacy: LegacyAnalysisResponse) => {
   const palms = Array.isArray(legacy.palmas) ? legacy.palmas : [];
   const metrics: PalmServiceMetrics = {
@@ -607,6 +643,11 @@ const adaptPalmMetrics = (legacy: LegacyAnalysisResponse) => {
       especie: normalizeString(palm.especie) || 'No detectada',
       altura_m: toNonNegativeNumber(palm.altura_m),
       estado: normalizeString(palm.estado),
+      altura_banda: normalizeString(palm.altura),
+      especie_confidence: toConfidence(palm.especie_confidence),
+      altura_confidence: toConfidence(palm.altura_confidence),
+      estado_confidence: toConfidence(palm.estado_confidence),
+      referencia_escala: normalizeString(palm.referencia_escala),
     })),
   };
 
@@ -631,6 +672,9 @@ const adaptTreeMetrics = (legacy: LegacyAnalysisResponse) => {
         altura_m: tree.altura_m == null ? null : toNonNegativeNumber(tree.altura_m),
         tipo_arbol: normalizeString(tree.tipo_arbol),
         horas_estimadas: tree.horas_estimadas == null ? null : toNonNegativeNumber(tree.horas_estimadas),
+        size_band_confidence: toConfidence(tree.size_band_confidence),
+        altura_confidence: toConfidence(tree.altura_confidence),
+        referencia_escala: normalizeString(tree.referencia_escala),
       })),
   };
 
@@ -649,6 +693,11 @@ const adaptShrubMetrics = (legacy: LegacyAnalysisResponse) => {
     metrics: {
       superficie_m2: getShrubAreaFromTask(task),
       tamano_dominante: normalizeString(task?.tamano_dominante),
+      estado_plantas: normalizeString(task?.estado_plantas),
+      superficie_confidence: toConfidence(task?.superficie_confidence),
+      tamano_confidence: toConfidence(task?.tamano_confidence),
+      estado_confidence: toConfidence(task?.estado_confidence),
+      referencia_escala: normalizeString(task?.referencia_escala),
     } satisfies ShrubServiceMetrics,
     level: normalizeLevel(task?.nivel_analisis, legacy.reasons?.length ? 3 : 1),
     observations: uniqueStrings([task?.observaciones || [], legacy.reasons || []]),

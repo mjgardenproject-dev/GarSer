@@ -10,6 +10,10 @@ import {
   buildAnalysisPromptAssembly,
   DETERMINISTIC_PROMPT_SETTINGS,
 } from './new_prompts.ts';
+import {
+  PALM_SPECIES_HEIGHT_BANDS,
+  getMaxPlausiblePalmHeightM,
+} from '../../../src/domain/speciesBusinessRules.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -123,14 +127,8 @@ function filterPhytosanitaryMetricsByScope(metrics: any, scopes: string[]) {
 }
 
 // --- PALM PRICING LOGIC ---
-const SPECIES_RANGES: Record<string, string[]> = {
-  'Phoenix canariensis': ['0-4', '4-10', '>10'],
-  'Phoenix dactylifera': ['0-5', '5-10', '10-15', '>15'],
-  'Washingtonia robusta/filifera': ['0-4', '4-12', '12-20', '>20'],
-  'Syagrus romanzoffiana': ['0-5', '5-10', '>10'],
-  'Trachycarpus fortunei': ['0-3', '3-6', '>6'],
-  'Roystonea regia': ['0-6', '>6']
-};
+// SSOT de bandas de altura por especie: src/domain/speciesBusinessRules.ts
+const SPECIES_RANGES: Record<string, readonly string[]> = PALM_SPECIES_HEIGHT_BANDS;
 
 const PALM_CONSTANTS = {
   PRICING: {
@@ -168,6 +166,35 @@ function normalizePalmState(s: string): "normal" | "descuidado" | "muy descuidad
   if (normalized.includes('muy descuidado') || normalized.includes('muy_descuidado')) return 'muy descuidado';
   if (normalized.includes('descuidado')) return 'descuidado';
   return 'normal'; // strict fallback
+}
+
+function clampConfidence(value: any): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(1, Math.max(0, n));
+}
+
+// Altura total plausible de un árbol objetivo residencial (post-validación anti-alucinación).
+const TREE_MAX_PLAUSIBLE_HEIGHT_M = 40;
+
+function sanitizeTreeResult(tree: any) {
+  const sanitized = { ...tree };
+
+  // Regla de negocio: la dificultad la decide SIEMPRE el cliente, nunca la IA.
+  sanitized.dificultad_alta = false;
+
+  sanitized.altura_confidence = clampConfidence(sanitized.altura_confidence);
+  sanitized.size_band_confidence = clampConfidence(sanitized.size_band_confidence);
+
+  const heightNum = Number(sanitized.altura_m);
+  if (Number.isFinite(heightNum) && heightNum > TREE_MAX_PLAUSIBLE_HEIGHT_M) {
+    sanitized.nivel_analisis = Math.max(Number(sanitized.nivel_analisis) || 1, 2);
+    const observaciones = Array.isArray(sanitized.observaciones) ? sanitized.observaciones : [];
+    if (!observaciones.includes('AMBIGUOUS_SIZE')) observaciones.push('AMBIGUOUS_SIZE');
+    sanitized.observaciones = observaciones;
+  }
+
+  return sanitized;
 }
 
 function calculatePalmEstimation(palms: any[]) {
@@ -225,6 +252,20 @@ function calculatePalmEstimation(palms: any[]) {
 
       // Map exact height to the correct bucket based on species
       p.altura = bestBucket;
+
+      // Post-validación anti-alucinación: confidences saneadas a [0,1] y
+      // altura plausible por especie (fuera de rango → needs review, no rechazo).
+      p.especie_confidence = clampConfidence(p.especie_confidence);
+      p.altura_confidence = clampConfidence(p.altura_confidence);
+      p.estado_confidence = clampConfidence(p.estado_confidence);
+
+      const maxPlausible = getMaxPlausiblePalmHeightM(species);
+      if (maxPlausible !== null && heightNum > maxPlausible) {
+        p.nivel_analisis = Math.max(Number(p.nivel_analisis) || 1, 2);
+        const observaciones = Array.isArray(p.observaciones) ? p.observaciones : [];
+        if (!observaciones.includes('AMBIGUOUS_SIZE')) observaciones.push('AMBIGUOUS_SIZE');
+        p.observaciones = observaciones;
+      }
 
       const state = normalizePalmState(p.estado);
       p.estado = state; // enforce strict valid state in output
@@ -422,6 +463,27 @@ function normalizeShrubSize(value: unknown): ShrubSize | null {
   if (normalized.includes('mediana')) return 'medianas';
   if (normalized.includes('peque')) return 'pequeñas';
   return null;
+}
+
+// Superficie plausible máxima de macizos residenciales (post-validación anti-alucinación).
+const SHRUB_MAX_PLAUSIBLE_AREA_M2 = 500;
+
+type ShrubState = 'normal' | 'descuidado' | 'muy descuidado';
+
+function normalizeShrubState(value: unknown): ShrubState | null {
+  const normalized = String(value || '').toLowerCase().trim();
+  if (!normalized) return null;
+  if (normalized.includes('muy')) return 'muy descuidado';
+  if (normalized.includes('descuidad')) return 'descuidado';
+  if (normalized.includes('normal')) return 'normal';
+  return null;
+}
+
+// Al fusionar tareas del mismo tamaño, conservar el estado más severo (manda el peor).
+function worstShrubState(a: ShrubState | null, b: ShrubState | null): ShrubState | null {
+  const severity = (state: ShrubState | null) =>
+    state === 'muy descuidado' ? 2 : state === 'descuidado' ? 1 : state === 'normal' ? 0 : -1;
+  return severity(a) >= severity(b) ? a : b;
 }
 
 function getShrubAreaFromTask(task: any): number {
@@ -1113,7 +1175,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     // Support for Tree Analysis Response
     if (ai?.arboles && Array.isArray(ai.arboles)) {
-      return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { arboles: ai.arboles })), {
+      const sanitizedTrees = ai.arboles.map((tree: any) => sanitizeTreeResult(tree));
+      return new Response(JSON.stringify(buildResponseWithAnalysisV2(payload, { arboles: sanitizedTrees })), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -1126,7 +1189,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         
         tareas.forEach((task: any, taskIndex: number) => {
             if (task.tipo_servicio === 'Poda de plantas y arbustos') {
-                const normalizedLevel = [1, 2, 3].includes(Number(task.nivel_analisis))
+                let normalizedLevel = [1, 2, 3].includes(Number(task.nivel_analisis))
                   ? Number(task.nivel_analisis)
                   : 3;
                 const normalizedSize = normalizeShrubSize(task.tamano_dominante);
@@ -1138,12 +1201,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
                   ? task.indices_imagenes.filter((index: unknown) => Number.isInteger(index))
                   : [];
 
+                // Post-validación anti-alucinación: superficie plausible de macizo residencial.
+                if (normalizedLevel < 3 && normalizedArea > SHRUB_MAX_PLAUSIBLE_AREA_M2) {
+                  normalizedLevel = 2;
+                  if (!normalizedObs.includes('AMBIGUOUS_SIZE')) normalizedObs.push('AMBIGUOUS_SIZE');
+                }
+
                 const normalizedTask = {
                   ...task,
                   tipo_servicio: 'Poda de plantas y arbustos',
                   nivel_analisis: normalizedLevel,
                   tamano_dominante: normalizedLevel === 3 ? null : normalizedSize,
                   superficie_m2: normalizedLevel === 3 ? 0 : normalizedArea,
+                  estado_plantas: normalizedLevel === 3 ? null : normalizeShrubState(task.estado_plantas),
+                  superficie_confidence: clampConfidence(task.superficie_confidence),
+                  tamano_confidence: clampConfidence(task.tamano_confidence),
+                  estado_confidence: clampConfidence(task.estado_confidence),
                   observaciones: normalizedLevel === 3
                     ? ['ELEMENTS_NOT_DETECTED']
                     : (normalizedObs.length > 0 ? normalizedObs : null),
@@ -1161,20 +1234,24 @@ Deno.serve(async (req: Request): Promise<Response> => {
                 } else {
                     // Merge m2 directly extracted by IA (legacy fallback already normalized upstream)
                     mergedTasks[key].superficie_m2 += normalizedTask.superficie_m2;
-                    
+
                     // Merge image indices
                     const newIndices = normalizedTask.indices_imagenes || [];
                     mergedTasks[key].indices_imagenes = [...new Set([...mergedTasks[key].indices_imagenes, ...newIndices])].sort();
-                    
+
                     // Merge observations
                     const newObs = normalizedTask.observaciones || [];
                     mergedTasks[key].observaciones = [...new Set([...mergedTasks[key].observaciones, ...newObs])];
-                    
+
+                    // El estado más severo manda (criterio del motor: el peor estado de la zona)
+                    mergedTasks[key].estado_plantas = worstShrubState(mergedTasks[key].estado_plantas ?? null, normalizedTask.estado_plantas ?? null);
+
                     // Keep the worst analysis level (highest number)
                     mergedTasks[key].nivel_analisis = Math.max(mergedTasks[key].nivel_analisis, normalizedTask.nivel_analisis || 1);
                     if (mergedTasks[key].nivel_analisis === 3) {
                       mergedTasks[key].superficie_m2 = 0;
                       mergedTasks[key].tamano_dominante = null;
+                      mergedTasks[key].estado_plantas = null;
                       mergedTasks[key].observaciones = ['ELEMENTS_NOT_DETECTED'];
                     }
                 }

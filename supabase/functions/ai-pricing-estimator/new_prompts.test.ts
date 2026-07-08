@@ -27,6 +27,77 @@ describe('new_prompts SSOT backend', () => {
     });
   });
 
+  it('el prompt de palmeras incluye procedimiento, definiciones operativas y confidences', () => {
+    const assembly = buildAnalysisPromptAssembly({
+      service_name: 'Poda de palmeras',
+      photo_urls: ['https://example.com/palm-1.jpg'],
+    });
+
+    const systemPrompt = String(assembly.messages[0].content);
+    expect(assembly.service).toBe('Poda de palmeras');
+    // Procedimiento y medición de tronco
+    expect(systemPrompt).toContain('PROCEDURE');
+    expect(systemPrompt).toContain('BASE of the crown');
+    // Especies del catálogo con criterios visuales
+    expect(systemPrompt).toContain('SPECIES IDENTIFICATION TRAITS');
+    expect(systemPrompt).toContain('Trachycarpus fortunei');
+    // Definiciones operativas de estado
+    expect(systemPrompt).toContain('MAINTENANCE STATE DEFINITIONS');
+    expect(systemPrompt).toContain('"muy descuidado"');
+    // Rangos plausibles y calibración de confidence
+    expect(systemPrompt).toContain('PLAUSIBLE TRUNK HEIGHT RANGES');
+    expect(systemPrompt).toContain('CONFIDENCE CALIBRATION');
+    // Schema con confidences y referencia de escala
+    expect(systemPrompt).toContain('"especie_confidence"');
+    expect(systemPrompt).toContain('"altura_confidence"');
+    expect(systemPrompt).toContain('"estado_confidence"');
+    expect(systemPrompt).toContain('"referencia_escala"');
+  });
+
+  it('el prompt de árboles incluye definiciones de bandas, confidences y prohibición de dificultad IA', () => {
+    const assembly = buildAnalysisPromptAssembly({
+      service_name: 'Poda de árboles',
+      photo_urls: ['https://example.com/tree-1.jpg'],
+    });
+
+    const systemPrompt = String(assembly.messages[0].content);
+    expect(assembly.service).toBe('Poda de árboles');
+    // Procedimiento con altura total y referencias de escala
+    expect(systemPrompt).toContain('PROCEDURE');
+    expect(systemPrompt).toContain('TOTAL height');
+    expect(systemPrompt).toContain('referencia_escala');
+    // Definiciones operativas de bandas
+    expect(systemPrompt).toContain('SIZE BAND DEFINITIONS');
+    expect(systemPrompt).toContain('"over_9": 9 m or more');
+    // Plausibilidad y confidence
+    expect(systemPrompt).toContain('PLAUSIBLE HEIGHT RANGE');
+    expect(systemPrompt).toContain('CONFIDENCE CALIBRATION');
+    expect(systemPrompt).toContain('"size_band_confidence"');
+    expect(systemPrompt).toContain('"altura_confidence"');
+    // La dificultad nunca la decide la IA
+    expect(systemPrompt).toContain('dificultad_alta must remain false');
+  });
+
+  it('el prompt de arbustos incluye estado operativo, confidences y rango plausible', () => {
+    const assembly = buildAnalysisPromptAssembly({
+      service_name: 'Poda de plantas y arbustos',
+      photo_urls: ['https://example.com/shrub-1.jpg'],
+    });
+
+    const systemPrompt = String(assembly.messages[0].content);
+    expect(assembly.service).toBe('Poda de plantas y arbustos');
+    expect(systemPrompt).toContain('PROCEDURE');
+    expect(systemPrompt).toContain('DOMINANT SIZE DEFINITIONS');
+    expect(systemPrompt).toContain('MAINTENANCE STATE DEFINITIONS');
+    expect(systemPrompt).toContain('estado_plantas');
+    expect(systemPrompt).toContain('PLAUSIBLE AREA RANGE');
+    expect(systemPrompt).toContain('CONFIDENCE CALIBRATION');
+    expect(systemPrompt).toContain('"superficie_confidence"');
+    expect(systemPrompt).toContain('"tamano_confidence"');
+    expect(systemPrompt).toContain('"estado_confidence"');
+    expect(systemPrompt).toContain('"referencia_escala"');
+  });
+
   it('etiqueta caras de setos (FACE_A / FACE_B) en el contenido del usuario', () => {
     const hedgeAssembly = buildAnalysisPromptAssembly({
       service_name: 'Poda de setos',

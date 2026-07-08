@@ -102,6 +102,14 @@ export interface BookingData {
     // Propuesta de la IA: nº de palmeras detectadas y resumen, para que el cliente confirme la cantidad.
     aiDetectedCount?: number;
     aiDetectedSummary?: string;
+    // Altura de tronco (m) estimada por la IA: permite re-mapear la banda al cambiar de especie.
+    aiDetectedHeightM?: number;
+    // Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente.
+    especieConfidence?: number | null;
+    alturaConfidence?: number | null;
+    estadoConfidence?: number | null;
+    // true cuando el estado (descuidado/muy_descuidado) fue propuesto por la IA y aún no lo confirmó el cliente.
+    stateProposedByAI?: boolean;
     hasPhytosanitary?: boolean;
     hasTrunkPeeling?: boolean;
     lowestRangeThreshold?: string;
@@ -189,6 +197,8 @@ export interface BookingData {
   treeGroups?: Array<{
     id: string;
     pruningType: 'structural' | 'shaping';
+    // Nº de árboles idénticos del grupo (especie/tamaño/estado similares). Default 1.
+    quantity?: number;
     photoIds?: string[];
     photoUrls: string[];
     files?: File[];
@@ -196,6 +206,12 @@ export interface BookingData {
     analyzedIndices?: number[];
     aiSizeBand?: 'small' | 'medium' | 'large' | 'over_9';
     aiHeightMeters?: number;
+    // Propuesta de la IA: nº de árboles detectados y resumen, para que el cliente confirme la cantidad.
+    aiDetectedCount?: number;
+    aiDetectedSummary?: string;
+    // Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente.
+    sizeBandConfidence?: number | null;
+    alturaConfidence?: number | null;
     difficultyHigh?: boolean;
     analysisLevel?: number;
     observations?: string[];
@@ -208,6 +224,14 @@ export interface BookingData {
     id: string;
     area: number; // m2
     size: 'pequeñas' | 'medianas' | 'grandes';
+    // Estado del macizo: activa condition_surcharges.media/alta del jardinero.
+    state?: 'normal' | 'descuidado' | 'muy_descuidado';
+    // true cuando el estado (descuidado/muy_descuidado) fue propuesto por la IA y aún no lo confirmó el cliente.
+    stateProposedByAI?: boolean;
+    // Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente.
+    superficieConfidence?: number | null;
+    tamanoConfidence?: number | null;
+    estadoConfidence?: number | null;
     wasteRemoval: boolean;
     photoIds?: string[];
     photoUrls?: string[];

@@ -75,10 +75,14 @@ import {
   isDetailsDevAnalysisEnabled,
 } from './detailsPageDevSeeds';
 import {
+  PALM_CANONICAL_SPECIES,
   getHighestOpenRangeThresholdForSpecies,
   getLowestRangeThresholdForSpecies,
+  getPalmHeightBandsForSpecies,
   isHighestOpenRangeForSpecies,
   isLowestRangeThresholdForSpecies,
+  mapPalmHeightToBand,
+  resolveSpeciesBusinessRule,
   supportsPhytosanitaryForSpecies,
   supportsTrunkPeelingForSpecies
 } from '../../domain/speciesBusinessRules';
@@ -144,6 +148,22 @@ const treeBandLabel = (band?: TreeSizeBand | null): string => {
   if (band === 'large') return 'Grande (5-9m)';
   if (band === 'over_9') return 'Muy grande (>9m)';
   return '-';
+};
+
+const TREE_BAND_OPTIONS: TreeSizeBand[] = ['small', 'medium', 'large', 'over_9'];
+
+// Resume los árboles detectados por banda de tamaño para que el cliente
+// pueda confirmar cuántos quiere podar (la IA propone, el cliente decide).
+const summarizeDetectedTrees = (trees: Array<{ size_band?: string | null }>): string => {
+    if (!trees || trees.length === 0) return '';
+    const counts = new Map<string, number>();
+    trees.forEach((t) => {
+        const band = treeBandLabel((t?.size_band as TreeSizeBand) || null);
+        counts.set(band, (counts.get(band) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+        .map(([label, count]) => `${count}× ${label}`)
+        .join(', ');
 };
 
 export const shouldShowZoneAnalysisResult = (hasResult: boolean, isZoneAnalyzing: boolean) =>
@@ -261,6 +281,21 @@ const normalizePalmState = (estado?: string): 'normal' | 'descuidado' | 'muy_des
     if (lower.includes('descuidada') || lower.includes('descuidado')) return 'descuidado';
     return 'normal';
 };
+
+const toNullableConfidence = (value: unknown): number | null => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.min(1, Math.max(0, parsed));
+};
+
+const PALM_STATE_OPTIONS: Array<{ value: 'normal' | 'descuidado' | 'muy_descuidado'; label: string }> = [
+    { value: 'normal', label: 'Normal' },
+    { value: 'descuidado', label: 'Descuidada' },
+    { value: 'muy_descuidado', label: 'Muy descuidada' },
+];
+
+// Umbral por debajo del cual pedimos al cliente que revise el campo (regla E07 del flujo).
+const PALM_CONFIDENCE_REVIEW_THRESHOLD = 0.8;
 
 // Resume las palmeras detectadas por especie y altura para que el cliente
 // pueda confirmar cuántas quiere podar (la IA propone, el cliente decide).
@@ -1321,7 +1356,8 @@ const DetailsPage: React.FC = () => {
     if (validGroups.length === 0) return 0;
 
     const total = validGroups.reduce((acc: number, t: any) => {
-      return acc + estimateTreeZoneHours(t);
+      const quantity = Math.max(1, Math.trunc(Number(t.quantity) || 1));
+      return acc + estimateTreeZoneHours(t) * quantity;
     }, 0);
     return Math.max(0, Math.ceil(total));
   };
@@ -1681,6 +1717,13 @@ const DetailsPage: React.FC = () => {
         return;
       }
     }
+    if (debugService === 'Poda de plantas y arbustos') {
+      const validShrubs = (bookingData.shrubGroups || []).filter((g: any) => !(g.isFailed === true || g.analysisLevel === 3));
+      if (validShrubs.length === 0 || !validShrubs.some((g: any) => Number(g.area) > 0)) {
+        toast.error('Analiza al menos un grupo de plantas con superficie válida para continuar.');
+        return;
+      }
+    }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
     setBookingData({ photos: filePhotos, description: descriptionRef.current });
@@ -1913,9 +1956,12 @@ const DetailsPage: React.FC = () => {
           {
             id: `ai-tree-${Date.now()}`,
             pruningType: 'structural' as const,
+            quantity: 1,
             photoUrls: targetUrls.map((_, i) => photoUrls[indexMap[i]]).filter(Boolean),
             aiSizeBand: aiSizeBand ?? undefined,
             aiHeightMeters: Number.isFinite(legacyHeight) ? legacyHeight : 0,
+            sizeBandConfidence: toNullableConfidence((t as any).size_band_confidence),
+            alturaConfidence: toNullableConfidence((t as any).altura_confidence),
             difficultyHigh: undefined,
             analysisLevel,
             observations: t.observaciones || [],
@@ -2330,7 +2376,7 @@ const DetailsPage: React.FC = () => {
     if (lower.includes('palmera')) {
         return {
             title: 'Fotos de tus palmeras',
-            description: 'Sube una foto por cada tipo de palmera diferente. Las palmeras tienen que verse enteras para las fotos desde el suelo hasta la corona. Si tienes varias iguales en especie, tamaño y estado, solo necesitas subir una foto.'
+            description: 'Sube 1-3 fotos por cada tipo de palmera: la palmera entera (desde la base del tronco hasta la corona) y, si puedes, un detalle de la corona. Hazlas de día, con el sol a tu espalda y sin recortar la copa. Truco: si alguien se pone al lado de la palmera calculamos la altura con más precisión. Si tienes varias iguales en especie, tamaño y estado, basta una foto: luego confirmas cuántas son.'
         };
     }
     if (lower.includes('césped') || lower.includes('cesped')) {
@@ -2348,7 +2394,13 @@ const DetailsPage: React.FC = () => {
     if (lower.includes('árbol') || lower.includes('arbol')) {
         return {
             title: 'Fotos de los árboles',
-            description: 'Sube fotos generales de los árboles a podar.'
+            description: 'Sube 1-3 fotos por cada árbol o grupo de árboles iguales: el árbol entero (desde la base del tronco hasta la punta de la copa), de día y sin recortar la copa. Truco: si alguien se pone al lado del árbol calculamos su tamaño con más precisión. Si tienes varios árboles parecidos, basta una foto: luego confirmas cuántos son.'
+        };
+    }
+    if (lower.includes('planta') || lower.includes('arbusto')) {
+        return {
+            title: 'Fotos de tus plantas y arbustos',
+            description: 'Sube 1-3 fotos por cada macizo o grupo de plantas: el macizo completo desde 3-5 m y, si puedes, un detalle del follaje. Hazlas de día y con el sol a tu espalda. Truco: deja una silla o el cubo de basura junto al macizo — así calculamos la superficie con más precisión. Si tienes macizos separados, añade un grupo por cada uno.'
         };
     }
     if (lower.includes('limpieza') || lower.includes('desbroce') || lower.includes('hierbas')) {
@@ -3193,6 +3245,7 @@ const DetailsPage: React.FC = () => {
     const newGroup = {
         id: `tree-${Date.now()}`,
         pruningType: 'structural' as const,
+        quantity: 1,
         photoIds: [] as string[],
         photoUrls: [] as string[],
         aiSizeBand: undefined as TreeSizeBand | undefined,
@@ -3256,6 +3309,10 @@ const DetailsPage: React.FC = () => {
                   ...zone,
                   aiSizeBand: undefined,
                   aiHeightMeters: 0,
+                  aiDetectedCount: undefined,
+                  aiDetectedSummary: undefined,
+                  sizeBandConfidence: undefined,
+                  alturaConfidence: undefined,
                   difficultyHigh: undefined,
                   estimatedHours: 0
               }));
@@ -3431,6 +3488,13 @@ const DetailsPage: React.FC = () => {
           (group as any).hasPhytosanitary = supportsPhytosanitaryForSpecies(group.species);
           (group as any).aiDetectedCount = detectedPalms.length;
           (group as any).aiDetectedSummary = summarizeDetectedPalms(detectedPalms);
+          // Datos de la propuesta IA para confirmación del cliente: altura en metros
+          // (permite re-mapear banda al cambiar especie) y confidences por campo.
+          (group as any).aiDetectedHeightM = Number((p0 as any)?.altura_m) > 0 ? Number((p0 as any).altura_m) : undefined;
+          (group as any).especieConfidence = toNullableConfidence((p0 as any)?.especie_confidence);
+          (group as any).alturaConfidence = toNullableConfidence((p0 as any)?.altura_confidence);
+          (group as any).estadoConfidence = toNullableConfidence((p0 as any)?.estado_confidence);
+          (group as any).stateProposedByAI = group.state !== 'normal';
           groups[idx] = group;
 
           await updatePalmPricing(groups);
@@ -3542,7 +3606,11 @@ const analyzeTreeGroup = async (id: string) => {
           setDebugLogs(currentDebugInfo);
 
 
-          const a = Array.isArray(res.arboles) && res.arboles.length > 0 ? res.arboles[0] : null;
+          const allTrees = Array.isArray(res.arboles) ? res.arboles : [];
+          // Solo árboles realmente analizados (excluye fallos nivel 3).
+          const detectedTrees = allTrees.filter((t) => Number(t?.nivel_analisis) !== 3 && !!t?.size_band);
+          // La IA PROPONE: tomamos el árbol principal y el cliente confirma la cantidad.
+          const a = detectedTrees[0] || allTrees[0] || null;
           const treePatch = adaptTreeAnalysisResult({
             analysis,
             legacyTree: a,
@@ -3551,6 +3619,9 @@ const analyzeTreeGroup = async (id: string) => {
             difficultyHigh: group.difficultyHigh,
           });
           Object.assign(group, treePatch);
+          (group as any).quantity = Math.max(1, Math.trunc(Number((group as any).quantity) || 1));
+          (group as any).aiDetectedCount = detectedTrees.length;
+          (group as any).aiDetectedSummary = summarizeDetectedTrees(detectedTrees);
           group.isFailed = Boolean(group.isFailed || !group.aiSizeBand);
           group.estimatedHours = estimateTreeZoneHours(group);
 
@@ -3640,6 +3711,14 @@ const analyzeTreeGroup = async (id: string) => {
     };
     const newGroups = [...(bookingData.shrubGroups || []), newGroup];
     commitShrubGroups(newGroups, true);
+  };
+
+  const updateShrubGroup = (id: string, updates: Partial<NonNullable<BookingData['shrubGroups']>[number]>) => {
+    const next = [...(bookingData.shrubGroups || [])];
+    const idx = next.findIndex((z) => z.id === id);
+    if (idx === -1) return;
+    next[idx] = { ...next[idx], ...updates };
+    commitShrubGroups(next, true);
   };
 
   const removeShrubGroup = (id: string) => {
@@ -4770,13 +4849,102 @@ const analyzeTreeGroup = async (id: string) => {
                                                         title={zone.species || 'Desconocida'}
                                                         analysis={zone.analysisV2}
                                                         analysisLevel={zone.analysisLevel}
-                                                        stats={[
-                                                            { label: 'Altura', value: zone.height || '-' },
-                                                            { label: 'Estado', value: <span className="capitalize">{zone.state || 'normal'}</span> }
-                                                        ]}
                                                         observations={zone.observations}
                                                         onDelete={() => removePalmGroup(zone.id)}
                                                     >
+                                                        {/* Resumen editable: la IA propone especie/altura/estado y el cliente confirma o corrige */}
+                                                        {(() => {
+                                                            const zoneAny = zone as any;
+                                                            const canonicalSpecies = resolveSpeciesBusinessRule(zone.species)?.canonicalName || '';
+                                                            const heightBands = getPalmHeightBandsForSpecies(zone.species);
+                                                            const lowSpeciesConfidence = zoneAny.especieConfidence != null && zoneAny.especieConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+                                                            const isSimilarSpecies = /o similar/i.test(zone.species || '');
+                                                            const lowHeightConfidence = zoneAny.alturaConfidence != null && zoneAny.alturaConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+                                                            const handleSpeciesEdit = (newSpecies: string) => {
+                                                                if (!newSpecies) return;
+                                                                const heightM = Number(zoneAny.aiDetectedHeightM);
+                                                                const bands = getPalmHeightBandsForSpecies(newSpecies);
+                                                                const rebanded = Number.isFinite(heightM) && heightM > 0
+                                                                    ? mapPalmHeightToBand(newSpecies, heightM)
+                                                                    : null;
+                                                                const nextHeight = rebanded
+                                                                    || (bands.includes(zone.height) ? zone.height : bands[0] || '');
+                                                                updatePalmGroup(zone.id, { species: newSpecies, height: nextHeight } as any);
+                                                            };
+                                                            return (
+                                                                <div className="mt-3 space-y-3">
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Especie</label>
+                                                                            <select
+                                                                                value={canonicalSpecies}
+                                                                                onChange={(e) => handleSpeciesEdit(e.target.value)}
+                                                                                className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                            >
+                                                                                {!canonicalSpecies && <option value="">Selecciona especie</option>}
+                                                                                {PALM_CANONICAL_SPECIES.map((sp) => (
+                                                                                    <option key={sp} value={sp}>{sp}</option>
+                                                                                ))}
+                                                                            </select>
+                                                                            {(lowSpeciesConfidence || isSimilarSpecies) && (
+                                                                                <p className="text-[11px] text-amber-700 mt-1">
+                                                                                    La IA no está segura de la especie: revísala, influye en el precio.
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Altura del tronco</label>
+                                                                            <select
+                                                                                value={zone.height || ''}
+                                                                                onChange={(e) => updatePalmGroup(zone.id, { height: e.target.value } as any)}
+                                                                                className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                            >
+                                                                                {!zone.height && <option value="">Selecciona altura</option>}
+                                                                                {zone.height && !heightBands.includes(zone.height) && (
+                                                                                    <option value={zone.height}>{zone.height} m</option>
+                                                                                )}
+                                                                                {heightBands.map((band) => (
+                                                                                    <option key={band} value={band}>{band} m</option>
+                                                                                ))}
+                                                                            </select>
+                                                                            {lowHeightConfidence && (
+                                                                                <p className="text-[11px] text-amber-700 mt-1">
+                                                                                    Revisa la altura: en las fotos no había una referencia de escala clara.
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Estado de la palmera</label>
+                                                                        <div className="flex gap-2">
+                                                                            {PALM_STATE_OPTIONS.map((option) => {
+                                                                                const isActive = normalizePalmState(zone.state) === option.value;
+                                                                                return (
+                                                                                    <button
+                                                                                        key={option.value}
+                                                                                        type="button"
+                                                                                        onClick={() => updatePalmGroup(zone.id, { state: option.value, stateProposedByAI: false } as any)}
+                                                                                        className={`flex-1 py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                                                                                            isActive
+                                                                                                ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                                                                : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                                                                        }`}
+                                                                                    >
+                                                                                        {option.label}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                        {zoneAny.stateProposedByAI && normalizePalmState(zone.state) !== 'normal' && (
+                                                                            <p className="text-[11px] text-amber-700 mt-1">
+                                                                                Estado propuesto por la IA según tus fotos. Puede aplicar un recargo del profesional: confírmalo o corrígelo.
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+
                                                         {/* Propuesta de la IA: detección como sugerencia, el cliente confirma la cantidad */}
                                                         {Number((zone as any).aiDetectedCount || 0) > 1 && (
                                                             <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-3 py-2 mt-3">
@@ -5020,6 +5188,10 @@ const analyzeTreeGroup = async (id: string) => {
                                                               ...z,
                                                               aiSizeBand: undefined,
                                                               aiHeightMeters: 0,
+                                                              aiDetectedCount: undefined,
+                                                              aiDetectedSummary: undefined,
+                                                              sizeBandConfidence: undefined,
+                                                              alturaConfidence: undefined,
                                                               difficultyHigh: undefined,
                                                               estimatedHours: 0
                                                             }));
@@ -5050,16 +5222,102 @@ const analyzeTreeGroup = async (id: string) => {
                                                     />
                                                 ) : (
                                                     <ServiceResultCard
-                                                        title={zone.pruningType === 'shaping' ? 'Poda de Formación' : 'Poda Estructural'}
+                                                        title={`Árbol ${treeBandLabel(normalizeTreeSizeBand((zone as any).aiSizeBand)).toLowerCase()}`}
                                                         analysis={zone.analysisV2}
                                                         analysisLevel={zone.analysisLevel}
-                                                        stats={[
-                                                            { label: 'Tamaño', value: treeBandLabel(normalizeTreeSizeBand((zone as any).aiSizeBand)) },
-                                                            { label: 'Acceso', value: typeof zone.difficultyHigh === 'boolean' ? (zone.difficultyHigh ? 'Difícil' : 'Fácil') : 'Pendiente de respuesta' }
-                                                        ]}
                                                         observations={zone.observations}
                                                         onDelete={() => removeTreeAnalysisResult(zone.id)}
-                                                    />
+                                                    >
+                                                        {/* Resumen editable: la IA propone el tamaño y el cliente confirma; el tipo de poda lo elige SIEMPRE el cliente */}
+                                                        {(() => {
+                                                            const zoneAny = zone as any;
+                                                            const currentBand = normalizeTreeSizeBand(zoneAny.aiSizeBand);
+                                                            const lowBandConfidence = zoneAny.sizeBandConfidence != null && zoneAny.sizeBandConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+                                                            const quantity = Math.max(1, Math.trunc(Number(zoneAny.quantity) || 1));
+                                                            return (
+                                                                <div className="mt-3 space-y-3">
+                                                                    <div>
+                                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Tipo de poda</label>
+                                                                        <div className="flex gap-2">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => updateTreeGroup(zone.id, { pruningType: 'shaping' })}
+                                                                                className={`flex-1 py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                                                                                    zone.pruningType === 'shaping'
+                                                                                        ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                                                        : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                                                                }`}
+                                                                            >
+                                                                                Poda de formación
+                                                                                <span className="block text-[10px] font-normal text-gray-500 mt-0.5">Mantenimiento estético y de forma</span>
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => updateTreeGroup(zone.id, { pruningType: 'structural' })}
+                                                                                className={`flex-1 py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                                                                                    zone.pruningType !== 'shaping'
+                                                                                        ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                                                        : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                                                                }`}
+                                                                            >
+                                                                                Poda estructural
+                                                                                <span className="block text-[10px] font-normal text-gray-500 mt-0.5">Aclareo, ramas gruesas o reducción de copa</span>
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Tamaño del árbol</label>
+                                                                        <select
+                                                                            value={currentBand || ''}
+                                                                            onChange={(e) => updateTreeGroup(zone.id, { aiSizeBand: e.target.value || undefined })}
+                                                                            className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                        >
+                                                                            {!currentBand && <option value="">Selecciona tamaño</option>}
+                                                                            {TREE_BAND_OPTIONS.map((band) => (
+                                                                                <option key={band} value={band}>{treeBandLabel(band)}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        {lowBandConfidence && (
+                                                                            <p className="text-[11px] text-amber-700 mt-1">
+                                                                                Revisa el tamaño: en las fotos no había una referencia de escala clara. Influye en el precio.
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                    {Number(zoneAny.aiDetectedCount || 0) > 1 && (
+                                                                        <div className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-3 py-2">
+                                                                            La IA ha detectado <span className="font-semibold">{zoneAny.aiDetectedCount} árboles</span> en estas fotos
+                                                                            {zoneAny.aiDetectedSummary ? <> ({zoneAny.aiDetectedSummary})</> : null}.
+                                                                            Confirma cuántos quieres podar ajustando la cantidad. Si hay tamaños distintos, añade un grupo aparte.
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="text-xs text-gray-600 flex items-center gap-2 pt-3 border-t border-gray-100">
+                                                                        <span className="font-medium text-gray-700">Cantidad de árboles idénticos:</span>
+                                                                        <div className="flex items-center border border-gray-300 rounded-md bg-white">
+                                                                            <button
+                                                                                className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-r border-gray-200"
+                                                                                onClick={() => updateTreeGroup(zone.id, { quantity: Math.max(1, quantity - 1) })}
+                                                                            >
+                                                                                -
+                                                                            </button>
+                                                                            <input
+                                                                                type="number"
+                                                                                min="1"
+                                                                                value={quantity}
+                                                                                onChange={(e) => updateTreeGroup(zone.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                                                                                className="w-10 text-center text-sm py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                            />
+                                                                            <button
+                                                                                className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
+                                                                                onClick={() => updateTreeGroup(zone.id, { quantity: quantity + 1 })}
+                                                                            >
+                                                                                +
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </ServiceResultCard>
                                                 )}
                                                 {!isFailedResult && (
                                                     <div className="mt-3 pt-3 border-t border-gray-100">
@@ -5214,12 +5472,81 @@ const analyzeTreeGroup = async (id: string) => {
                                                         title="Macizo de plantas y arbustos"
                                                         analysis={group.analysisV2}
                                                         analysisLevel={group.analysisLevel}
-                                                        stats={[
-                                                            { label: 'Superficie', value: `${group.area} m²` },
-                                                            { label: 'Tamaño dominante', value: <span className="capitalize">{group.size}</span> }
-                                                        ]}
                                                         observations={group.observations}
-                                                    />
+                                                    >
+                                                        {/* Resumen editable: la IA propone superficie/tamaño/estado y el cliente confirma o corrige */}
+                                                        {(() => {
+                                                            const groupAny = group as any;
+                                                            const lowAreaConfidence = groupAny.superficieConfidence != null && groupAny.superficieConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+                                                            const lowSizeConfidence = groupAny.tamanoConfidence != null && groupAny.tamanoConfidence < PALM_CONFIDENCE_REVIEW_THRESHOLD;
+                                                            return (
+                                                                <div className="mt-3 space-y-3">
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Superficie (m²)</label>
+                                                                            <input
+                                                                                type="number"
+                                                                                min="1"
+                                                                                value={group.area || ''}
+                                                                                onChange={(e) => updateShrubGroup(group.id, { area: Math.max(0, parseInt(e.target.value) || 0) })}
+                                                                                className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                            />
+                                                                            {lowAreaConfidence && (
+                                                                                <p className="text-[11px] text-amber-700 mt-1">
+                                                                                    Revisa la superficie: en las fotos no había una referencia de escala clara.
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                        <div>
+                                                                            <label className="block text-xs font-medium text-gray-700 mb-1">Tamaño dominante</label>
+                                                                            <select
+                                                                                value={group.size}
+                                                                                onChange={(e) => updateShrubGroup(group.id, { size: e.target.value as 'pequeñas' | 'medianas' | 'grandes' })}
+                                                                                className="w-full text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+                                                                            >
+                                                                                <option value="pequeñas">Pequeñas (bajo la rodilla)</option>
+                                                                                <option value="medianas">Medianas (hasta el pecho)</option>
+                                                                                <option value="grandes">Grandes (sobre la cabeza)</option>
+                                                                            </select>
+                                                                            {lowSizeConfidence && (
+                                                                                <p className="text-[11px] text-amber-700 mt-1">
+                                                                                    Revisa el tamaño dominante: influye en el precio.
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="block text-xs font-medium text-gray-700 mb-1">Estado de las plantas</label>
+                                                                        <div className="flex gap-2">
+                                                                            {PALM_STATE_OPTIONS.map((option) => {
+                                                                                const isActive = (groupAny.state || 'normal') === option.value;
+                                                                                const label = option.value === 'normal' ? 'Normal' : option.value === 'descuidado' ? 'Descuidadas' : 'Muy descuidadas';
+                                                                                return (
+                                                                                    <button
+                                                                                        key={option.value}
+                                                                                        type="button"
+                                                                                        onClick={() => updateShrubGroup(group.id, { state: option.value, stateProposedByAI: false } as any)}
+                                                                                        className={`flex-1 py-2 px-2 rounded-lg border text-xs font-medium transition-colors ${
+                                                                                            isActive
+                                                                                                ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-500'
+                                                                                                : 'bg-white border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'
+                                                                                        }`}
+                                                                                    >
+                                                                                        {label}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                        {groupAny.stateProposedByAI && (groupAny.state || 'normal') !== 'normal' && (
+                                                                            <p className="text-[11px] text-amber-700 mt-1">
+                                                                                Estado propuesto por la IA según tus fotos. Puede aplicar un recargo del profesional: confírmalo o corrígelo.
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </ServiceResultCard>
                                                 )}
                                             </div>
                                          )}

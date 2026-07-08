@@ -5,17 +5,14 @@ import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
 import { getPricingMethod } from '../../utils/hourlyPricing';
+import { PALM_SPECIES_HEIGHT_BANDS } from '../../domain/speciesBusinessRules';
 
 export type PalmHeight = string;
 
-export const SPECIES_RANGES: Record<PalmSpecies, string[]> = {
-  'Phoenix canariensis': ['0-4', '4-10', '>10'],
-  'Phoenix dactylifera': ['0-5', '5-10', '10-15', '>15'],
-  'Washingtonia robusta/filifera': ['0-4', '4-12', '12-20', '>20'],
-  'Syagrus romanzoffiana': ['0-5', '5-10', '>10'],
-  'Trachycarpus fortunei': ['0-3', '3-6', '>6'],
-  'Roystonea regia': ['0-6', '>6']
-};
+// SSOT de bandas de altura por especie: src/domain/speciesBusinessRules.ts
+export const SPECIES_RANGES: Record<PalmSpecies, string[]> = Object.fromEntries(
+  Object.entries(PALM_SPECIES_HEIGHT_BANDS).map(([species, bands]) => [species, [...bands]])
+) as Record<PalmSpecies, string[]>;
 
 const EMPTY_CONFIG: PalmPricingConfig = {
   species_prices: {

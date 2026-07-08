@@ -69,6 +69,35 @@ export const speciesBusinessRules: Record<PalmCanonicalSpecies, SpeciesBusinessR
   }
 };
 
+/**
+ * Bandas de altura de tronco (en metros, sin sufijo "m") por especie.
+ * SSOT compartido por el configurador del jardinero, el edge de análisis IA
+ * y la UI de reserva. Las claves de `height_prices` y `yield_units_per_hour`
+ * del jardinero usan exactamente estos literales.
+ */
+export const PALM_SPECIES_HEIGHT_BANDS: Record<PalmCanonicalSpecies, readonly string[]> = {
+  'Phoenix canariensis': ['0-4', '4-10', '>10'],
+  'Phoenix dactylifera': ['0-5', '5-10', '10-15', '>15'],
+  'Washingtonia robusta/filifera': ['0-4', '4-12', '12-20', '>20'],
+  'Syagrus romanzoffiana': ['0-5', '5-10', '>10'],
+  'Trachycarpus fortunei': ['0-3', '3-6', '>6'],
+  'Roystonea regia': ['0-6', '>6']
+};
+
+/**
+ * Altura de tronco máxima plausible (m) por especie, para post-validación
+ * anti-alucinación del análisis IA. Un valor por encima no se rechaza: se
+ * degrada el nivel de análisis y se pide confirmación al cliente.
+ */
+export const PALM_SPECIES_MAX_PLAUSIBLE_HEIGHT_M: Record<PalmCanonicalSpecies, number> = {
+  'Phoenix canariensis': 20,
+  'Phoenix dactylifera': 25,
+  'Washingtonia robusta/filifera': 30,
+  'Syagrus romanzoffiana': 20,
+  'Trachycarpus fortunei': 12,
+  'Roystonea regia': 25
+};
+
 const normalizeSpecies = (species: string): string => {
   return (species || '').toLowerCase().replace(/\s+o similar$/, '').trim();
 };
@@ -133,6 +162,37 @@ export const isHighestOpenRangeForSpecies = (species: string, heightRange: strin
   const threshold = getHighestOpenRangeThresholdForSpecies(species);
   if (!threshold) return false;
   return normalizeHeightRange(heightRange) === normalizeHeightRange(threshold);
+};
+
+export const getPalmHeightBandsForSpecies = (species: string): readonly string[] => {
+  const rule = resolveSpeciesBusinessRule(species);
+  if (!rule) return [];
+  return PALM_SPECIES_HEIGHT_BANDS[rule.canonicalName];
+};
+
+/**
+ * Mapea una altura de tronco en metros a la banda de precio de la especie.
+ * Devuelve null si la especie no es canónica o la altura no es válida.
+ */
+export const mapPalmHeightToBand = (species: string, heightM: number): string | null => {
+  const bands = getPalmHeightBandsForSpecies(species);
+  if (bands.length === 0 || !Number.isFinite(heightM) || heightM < 0) return null;
+
+  for (const band of bands) {
+    if (band.startsWith('>')) {
+      if (heightM >= parseFloat(band.slice(1))) return band;
+    } else {
+      const [min, max] = band.split('-').map(Number);
+      if (heightM >= min && heightM < max) return band;
+    }
+  }
+  return bands[0];
+};
+
+export const getMaxPlausiblePalmHeightM = (species: string): number | null => {
+  const rule = resolveSpeciesBusinessRule(species);
+  if (!rule) return null;
+  return PALM_SPECIES_MAX_PLAUSIBLE_HEIGHT_M[rule.canonicalName];
 };
 
 export const canApplyTrunkFinish = (species: string, requested: boolean | undefined): boolean => {

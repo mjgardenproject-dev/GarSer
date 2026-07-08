@@ -80,6 +80,34 @@ describe('adaptLegacyAnalysisToV2', () => {
     expect(validateAnalysisV2(analysis)).toEqual([]);
   });
 
+  it('preserva confidences y referencia de escala de desbroce', () => {
+    const analysis = adaptLegacyAnalysisToV2({
+      serviceName: 'Desbroce de malas hierbas',
+      sourcePhotoCount: 1,
+      legacyResponse: {
+        tareas: [{
+          tipo_servicio: 'Desbroce de malas hierbas',
+          superficie_malas_hierbas_m2: 350,
+          estado_malas_hierbas: 'dificultad_alta',
+          superficie_confidence: 0.75,
+          estado_confidence: -1, // fuera de rango: debe quedar en 0
+          referencia_escala: 'coche ≈ 4,5 m',
+          nivel_analisis: 1,
+        }],
+      },
+    });
+
+    const metrics = analysis.service_metrics as WeedingServiceMetrics;
+    expect(metrics).toMatchObject({
+      superficie_malas_hierbas_m2: 350,
+      estado_malas_hierbas: 'dificultad_alta',
+      superficie_confidence: 0.75,
+      estado_confidence: 0,
+      referencia_escala: 'coche ≈ 4,5 m',
+    });
+    expect(validateAnalysisV2(analysis)).toEqual([]);
+  });
+
   it('preserva confidences y referencia de escala de césped', () => {
     const analysis = adaptLegacyAnalysisToV2({
       serviceName: 'Corte de césped',

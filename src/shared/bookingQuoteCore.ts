@@ -1273,8 +1273,11 @@ export function buildAuthoritativeBookingQuote(params: {
 
   if (bookingData.weedingZones?.length) {
     const yieldM2 = Number(config.yield_m2_per_hour);
+    // El desbroce usa suplementos.retirada_restos (no waste_removal.percentage). La retirada
+    // también consume tiempo: sin este multiplicador se bloqueaban slots de menos (§7.6).
+    const weedingWasteMult = globalWaste ? 1 + Number(config.suplementos?.retirada_restos || 0) / 100 : 1;
     bookingData.weedingZones.forEach((zone) => {
-      totalHours += (Number(zone.area || 0) / yieldM2) * getDurationMultiplier(zone.state || 'normal');
+      totalHours += (Number(zone.area || 0) / yieldM2) * getDurationMultiplier(zone.state || 'normal') * weedingWasteMult;
     });
   }
 

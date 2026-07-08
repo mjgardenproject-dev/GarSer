@@ -98,6 +98,23 @@ describe('new_prompts SSOT backend', () => {
     expect(systemPrompt).toContain('"referencia_escala"');
   });
 
+  it('el prompt de desbroce incluye procedimiento, estados operativos, confidences y rango plausible', () => {
+    const assembly = buildAnalysisPromptAssembly({
+      service_name: 'Desbroce de malas hierbas',
+      photo_urls: ['https://example.com/weed-1.jpg'],
+    });
+
+    const systemPrompt = String(assembly.messages[0].content);
+    expect(systemPrompt).toContain('PROCEDURE');
+    expect(systemPrompt).toContain('STATE DEFINITIONS');
+    expect(systemPrompt).toContain('PLAUSIBLE AREA RANGE');
+    expect(systemPrompt).toContain('CONFIDENCE CALIBRATION');
+    expect(systemPrompt).toContain('"superficie_confidence"');
+    expect(systemPrompt).toContain('"estado_confidence"');
+    expect(systemPrompt).toContain('"referencia_escala"');
+    expect(systemPrompt).toContain('"normal" | "dificultad_media" | "dificultad_alta"');
+  });
+
   it('el prompt de césped incluye procedimiento, estado operativo, confidences y rango plausible', () => {
     const assembly = buildAnalysisPromptAssembly({
       service_name: 'Corte de césped',

@@ -348,9 +348,15 @@ interface WeedingNormalizedTask {
   tipo_servicio: typeof WEEDING_SERVICE_NAME;
   estado_malas_hierbas: WeedingState | null;
   superficie_malas_hierbas_m2: number;
+  superficie_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
   nivel_analisis: 1 | 2 | 3;
   observaciones: string[] | null;
 }
+
+// Superficie plausible máxima de una parcela de desbroce residencial (anti-alucinación).
+const WEEDING_MAX_PLAUSIBLE_AREA_M2 = 10000;
 
 function isWeedingServiceName(serviceName?: string) {
   const lower = String(serviceName || '').toLowerCase();
@@ -376,13 +382,20 @@ function normalizeWeedingTask(task: any): WeedingNormalizedTask | null {
   if (!task || typeof task !== 'object') return null;
   const level = Number(task.nivel_analisis);
   if (![1, 2, 3].includes(level)) return null;
-  const nivel_analisis = level as 1 | 2 | 3;
+  let nivel_analisis = level as 1 | 2 | 3;
   const estado = normalizeWeedingState(task.estado_malas_hierbas);
   const areaRaw = Number(task.superficie_malas_hierbas_m2 || 0);
   const superficie = Number.isFinite(areaRaw) ? Math.max(0, Math.round(areaRaw)) : 0;
-  const observaciones = Array.isArray(task.observaciones)
+  let observaciones = Array.isArray(task.observaciones)
     ? task.observaciones.filter((item: unknown) => typeof item === 'string')
     : null;
+
+  // Post-validación anti-alucinación: superficie fuera de rango → revisión, nunca forzar.
+  if (nivel_analisis < 3 && superficie > WEEDING_MAX_PLAUSIBLE_AREA_M2) {
+    nivel_analisis = 2;
+    observaciones = observaciones ? [...observaciones] : [];
+    if (!observaciones.includes('AMBIGUOUS_SIZE')) observaciones.push('AMBIGUOUS_SIZE');
+  }
 
   if (nivel_analisis === 3) {
     return {
@@ -399,6 +412,9 @@ function normalizeWeedingTask(task: any): WeedingNormalizedTask | null {
     tipo_servicio: WEEDING_SERVICE_NAME,
     estado_malas_hierbas: estado,
     superficie_malas_hierbas_m2: superficie,
+    superficie_confidence: clampConfidence(task.superficie_confidence),
+    estado_confidence: clampConfidence(task.estado_confidence),
+    referencia_escala: typeof task.referencia_escala === 'string' && task.referencia_escala.trim() ? task.referencia_escala.trim() : null,
     nivel_analisis,
     observaciones: observaciones && observaciones.length > 0 ? observaciones : null
   };

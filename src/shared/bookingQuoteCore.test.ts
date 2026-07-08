@@ -205,6 +205,34 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(veryNeglected.estimatedHours).toBeGreaterThanOrEqual(normal.estimatedHours);
   });
 
+  it('incluye la retirada de restos en las horas del desbroce (no solo en el precio)', () => {
+    const providerConfig = {
+      precio_desbroce_m2: 1,
+      precio_herbicida_m2: 0.5,
+      yield_m2_per_hour: 100,
+      suplementos: { dificultad_media: 20, dificultad_alta: 50, retirada_restos: 50 },
+      importe_minimo: 0,
+    };
+    const build = (wasteRemoval: boolean) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-weeding'],
+        weedingZones: [{ id: 'weed-1', area: 400, state: 'normal', applyHerbicide: false }],
+        wasteRemoval,
+      } as any,
+      providerConfig,
+    });
+
+    const withoutWaste = build(false);
+    const withWaste = build(true);
+
+    // Precio: 400 m² × 1 €/m² = 400 €; con retirada +50% → 600 €.
+    expect(withoutWaste.totalPrice).toBe(400);
+    expect(withWaste.totalPrice).toBe(600);
+    // Horas: 400/100 = 4h; la retirada también consume tiempo → 6h (antes se quedaba en 4h).
+    expect(withoutWaste.estimatedHours).toBe(4);
+    expect(withWaste.estimatedHours).toBe(6);
+  });
+
   it('aplica el recargo de estado del césped cuando la zona lleva state', () => {
     const providerConfig = {
       pricing_method: 'per_quantity',

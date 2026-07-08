@@ -169,6 +169,10 @@ export interface ShrubServiceMetrics {
 export interface WeedingServiceMetrics {
   superficie_malas_hierbas_m2: number;
   estado_malas_hierbas: 'normal' | 'dificultad_media' | 'dificultad_alta' | null;
+  /** Confidences de la IA (0-1) para decidir qué campos pedir confirmar al cliente. */
+  superficie_confidence?: number | null;
+  estado_confidence?: number | null;
+  referencia_escala?: string | null;
 }
 
 export type ServiceMetricsByService = {
@@ -734,6 +738,9 @@ const adaptWeedingMetrics = (legacy: LegacyAnalysisResponse) => {
     metrics: {
       superficie_malas_hierbas_m2: toNonNegativeNumber(task?.superficie_malas_hierbas_m2),
       estado_malas_hierbas: normalizedState,
+      superficie_confidence: toConfidence(task?.superficie_confidence),
+      estado_confidence: toConfidence(task?.estado_confidence),
+      referencia_escala: normalizeString(task?.referencia_escala),
     } satisfies WeedingServiceMetrics,
     level: normalizeLevel(task?.nivel_analisis, legacy.reasons?.length ? 3 : 1),
     observations: uniqueStrings([task?.observaciones || [], legacy.reasons || []]),

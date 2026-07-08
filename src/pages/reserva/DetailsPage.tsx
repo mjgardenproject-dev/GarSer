@@ -6373,6 +6373,14 @@ const analyzeTreeGroup = async (id: string) => {
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">m²</span>
                           </div>
+                          {Number(zone.area) > 10000 && (
+                              <p className="text-[11px] text-amber-700 mt-1">
+                                  Revisa la superficie: más de 10.000 m² excede lo habitual en parcelas residenciales. El profesional verificará la medida en persona.
+                              </p>
+                          )}
+                          <p className="text-[11px] text-gray-500 mt-1">
+                              Truco: cuéntala a pasos (1 paso ≈ 0,8 m) y multiplica largo × ancho.
+                          </p>
                       </div>
 
                       <div>

@@ -273,6 +273,64 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(result.totalPrice).toBe(135);
   });
 
+  it('desbroce: suma el herbicida a la base y aplica el importe mínimo', () => {
+    const providerConfig = {
+      precio_desbroce_m2: 1,
+      precio_herbicida_m2: 0.5,
+      yield_m2_per_hour: 100,
+      suplementos: { dificultad_media: 20, dificultad_alta: 50, retirada_restos: 0 },
+      importe_minimo: 80,
+    };
+    const build = (area: number, applyHerbicide: boolean) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-weeding'],
+        weedingZones: [{ id: 'weed-1', area, state: 'normal', applyHerbicide }],
+      } as any,
+      providerConfig,
+    });
+
+    // (400×1 + 400×0.5) = 600 € con herbicida; 400 € sin él.
+    expect(build(400, true).totalPrice).toBe(600);
+    expect(build(400, false).totalPrice).toBe(400);
+    // 50 m² → 50 € < importe_minimo 80 → 80 €.
+    expect(build(50, false).totalPrice).toBe(80);
+  });
+
+  it('fitosanitarios fallback sin métricas: matrices por altura y minimum_fee', () => {
+    const providerConfig = {
+      tratamientos_activos: ['insecticida', 'fungicida', 'ecologico_preventivo'],
+      yields: { setos_ml_per_hour: 30 },
+      setos: {
+        hasta_2m: { insecticida: 1.5, fungicida: 1.5, ecologico_preventivo: 1.2 },
+        mas_de_2m: { insecticida: 2, fungicida: 2, ecologico_preventivo: 1.6 },
+      },
+      pricing_modifiers: { eco: { percentage: 10 }, combo: { two_treatments_percentage: 20, three_plus_treatments_percentage: 30 } },
+      minimum_fee: 80,
+    };
+    const build = (area: number, aboveTwoMeters: boolean) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-phyto'],
+        phytosanitaryZones: [{
+          id: 'fum-1',
+          affectedType: 'Setos',
+          type: 'insecticida',
+          intent: 'curative',
+          curativeTarget: 'insects',
+          area,
+          aboveTwoMeters,
+        }],
+      } as any,
+      providerConfig,
+    });
+
+    // 60 ml × 2 €/ml (más de 2m) = 120 €.
+    expect(build(60, true).totalPrice).toBe(120);
+    // 60 ml × 1.5 €/ml (hasta 2m) = 90 €.
+    expect(build(60, false).totalPrice).toBe(90);
+    // 20 ml × 2 = 40 € < minimum_fee 80 → 80 €.
+    expect(build(20, true).totalPrice).toBe(80);
+  });
+
   it('incluye la retirada de restos en las horas del desbroce (no solo en el precio)', () => {
     const providerConfig = {
       precio_desbroce_m2: 1,
@@ -299,6 +357,57 @@ describe('buildAuthoritativeBookingQuote', () => {
     // Horas: 400/100 = 4h; la retirada también consume tiempo → 6h (antes se quedaba en 4h).
     expect(withoutWaste.estimatedHours).toBe(4);
     expect(withWaste.estimatedHours).toBe(6);
+  });
+
+  it('césped per_hour: cobra por horas (estado incluido) con la tarifa horaria', () => {
+    const providerConfig = {
+      pricing_method: 'per_hour',
+      precioPorHora: 30,
+      yield_m2_per_hour: 100,
+      condition_surcharges: { descuidado: 20, muy_descuidado: 50 },
+      waste_removal: { percentage: 0 },
+      minimum_price: 0,
+    };
+    const build = (state: string) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-lawn'],
+        lawnZones: [{ id: 'lawn-1', species: 'Césped general', quantity: 200, state }],
+      } as any,
+      providerConfig,
+    });
+
+    // Normal: 200/100 = 2h × 30 € = 60 €.
+    const normal = build('normal');
+    expect(normal.estimatedHours).toBe(2);
+    expect(normal.totalPrice).toBe(60);
+    // Muy descuidado: 200/100 × 1.7 = 3.4h → 3.5h × 30 € = 105 €.
+    const neglected = build('muy descuidado');
+    expect(neglected.estimatedHours).toBe(3.5);
+    expect(neglected.totalPrice).toBe(105);
+  });
+
+  it('respeta el 0 explícito en condition_surcharges (no lo pisa con el default)', () => {
+    // Un jardinero puede decidir NO recargar por estado configurando 0%. El patrón
+    // `surcharges.muy_descuidado || 50` pisaba ese 0 con el default → sobrecobro.
+    const build = (surcharges: Record<string, number> | undefined) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-lawn'],
+        lawnZones: [{ id: 'lawn-1', species: 'Césped general', quantity: 200, state: 'muy descuidado' }],
+      } as any,
+      providerConfig: {
+        pricing_method: 'per_quantity',
+        price_per_m2: 0.5,
+        yield_m2_per_hour: 100,
+        condition_surcharges: surcharges,
+        waste_removal: { percentage: 0 },
+        minimum_price: 0,
+      },
+    });
+
+    // 0 explícito → sin recargo: 200 × 0.5 = 100 €.
+    expect(build({ descuidado: 0, muy_descuidado: 0 }).totalPrice).toBe(100);
+    // Campo ausente → default 50%: 150 €.
+    expect(build({} as any).totalPrice).toBe(150);
   });
 
   it('aplica el recargo de estado del césped cuando la zona lleva state', () => {
@@ -355,6 +464,31 @@ describe('buildAuthoritativeBookingQuote', () => {
     // Las horas también: 40/20 = 2h vs 80/20 = 4h.
     expect(oneFace.estimatedHours).toBe(2);
     expect(twoFaces.estimatedHours).toBe(4);
+  });
+
+  it('aplica la retirada de restos al precio y a las horas del seto', () => {
+    const providerConfig = {
+      pricing_method: 'per_quantity',
+      pricing_matrix: { '0-2m': 3, '2-4m': 5, '4-6m': 8 },
+      yield_ml_per_hour: { '0-2m': 30, '2-4m': 20, '4-6m': 10 },
+      condition_surcharges: { media: 20, alta: 50 },
+      waste_removal: { percentage: 20 },
+      minimum_price: 0,
+    };
+    const build = (wasteRemoval: boolean) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-hedge'],
+        hedgeZones: [{ id: 'hedge-1', type: '2-4m', height: '2-4m', length: 40, length_pricing_m: 40, faces_to_trim: 1, state: 'normal' }],
+        wasteRemoval,
+      } as any,
+      providerConfig,
+    });
+
+    // 40 ml × 5 €/ml = 200 €; con retirada +20% → 240 €. Horas: 2h → 2.4h → redondeo 2.5h.
+    expect(build(false).totalPrice).toBe(200);
+    expect(build(false).estimatedHours).toBe(2);
+    expect(build(true).totalPrice).toBe(240);
+    expect(build(true).estimatedHours).toBe(2.5);
   });
 
   it('aplica el recargo de estado del seto (media/alta) cuando la zona lleva state', () => {
@@ -419,6 +553,68 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(result.eligibility).toEqual({ isEligible: true });
     expect(result.estimatedHours).toBe(1.5);
     expect(result.totalPrice).toBe(75);
+  });
+
+  it('palmeras per_quantity: fórmula completa §7.4 con estado, restos, extras y acceso', () => {
+    const providerConfig = {
+      pricing_method: 'per_quantity',
+      height_prices: { 'Phoenix canariensis': { '0-4': 60, '4-10': 100, '>10': 150 } },
+      yield_units_per_hour: { 'Phoenix canariensis': { '0-4': 2, '4-10': 1 } },
+      condition_surcharges: { normal: 0, descuidado: 20, muy_descuidado: 50 },
+      waste_removal: { percentage: 10 },
+      phytosanitary: 15,
+      trunk_finish: 10,
+      access_difficulty: 20,
+      minimum_price: 0,
+    };
+    const result = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-palm'],
+        wasteRemoval: true,
+        palmGroups: [{
+          id: 'palm-1',
+          species: 'Phoenix canariensis',
+          height: '4-10',
+          quantity: 2,
+          state: 'muy_descuidado',
+          hasPhytosanitary: true,
+          hasTrunkPeeling: true,
+          hasAccessDifficulty: true,
+        }],
+      } as any,
+      providerConfig,
+    });
+
+    // base 100 × estado 1.5 × restos 1.1 = 165; extras = tronco 10% (16.5) + fito 15 = 31.5;
+    // (165 + 31.5) × acceso 1.2 = 235.8 × 2 uds = 471.6 → 472 €.
+    expect(result.totalPrice).toBe(472);
+    // Horas desde los yields DEL JARDINERO también en per_quantity (§2):
+    // (2/1) × 1.5 × 1.1 × 1.2 = 3.96h → redondeo a 4h.
+    expect(result.estimatedHours).toBe(4);
+  });
+
+  it('palmeras: el recargo de acceso no aplica en la banda de altura mínima de la especie', () => {
+    const providerConfig = {
+      pricing_method: 'per_quantity',
+      height_prices: { 'Phoenix canariensis': { '0-4': 60, '4-10': 100, '>10': 150 } },
+      yield_units_per_hour: { 'Phoenix canariensis': { '0-4': 2, '4-10': 1 } },
+      condition_surcharges: { normal: 0, descuidado: 20, muy_descuidado: 50 },
+      waste_removal: { percentage: 0 },
+      access_difficulty: 20,
+      minimum_price: 0,
+    };
+    const build = (height: string) => buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-palm'],
+        palmGroups: [{ id: 'palm-1', species: 'Phoenix canariensis', height, quantity: 2, state: 'normal', hasAccessDifficulty: true }],
+      } as any,
+      providerConfig,
+    });
+
+    // '0-4' es la banda mínima de Phoenix canariensis → sin recargo de acceso: 60×2 = 120 €.
+    expect(build('0-4').totalPrice).toBe(120);
+    // '4-10' sí lo aplica: 100×1.2×2 = 240 €.
+    expect(build('4-10').totalPrice).toBe(240);
   });
 
   it('cotiza palmeras en modo per_hour usando pricing_method como contrato canónico', () => {

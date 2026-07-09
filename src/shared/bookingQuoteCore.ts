@@ -235,6 +235,18 @@ export interface BookingQuoteResult {
 const DEFAULT_HEDGE_SURCHARGES = { media: 20, alta: 50 };
 const DEFAULT_SHRUB_SURCHARGES = { media: 20, alta: 50 };
 
+/**
+ * Resuelve un % de recargo respetando el 0 explícito del jardinero.
+ * El patrón anterior (`surcharges.media || 20`) pisaba un 0 configurado a
+ * propósito con el default → sobrecobro para jardineros que decidieron no
+ * recargar por estado. El default solo aplica si el campo no existe.
+ */
+const resolveSurchargePercent = (value: unknown, fallback: number): number => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 type TreeSizeBand = 'small' | 'medium' | 'large' | 'over_9';
 type PhytosanitaryTreatment = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
 type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
@@ -443,8 +455,8 @@ const buildShrubBreakdown = (bookingData: SerializableBookingData, config: any, 
     const area = Number(group.area || 0);
     const state = String(group.state || 'normal').toLowerCase();
     let surchargePercent = 0;
-    if (state.includes('muy')) surchargePercent = surcharges.alta || DEFAULT_SHRUB_SURCHARGES.alta;
-    else if (state.includes('descuidad')) surchargePercent = surcharges.media || DEFAULT_SHRUB_SURCHARGES.media;
+    if (state.includes('muy')) surchargePercent = resolveSurchargePercent(surcharges.alta, DEFAULT_SHRUB_SURCHARGES.alta);
+    else if (state.includes('descuidad')) surchargePercent = resolveSurchargePercent(surcharges.media, DEFAULT_SHRUB_SURCHARGES.media);
     const stateMult = 1 + surchargePercent / 100;
     const wasteMult = globalWaste ? 1 + wastePercent / 100 : 1;
     const linePrice = roundUp(area * unitPrice * stateMult * wasteMult);
@@ -1399,8 +1411,8 @@ export function buildAuthoritativeBookingQuote(params: {
         const surcharges = config.condition_surcharges || DEFAULT_HEDGE_SURCHARGES;
         const state = String(zone.state || 'normal').toLowerCase();
         let statePercent = 0;
-        if (state.includes('alta') || state.includes('muy_descuidado')) statePercent = surcharges.alta || DEFAULT_HEDGE_SURCHARGES.alta;
-        else if (state.includes('media') || state.includes('descuidado')) statePercent = surcharges.media || DEFAULT_HEDGE_SURCHARGES.media;
+        if (state.includes('alta') || state.includes('muy_descuidado')) statePercent = resolveSurchargePercent(surcharges.alta, DEFAULT_HEDGE_SURCHARGES.alta);
+        else if (state.includes('media') || state.includes('descuidado')) statePercent = resolveSurchargePercent(surcharges.media, DEFAULT_HEDGE_SURCHARGES.media);
 
         const stateMult = 1 + statePercent / 100;
         const wasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
@@ -1437,8 +1449,8 @@ export function buildAuthoritativeBookingQuote(params: {
           const state = String(zone.state || 'normal').toLowerCase();
           const surcharges = config.condition_surcharges || {};
           let statePercent = 0;
-          if (state.includes('muy')) statePercent = surcharges.muy_descuidado || 50;
-          else if (state.includes('descuidad')) statePercent = surcharges.descuidado || 20;
+          if (state.includes('muy')) statePercent = resolveSurchargePercent(surcharges.muy_descuidado, 50);
+          else if (state.includes('descuidad')) statePercent = resolveSurchargePercent(surcharges.descuidado, 20);
           const stateMult = 1 + statePercent / 100;
           const wasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
           lawnSubtotal += baseRate * Number(zone.quantity || 0) * stateMult * wasteMult;
@@ -1457,8 +1469,8 @@ export function buildAuthoritativeBookingQuote(params: {
         const state = String(group.state || 'normal').toLowerCase();
         const surcharges = config.condition_surcharges || DEFAULT_SHRUB_SURCHARGES;
         let statePercent = 0;
-        if (state.includes('muy')) statePercent = surcharges.alta || DEFAULT_SHRUB_SURCHARGES.alta;
-        else if (state.includes('descuidad')) statePercent = surcharges.media || DEFAULT_SHRUB_SURCHARGES.media;
+        if (state.includes('muy')) statePercent = resolveSurchargePercent(surcharges.alta, DEFAULT_SHRUB_SURCHARGES.alta);
+        else if (state.includes('descuidad')) statePercent = resolveSurchargePercent(surcharges.media, DEFAULT_SHRUB_SURCHARGES.media);
         const stateMult = 1 + statePercent / 100;
         const wasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
         shrubTotal += Number(group.area || 0) * pricePerM2 * stateMult * wasteMult;

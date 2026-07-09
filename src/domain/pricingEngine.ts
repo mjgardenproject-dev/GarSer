@@ -329,8 +329,15 @@ export const calculatePalmHoursFromConfig = (
   config: any,
   globalWasteRemoval: boolean
 ): number => {
-  const pricingMethod = getPricingMethod(config, { allowLegacyYieldCalculation: true });
-  if (pricingMethod !== 'per_hour' || !config?.yield_units_per_hour || getPrecioPorHora(config) <= 0) {
+  // Los rendimientos son SIEMPRE obligatorios y el tiempo se calcula con los del
+  // jardinero concreto (garser-pricing-rules §2), también en per_quantity: antes el
+  // gate exigía per_hour + tarifa horaria y los jardineros per_quantity caían a la
+  // tabla genérica interna → slots bloqueados con un tiempo que no era el suyo.
+  const hasConfiguredYields =
+    config?.yield_units_per_hour &&
+    groups.some((group) => Number(config.yield_units_per_hour?.[group.species]?.[group.height] || 0) > 0);
+
+  if (!hasConfiguredYields) {
     return calculatePalmHoursEngine(
       groups.flatMap((group) =>
         Array.from({ length: Math.max(0, Math.trunc(Number(group.quantity || 0))) }, () => ({

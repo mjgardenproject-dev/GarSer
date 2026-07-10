@@ -134,6 +134,9 @@ const GARDEN_STATE_OPTIONS: ManualEnumOption[] = [
   },
 ];
 
+// Etiquetas alineadas con HEDGE_STATE_LABELS (flujo de fotos) y con el vocabulario
+// "descuidado/muy descuidado" de césped, arbustos y palmeras. Los valores (normal/
+// media/alta) son los que consume el motor; solo cambia el texto de cara al cliente.
 const HEDGE_STATE_OPTIONS: ManualEnumOption[] = [
   {
     value: 'normal',
@@ -143,13 +146,13 @@ const HEDGE_STATE_OPTIONS: ManualEnumOption[] = [
   },
   {
     value: 'media',
-    label: 'Dificultad media',
+    label: 'Descuidado',
     help: 'Crecimiento notable o irregular; requiere más pasadas.',
     icon: 'Wheat',
   },
   {
     value: 'alta',
-    label: 'Dificultad alta',
+    label: 'Muy descuidado',
     help: 'Muy crecido o leñoso; recorte severo o de reformado.',
     icon: 'Trees',
   },
@@ -318,7 +321,10 @@ const PHYTOSANITARY_PRODUCT_OPTIONS: ManualEnumOption[] = [
 
 export const MANUAL_RANGES = {
   lawn: { superficie_m2: { min: 1, max: 5000 } },
-  hedge: { longitud_m: { min: 1, max: 500 }, altura_m: { min: 0.3, max: 6 }, caras: { min: 1, max: 2 } },
+  // Rango residencial alineado con la post-validación del flujo IA (hedgeBusinessRules:
+  // HEDGE_MAX_PLAUSIBLE_LENGTH_M=200). Un seto >200m es un trabajo comercial que por
+  // fotos iría a revisión; el manual no debe cobrarlo directo y crear la asimetría.
+  hedge: { longitud_m: { min: 1, max: 200 }, altura_m: { min: 0.3, max: 6 }, caras: { min: 1, max: 2 } },
   palm: { altura_m: { min: 0.5, max: 25 }, quantity: { min: 1, max: 50 } },
   shrub: { superficie_m2: { min: 1, max: 2000 } },
   phytosanitary: { area: { min: 1, max: 5000 } },
@@ -412,7 +418,8 @@ export const MANUAL_ENTRY_SURVEYS: Record<ManualServiceKey, ManualServiceSurvey>
             min: MANUAL_RANGES.hedge.longitud_m.min,
             max: MANUAL_RANGES.hedge.longitud_m.max,
             step: 1,
-            example: 'Un coche mide unos 4,5 m de largo.',
+            help: 'La longitud total a lo largo del seto. Si hace esquinas, suma los tramos.',
+            example: 'Un coche mide unos 4,5 m de largo. A pasos, cada paso son unos 0,8 m.',
           },
         ],
       },
@@ -430,6 +437,7 @@ export const MANUAL_ENTRY_SURVEYS: Record<ManualServiceKey, ManualServiceSurvey>
             min: MANUAL_RANGES.hedge.altura_m.min,
             max: MANUAL_RANGES.hedge.altura_m.max,
             step: 0.5,
+            help: 'Desde el suelo hasta lo más alto. La altura decide la tarifa, así que ajústala bien.',
             example: 'Una puerta estándar mide unos 2 m.',
           },
         ],

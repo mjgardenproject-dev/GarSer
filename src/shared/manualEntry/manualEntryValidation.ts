@@ -23,6 +23,7 @@ import {
   type ManualFieldDef,
   type ManualServiceKey,
 } from './manualEntrySchema.ts';
+import { HEDGE_HEIGHT_BANDS } from '../../domain/hedgeBusinessRules.ts';
 
 export interface ManualValidationError {
   field: string;
@@ -225,6 +226,11 @@ export function validateManualBookingInput(
       if (zones.length === 0) return fail([{ field: 'hedgeZones', code: 'empty_collection', message: 'Falta el seto.' }]);
       zones.forEach((zone, index) => {
         pushRange(errors, `hedgeZones[${index}].length`, zone.length, MANUAL_RANGES.hedge.longitud_m, 'la longitud del seto');
+        // La altura y su banda deciden la tarifa (pricing_matrix[height]); sin validarlas,
+        // una banda inválida pasa el control y el motor devuelve missing_pricing_config
+        // → el cliente ve cero jardineros sin saber por qué.
+        pushRange(errors, `hedgeZones[${index}].height_pricing_m`, zone.height_pricing_m ?? zone.altura_m, MANUAL_RANGES.hedge.altura_m, 'la altura del seto');
+        pushEnum(errors, `hedgeZones[${index}].height`, zone.height, HEDGE_HEIGHT_BANDS, 'la altura del seto');
         pushRange(errors, `hedgeZones[${index}].faces_to_trim`, zone.faces_to_trim ?? 1, MANUAL_RANGES.hedge.caras, 'las caras a recortar', true);
         pushEnum(errors, `hedgeZones[${index}].state`, zone.state, HEDGE_STATES, 'el estado del seto');
       });

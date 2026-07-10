@@ -91,13 +91,28 @@ describe('validateManualBookingInput - palm', () => {
 describe('validateManualBookingInput - other services', () => {
   it('validates hedge faces range', () => {
     const ok = validateManualBookingInput('hedge', {
-      hedgeZones: [{ length: 20, faces_to_trim: 2, state: 'normal' }],
+      hedgeZones: [{ length: 20, height: '2-4m', height_pricing_m: 2.5, faces_to_trim: 2, state: 'normal' }],
     });
     expect(ok.ok).toBe(true);
     const bad = validateManualBookingInput('hedge', {
-      hedgeZones: [{ length: 20, faces_to_trim: 5, state: 'normal' }],
+      hedgeZones: [{ length: 20, height: '2-4m', height_pricing_m: 2.5, faces_to_trim: 5, state: 'normal' }],
     });
     expect(bad.ok).toBe(false);
+  });
+
+  it('rejects a hedge band that does not exist in the gardener pricing matrix', () => {
+    // La banda selecciona pricing_matrix[height]; una banda fantasma ('1-2m') pasaría la
+    // validación antigua y el motor devolvería missing_pricing_config → cero jardineros.
+    const bad = validateManualBookingInput('hedge', {
+      hedgeZones: [{ length: 20, height: '1-2m', height_pricing_m: 1.8, faces_to_trim: 1, state: 'normal' }],
+    });
+    expect(bad.ok).toBe(false);
+
+    // Altura fuera de rango también se rechaza sin truncar.
+    const badHeight = validateManualBookingInput('hedge', {
+      hedgeZones: [{ length: 20, height: '4-6m', height_pricing_m: 12, faces_to_trim: 1, state: 'normal' }],
+    });
+    expect(badHeight.ok).toBe(false);
   });
 
   it('validates weeding area and state', () => {

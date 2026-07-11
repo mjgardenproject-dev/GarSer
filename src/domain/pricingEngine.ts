@@ -7,38 +7,13 @@
 import {
   canApplyTrunkPeeling,
   getLowestRangeThresholdForSpecies,
-  isHighestOpenRangeForSpecies,
   resolveSpeciesBusinessRule,
   supportsPhytosanitaryForSpecies
 } from './speciesBusinessRules.ts';
 
-export interface PricingConfig {
-  minimumPrice: number;
-  wasteRemovalPercentage: number;
-}
-
-export interface Metric {
-  qty: number;
-  state?: 'normal' | 'descuidado' | 'muy descuidado';
-  difficulty?: number;
-  wasteRemoval?: boolean;
-}
-
-// Utility to apply condition multiplier
-export const getConditionMultiplier = (state?: string): number => {
-  if (state === 'muy descuidado') return 1.6;
-  if (state === 'descuidado') return 1.3;
-  return 1.0;
-};
-
-// Waste multiplier
-export const getWasteMultiplier = (hasWasteRemoval: boolean, wasteRemovalPercentage: number): number => {
-  return hasWasteRemoval ? 1 + (wasteRemovalPercentage / 100) : 1.0;
-};
-
-// Generic safe price applier
 import { getPrecioPorHora, getPricingMethod } from '../utils/hourlyPricing.ts';
 
+// Generic safe price applier
 export const applyMinimumPrice = (calculatedPrice: number, minimumPrice: number): number => {
   if (calculatedPrice <= 0) return 0;
   return Math.max(calculatedPrice, minimumPrice);
@@ -54,63 +29,6 @@ export const calculatePriceFromYield = (
   if (!yieldPerHour || yieldPerHour <= 0 || !hourlyRate || hourlyRate <= 0) return 0;
   const estimatedHours = (quantity / yieldPerHour) * difficultyMultiplier;
   return estimatedHours * hourlyRate;
-};
-
-// Lawn Pricing
-export const calculateLawnPrice = (
-  zones: { quantity: number; state: string }[],
-  globalWasteRemoval: boolean,
-  baseRatePer150m2: number,
-  config: any // Extended to any for flexibility with LawnPricingConfig
-): number => {
-  let totalHours = 0;
-  let totalPrice = 0;
-  const precioPorHora = getPrecioPorHora(config);
-  const useYield = getPricingMethod(config) === 'per_hour' && config.yield_m2_per_hour && precioPorHora > 0;
-
-  zones.forEach(z => {
-    if (z.quantity > 0) {
-      const diff = getConditionMultiplier(z.state);
-      if (useYield) {
-        totalPrice += calculatePriceFromYield(z.quantity, config.yield_m2_per_hour, precioPorHora, diff);
-      } else {
-        totalHours += (z.quantity / 150) * diff;
-      }
-    }
-  });
-
-  let basePrice = useYield ? totalPrice : (totalHours * baseRatePer150m2);
-  const wasteMult = getWasteMultiplier(globalWasteRemoval, config.waste_removal?.percentage || config.wasteRemovalPercentage || 0);
-  return applyMinimumPrice(basePrice * wasteMult, config.minimum_price || config.minimumPrice || 0);
-};
-
-// Tree Pricing
-export const calculateTreePrice = (
-  trees: { estimatedHours: number }[],
-  globalWasteRemoval: boolean,
-  hourlyRate: number,
-  config: PricingConfig
-): number => {
-  const totalHours = trees.reduce((acc, t) => acc + (t.estimatedHours || 0), 0);
-  const basePrice = totalHours * hourlyRate;
-  const wasteMult = getWasteMultiplier(globalWasteRemoval, config.wasteRemovalPercentage);
-  return applyMinimumPrice(basePrice * wasteMult, config.minimumPrice);
-};
-
-// General fallback for flat items or unknown structures based on a flat quantity
-export const calculateFlatRate = (
-  items: Metric[],
-  rate: number,
-  config: PricingConfig
-): number => {
-  let total = 0;
-  items.forEach(i => {
-    const base = i.qty * rate;
-    const stateMult = getConditionMultiplier(i.state);
-    const wasteMult = getWasteMultiplier(!!i.wasteRemoval, config.wasteRemovalPercentage);
-    total += base * stateMult * wasteMult;
-  });
-  return applyMinimumPrice(total, config.minimumPrice);
 };
 
 // --- PALM PRICING LOGIC ---
@@ -212,10 +130,6 @@ export interface PalmPricingGroup {
   needsTrunkFinish?: boolean;
   hasAccessDifficulty?: boolean;
 }
-
-export const isPalmGroupInTerminalOpenRange = (group: Pick<PalmPricingGroup, 'species' | 'height'>): boolean => {
-  return isHighestOpenRangeForSpecies(group.species, group.height);
-};
 
 const normalizeHeightRange = (value: string): string => {
   return String(value || '')

@@ -56,6 +56,62 @@ export async function expireStaleBookingRequests(): Promise<number> {
   }
 }
 
+// Email al cliente cuando el jardinero acepta/rechaza (fire-and-forget: el email
+// jamás debe bloquear ni romper la respuesta a la solicitud).
+async function notifyClientOfResponse(bookingId: string, response: 'accept' | 'reject'): Promise<void> {
+  try {
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('client_id, gardener_id, service_id, date, start_time, total_price')
+      .eq('id', bookingId)
+      .single();
+    if (!booking?.client_id) return;
+
+    const ids = [booking.client_id, booking.gardener_id].filter(Boolean) as string[];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', ids);
+    const nameOf = (id: string | null) =>
+      profiles?.find((p: { id: string; full_name: string | null }) => p.id === id)?.full_name || '';
+
+    let serviceName = '';
+    if (booking.service_id) {
+      const { data: service } = await supabase
+        .from('services').select('name').eq('id', booking.service_id).single();
+      serviceName = service?.name || '';
+    }
+
+    const dateText = booking.date
+      ? `${booking.date}${booking.start_time ? ` a las ${String(booking.start_time).slice(0, 5)}` : ''}`
+      : '';
+
+    await supabase.functions.invoke('send-email-notification', {
+      body: {
+        user_id: booking.client_id,
+        type: response === 'accept' ? 'booking_accepted' : 'booking_rejected',
+        data: {
+          name: nameOf(booking.client_id) || 'cliente',
+          counterpartName: nameOf(booking.gardener_id),
+          serviceName,
+          dateText,
+          priceText: booking.total_price != null ? `${Number(booking.total_price).toFixed(2)} €` : '',
+        },
+      },
+    });
+  } catch (error) {
+    // Solo telemetría: el flujo principal ya terminó bien
+    reportBookingEvent('warn', {
+      event: 'booking.response_email_failed',
+      context: {
+        bookingId,
+        response,
+        message: error instanceof Error ? error.message : 'unknown',
+      },
+    });
+  }
+}
+
 export async function respondBookingRequest(params: RespondBookingRequestParams) {
   const operationId = params.operationId || randomId();
   try {
@@ -76,6 +132,8 @@ export async function respondBookingRequest(params: RespondBookingRequestParams)
         status: result.status,
       },
     });
+    // No await: el email no bloquea la respuesta al jardinero
+    void notifyClientOfResponse(params.bookingId, params.response);
     return result;
   } catch (error) {
     reportBookingEvent('error', {

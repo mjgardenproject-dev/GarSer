@@ -113,11 +113,25 @@ export function renderBrandedEmail(opts: BrandedEmailOptions): string {
 </html>`;
 }
 
+/** Versión text/plain del email (mejora entregabilidad y accesibilidad). */
+export function renderPlainText(opts: BrandedEmailOptions & { detailPairs?: Array<[string, string]> }): string {
+  const lines: string[] = [opts.heading, ''];
+  if (opts.intro) lines.push(opts.intro, '');
+  (opts.detailPairs || []).forEach(([label, value]) => lines.push(`${label}: ${value}`));
+  if (opts.detailPairs?.length) lines.push('');
+  if (opts.cta) lines.push(`${opts.cta.label}: ${opts.cta.url}`, '');
+  if (opts.footerNote) lines.push(opts.footerNote, '');
+  lines.push(`— ${BRAND.name} · ${BRAND.site}`);
+  return lines.join('\n');
+}
+
 /** Envío vía Brevo (API REST). Reutilizable por todas las funciones. */
 export async function sendViaBrevo(params: {
   to: string;
   subject: string;
   html: string;
+  /** Versión text/plain opcional (usar renderPlainText). */
+  text?: string;
   smtpUser: string;
   smtpPass: string;
 }): Promise<{ ok: boolean; error?: string }> {
@@ -134,6 +148,7 @@ export async function sendViaBrevo(params: {
         to: [{ email: params.to }],
         subject: params.subject,
         htmlContent: params.html,
+        ...(params.text ? { textContent: params.text } : {}),
       }),
     });
     if (!res.ok) {

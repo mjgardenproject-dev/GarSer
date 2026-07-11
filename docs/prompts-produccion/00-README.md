@@ -1,12 +1,13 @@
 # Prompts de producción GarSer — índice y estado
 
-Cada archivo de esta carpeta es un **prompt autónomo** listo para pegar en una sesión nueva de Claude Code.
-Rutas y líneas verificadas contra el código real el **2026-07-11**.
+> ✅ **EJECUTADO (2026-07-11)**: los 8 items fueron aplicados en profundidad y commiteados
+> (commits `2f5e079`…`b96d6e3`), con migraciones aplicadas en la BD remota y las 3 Edge
+> Functions redesplegadas. 356/356 tests, build verde, funnel verificado en vivo a 375px.
+> Esta carpeta queda como REGISTRO del análisis; los pendientes que siguen vivos son
+> manuales: plantillas de Supabase Auth (Dashboard), imágenes de la tabla `services`,
+> restricciones de la API key de Google Maps en producción, y E2E con cuentas reales.
 
-> ⚠️ **Contexto importante**: el 2026-07-10 una sesión ya ejecutó una primera pasada de los 8
-> items (356/356 tests verdes, build verde) y esos cambios pueden estar **sin commit**.
-> Cada prompt indica qué está YA hecho y qué falta. Antes de empezar cualquier sesión,
-> ejecuta `git status` + `git log --oneline -5` para saber si esa pasada está commiteada.
+Cada archivo de esta carpeta es un **prompt autónomo** (rutas y líneas verificadas el 2026-07-11, antes de la ejecución).
 
 ## Estado por item (2026-07-11)
 

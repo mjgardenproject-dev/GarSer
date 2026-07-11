@@ -16,6 +16,9 @@ import { MANUAL_ENTRY_SURVEYS, resolveManualServiceKey } from '../../shared/manu
 import { buildManualBookingPatch } from '../../pages/reserva/manualEntryBuilders';
 import { expireStaleBookingRequests, respondBookingRequest } from '../../utils/bookingRequestService';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
+import { fetchBookingServiceDetails, type BookingServiceInput } from '../../utils/bookingServiceDetails';
+import ServiceDetailCard from './ServiceDetailCard';
+import PhotoGallery from '../common/PhotoGallery';
 
 interface BookingRequestWithDetails {
   id: string;
@@ -55,55 +58,9 @@ interface BookingRequestWithDetails {
   }>;
   media_urls?: string[];
   declared_variables?: { serviceKey?: string; wasteRemoval?: boolean; items?: Array<Record<string, unknown>> } | null;
+  service_input?: BookingServiceInput | null;
   existing_response?: BookingResponse;
 }
-
-// --- Formateo legible de las variables declaradas/analizadas del servicio ---
-const FIELD_LABELS: Record<string, string> = {
-  quantity: 'Cantidad', area: 'Superficie', length: 'Longitud',
-  faces: 'Caras', faces_to_trim: 'Caras a podar', state: 'Estado',
-  size: 'Tamaño', species: 'Especie', height: 'Altura', pruningType: 'Tipo de poda',
-};
-const FIELD_UNITS: Record<string, string> = { quantity: ' ud', area: ' m²', length: ' m' };
-const BOOL_LABELS: Record<string, string> = {
-  difficultyHigh: 'Dificultad alta', dificultad_alta: 'Dificultad alta',
-  applyHerbicide: 'Con herbicida', hasPhytosanitary: 'Tratamiento fitosanitario',
-  hasTrunkPeeling: 'Pelado de tronco', hasAccessDifficulty: 'Acceso difícil',
-};
-const VALUE_LABELS: Record<string, string> = {
-  small: 'Pequeño', medium: 'Mediano', large: 'Grande', over_9: 'Muy grande',
-  pequeñas: 'Pequeñas', medianas: 'Medianas', grandes: 'Grandes',
-  estructural: 'Poda estructural', formacion: 'Poda de formación',
-  normal: 'Normal', descuidado: 'Descuidado', 'muy descuidado': 'Muy descuidado',
-  descuidada: 'Descuidada', 'muy descuidada': 'Muy descuidada',
-  media: 'Dificultad media', alta: 'Dificultad alta',
-};
-
-const prettyValue = (raw: unknown): string => {
-  const s = String(raw).replace(/_/g, ' ').toLowerCase();
-  return VALUE_LABELS[s] || String(raw);
-};
-
-// Convierte un item declarado en pares etiqueta:valor legibles, ignorando campos internos/vacíos.
-const describeDeclaredItem = (item: Record<string, unknown>): Array<{ label: string; value: string }> => {
-  const rows: Array<{ label: string; value: string }> = [];
-  Object.entries(item).forEach(([key, value]) => {
-    if (value === null || value === undefined || value === '' || key === 'id') return;
-    if (typeof value === 'boolean') {
-      if (value && BOOL_LABELS[key]) rows.push({ label: BOOL_LABELS[key], value: 'Sí' });
-      return;
-    }
-    if (typeof value === 'object') return; // no aplanamos objetos anidados
-    const label = FIELD_LABELS[key];
-    if (!label) return; // solo campos conocidos, para no ensuciar con claves internas
-    const unit = FIELD_UNITS[key] || '';
-    const display = key === 'state' || key === 'size' || key === 'species' || key === 'pruningType'
-      ? prettyValue(value)
-      : `${value}${unit}`;
-    rows.push({ label, value: display });
-  });
-  return rows;
-};
 
 interface BookingRequestsManagerProps {
   onBack?: () => void;
@@ -285,8 +242,16 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
 
       const enrichedRequests = await Promise.all(
         transformedRequests.map(async (request: BookingRequestWithDetails) => {
+          // Variables del trabajo: el RPC cubre fotos (IA) y manual; para reservas
+          // manuales antiguas sin quote enlazado, caemos a la declaración auditada.
+          let service_input: BookingServiceInput | null = null;
           let declared_variables: BookingRequestWithDetails['declared_variables'] = null;
-          if (request.data_input_mode === 'manual' && request.manual_declaration_id) {
+          try {
+            service_input = await fetchBookingServiceDetails(request.id);
+          } catch {
+            service_input = null;
+          }
+          if (!service_input && request.data_input_mode === 'manual' && request.manual_declaration_id) {
             try {
               declared_variables = (await fetchDeclaredVariables(request.id)) as BookingRequestWithDetails['declared_variables'];
             } catch {
@@ -297,6 +262,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
             ...request,
             media_urls: mediaMap[request.id] || [],
             declared_variables,
+            service_input,
           };
         }),
       );
@@ -551,42 +517,13 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                 </div>
 
                 {/* Detalle del servicio: qué trabajo es exactamente (para decidir si aceptar) */}
-                <div className="mb-4 p-3 rounded-lg border border-gray-200 bg-white">
-                  <div className="flex items-center justify-between mb-2 gap-2">
-                    <p className="text-sm font-semibold text-gray-800">Detalle del servicio</p>
-                    <span className="text-[11px] text-gray-500 shrink-0">
-                      {request.data_input_mode === 'manual' ? 'Declarado por el cliente' : 'Analizado por IA (fotos)'}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-gray-700">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-gray-400" />
-                      Duración estimada: <strong>{request.duration_hours}h</strong>
-                    </span>
-                    {request.declared_variables?.wasteRemoval && (
-                      <span className="text-emerald-700">Retirada de restos incluida</span>
-                    )}
-                  </div>
-                  {request.declared_variables?.items && request.declared_variables.items.length > 0 && (
-                    <div className="mt-2 space-y-1.5">
-                      {request.declared_variables.items.map((item, idx) => {
-                        const rows = describeDeclaredItem(item);
-                        if (rows.length === 0) return null;
-                        const multiple = (request.declared_variables?.items?.length || 0) > 1;
-                        return (
-                          <div key={idx} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-gray-50 px-2.5 py-1.5">
-                            {multiple && <span className="text-[11px] font-medium text-gray-400">#{idx + 1}</span>}
-                            {rows.map((r) => (
-                              <span key={r.label} className="text-xs text-gray-700">
-                                <span className="text-gray-500">{r.label}:</span> <strong className="text-gray-800">{r.value}</strong>
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <ServiceDetailCard
+                  className="mb-4"
+                  durationHours={request.duration_hours}
+                  dataInputMode={request.data_input_mode}
+                  serviceInput={request.service_input}
+                  declaredVariables={request.declared_variables}
+                />
 
                 {request.notes && (
                   <div className="mb-4 p-3 bg-gray-50 rounded-lg">
@@ -598,20 +535,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
 
                 {request.media_urls && request.media_urls.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Fotos de la reserva</p>
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                      {request.media_urls.slice(0, 8).map((url) => (
-                        <a
-                          key={url}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block rounded-lg overflow-hidden border border-gray-200 bg-gray-50"
-                        >
-                          <img src={url} alt="Foto reserva" className="w-full h-20 object-cover" loading="lazy" />
-                        </a>
-                      ))}
-                    </div>
+                    <PhotoGallery urls={request.media_urls} label="Fotos de la reserva" />
                   </div>
                 )}
 

@@ -1363,6 +1363,12 @@ export function buildAuthoritativeBookingQuote(params: {
     });
   }
 
+  // Red de seguridad: las barreras de elegibilidad (missing_yield_config) impiden llegar
+  // aquí con un rendimiento 0, pero si un dato corrupto (yield NaN, métrica Infinity) se
+  // colara, una división por cero convertiría totalHours en Infinity/NaN y el presupuesto
+  // en horas y precio Infinity. Clampeamos a un número finito no negativo (garser-pricing §2/§7).
+  if (!Number.isFinite(totalHours) || totalHours < 0) totalHours = 0;
+
   if (totalHours > 8) totalHours *= 0.9;
   const estimatedHours = Math.max(1, Math.ceil(totalHours * 2) / 2);
 

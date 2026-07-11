@@ -8,13 +8,17 @@ import GardenerStatusPage from './GardenerStatusPage';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
+// Debe coincidir EXACTAMENTE con los nombres canónicos de la tabla `services`
+// (ver enforce_canonical_services.js). Faltaba "Desbroce de malas hierbas": sin él, ningún
+// jardinero podía declarar que ofrece desbroce y nunca aparecía como elegible para ese servicio.
 const SERVICES = [
   'Corte de césped',
   'Poda de plantas y arbustos',
   'Poda de setos',
   'Poda de árboles',
   'Servicios fitosanitarios',
-  'Poda de palmeras'
+  'Poda de palmeras',
+  'Desbroce de malas hierbas'
 ];
 
 const TOOLS = [
@@ -70,7 +74,9 @@ const GardenerApplicationWizard: React.FC = () => {
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
 
   const totalSteps = 6;
-  const progress = useMemo(() => Math.round(((step - 1) / totalSteps) * 100), [step]);
+  // Progreso real del wizard: 0% en el paso 1 y 100% en el último paso.
+  // Antes usaba (step-1)/totalSteps → en el paso 6 marcaba 83% y nunca llegaba al 100%.
+  const progress = useMemo(() => Math.round(((step - 1) / (totalSteps - 1)) * 100), [step]);
 
   const isStepValid = (s: number) => {
     if (s === 1) return fullName.trim().length > 0 && phone.trim().length > 0 && cityZone.trim().length > 0 && !!photoUrl;
@@ -409,6 +415,31 @@ const GardenerApplicationWizard: React.FC = () => {
             </div>
             <label className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
             <textarea value={experienceText} onChange={(e)=>setExperienceText(e.target.value)} rows={4} className="w-full p-3 border rounded text-base sm:text-sm" />
+
+            {/* Experiencia laboral verificable (se persiste en worked_for_companies / can_prove) */}
+            <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={workedForCompanies}
+                  onChange={() => setWorkedForCompanies((v) => { const next = !v; if (!next) setCanProve(false); return next; })}
+                  className="w-4 h-4 text-green-600 rounded"
+                />
+                <span className="text-sm text-gray-800">He trabajado para empresas de jardinería</span>
+              </label>
+              {workedForCompanies && (
+                <label className="flex items-center gap-2 cursor-pointer pl-6">
+                  <input
+                    type="checkbox"
+                    checked={canProve}
+                    onChange={() => setCanProve((v) => !v)}
+                    className="w-4 h-4 text-green-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Puedo acreditarlo (nóminas, contratos o referencias)</span>
+                </label>
+              )}
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Adjunta fotos o documentos (opcional). Si lo tienes, añade tu CV</label>
               

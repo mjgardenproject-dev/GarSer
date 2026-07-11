@@ -11,8 +11,9 @@ import { reportBookingEvent } from '../../utils/bookingTelemetry';
 interface ChatMessage {
   id: string;
   booking_id: string;
-  sender_id: string;
+  sender_id: string | null;
   message: string;
+  message_type?: 'user' | 'system' | null;
   image_url?: string | null;
   read_at?: string | null;
   read_by?: string | null;
@@ -88,7 +89,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       if (error) throw error;
 
       const msgs = (data || []) as ChatMessage[];
-      const senderIds = Array.from(new Set(msgs.map(m => m.sender_id).filter(Boolean)));
+      // sender_id puede ser null en mensajes de sistema; los excluimos de la resolución de nombres.
+      const senderIds = Array.from(new Set(msgs.map(m => m.sender_id).filter((v): v is string => Boolean(v))));
 
       // Fetch sender names from profiles by user_id
       const namesMap = new Map<string, string>();
@@ -106,7 +108,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
 
       const messagesWithNames = msgs.map(m => ({
         ...m,
-        sender_name: namesMap.get(m.sender_id) || 'Usuario'
+        sender_name: namesMap.get(m.sender_id ?? '') || 'Usuario'
       }));
 
       setMessages(messagesWithNames);
@@ -400,6 +402,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
             </div>
           ) : (
             messages.map((message) => (
+              message.message_type === 'system' ? (
+                <div key={message.id} className="flex justify-center">
+                  <div className="max-w-[85%] px-3 py-1.5 rounded-full bg-gray-100 border border-gray-200 text-center">
+                    <p className="text-xs text-gray-600 whitespace-pre-wrap">{message.message}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {format(parseISO(message.created_at), 'dd/MM HH:mm', { locale: es })}
+                    </p>
+                  </div>
+                </div>
+              ) : (
               <div
                 key={message.id}
                 className={`flex ${message.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
@@ -431,6 +443,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
                   </p>
                 </div>
               </div>
+              )
             ))
           )}
           <div ref={messagesEndRef} />

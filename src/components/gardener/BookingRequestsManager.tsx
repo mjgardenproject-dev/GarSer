@@ -54,8 +54,56 @@ interface BookingRequestWithDetails {
     end_time: string;
   }>;
   media_urls?: string[];
+  declared_variables?: { serviceKey?: string; wasteRemoval?: boolean; items?: Array<Record<string, unknown>> } | null;
   existing_response?: BookingResponse;
 }
+
+// --- Formateo legible de las variables declaradas/analizadas del servicio ---
+const FIELD_LABELS: Record<string, string> = {
+  quantity: 'Cantidad', area: 'Superficie', length: 'Longitud',
+  faces: 'Caras', faces_to_trim: 'Caras a podar', state: 'Estado',
+  size: 'Tamaño', species: 'Especie', height: 'Altura', pruningType: 'Tipo de poda',
+};
+const FIELD_UNITS: Record<string, string> = { quantity: ' ud', area: ' m²', length: ' m' };
+const BOOL_LABELS: Record<string, string> = {
+  difficultyHigh: 'Dificultad alta', dificultad_alta: 'Dificultad alta',
+  applyHerbicide: 'Con herbicida', hasPhytosanitary: 'Tratamiento fitosanitario',
+  hasTrunkPeeling: 'Pelado de tronco', hasAccessDifficulty: 'Acceso difícil',
+};
+const VALUE_LABELS: Record<string, string> = {
+  small: 'Pequeño', medium: 'Mediano', large: 'Grande', over_9: 'Muy grande',
+  pequeñas: 'Pequeñas', medianas: 'Medianas', grandes: 'Grandes',
+  estructural: 'Poda estructural', formacion: 'Poda de formación',
+  normal: 'Normal', descuidado: 'Descuidado', 'muy descuidado': 'Muy descuidado',
+  descuidada: 'Descuidada', 'muy descuidada': 'Muy descuidada',
+  media: 'Dificultad media', alta: 'Dificultad alta',
+};
+
+const prettyValue = (raw: unknown): string => {
+  const s = String(raw).replace(/_/g, ' ').toLowerCase();
+  return VALUE_LABELS[s] || String(raw);
+};
+
+// Convierte un item declarado en pares etiqueta:valor legibles, ignorando campos internos/vacíos.
+const describeDeclaredItem = (item: Record<string, unknown>): Array<{ label: string; value: string }> => {
+  const rows: Array<{ label: string; value: string }> = [];
+  Object.entries(item).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '' || key === 'id') return;
+    if (typeof value === 'boolean') {
+      if (value && BOOL_LABELS[key]) rows.push({ label: BOOL_LABELS[key], value: 'Sí' });
+      return;
+    }
+    if (typeof value === 'object') return; // no aplanamos objetos anidados
+    const label = FIELD_LABELS[key];
+    if (!label) return; // solo campos conocidos, para no ensuciar con claves internas
+    const unit = FIELD_UNITS[key] || '';
+    const display = key === 'state' || key === 'size' || key === 'species' || key === 'pruningType'
+      ? prettyValue(value)
+      : `${value}${unit}`;
+    rows.push({ label, value: display });
+  });
+  return rows;
+};
 
 interface BookingRequestsManagerProps {
   onBack?: () => void;
@@ -235,10 +283,23 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         }
       );
 
-      const enrichedRequests = transformedRequests.map((request: BookingRequestWithDetails) => ({
-        ...request,
-        media_urls: mediaMap[request.id] || [],
-      }));
+      const enrichedRequests = await Promise.all(
+        transformedRequests.map(async (request: BookingRequestWithDetails) => {
+          let declared_variables: BookingRequestWithDetails['declared_variables'] = null;
+          if (request.data_input_mode === 'manual' && request.manual_declaration_id) {
+            try {
+              declared_variables = (await fetchDeclaredVariables(request.id)) as BookingRequestWithDetails['declared_variables'];
+            } catch {
+              declared_variables = null;
+            }
+          }
+          return {
+            ...request,
+            media_urls: mediaMap[request.id] || [],
+            declared_variables,
+          };
+        }),
+      );
 
       setRequests(enrichedRequests);
     } catch (error) {
@@ -487,6 +548,44 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     <MapPin className="w-4 h-4 mr-2" />
                     {request.client_address}
                   </div>
+                </div>
+
+                {/* Detalle del servicio: qué trabajo es exactamente (para decidir si aceptar) */}
+                <div className="mb-4 p-3 rounded-lg border border-gray-200 bg-white">
+                  <div className="flex items-center justify-between mb-2 gap-2">
+                    <p className="text-sm font-semibold text-gray-800">Detalle del servicio</p>
+                    <span className="text-[11px] text-gray-500 shrink-0">
+                      {request.data_input_mode === 'manual' ? 'Declarado por el cliente' : 'Analizado por IA (fotos)'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-gray-700">
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      Duración estimada: <strong>{request.duration_hours}h</strong>
+                    </span>
+                    {request.declared_variables?.wasteRemoval && (
+                      <span className="text-emerald-700">Retirada de restos incluida</span>
+                    )}
+                  </div>
+                  {request.declared_variables?.items && request.declared_variables.items.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {request.declared_variables.items.map((item, idx) => {
+                        const rows = describeDeclaredItem(item);
+                        if (rows.length === 0) return null;
+                        const multiple = (request.declared_variables?.items?.length || 0) > 1;
+                        return (
+                          <div key={idx} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-gray-50 px-2.5 py-1.5">
+                            {multiple && <span className="text-[11px] font-medium text-gray-400">#{idx + 1}</span>}
+                            {rows.map((r) => (
+                              <span key={r.label} className="text-xs text-gray-700">
+                                <span className="text-gray-500">{r.label}:</span> <strong className="text-gray-800">{r.value}</strong>
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {request.notes && (

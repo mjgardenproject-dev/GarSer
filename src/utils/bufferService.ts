@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { Booking, TimeBlock } from '../types';
+import { WORK_DAY_START_HOUR, LATEST_BLOCK_START_HOUR } from './availabilityWindow';
 
 export class BufferService {
   private static async getAvailableHourSet(gardenerId: string, date: string): Promise<Set<number>> {
@@ -127,7 +128,7 @@ export class BufferService {
 
         // Crear bloques de tiempo base
         const baseBlocks: TimeBlock[] = [];
-        for (let hour = 7; hour <= 19; hour++) {
+        for (let hour = WORK_DAY_START_HOUR; hour <= LATEST_BLOCK_START_HOUR; hour++) {
           const isAvailable = availableHours.has(hour);
           baseBlocks.push({
             hour,
@@ -169,7 +170,7 @@ export class BufferService {
     });
 
     // Buscar el próximo slot disponible (bloques de inicio 7:00 .. 19:00)
-    for (let hour = requestedStartHour; hour <= 19; hour++) {
+    for (let hour = requestedStartHour; hour <= LATEST_BLOCK_START_HOUR; hour++) {
       const hasConflict = sortedBookings.some(booking => {
         const bookingStartHour = parseInt(booking.start_time.split(':')[0]);
         const bookingEndHour = bookingStartHour + booking.duration_hours;

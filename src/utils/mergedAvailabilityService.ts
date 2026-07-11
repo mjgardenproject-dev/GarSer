@@ -3,6 +3,7 @@ import { BufferService } from './bufferService';
 import { addDays, format } from 'date-fns';
 import type { BookingData } from '../contexts/BookingContext';
 import { previewProviderQuotes } from './bookingAuthorityService';
+import { WORK_DAY_START_HOUR, WORK_DAY_END_HOUR } from './availabilityWindow';
 
 // Bypass temporal de filtros para diagnóstico: ignora servicio, distancia y disponibilidad
 const TEMP_DISABLE_FILTERS = false;
@@ -146,7 +147,7 @@ export async function computeMergedSlots(
     const blocksMap = await BufferService.getAvailableBlocksWithBuffer([gardenerId], date, clientId);
     const blocks = blocksMap.get(gardenerId) || [];
 
-    for (let start = 8; start + durationHours <= 20; start++) {
+    for (let start = WORK_DAY_START_HOUR; start + durationHours <= WORK_DAY_END_HOUR; start++) {
       const sequence = [];
       let ok = true;
       for (let i = 0; i < durationHours; i++) {

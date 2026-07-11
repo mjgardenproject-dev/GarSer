@@ -30,26 +30,37 @@ const AddressPage: React.FC = () => {
     }
 
     setIsLocating(true);
+    setAddressError('');
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
           const resolvedAddress = await getAddressFromCoordinates(latitude, longitude);
-          if (!resolvedAddress) {
-            setAddressError('No se pudo convertir tu ubicación en una dirección válida');
-            return;
-          }
-          setAddress(resolvedAddress);
+          // Aunque el geocoding inverso falle, las coordenadas son fiables: las guardamos igual
+          // para no bloquear la reserva. Solo pedimos que revise/complete el texto de la dirección.
           setAddressCoordinates({ lat: latitude, lng: longitude });
-          setAddressError('');
+          if (resolvedAddress) {
+            setAddress(resolvedAddress);
+            setAddressError('');
+          } else {
+            setAddressError('Tenemos tu ubicación, pero no pudimos completar la dirección automáticamente. Escríbela para continuar.');
+          }
         } catch (error) {
-          setAddressError('No se pudo obtener la dirección');
+          setAddressError('No se pudo obtener la dirección a partir de tu ubicación. Escríbela manualmente.');
         } finally {
           setIsLocating(false);
         }
       },
-      () => {
-        setAddressError('No se pudo obtener tu ubicación');
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setAddressError('Permiso de ubicación denegado. Actívalo en tu navegador o escribe la dirección manualmente.');
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          setAddressError('No se pudo determinar tu ubicación (sin señal GPS). Escribe la dirección manualmente.');
+        } else if (error.code === error.TIMEOUT) {
+          setAddressError('Se agotó el tiempo obteniendo tu ubicación. Inténtalo de nuevo o escribe la dirección.');
+        } else {
+          setAddressError('No se pudo obtener tu ubicación. Escribe la dirección manualmente.');
+        }
         setIsLocating(false);
       },
       { timeout: 10000, enableHighAccuracy: true }
@@ -62,11 +73,15 @@ const AddressPage: React.FC = () => {
       return;
     }
 
-    // Validar que tenga número
-    const hasNumber = /\d+/.test(address);
-    if (!hasNumber) {
-      setAddressError('Por favor, incluye el número de la casa');
-      return;
+    // Si ya tenemos coordenadas fiables (ubicación actual o dirección seleccionada del
+    // autocompletado) no exigimos número de casa: la localización en el mapa ya es precisa.
+    // Solo se pide el número cuando el cliente teclea la dirección a mano y aún no hay coords.
+    if (!addressCoordinates) {
+      const hasNumber = /\d+/.test(address);
+      if (!hasNumber) {
+        setAddressError('Por favor, incluye el número de la casa');
+        return;
+      }
     }
 
     let resolvedCoordinates = addressCoordinates;

@@ -386,6 +386,32 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(neglected.totalPrice).toBe(105);
   });
 
+  it('palmeras per_hour: usa el motor de palmeras (precio por unidad), no horas × tarifa', () => {
+    // Regresión del guard hasTreeOrPalm: antes comparaba serviceIds (UUIDs) contra slugs
+    // y era siempre false, de modo que un jardinero de palmeras con pricing_method
+    // 'per_hour' caía en la rama ingenua (estimatedHours × precioPorHora) e ignoraba
+    // height_prices y los extras. Ahora se detecta por el payload (palmGroups presentes).
+    const providerConfig = {
+      pricing_method: 'per_hour',
+      precioPorHora: 30,
+      height_prices: { Phoenix: { '0-5': 50 } },
+      yields: { palmeras_units_per_hour: 2 },
+      condition_surcharges: { normal: 0, descuidada: 20, muy_descuidada: 50 },
+      waste_removal: { percentage: 0 },
+      minimum_price: 0,
+    };
+    const result = buildAuthoritativeBookingQuote({
+      bookingData: {
+        serviceIds: ['svc-palm'],
+        palmGroups: [{ id: 'p1', species: 'Phoenix', height: '0-5', quantity: 1, state: 'normal' }],
+      } as any,
+      providerConfig,
+    });
+    // Precio del motor de palmeras (1 × 50 €), NO estimatedHours × 30 € de la rama ingenua.
+    expect(result.totalPrice).toBe(50);
+    expect(result.eligibility.isEligible).toBe(true);
+  });
+
   it('respeta el 0 explícito en condition_surcharges (no lo pisa con el default)', () => {
     // Un jardinero puede decidir NO recargar por estado configurando 0%. El patrón
     // `surcharges.muy_descuidado || 50` pisaba ese 0 con el default → sobrecobro.

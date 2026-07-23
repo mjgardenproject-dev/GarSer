@@ -823,7 +823,7 @@ const ConfirmationPage: React.FC = () => {
       try {
         if (bookingData.providerId) {
           const { data } = await supabase
-            .from('gardener_profiles')
+            .from('public_gardener_directory')
             .select('full_name')
             .eq('user_id', bookingData.providerId)
             .maybeSingle();

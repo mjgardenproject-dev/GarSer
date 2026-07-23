@@ -2,12 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, Save, ChevronLeft, ChevronRight, ArrowLeft, RefreshCw, AlertTriangle } from 'lucide-react';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks, isBefore, isToday, startOfToday } from 'date-fns';
+import { format, parseISO, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks, isBefore, isToday, startOfToday } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { 
-  generateDailyTimeBlocks, 
-  getGardenerAvailability, 
-  setGardenerAvailability 
+import {
+  generateDailyTimeBlocks,
+  getGardenerAvailabilityByDate,
+  setGardenerAvailability
 } from '../../utils/availabilityService';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
@@ -25,6 +25,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bookedBlocks, setBookedBlocks] = useState<{ [date: string]: Set<number> }>({});
+  // Horas con solicitud de reserva PENDIENTE: se muestran (ámbar) y no se pueden desmarcar,
+  // para que el jardinero no retire disponibilidad de una hora ya solicitada por un cliente.
+  const [pendingBlocks, setPendingBlocks] = useState<{ [date: string]: Set<number> }>({});
+  // Foto de lo último cargado/guardado, para guardar solo los días que realmente cambian.
+  const [savedSnapshot, setSavedSnapshot] = useState<{ [date: string]: { [hour: number]: boolean } }>({});
   const [hasRecurringSchedule, setHasRecurringSchedule] = useState(false);
   
   // Nuevo estado para controlar cambios sin guardar
@@ -34,7 +39,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
   const [recurringSaveHandler, setRecurringSaveHandler] = useState<(() => Promise<boolean>) | null>(null);
   const [recurringMountKey, setRecurringMountKey] = useState(0);
 
-  // Generar bloques de tiempo de 1 hora (8:00 AM a 8:00 PM)
+  // Bloques de 1 hora del día laboral (7:00–20:00, ver availabilityWindow.ts)
   const timeBlocks = generateDailyTimeBlocks();
 
   const checkRecurringSchedule = useCallback(async () => {
@@ -97,75 +102,67 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
   }, [hasUnsavedChanges]);
 
   const fetchWeeklyAvailability = async () => {
-    if (!user?.id) {
-      console.error('No user found when trying to fetch availability');
-      return;
-    }
-
-    console.log('Starting to fetch weekly availability for user:', user.id);
+    if (!user?.id) return;
 
     setLoading(true);
     try {
       const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(selectedWeek, { weekStartsOn: 1 });
       const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
-      
-      console.log('Fetching availability for week:', format(weekStart, 'yyyy-MM-dd'), 'to', format(weekEnd, 'yyyy-MM-dd'));
-      
-      const weeklyData: { [date: string]: { [hour: number]: boolean } } = {};
+      const startStr = format(weekStart, 'yyyy-MM-dd');
+      const endStr = format(weekEnd, 'yyyy-MM-dd');
 
-      for (const day of weekDays) {
+      // Disponibilidad de toda la semana en una sola query (antes: 7 secuenciales)
+      const byDate = await getGardenerAvailabilityByDate(user.id, startStr, endStr);
+      const weeklyData: { [date: string]: { [hour: number]: boolean } } = {};
+      weekDays.forEach((day) => {
         const dateStr = format(day, 'yyyy-MM-dd');
-        console.log('Fetching availability for date:', dateStr);
-        
-        const availability = await getGardenerAvailability(user.id, dateStr);
-        console.log(`Availability for ${dateStr}:`, availability);
-        
-        // Convertir a formato de horas
         const dayAvailability: { [hour: number]: boolean } = {};
-        availability.forEach(block => {
+        (byDate[dateStr] || []).forEach(block => {
           if (block.is_available) {
             dayAvailability[block.hour_block] = true;
           }
         });
         weeklyData[dateStr] = dayAvailability;
-      }
+      });
 
-      console.log('Final weekly availability data:', weeklyData);
       setWeeklyAvailability(weeklyData);
+      setSavedSnapshot(weeklyData);
       setHasUnsavedChanges(false); // Reset changes flag on load
 
-      // Cargar reservas confirmadas dentro de la semana y marcar bloques
+      // Reservas confirmadas y solicitudes pendientes de la semana → marcar bloques
       try {
-        const startStr = format(weekStart, 'yyyy-MM-dd');
-        const endStr = format(weekEnd, 'yyyy-MM-dd');
         const { data: bookings, error: bookingsError } = await supabase
           .from('bookings')
-          .select('date, start_time, duration_hours')
+          .select('date, start_time, duration_hours, status')
           .eq('gardener_id', user.id)
-          .eq('status', 'confirmed')
+          .in('status', ['pending', 'confirmed'])
           .gte('date', startStr)
           .lte('date', endStr);
 
         if (bookingsError) {
-          console.warn('Error fetching confirmed bookings for calendar:', bookingsError);
+          console.warn('Error fetching bookings for calendar:', bookingsError);
           setBookedBlocks({});
+          setPendingBlocks({});
         } else {
           const bookedMap: { [date: string]: Set<number> } = {};
+          const pendingMap: { [date: string]: Set<number> } = {};
           (bookings || []).forEach((b: any) => {
             const startHour = parseInt((b.start_time || '08:00').split(':')[0]);
             const duration = b.duration_hours || 1;
-            const dateKey = b.date;
-            if (!bookedMap[dateKey]) bookedMap[dateKey] = new Set<number>();
+            const target = b.status === 'confirmed' ? bookedMap : pendingMap;
+            if (!target[b.date]) target[b.date] = new Set<number>();
             for (let i = 0; i < duration; i++) {
-              bookedMap[dateKey].add(startHour + i);
+              target[b.date].add(startHour + i);
             }
           });
           setBookedBlocks(bookedMap);
+          setPendingBlocks(pendingMap);
         }
       } catch (e) {
         console.warn('Error building booked blocks map:', e);
         setBookedBlocks({});
+        setPendingBlocks({});
       }
     } catch (error) {
       console.error('Error fetching availability:', error);
@@ -189,30 +186,57 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
     setHasUnsavedChanges(true); // Marcar que hay cambios sin guardar
   };
 
-  const saveWeeklyAvailability = async (): Promise<boolean> => {
-    if (!user) {
-      console.error('No user found when trying to save availability');
-      return false;
+  // Compara un día contra la última foto guardada para escribir solo lo que cambió.
+  const dayChanged = (date: string): boolean => {
+    const current = weeklyAvailability[date] || {};
+    const saved = savedSnapshot[date] || {};
+    const hours = new Set([...Object.keys(current), ...Object.keys(saved)]);
+    for (const h of hours) {
+      if (!!current[Number(h)] !== !!saved[Number(h)]) return true;
     }
+    return false;
+  };
 
-    console.log('Starting to save weekly availability for user:', user.id);
-    console.log('Weekly availability data:', weeklyAvailability);
+  const saveWeeklyAvailability = async (): Promise<boolean> => {
+    if (!user) return false;
+
+    const changedDates = Object.keys(weeklyAvailability).filter(dayChanged);
+    if (changedDates.length === 0) {
+      setHasUnsavedChanges(false);
+      return true;
+    }
 
     setSaving(true);
     try {
-      const promises = Object.entries(weeklyAvailability).map(([date, dayAvailability]) => {
-        const availableHours = Object.entries(dayAvailability)
-          .filter(([_, isAvailable]) => isAvailable)
-          .map(([hour, _]) => parseInt(hour));
-        
-        console.log(`Saving availability for date ${date}:`, availableHours);
-        return setGardenerAvailability(user.id, date, availableHours);
-      });
+      // Guardamos solo los días modificados y reportamos exactamente cuáles fallan,
+      // en vez de un "todo o nada" que dejaba días a medias sin avisar.
+      const results = await Promise.allSettled(
+        changedDates.map((date) => {
+          const availableHours = Object.entries(weeklyAvailability[date])
+            .filter(([, isAvailable]) => isAvailable)
+            .map(([hour]) => parseInt(hour));
+          return setGardenerAvailability(user.id, date, availableHours);
+        })
+      );
 
-      const results = await Promise.all(promises);
-      console.log('Save results:', results);
+      const failedDates = changedDates.filter((_, i) => results[i].status === 'rejected');
+      if (failedDates.length > 0) {
+        const labels = failedDates
+          .map((d) => format(parseISO(d), 'EEE dd/MM', { locale: es }))
+          .join(', ');
+        toast.error(`No se pudo guardar: ${labels}. Revisa tu conexión y guarda de nuevo.`);
+        // Actualizamos la foto solo con los días que sí se guardaron
+        const snapshot = { ...savedSnapshot };
+        changedDates.forEach((d, i) => {
+          if (results[i].status === 'fulfilled') snapshot[d] = { ...weeklyAvailability[d] };
+        });
+        setSavedSnapshot(snapshot);
+        return false;
+      }
+
       toast.success('Disponibilidad guardada correctamente');
-      setHasUnsavedChanges(false); // Reset changes flag on success
+      setSavedSnapshot(JSON.parse(JSON.stringify(weeklyAvailability)));
+      setHasUnsavedChanges(false);
       return true;
     } catch (error: any) {
       console.error('Error saving availability:', error);
@@ -249,6 +273,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
 
   const isBlockBooked = (date: string, hour: number): boolean => {
     const set = bookedBlocks[date];
+    return !!set && set.has(hour);
+  };
+
+  const isBlockPending = (date: string, hour: number): boolean => {
+    const set = pendingBlocks[date];
     return !!set && set.has(hour);
   };
 
@@ -416,7 +445,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
             </div>
 
             {/* 5. Título del calendario y Botón Guardar (alineados) */}
-            <div className="flex items-center justify-between mb-4 px-1">
+            <div className="flex items-center justify-between mb-2 px-1">
               <h3 className="text-lg font-semibold text-gray-900">Calendario semanal</h3>
               
               {/* Botón Guardar movido aquí */}
@@ -435,6 +464,14 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
                 <Save className="w-4 h-4" />
                 {saving ? 'Guardando…' : 'Guardar'}
               </button>
+            </div>
+
+            {/* Leyenda compacta ANTES del calendario (en móvil quedaba al final y no se veía) */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-4 px-1 text-[11px] sm:text-xs text-gray-600">
+              <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100 border border-green-400 inline-block" />Disponible</span>
+              <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-600 border border-green-700 inline-block" />Reservado</span>
+              <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-400 inline-block" />Solicitada</span>
+              <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-50 border border-gray-300 inline-block" />No disponible</span>
             </div>
 
             {loading ? (
@@ -470,23 +507,27 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
                     const dateStr = format(day, 'yyyy-MM-dd');
                     const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);
                     const isBooked = isBlockBooked(dateStr, timeBlock.hour);
+                    const isPending = isBlockPending(dateStr, timeBlock.hour);
                     const isPast = isBefore(day, startOfToday());
+                    const locked = isBooked || isPending || isPast;
 
                     return (
                       <button
                         key={`${dateStr}-${timeBlock.hour}`}
-                        onClick={() => { if (!isBooked && !isPast) toggleBlockAvailability(dateStr, timeBlock.hour); }}
-                        disabled={isBooked || isPast}
+                        onClick={() => { if (!locked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
+                        disabled={locked}
                         className={`
-                          py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200 
+                          py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200
                           flex items-center justify-center font-medium text-xs sm:text-sm
                           ${isBooked
                             ? 'bg-green-600 border-green-700 text-white cursor-default'
-                            : isPast
-                              ? 'bg-gray-200 border-gray-200 text-gray-400 cursor-not-allowed'
-                              : isAvailable 
-                                ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm' 
-                                : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
+                            : isPending
+                              ? 'bg-amber-100 border-amber-400 text-amber-800 cursor-default'
+                              : isPast
+                                ? 'bg-gray-200 border-gray-200 text-gray-400 cursor-not-allowed'
+                                : isAvailable
+                                  ? 'bg-green-100 border-green-400 text-green-800 hover:bg-green-200 shadow-sm'
+                                  : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
                           }
                         `}
                       >
@@ -529,23 +570,27 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
                       const dateStr = format(day, 'yyyy-MM-dd');
                       const isAvailable = isBlockAvailable(dateStr, timeBlock.hour);
                       const isBooked = isBlockBooked(dateStr, timeBlock.hour);
+                      const isPending = isBlockPending(dateStr, timeBlock.hour);
                       const isPast = isBefore(day, startOfToday());
-                      
+                      const locked = isBooked || isPending || isPast;
+
                       return (
                         <button
                           key={`mob-${dateStr}-${timeBlock.hour}`}
-                          onClick={() => { if (!isBooked && !isPast) toggleBlockAvailability(dateStr, timeBlock.hour); }}
-                          disabled={isBooked || isPast}
+                          onClick={() => { if (!locked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
+                          disabled={locked}
                           className={`
-                            h-9 rounded-md border-2 transition-all duration-200 
+                            h-11 rounded-md border-2 transition-all duration-200
                             flex items-center justify-center font-bold text-xs
                             ${isBooked
                               ? 'bg-green-600 border-green-700 text-white cursor-default'
-                              : isPast
-                                ? 'bg-gray-200 border-gray-200 text-gray-400 cursor-not-allowed'
-                                : isAvailable 
-                                  ? 'bg-green-100 border-green-400 text-green-900 hover:bg-green-200' 
-                                  : 'bg-gray-50 border-gray-300 text-gray-900 hover:bg-gray-100'
+                              : isPending
+                                ? 'bg-amber-100 border-amber-400 text-amber-900 cursor-default'
+                                : isPast
+                                  ? 'bg-gray-200 border-gray-200 text-gray-400 cursor-not-allowed'
+                                  : isAvailable
+                                    ? 'bg-green-100 border-green-400 text-green-900 hover:bg-green-200'
+                                    : 'bg-gray-50 border-gray-300 text-gray-900 hover:bg-gray-100'
                             }
                           `}
                         >
@@ -600,34 +645,27 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
         document.body
       )}
 
-      {/* Legend and Instructions */}
+      {/* Nota de uso */}
       {activeTab === 'weekly' && (
-        <div className="mt-6 bg-gray-50 rounded-lg p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center space-x-4 sm:space-x-6 text-xs sm:text-sm flex-nowrap">
-              <div className="flex items-center">
-                <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-100 border-2 border-green-400 rounded mr-2"></div>
-                <span className="text-gray-700">Disponible</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 sm:w-4 sm:h-4 bg-green-600 border-2 border-green-700 rounded mr-2"></div>
-                <span className="text-gray-700">Reservado</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-3 h-3 sm:w-4 sm:h-4 bg-gray-50 border-2 border-gray-300 rounded mr-2"></div>
-                <span className="text-gray-700">No disponible</span>
-              </div>
-            </div>
-            
-            <div className="text-sm text-gray-600 min-w-0 sm:max-w-[50%]">
-              <p className="break-words whitespace-normal leading-snug">Haz clic en cada bloque para cambiar tu disponibilidad</p>
-              <p className="break-words whitespace-normal leading-snug">Horario: 7:00 - 20:00 (bloques de 1 hora)</p>
-            </div>
-          </div>
+        <div className="mt-6 mb-20 md:mb-0 bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+          <p className="leading-snug">Toca cada bloque para cambiar tu disponibilidad. Horario: 7:00 – 20:00 (bloques de 1 hora).</p>
         </div>
       )}
 
-      
+      {/* Guardar sticky en móvil: en pantallas pequeñas el botón superior desaparece al
+          hacer scroll por las 13 filas del calendario */}
+      {activeTab === 'weekly' && hasUnsavedChanges && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-gray-200 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <button
+            onClick={saveWeeklyAvailability}
+            disabled={saving}
+            className="w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg shadow-green-600/20 active:scale-[0.98] transition-all disabled:opacity-70"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Guardando…' : 'Guardar cambios'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

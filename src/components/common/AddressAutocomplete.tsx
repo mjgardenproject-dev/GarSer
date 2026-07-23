@@ -7,6 +7,9 @@ interface AddressAutocompleteProps {
   name?: string;
   value: string;
   onChange: (address: string) => void;
+  /** Selección de una sugerencia: dirección final + coordenadas si Places las devuelve.
+   *  Permite al consumidor ahorrarse el geocoding posterior. */
+  onSelectPlace?: (address: string, coordinates: { lat: number; lng: number } | null) => void;
   placeholder?: string;
   className?: string;
   error?: string;
@@ -17,6 +20,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   name,
   value,
   onChange,
+  onSelectPlace,
   placeholder = "Buscar dirección…",
   className = "",
   error
@@ -221,12 +225,18 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         const service = new window.google.maps.places.PlacesService(dummy);
         const req: any = {
           placeId: suggestion.place_id,
-          fields: ['formatted_address'],
+          // geometry es Basic Data del mismo SKU: nos da las coordenadas sin coste extra
+          fields: ['formatted_address', 'geometry'],
           sessionToken: sessionTokenObj || undefined,
         };
         service.getDetails(req, (place: any, status: any) => {
           if (status === window.google.maps.places.PlacesServiceStatus.OK && place?.formatted_address) {
+            const location = place.geometry?.location;
+            const coords = location && typeof location.lat === 'function'
+              ? { lat: location.lat(), lng: location.lng() }
+              : null;
             onChange(place.formatted_address);
+            onSelectPlace?.(place.formatted_address, coords);
           } else {
             // Fallback: construir una dirección combinando main + secondary
             const main = suggestion?.structured_formatting?.main_text || '';
@@ -234,6 +244,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             const fullAddress = [main, secondary].filter(Boolean).join(', ');
             const valueToUse = fullAddress || suggestion.description;
             onChange(valueToUse);
+            onSelectPlace?.(valueToUse, null);
           }
           setIsOpen(false);
           setSuggestions([]);
@@ -255,6 +266,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     const fullAddress = [main, secondary].filter(Boolean).join(', ');
     const valueToUse = fullAddress || suggestion.description;
     onChange(valueToUse);
+    onSelectPlace?.(valueToUse, null);
     setIsOpen(false);
     setSuggestions([]);
     if (sessionActive) {

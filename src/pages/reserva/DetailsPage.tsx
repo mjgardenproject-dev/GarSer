@@ -298,11 +298,10 @@ const PHYTOSANITARY_GROUPED_FIELDS = {
   ],
   'Césped y Plantas Bajas': [
     { key: 'cesped_m2', label: 'Tratamiento de superficie', unit: 'm²' }
-  ],
-  'Control de Malas Hierbas': [
-    { key: 'herbicida_poca_densidad_m2', label: 'Aplicación de herbicida: densidad baja', unit: 'm²' },
-    { key: 'herbicida_mucha_densidad_m2', label: 'Aplicación de herbicida: densidad alta', unit: 'm²' }
   ]
+  // El herbicida/control de malas hierbas NO forma parte de fitosanitarios: lo cubre el
+  // servicio de Desbroce (con su propio precio). Antes se ofrecía aquí pero el motor no
+  // tenía tarifa para él (se hacía gratis o se cobraba mal), así que se retiró de fito.
 } as const;
 
 const PHYTOSANITARY_RESULT_FIELDS: Array<{ key: PhytosanitaryMetricKey; label: string; unit: string }> = [
@@ -2327,7 +2326,7 @@ const DetailsPage: React.FC = () => {
                   : ['medianos', 'grandes', 'medianas', 'altas'].includes(rawBand);
                 const recommended = String(t.tratamiento_recomendado || '').toLowerCase();
                 const pestLevel = String(t.nivel_plaga || '').toLowerCase();
-                const mappedTreatment = recommended || (pestLevel.includes('curativo') || pestLevel.includes('activa') ? 'insecticida' : (pestLevel.includes('fung') ? 'fungicida' : (pestLevel.includes('herbi') ? 'herbicida' : 'ecologico_preventivo')));
+                const mappedTreatment = recommended || (pestLevel.includes('curativo') || pestLevel.includes('activa') ? 'insecticida' : (pestLevel.includes('fung') ? 'fungicida' : 'ecologico_preventivo'));
                 
                 // Directly use metricas_fitosanitarias from task (or fallback to empty if old format)
                 const rawMetrics = (t as any).metricas_fitosanitarias || (res as any)?.metricas_fitosanitarias || {};

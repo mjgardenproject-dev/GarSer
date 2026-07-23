@@ -1363,6 +1363,12 @@ export function buildAuthoritativeBookingQuote(params: {
     });
   }
 
+  // Red de seguridad: las barreras de elegibilidad (missing_yield_config) impiden llegar
+  // aquí con un rendimiento 0, pero si un dato corrupto (yield NaN, métrica Infinity) se
+  // colara, una división por cero convertiría totalHours en Infinity/NaN y el presupuesto
+  // en horas y precio Infinity. Clampeamos a un número finito no negativo (garser-pricing §2/§7).
+  if (!Number.isFinite(totalHours) || totalHours < 0) totalHours = 0;
+
   if (totalHours > 8) totalHours *= 0.9;
   const estimatedHours = Math.max(1, Math.ceil(totalHours * 2) / 2);
 
@@ -1373,10 +1379,13 @@ export function buildAuthoritativeBookingQuote(params: {
     return rounded;
   };
 
-  const hasTreeOrPalm = (bookingData.serviceIds || []).some((id) => {
-    const normalized = String(id || '').toLowerCase();
-    return normalized.includes('poda-arboles') || normalized.includes('poda-palmeras') || normalized.includes('tree') || normalized.includes('palm');
-  });
+  // Árboles/palmeras se detectan por el PAYLOAD (grupos presentes), no por los serviceIds:
+  // serviceIds contiene UUIDs de la tabla `services`, por lo que buscar slugs como
+  // 'poda-palmeras'/'palm' daba SIEMPRE false y las palmeras/árboles con pricing_method
+  // 'per_hour' caían en la rama ingenua (horas × tarifa), perdiendo los extras
+  // (fitosanitario €/ud, pelado de tronco %, precio por unidad vía yield) que sí aplica
+  // calculatePalmPriceEngine / el motor de árboles en la rama detallada de abajo.
+  const hasTreeOrPalm = palmGroups.length > 0 || (bookingData.treeGroups?.length ?? 0) > 0;
 
   let totalPrice = 0;
   const precioPorHora = getPrecioPorHora(config);

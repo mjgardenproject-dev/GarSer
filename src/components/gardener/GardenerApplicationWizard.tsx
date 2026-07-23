@@ -5,16 +5,21 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-react';
 import GardenerStatusPage from './GardenerStatusPage';
+import { compressImage } from '../../utils/imageCompression';
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
+// Debe coincidir EXACTAMENTE con los nombres canónicos de la tabla `services`
+// (ver enforce_canonical_services.js). Faltaba "Desbroce de malas hierbas": sin él, ningún
+// jardinero podía declarar que ofrece desbroce y nunca aparecía como elegible para ese servicio.
 const SERVICES = [
   'Corte de césped',
   'Poda de plantas y arbustos',
   'Poda de setos',
   'Poda de árboles',
   'Servicios fitosanitarios',
-  'Poda de palmeras'
+  'Poda de palmeras',
+  'Desbroce de malas hierbas'
 ];
 
 const TOOLS = [
@@ -70,16 +75,37 @@ const GardenerApplicationWizard: React.FC = () => {
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
 
   const totalSteps = 6;
-  const progress = useMemo(() => Math.round(((step - 1) / totalSteps) * 100), [step]);
+  // Progreso real del wizard: 0% en el paso 1 y 100% en el último paso.
+  // Antes usaba (step-1)/totalSteps → en el paso 6 marcaba 83% y nunca llegaba al 100%.
+  const progress = useMemo(() => Math.round(((step - 1) / (totalSteps - 1)) * 100), [step]);
+
+  // Teléfono español: 9 dígitos empezando por 6/7/8/9, prefijo +34 opcional
+  // (espacios y guiones se ignoran). Sin esto se colaban teléfonos imposibles.
+  const isPhoneValid = (value: string) => /^(\+34)?[6789]\d{8}$/.test(value.replace(/[\s-]/g, ''));
 
   const isStepValid = (s: number) => {
-    if (s === 1) return fullName.trim().length > 0 && phone.trim().length > 0 && cityZone.trim().length > 0 && !!photoUrl;
+    if (s === 1) return fullName.trim().length > 0 && isPhoneValid(phone) && cityZone.trim().length > 0 && !!photoUrl;
     if (s === 2) return services.length > 0; // "Otros" es opcional
     if (s === 3) return tools.length > 0;
     if (s === 4) return (expYears >= 0) && (experienceText.trim().length > 0);
-    if (s === 5) return true; // Formación es opcional? El usuario dijo "Aumentar tamaño...", asumo que puede estar vacío o lleno.
+    if (s === 5) return true; // Paso 5 (formación) es OPCIONAL por diseño: no debe frenar la solicitud
     if (s === 6) return declTruth && acceptTerms;
     return true;
+  };
+
+  // Qué falta para poder continuar (se muestra junto al botón deshabilitado)
+  const stepHint = (s: number): string => {
+    if (s === 1) {
+      if (!fullName.trim()) return 'Escribe tu nombre completo.';
+      if (!isPhoneValid(phone)) return 'Introduce un teléfono válido (9 dígitos, +34 opcional).';
+      if (!cityZone.trim()) return 'Indica tu ciudad o zona de trabajo.';
+      if (!photoUrl) return 'Sube una foto de perfil profesional.';
+    }
+    if (s === 2) return 'Marca al menos un servicio que ofrezcas.';
+    if (s === 3) return 'Marca al menos una herramienta de la que dispongas.';
+    if (s === 4) return 'Indica tus años de experiencia y descríbela brevemente.';
+    if (s === 6) return 'Marca las dos casillas para poder enviar la solicitud.';
+    return '';
   };
 
   // --- Persistence Logic ---
@@ -124,6 +150,8 @@ const GardenerApplicationWizard: React.FC = () => {
 
   useEffect(() => {
     if (!user?.id) return;
+    // Tras enviar con éxito no re-guardamos el borrador: el key se limpia en submit()
+    if (submittedSuccess) return;
     const key = `gardener_wizard_progress_${user.id}`;
     const data = {
       step, applicationId, submittedSuccess,
@@ -193,9 +221,11 @@ const GardenerApplicationWizard: React.FC = () => {
   };
 
   const uploadPhoto = async (file: File, folder: string): Promise<string> => {
-    const ext = file.name.split('.').pop() || 'jpg';
+    // Las fotos de móvil pesan varios MB: comprimimos antes de subir (PDF/doc pasan tal cual)
+    const toUpload = await compressImage(file);
+    const ext = toUpload.name.split('.').pop() || 'jpg';
     const path = `${user!.id}/${folder}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('applications').upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from('applications').upload(path, toUpload, { upsert: true });
     if (error) throw error;
     const { data } = supabase.storage.from('applications').getPublicUrl(path);
     return data.publicUrl;
@@ -253,6 +283,9 @@ const GardenerApplicationWizard: React.FC = () => {
       // Success: show local success state immediately without redirection
       toast.success('Solicitud enviada');
       setSubmittedSuccess(true);
+      // El borrador local ya no sirve (la solicitud vive en la BD); si no se limpia,
+      // una futura solicitud tras rechazo arrancaría con datos viejos a medias.
+      try { localStorage.removeItem(`gardener_wizard_progress_${user!.id}`); } catch { /* noop */ }
     } finally { setLoading(false); }
   };
 
@@ -316,7 +349,18 @@ const GardenerApplicationWizard: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700">Nombre completo</label>
             <input value={fullName} onChange={(e)=>setFullName(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
             <label className="block text-sm font-medium text-gray-700">Teléfono</label>
-            <input value={phone} onChange={(e)=>setPhone(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="600 000 000"
+              value={phone}
+              onChange={(e)=>setPhone(e.target.value)}
+              className={`w-full p-3 border rounded text-base sm:text-sm ${phone.trim().length > 0 && !isPhoneValid(phone) ? 'border-red-400' : ''}`}
+            />
+            {phone.trim().length > 0 && !isPhoneValid(phone) && (
+              <p className="text-xs text-red-600">Introduce un teléfono español válido: 9 dígitos empezando por 6, 7, 8 o 9 (+34 opcional).</p>
+            )}
             
             {/* Email removed */}
             
@@ -350,8 +394,10 @@ const GardenerApplicationWizard: React.FC = () => {
                       if(!f) return; 
                       setIsUploadingAvatar(true);
                       try {
-                        const url=await uploadPhoto(f,'avatar'); 
-                        setPhotoUrl(url); 
+                        const url=await uploadPhoto(f,'avatar');
+                        setPhotoUrl(url);
+                      } catch {
+                        toast.error('No se pudo subir la foto. Revisa tu conexión e inténtalo de nuevo.');
                       } finally {
                         setIsUploadingAvatar(false);
                       }
@@ -409,6 +455,31 @@ const GardenerApplicationWizard: React.FC = () => {
             </div>
             <label className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
             <textarea value={experienceText} onChange={(e)=>setExperienceText(e.target.value)} rows={4} className="w-full p-3 border rounded text-base sm:text-sm" />
+
+            {/* Experiencia laboral verificable (se persiste en worked_for_companies / can_prove) */}
+            <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={workedForCompanies}
+                  onChange={() => setWorkedForCompanies((v) => { const next = !v; if (!next) setCanProve(false); return next; })}
+                  className="w-4 h-4 text-green-600 rounded"
+                />
+                <span className="text-sm text-gray-800">He trabajado para empresas de jardinería</span>
+              </label>
+              {workedForCompanies && (
+                <label className="flex items-center gap-2 cursor-pointer pl-6">
+                  <input
+                    type="checkbox"
+                    checked={canProve}
+                    onChange={() => setCanProve((v) => !v)}
+                    className="w-4 h-4 text-green-600 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Puedo acreditarlo (nóminas, contratos o referencias)</span>
+                </label>
+              )}
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Adjunta fotos o documentos (opcional). Si lo tienes, añade tu CV</label>
               
@@ -456,10 +527,12 @@ const GardenerApplicationWizard: React.FC = () => {
                     if (files.length === 0) return;
                     setIsUploadingProof(true);
                     try {
-                      const urls: string[]=[]; 
-                      for(const f of files){ const u=await uploadPhoto(f,'proof'); urls.push(u);} 
-                      setProofPhotos((prev)=>[...prev,...urls]); 
+                      const urls: string[]=[];
+                      for(const f of files){ const u=await uploadPhoto(f,'proof'); urls.push(u);}
+                      setProofPhotos((prev)=>[...prev,...urls]);
                       e.target.value = ''; // Reset input to allow re-selecting same file
+                    } catch {
+                      toast.error('No se pudieron subir los archivos. Revisa tu conexión e inténtalo de nuevo.');
                     } finally {
                       setIsUploadingProof(false);
                     }
@@ -521,10 +594,12 @@ const GardenerApplicationWizard: React.FC = () => {
                       if (files.length === 0) return;
                       setIsUploadingCert(true);
                       try {
-                        const urls: string[]=[]; 
-                        for(const f of files){ const u=await uploadPhoto(f,'certs'); urls.push(u);} 
-                        setCertPhotos((prev)=>[...prev,...urls]); 
+                        const urls: string[]=[];
+                        for(const f of files){ const u=await uploadPhoto(f,'certs'); urls.push(u);}
+                        setCertPhotos((prev)=>[...prev,...urls]);
                         e.target.value = '';
+                      } catch {
+                        toast.error('No se pudieron subir los archivos. Revisa tu conexión e inténtalo de nuevo.');
                       } finally {
                         setIsUploadingCert(false);
                       }
@@ -552,6 +627,10 @@ const GardenerApplicationWizard: React.FC = () => {
               <button onClick={submit} disabled={!declTruth || !acceptTerms || loading} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 inline-flex items-center gap-2"><Check className="w-4 h-4" /><span>{loading ? 'Enviando...' : 'Enviar solicitud'}</span></button>
             )}
           </div>
+          {/* Explicar qué falta en vez de solo deshabilitar el botón */}
+          {!isStepValid(step) && (
+            <p className="text-xs text-gray-500 mt-2 text-center">{stepHint(step)}</p>
+          )}
         </div>
       </div>
     </div>

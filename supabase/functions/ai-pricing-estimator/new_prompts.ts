@@ -620,8 +620,6 @@ const PROMPT_MODULES: Record<AnalysisService, PromptModule> = {
       '    "arboles_peq_ud": number,',
       '    "arboles_med_ud": number,',
       '    "arboles_gran_ud": number,',
-      '    "herbicida_poca_densidad_m2": number,',
-      '    "herbicida_mucha_densidad_m2": number,',
       '    "plantas_superficie_calculada_m2": number,',
       '    "plantas_tamano_dominante": "pequenas" | "medianas" | "grandes" | null',
       '  },',

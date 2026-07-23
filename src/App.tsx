@@ -218,7 +218,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {!isAuthPage && !isAdminPage && !isMarketingPage && <Navbar applicationStatus={applicationStatus} />}
+      {/* En el funnel de reserva la navbar de marketing sobra: duplica cabecera (el funnel
+          ya tiene Volver/Salir) y roba ~130px de la primera pantalla en móvil */}
+      {!isAuthPage && !isAdminPage && !isMarketingPage && !isBookingPage && <Navbar applicationStatus={applicationStatus} />}
       
       {isAdminPage ? (
         <Routes>

@@ -394,7 +394,7 @@ const ProvidersPage: React.FC = () => {
         const exclusionCodes = Object.values(preview.exclusions || {}).map((exclusion) => exclusion.code);
         const { data: profiles } = eligibleProviderIds.length > 0
           ? await supabase
-              .from('gardener_profiles')
+              .from('public_gardener_directory')
               .select('user_id, full_name, avatar_url, rating_average, rating_count, has_phytosanitary_license')
               .in('user_id', eligibleProviderIds)
           : { data: [] };

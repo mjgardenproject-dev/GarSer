@@ -16,6 +16,9 @@ import { MANUAL_ENTRY_SURVEYS, resolveManualServiceKey } from '../../shared/manu
 import { buildManualBookingPatch } from '../../pages/reserva/manualEntryBuilders';
 import { expireStaleBookingRequests, respondBookingRequest } from '../../utils/bookingRequestService';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
+import { fetchBookingServiceDetails, type BookingServiceInput } from '../../utils/bookingServiceDetails';
+import ServiceDetailCard from './ServiceDetailCard';
+import PhotoGallery from '../common/PhotoGallery';
 
 interface BookingRequestWithDetails {
   id: string;
@@ -54,6 +57,8 @@ interface BookingRequestWithDetails {
     end_time: string;
   }>;
   media_urls?: string[];
+  declared_variables?: { serviceKey?: string; wasteRemoval?: boolean; items?: Array<Record<string, unknown>> } | null;
+  service_input?: BookingServiceInput | null;
   existing_response?: BookingResponse;
 }
 
@@ -235,10 +240,32 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         }
       );
 
-      const enrichedRequests = transformedRequests.map((request: BookingRequestWithDetails) => ({
-        ...request,
-        media_urls: mediaMap[request.id] || [],
-      }));
+      const enrichedRequests = await Promise.all(
+        transformedRequests.map(async (request: BookingRequestWithDetails) => {
+          // Variables del trabajo: el RPC cubre fotos (IA) y manual; para reservas
+          // manuales antiguas sin quote enlazado, caemos a la declaración auditada.
+          let service_input: BookingServiceInput | null = null;
+          let declared_variables: BookingRequestWithDetails['declared_variables'] = null;
+          try {
+            service_input = await fetchBookingServiceDetails(request.id);
+          } catch {
+            service_input = null;
+          }
+          if (!service_input && request.data_input_mode === 'manual' && request.manual_declaration_id) {
+            try {
+              declared_variables = (await fetchDeclaredVariables(request.id)) as BookingRequestWithDetails['declared_variables'];
+            } catch {
+              declared_variables = null;
+            }
+          }
+          return {
+            ...request,
+            media_urls: mediaMap[request.id] || [],
+            declared_variables,
+            service_input,
+          };
+        }),
+      );
 
       setRequests(enrichedRequests);
     } catch (error) {
@@ -489,6 +516,15 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                   </div>
                 </div>
 
+                {/* Detalle del servicio: qué trabajo es exactamente (para decidir si aceptar) */}
+                <ServiceDetailCard
+                  className="mb-4"
+                  durationHours={request.duration_hours}
+                  dataInputMode={request.data_input_mode}
+                  serviceInput={request.service_input}
+                  declaredVariables={request.declared_variables}
+                />
+
                 {request.notes && (
                   <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                     <p className="text-sm text-gray-600 whitespace-pre-wrap">
@@ -499,20 +535,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
 
                 {request.media_urls && request.media_urls.length > 0 && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Fotos de la reserva</p>
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                      {request.media_urls.slice(0, 8).map((url) => (
-                        <a
-                          key={url}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block rounded-lg overflow-hidden border border-gray-200 bg-gray-50"
-                        >
-                          <img src={url} alt="Foto reserva" className="w-full h-20 object-cover" loading="lazy" />
-                        </a>
-                      ))}
-                    </div>
+                    <PhotoGallery urls={request.media_urls} label="Fotos de la reserva" />
                   </div>
                 )}
 

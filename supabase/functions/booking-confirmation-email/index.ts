@@ -1,29 +1,37 @@
-// Supabase Edge Function: Booking confirmation emails (cliente + jardinero)
+// Supabase Edge Function: emails de reserva pagada (cliente + jardinero)
 //
-// Envía dos correos transaccionales cuando una reserva queda confirmada/pagada:
-//   - Cliente: confirmación de su reserva.
-//   - Jardinero: aviso de nueva reserva.
+// Se invoca desde booking-payment-webhook (no bloqueante) con { bookingId } o
+// { bookingIds: [] } cuando el pago queda confirmado.
 //
-// Diseño:
-//   - Auto-contenido y testeable: se invoca con { bookingId } o { bookingIds: [] }.
-//   - Usa Brevo por API REST (mismo patrón que send-email-notification).
-//   - Modo MOCK si faltan credenciales SMTP (no rompe nada, solo loguea).
-//   - Nunca lanza por fallos de email: devuelve un resumen por destinatario.
+// El copy depende del ESTADO real de la reserva:
+//   - 'pending'  → el pago está hecho pero el jardinero aún debe aceptar:
+//                  cliente = "solicitud recibida", jardinero = "nueva solicitud".
+//   - 'confirmed' → reserva cerrada: cliente = "reserva confirmada",
+//                  jardinero = "nueva reserva confirmada".
 //
-// Secretos requeridos (Supabase Secrets):
-//   SMTP_USER  -> email remitente verificado en Brevo
-//   SMTP_PASS  -> api-key de Brevo
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (o SUPABASE_SECRET_KEYS)
+// Usa la capa de marca compartida (../_shared/emailBrand.ts): plantilla GarSer única,
+// nombre real del usuario, CTA a garser.es y versión text/plain.
+// Modo MOCK si faltan credenciales SMTP. Nunca lanza por fallos de email.
+//
+// Secretos: SMTP_USER (remitente verificado en Brevo), SMTP_PASS (api-key),
+// SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (o SUPABASE_SECRET_KEYS).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  BRAND,
+  renderBrandedEmail,
+  renderPlainText,
+  detailRows,
+  formatBookingDate,
+  formatPrice,
+  sendViaBrevo,
+} from '../_shared/emailBrand.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-
-const BRAND_GREEN = '#16a34a';
 
 interface RequestPayload {
   bookingId?: string;
@@ -42,100 +50,6 @@ function resolveServiceRoleKey(): string | undefined {
     }
   }
   return Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-}
-
-function formatBookingDate(date: string | null, startTime: string | null): string {
-  if (!date) return 'Fecha por confirmar';
-  try {
-    const iso = startTime ? `${date}T${startTime}` : `${date}T00:00:00`;
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return date;
-    const datePart = d.toLocaleDateString('es-ES', {
-      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    });
-    if (!startTime) return datePart;
-    const timePart = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    return `${datePart} a las ${timePart}`;
-  } catch {
-    return date;
-  }
-}
-
-function formatPrice(value: number | null | undefined): string {
-  const n = Number(value || 0);
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n);
-}
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-function clientEmailHtml(params: {
-  clientName: string; serviceName: string; whenText: string; priceText: string; address: string;
-}): string {
-  return `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
-      <h1 style="color: ${BRAND_GREEN};">¡Reserva confirmada, ${escapeHtml(params.clientName)}!</h1>
-      <p>Tu reserva en GarSer ha quedado confirmada. Estos son los detalles:</p>
-      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <tr><td style="padding: 8px 0; color: #6b7280;">Servicio</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.serviceName)}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b7280;">Fecha</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.whenText)}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b7280;">Dirección</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.address)}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b7280;">Total</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.priceText)}</td></tr>
-      </table>
-      <p>El jardinero asignado se pondrá en contacto contigo si necesita algún detalle adicional.</p>
-      <p>Gracias por confiar en GarSer.</p>
-    </div>
-  `;
-}
-
-function gardenerEmailHtml(params: {
-  gardenerName: string; serviceName: string; whenText: string; priceText: string; address: string;
-}): string {
-  return `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1f2937;">
-      <h1 style="color: ${BRAND_GREEN};">Nueva reserva, ${escapeHtml(params.gardenerName)}</h1>
-      <p>Has recibido una nueva reserva confirmada en GarSer:</p>
-      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <tr><td style="padding: 8px 0; color: #6b7280;">Servicio</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.serviceName)}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b7280;">Fecha</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.whenText)}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b7280;">Dirección</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.address)}</td></tr>
-        <tr><td style="padding: 8px 0; color: #6b7280;">Importe</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(params.priceText)}</td></tr>
-      </table>
-      <p>Revisa tu panel de GarSer para gestionar la reserva.</p>
-    </div>
-  `;
-}
-
-async function sendViaBrevo(params: {
-  to: string; subject: string; html: string;
-  smtpUser: string; smtpPass: string;
-}): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': params.smtpPass,
-        'accept': 'application/json',
-      },
-      body: JSON.stringify({
-        sender: { name: 'GarSer', email: params.smtpUser },
-        to: [{ email: params.to }],
-        subject: params.subject,
-        htmlContent: params.html,
-      }),
-    });
-    if (!res.ok) {
-      const result = await res.json().catch(() => ({}));
-      return { ok: false, error: result?.message || `Brevo HTTP ${res.status}` };
-    }
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'unknown_brevo_error' };
-  }
 }
 
 Deno.serve(async (req) => {
@@ -177,7 +91,7 @@ Deno.serve(async (req) => {
     for (const bookingId of ids) {
       const { data: booking, error: bookingError } = await admin
         .from('bookings')
-        .select('id, client_id, gardener_id, service_id, date, start_time, total_price, client_address')
+        .select('id, client_id, gardener_id, service_id, status, date, start_time, total_price, client_address')
         .eq('id', bookingId)
         .single();
 
@@ -197,6 +111,7 @@ Deno.serve(async (req) => {
       const whenText = formatBookingDate(booking.date, booking.start_time);
       const priceText = formatPrice(booking.total_price);
       const address = booking.client_address || 'Dirección indicada en la reserva';
+      const isPendingAcceptance = booking.status === 'pending';
 
       // Resolver email + nombre de cliente y jardinero
       const resolveRecipient = async (userId: string | null) => {
@@ -214,11 +129,18 @@ Deno.serve(async (req) => {
       const client = await resolveRecipient(booking.client_id);
       const gardener = await resolveRecipient(booking.gardener_id);
 
+      const detailPairs: Array<[string, string]> = [
+        ['Servicio', serviceName],
+        ['Fecha', whenText],
+        ['Dirección', address],
+        ['Total', priceText],
+      ];
+
       const dispatch = async (
         role: 'client' | 'gardener',
         recipient: { email: string | null; name: string },
         subject: string,
-        html: string,
+        opts: Parameters<typeof renderBrandedEmail>[0],
       ) => {
         if (!recipient.email) {
           results.push({ bookingId, role, status: 'skipped', reason: 'no_email' });
@@ -229,7 +151,13 @@ Deno.serve(async (req) => {
           results.push({ bookingId, role, status: 'mock', to: recipient.email });
           return;
         }
-        const sent = await sendViaBrevo({ to: recipient.email, subject, html, smtpUser, smtpPass });
+        const sent = await sendViaBrevo({
+          to: recipient.email,
+          subject,
+          html: renderBrandedEmail(opts),
+          text: renderPlainText({ ...opts, detailPairs }),
+          smtpUser, smtpPass,
+        });
         results.push({
           bookingId, role,
           status: sent.ok ? 'sent' : 'failed',
@@ -238,22 +166,40 @@ Deno.serve(async (req) => {
         });
       };
 
-      await dispatch(
-        'client', client,
-        'Tu reserva en GarSer está confirmada',
-        clientEmailHtml({
-          clientName: client.name || 'cliente',
-          serviceName, whenText, priceText, address,
-        }),
-      );
-      await dispatch(
-        'gardener', gardener,
-        'Nueva reserva confirmada en GarSer',
-        gardenerEmailHtml({
-          gardenerName: gardener.name || 'jardinero',
-          serviceName, whenText, priceText, address,
-        }),
-      );
+      if (isPendingAcceptance) {
+        await dispatch('client', client, 'Hemos recibido tu reserva en GarSer', {
+          title: 'Hemos recibido tu reserva en GarSer',
+          heading: `¡Gracias, ${client.name || 'cliente'}!`,
+          intro: 'Tu pago está confirmado y hemos enviado la solicitud al profesional. Te avisaremos en cuanto la acepte.',
+          bodyHtml: detailRows(detailPairs),
+          cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
+          footerNote: 'Si el profesional no puede aceptarla, te lo notificaremos y no se te cobrará nada.',
+        });
+        await dispatch('gardener', gardener, 'Nueva solicitud de reserva en GarSer', {
+          title: 'Nueva solicitud de reserva en GarSer',
+          heading: `Hola ${gardener.name || 'jardinero'}, tienes una nueva solicitud`,
+          intro: 'Un cliente ha solicitado una reserva contigo. Revisa el detalle y acéptala o recházala desde tu panel.',
+          bodyHtml: detailRows(detailPairs),
+          cta: { label: 'Revisar solicitud', url: `${BRAND.site}/dashboard` },
+          footerNote: 'Las solicitudes sin respuesta caducan automáticamente: responde cuanto antes.',
+        });
+      } else {
+        await dispatch('client', client, 'Tu reserva en GarSer está confirmada', {
+          title: 'Tu reserva en GarSer está confirmada',
+          heading: `¡Reserva confirmada, ${client.name || 'cliente'}!`,
+          intro: 'Tu reserva ha quedado confirmada. Estos son los detalles:',
+          bodyHtml: detailRows(detailPairs),
+          cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
+          footerNote: 'El profesional se pondrá en contacto contigo por el chat si necesita algún detalle adicional.',
+        });
+        await dispatch('gardener', gardener, 'Nueva reserva confirmada en GarSer', {
+          title: 'Nueva reserva confirmada en GarSer',
+          heading: `Nueva reserva, ${gardener.name || 'jardinero'}`,
+          intro: 'Tienes una nueva reserva confirmada:',
+          bodyHtml: detailRows(detailPairs),
+          cta: { label: 'Gestionar reserva', url: `${BRAND.site}/dashboard` },
+        });
+      }
     }
 
     return new Response(JSON.stringify({ success: true, mock, results }), {

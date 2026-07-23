@@ -11,15 +11,28 @@ const AddressPage: React.FC = () => {
   const [address, setAddress] = useState(bookingData.address);
   const [addressCoordinates, setAddressCoordinates] = useState(bookingData.addressCoordinates || null);
   const [isLocating, setIsLocating] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
   const [addressError, setAddressError] = useState('');
 
+  // Guardado de progreso con debounce: antes se escribía en cada pulsación de tecla
   useEffect(() => {
-    saveProgress();
+    const handler = setTimeout(() => saveProgress(), 800);
+    return () => clearTimeout(handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
 
+  // Tecleo manual: el texto ya no se corresponde con las coordenadas previas
   const handleAddressSelected = (addr: string) => {
     setAddress(addr);
     setAddressCoordinates(null);
+    setAddressError('');
+  };
+
+  // Selección de sugerencia del autocompletado: Places ya nos da las coordenadas,
+  // no hace falta re-geocodificar al continuar
+  const handlePlaceSelected = (addr: string, coords: { lat: number; lng: number } | null) => {
+    setAddress(addr);
+    setAddressCoordinates(coords);
     setAddressError('');
   };
 
@@ -30,26 +43,37 @@ const AddressPage: React.FC = () => {
     }
 
     setIsLocating(true);
+    setAddressError('');
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
           const resolvedAddress = await getAddressFromCoordinates(latitude, longitude);
-          if (!resolvedAddress) {
-            setAddressError('No se pudo convertir tu ubicación en una dirección válida');
-            return;
-          }
-          setAddress(resolvedAddress);
+          // Aunque el geocoding inverso falle, las coordenadas son fiables: las guardamos igual
+          // para no bloquear la reserva. Solo pedimos que revise/complete el texto de la dirección.
           setAddressCoordinates({ lat: latitude, lng: longitude });
-          setAddressError('');
+          if (resolvedAddress) {
+            setAddress(resolvedAddress);
+            setAddressError('');
+          } else {
+            setAddressError('Tenemos tu ubicación, pero no pudimos completar la dirección automáticamente. Escríbela para continuar.');
+          }
         } catch (error) {
-          setAddressError('No se pudo obtener la dirección');
+          setAddressError('No se pudo obtener la dirección a partir de tu ubicación. Escríbela manualmente.');
         } finally {
           setIsLocating(false);
         }
       },
-      () => {
-        setAddressError('No se pudo obtener tu ubicación');
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setAddressError('Permiso de ubicación denegado. Actívalo en tu navegador o escribe la dirección manualmente.');
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          setAddressError('No se pudo determinar tu ubicación (sin señal GPS). Escribe la dirección manualmente.');
+        } else if (error.code === error.TIMEOUT) {
+          setAddressError('Se agotó el tiempo obteniendo tu ubicación. Inténtalo de nuevo o escribe la dirección.');
+        } else {
+          setAddressError('No se pudo obtener tu ubicación. Escribe la dirección manualmente.');
+        }
         setIsLocating(false);
       },
       { timeout: 10000, enableHighAccuracy: true }
@@ -57,34 +81,44 @@ const AddressPage: React.FC = () => {
   };
 
   const validateAndContinue = async () => {
+    if (isValidating) return;
     if (!address.trim()) {
       setAddressError('Por favor, introduce una dirección');
       return;
     }
 
-    // Validar que tenga número
-    const hasNumber = /\d+/.test(address);
-    if (!hasNumber) {
-      setAddressError('Por favor, incluye el número de la casa');
-      return;
+    // Si ya tenemos coordenadas fiables (ubicación actual o dirección seleccionada del
+    // autocompletado) no exigimos número de casa: la localización en el mapa ya es precisa.
+    // Solo se pide el número cuando el cliente teclea la dirección a mano y aún no hay coords.
+    if (!addressCoordinates) {
+      const hasNumber = /\d+/.test(address);
+      if (!hasNumber) {
+        setAddressError('Por favor, incluye el número de la casa');
+        return;
+      }
     }
 
-    let resolvedCoordinates = addressCoordinates;
-    if (!resolvedCoordinates) {
-      resolvedCoordinates = await getCoordinatesFromAddress(address.trim());
-    }
+    setIsValidating(true);
+    try {
+      let resolvedCoordinates = addressCoordinates;
+      if (!resolvedCoordinates) {
+        resolvedCoordinates = await getCoordinatesFromAddress(address.trim());
+      }
 
-    if (!resolvedCoordinates) {
-      setAddressError('No se pudo validar la dirección en el mapa. Selecciona una dirección sugerida o usa tu ubicación actual.');
-      return;
-    }
+      if (!resolvedCoordinates) {
+        setAddressError('No se pudo validar la dirección en el mapa. Selecciona una dirección sugerida o usa tu ubicación actual.');
+        return;
+      }
 
-    setBookingData({
-      address,
-      addressCoordinates: resolvedCoordinates,
-    });
-    saveProgress();
-    setCurrentStep(1);
+      setBookingData({
+        address,
+        addressCoordinates: resolvedCoordinates,
+      });
+      saveProgress();
+      setCurrentStep(1);
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   return (
@@ -139,6 +173,7 @@ const AddressPage: React.FC = () => {
               name="booking-address"
               value={address}
               onChange={handleAddressSelected}
+              onSelectPlace={handlePlaceSelected}
               error={addressError}
               placeholder="Buscar dirección completa…"
             />
@@ -185,10 +220,11 @@ const AddressPage: React.FC = () => {
           <button
             type="button"
             onClick={validateAndContinue}
-            disabled={!address.trim()}
+            disabled={!address.trim() || isValidating}
+            aria-busy={isValidating}
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
-            Continuar a servicios
+            {isValidating ? 'Validando dirección…' : 'Continuar a servicios'}
           </button>
         </div>
       </div>

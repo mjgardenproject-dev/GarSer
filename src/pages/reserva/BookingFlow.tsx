@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import AddressPage from './AddressPage';
 import ServicesPage from './ServicesPage';
 import DetailsPage from './DetailsPage';
-// AvailabilityPage eliminado del flujo
+
 import ProvidersPage from './ProvidersPage';
 import ConfirmationPage from './ConfirmationPage';
 import { LogOut, AlertTriangle } from 'lucide-react';

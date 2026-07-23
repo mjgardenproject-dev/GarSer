@@ -66,7 +66,7 @@ vi.mock('../../lib/supabase', () => ({
         };
       }
 
-      if (table === 'gardener_profiles') {
+      if (table === 'gardener_profiles' || table === 'public_gardener_directory') {
         return {
           select: () => ({
             in: async () => ({

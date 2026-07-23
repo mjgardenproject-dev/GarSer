@@ -106,6 +106,33 @@ export type Database = {
         }
         Relationships: []
       }
+      app_settings: {
+        Row: {
+          business_name: string
+          contact_email: string
+          contact_phone: string
+          id: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          business_name?: string
+          contact_email?: string
+          contact_phone?: string
+          id?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          business_name?: string
+          contact_email?: string
+          contact_phone?: string
+          id?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       availability: {
         Row: {
           created_at: string | null
@@ -263,6 +290,66 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      booking_manual_declarations: {
+        Row: {
+          accepted_at: string
+          booking_id: string | null
+          client_id: string
+          created_at: string
+          declaration_id: string
+          declared_variables: Json
+          id: string
+          input_source: string
+          legal_text_hash: string
+          legal_text_version: string
+          service_id: string | null
+          service_name: string | null
+        }
+        Insert: {
+          accepted_at?: string
+          booking_id?: string | null
+          client_id: string
+          created_at?: string
+          declaration_id: string
+          declared_variables?: Json
+          id?: string
+          input_source?: string
+          legal_text_hash: string
+          legal_text_version: string
+          service_id?: string | null
+          service_name?: string | null
+        }
+        Update: {
+          accepted_at?: string
+          booking_id?: string | null
+          client_id?: string
+          created_at?: string
+          declaration_id?: string
+          declared_variables?: Json
+          id?: string
+          input_source?: string
+          legal_text_hash?: string
+          legal_text_version?: string
+          service_id?: string | null
+          service_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_manual_declarations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_manual_declarations_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       booking_media: {
         Row: {
@@ -781,6 +868,53 @@ export type Database = {
           },
         ]
       }
+      booking_variable_revisions: {
+        Row: {
+          author_id: string | null
+          author_role: string
+          booking_id: string
+          corrected_variables: Json | null
+          created_at: string
+          id: string
+          original_total_price: number | null
+          original_variables: Json | null
+          proposed_total_price: number | null
+          reason: string | null
+        }
+        Insert: {
+          author_id?: string | null
+          author_role: string
+          booking_id: string
+          corrected_variables?: Json | null
+          created_at?: string
+          id?: string
+          original_total_price?: number | null
+          original_variables?: Json | null
+          proposed_total_price?: number | null
+          reason?: string | null
+        }
+        Update: {
+          author_id?: string | null
+          author_role?: string
+          booking_id?: string
+          corrected_variables?: Json | null
+          created_at?: string
+          id?: string
+          original_total_price?: number | null
+          original_variables?: Json | null
+          proposed_total_price?: number | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_variable_revisions_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bookings: {
         Row: {
           buffer_applied: boolean | null
@@ -789,12 +923,14 @@ export type Database = {
           client_latitude: number | null
           client_longitude: number | null
           created_at: string | null
+          data_input_mode: string | null
           date: string
           duration_hours: number
           end_time: string | null
           gardener_id: string | null
           hourly_rate: number | null
           id: string
+          manual_declaration_id: string | null
           notes: string | null
           price_change_status: string | null
           pricing_context: Json
@@ -820,12 +956,14 @@ export type Database = {
           client_latitude?: number | null
           client_longitude?: number | null
           created_at?: string | null
+          data_input_mode?: string | null
           date: string
           duration_hours: number
           end_time?: string | null
           gardener_id?: string | null
           hourly_rate?: number | null
           id?: string
+          manual_declaration_id?: string | null
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
@@ -851,12 +989,14 @@ export type Database = {
           client_latitude?: number | null
           client_longitude?: number | null
           created_at?: string | null
+          data_input_mode?: string | null
           date?: string
           duration_hours?: number
           end_time?: string | null
           gardener_id?: string | null
           hourly_rate?: number | null
           id?: string
+          manual_declaration_id?: string | null
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
@@ -1083,6 +1223,13 @@ export type Database = {
             referencedRelation: "gardener_profiles"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "gardener_licenses_gardener_id_fkey_profiles"
+            columns: ["gardener_id"]
+            isOneToOne: false
+            referencedRelation: "public_gardener_directory"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       gardener_profiles: {
@@ -1257,6 +1404,13 @@ export type Database = {
             columns: ["gardener_id"]
             isOneToOne: false
             referencedRelation: "gardener_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "gardener_service_prices_gardener_id_fkey"
+            columns: ["gardener_id"]
+            isOneToOne: false
+            referencedRelation: "public_gardener_directory"
             referencedColumns: ["user_id"]
           },
           {
@@ -1631,11 +1785,59 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      public_gardener_directory: {
+        Row: {
+          avatar_url: string | null
+          description: string | null
+          full_name: string | null
+          has_phytosanitary_license: boolean | null
+          is_available: boolean | null
+          max_distance: number | null
+          rating: number | null
+          rating_average: number | null
+          rating_count: number | null
+          services: string[] | null
+          total_reviews: number | null
+          user_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          description?: string | null
+          full_name?: string | null
+          has_phytosanitary_license?: boolean | null
+          is_available?: boolean | null
+          max_distance?: number | null
+          rating?: number | null
+          rating_average?: number | null
+          rating_count?: number | null
+          services?: string[] | null
+          total_reviews?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          description?: string | null
+          full_name?: string | null
+          has_phytosanitary_license?: boolean | null
+          is_available?: boolean | null
+          max_distance?: number | null
+          rating?: number | null
+          rating_average?: number | null
+          rating_count?: number | null
+          services?: string[] | null
+          total_reviews?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       admin_review_gardener_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
+        Returns: undefined
+      }
+      attach_manual_declaration_to_booking: {
+        Args: { p_booking_id: string; p_declaration_id: string }
         Returns: undefined
       }
       cleanup_expired_booking_payment_state: {

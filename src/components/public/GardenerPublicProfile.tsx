@@ -20,7 +20,7 @@ const GardenerPublicProfile: React.FC = () => {
           return;
         }
         const { data, error } = await supabase
-          .from('gardener_profiles')
+          .from('public_gardener_directory')
           .select('user_id, full_name, avatar_url, rating, total_reviews, services, max_distance, description, is_available')
           .eq('user_id', gardenerId)
           .maybeSingle();

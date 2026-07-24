@@ -209,7 +209,11 @@ async function ensureProviderOperationalCoordinates(
   if (getProviderCoordinates(profile)) return profile;
 
   const address = String(profile.address || '').trim();
-  const googleApiKey = String(Deno.env.get('GOOGLE_API_KEY') || '').trim();
+  // Geocoding usa su PROPIO secret de Google Maps (Geocoding API), separado del
+  // GOOGLE_API_KEY de Gemini que usa ai-pricing-estimator. Compartir el mismo nombre hacía
+  // que el geocoding recibiera la key de Gemini (sin Geocoding API) y fallara en silencio,
+  // dejando a los jardineros con coordenadas nulas e invisibles en ProvidersPage.
+  const googleApiKey = String(Deno.env.get('GOOGLE_MAPS_API_KEY') || '').trim();
   if (!address || !googleApiKey) {
     return profile;
   }

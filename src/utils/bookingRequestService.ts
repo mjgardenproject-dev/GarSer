@@ -132,6 +132,30 @@ export async function respondBookingRequest(params: RespondBookingRequestParams)
         status: result.status,
       },
     });
+    // Captura diferida: tras cambiar el estado, capturamos (accept) o liberamos (reject) el
+    // pago autorizado. Idempotente en el servidor. Si falla, no rompemos la respuesta al
+    // jardinero (la reserva ya cambió de estado); la autorización de Stripe se captura al
+    // reintentar o caduca sola a los 7 días, así que el cliente nunca paga de más.
+    try {
+      const { error: finalizeError } = await supabase.functions.invoke('booking-payment', {
+        body: {
+          action: 'finalize_booking_payment',
+          bookingId: params.bookingId,
+          decision: params.response,
+        },
+      });
+      if (finalizeError) throw finalizeError;
+    } catch (finalizeError) {
+      reportBookingEvent('error', {
+        event: 'booking.payment_finalize_failed',
+        context: {
+          bookingId: params.bookingId,
+          response: params.response,
+          operationId,
+          message: finalizeError instanceof Error ? finalizeError.message : 'unknown',
+        },
+      });
+    }
     // No await: el email no bloquea la respuesta al jardinero
     void notifyClientOfResponse(params.bookingId, params.response);
     return result;

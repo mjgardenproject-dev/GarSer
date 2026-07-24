@@ -406,7 +406,9 @@ async function ensureProviderOperationalCoordinates(
   }
 
   const address = String(profile.address || '').trim();
-  const googleApiKey = String(Deno.env.get('GOOGLE_API_KEY') || '').trim();
+  // Geocoding usa su PROPIO secret de Google Maps (Geocoding API), separado del
+  // GOOGLE_API_KEY de Gemini. Ver nota en booking-authority.
+  const googleApiKey = String(Deno.env.get('GOOGLE_MAPS_API_KEY') || '').trim();
   if (!address || !googleApiKey) {
     return profile;
   }

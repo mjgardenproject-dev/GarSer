@@ -592,7 +592,12 @@ async function processStripeEvent(
     };
   }
 
-  if (eventType === 'payment_intent.succeeded') {
+  // Captura diferida: la reserva se crea al AUTORIZAR el pago
+  // ('payment_intent.amount_capturable_updated'), no al capturar. El evento
+  // 'payment_intent.succeeded' llega despues, cuando el jardinero acepta y se captura el
+  // importe; confirm_booking_payment_attempt es idempotente (linea 305) y no duplica la
+  // reserva. El importe validado sale de amount_received || amount, correcto en ambos casos.
+  if (eventType === 'payment_intent.succeeded' || eventType === 'payment_intent.amount_capturable_updated') {
     const { data, error } = await admin.rpc('confirm_booking_payment_attempt', {
       p_attempt_id: attemptId,
       p_stripe_event_id: asString(params.event.id),

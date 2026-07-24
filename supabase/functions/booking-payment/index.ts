@@ -29,12 +29,18 @@ type PaymentAction =
   | 'prepare_payment'
   | 'get_attempt_status'
   | 'cancel_attempt'
-  | 'sync_payment_state';
+  | 'sync_payment_state'
+  | 'finalize_booking_payment';
 
 type PaymentPayload = {
   action?: PaymentAction;
   quoteId?: string;
   attemptId?: string;
+  // finalize_booking_payment: captura o libera el pago autorizado tras la respuesta del
+  // jardinero. `bookingId` identifica la reserva; `decision` = 'accept' (captura) | 'reject'
+  // (libera). El jardinero llama a esta accion despues de respond_booking_request.
+  bookingId?: string;
+  decision?: 'accept' | 'reject';
 };
 
 type AttemptSummary = {
@@ -703,6 +709,20 @@ async function getOwnedAttemptRow(
   return (data as AttemptRow | null) || null;
 }
 
+async function getAttemptByBookingId(
+  admin: ReturnType<typeof createClient>,
+  bookingId: string,
+): Promise<AttemptRow | null> {
+  const { data } = await admin
+    .from('booking_payment_attempts')
+    .select('*')
+    .eq('booking_id', bookingId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as AttemptRow | null) || null;
+}
+
 async function stripePost(params: {
   path: string;
   body: URLSearchParams;
@@ -1036,6 +1056,11 @@ async function createPaymentIntentForAttempt(
   body.append('currency', attempt.currency || 'eur');
   body.append('description', 'Gastos de gestion de reserva GarSer');
   body.append('automatic_payment_methods[enabled]', 'true');
+  // Captura diferida: al reservar solo AUTORIZAMOS el importe (requires_capture). El webhook
+  // crea la reserva en 'payment_intent.amount_capturable_updated'. Se CAPTURA cuando el
+  // jardinero acepta (booking-respond) y se LIBERA (cancel) si rechaza o caduca a 24h. Así el
+  // cliente nunca paga por un servicio no confirmado. La autorizacion caduca sola a los 7 dias.
+  body.append('capture_method', 'manual');
 
   const receiptEmail = asString(userEmail);
   if (receiptEmail) {
@@ -1232,6 +1257,92 @@ Deno.serve(async (req: Request) => {
         },
       });
       return jsonResponse({ attempt: summary });
+    }
+
+    if (payload.action === 'finalize_booking_payment') {
+      if (!stripeSecret) {
+        throw new Error('Falta STRIPE_SECRET_KEY para finalizar el pago.');
+      }
+      const bookingId = asString(payload.bookingId);
+      const decision = payload.decision;
+      if (!bookingId || (decision !== 'accept' && decision !== 'reject')) {
+        throw new BookingPaymentHttpError({
+          status: 400,
+          code: 'invalid_finalize_request',
+          message: 'Falta bookingId o decision (accept|reject).',
+        });
+      }
+
+      // El llamante debe ser el JARDINERO de la reserva.
+      const { data: bookingData } = await dbAdmin
+        .from('bookings')
+        .select('id, gardener_id, status')
+        .eq('id', bookingId)
+        .maybeSingle();
+      const bookingRow = bookingData as { id: string; gardener_id: string | null; status: string } | null;
+      if (!bookingRow) {
+        throw new BookingPaymentHttpError({ status: 404, code: 'booking_not_found', message: 'Reserva no encontrada.' });
+      }
+      if (String(bookingRow.gardener_id || '') !== user.id) {
+        throw new BookingPaymentHttpError({ status: 403, code: 'not_booking_gardener', message: 'No eres el profesional de esta reserva.' });
+      }
+
+      const finalizeAttempt = await getAttemptByBookingId(dbAdmin, bookingId);
+      const paymentIntentId = finalizeAttempt?.stripe_payment_intent_id || null;
+      contextAttemptId = finalizeAttempt?.id || '';
+      contextProviderId = user.id;
+      if (!paymentIntentId) {
+        // Reserva sin pago asociado (p. ej. vía broadcast): nada que capturar/liberar.
+        return jsonResponse({ status: 'no_payment', bookingId });
+      }
+
+      // Consultamos el estado real del PaymentIntent para ser idempotentes ante reintentos.
+      const pi = await stripeGet({ path: `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`, stripeSecret });
+      const piStatus = asString((pi as Record<string, unknown>).status);
+
+      let resultStatus = 'noop';
+      if (decision === 'accept') {
+        // Capturamos SOLO si el jardinero confirmó (respond_booking_request dejó la reserva
+        // en 'confirmed') y el pago sigue autorizado pendiente de captura.
+        if (bookingRow.status === 'confirmed' && piStatus === 'requires_capture') {
+          await stripePost({
+            path: `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}/capture`,
+            body: new URLSearchParams(),
+            stripeSecret,
+          });
+          resultStatus = 'captured';
+        } else if (piStatus === 'succeeded') {
+          resultStatus = 'already_captured';
+        } else {
+          resultStatus = 'not_capturable';
+        }
+      } else {
+        // reject: liberamos la autorización (el cliente no paga nada).
+        if (piStatus === 'requires_capture' || piStatus === 'requires_payment_method' || piStatus === 'requires_confirmation') {
+          try {
+            await stripePost({
+              path: `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}/cancel`,
+              body: new URLSearchParams(),
+              stripeSecret,
+            });
+          } catch {
+            // Si Stripe ya lo finalizó, seguimos: la autorización caduca sola a los 7 días.
+          }
+          resultStatus = 'released';
+        } else if (piStatus === 'canceled') {
+          resultStatus = 'already_released';
+        } else {
+          resultStatus = 'not_releasable';
+        }
+      }
+
+      await persistServerTelemetry(dbAdmin, {
+        level: 'info',
+        event: 'booking.payment_finalized',
+        userId,
+        context: { action: payload.action, bookingId, decision, piStatus, resultStatus },
+      });
+      return jsonResponse({ status: resultStatus, bookingId, decision });
     }
 
     const stripePublishableKey = resolveStripePublishableKey();

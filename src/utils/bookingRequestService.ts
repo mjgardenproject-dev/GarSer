@@ -112,6 +112,51 @@ async function notifyClientOfResponse(bookingId: string, response: 'accept' | 'r
   }
 }
 
+// Aviso al cliente cuando el jardinero cancela una reserva YA CONFIRMADA (el rechazo de una
+// solicitud pendiente ya lo cubre notifyClientOfResponse). Best-effort: no bloquea ni rompe.
+export async function notifyClientOfCancellation(bookingId: string): Promise<void> {
+  try {
+    const { data: booking } = await supabase
+      .from('bookings')
+      .select('client_id, service_id, date, start_time, total_price')
+      .eq('id', bookingId)
+      .single();
+    if (!booking?.client_id) return;
+
+    let serviceName = '';
+    if (booking.service_id) {
+      const { data: service } = await supabase
+        .from('services').select('name').eq('id', booking.service_id).single();
+      serviceName = service?.name || '';
+    }
+    const dateText = booking.date
+      ? `${booking.date}${booking.start_time ? ` a las ${String(booking.start_time).slice(0, 5)}` : ''}`
+      : '';
+
+    const { error } = await supabase.functions.invoke('send-email-notification', {
+      body: {
+        user_id: booking.client_id,
+        type: 'booking_cancelled',
+        data: {
+          name: 'cliente',
+          serviceName,
+          dateText,
+          priceText: booking.total_price != null ? `${Number(booking.total_price).toFixed(2)} €` : '',
+        },
+      },
+    });
+    if (error) throw error;
+  } catch (error) {
+    reportBookingEvent('warn', {
+      event: 'booking.response_email_failed',
+      context: {
+        bookingId,
+        message: error instanceof Error ? error.message : 'unknown',
+      },
+    });
+  }
+}
+
 export async function respondBookingRequest(params: RespondBookingRequestParams) {
   const operationId = params.operationId || randomId();
   try {

@@ -40,6 +40,13 @@
   - **Pendiente:** redesplegar booking-payment + booking-payment-webhook con --use-api; prueba E2E en Stripe test.
   - **Mejora opcional (no crítica):** liberar el PI al EXPIRAR la solicitud (24h) en vez de esperar la caducidad de 7 días de Stripe. Hoy el finalize solo corre al responder, no al expirar.
 
+- **Paso 5 (robustez webhook)** ✅ commit bdbc882: reprocesa eventos Stripe atascados en 'processing' >3min (idempotente); vía broadcast verificada como código latente (no explotable). **Pendiente:** redesplegar booking-payment-webhook.
+- **Paso 6 (fiabilidad emails)** ✅ (núcleo ya activo tras redeploy del webhook en paso 4):
+  - CTA rota del email de rechazo de jardinero: `/gardener/apply` y `/aplicar` → `/apply` (ApplicationsAdmin + send-email-notification).
+  - Email de cancelación cableado: `notifyClientOfCancellation` (booking_cancelled, estaba implementado pero nunca se invocaba) se dispara cuando el jardinero cancela una reserva CONFIRMADA (GardenerDashboard).
+  - 357 tests + build verdes. **Pendiente:** redesplegar send-email-notification; deploy front (Vercel).
+  - **Pendientes anotados:** (a) mover email de aceptar/rechazar a server-side (hoy fire-and-forget desde el front del jardinero); (b) REEMBOLSO al cancelar una reserva confirmada ya cobrada (el email avisa pero no reembolsa) → paso 8; (c) email de solicitud expirada; (d) seguridad de send-email-notification (validar llamante) → paso 9.
+
 ### ✅ Regresión de entorno de test RESUELTA
 `brew upgrade supabase` arrastró Node a v26.5.0, incompatible con jsdom 29 → 24 tests de UI fallaban. **Resuelto:** `brew install node@22` + `brew link --overwrite --force node@22` → Node 22.23.1 LTS activo. Suite completa **356/356 en verde**, build ✓. Añadido `.nvmrc` con `22`.
 

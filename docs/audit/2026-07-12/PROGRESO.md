@@ -24,6 +24,22 @@
   - ⏳ **Fito manual vs IA (ALTO):** PENDIENTE. Es un refactor profundo del motor de fito (dos modelos de precio distintos: rama sin métricas suma tarifa fija por tratamiento con insecticida→curativo y palmeras/árboles>3m→banda mediana; rama con métricas usa tarifa única preventivo/curativo + combo). Matiz de producto: el wizard manual no pregunta la banda de altura exacta. Merece la skill garser-manual-entry como SSOT + tests de paridad exhaustivos. NO abordado para no introducir bugs de precio peores.
   - **Pendiente producción (fase final):** redesplegar booking-authority + booking-payment (tocan bookingQuoteCore) y ai-pricing-estimator (prompt).
 
+- **Paso 4** ✅ (local/código, pendiente de desplegar y probar en producción) — captura diferida:
+  - booking-payment: PaymentIntent con `capture_method='manual'` (autoriza) + acción `finalize_booking_payment` (captura al aceptar / libera al rechazar, idempotente vía stripeGet del estado real) + helper getAttemptByBookingId.
+  - booking-payment-webhook: la reserva se crea en `payment_intent.amount_capturable_updated` (autorización); `succeeded` es idempotente (confirm_booking_payment_attempt no valida captura, solo importe).
+  - bookingRequestService: al aceptar/rechazar invoca finalize_booking_payment.
+  - Expiración 24h: cubierta por auto-release de Stripe a 7 días; liberación explícita = mejora futura.
+  - 357 tests + build verdes. **Despliegue:** redesplegar booking-payment + webhook, subir front, y AÑADIR el evento `payment_intent.amount_capturable_updated` al webhook en Stripe.
+
+- **Paso 4 (captura diferida)** ✅ CÓDIGO YA IMPLEMENTADO (commit 34dd714, no escrito en esta sesión — trabajo previo/paralelo del usuario). Flujo completo y cableado:
+  - booking-payment: PaymentIntent con `capture_method: 'manual'` (autoriza, no cobra); endpoint `finalize_booking_payment` que captura (accept) o libera (reject) según el estado.
+  - booking-payment-webhook: crea la reserva en `payment_intent.amount_capturable_updated` (al autorizar), no al capturar; idempotente.
+  - bookingRequestService: tras responder, invoca finalize_booking_payment (captura/libera). Fallo no bloquea (Stripe libera a 7 días).
+  - Webhook de Stripe: evento `amount_capturable_updated` añadido por el usuario (modo test). ✓
+  - 357 tests verdes, build ok, en el PR #8.
+  - **Pendiente:** redesplegar booking-payment + booking-payment-webhook con --use-api; prueba E2E en Stripe test.
+  - **Mejora opcional (no crítica):** liberar el PI al EXPIRAR la solicitud (24h) en vez de esperar la caducidad de 7 días de Stripe. Hoy el finalize solo corre al responder, no al expirar.
+
 ### ✅ Regresión de entorno de test RESUELTA
 `brew upgrade supabase` arrastró Node a v26.5.0, incompatible con jsdom 29 → 24 tests de UI fallaban. **Resuelto:** `brew install node@22` + `brew link --overwrite --force node@22` → Node 22.23.1 LTS activo. Suite completa **356/356 en verde**, build ✓. Añadido `.nvmrc` con `22`.
 

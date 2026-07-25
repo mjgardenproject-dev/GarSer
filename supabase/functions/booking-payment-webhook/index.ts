@@ -26,6 +26,7 @@ type WebhookLedgerRow = {
   stripe_event_id: string;
   status: 'processing' | 'processed' | 'ignored' | 'failed';
   payment_attempt_id?: string | null;
+  received_at?: string | null;
 };
 
 class BookingPaymentWebhookHttpError extends Error {
@@ -421,13 +422,25 @@ async function upsertWebhookLedgerRow(
 
   const existing = await admin
     .from('stripe_webhook_events')
-    .select('stripe_event_id, status, payment_attempt_id')
+    .select('stripe_event_id, status, payment_attempt_id, received_at')
     .eq('stripe_event_id', params.eventId)
     .single();
 
   if (existing.error) throw existing.error;
   const existingRow = existing.data as WebhookLedgerRow;
-  if (existingRow.status === 'failed') {
+
+  // Reprocesar si el intento anterior falló, o si lleva demasiado tiempo en 'processing'
+  // (el proceso murió a mitad: timeout/crash del webhook). Sin esto, una fila atascada en
+  // 'processing' se trataría como duplicada para siempre y el pago nunca se materializaría
+  // en reserva. confirm_booking_payment_attempt es idempotente, así que reprocesar es seguro.
+  const STALE_PROCESSING_MS = 3 * 60 * 1000;
+  const receivedAtMs = existingRow.received_at ? new Date(existingRow.received_at).getTime() : 0;
+  const isStaleProcessing =
+    existingRow.status === 'processing' &&
+    receivedAtMs > 0 &&
+    Date.now() - receivedAtMs > STALE_PROCESSING_MS;
+
+  if (existingRow.status === 'failed' || isStaleProcessing) {
     const retryUpdate = await admin
       .from('stripe_webhook_events')
       .update({
@@ -436,15 +449,18 @@ async function upsertWebhookLedgerRow(
         payload: params.payload,
         failure_message: null,
         processed_at: null,
+        received_at: new Date().toISOString(),
       })
       .eq('stripe_event_id', params.eventId)
-      .select('stripe_event_id, status, payment_attempt_id')
+      .select('stripe_event_id, status, payment_attempt_id, received_at')
       .single();
 
     if (retryUpdate.error) throw retryUpdate.error;
     return { row: retryUpdate.data as WebhookLedgerRow, alreadyProcessed: false };
   }
 
+  // 'processing' reciente = otro procesamiento concurrente en curso; se trata como duplicado
+  // para no reprocesar en paralelo (el que está en curso lo finalizará).
   return {
     row: existingRow,
     alreadyProcessed:

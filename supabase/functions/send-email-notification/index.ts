@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
         heading: `Hola ${escapeHtml(name)}`,
         intro: 'Gracias por tu interés en unirte a GarSer. Hemos revisado tu solicitud y por ahora no podemos aceptarla por el siguiente motivo:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
-        cta: { label: 'Volver a solicitar', url: data?.applyUrl || `${BRAND.site}/aplicar` },
+        cta: { label: 'Volver a solicitar', url: data?.applyUrl || `${BRAND.site}/apply` },
         footerNote: 'Este rechazo no es definitivo: puedes corregir la información y volver a enviar tu solicitud.',
       };
     } else if (type === 'booking_accepted') {

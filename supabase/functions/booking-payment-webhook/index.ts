@@ -638,9 +638,13 @@ async function processStripeEvent(
       const confirmedBookingId = asString(asRecord(data).bookingId);
       if (confirmedBookingId) {
         try {
-          await admin.functions.invoke('booking-confirmation-email', {
+          // OJO: functions.invoke NO lanza en errores HTTP (401/500): devuelve { error }.
+          // Sin comprobarlo, un rechazo del gateway o de la funcion de email pasaba
+          // completamente desapercibido (ni logs ni alerta) y los emails no se enviaban.
+          const { error: emailInvokeError } = await admin.functions.invoke('booking-confirmation-email', {
             body: { bookingId: confirmedBookingId },
           });
+          if (emailInvokeError) throw emailInvokeError;
         } catch (emailError) {
           console.error('booking-confirmation-email dispatch fallido (no bloqueante):', emailError);
         }

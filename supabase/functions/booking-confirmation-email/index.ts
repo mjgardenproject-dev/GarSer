@@ -52,6 +52,35 @@ function resolveServiceRoleKey(): string | undefined {
   return Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 }
 
+// Esta funcion se despliega con verify_jwt=false para que el webhook pueda invocarla con la
+// clave de servicio moderna (sb_secret_..., que NO es un JWT y el gateway rechazaba con 401
+// antes de ejecutarla: los emails de reserva no se enviaban nunca y el fallo era invisible).
+// Como el gateway ya no filtra, validamos aqui que el llamante presenta una clave de
+// servicio valida: sin esto, cualquiera podria disparar emails a terceros conociendo un
+// bookingId (vector de spam/phishing con la marca GarSer).
+function collectInternalServiceKeys(): string[] {
+  const keys: string[] = [];
+  const modern = Deno.env.get('SUPABASE_SECRET_KEYS');
+  if (modern) {
+    try {
+      const parsed = JSON.parse(modern) as Record<string, string>;
+      Object.values(parsed).forEach((value) => { if (value) keys.push(String(value)); });
+    } catch {
+      keys.push(modern);
+    }
+  }
+  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (legacy) keys.push(legacy);
+  return keys.filter(Boolean);
+}
+
+function isInternalServiceCaller(req: Request): boolean {
+  const header = String(req.headers.get('Authorization') || req.headers.get('authorization') || '').trim();
+  const presented = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : header;
+  if (!presented) return false;
+  return collectInternalServiceKeys().some((key) => key === presented);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -59,6 +88,11 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
       status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  if (!isInternalServiceCaller(req)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 

@@ -59,7 +59,7 @@ const ApplicationsAdmin: React.FC = () => {
             name: app.full_name || 'Jardinero',
             reason,
             loginUrl: `${window.location.origin}/auth`,
-            applyUrl: `${window.location.origin}/gardener/apply`
+            applyUrl: `${window.location.origin}/apply`
           }
         }
       });

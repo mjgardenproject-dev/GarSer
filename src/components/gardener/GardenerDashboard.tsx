@@ -13,7 +13,7 @@ import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
-import { respondBookingRequest } from '../../utils/bookingRequestService';
+import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -199,6 +199,12 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
             .eq('id', bookingId);
 
           if (error) throw error;
+
+          // Reserva ya confirmada que el jardinero cancela: avisar al cliente por email
+          // (el rechazo de una solicitud pendiente ya envía su propio aviso).
+          if (status === 'cancelled') {
+            void notifyClientOfCancellation(bookingId);
+          }
         }
       }
 

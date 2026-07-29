@@ -192,6 +192,15 @@ Deno.serve(async (req) => {
           text: renderPlainText({ ...opts, detailPairs }),
           smtpUser, smtpPass,
         });
+        if (!sent.ok) {
+          // Sin este log, un rechazo del proveedor (p. ej. Brevo bloqueando la IP del edge
+          // runtime, api-key invalida o remitente no verificado) quedaba SOLO dentro del
+          // body de la respuesta, que nadie inspecciona: la funcion devolvia 200 y el fallo
+          // era invisible en los logs. Cualquier email que no sale tiene que dejar rastro.
+          console.error(
+            `EMAIL FALLIDO (${role}) -> ${recipient.email} | booking ${bookingId} | ${sent.error || 'sin detalle'}`,
+          );
+        }
         results.push({
           bookingId, role,
           status: sent.ok ? 'sent' : 'failed',

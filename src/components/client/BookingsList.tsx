@@ -166,19 +166,10 @@ const BookingsList = () => {
         });
       if (insertError) throw insertError;
 
-      const { data: ratingsData, error: ratingsError } = await supabase
-        .from('reviews')
-        .select('rating')
-        .eq('gardener_id', reviewTarget.gardener_id);
-      if (ratingsError) throw ratingsError;
-      const ratings = (ratingsData || []).map((r: any) => r.rating);
-      const count = ratings.length;
-      const avg = count > 0 ? Math.round((ratings.reduce((a: number, b: number) => a + b, 0) / count) * 100) / 100 : 5;
-      const { error: updError } = await supabase
-        .from('gardener_profiles')
-        .update({ rating: avg, total_reviews: count })
-        .eq('user_id', reviewTarget.gardener_id);
-      if (updError) throw updError;
+      // Los agregados (rating_average/rating_count y rating/total_reviews) los recalcula un
+      // trigger SECURITY DEFINER sobre `reviews`. Antes se intentaba desde aquí, pero un
+      // cliente no puede escribir en el perfil de OTRO usuario (RLS lo deniega), así que la
+      // media nunca se actualizaba y el jardinero salía siempre como "Nuevo".
 
       setReviewTarget(null);
       setExistingReview(null);

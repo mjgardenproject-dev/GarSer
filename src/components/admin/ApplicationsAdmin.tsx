@@ -52,7 +52,8 @@ const ApplicationsAdmin: React.FC = () => {
     try {
       const { error } = await supabase.functions.invoke('send-email-notification', {
         body: {
-          to: app.email, // If undefined, edge function will try to fetch using user_id
+          // El destinatario lo resuelve la edge function desde user_id: enviar un `to` desde
+          // el navegador permitía dirigir un correo con la marca GarSer a cualquier dirección.
           user_id: app.user_id,
           type,
           data: {

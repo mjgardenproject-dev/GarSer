@@ -14,6 +14,7 @@ import BookingRequestsManager from './BookingRequestsManager';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
 import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
+import { GardenerBookingAmount } from '../booking/BookingAmounts';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -402,9 +403,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         {booking.client_address}
                       </div>
                       <div className="flex items-center justify-end md:justify-start text-gray-600">
-                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-50 text-green-700 font-semibold">
-                          €{booking.total_price}
-                        </span>
+                        <GardenerBookingAmount booking={booking} />
                       </div>
                     </div>
 

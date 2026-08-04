@@ -9,6 +9,8 @@ import { es } from 'date-fns/locale';
 import ChatWindow from '../chat/ChatWindow';
 import { useNavigate } from 'react-router-dom';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
+import { ClientBookingAmounts } from '../booking/BookingAmounts';
+import { formatEuro, getBookingAmounts } from '../../shared/bookingAmounts';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: {
@@ -252,7 +254,7 @@ const BookingsList = () => {
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="flex items-center text-gray-600">
                   <Calendar className="w-4 h-4 mr-2" />
                   {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
@@ -265,17 +267,26 @@ const BookingsList = () => {
                   <MapPin className="w-4 h-4 mr-2" />
                   {booking.client_address}
                 </div>
-                <div className="flex items-center justify-end md:justify-start text-gray-600">
-                  <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-50 text-green-700 font-semibold">
-                    €{booking.total_price}
-                  </span>
-                </div>
               </div>
+
+              <ClientBookingAmounts booking={booking} className="mb-4" />
 
               {booking.price_change_status === 'pending_client_acceptance' && (
                 <div className="mb-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
-                  <p className="text-sm text-amber-900 font-medium mb-3">
-                    El jardinero ha propuesto un nuevo precio para esta reserva: <strong>€{booking.proposed_total_price}</strong>
+                  <p className="text-sm text-amber-900 font-medium mb-1">
+                    El jardinero propone un nuevo precio del servicio:{' '}
+                    <strong>{formatEuro(booking.proposed_total_price)}</strong>
+                  </p>
+                  {/* Se explicita el nuevo total porque los gastos de gestión ya abonados no se
+                      recobran: sin esta línea el cliente no sabe cuánto acaba pagando en total. */}
+                  <p className="text-xs text-amber-800 mb-3">
+                    El total de tu reserva pasaría a{' '}
+                    <strong>
+                      {formatEuro(
+                        getBookingAmounts({ ...booking, total_price: booking.proposed_total_price }).clientTotal,
+                      )}
+                    </strong>
+                    . Los gastos de gestión ya abonados no cambian.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button

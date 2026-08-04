@@ -164,7 +164,14 @@ export interface Booking {
   proposed_price_by?: string | null;
   proposed_price_at?: string | null;
   proposed_price_expires_at?: string | null;
+  /** Precio del servicio. Lo cobra el jardinero íntegro, en mano. */
   total_price: number;
+  /** Gastos de gestión cobrados al cliente por Stripe. Inmutable tras crear la reserva. */
+  management_fee?: number | null;
+  /** Procedencia de `management_fee`; 'unknown' ⇒ no hay comisión fiable que mostrar. */
+  management_fee_source?: string | null;
+  /** Desembolso total del cliente. Columna generada: total_price + management_fee. */
+  client_total_price?: number | null;
   travel_fee: number;
   hourly_rate: number;
   client_address: string;

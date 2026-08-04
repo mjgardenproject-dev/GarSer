@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Briefcase, Leaf, TrendingUp } from 'lucide-react';
+import { Users, Briefcase, Leaf, TrendingUp, Wallet } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
+import { formatEuro } from '../../shared/bookingAmounts';
 
 const AdminDashboard: React.FC = () => {
   const [data, setData] = useState({
     totalUsers: 0,
     activeServices: 0,
     pendingCertificates: 0,
-    totalRevenue: 0,
+    grossVolume: 0,
+    platformRevenue: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -40,21 +42,30 @@ const AdminDashboard: React.FC = () => {
         
         if (certsError) throw certsError;
 
-        // Fetch completed bookings for revenue
+        // Volumen transaccionado e ingresos reales de la plataforma. Son cifras distintas:
+        // total_price lo cobra integro el jardinero en mano; GarSer solo ingresa management_fee.
         const { data: bookingsData, error: bookingsError } = await supabase
           .from('bookings')
-          .select('total_price')
-          .eq('status', 'completed');
-        
+          .select('total_price, management_fee')
+          .in('status', ['confirmed', 'in_progress', 'completed']);
+
         if (bookingsError) throw bookingsError;
 
-        const revenue = (bookingsData || []).reduce((sum: number, booking: any) => sum + (Number(booking.total_price) || 0), 0);
+        const grossVolume = (bookingsData || []).reduce(
+          (sum: number, booking: any) => sum + (Number(booking.total_price) || 0),
+          0,
+        );
+        const platformRevenue = (bookingsData || []).reduce(
+          (sum: number, booking: any) => sum + (Number(booking.management_fee) || 0),
+          0,
+        );
 
         setData({
           totalUsers: usersCount || 0,
           activeServices: servicesCount || 0,
           pendingCertificates: certsCount || 0,
-          totalRevenue: revenue,
+          grossVolume,
+          platformRevenue,
         });
 
       } catch (error: any) {
@@ -69,13 +80,13 @@ const AdminDashboard: React.FC = () => {
   }, []);
 
   const formatNumber = (num: number) => new Intl.NumberFormat('es-ES').format(num);
-  const formatCurrency = (num: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(num);
 
   const stats = [
     { title: 'Usuarios Totales', value: formatNumber(data.totalUsers), icon: Users, color: 'text-blue-500' },
     { title: 'Servicios Activos', value: formatNumber(data.activeServices), icon: Briefcase, color: 'text-purple-500' },
     { title: 'Certificados Pendientes', value: formatNumber(data.pendingCertificates), icon: Leaf, color: 'text-green-500' },
-    { title: 'Ingresos Totales', value: formatCurrency(data.totalRevenue), icon: TrendingUp, color: 'text-emerald-500' },
+    { title: 'Volumen transaccionado', value: formatEuro(data.grossVolume), icon: TrendingUp, color: 'text-emerald-500' },
+    { title: 'Ingresos GarSer', value: formatEuro(data.platformRevenue), icon: Wallet, color: 'text-amber-500' },
   ];
 
   return (
@@ -92,7 +103,7 @@ const AdminDashboard: React.FC = () => {
             <span className="sr-only">Cargando datos del dashboard…</span>
           </div>
         ) : (
-          <section aria-label="Estadísticas generales" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <section aria-label="Estadísticas generales" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
             {stats.map((stat, i) => (
               <article key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
                 <div>

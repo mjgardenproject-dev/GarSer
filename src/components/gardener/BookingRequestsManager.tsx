@@ -19,6 +19,8 @@ import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import { fetchBookingServiceDetails, type BookingServiceInput } from '../../utils/bookingServiceDetails';
 import ServiceDetailCard from './ServiceDetailCard';
 import PhotoGallery from '../common/PhotoGallery';
+import { GardenerBookingAmount } from '../booking/BookingAmounts';
+import { formatEuro } from '../../shared/bookingAmounts';
 
 interface BookingRequestWithDetails {
   id: string;
@@ -102,7 +104,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       }));
       setCorrectionVars((prev) => ({ ...prev, [request.id]: declaredVariables }));
       setCorrectionFor(null);
-      toast.success(`Precio recalculado: €${result.totalPrice}. Revisa el motivo y envía la propuesta.`);
+      toast.success(`Precio del servicio recalculado: ${formatEuro(result.totalPrice)}. Revisa el motivo y envía la propuesta.`);
     } catch (error: any) {
       const message = isBookingAuthorityError(error)
         ? error.backendMessage || error.message
@@ -400,15 +402,6 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
     return `${startTime} - ${endTime}`;
   };
 
-  const formatPrice = (amount?: number) => {
-    try {
-      const value = typeof amount === 'number' ? amount : 0;
-      return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(value);
-    } catch {
-      return `€${amount ?? 0}`;
-    }
-  };
-
   const getBookingStatus = (createdAt: string) => {
     const created = parseISO(createdAt);
     const now = new Date();
@@ -488,9 +481,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     </div>
                   </div>
                   <div className="sm:text-right sm:shrink-0">
-                    <div className="text-xl sm:text-2xl font-bold text-green-600 whitespace-nowrap">
-                      {formatPrice(request.total_price)}
-                    </div>
+                    <GardenerBookingAmount booking={request} variant="hero" />
                     {request.price_change_status === 'pending_client_acceptance' && (
                       <div className="text-xs text-amber-700 mt-1">Cambio de precio pendiente de cliente</div>
                     )}
@@ -568,7 +559,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                             [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), amount: e.target.value }
                           }))
                         }
-                        placeholder={`Nuevo precio (€), actual: ${Number(request.total_price || 0).toFixed(2)}`}
+                        placeholder={`Nuevo precio del servicio (€), actual: ${formatEuro(request.total_price)}`}
                         className="flex-1 px-3 py-2 border border-blue-200 rounded-md text-sm"
                       />
                       <input

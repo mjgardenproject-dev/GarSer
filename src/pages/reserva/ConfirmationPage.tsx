@@ -38,7 +38,7 @@ import type {
   BookingQuoteEconomicBreakdown,
   BookingQuoteSlotSelection,
 } from '../../shared/bookingQuoteCore';
-import { getBookingCustomerPaymentSummary } from '../../shared/bookingQuoteCore';
+import { formatEuro, getQuoteAmounts } from '../../shared/bookingAmounts';
 import {
   buildAuthoritativeQuoteSnapshot,
   hasAuthoritativeQuoteSnapshot,
@@ -230,10 +230,6 @@ const ConfirmationPage: React.FC = () => {
   const paymentFormRef = useRef<EmbeddedStripePaymentFormHandle | null>(null);
   const paymentSheetSuccessKeyRef = useRef<string | null>(null);
   const paymentSheetCloseButtonRef = useRef<HTMLButtonElement | null>(null);
-  const currencyFormatter = useMemo(
-    () => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-    []
-  );
   const dateFormatter = useMemo(
     () => new Intl.DateTimeFormat('es-ES', { dateStyle: 'long' }),
     []
@@ -1123,11 +1119,11 @@ const ConfirmationPage: React.FC = () => {
     [dateFormatter, quoteExpiresAt, timeFormatter]
   );
   const payableNowLabel = useMemo(
-    () => (quoteEconomics ? currencyFormatter.format(quoteEconomics.payableNow) : 'el importe pendiente'),
-    [currencyFormatter, quoteEconomics]
+    () => (quoteEconomics ? formatEuro(quoteEconomics.payableNow) : 'el importe pendiente'),
+    [quoteEconomics]
   );
   const customerPaymentSummary = useMemo(
-    () => getBookingCustomerPaymentSummary(quoteEconomics),
+    () => getQuoteAmounts(quoteEconomics),
     [quoteEconomics]
   );
   const showInlinePaymentForm =
@@ -1694,12 +1690,13 @@ const ConfirmationPage: React.FC = () => {
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
                 <CheckCircle2 aria-hidden="true" className="h-9 w-9 text-emerald-600" />
               </div>
-              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Reserva confirmada</p>
+              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Pago confirmado</p>
               <h1 id="booking-success-title" className="mt-3 text-2xl font-semibold text-gray-950 text-balance">
-                Todo ha quedado listo
+                Hemos enviado tu reserva al profesional
               </h1>
               <p className="mt-3 text-sm leading-6 text-gray-600">
-                Tu adelanto se ha confirmado y ya puedes seguir la reserva desde tu panel.
+                Los gastos de gestión quedan retenidos y solo se cobran cuando el profesional acepte. Puedes
+                seguir la reserva desde tu panel.
               </p>
             </div>
 
@@ -1720,9 +1717,27 @@ const ConfirmationPage: React.FC = () => {
                   <span className="max-w-[14rem] text-right text-sm font-medium text-gray-900">{gardenerName || 'Jardinero'}</span>
                 </div>
                 <div className="flex items-start justify-between gap-3">
-                  <span className="text-sm text-gray-500">Pagado ahora</span>
+                  <span className="text-sm text-gray-500">Gastos de gestión</span>
                   <span className="text-sm font-semibold text-emerald-700 tabular-nums">{payableNowLabel}</span>
                 </div>
+                {/* Justo después de pagar es cuando el cliente necesita saber que lo abonado no
+                    sustituye al precio del servicio, sino que se suma. */}
+                {customerPaymentSummary ? (
+                  <>
+                    <div className="flex items-start justify-between gap-3 border-t border-gray-200 pt-3">
+                      <span className="text-sm text-gray-500">Total de la reserva</span>
+                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                        {formatEuro(customerPaymentSummary.clientTotal)}
+                      </span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-sm text-gray-500">Pendiente de pagar al profesional</span>
+                      <span className="text-sm font-semibold text-gray-900 tabular-nums">
+                        {formatEuro(customerPaymentSummary.pendingToGardener)}
+                      </span>
+                    </div>
+                  </>
+                ) : null}
               </div>
             </div>
 
@@ -1823,7 +1838,7 @@ const ConfirmationPage: React.FC = () => {
                          {breakdown.map((item, i) => (
                              <div key={i} className="flex justify-between text-xs">
                                  <span className="text-gray-600 truncate mr-2">{item.desc}</span>
-                                <span className="font-medium text-gray-900 whitespace-nowrap">{currencyFormatter.format(item.price)}</span>
+                                <span className="font-medium text-gray-900 whitespace-nowrap">{formatEuro(item.price)}</span>
                              </div>
                          ))}
                      </div>
@@ -1831,7 +1846,10 @@ const ConfirmationPage: React.FC = () => {
              </div>
           )}
 
-          {/* Divider */}
+          {/* Resumen de pago: dos cifras y una nota que explica la diferencia entre ambas.
+              Antes se mostraban cinco importes, dos de ellos ("Tarifa de reserva" y "Adelanto
+              de confirmación") el MISMO número con nombres distintos, y el cliente no podía
+              deducir cuánto le quedaba por pagar al profesional. */}
           <div className="border-t border-gray-200 pt-4">
             <div className="space-y-5">
               <div>
@@ -1839,45 +1857,25 @@ const ConfirmationPage: React.FC = () => {
                 <div className="mt-3">
                   <p className="text-sm font-medium text-gray-500">Total de la reserva</p>
                   <p className="mt-1 text-[2rem] font-bold leading-none text-gray-950 tabular-nums">
-                    {customerPaymentSummary ? currencyFormatter.format(customerPaymentSummary.reservationTotal) : 'Pendiente'}
+                    {customerPaymentSummary ? formatEuro(customerPaymentSummary.clientTotal) : 'Pendiente'}
                   </p>
                 </div>
-              </div>
-
-              <div className="space-y-3 border-b border-gray-100 pb-4">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm text-gray-500">Subtotal del servicio</span>
-                  <span className="text-sm font-medium text-gray-600 tabular-nums">
-                    {customerPaymentSummary ? currencyFormatter.format(customerPaymentSummary.serviceSubtotal) : 'Pendiente'}
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm text-gray-500">Tarifa de reserva</span>
-                  <span className="text-sm font-medium text-gray-600 tabular-nums">
-                    {customerPaymentSummary ? currencyFormatter.format(customerPaymentSummary.reservationFee) : 'Pendiente'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-end justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-base font-semibold text-gray-900 text-balance">Adelanto de confirmación</p>
-                </div>
-                <p className="text-[1.75rem] font-bold leading-none text-green-600 tabular-nums">
-                  {customerPaymentSummary ? currencyFormatter.format(customerPaymentSummary.confirmationDeposit) : 'Pendiente'}
-                </p>
               </div>
 
               <div className="border-t border-gray-100 pt-4">
                 <div className="flex items-end justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-base font-semibold text-gray-900 text-balance">Pendiente al profesional</p>
+                    <p className="text-base font-semibold text-gray-900 text-balance">
+                      Pendiente de pagar al profesional
+                    </p>
                     <p className="mt-2 max-w-[22rem] text-xs leading-5 text-gray-500">
-                      El profesional cobrará este importe al completar el servicio de la manera que acordéis.
+                      {customerPaymentSummary
+                        ? `Ahora pagas ${formatEuro(customerPaymentSummary.managementFee)} de gastos de gestión. El resto se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
+                        : 'El profesional cobrará este importe al completar el servicio de la manera que acordéis.'}
                     </p>
                   </div>
-                  <p className="text-[1.375rem] font-semibold leading-none text-gray-900 tabular-nums">
-                    {customerPaymentSummary ? currencyFormatter.format(customerPaymentSummary.pendingToProfessional) : 'Pendiente'}
+                  <p className="text-[1.75rem] font-bold leading-none text-green-600 tabular-nums">
+                    {customerPaymentSummary ? formatEuro(customerPaymentSummary.pendingToGardener) : 'Pendiente'}
                   </p>
                 </div>
               </div>
@@ -1992,7 +1990,7 @@ const ConfirmationPage: React.FC = () => {
           <div className="mx-auto w-full sm:max-w-lg">
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Pagas ahora</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Gastos de gestión</p>
                 <p className="text-2xl font-semibold text-gray-900 tabular-nums">{payableNowLabel}</p>
               </div>
               <p className="max-w-[12rem] text-right text-xs text-gray-500">
@@ -2060,7 +2058,7 @@ const ConfirmationPage: React.FC = () => {
 
                 <div className="mt-4 flex items-end justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pagas ahora</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Gastos de gestión</p>
                     <p className="mt-1 text-4xl font-bold leading-none text-gray-950 tabular-nums">{payableNowLabel}</p>
                   </div>
                   <p className="max-w-[9rem] text-right text-xs leading-5 text-gray-500" translate="no">

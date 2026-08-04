@@ -7,6 +7,7 @@ import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { proposeBookingPriceChange, respondBookingPriceChange, PriceChangeStatus } from '../../utils/bookingPriceChangeService';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
+import { formatEuro, getBookingAmounts } from '../../shared/bookingAmounts';
 import {
   ChatMessage,
   ChatParticipants,
@@ -31,6 +32,8 @@ type BookingChatMeta = {
   gardener_id: string;
   status: string;
   total_price: number;
+  management_fee?: number | null;
+  management_fee_source?: string | null;
   price_change_status?: PriceChangeStatus | null;
   proposed_total_price?: number | null;
   proposed_price_reason?: string | null;
@@ -111,7 +114,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   const refreshBookingMeta = useCallback(async () => {
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, client_id, gardener_id, status, total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_price_expires_at, pricing_context')
+      .select('id, client_id, gardener_id, status, total_price, management_fee, management_fee_source, price_change_status, proposed_total_price, proposed_price_reason, proposed_price_expires_at, pricing_context')
       .eq('id', bookingId)
       .single();
     if (!error && data) setBookingMeta(data as BookingChatMeta);
@@ -405,8 +408,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
         {hasPendingPriceProposal && bookingMeta && (
           <div className="px-4 py-3 border-b border-amber-200 bg-amber-50">
             <p className="text-sm font-medium text-amber-900">
-              Propuesta de nuevo precio: €{Number(bookingMeta.proposed_total_price || 0).toFixed(2)}
+              Propuesta de nuevo precio del servicio: {formatEuro(bookingMeta.proposed_total_price)}
             </p>
+            {/* Solo al cliente: es el único para quien el total difiere del precio del servicio. */}
+            {isClient && (
+              <p className="text-xs text-amber-800 mt-0.5">
+                El total de tu reserva pasaría a{' '}
+                {formatEuro(
+                  getBookingAmounts({ ...bookingMeta, total_price: bookingMeta.proposed_total_price }).clientTotal,
+                )}
+                . Los gastos de gestión ya abonados no cambian.
+              </p>
+            )}
             {bookingMeta.proposed_price_reason && (
               <p className="text-xs text-amber-800 mt-0.5">{bookingMeta.proposed_price_reason}</p>
             )}

@@ -22,10 +22,9 @@ import {
   renderBrandedEmail,
   renderPlainText,
   detailRows,
-  formatBookingDate,
-  formatPrice,
   sendViaBrevo,
 } from '../_shared/emailBrand.ts';
+import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE, type DetailPair } from '../_shared/bookingEmailDetails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -123,57 +122,22 @@ Deno.serve(async (req) => {
     const results: Array<Record<string, unknown>> = [];
 
     for (const bookingId of ids) {
-      const { data: booking, error: bookingError } = await admin
-        .from('bookings')
-        .select('id, client_id, gardener_id, service_id, status, date, start_time, total_price, client_address')
-        .eq('id', bookingId)
-        .single();
-
-      if (bookingError || !booking) {
+      const details = await buildBookingEmailDetails(admin, bookingId);
+      if (!details) {
         results.push({ bookingId, status: 'skipped', reason: 'booking_not_found' });
         continue;
       }
 
-      // Nombre del servicio
-      let serviceName = 'Servicio de jardinería';
-      if (booking.service_id) {
-        const { data: service } = await admin
-          .from('services').select('name').eq('id', booking.service_id).single();
-        if (service?.name) serviceName = service.name;
-      }
-
-      const whenText = formatBookingDate(booking.date, booking.start_time);
-      const priceText = formatPrice(booking.total_price);
-      const address = booking.client_address || 'Dirección indicada en la reserva';
+      const { booking, client, gardener, clientPairs, gardenerPairs, clientFeeNote } = details;
       const isPendingAcceptance = booking.status === 'pending';
 
-      // Resolver email + nombre de cliente y jardinero
-      const resolveRecipient = async (userId: string | null) => {
-        if (!userId) return { email: null as string | null, name: '' };
-        let email: string | null = null;
-        const { data: userData } = await admin.auth.admin.getUserById(userId);
-        if (userData?.user?.email) email = userData.user.email;
-        let name = '';
-        const { data: profile } = await admin
-          .from('profiles').select('full_name').eq('id', userId).single();
-        if (profile?.full_name) name = profile.full_name;
-        return { email, name };
-      };
-
-      const client = await resolveRecipient(booking.client_id);
-      const gardener = await resolveRecipient(booking.gardener_id);
-
-      const detailPairs: Array<[string, string]> = [
-        ['Servicio', serviceName],
-        ['Fecha', whenText],
-        ['Dirección', address],
-        ['Total', priceText],
-      ];
-
+      // Cada audiencia recibe SU bloque de importes: el cliente ve el total de la reserva y lo
+      // que le queda por pagar al profesional; el jardinero, solo lo que va a cobrar.
       const dispatch = async (
         role: 'client' | 'gardener',
         recipient: { email: string | null; name: string },
         subject: string,
+        detailPairs: DetailPair[],
         opts: Parameters<typeof renderBrandedEmail>[0],
       ) => {
         if (!recipient.email) {
@@ -210,37 +174,41 @@ Deno.serve(async (req) => {
       };
 
       if (isPendingAcceptance) {
-        await dispatch('client', client, 'Hemos recibido tu reserva en GarSer', {
+        await dispatch('client', client, 'Hemos recibido tu reserva en GarSer', clientPairs, {
           title: 'Hemos recibido tu reserva en GarSer',
           heading: `¡Gracias, ${client.name || 'cliente'}!`,
-          intro: 'Tu pago está confirmado y hemos enviado la solicitud al profesional. Te avisaremos en cuanto la acepte.',
-          bodyHtml: detailRows(detailPairs),
+          // El cargo es una AUTORIZACION con captura diferida: hasta que el profesional acepta
+          // no se cobra nada. Decir "tu pago esta confirmado" y a la vez "no se te cobrara
+          // nada" era contradictorio; ahora se nombra el estado real.
+          intro: 'Hemos retenido los gastos de gestión y enviado la solicitud al profesional. Te avisaremos en cuanto la acepte.',
+          bodyHtml: detailRows(clientPairs),
           cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
-          footerNote: 'Si el profesional no puede aceptarla, te lo notificaremos y no se te cobrará nada.',
+          footerNote: clientFeeNote || 'Si el profesional no puede aceptarla, te lo notificaremos y no se te cobrará nada.',
         });
-        await dispatch('gardener', gardener, 'Nueva solicitud de reserva en GarSer', {
+        await dispatch('gardener', gardener, 'Nueva solicitud de reserva en GarSer', gardenerPairs, {
           title: 'Nueva solicitud de reserva en GarSer',
           heading: `Hola ${gardener.name || 'jardinero'}, tienes una nueva solicitud`,
           intro: 'Un cliente ha solicitado una reserva contigo. Revisa el detalle y acéptala o recházala desde tu panel.',
-          bodyHtml: detailRows(detailPairs),
+          bodyHtml: detailRows(gardenerPairs),
           cta: { label: 'Revisar solicitud', url: `${BRAND.site}/dashboard` },
-          footerNote: 'Las solicitudes sin respuesta caducan automáticamente: responde cuanto antes.',
+          footerNote: `${GARDENER_AMOUNT_NOTE} Las solicitudes sin respuesta caducan automáticamente: responde cuanto antes.`,
         });
       } else {
-        await dispatch('client', client, 'Tu reserva en GarSer está confirmada', {
+        await dispatch('client', client, 'Tu reserva en GarSer está confirmada', clientPairs, {
           title: 'Tu reserva en GarSer está confirmada',
           heading: `¡Reserva confirmada, ${client.name || 'cliente'}!`,
           intro: 'Tu reserva ha quedado confirmada. Estos son los detalles:',
-          bodyHtml: detailRows(detailPairs),
+          bodyHtml: detailRows(clientPairs),
           cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
-          footerNote: 'El profesional se pondrá en contacto contigo por el chat si necesita algún detalle adicional.',
+          footerNote: clientFeeNote || 'El profesional se pondrá en contacto contigo por el chat si necesita algún detalle adicional.',
         });
-        await dispatch('gardener', gardener, 'Nueva reserva confirmada en GarSer', {
+        await dispatch('gardener', gardener, 'Nueva reserva confirmada en GarSer', gardenerPairs, {
           title: 'Nueva reserva confirmada en GarSer',
           heading: `Nueva reserva, ${gardener.name || 'jardinero'}`,
           intro: 'Tienes una nueva reserva confirmada:',
-          bodyHtml: detailRows(detailPairs),
+          bodyHtml: detailRows(gardenerPairs),
           cta: { label: 'Gestionar reserva', url: `${BRAND.site}/dashboard` },
+          footerNote: GARDENER_AMOUNT_NOTE,
         });
       }
     }

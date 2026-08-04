@@ -920,6 +920,9 @@ export type Database = {
           buffer_applied: boolean | null
           client_address: string
           client_id: string | null
+          client_total_price: number
+          management_fee: number
+          management_fee_source: string
           client_latitude: number | null
           client_longitude: number | null
           created_at: string | null
@@ -953,6 +956,8 @@ export type Database = {
           buffer_applied?: boolean | null
           client_address: string
           client_id?: string | null
+          management_fee?: number
+          management_fee_source?: string
           client_latitude?: number | null
           client_longitude?: number | null
           created_at?: string | null
@@ -986,6 +991,8 @@ export type Database = {
           buffer_applied?: boolean | null
           client_address?: string
           client_id?: string | null
+          management_fee?: number
+          management_fee_source?: string
           client_latitude?: number | null
           client_longitude?: number | null
           created_at?: string | null

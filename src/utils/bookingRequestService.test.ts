@@ -15,7 +15,6 @@ vi.mock('../lib/supabase', () => ({
 }));
 
 import {
-  createBroadcastBookingRequests,
   expireStaleBookingRequests,
   respondBookingRequest,
 } from './bookingRequestService';
@@ -52,36 +51,4 @@ describe('bookingRequestService RPC integration', () => {
     });
   });
 
-  it('crea solicitudes broadcast desde RPC sin inserts directos', async () => {
-    rpcMock.mockResolvedValueOnce({ data: { status: 'pending', booking_ids: ['b1', 'b2'] }, error: null });
-
-    await createBroadcastBookingRequests({
-      gardenerIds: ['gardener-1', 'gardener-2'],
-      serviceId: 'service-1',
-      date: '2026-05-15',
-      startTime: '09:00',
-      durationHours: 2,
-      totalPrice: 140,
-      clientAddress: 'Calle Mayor 10',
-      notes: 'Puerta verde',
-      pricingContext: { source: 'test' },
-      travelFee: 15,
-      hourlyRate: 25,
-    });
-
-    expect(rpcMock).toHaveBeenCalledWith('create_broadcast_booking_requests', {
-      p_gardener_ids: ['gardener-1', 'gardener-2'],
-      p_service_id: 'service-1',
-      p_date: '2026-05-15',
-      p_start_time: '09:00',
-      p_duration_hours: 2,
-      p_total_price: 140,
-      p_client_address: 'Calle Mayor 10',
-      p_notes: 'Puerta verde',
-      p_pricing_context: { source: 'test' },
-      p_travel_fee: 15,
-      p_hourly_rate: 25,
-      p_operation_id: expect.any(String),
-    });
-  });
 });

@@ -316,19 +316,24 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(screen.queryByText(/El pago se realiza dentro de esta pantalla con Stripe/)).toBeNull()
   })
 
-  it('muestra el resumen de pago con la jerarquía económica esperada', () => {
+  it('muestra el total de la reserva y lo que queda por pagar al profesional', () => {
     render(<ConfirmationPage />)
 
+    // Dos cifras y una nota que explica la diferencia. El cliente tiene que poder responder
+    // "¿cuánto pago en total?" y "¿cuánto le doy al jardinero?" sin restar nada de cabeza.
     expect(screen.getByText('Resumen de pago')).toBeTruthy()
     expect(screen.getByText('Total de la reserva')).toBeTruthy()
     expect(screen.getByText('177,75 €')).toBeTruthy()
-    expect(screen.getByText('Subtotal del servicio')).toBeTruthy()
-    expect(screen.getAllByText('158,00 €').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('Tarifa de reserva')).toBeTruthy()
-    expect(screen.getAllByText('19,75 €').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('Adelanto de confirmación')).toBeTruthy()
-    expect(screen.getByText('Pendiente al profesional')).toBeTruthy()
-    expect(screen.getByText(/El profesional cobrará este importe al completar el servicio/)).toBeTruthy()
+    expect(screen.getByText('Pendiente de pagar al profesional')).toBeTruthy()
+    expect(screen.getAllByText('158,00 €').length).toBeGreaterThanOrEqual(1)
+    expect(
+      screen.getByText(/Ahora pagas 19,75 € de gastos de gestión\. El resto se lo abonas directamente al profesional/),
+    ).toBeTruthy()
+
+    // El vocabulario antiguo mostraba el mismo importe dos veces con nombres distintos.
+    expect(screen.queryByText('Adelanto de confirmación')).toBeNull()
+    expect(screen.queryByText('Tarifa de reserva')).toBeNull()
+    expect(screen.queryByText('Subtotal del servicio')).toBeNull()
   })
 
   it('muestra la causa real cuando booking-payment devuelve slot_unavailable', async () => {
@@ -409,14 +414,14 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(await screen.findByRole('dialog', { name: 'Pago seguro' })).toBeTruthy()
     expect(await screen.findByTestId('payment-element')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Continuar al pago' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Pagar 19,75 €' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Pagar 19,75 €' })).toBeTruthy()
   })
 
   it('confirma el pago inline y sincroniza el estado autoritativo', async () => {
     render(<ConfirmationPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continuar al pago' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Pagar 19,75 €' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Pagar 19,75 €' }))
 
     await waitFor(() => {
       expect(mocks.stripeSubmit).toHaveBeenCalledTimes(1)
@@ -454,7 +459,7 @@ describe('ConfirmationPage embedded payment flow', () => {
     render(<ConfirmationPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continuar al pago' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Pagar 19,75 €' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Pagar 19,75 €' }))
 
     await waitFor(() => {
       expect(mocks.stripeSubmit).toHaveBeenCalledTimes(1)
@@ -465,7 +470,7 @@ describe('ConfirmationPage embedded payment flow', () => {
       expect(screen.queryByRole('dialog', { name: 'Pago seguro' })).toBeNull()
     }, { timeout: 1500 })
 
-    expect(await screen.findByRole('heading', { name: 'Todo ha quedado listo' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ir a mis reservas' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ir al inicio' })).toBeTruthy()
     expect(mocks.toast.success).toHaveBeenCalledWith('Pago confirmado y reserva creada correctamente')
@@ -498,7 +503,7 @@ describe('ConfirmationPage embedded payment flow', () => {
 
     render(<ConfirmationPage />)
 
-    expect(await screen.findByRole('heading', { name: 'Todo ha quedado listo' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ir a mis reservas' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ir al inicio' })).toBeTruthy()
     expect(mocks.navigate).not.toHaveBeenCalled()
@@ -518,7 +523,7 @@ describe('ConfirmationPage embedded payment flow', () => {
 
     render(<ConfirmationPage />)
 
-    expect(await screen.findByRole('heading', { name: 'Todo ha quedado listo' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Ir al inicio' }))
 

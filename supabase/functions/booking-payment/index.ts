@@ -30,7 +30,8 @@ type PaymentAction =
   | 'get_attempt_status'
   | 'cancel_attempt'
   | 'sync_payment_state'
-  | 'finalize_booking_payment';
+  | 'finalize_booking_payment'
+  | 'finalize_price_change_payment';
 
 type PaymentPayload = {
   action?: PaymentAction;
@@ -39,6 +40,10 @@ type PaymentPayload = {
   // finalize_booking_payment: captura o libera el pago autorizado tras la respuesta del
   // jardinero. `bookingId` identifica la reserva; `decision` = 'accept' (captura) | 'reject'
   // (libera). El jardinero llama a esta accion despues de respond_booking_request.
+  //
+  // finalize_price_change_payment: lo mismo, pero cuando quien resuelve es el CLIENTE al
+  // aceptar o rechazar un cambio de precio. No acepta `decision`: la deriva de
+  // price_change_status en la BD, porque el actor no es quien decide el desenlace.
   bookingId?: string;
   decision?: 'accept' | 'reject';
 };
@@ -1343,6 +1348,115 @@ Deno.serve(async (req: Request) => {
         context: { action: payload.action, bookingId, decision, piStatus, resultStatus },
       });
       return jsonResponse({ status: resultStatus, bookingId, decision });
+    }
+
+    if (payload.action === 'finalize_price_change_payment') {
+      if (!stripeSecret) {
+        throw new Error('Falta STRIPE_SECRET_KEY para finalizar el pago.');
+      }
+      const bookingId = asString(payload.bookingId);
+      if (!bookingId) {
+        throw new BookingPaymentHttpError({
+          status: 400,
+          code: 'invalid_finalize_request',
+          message: 'Falta bookingId.',
+        });
+      }
+
+      // Aquí el actor es el CLIENTE: es quien acepta o rechaza la propuesta de precio.
+      const { data: priceChangeBookingData } = await dbAdmin
+        .from('bookings')
+        .select('id, client_id, status, price_change_status')
+        .eq('id', bookingId)
+        .maybeSingle();
+      const priceChangeBooking = priceChangeBookingData as
+        | { id: string; client_id: string | null; status: string; price_change_status: string | null }
+        | null;
+      if (!priceChangeBooking) {
+        throw new BookingPaymentHttpError({ status: 404, code: 'booking_not_found', message: 'Reserva no encontrada.' });
+      }
+      if (String(priceChangeBooking.client_id || '') !== user.id) {
+        throw new BookingPaymentHttpError({ status: 403, code: 'not_booking_client', message: 'No eres el cliente de esta reserva.' });
+      }
+
+      // La decisión se DERIVA del estado ya persistido, no de un parámetro del cliente: la
+      // transición la hizo respond_booking_price_change y es la única prueba válida.
+      const changeStatus = String(priceChangeBooking.price_change_status || '');
+      if (changeStatus !== 'accepted' && changeStatus !== 'rejected') {
+        throw new BookingPaymentHttpError({
+          status: 409,
+          code: 'price_change_unresolved',
+          message: 'El cambio de precio todavía no está resuelto.',
+        });
+      }
+
+      const priceChangeAttempt = await getAttemptByBookingId(dbAdmin, bookingId);
+      const priceChangeIntentId = priceChangeAttempt?.stripe_payment_intent_id || null;
+      contextAttemptId = priceChangeAttempt?.id || '';
+      if (!priceChangeIntentId) {
+        return jsonResponse({ status: 'no_payment', bookingId });
+      }
+
+      const priceChangeIntent = await stripeGet({
+        path: `/v1/payment_intents/${encodeURIComponent(priceChangeIntentId)}`,
+        stripeSecret,
+      });
+      const priceChangeIntentStatus = asString((priceChangeIntent as Record<string, unknown>).status);
+
+      let priceChangeResult = 'noop';
+      if (changeStatus === 'accepted') {
+        // Aceptar un cambio de precio confirma la reserva (status='confirmed'), así que es
+        // el momento de capturar los gastos de gestión. Sin esto la autorización caducaba a
+        // los 7 días y GarSer no cobraba nunca esa reserva.
+        if (priceChangeBooking.status === 'confirmed' && priceChangeIntentStatus === 'requires_capture') {
+          await stripePost({
+            path: `/v1/payment_intents/${encodeURIComponent(priceChangeIntentId)}/capture`,
+            body: new URLSearchParams(),
+            stripeSecret,
+          });
+          priceChangeResult = 'captured';
+        } else if (priceChangeIntentStatus === 'succeeded') {
+          priceChangeResult = 'already_captured';
+        } else {
+          priceChangeResult = 'not_capturable';
+        }
+      } else {
+        // Rechazar cancela la reserva: hay que liberar la autorización retenida al cliente.
+        if (
+          priceChangeIntentStatus === 'requires_capture' ||
+          priceChangeIntentStatus === 'requires_payment_method' ||
+          priceChangeIntentStatus === 'requires_confirmation'
+        ) {
+          try {
+            await stripePost({
+              path: `/v1/payment_intents/${encodeURIComponent(priceChangeIntentId)}/cancel`,
+              body: new URLSearchParams(),
+              stripeSecret,
+            });
+          } catch {
+            // Si Stripe ya lo finalizó, seguimos: la autorización caduca sola a los 7 días.
+          }
+          priceChangeResult = 'released';
+        } else if (priceChangeIntentStatus === 'canceled') {
+          priceChangeResult = 'already_released';
+        } else {
+          priceChangeResult = 'not_releasable';
+        }
+      }
+
+      await persistServerTelemetry(dbAdmin, {
+        level: 'info',
+        event: 'booking.price_change_payment_finalized',
+        userId,
+        context: {
+          action: payload.action,
+          bookingId,
+          priceChangeStatus: changeStatus,
+          piStatus: priceChangeIntentStatus,
+          resultStatus: priceChangeResult,
+        },
+      });
+      return jsonResponse({ status: priceChangeResult, bookingId, decision: changeStatus });
     }
 
     const stripePublishableKey = resolveStripePublishableKey();

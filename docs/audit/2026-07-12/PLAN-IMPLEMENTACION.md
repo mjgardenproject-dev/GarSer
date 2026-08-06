@@ -35,7 +35,7 @@ Runbook paso a paso para cerrar los hallazgos de `REPORT.md` y dejar la web **li
 | 5 | Cobros: robustez del webhook y vía de reserva | 🟠 ALTO | Flujo de dinero |
 | 6 | Emails: fiabilidad del ciclo de reserva | 🔴 CRÍTICO | Edge functions |
 | 7 | Reseñas: reputación visible al elegir jardinero | 🔴 CRÍTICO | Migración + front |
-| 8 | Feature: cancelación de reserva por el cliente | 🟠 ALTO | Front + datos |
+| 8 | Feature: cancelación de reserva (cliente **y** jardinero) | 🔴 CRÍTICO | Front + datos + dinero |
 | **8B** | **Cambio de precio: avisos por email y claridad en la UI** | 🔴 **CRÍTICO** | **Emails + front** |
 | **8C** | **Ciclo de vida de la reserva: caducidades, ventanas y estados** | 🔴 **CRÍTICO** | **Cron + estados + front** |
 | 9 | Seguridad: cerrar funciones auxiliares (email/IA) | 🟠 ALTO | Edge functions |
@@ -234,7 +234,14 @@ Runbook paso a paso para cerrar los hallazgos de `REPORT.md` y dejar la web **li
 
 ---
 
-## PASO 8 — Cancelación de reserva por el cliente 🟠
+## PASO 8 — Cancelación de reserva (cliente y jardinero) 🔴
+
+> **Ampliado el 2026-08-06.** Verificado que **hoy NINGUNA de las dos partes puede cancelar una
+> reserva confirmada**: el cliente no tiene botón, y el jardinero solo puede rechazar solicitudes
+> *pendientes*. Es requisito previo del paso 8C, y sin él la política de dinero y el email
+> `booking_cancelled` (paso 6) son inalcanzables. Aplica la política decidida en 8C·D3/D4:
+> cancela el cliente → se capturan los gastos de gestión; cancela el jardinero tras aceptar →
+> se devuelven **y** se registra la penalización de 1★ del sistema.
 
 **Qué haré (pre-borrador):**
 - Añadir en "Mis reservas" un botón **Cancelar** en estados `pending`/`confirmed`, que: cambie el estado a `cancelled` (vía RPC seguro, respetando el blindaje del paso 2), **libere el slot** de disponibilidad, dispare el **email** de cancelación (paso 6) y, si procede, el **reembolso** (paso 4).
@@ -430,17 +437,74 @@ pending ──(jardinero acepta)──> confirmed ──(ventana de completado)�
 - Emails de cada transición automática (enlaza con el paso 6).
 - Decidir sobre `in_progress`: cablearlo ("Iniciar servicio") o eliminarlo con sus 4 ramas de UI.
 
-### D) Decisiones de negocio que necesito de ti (no son técnicas)
+### D) Política decidida por el usuario (2026-08-06) — VINCULANTE
 
-1. **Ventana de completado**: ¿desde el fin del servicio hasta cuántos días? (sugerencia: 7)
-2. **Cierre automático**: ¿a las 72 h del servicio? ¿auto-completar o dejar en revisión?
-3. **Política de cancelación**: ¿hasta cuándo puede cancelar el cliente sin coste? ¿se devuelve
-   la comisión? ¿y si cancela el jardinero (¿penalización?)?
-4. **No-show**: ¿quién puede reportarlo y qué pasa con el dinero?
-5. **`in_progress`**: ¿lo quieres como estado real ("Iniciar servicio") o lo eliminamos?
+**D0. Requisito previo verificado: HOY NADIE PUEDE CANCELAR UNA RESERVA CONFIRMADA.**
+- **Cliente:** no tiene ningún botón de cancelar. (El "Cancelar" de `BookingsList:451` cierra el
+  modal de reseña.)
+- **Jardinero:** solo puede **rechazar solicitudes pendientes** (`GardenerDashboard` con
+  `status === 'pending'`, y `BookingRequestsManager:609`). El "Cancelar" de
+  `GardenerBookings:320` cierra el modal de completar.
+- ⇒ El estado `cancelled` de una reserva **confirmada** es **inalcanzable desde la UI**, y por
+  eso el email `booking_cancelled` cableado en el paso 6 **nunca llega a dispararse**.
+- **Primero hay que construir ambas cancelaciones** (cliente y jardinero sobre reservas
+  confirmadas). Sin eso, toda la política de abajo es letra muerta.
 
-**Antes de probar, TÚ:** responder las 5 decisiones de arriba (sin ellas, las ventanas serían
-inventadas por mí).
+**D1+D2. Auto-finalización a las 24 h.** Si el jardinero no marca el servicio como finalizado,
+a las **24 h del fin del servicio** (`date + start_time + duration_hours`) el sistema lo
+auto-finaliza → `completed`, y **el cliente ya puede dejar su reseña**.
+- La **ventana de completado manual** va desde el fin del servicio hasta esa auto-finalización.
+- Antes del fin del servicio: **no se puede completar** (ni por UI ni por API).
+
+**D3. Dinero según de quién sea la causa** (los "gastos de gestión" = `management_fee`, lo único
+que cobra GarSer y lo único capturado):
+
+| Situación | Gastos de gestión |
+|---|---|
+| Jardinero **no acepta** la solicitud (o caduca) | **Se devuelven** al cliente (se libera la autorización) |
+| Jardinero **cancela tras aceptar** | **Se devuelven** al cliente (reembolso, ya estaba capturado) |
+| **Cliente cancela** tras reservar | **Se capturan** (no se devuelven) |
+
+**D4. Sanción al jardinero:**
+- **No aceptar** una solicitud: **sin sanción** (es libre de no cogerla).
+- **Cancelar después de haber aceptado**: se registra automáticamente una **valoración de 1
+  estrella a nombre de GarSer** con la observación **"Servicio no completado"**.
+
+> ⚠️ **Matiz de implementación que propongo** (respetando la decisión): registrarla marcada como
+> **penalización del sistema** (p. ej. `is_system_penalty = true`), mostrada como
+> *"GarSer · cancelación del profesional"* y **no** como si fuera la reseña de un cliente. Motivos:
+> (a) es honesto — nadie recibió ese servicio; (b) no contamina la semántica de `reviews` ni la
+> media real; (c) es defendible si un jardinero la reclama. Sigue contando para la nota (que es
+> el efecto que buscas) pero es trazable y distinguible.
+
+**D5. No-show — propuesta profesional** (me pediste que eligiera; es coherente con D3):
+
+| Caso | Quién reporta | Estado | Dinero | Sanción |
+|---|---|---|---|---|
+| **Cliente no está / no da acceso** | El jardinero, dentro de la ventana de completado | `no_show_client` | Gastos de gestión **se capturan** (causa del cliente) | Ninguna al jardinero |
+| **El jardinero no aparece** | El cliente, dentro de la ventana | `no_show_gardener` | Gastos de gestión **se devuelven** (causa del jardinero) | **Misma que cancelar tras aceptar** (1★ de sistema): para el cliente el daño es igual o peor |
+| **Ambos se reportan** | — | `disputed` | Congelado | Revisión manual del admin |
+
+- Ventana de reporte: desde el fin del servicio hasta la auto-finalización (24 h). Después, no.
+- Anti-abuso: un solo reporte por parte y reserva; el reportado recibe email para poder replicar.
+
+**D6. `in_progress`: se ELIMINA.** Se retira del tipo y de las 4 ramas de UI que lo pintan
+(`ChatList`, `BookingsList`, `GardenerBookings`, `GardenerDashboard`) y de la máquina de estados
+SQL. Nadie lo escribía nunca.
+
+### E) Estados finales tras esta decisión
+
+```
+pending ──(acepta)──> confirmed ──(fin del servicio + acción o 24 h)──> completed
+   │                      │
+   │ (24 h sin responder  ├──> cancelled_by_client    (gestión: se captura)
+   │  o llega la hora)    ├──> cancelled_by_gardener  (gestión: se devuelve + 1★ sistema)
+   └──> expired           ├──> no_show_client         (gestión: se captura)
+     (gestión: se         ├──> no_show_gardener       (gestión: se devuelve + 1★ sistema)
+      devuelve)           └──> disputed               (congelado, revisión admin)
+```
+
+**Antes de probar, TÚ:** nada (la política ya está decidida arriba).
 
 **Prueba (cuando se implemente):**
 1. Crea una solicitud y no la respondas → a las 24 h (o forzando el cron) pasa a `expired`,

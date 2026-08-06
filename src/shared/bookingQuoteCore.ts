@@ -10,6 +10,7 @@ import { calculateTreePruningQuoteForTrees } from '../domain/pricing/treePruning
 import type { PhytosanitaryYields } from '../types/index.ts';
 import type { TreePruningServiceConfig } from '../types/treePruning.ts';
 import { getPrecioPorHora, getPricingMethod } from '../utils/hourlyPricing.ts';
+import { BOOKING_MANAGEMENT_FEE_RATE } from './bookingAmounts.ts';
 
 export interface BookingQuoteLine {
   desc: string;
@@ -110,13 +111,6 @@ export interface BookingQuoteEconomicBreakdown {
   stripeLineItems: BookingStripeLineItem[];
 }
 
-export interface BookingCustomerPaymentSummary {
-  reservationTotal: number;
-  serviceSubtotal: number;
-  reservationFee: number;
-  confirmationDeposit: number;
-  pendingToProfessional: number;
-}
 
 export interface BookingQuoteMetadata {
   pricingContext: BookingQuotePricingContext;
@@ -386,30 +380,10 @@ const EMPTY_DETAILED_PHYTOSANITARY_PRICING: PhytosanitaryDetailedPricing = {
 };
 
 const BOOKING_TAX_RATE = 0.21;
-const BOOKING_MANAGEMENT_FEE_RATE = 0.125;
 const roundUp = (value: number) => Math.ceil(Number(value || 0));
 const roundCurrency = (value: number) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const hasPositiveNumber = (value: unknown) => Number.isFinite(Number(value)) && Number(value) > 0;
 
-export const getBookingCustomerPaymentSummary = (
-  economics?: BookingQuoteEconomicBreakdown | null
-): BookingCustomerPaymentSummary | null => {
-  if (!economics) return null;
-
-  const serviceSubtotal = roundCurrency(economics.serviceGrossTotal);
-  const reservationFee = roundCurrency(economics.managementFee);
-  const confirmationDeposit = roundCurrency(economics.payableNow);
-  const pendingToProfessional = roundCurrency(economics.payableLater);
-  const reservationTotal = roundCurrency(serviceSubtotal + reservationFee);
-
-  return {
-    reservationTotal,
-    serviceSubtotal,
-    reservationFee,
-    confirmationDeposit,
-    pendingToProfessional,
-  };
-};
 
 const toSafeNumber = (value: unknown): number => {
   const parsed = Number(value || 0);

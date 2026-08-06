@@ -2,45 +2,47 @@
 
 > Sesión nueva, en frío. Proyecto **GarSer** (React+Vite+TS, Supabase Auth + Edge Functions Deno + Brevo). Apóyate en la skill **`supabase`** (plantillas de Auth y Edge Functions).
 
-## Estado actual (verificado 2026-07-11) — la capa de marca YA existe
-
-El 2026-07-10 se construyó la base (comprueba con `git log` si está commiteada):
+## Estado actual (verificado 2026-08-03)
 
 - **`supabase/functions/_shared/emailBrand.ts`** — capa compartida de marca:
-  `BRAND` (verde `#16a34a`, `site: https://garser.es`), `renderBrandedEmail()` (shell HTML
-  completo: cabecera, tarjeta, CTA, pie), `detailRows()` (filas etiqueta:valor),
-  `formatPrice()`, `formatBookingDate()`, `escapeHtml()` y `sendViaBrevo()` (API REST de
-  Brevo con manejo de error). **Todos los emails nuevos deben usar esta capa** — no
-  dupliques HTML.
-- **`supabase/functions/send-email-notification/index.ts`** — ya refactorizada sobre la capa:
-  tipos `gardener_approved` / `gardener_rejected`, resuelve el email por `user_id` vía
-  service-role, nombre real del usuario, CTA a garser.es, modo MOCK si faltan
-  `SMTP_USER`/`SMTP_PASS`. ⚠️ **PENDIENTE**: `deno check supabase/functions/send-email-notification/index.ts`
-  y deploy (`supabase functions deploy send-email-notification --use-api` — Docker colgado
-  en esta máquina, siempre `--use-api`).
-- **`supabase/functions/booking-confirmation-email/index.ts`** — confirmación de reserva a
-  cliente y jardinero, invocada desde `booking-payment-webhook/index.ts` (no bloqueante).
-  **NO usa aún la capa compartida** (HTML propio duplicado): migrarla.
-- `nodemailer` sigue en `package.json` pero nadie lo usa (las funciones Deno usan fetch a Brevo): eliminarlo.
+  `BRAND`, `renderBrandedEmail()`, `detailRows()`, `formatPrice()`, `formatBookingDate()`,
+  `escapeHtml()` y `sendViaBrevo()`. **Todos los emails deben usar esta capa.**
+- **`supabase/functions/_shared/bookingEmailDetails.ts`** — resuelve en el servidor los
+  detalles de una reserva y devuelve los bloques de importes **por audiencia**
+  (`clientPairs` / `gardenerPairs`), usando el SSOT `src/shared/bookingAmounts.ts`.
+  Lo consumen las dos funciones de email, para que las etiquetas no puedan divergir.
+- **`send-email-notification`** — sobre la capa compartida. Contrato de reserva: solo
+  `{ type, bookingId }`; el importe, el servicio, la fecha y los nombres se resuelven con
+  service-role. Autorización: servicio interno, participante de la reserva, o admin para los
+  tipos `gardener_*`. No acepta destinatario libre.
+- **`booking-confirmation-email`** — migrada a la capa compartida y separada por audiencia.
+- `nodemailer` ya no está en `package.json`.
 
-**Primeros pasos de esta sesión**: `deno check` + deploy de `send-email-notification`, y migrar `booking-confirmation-email` al shell compartido.
+### Importes en los emails (cerrado el 2026-08-03)
 
-## Casos que el sistema completo DEBE cubrir (hoy solo existen 3)
+Al **cliente** se le muestran siempre dos cifras: *Total de la reserva* y *Pendiente de pagar
+al profesional*, más una nota que indica si los gastos de gestión están **retenidos**
+(reserva pendiente) o **cobrados** (confirmada). Al **jardinero**, solo *Cobrarás*, íntegro.
+La comisión sale de `bookings.management_fee`, nunca de recalcular el 12,5 %.
+
+## Casos cubiertos
 
 | Evento | Destinatario | Estado |
 |---|---|---|
-| Solicitud de jardinero aprobada / rechazada | jardinero | ✅ hecho (deploy pendiente) |
-| Confirmación de reserva pagada | cliente + jardinero | 🟡 existe, sin capa de marca |
+| Solicitud de jardinero aprobada / rechazada | jardinero | ✅ |
+| Confirmación de reserva pagada | cliente + jardinero | ✅ |
+| Nueva solicitud de reserva recibida | jardinero | ✅ |
+| Reserva aceptada / rechazada | cliente | ✅ |
+| Reserva cancelada | cliente | ✅ |
 | Solicitud de jardinero **recibida** | jardinero | ❌ |
-| Nueva **solicitud de reserva** recibida | jardinero | ❌ |
-| Reserva **aceptada** | cliente | ❌ |
-| Reserva cancelada / rechazada | ambos | ❌ |
-| Cambio de precio propuesto / resuelto | cliente / jardinero | ❌ |
+| Cambio de precio propuesto / resuelto | cliente / jardinero | ❌ (hoy solo mensaje de chat) |
 | Recordatorio de servicio próximo | ambos | ❌ (valorar pg_cron) |
 | Mensaje de chat sin leer | destinatario | ❌ (agrupar; solo si offline; anti-spam) |
 | Cuenta: verificación, reset password, bienvenida | usuario | ❌ plantillas Supabase Auth sin personalizar |
 
-Todos con **nombre real** del usuario y **CTA a https://garser.es** (a la vista concreta: mis reservas, panel jardinero…).
+Todos con **nombre real** del usuario y **CTA a https://garser.es**.
+
+Despliegue: `supabase functions deploy <nombre> --use-api` (Docker colgado en esta máquina).
 
 ## Diseño a implementar
 

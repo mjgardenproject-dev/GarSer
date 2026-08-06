@@ -12,7 +12,7 @@ import type {
   BookingQuotePalmCoverage,
   BookingQuotePalmGroupContext,
 } from '../../shared/bookingQuoteCore';
-import { getBookingCustomerPaymentSummary } from '../../shared/bookingQuoteCore';
+import { formatEuro, getQuoteAmounts } from '../../shared/bookingAmounts';
 import { PartialServiceModal } from './PartialServiceModal';
 import {
   fetchProviderMonthDays,
@@ -47,10 +47,6 @@ const ProvidersPage: React.FC = () => {
   const [emptyStateHint, setEmptyStateHint] = useState('');
   const [requiresCertifiedLicense, setRequiresCertifiedLicense] = useState(false);
   const reqIdRef = useRef<number>(0);
-  const currencyFormatter = useMemo(
-    () => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-    []
-  );
   const monthFormatter = useMemo(() => new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }), []);
 
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
@@ -510,8 +506,8 @@ const ProvidersPage: React.FC = () => {
 
 
   const computeReservationTotal = (gardenerId: string) => {
-    const summary = getBookingCustomerPaymentSummary(previewQuotes[gardenerId]?.economics);
-    return Math.max(0, Number(summary?.reservationTotal || 0));
+    const summary = getQuoteAmounts(previewQuotes[gardenerId]?.economics);
+    return Math.max(0, Number(summary?.clientTotal || 0));
   };
 
   const handleContinue = () => { 
@@ -728,7 +724,7 @@ const ProvidersPage: React.FC = () => {
               const selected = selectedProvider === p.user_id;
               const coverage = getPalmCoverage(p.user_id);
               const isPartial = coverage && !coverage.isFull;
-              const paymentSummary = getBookingCustomerPaymentSummary(previewQuotes[p.user_id]?.economics);
+              const paymentSummary = getQuoteAmounts(previewQuotes[p.user_id]?.economics);
               const reservationTotal = computeReservationTotal(p.user_id);
 
               return (
@@ -767,12 +763,13 @@ const ProvidersPage: React.FC = () => {
                               Total de la reserva
                             </div>
                             <div className="mt-1 flex items-baseline gap-1.5 text-gray-900">
-                              <span className="text-lg font-semibold">{currencyFormatter.format(reservationTotal)}</span>
+                              <span className="text-lg font-semibold">{formatEuro(reservationTotal)}</span>
                               {isPartial ? <span className="text-xs text-amber-700 font-normal">(parcial)</span> : null}
                             </div>
                             {paymentSummary ? (
                               <div className="mt-1 text-xs text-gray-500">
-                                Incluye tarifa de reserva de {currencyFormatter.format(paymentSummary.reservationFee)}
+                                Pagas hoy {formatEuro(paymentSummary.managementFee)} de gastos de gestión ·{' '}
+                                {formatEuro(paymentSummary.pendingToGardener)} al profesional
                               </div>
                             ) : null}
                           </>

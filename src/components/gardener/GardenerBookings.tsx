@@ -14,6 +14,7 @@ import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionSer
 import { fetchBookingServiceDetails, type BookingServiceInput } from '../../utils/bookingServiceDetails';
 import ServiceDetailCard from './ServiceDetailCard';
 import PhotoGallery from '../common/PhotoGallery';
+import { GardenerBookingAmount } from '../booking/BookingAmounts';
 
 interface GardenerBookingItem extends Booking {
   services?: { name: string } | null;
@@ -216,9 +217,7 @@ const GardenerBookings: React.FC = () => {
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2 shrink-0" />
                     {booking.start_time} ({booking.duration_hours}h)
-                    <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-md bg-green-50 text-green-700 font-semibold">
-                      €{booking.total_price}
-                    </span>
+                    <GardenerBookingAmount booking={booking} className="ml-auto" />
                   </div>
                   <div className="flex items-start text-gray-600 sm:col-span-2">
                     <MapPin className="w-4 h-4 mr-2 mt-0.5 shrink-0" />

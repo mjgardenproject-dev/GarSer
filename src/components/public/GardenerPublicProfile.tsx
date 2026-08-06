@@ -77,7 +77,10 @@ const GardenerPublicProfile: React.FC = () => {
             <div className="mt-2 flex items-center gap-3 text-sm text-gray-600">
               <span className="inline-flex items-center gap-1">
                 <Star className="w-4 h-4 text-yellow-500" />
-                {profile?.rating ?? 5.0} ({profile?.total_reviews ?? 0} reseñas)
+                {/* Sin reseñas no se finge un 5.0: se dice que aún no tiene valoraciones. */}
+                {Number(profile?.total_reviews) > 0
+                  ? `${profile?.rating} (${profile?.total_reviews} ${Number(profile?.total_reviews) === 1 ? 'reseña' : 'reseñas'})`
+                  : 'Sin valoraciones todavía'}
               </span>
               <span className="inline-flex items-center gap-1">
                 <MapPin className="w-4 h-4 text-green-600" />

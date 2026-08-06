@@ -14,6 +14,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml } from '../_shared/emailBrand.ts';
+import { buildBookingEmailDetails } from '../_shared/bookingEmailDetails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,20 +29,81 @@ type EmailType =
   | 'booking_cancelled';
 
 interface EmailPayload {
-  to?: string;
+  /**
+   * NO se acepta un destinatario libre: se ignora si llega. El email se resuelve siempre
+   * desde `bookingId` o `user_id` con la clave de servicio. Aceptarlo permitía usar esta
+   * función como relay para mandar correos con la marca GarSer a cualquier dirección.
+   */
   user_id?: string;
   type: EmailType;
-  data: {
-    name: string;
+  /**
+   * Contrato vigente para los tipos de reserva: solo el id. Los importes, el nombre del
+   * servicio, la fecha y los nombres de las partes se resuelven en el servidor.
+   * Antes el navegador enviaba `priceText` ya formateado, es decir: un dato de dinero
+   * compuesto en un cliente no confiable, con un formato de euro distinto al del resto.
+   */
+  bookingId?: string;
+  data?: {
+    name?: string;
     reason?: string;
     loginUrl?: string;
     applyUrl?: string;
-    // Tipos de reserva
+    // Campos del contrato LEGACY (ver nota de compatibilidad en el handler).
     counterpartName?: string;
     serviceName?: string;
     dateText?: string;
     priceText?: string;
   };
+}
+
+const BOOKING_EMAIL_TYPES = new Set<EmailType>(['booking_accepted', 'booking_rejected', 'booking_cancelled']);
+
+function collectInternalServiceKeys(): string[] {
+  const keys: string[] = [];
+  const modern = Deno.env.get('SUPABASE_SECRET_KEYS');
+  if (modern) {
+    try {
+      const parsed = JSON.parse(modern) as Record<string, string>;
+      Object.values(parsed).forEach((value) => { if (value) keys.push(String(value)); });
+    } catch {
+      keys.push(modern);
+    }
+  }
+  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (legacy) keys.push(legacy);
+  return keys.filter(Boolean);
+}
+
+function presentedToken(req: Request): string {
+  const header = String(req.headers.get('Authorization') || req.headers.get('authorization') || '').trim();
+  return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : header;
+}
+
+function isInternalServiceCaller(req: Request): boolean {
+  const token = presentedToken(req);
+  if (!token) return false;
+  return collectInternalServiceKeys().some((key) => key === token);
+}
+
+/**
+ * Los avisos de alta/rechazo de jardinero solo los puede disparar un administrador.
+ * `profiles` se consulta por `id` y por `user_id`: el histórico de migraciones usa ambas
+ * como clave contra auth.uid(), y aquí no podemos asumir cuál rige.
+ */
+// deno-lint-ignore no-explicit-any
+async function isAdminCaller(req: Request, admin: any): Promise<boolean> {
+  const token = presentedToken(req);
+  if (!token) return false;
+  const { data: caller } = await admin.auth.getUser(token);
+  const callerId = caller?.user?.id;
+  if (!callerId) return false;
+  const { data: rows } = await admin
+    .from('profiles')
+    .select('role')
+    .or(`id.eq.${callerId},user_id.eq.${callerId}`)
+    .limit(5);
+  // deno-lint-ignore no-explicit-any
+  return Array.isArray(rows) && rows.some((row: any) => String(row?.role || '') === 'admin');
 }
 
 Deno.serve(async (req) => {
@@ -51,35 +113,110 @@ Deno.serve(async (req) => {
 
   try {
     const payload = (await req.json()) as EmailPayload;
-    let { to } = payload;
+    let to: string | undefined;
     const { user_id, type, data } = payload;
+    const bookingId = String(payload.bookingId || '').trim();
 
     const SMTP_USER = Deno.env.get('SMTP_USER');
     const SMTP_PASS = Deno.env.get('SMTP_PASS');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const admin =
+      SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) : null;
 
-    // Resolver el email a partir del user_id si no se envía 'to'
-    if (!to && user_id && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-      const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-      const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(user_id);
-      if (!userError && userData?.user?.email) {
-        to = userData.user.email;
-      } else {
-        console.error('Error fetching user email:', userError);
+    let name = data?.name || 'cliente';
+    let counterpartName = data?.counterpartName || '';
+    let bookingPairs: Array<[string, string]> = [];
+    let bookingFeeNote = '';
+
+    if (BOOKING_EMAIL_TYPES.has(type) && bookingId) {
+      // ---- Contrato vigente: todo se resuelve aquí, con la clave de servicio ----
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para resolver la reserva.');
       }
+
+      const details = await buildBookingEmailDetails(admin, bookingId);
+      if (!details) {
+        return new Response(JSON.stringify({ error: 'booking_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Autorización: o llama un servicio interno, o llama un usuario que es parte de ESTA
+      // reserva. Sin esta comprobación cualquier usuario autenticado podía disparar correos
+      // con la marca GarSer a cualquier dirección: un relay de phishing.
+      if (!isInternalServiceCaller(req)) {
+        const token = presentedToken(req);
+        const { data: caller } = token ? await admin.auth.getUser(token) : { data: null };
+        const callerId = caller?.user?.id || '';
+        const isParticipant =
+          callerId &&
+          (callerId === details.booking.client_id || callerId === details.booking.gardener_id);
+        if (!isParticipant) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      // Estos emails son SIEMPRE para el cliente (le informan de la respuesta del profesional).
+      to = details.client.email;
+      name = details.client.name || 'cliente';
+      counterpartName = details.gardener.name || '';
+      bookingPairs = details.clientPairs;
+      bookingFeeNote = details.clientFeeNote;
+    } else if (type === 'gardener_approved' || type === 'gardener_rejected') {
+      // Avisos de alta/rechazo de jardinero: solo administradores (o un servicio interno).
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req) && !(await isAdminCaller(req, admin))) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (user_id) {
+        const { data: userData, error: userError } = await admin.auth.admin.getUserById(user_id);
+        if (!userError && userData?.user?.email) {
+          to = userData.user.email;
+        } else {
+          console.error('Error fetching user email:', userError);
+        }
+      }
+    } else {
+      // ---- Contrato LEGACY de reserva (navegadores con la SPA anterior en caché) ----
+      // Se mantiene solo durante la ventana de despliegue; se retira en el paso siguiente,
+      // momento en el que estas tres ramas exigirán bookingId como el resto.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req)) {
+        const token = presentedToken(req);
+        const { data: caller } = token ? await admin.auth.getUser(token) : { data: null };
+        if (!caller?.user?.id) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      if (user_id && admin) {
+        const { data: userData, error: userError } = await admin.auth.admin.getUserById(user_id);
+        if (!userError && userData?.user?.email) {
+          to = userData.user.email;
+        } else {
+          console.error('Error fetching user email:', userError);
+        }
+      }
+
+      if (data?.serviceName) bookingPairs.push(['Servicio', data.serviceName]);
+      if (data?.dateText) bookingPairs.push(['Fecha', data.dateText]);
+      if (data?.priceText) bookingPairs.push(['Precio del servicio', data.priceText]);
     }
 
     if (!to) {
       throw new Error('Recipient email (to) is required or could not be found via user_id');
     }
-
-    const name = data?.name || 'cliente';
-    // Filas de detalle de reserva (solo las que vengan informadas)
-    const bookingPairs: Array<[string, string]> = [];
-    if (data?.serviceName) bookingPairs.push(['Servicio', data.serviceName]);
-    if (data?.dateText) bookingPairs.push(['Fecha', data.dateText]);
-    if (data?.priceText) bookingPairs.push(['Total', data.priceText]);
 
     let subject = '';
     let opts: Parameters<typeof renderBrandedEmail>[0];
@@ -111,10 +248,10 @@ Deno.serve(async (req) => {
       opts = {
         title: subject,
         heading: `¡Buenas noticias, ${escapeHtml(name)}!`,
-        intro: `${escapeHtml(data?.counterpartName || 'El profesional')} ha aceptado tu reserva. Todo listo:`,
+        intro: `${escapeHtml(counterpartName || 'El profesional')} ha aceptado tu reserva. Todo listo:`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
-        footerNote: 'Puedes hablar con el profesional desde el chat de la reserva.',
+        footerNote: bookingFeeNote || 'Puedes hablar con el profesional desde el chat de la reserva.',
       };
     } else if (type === 'booking_rejected') {
       subject = 'Tu solicitud de reserva no ha podido ser aceptada';
@@ -122,7 +259,7 @@ Deno.serve(async (req) => {
       opts = {
         title: subject,
         heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(data?.counterpartName || 'El profesional')} no ha podido aceptar tu solicitud de reserva. No se te cobrará nada.`,
+        intro: `${escapeHtml(counterpartName || 'El profesional')} no ha podido aceptar tu solicitud de reserva. No se te cobrará nada.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Buscar otro profesional', url: `${BRAND.site}/reserva` },
         footerNote: 'Hay más jardineros disponibles en tu zona: puedes repetir la reserva en un minuto.',
@@ -136,7 +273,7 @@ Deno.serve(async (req) => {
         intro: 'Te confirmamos que la siguiente reserva ha quedado cancelada:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
-        ...(data?.reason ? { footerNote: `Motivo: ${data.reason}` } : {}),
+        footerNote: data?.reason ? `Motivo: ${data.reason}` : bookingFeeNote,
       };
     } else {
       throw new Error('Invalid email type');

@@ -208,12 +208,17 @@ describe('ProvidersPage', () => {
     cleanup();
   });
 
-  it('muestra al cliente el total de la reserva con la tarifa incluida', async () => {
+  it('desglosa lo que el cliente paga hoy y lo que abona al profesional', async () => {
     render(<ProvidersPage />);
 
     expect(await screen.findByText('Total de la reserva')).toBeTruthy();
     expect(screen.getByText('177,75 €')).toBeTruthy();
-    expect(screen.getByText('Incluye tarifa de reserva de 19,75 €')).toBeTruthy();
+    // Ya desde la elección de profesional se separan los dos importes: antes solo se decía
+    // "Incluye tarifa de reserva de X", sin indicar cuánto acababa cobrando el jardinero.
+    const rendered = document.body.textContent || '';
+    expect(rendered).toContain('Pagas hoy 19,75 € de gastos de gestión');
+    expect(rendered).toContain('158,00 € al profesional');
+    expect(rendered).not.toContain('Incluye tarifa de reserva');
   });
 
   it('consume el preview backend sin reenviar minimos globales legacy', async () => {

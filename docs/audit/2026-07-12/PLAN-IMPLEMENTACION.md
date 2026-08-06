@@ -36,6 +36,7 @@ Runbook paso a paso para cerrar los hallazgos de `REPORT.md` y dejar la web **li
 | 6 | Emails: fiabilidad del ciclo de reserva | 🔴 CRÍTICO | Edge functions |
 | 7 | Reseñas: reputación visible al elegir jardinero | 🔴 CRÍTICO | Migración + front |
 | 8 | Feature: cancelación de reserva por el cliente | 🟠 ALTO | Front + datos |
+| **8B** | **Cambio de precio: avisos por email y claridad en la UI** | 🔴 **CRÍTICO** | **Emails + front** |
 | 9 | Seguridad: cerrar funciones auxiliares (email/IA) | 🟠 ALTO | Edge functions |
 | 10 | Limpieza: quitar debug/logs con PII del bundle | 🟠 ALTO | Build |
 | 11 | Limpieza: borrar código muerto y archivos sueltos | 🟡 MEDIO/BAJO | Repo |
@@ -245,6 +246,86 @@ Runbook paso a paso para cerrar los hallazgos de `REPORT.md` y dejar la web **li
 **Prueba local (haz esto):**
 1. Con una reserva de test pagada, pulsa **Cancelar** en "Mis reservas".
    - ✅ **Éxito:** la reserva pasa a "Cancelada", el slot vuelve a quedar libre (compruébalo intentando reservar esa hora otra vez), aparece el refund en Stripe test y el email de cancelación en los logs.
+
+**⏸ ME DETENGO. Espero tu "avanza al paso 9".**
+
+---
+
+## PASO 8B — Cambio de precio: avisos por email y claridad en la UI 🔴
+
+> **Añadido el 2026-08-06 a petición del usuario.** El flujo de cambio de precio mueve dinero
+> real y hoy es **silencioso**: no envía ni un solo email. Como tampoco hay notificaciones
+> in-app, **el email sería el único canal**, así que ahora mismo el cliente solo se entera de
+> que le han cambiado el precio si entra por su cuenta al chat o a "Mis reservas".
+
+**Estado verificado hoy (2026-08-06):**
+
+| Situación | Email | UI |
+|---|---|---|
+| Jardinero propone cambio | ❌ ninguno | ✅ jardinero ve aviso · ✅ cliente ve nuevo precio y total |
+| Cliente acepta | ❌ ninguno | ✅ el nuevo importe aparece en ambas tarjetas (`total_price` se sobrescribe, tarjetas vía `getBookingAmounts`) |
+| Cliente rechaza | ❌ ninguno | ⚠️ sin confirmación explícita al jardinero |
+| Propuesta caduca | ❌ ninguno | ⚠️ puede seguir mostrándose "pendiente" |
+
+Tipos existentes en `send-email-notification`: `booking_accepted`, `booking_rejected`,
+`booking_cancelled`, `gardener_approved`, `gardener_rejected`. **Ninguno de cambio de precio.**
+`src/utils/bookingPriceChangeService.ts` no invoca `send-email-notification` en ningún punto.
+
+**Qué haré (pre-borrador):**
+
+*Emails (4 nuevos tipos en `send-email-notification`, contrato del paso 8: solo `{ type, bookingId }`,
+importes resueltos server-side con `getQuoteAmounts()`/`format_eur()`, jamás compuestos en el navegador):*
+1. `booking_price_change_proposed` → **al cliente**: nuevo precio, **motivo**, total resultante,
+   aviso de que los gastos de gestión ya abonados no cambian, y CTA a la reserva.
+2. `booking_price_change_accepted` → **al jardinero**: el cliente aceptó; nuevo importe a cobrar.
+3. `booking_price_change_rejected` → **al jardinero**: el cliente rechazó; sigue el precio original.
+4. `booking_price_change_expired` → **a ambos**: la propuesta caducó sin respuesta.
+
+*Disparo server-side* (no desde el navegador, como el resto del paso 8), enganchado a las
+transiciones de `price_change_status`, para que un cierre de pestaña no se lleve el aviso.
+
+*UI:*
+5. **Motivo del cambio en la tarjeta de reserva del cliente** (`BookingsList`), no solo en el chat:
+   hoy `proposed_price_reason` únicamente se pinta en `ChatWindow:423`.
+6. **Copy unificado y explícito para el jardinero.** Hoy hay **tres textos distintos** para el
+   mismo estado: `BookingRequestsManager:486` ("Cambio de precio pendiente de cliente"),
+   `GardenerDashboard:411` ("…pendiente de aceptación del cliente"),
+   `GardenerBookings:267` ("…pendiente de respuesta del cliente"). Unificar a algo como
+   **"Tu solicitud de cambio de precio se ha enviado al cliente. Esperando su respuesta."**,
+   con la fecha de caducidad de la propuesta si existe.
+7. **Confirmación al jardinero del desenlace** en la tarjeta (aceptado / rechazado / caducado),
+   no solo el cambio silencioso del importe.
+
+*Huecos adicionales detectados (decidir alcance contigo):*
+8. **No se puede retirar una propuesta.** Solo existen `proposeBookingPriceChange` y
+   `respondBookingPriceChange`. Si el jardinero se equivoca de importe, no hay marcha atrás.
+   → Añadir acción de retirada (y su email al cliente).
+9. **La expiración es oportunista**: `expire_pending_price_change()` solo corre cuando otra RPC
+   toca esa reserva (`PERFORM` al inicio), no hay cron. Una propuesta caducada puede seguir
+   apareciendo como pendiente indefinidamente. → Cron o expiración al leer.
+10. **Decisión de negocio a confirmar (no técnica):** si el precio **baja**, el cliente ya pagó
+    la comisión sobre el importe alto y no se le devuelve; si **sube**, GarSer no cobra comisión
+    adicional. Está explicitado en la UI del cliente, pero conviene que sea una decisión
+    consciente y no un efecto colateral. **Pregunta abierta para ti.**
+
+**Qué cambia para el usuario final:** cliente y jardinero se enteran por email de cada
+movimiento del precio, con el motivo delante; y el jardinero sabe en todo momento en qué punto
+está su solicitud.
+
+**Antes de probar, TÚ:** nada (los secrets de email ya están configurados).
+
+**Prueba (haz esto):**
+1. Como jardinero, propón un cambio de precio con un motivo.
+   - ✅ El **cliente recibe email** con nuevo precio + motivo + total resultante.
+   - ✅ El jardinero ve "Tu solicitud… esperando respuesta" (mismo texto en las 3 pantallas).
+   - ✅ El cliente ve **el motivo también en la tarjeta**, no solo en el chat.
+2. Como cliente, **acepta**.
+   - ✅ El **jardinero recibe email** de aceptación; ambas tarjetas muestran el nuevo importe.
+3. Repite y **rechaza**.
+   - ✅ El **jardinero recibe email** de rechazo; la reserva mantiene el precio original.
+
+**⚠️ Dependencia:** al aceptar un cambio de precio se captura el pago vía
+`finalize_price_change_payment` (paso 8). Verificar que el email y la captura no se pisan.
 
 **⏸ ME DETENGO. Espero tu "avanza al paso 9".**
 

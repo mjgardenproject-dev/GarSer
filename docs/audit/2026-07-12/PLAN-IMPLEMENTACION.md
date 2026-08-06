@@ -37,6 +37,7 @@ Runbook paso a paso para cerrar los hallazgos de `REPORT.md` y dejar la web **li
 | 7 | Reseñas: reputación visible al elegir jardinero | 🔴 CRÍTICO | Migración + front |
 | 8 | Feature: cancelación de reserva por el cliente | 🟠 ALTO | Front + datos |
 | **8B** | **Cambio de precio: avisos por email y claridad en la UI** | 🔴 **CRÍTICO** | **Emails + front** |
+| **8C** | **Ciclo de vida de la reserva: caducidades, ventanas y estados** | 🔴 **CRÍTICO** | **Cron + estados + front** |
 | 9 | Seguridad: cerrar funciones auxiliares (email/IA) | 🟠 ALTO | Edge functions |
 | 10 | Limpieza: quitar debug/logs con PII del bundle | 🟠 ALTO | Build |
 | 11 | Limpieza: borrar código muerto y archivos sueltos | 🟡 MEDIO/BAJO | Repo |
@@ -328,6 +329,128 @@ está su solicitud.
 `finalize_price_change_payment` (paso 8). Verificar que el email y la captura no se pisan.
 
 **⏸ ME DETENGO. Espero tu "avanza al paso 9".**
+
+---
+
+## PASO 8C — Ciclo de vida de la reserva: caducidades, ventanas y estados 🔴
+
+> **Añadido el 2026-08-06 a petición del usuario.** Hoy el ciclo de vida no está cerrado: nada
+> caduca por sí solo y una reserva puede completarse antes de prestarse. Es el apartado que
+> más se aleja de lo que hace un marketplace de reservas en producción.
+
+### A) Estado actual (verificado en código, 2026-08-06)
+
+**Estados declarados** (`src/types/index.ts:160`):
+`pending | confirmed | in_progress | completed | cancelled | expired`
+- `in_progress`: **inalcanzable** — ninguna función lo escribe nunca. Cuatro componentes lo
+  pintan en sus helpers de color/texto. Rama muerta.
+- No existe `no_show` ni distinción de **quién** canceló.
+
+**Caducidad de solicitudes — existe, pero casi nunca se ejecuta:**
+- `expire_stale_booking_requests()` marca `expired` las `pending` con
+  `created_at <= now() - interval '24 hours'`.
+- **Solo se invoca desde el navegador del jardinero** (`BookingRequestsManager.tsx:126`, al abrir
+  su panel). **No hay cron.**
+- Peor: filtra `WHERE gardener_id = auth.uid()` → cada jardinero **solo caduca las suyas**.
+- **Consecuencia real:** si el jardinero no entra a su panel, la solicitud del cliente sigue
+  `pending` **indefinidamente**: el dinero del cliente queda autorizado (hasta que Stripe lo
+  libera solo a los 7 días), el slot sigue bloqueado y el cliente nunca recibe respuesta.
+
+**Reservas confirmadas: no caducan nunca.** Una reserva cuya fecha ya pasó permanece
+`confirmed` para siempre si el jardinero no la marca. Nada la cierra.
+
+**Botón "Servicio Completado": sin ninguna comprobación de fecha.**
+- Front: `GardenerDashboard.tsx:434` lo muestra con solo `booking.status === 'confirmed'`.
+- Servidor: `booking-complete` valida propietario y estado, pero **no valida la fecha**.
+- **Consecuencia:** se puede completar —y con la captura diferida, **cobrar**— una reserva
+  cuyo servicio es dentro de 3 días. Justo lo que el usuario reportó.
+
+**Crons reales en el proyecto: dos, y ninguno del ciclo de reservas** — limpieza de logs de IA
+(`20260403000000`) y generación de slots recurrentes (`20260706120100`).
+
+**Holds de pago (30 min):** `cleanup_expired_booking_payment_state()` sí se limpia de forma
+oportunista desde `booking-authority` y `booking-payment` (mejor que las solicitudes, pero
+también sin cron).
+
+**El cliente no puede cancelar** (paso 8, pendiente). **No hay reembolso** al cancelar.
+
+### B) Qué rompe esto en producción
+
+| Problema | Impacto |
+|---|---|
+| Solicitud `pending` eterna | Dinero del cliente retenido, slot bloqueado, cero respuesta. Depende de que el jardinero entre |
+| Completar antes del servicio | Se captura el pago de algo no prestado. Cobro por adelantado encubierto |
+| Confirmada pasada sin cerrar | Nunca llega a `completed` → **el cliente no puede valorar** (requiere `completed`), el jardinero no cierra, métricas falsas |
+| Sin `no_show` | No hay forma de registrar que el cliente no estaba o el jardinero no apareció |
+| Caducidad por visita, no por tiempo | El ciclo depende del comportamiento del usuario, no del reloj |
+
+### C) Flujo propuesto (saneado, listo para producción)
+
+**Estados finales** (renombrar/añadir; `in_progress` se elimina o se cablea, no se deja a medias):
+
+```
+pending ──(jardinero acepta)──> confirmed ──(ventana de completado)──> completed
+   │                                │
+   │ (24 h sin respuesta            │ (cancelación con política)
+   │  o llega la fecha)             ├──> cancelled_by_gardener
+   └──> expired                     └──> cancelled_by_client
+                                    │
+                                    └──(nadie cierra tras N días)──> no_show / auto_completed
+```
+
+**Reglas de tiempo (el corazón del cambio):**
+
+1. **Caducidad de solicitud** — `pending` caduca a las **24 h** *o* al llegar la **hora de inicio
+   del servicio**, lo que ocurra antes (no tiene sentido esperar 24 h si el servicio es en 3 h).
+   → Ejecutado por **cron cada 15 min**, sin filtro por jardinero, no desde el navegador.
+   → Al caducar: liberar la autorización de Stripe, liberar el slot y **avisar por email a ambos**.
+
+2. **Ventana de completado** — el botón "Servicio completado" solo existe **desde la hora de fin
+   del servicio** (`date + start_time + duration_hours`) y hasta **N días** después.
+   → Validado **en el servidor** (`booking-complete`), no solo ocultando el botón.
+   → Antes de esa hora, el jardinero ve *"Podrás cerrarlo cuando termine el servicio"*.
+
+3. **Cierre automático** — si nadie cierra tras **72 h** del fin del servicio, el sistema lo
+   resuelve solo (práctica estándar: Airbnb/TaskRabbit auto-completan y liberan el pago) →
+   `completed` automático + email a ambos, o `disputed` si alguien reportó incidencia.
+   → Sin esto, las reservas se acumulan vivas para siempre.
+
+4. **Cancelación con política de tiempo** — definir ventana (p. ej. gratis hasta 24 h antes) y
+   qué pasa con la comisión ya cobrada según quién cancela y cuándo. Enlaza con el paso 8
+   (cancelación por el cliente) y el reembolso pendiente.
+
+5. **No-show** — reportable dentro de la ventana de completado por cualquiera de las partes,
+   con su desenlace económico definido.
+
+**Implementación:**
+- **Cron real** (pg_cron cada 15 min) que ejecute: caducar solicitudes, cerrar reservas vencidas
+  y liberar holds. Un único punto, idempotente, sin depender de que nadie abra una pantalla.
+- Quitar el `WHERE gardener_id = auth.uid()` de la caducidad cuando la ejecuta el cron.
+- Guardas de fecha en `booking-complete` **y** en el front.
+- Emails de cada transición automática (enlaza con el paso 6).
+- Decidir sobre `in_progress`: cablearlo ("Iniciar servicio") o eliminarlo con sus 4 ramas de UI.
+
+### D) Decisiones de negocio que necesito de ti (no son técnicas)
+
+1. **Ventana de completado**: ¿desde el fin del servicio hasta cuántos días? (sugerencia: 7)
+2. **Cierre automático**: ¿a las 72 h del servicio? ¿auto-completar o dejar en revisión?
+3. **Política de cancelación**: ¿hasta cuándo puede cancelar el cliente sin coste? ¿se devuelve
+   la comisión? ¿y si cancela el jardinero (¿penalización?)?
+4. **No-show**: ¿quién puede reportarlo y qué pasa con el dinero?
+5. **`in_progress`**: ¿lo quieres como estado real ("Iniciar servicio") o lo eliminamos?
+
+**Antes de probar, TÚ:** responder las 5 decisiones de arriba (sin ellas, las ventanas serían
+inventadas por mí).
+
+**Prueba (cuando se implemente):**
+1. Crea una solicitud y no la respondas → a las 24 h (o forzando el cron) pasa a `expired`,
+   se libera el pago y llegan los emails.
+2. En una reserva confirmada **futura** → el botón de completar **no aparece**, y si se fuerza
+   por API el servidor responde error.
+3. En una reserva ya pasada → el botón aparece y funciona.
+4. Reserva pasada sin cerrar → tras la ventana, el cron la resuelve sola.
+
+**⏸ ME DETENGO. Espero tus decisiones y tu "avanza al paso 8C".**
 
 ---
 

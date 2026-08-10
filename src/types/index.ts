@@ -157,7 +157,9 @@ export interface Booking {
   start_time: string;
   end_time?: string;
   duration_hours: number;
-  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'expired';
+  // `in_progress` eliminado en el paso 8C: era inalcanzable (ningún código lo escribía).
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'expired'
+    | 'no_show_client' | 'no_show_gardener' | 'disputed';
   price_change_status?: 'none' | 'pending_client_acceptance' | 'accepted' | 'rejected' | 'expired';
   proposed_total_price?: number | null;
   proposed_price_reason?: string | null;

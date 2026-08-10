@@ -47,7 +47,7 @@ const AdminDashboard: React.FC = () => {
         const { data: bookingsData, error: bookingsError } = await supabase
           .from('bookings')
           .select('total_price, management_fee')
-          .in('status', ['confirmed', 'in_progress', 'completed']);
+          .in('status', ['confirmed', 'completed']);
 
         if (bookingsError) throw bookingsError;
 

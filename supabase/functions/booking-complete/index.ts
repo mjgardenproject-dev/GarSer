@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
 
     const { data: booking, error: bookingError } = await admin
       .from('bookings')
-      .select('id, gardener_id, status')
+      .select('id, gardener_id, status, date, start_time, duration_hours')
       .eq('id', normalizedBookingId)
       .single();
 
@@ -115,11 +115,36 @@ Deno.serve(async (req) => {
     }
 
     const currentStatus = String(booking.status || '').trim();
-    if (!['confirmed', 'in_progress', 'completed'].includes(currentStatus)) {
+    // `in_progress` se elimina del ciclo (paso 8C): era inalcanzable, nadie lo escribía.
+    if (!['confirmed', 'completed'].includes(currentStatus)) {
       return new Response(JSON.stringify({ error: 'La reserva no está en un estado completable.' }), {
         status: 409,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // VENTANA DE COMPLETADO (paso 8C): no se puede dar por finalizado un servicio que aún no
+    // ha terminado. Sin esta guarda se podía cerrar —y con la captura diferida, COBRAR— una
+    // reserva de dentro de 3 días. Se valida aquí y no solo ocultando el botón, porque el
+    // front no es una frontera de seguridad.
+    if (currentStatus === 'confirmed') {
+      const serviceDate = String(booking.date || '').trim();
+      const serviceStart = String(booking.start_time || '00:00:00').slice(0, 8);
+      const durationHours = Math.max(Number(booking.duration_hours) || 1, 1);
+      const serviceEnd = serviceDate ? new Date(`${serviceDate}T${serviceStart}Z`) : null;
+      if (serviceEnd && !Number.isNaN(serviceEnd.getTime())) {
+        serviceEnd.setUTCHours(serviceEnd.getUTCHours() + durationHours);
+        if (Date.now() < serviceEnd.getTime()) {
+          return new Response(
+            JSON.stringify({
+              error: 'Todavía no puedes cerrar esta reserva: el servicio aún no ha terminado.',
+              code: 'service_not_finished_yet',
+              serviceEndsAt: serviceEnd.toISOString(),
+            }),
+            { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+      }
     }
 
     if (currentStatus !== 'completed') {

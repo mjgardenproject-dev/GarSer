@@ -38,7 +38,7 @@ interface BookingWithProfiles {
 const getStatusColor = (status: string) => {
   switch (status) {
     case 'confirmed': return 'text-blue-600 bg-blue-100';
-    case 'in_progress': return 'text-yellow-600 bg-yellow-100';
+    case 'disputed': return 'text-purple-600 bg-purple-100';
     case 'completed': return 'text-green-600 bg-green-100';
     default: return 'text-gray-600 bg-gray-100';
   }
@@ -48,7 +48,7 @@ const getStatusText = (status: string) => {
   switch (status) {
     case 'pending': return 'Pendiente';
     case 'confirmed': return 'Confirmado';
-    case 'in_progress': return 'En progreso';
+    case 'disputed': return 'En revisión';
     case 'completed': return 'Completado';
     default: return status;
   }
@@ -81,7 +81,7 @@ const ChatList: React.FC = () => {
           .from('bookings')
           .select(`id, client_id, gardener_id, date, start_time, status, services(name)`)
           .or(`client_id.eq.${user.id},gardener_id.eq.${user.id}`)
-          .in('status', ['pending', 'confirmed', 'in_progress', 'completed'])
+          .in('status', ['pending', 'confirmed', 'completed'])
           .order('date', { ascending: false }) as unknown as Promise<{ data: BookingWithProfiles[] | null; error: unknown }>,
         fetchChatOverview(),
       ]);

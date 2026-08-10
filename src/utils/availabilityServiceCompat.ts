@@ -285,7 +285,7 @@ export async function applyRecurringSchedule(
       .from('bookings')
       .select('date, start_time, duration_hours')
       .eq('gardener_id', gardenerId)
-      .in('status', ['confirmed', 'in_progress'])
+      .in('status', ['confirmed'])
       .gte('date', startStr)
       .lte('date', endStr);
 

@@ -1496,6 +1496,27 @@ Deno.serve(async (req: Request) => {
         moneyStatus = 'no_payment';
       }
 
+      // Aviso a la otra parte. Se dispara desde el SERVIDOR (no desde el navegador de quien
+      // cancela): si se cerrara la pestaña justo después, el aviso se perdería y la
+      // contraparte se quedaría esperando un servicio que ya no existe.
+      if (payload.action === 'cancel_booking' && !rpcResult.idempotent) {
+        try {
+          const { error: cancelEmailError } = await dbAdmin.functions.invoke('send-email-notification', {
+            body: { type: 'booking_cancelled', bookingId },
+          });
+          if (cancelEmailError) throw cancelEmailError;
+        } catch (emailError) {
+          // No bloquea la cancelación, pero queda registrado (la lección de los emails que
+          // fallaban en silencio).
+          await persistServerTelemetry(dbAdmin, {
+            level: 'warn',
+            event: 'booking.cancellation_email_failed',
+            userId,
+            context: { bookingId, message: emailError instanceof Error ? emailError.message : 'unknown' },
+          });
+        }
+      }
+
       await persistServerTelemetry(dbAdmin, {
         level: moneyStatus === 'failed' ? 'error' : 'info',
         event: 'booking.lifecycle_resolved',

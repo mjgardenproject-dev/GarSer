@@ -177,7 +177,12 @@ Deno.serve(async (req) => {
       }
 
       const isPriceChange = type.startsWith('booking_price_change');
-      if (PRICE_CHANGE_TO_GARDENER.has(type)) {
+      // Una cancelacion la sufre la OTRA parte: si cancela el cliente hay que avisar al
+      // jardinero (tiene el hueco reservado), y viceversa. Antes este aviso iba siempre al
+      // cliente, de modo que un jardinero podia perder el trabajo sin enterarse.
+      const cancelledByClient =
+        type === 'booking_cancelled' && details.booking.cancellation_actor === 'client';
+      if (PRICE_CHANGE_TO_GARDENER.has(type) || cancelledByClient) {
         // El jardinero propuso el cambio: es a él a quien le importa el desenlace, y ve su
         // propio importe (íntegro), no el total del cliente.
         to = details.gardener.email;

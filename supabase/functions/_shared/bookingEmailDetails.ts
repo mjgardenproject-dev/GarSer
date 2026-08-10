@@ -38,6 +38,7 @@ export interface BookingEmailDetails {
     client_address: string | null;
     proposed_total_price: number | null;
     proposed_price_reason: string | null;
+    cancellation_actor: string | null;
   };
   serviceName: string;
   whenText: string;
@@ -57,7 +58,7 @@ export interface BookingEmailDetails {
 }
 
 const BOOKING_COLUMNS =
-  'id, client_id, gardener_id, service_id, status, date, start_time, total_price, management_fee, management_fee_source, client_address, proposed_total_price, proposed_price_reason';
+  'id, client_id, gardener_id, service_id, status, date, start_time, total_price, management_fee, management_fee_source, client_address, proposed_total_price, proposed_price_reason, cancellation_actor';
 
 // deno-lint-ignore no-explicit-any
 type AdminClient = any;

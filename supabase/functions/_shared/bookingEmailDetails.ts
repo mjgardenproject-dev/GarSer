@@ -36,12 +36,18 @@ export interface BookingEmailDetails {
     management_fee: number | null;
     management_fee_source: string | null;
     client_address: string | null;
+    proposed_total_price: number | null;
+    proposed_price_reason: string | null;
   };
   serviceName: string;
   whenText: string;
   address: string;
   client: BookingEmailRecipient;
   gardener: BookingEmailRecipient;
+  /** Filas del CAMBIO DE PRECIO propuesto (nuevo precio, nuevo total y motivo). */
+  priceChangeClientPairs: DetailPair[];
+  /** Filas del cambio de precio para el JARDINERO: su nuevo importe, íntegro. */
+  priceChangeGardenerPairs: DetailPair[];
   /** Filas para el CLIENTE: total de la reserva + lo que le queda por pagar al profesional. */
   clientPairs: DetailPair[];
   /** Filas para el JARDINERO: unicamente lo que va a cobrar, integro. */
@@ -51,7 +57,7 @@ export interface BookingEmailDetails {
 }
 
 const BOOKING_COLUMNS =
-  'id, client_id, gardener_id, service_id, status, date, start_time, total_price, management_fee, management_fee_source, client_address';
+  'id, client_id, gardener_id, service_id, status, date, start_time, total_price, management_fee, management_fee_source, client_address, proposed_total_price, proposed_price_reason';
 
 // deno-lint-ignore no-explicit-any
 type AdminClient = any;
@@ -126,6 +132,33 @@ export async function buildBookingEmailDetails(
     [`${BOOKING_AMOUNT_LABELS.gardenerReceives} (íntegro)`, formatEuro(amounts.gardenerReceives)],
   ];
 
+  // Cambio de precio (paso 8B). Se calcula aqui, con el mismo motor y el mismo formato de
+  // euro que el resto: el importe propuesto NO puede componerse en el navegador ni con otro
+  // formateador. Los gastos de gestion ya abonados no se recobran, por eso el nuevo total
+  // del cliente se deriva del precio propuesto manteniendo la comision existente.
+  const proposed = Number(booking.proposed_total_price);
+  const hasProposal = Number.isFinite(proposed) && proposed > 0;
+  const proposedAmounts = hasProposal
+    ? getBookingAmounts({ ...booking, total_price: proposed })
+    : null;
+
+  const priceChangeClientPairs: DetailPair[] = hasProposal
+    ? [
+        ...base,
+        ['Precio del servicio propuesto', formatEuro(proposed)],
+        ...(proposedAmounts && proposedAmounts.feeIsKnown
+          ? [[`Nuevo ${BOOKING_AMOUNT_LABELS.clientTotal.toLowerCase()}`, formatEuro(proposedAmounts.clientTotal)] as DetailPair]
+          : []),
+        ...(booking.proposed_price_reason
+          ? [['Motivo', String(booking.proposed_price_reason)] as DetailPair]
+          : []),
+      ]
+    : base;
+
+  const priceChangeGardenerPairs: DetailPair[] = hasProposal
+    ? [...base, [`${BOOKING_AMOUNT_LABELS.gardenerReceives} (íntegro)`, formatEuro(proposed)]]
+    : gardenerPairs;
+
   return {
     booking,
     serviceName,
@@ -135,6 +168,8 @@ export async function buildBookingEmailDetails(
     gardener,
     clientPairs,
     gardenerPairs,
+    priceChangeClientPairs,
+    priceChangeGardenerPairs,
     clientFeeNote: clientAmountsNote(amounts),
   };
 }

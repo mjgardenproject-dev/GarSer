@@ -326,6 +326,13 @@ const BookingsList = () => {
                     </strong>
                     . Los gastos de gestión ya abonados no cambian.
                   </p>
+                  {/* El motivo solo se pintaba en el chat: el cliente tenía que ir a buscarlo
+                      para entender por qué le suben el precio. Aquí está donde decide. */}
+                  {booking.proposed_price_reason && (
+                    <p className="text-xs text-amber-900 mb-3">
+                      <span className="font-medium">Motivo:</span> {booking.proposed_price_reason}
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={async () => {

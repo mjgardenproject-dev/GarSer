@@ -11,6 +11,38 @@ type PriceChangeRpcResponse = {
   expires_at?: string;
 };
 
+// Aviso por email de cada movimiento del cambio de precio (paso 8B).
+//
+// Best-effort: el cambio de precio ya está persistido y no debe romperse porque falle un
+// correo. Pero el { error } SÍ se comprueba (functions.invoke no lanza en errores HTTP), para
+// que un aviso perdido deje rastro en lugar de desaparecer en silencio.
+//
+// Contrato del paso 8: solo { type, bookingId }. Los importes y el motivo los resuelve la
+// edge function con la clave de servicio; jamás se componen aquí.
+async function notifyPriceChange(
+  bookingId: string,
+  type:
+    | 'booking_price_change_proposed'
+    | 'booking_price_change_accepted'
+    | 'booking_price_change_rejected',
+): Promise<void> {
+  try {
+    const { error } = await supabase.functions.invoke('send-email-notification', {
+      body: { type, bookingId },
+    });
+    if (error) throw error;
+  } catch (error) {
+    reportBookingEvent('warn', {
+      event: 'booking.price_change_email_failed',
+      context: {
+        bookingId,
+        type,
+        message: error instanceof Error ? error.message : 'unknown',
+      },
+    });
+  }
+}
+
 export async function proposeBookingPriceChange(params: {
   bookingId: string;
   proposedTotalPrice: number;
@@ -28,6 +60,16 @@ export async function proposeBookingPriceChange(params: {
 
   const { data, error } = await supabase.rpc('propose_booking_price_change', payload);
   if (error) throw error;
+
+  // El cliente tiene que enterarse: sin notificaciones in-app, el email es el único canal.
+  void notifyPriceChange(params.bookingId, 'booking_price_change_proposed');
+
+  // El jardinero propuso el cambio: es a él a quien le importa el desenlace.
+  void notifyPriceChange(
+    params.bookingId,
+    params.accept ? 'booking_price_change_accepted' : 'booking_price_change_rejected',
+  );
+
   return (data || null) as PriceChangeRpcResponse | null;
 }
 

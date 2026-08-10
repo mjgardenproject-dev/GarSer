@@ -14,7 +14,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml } from '../_shared/emailBrand.ts';
-import { buildBookingEmailDetails } from '../_shared/bookingEmailDetails.ts';
+import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,7 +26,14 @@ type EmailType =
   | 'gardener_rejected'
   | 'booking_accepted'
   | 'booking_rejected'
-  | 'booking_cancelled';
+  | 'booking_cancelled'
+  // Cambio de precio (paso 8B). Hasta ahora este flujo movía dinero sin avisar a nadie: sin
+  // notificaciones in-app, el email es el ÚNICO canal, así que el cliente solo se enteraba
+  // de que le habían cambiado el precio si entraba por su cuenta al chat o a Mis reservas.
+  | 'booking_price_change_proposed'
+  | 'booking_price_change_accepted'
+  | 'booking_price_change_rejected'
+  | 'booking_price_change_expired';
 
 interface EmailPayload {
   /**
@@ -56,7 +63,17 @@ interface EmailPayload {
   };
 }
 
-const BOOKING_EMAIL_TYPES = new Set<EmailType>(['booking_accepted', 'booking_rejected', 'booking_cancelled']);
+const BOOKING_EMAIL_TYPES = new Set<EmailType>([
+  'booking_accepted', 'booking_rejected', 'booking_cancelled',
+  'booking_price_change_proposed', 'booking_price_change_accepted',
+  'booking_price_change_rejected', 'booking_price_change_expired',
+]);
+
+// Quién recibe cada aviso de cambio de precio: la propuesta la sufre el CLIENTE (es quien
+// decide), y el desenlace le importa al JARDINERO (es quien lo pidió).
+const PRICE_CHANGE_TO_GARDENER = new Set<EmailType>([
+  'booking_price_change_accepted', 'booking_price_change_rejected',
+]);
 
 function collectInternalServiceKeys(): string[] {
   const keys: string[] = [];
@@ -159,12 +176,23 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Estos emails son SIEMPRE para el cliente (le informan de la respuesta del profesional).
-      to = details.client.email;
-      name = details.client.name || 'cliente';
-      counterpartName = details.gardener.name || '';
-      bookingPairs = details.clientPairs;
-      bookingFeeNote = details.clientFeeNote;
+      const isPriceChange = type.startsWith('booking_price_change');
+      if (PRICE_CHANGE_TO_GARDENER.has(type)) {
+        // El jardinero propuso el cambio: es a él a quien le importa el desenlace, y ve su
+        // propio importe (íntegro), no el total del cliente.
+        to = details.gardener.email;
+        name = details.gardener.name || 'jardinero';
+        counterpartName = details.client.name || '';
+        bookingPairs = isPriceChange ? details.priceChangeGardenerPairs : details.gardenerPairs;
+        bookingFeeNote = GARDENER_AMOUNT_NOTE;
+      } else {
+        // El resto informan al cliente de lo que hace el profesional.
+        to = details.client.email;
+        name = details.client.name || 'cliente';
+        counterpartName = details.gardener.name || '';
+        bookingPairs = isPriceChange ? details.priceChangeClientPairs : details.clientPairs;
+        bookingFeeNote = details.clientFeeNote;
+      }
     } else if (type === 'gardener_approved' || type === 'gardener_rejected') {
       // Avisos de alta/rechazo de jardinero: solo administradores (o un servicio interno).
       if (!admin) {
@@ -274,6 +302,50 @@ Deno.serve(async (req) => {
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
         footerNote: data?.reason ? `Motivo: ${data.reason}` : bookingFeeNote,
+      };
+    } else if (type === 'booking_price_change_proposed') {
+      subject = 'El profesional propone un nuevo precio para tu reserva';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `${escapeHtml(counterpartName || 'El profesional')} ha propuesto un nuevo precio para tu reserva. Revísalo y decide si lo aceptas; hasta entonces la reserva mantiene el precio actual.`,
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Revisar la propuesta', url: `${BRAND.site}/bookings` },
+        footerNote: 'Los gastos de gestión que ya abonaste no cambian. Si no respondes, la propuesta caduca y la reserva sigue con el precio original.',
+      };
+    } else if (type === 'booking_price_change_accepted') {
+      subject = 'El cliente ha aceptado tu nuevo precio';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Buenas noticias, ${escapeHtml(name)}`,
+        intro: `${escapeHtml(counterpartName || 'El cliente')} ha aceptado el nuevo precio. La reserva queda confirmada con el importe actualizado:`,
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
+        footerNote: bookingFeeNote,
+      };
+    } else if (type === 'booking_price_change_rejected') {
+      subject = 'El cliente no ha aceptado el cambio de precio';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `${escapeHtml(counterpartName || 'El cliente')} no ha aceptado el nuevo precio. La reserva continúa con el precio original:`,
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
+        footerNote: 'Puedes hablarlo con el cliente por el chat de la reserva.',
+      };
+    } else if (type === 'booking_price_change_expired') {
+      subject = 'La propuesta de cambio de precio ha caducado';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: 'La propuesta de cambio de precio ha caducado sin respuesta. La reserva mantiene su precio original:',
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
+        footerNote: 'Si sigue siendo necesario ajustar el precio, podéis acordarlo por el chat.',
       };
     } else {
       throw new Error('Invalid email type');

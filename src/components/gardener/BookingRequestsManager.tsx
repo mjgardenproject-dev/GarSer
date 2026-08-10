@@ -483,7 +483,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                   <div className="sm:text-right sm:shrink-0">
                     <GardenerBookingAmount booking={request} variant="hero" />
                     {request.price_change_status === 'pending_client_acceptance' && (
-                      <div className="text-xs text-amber-700 mt-1">Cambio de precio pendiente de cliente</div>
+                      <div className="text-xs text-amber-700 mt-1">Tu solicitud de cambio de precio se ha enviado al cliente. Esperando su respuesta.</div>
                     )}
                     <div className="text-sm text-orange-600 flex items-center">
                       <AlertCircle className="w-4 h-4 mr-1" />

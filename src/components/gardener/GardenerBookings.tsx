@@ -268,7 +268,7 @@ const GardenerBookings: React.FC = () => {
 
                 {booking.price_change_status === 'pending_client_acceptance' && (
                   <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm">
-                    Cambio de precio pendiente de respuesta del cliente.
+                    Tu solicitud de cambio de precio se ha enviado al cliente. Esperando su respuesta.
                   </div>
                 )}
 

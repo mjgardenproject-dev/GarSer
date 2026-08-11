@@ -12,6 +12,12 @@ Runbook paso a paso para cerrar los hallazgos de `REPORT.md` y dejar la web **li
 4. Tú pruebas en local siguiendo la checklist del paso.
 5. Si todo sale bien, me dices **"avanza al paso N+1"**. Si algo falla, me lo dices y lo corrijo antes de avanzar.
 6. **⏸ Yo me detengo SIEMPRE al final de cada paso. Nunca encadeno dos pasos sin tu confirmación.**
+7. **Cada paso termina SIEMPRE con la sección "🔧 Lo que tienes que hacer tú"**, con los comandos
+   exactos de lo que quede pendiente por tu parte (migraciones, despliegues, secretos, ajustes
+   en Stripe/Brevo/Google/Vercel), separando **local** de **producción** y distinguiendo lo que
+   yo ya he aplicado de lo que falta. **Si no hay nada que hacer, la sección aparece igualmente
+   y dentro pone `(nada que desplegar)`.** Nunca se omite: su ausencia crearía la duda de si se
+   me olvidó mencionarlo o es que de verdad no hay nada.
 
 ### Regla de oro de seguridad
 **Nada se sube a producción hasta el final.** Todo el desarrollo y todas las pruebas son **en local**. La subida a producción (git push + aplicar migraciones + redesplegar funciones + tus tareas de dashboard) es la **Fase Final**, y la haremos junta, con tu aprobación explícita por cada acción que toque producción real. Durante todo el proceso, para pagos usamos **Stripe en modo test** (tarjetas de prueba, sin dinero real); el dinero real solo aparece en la prueba de humo final.

@@ -38,17 +38,24 @@ ON CONFLICT (service_id) DO NOTHING;
 -- con tarifas y rendimientos coherentes, horario semanal fijo y reglas de preaviso.
 -- ============================================================================
 
+-- OJO: GoTrue falla con "Database error querying schema" si las columnas de token quedan a
+-- NULL; espera cadenas vacías. Sin esto el usuario existe pero NO PUEDE INICIAR SESIÓN.
 INSERT INTO auth.users (
   id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, created_at, updated_at,
-  raw_app_meta_data, raw_user_meta_data
+  raw_app_meta_data, raw_user_meta_data,
+  confirmation_token, recovery_token, email_change,
+  email_change_token_new, email_change_token_current,
+  phone_change, phone_change_token, reauthentication_token
 ) VALUES
   ('11111111-aaaa-4aaa-8aaa-111111111111','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'jardinero.local@test.local', crypt('Test123456!', gen_salt('bf')), now(), now(), now(),
-   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Miguel Ángel Ruiz"}'::jsonb),
+   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Miguel Ángel Ruiz"}'::jsonb,
+   '', '', '', '', '', '', '', ''),
   ('22222222-bbbb-4bbb-8bbb-222222222222','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'cliente.local@test.local', crypt('Test123456!', gen_salt('bf')), now(), now(), now(),
-   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Laura Fernández"}'::jsonb)
+   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Laura Fernández"}'::jsonb,
+   '', '', '', '', '', '', '', '')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)

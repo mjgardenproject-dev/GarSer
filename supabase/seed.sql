@@ -50,11 +50,11 @@ INSERT INTO auth.users (
 ) VALUES
   ('11111111-aaaa-4aaa-8aaa-111111111111','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'jardinero.local@test.local', crypt('Test123456!', gen_salt('bf')), now(), now(), now(),
-   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Miguel Ángel Ruiz"}'::jsonb,
+   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Miguel Ángel Ruiz","role":"gardener","requested_role":"gardener"}'::jsonb,
    '', '', '', '', '', '', '', ''),
   ('22222222-bbbb-4bbb-8bbb-222222222222','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'cliente.local@test.local', crypt('Test123456!', gen_salt('bf')), now(), now(), now(),
-   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Laura Fernández"}'::jsonb,
+   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Laura Fernández","role":"client"}'::jsonb,
    '', '', '', '', '', '', '', '')
 ON CONFLICT (id) DO NOTHING;
 
@@ -86,6 +86,33 @@ INSERT INTO public.gardener_profiles (
   'Jardinero profesional con 12 años de experiencia en la Costa del Sol. Mantenimiento integral, poda de palmeras y tratamientos fitosanitarios con carné aplicador.',
   12, 40, true, 36.5101, -4.8824, true, 'approved', NULL, 0, 0, 0
 ) ON CONFLICT (user_id) DO NOTHING;
+
+-- Solicitud ya APROBADA. Un jardinero real aprobado por el admin tiene las dos cosas:
+-- la solicitud en estado 'approved' y el perfil operativo. Sembrar solo el perfil deja la
+-- cuenta a medias y cualquier pantalla que mire la solicitud (App.tsx toUiStatus, /status,
+-- el panel de admin) la ve como "sin solicitar" y empuja al formulario de /apply.
+INSERT INTO public.gardener_applications (
+  user_id, status, full_name, phone, email, city_zone,
+  services, tools_available, experience_years, experience_range,
+  worked_for_companies, can_prove, experience_description,
+  test_grass_frequency, test_hedge_season, test_pest_action,
+  certification_text, declaration_truth, accept_terms,
+  submitted_at, reviewed_at, review_comment
+) VALUES (
+  '11111111-aaaa-4aaa-8aaa-111111111111','approved','Miguel Ángel Ruiz','600112233',
+  'jardinero.local@test.local','Marbella',
+  ARRAY['Corte de césped','Poda de setos','Poda de árboles','Poda de palmeras',
+        'Poda de arbustos','Desbroce','Tratamientos fitosanitarios'],
+  ARRAY['Cortacésped','Desbrozadora','Motosierra','Cortasetos','Atomizador','Vehículo propio'],
+  12,'>5', true, true,
+  'Doce años en mantenimiento integral de jardines en la Costa del Sol, con carné de aplicador de fitosanitarios.',
+  'semana','invierno','Identificar la plaga antes de tratar y aplicar el producto autorizado en la dosis mínima eficaz.',
+  'Carné de aplicador de productos fitosanitarios nivel cualificado.',
+  true, true, now(), now(), 'Cuenta de pruebas local aprobada automáticamente por el seed.'
+) ON CONFLICT (user_id) DO UPDATE SET
+  status = 'approved',
+  reviewed_at = now(),
+  review_comment = EXCLUDED.review_comment;
 
 -- ---------------------------------------------------------------------------
 -- Tarifas de los 7 servicios. Precios de mercado de la Costa del Sol (2026):

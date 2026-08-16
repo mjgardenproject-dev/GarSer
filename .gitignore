@@ -62,3 +62,6 @@ ehthumbs.db
 
 # Claude Code (local config, memory, skills — no pertenece al repo compartido)
 .claude/
+
+# Generado por comprobaciones puntuales de tipos con Deno; no es del toolchain del proyecto.
+deno.lock

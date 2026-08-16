@@ -425,6 +425,16 @@ Rellena esto antes de empezar y ten la tabla a mano:
   SELECT user_id, full_name, role FROM public.profiles ORDER BY role;
   ```
 
+- [ ] **11.7 — La pantalla con reseñas inventadas ya no existe.** Entra a
+  `garser.es/service/cualquier-cosa`.
+  - ✅ **Éxito:** no carga ninguna ficha de servicio.
+  - ❌ **Si carga y muestra "4.8 (127 reseñas)":** son reseñas **inventadas**, escritas a mano en
+    el código. Publicarlas como prueba social es engañoso para el cliente. Bloqueante.
+
+- [ ] **11.8 — Nada se rompió con la limpieza.** Recorre por encima: home pública, funnel
+  completo hasta elegir jardinero, panel de cliente, panel de jardinero y admin.
+  - ✅ **Éxito:** todo funciona y la consola no muestra errores nuevos.
+
 ---
 
 ## SECCIÓN 12 — Rendimiento y navegación (paso 12) 🟡

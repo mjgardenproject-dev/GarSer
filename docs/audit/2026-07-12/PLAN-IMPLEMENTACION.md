@@ -18,6 +18,12 @@ Runbook paso a paso para cerrar los hallazgos de `REPORT.md` y dejar la web **li
    yo ya he aplicado de lo que falta. **Si no hay nada que hacer, la sección aparece igualmente
    y dentro pone `(nada que desplegar)`.** Nunca se omite: su ausencia crearía la duda de si se
    me olvidó mencionarlo o es que de verdad no hay nada.
+8. **Cada paso aporta sus pruebas a `PRUEBAS-PRODUCCION.md`** (regla fijada el 2026-08-16). Las
+   pruebas locales de un paso valen para el paso; para **salir a producción** hace falta volver a
+   verificarlas contra la web real, donde cambian las claves, el dominio, los secretos, el correo
+   saliente y las versiones desplegadas de las funciones. Por eso, al cerrar cualquier paso, sus
+   pruebas se **traducen a producción y se añaden a ese archivo**, que es la batería única que se
+   ejecuta al final, de arriba abajo, para confirmar al 100 % que la web está lista.
 
 ### Regla de oro de seguridad
 **Nada se sube a producción hasta el final.** Todo el desarrollo y todas las pruebas son **en local**. La subida a producción (git push + aplicar migraciones + redesplegar funciones + tus tareas de dashboard) es la **Fase Final**, y la haremos junta, con tu aprobación explícita por cada acción que toque producción real. Durante todo el proceso, para pagos usamos **Stripe en modo test** (tarjetas de prueba, sin dinero real); el dinero real solo aparece en la prueba de humo final.

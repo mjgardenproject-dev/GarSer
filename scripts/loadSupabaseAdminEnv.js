@@ -1,6 +1,23 @@
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const DEFAULT_ENV_PATH = '.env';
+// Rutas ancladas a la RAÍZ del proyecto, no al directorio desde el que se lance el script.
+// Antes era `.env` a secas, que se resuelve contra el cwd: funcionaba solo si lo ejecutabas
+// desde la raíz. Ahora que estos scripts viven en `scripts/`, `node scripts/x.js` desde dentro
+// de la carpeta habría fallado con un "no se encontró .env" desconcertante.
+//
+// Y se prueba `.env.local` además de `.env`: este proyecto usa `.env.local` (la convención de
+// Vite) y nunca ha tenido un `.env`, así que estos scripts fallaban siempre, dijeran lo que
+// dijeran los comandos de package.json.
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CANDIDATE_ENV_PATHS = [path.join(PROJECT_ROOT, '.env'), path.join(PROJECT_ROOT, '.env.local')];
+
+function resolveEnvPath() {
+  return CANDIDATE_ENV_PATHS.find((candidate) => fs.existsSync(candidate)) || CANDIDATE_ENV_PATHS[0];
+}
+
+const DEFAULT_ENV_PATH = resolveEnvPath();
 
 function parseEnvFile(content) {
   const envVars = {};

@@ -1,13 +1,21 @@
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 
+// Anclado a la raíz del proyecto y con `.env.local` como alternativa: ver la nota en
+// loadSupabaseAdminEnv.js.
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ENV_PATH = [path.join(PROJECT_ROOT, '.env'), path.join(PROJECT_ROOT, '.env.local')]
+  .find((candidate) => fs.existsSync(candidate));
+
 function readLocalEnv() {
-  if (!fs.existsSync('.env')) {
+  if (!ENV_PATH) {
     return {};
   }
 
   const envVars = {};
-  const envContent = fs.readFileSync('.env', 'utf8');
+  const envContent = fs.readFileSync(ENV_PATH, 'utf8');
   envContent.split('\n').forEach((line) => {
     const [key, ...rest] = line.split('=');
     if (!key || rest.length === 0) return;

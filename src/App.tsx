@@ -12,7 +12,6 @@ import GardenerBookings from './components/gardener/GardenerBookings';
 import BottomNav from './components/layout/BottomNav';
 import ClientBookingLauncher from './components/client/ClientBookingLauncher';
 import ErrorBoundary from './components/common/ErrorBoundary';
-import ServiceDetail from './components/client/ServiceDetail';
 import MyAccount from './components/account/MyAccount';
 import LegacyBookingRedirect from './components/client/LegacyBookingRedirect';
 import LegacyCheckoutRedirect from './components/client/LegacyCheckoutRedirect';
@@ -388,16 +387,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             </ErrorBoundary>
           } 
         />
-        <Route 
-          path="/service/:serviceId" 
-          element={
-            <ProtectedRoute>
-              <ErrorBoundary fallbackTitle="Error al cargar el servicio" fallbackMessage="Intenta reintentar o volver al catálogo.">
-                <ServiceDetail />
-              </ErrorBoundary>
-            </ProtectedRoute>
-          } 
-        />
+        {/* Ruta /service/:serviceId retirada (paso 11). Solo se llegaba a ella desde
+            ServiceCatalog, que ya estaba huérfano, y la pantalla mostraba un
+            "4.8 (127 reseñas)" escrito a mano: prueba social inventada, con las reseñas
+            reales viviendo en otro sitio. Un enlace de más y se publicaba. */}
         <Route 
           path="/reservar/:gardenerId" 
           element={
@@ -481,7 +474,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             </ProtectedRoute>
           } 
         />
-        <Route path="/" element={<Navigate to="/dashboard" />} />
+        {/* Aquí había una segunda <Route path="/">: inalcanzable, porque React Router se queda
+            con la primera coincidencia y la raíz ya está declarada arriba (línea ~243).
+            Además contradecía a aquella: esta mandaba siempre a /dashboard, mientras que la
+            que sí manda distingue entre visitante y usuario con sesión. */}
         <Route path="/auth" element={<AuthForm />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         </Routes>

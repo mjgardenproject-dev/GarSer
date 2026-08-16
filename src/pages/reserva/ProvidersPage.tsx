@@ -395,7 +395,7 @@ const ProvidersPage: React.FC = () => {
               .in('user_id', eligibleProviderIds)
           : { data: [] };
 
-        let list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
+        const list: ProviderProfile[] = ((profiles as any) || []) as ProviderProfile[];
 
         const eligibleQuoteEntries = Object.entries(preview.quotes || {}).filter(([providerId]) =>
           eligibleProviderIds.includes(providerId)

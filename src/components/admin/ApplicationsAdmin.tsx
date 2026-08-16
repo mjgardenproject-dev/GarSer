@@ -94,7 +94,7 @@ const ApplicationsAdmin: React.FC = () => {
     setErrorMsg('');
     
     try {
-      // @ts-ignore - Supabase type inference for RPC arguments can be problematic
+      // @ts-expect-error - la inferencia de tipos de Supabase para los argumentos de RPC no es fiable
       const { error } = await supabase.rpc('admin_review_gardener_application', {
         p_application_id: app.id,
         p_status: 'approved'
@@ -129,7 +129,7 @@ const ApplicationsAdmin: React.FC = () => {
     }
 
     try {
-      // @ts-ignore - Supabase type inference for RPC arguments can be problematic
+      // @ts-expect-error - la inferencia de tipos de Supabase para los argumentos de RPC no es fiable
       const { error } = await supabase.rpc('admin_review_gardener_application', {
         p_application_id: appToReject.id,
         p_status: 'rejected',

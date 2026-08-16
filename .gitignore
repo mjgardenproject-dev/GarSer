@@ -65,3 +65,6 @@ ehthumbs.db
 
 # Generado por comprobaciones puntuales de tipos con Deno; no es del toolchain del proyecto.
 deno.lock
+
+# Artefactos de sesiones de dogfooding (capturas e informes puntuales)
+dogfood-output/

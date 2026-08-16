@@ -15,6 +15,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml } from '../_shared/emailBrand.ts';
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
+import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -74,33 +75,6 @@ const BOOKING_EMAIL_TYPES = new Set<EmailType>([
 const PRICE_CHANGE_TO_GARDENER = new Set<EmailType>([
   'booking_price_change_accepted', 'booking_price_change_rejected',
 ]);
-
-function collectInternalServiceKeys(): string[] {
-  const keys: string[] = [];
-  const modern = Deno.env.get('SUPABASE_SECRET_KEYS');
-  if (modern) {
-    try {
-      const parsed = JSON.parse(modern) as Record<string, string>;
-      Object.values(parsed).forEach((value) => { if (value) keys.push(String(value)); });
-    } catch {
-      keys.push(modern);
-    }
-  }
-  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (legacy) keys.push(legacy);
-  return keys.filter(Boolean);
-}
-
-function presentedToken(req: Request): string {
-  const header = String(req.headers.get('Authorization') || req.headers.get('authorization') || '').trim();
-  return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : header;
-}
-
-function isInternalServiceCaller(req: Request): boolean {
-  const token = presentedToken(req);
-  if (!token) return false;
-  return collectInternalServiceKeys().some((key) => key === token);
-}
 
 /**
  * Los avisos de alta/rechazo de jardinero solo los puede disparar un administrador.
@@ -218,33 +192,22 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      // ---- Contrato LEGACY de reserva (navegadores con la SPA anterior en caché) ----
-      // Se mantiene solo durante la ventana de despliegue; se retira en el paso siguiente,
-      // momento en el que estas tres ramas exigirán bookingId como el resto.
-      if (!admin) {
-        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
-      }
-      if (!isInternalServiceCaller(req)) {
-        const token = presentedToken(req);
-        const { data: caller } = token ? await admin.auth.getUser(token) : { data: null };
-        if (!caller?.user?.id) {
-          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-      }
-      if (user_id && admin) {
-        const { data: userData, error: userError } = await admin.auth.admin.getUserById(user_id);
-        if (!userError && userData?.user?.email) {
-          to = userData.user.email;
-        } else {
-          console.error('Error fetching user email:', userError);
-        }
-      }
-
-      if (data?.serviceName) bookingPairs.push(['Servicio', data.serviceName]);
-      if (data?.dateText) bookingPairs.push(['Fecha', data.dateText]);
-      if (data?.priceText) bookingPairs.push(['Precio del servicio', data.priceText]);
+      // ---- Contrato LEGACY: RETIRADO (paso 9) ----
+      // Aceptaba `user_id` + textos libres (`serviceName`, `dateText`, `priceText`) de
+      // cualquier usuario autenticado. Como registrarse es gratis y abierto, eso era un relay
+      // de phishing: cualquiera podía mandar a cualquier otro usuario un correo con la
+      // plantilla y el remitente de GarSer, y con el contenido que quisiera dentro.
+      //
+      // Existía solo como red durante la ventana de despliegue, para navegadores con la SPA
+      // anterior en caché. Ese contrato ya no lo usa nadie del front, y el coste de mantenerlo
+      // era dejar la puerta abierta. Ahora falla de forma segura: sin email, en vez de un email
+      // que no deberíamos mandar.
+      return new Response(JSON.stringify({
+        error: 'unsupported_email_type',
+        message: 'Tipo de email no soportado. Los avisos de reserva requieren bookingId.',
+      }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (!to) {

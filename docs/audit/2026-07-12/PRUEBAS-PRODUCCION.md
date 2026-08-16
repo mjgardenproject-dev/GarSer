@@ -322,24 +322,66 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ## SECCIÓN 10 — Funciones auxiliares seguras (paso 9) 🟠
 
-- [ ] **10.1 — El envío de correos no es un relay abierto.**
+> Para estas pruebas necesitas el **token de sesión** de una cuenta cliente real
+> (DevTools → Application → Local Storage → `access_token`). Se usa como `TOKEN_CLIENTE`.
+
+- [ ] **10.1 — El envío de correos no es un relay de phishing.** Este es el contrato retirado:
+  mandar un correo con la marca GarSer a **otro usuario**, con el texto que quieras dentro.
   ```bash
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST "URL_SUPABASE/functions/v1/send-email-notification" -H "apikey: ANON_KEY" -H "Content-Type: application/json" -d '{"type":"booking_accepted","bookingId":"00000000-0000-0000-0000-000000000000"}'
+  curl -s -X POST "URL_SUPABASE/functions/v1/send-email-notification" -H "apikey: ANON_KEY" -H "Authorization: Bearer TOKEN_CLIENTE" -H "Content-Type: application/json" -d '{"user_id":"OTRO_USER_ID","type":"booking_accepted","data":{"name":"Victima","serviceName":"Pago urgente","priceText":"Pincha aqui"}}'
   ```
-  - ✅ **Éxito:** `401` / `403`. Denegado.
+  - ✅ **Éxito:** `400 unsupported_email_type`. Y **no llega ningún correo** a ese usuario.
   - ❌ **Si falla:** cualquiera puede mandar correos desde tu dominio → tu remitente acaba en
-    listas negras y **dejan de llegar todos los emails**.
+    listas negras y **dejan de llegar todos los emails**, también los de verdad.
 
-- [ ] **10.2 — La IA tiene límite por usuario.** Lanza varios análisis de fotos seguidos con la
-  misma cuenta.
-  - ✅ **Éxito:** a partir del umbral responde "demasiadas peticiones", no sigue llamando a Gemini.
-  - ❌ **Si falla:** tu factura de Gemini la marca un tercero.
+- [ ] **10.2 — Un tercero no puede disparar avisos de una reserva ajena.** Con el token de una
+  cuenta que **no** participa en esa reserva:
+  ```bash
+  curl -s -X POST "URL_SUPABASE/functions/v1/send-email-notification" -H "apikey: ANON_KEY" -H "Authorization: Bearer TOKEN_DE_UN_TERCERO" -H "Content-Type: application/json" -d '{"type":"booking_accepted","bookingId":"ID_DE_UNA_RESERVA_AJENA"}'
+  ```
+  - ✅ **Éxito:** `403 Unauthorized`.
 
-- [ ] **10.3 — No se pueden analizar imágenes de fuera.** Invoca el análisis con una URL de imagen
-  de un dominio ajeno.
-  - ✅ **Éxito:** rechazada (solo se aceptan URLs del bucket del proyecto).
+- [ ] **10.3 — El alta de jardinero solo la anuncia un admin.** Con un token de cliente normal:
+  ```bash
+  curl -s -X POST "URL_SUPABASE/functions/v1/send-email-notification" -H "apikey: ANON_KEY" -H "Authorization: Bearer TOKEN_CLIENTE" -H "Content-Type: application/json" -d '{"user_id":"CUALQUIER_USER_ID","type":"gardener_approved","data":{"name":"x"}}'
+  ```
+  - ✅ **Éxito:** `403 Unauthorized`.
 
-- [ ] **10.4 — No-regresión:** un análisis de fotos normal, con sesión iniciada, ✅ sigue funcionando.
+- [ ] **10.4 — La clave pública NO es identidad ante la IA.** Este es el agujero de coste:
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST "URL_SUPABASE/functions/v1/ai-pricing-estimator" -H "apikey: ANON_KEY" -H "Authorization: Bearer ANON_KEY" -H "Content-Type: application/json" -d '{"description":"","service_ids":["x"],"service_name":"Corte de cesped"}'
+  ```
+  - ✅ **Éxito:** `401`. La `anon key` es pública: tenerla no puede dar acceso a un servicio que
+    cuesta dinero.
+  - ❌ **Si falla:** tu factura de Gemini la marca un tercero, y al agotar la cuota del proyecto
+    **los clientes de verdad se quedan sin poder analizar sus fotos**.
+
+- [ ] **10.5 — El modo de auditoría de prompts está cerrado.** Multiplica por diez cada llamada:
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST "URL_SUPABASE/functions/v1/ai-pricing-estimator" -H "apikey: ANON_KEY" -H "Authorization: Bearer TOKEN_CLIENTE" -H "Content-Type: application/json" -d '{"description":"","mode":"weeding_prompt_quality_check","qa_runs":10}'
+  ```
+  - ✅ **Éxito:** `403`.
+
+- [ ] **10.6 — La IA tiene cuota por usuario.** Con la misma cuenta, lanza más de **30 análisis
+  en menos de una hora** (repite el análisis de fotos en el funnel).
+  - ✅ **Éxito:** a partir del umbral el funnel muestra *"Ahora mismo no hemos podido revisar las
+    fotos. Puedes intentarlo de nuevo en unos minutos."* y **deja de llamar a Gemini**.
+  - Comprobación directa en **Supabase → SQL Editor**:
+    ```sql
+    SELECT user_id, request_count, window_started_at FROM public.ai_pricing_rate_limits;
+    ```
+    ✅ el contador de esa cuenta sube con cada análisis.
+
+- [ ] **10.7 — Nadie puede manipular su propia cuota.** En el SQL Editor:
+    ```sql
+    SET ROLE authenticated;
+    SELECT count(*) FROM public.ai_pricing_rate_limits;
+    ```
+  - ✅ **Éxito:** `permission denied`. Un límite que el limitado puede tocar es decorativo.
+
+- [ ] **10.8 — No-regresión (la importante):** con sesión iniciada, un análisis de fotos normal
+  en el funnel ✅ **sigue funcionando igual**, con sus medidas y su precio.
+  - ❌ **Si falla:** el endurecimiento se ha llevado por delante el producto. Avísame de inmediato.
 
 ---
 

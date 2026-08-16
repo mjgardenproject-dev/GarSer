@@ -1,0 +1,52 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.112.3"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.112.3": "f6b9130984301066587e8917dfab3b3d60be47dc966bd3d04c733bc9423c1cf9"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@eslint/js@^9.9.1",
+        "npm:@googlemaps/js-api-loader@^1.16.10",
+        "npm:@hookform/resolvers@^5.2.1",
+        "npm:@stripe/react-stripe-js@^6.4.0",
+        "npm:@stripe/stripe-js@^9.6.0",
+        "npm:@supabase/supabase-js@^2.57.4",
+        "npm:@testing-library/jest-dom@^6.9.1",
+        "npm:@testing-library/react@^16.3.2",
+        "npm:@testing-library/user-event@^14.6.1",
+        "npm:@types/google.maps@^3.58.1",
+        "npm:@types/react-dom@^18.3.0",
+        "npm:@types/react@^18.3.5",
+        "npm:@vitejs/plugin-react@^4.3.1",
+        "npm:@vitest/ui@^4.1.4",
+        "npm:autoprefixer@^10.4.18",
+        "npm:date-fns@^4.1.0",
+        "npm:eslint-plugin-react-hooks@^5.1.0-rc.0",
+        "npm:eslint-plugin-react-refresh@~0.4.11",
+        "npm:eslint@^9.9.1",
+        "npm:globals@^15.9.0",
+        "npm:jsdom@^29.0.2",
+        "npm:lucide-react@0.344",
+        "npm:postcss@^8.4.35",
+        "npm:qrcode@^1.5.4",
+        "npm:react-dom@^18.3.1",
+        "npm:react-hook-form@^7.62.0",
+        "npm:react-hot-toast@^2.6.0",
+        "npm:react-router-dom@^7.8.2",
+        "npm:react@^18.3.1",
+        "npm:tailwindcss-animate@^1.0.7",
+        "npm:tailwindcss@^3.4.1",
+        "npm:typescript-eslint@^8.3.0",
+        "npm:typescript@^5.5.3",
+        "npm:vite@^5.4.2",
+        "npm:vitest@^4.1.4",
+        "npm:yup@^1.7.0",
+        "npm:zod@^4.3.6"
+      ]
+    }
+  }
+}

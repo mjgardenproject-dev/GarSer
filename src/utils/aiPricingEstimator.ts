@@ -199,6 +199,24 @@ export async function estimateWorkWithAI(input: EstimationInput): Promise<Estima
     });
     if (error) {
       console.warn('[AI] Edge Function error:', error);
+      // Límite de uso propio (429). Merece un mensaje distinto del "algo ha fallado" genérico
+      // porque es lo único que el cliente puede resolver por sí mismo: esperando. Sin esta
+      // rama vería el error de siempre, reintentaría, volvería a chocar y no sabría por qué.
+      const status = Number((error as { context?: { status?: number }; status?: number })?.context?.status
+        ?? (error as { status?: number })?.status ?? 0);
+      if (status === 429) {
+        return {
+          tareas: [],
+          analysis_v2: adaptLegacyAnalysisToV2({
+            serviceName: input.serviceName,
+            legacyResponse: { tareas: [], reasons: ['PROVIDER_RATE_LIMIT'] },
+            sourcePhotoCount: input.photoCount,
+            provider: 'internal',
+            model: input.model || 'gemini-2.5-flash',
+          }),
+          rawResponse: { error: 'rate_limited' },
+        };
+      }
       throw new Error(error.message || 'EDGE_FUNCTION_INVOCATION_FAILED');
     }
     const tareas = Array.isArray((data as any)?.tareas) ? (data as any).tareas : [];

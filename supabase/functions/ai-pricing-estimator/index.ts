@@ -1,6 +1,19 @@
 // Supabase Edge Function: análisis visual de jardines con Gemini para estimación de presupuesto.
 // Requiere configurar el secreto GOOGLE_API_KEY (opcional: GEMINI_MODEL).
+//
+// Esta función gasta dinero real (Gemini) y descarga URLs por su cuenta, así que tiene tres
+// puertas antes de llegar al modelo (paso 9):
+//   1. Usuario real autenticado — la clave `anon` es pública, tenerla no es identidad.
+//   2. Cuota por usuario — sin ella, el coste de IA es ilimitado para quien quiera abusar.
+//   3. Lista blanca de orígenes de imagen — sin ella, es un proxy de peticiones (SSRF).
 declare const Deno: any;
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  isInternalServiceCaller,
+  resolveCallerUserId,
+  resolveServiceRoleKey,
+} from '../_shared/functionAuth.ts';
+import { isAllowedImageUrl } from '../_shared/imageSourceGuard.ts';
 import {
   adaptLegacyAnalysisToV2,
   validateAnalysisV2,
@@ -884,11 +897,30 @@ function normalizePhytosanitaryTasks(ai: any, payload: Payload): any[] {
   return buildPhytosanitaryTasksFromDetectedElements(ai, payload);
 }
 
+// Tamaño máximo por imagen. El pipeline del funnel ya comprime antes de subir; esto es el
+// tope duro para que una imagen enorme no agote la memoria de la función.
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+
 async function fetchImageAsBase64(url: string): Promise<string | null> {
+  if (!isAllowedImageUrl(url, Deno.env.get('SUPABASE_URL'))) {
+    console.warn('[Gemini] URL de imagen rechazada por no ser de nuestro Storage.');
+    return null;
+  }
   try {
-    const resp = await fetch(url);
+    // `redirect: 'manual'` es parte del cierre: sin esto, una URL permitida podría responder
+    // 302 hacia un host arbitrario y la comprobación de arriba quedaría burlada.
+    const resp = await fetch(url, { redirect: 'manual' });
     if (!resp.ok) return null;
+    const declaredLength = Number(resp.headers.get('content-length') || 0);
+    if (declaredLength > MAX_IMAGE_BYTES) {
+      console.warn('[Gemini] Imagen descartada por exceder el tamaño máximo.');
+      return null;
+    }
     const blob = await resp.blob();
+    if (blob.size > MAX_IMAGE_BYTES) {
+      console.warn('[Gemini] Imagen descartada por exceder el tamaño máximo.');
+      return null;
+    }
     const buf = await blob.arrayBuffer();
     // Use standard Buffer approach or chunked processing for large files to avoid stack overflow
     // In Deno/Edge, btoa on very large strings can cause stack overflow if spread operator is used on massive arrays
@@ -1091,10 +1123,69 @@ Deno.serve(async (req: Request): Promise<Response> => {
   try {
     const payload = (await req.json()) as Payload;
 
-    // Modo: cálculo de precios de palmeras
+    // Modo: cálculo de precios de palmeras.
+    // Se deja SIN puerta a propósito: es aritmética local, no llama a Gemini y no gasta nada.
+    // Cerrarlo no protegería de nada y sí podría romper un paso del funnel que aún no exige sesión.
     if (payload.mode === 'calculate_palm_pricing' && Array.isArray(payload.palms)) {
         const result = calculatePalmEstimation(payload.palms);
         return new Response(JSON.stringify(result), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ------------------------------------------------------------------
+    // A partir de aquí SÍ se llama a Gemini, así que se cobra. Puerta 1 y 2.
+    // ------------------------------------------------------------------
+    const internalCaller = isInternalServiceCaller(req);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = resolveServiceRoleKey();
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error('Faltan secretos de Supabase para autorizar el análisis.');
+    }
+    const admin = createClient(supabaseUrl, serviceRoleKey);
+
+    if (!internalCaller) {
+      // Puerta 1 — usuario real. Traer la clave `anon` no basta: es pública, viaja en el
+      // bundle de la web y cualquiera la tiene. Solo cuenta un token que resuelva a un usuario.
+      // Esto no cierra el funnel a nadie: para analizar hacen falta fotos, y subirlas a Storage
+      // ya exige sesión (política `booking_photos_insert_auth`, `to authenticated`).
+      const callerUserId = await resolveCallerUserId(req, admin);
+      if (!callerUserId) {
+        return new Response(JSON.stringify({ error: 'unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Puerta 2 — cuota. Sin esto el coste de IA es ilimitado: un bucle de un tercero vacía
+      // el presupuesto de Gemini y, al agotar la cuota del proyecto, deja sin análisis a los
+      // clientes de verdad. El contador se incrementa y se evalúa de forma atómica en la BD.
+      const { data: quota, error: quotaError } = await admin.rpc('consume_ai_pricing_quota', {
+        p_user_id: callerUserId,
+      });
+      if (quotaError) {
+        // Un fallo de la cuota no puede dejar la puerta abierta: si no se puede contar, no se gasta.
+        console.error('[ai-pricing-estimator] No se pudo evaluar la cuota:', quotaError.message);
+        return new Response(JSON.stringify({ error: 'quota_unavailable' }), {
+          status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (quota && quota.allowed === false) {
+        return new Response(JSON.stringify({
+          error: 'rate_limited',
+          message: 'Has hecho demasiados análisis en poco tiempo. Inténtalo de nuevo más tarde.',
+          reset_at: quota.reset_at,
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '900' },
+        });
+      }
+    }
+
+    // Modo de auditoría de repetibilidad: una sola petición dispara hasta 10 llamadas a Gemini.
+    // Es una herramienta interna de calidad de prompts, no algo que use un cliente: expuesta,
+    // multiplica por diez el coste de cada abuso. Solo llamantes internos.
+    if (payload.mode === 'weeding_prompt_quality_check' && !internalCaller) {
+      return new Response(JSON.stringify({ error: 'forbidden' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // Nuevo modo: auditoría de repetibilidad para prompt de desbroce

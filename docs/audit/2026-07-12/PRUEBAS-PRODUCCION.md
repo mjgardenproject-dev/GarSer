@@ -387,17 +387,43 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ## SECCIÓN 11 — Limpieza y consola (pasos 10 y 11) 🟠
 
-- [ ] **11.1 — Nada de datos personales en la consola.** En garser.es, DevTools → Consola. Usa el
-  **reset de contraseña** y escribe en el **autocompletado de dirección**.
-  - ✅ **Éxito:** no se imprime tu email, ni tu id de usuario, ni lo que tecleas.
+- [ ] **11.1 — Nada de datos personales en la consola.** En garser.es, DevTools → Consola
+  (deja el filtro en *All levels*). Usa el **reset de contraseña**, escribe en el
+  **autocompletado de dirección** y entra al panel del jardinero.
+  - ✅ **Éxito:** no se imprime tu email, ni tu id de usuario, ni tu rol, ni lo que tecleas.
+  - Nota: seguirás viendo algún `warn`/`error` si algo falla. Es deliberado: se conservan para
+    poder diagnosticar incidencias de clientes. Lo que no debe aparecer son **datos personales**.
 
-- [ ] **11.2 — La herramienta de debug no está en el admin.** ✅ no existe la sección "DatabaseFix".
+- [ ] **11.2 — La herramienta de debug no está en el admin.** Entra en **Admin → Usuarios**.
+  - ✅ **Éxito:** no existe ninguna sección "DatabaseFix". Hacía escrituras de prueba reales
+    contra la base de datos desde el navegador.
 
 - [ ] **11.3 — Las rutas de debug no responden.** Entra a `garser.es/debug-roles` y `/debug-maps`.
-  - ✅ **Éxito:** no cargan (404 o redirección). **Nunca** la herramienta funcionando.
+  - ✅ **Éxito:** no cargan la herramienta.
+  - ❌ **Si carga `/debug-roles`:** es capaz de **crear perfiles** en la base de datos. Bloqueante.
+
+- [ ] **11.3b — Verifica que la variable de bypass no está puesta.** En **Vercel → Settings →
+  Environment Variables**.
+  - ✅ **Éxito:** `VITE_ENABLE_DEBUG_ROUTES` no existe o vale `false`. (Las rutas ya no existen en
+    el código, así que esto es solo higiene: la variable ya no reabre nada.)
 
 - [ ] **11.4 — No hay rutas fantasma con datos inventados.** ✅ `/service/:id` con su rating falso
   "4.8" ya no existe.
+
+- [ ] **11.5 — El Monitor de Roles no inventa inconsistencias.** Entra en **Admin → Usuarios** y
+  pulsa **Verificar Roles** con jardineros reales dados de alta.
+  - ✅ **Éxito:** los jardineros salen como **consistentes** y **tu cuenta de admin NO aparece**
+    en la lista.
+  - ❌ **Si falla: NO pulses "Corregir Todas".** Antes del arreglo, ese botón degradaba a
+    cliente a **todos** los jardineros y también al admin, que perdía el acceso a su propio
+    panel sin forma de recuperarlo desde la web. Avísame en su lugar.
+
+- [ ] **11.6 — Comprobación de seguridad del propio botón.** Con **un solo** jardinero de prueba,
+  si aparece alguna inconsistencia legítima, pulsa **Corregir** solo en esa fila y comprueba en
+  Supabase que el rol cambió **en la fila correcta**:
+  ```sql
+  SELECT user_id, full_name, role FROM public.profiles ORDER BY role;
+  ```
 
 ---
 

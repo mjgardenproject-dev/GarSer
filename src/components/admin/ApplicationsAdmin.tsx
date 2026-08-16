@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CheckCircle, XCircle, Search, X, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import DatabaseFix from '../debug/DatabaseFix';
 
 interface Application {
   id: string;
@@ -565,10 +564,6 @@ const ApplicationsAdmin: React.FC = () => {
         </div>
       )}
 
-      {/* Database Fix Tool */}
-      <div className="mt-8 border-t border-gray-200 pt-8">
-        <DatabaseFix />
-      </div>
     </div>
   );
 };

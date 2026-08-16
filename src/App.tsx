@@ -7,7 +7,6 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import AuthForm from './components/auth/AuthForm';
 import ResetPassword from './components/auth/ResetPassword';
 import AdminRoute from './components/auth/AdminRoute';
-import DevelopmentRoute from './components/auth/DevelopmentRoute';
 import Navbar from './components/layout/Navbar';
 import GardenerBookings from './components/gardener/GardenerBookings';
 import BottomNav from './components/layout/BottomNav';
@@ -20,9 +19,7 @@ import LegacyCheckoutRedirect from './components/client/LegacyCheckoutRedirect';
 import GardenerPublicProfile from './components/public/GardenerPublicProfile';
 import BookingsList from './components/client/BookingsList';
 import GardenerDashboard from './components/gardener/GardenerDashboard';
-import GoogleMapsDebug from './components/common/GoogleMapsDebug';
 import ChatList from './components/chat/ChatList';
-import RoleDebug from './components/debug/RoleDebug';
 import RoleMonitor from './components/admin/RoleMonitor';
 import GardenerApplicationWizard from './components/gardener/GardenerApplicationWizard';
 import GardenerStatusPage from './components/gardener/GardenerStatusPage';
@@ -452,25 +449,13 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             </ProtectedRoute>
           } 
         />
-        <Route 
-          path="/debug-maps" 
-          element={
-            <DevelopmentRoute>
-              <div className="p-8">
-                <GoogleMapsDebug />
-              </div>
-            </DevelopmentRoute>
-          } 
-        />
-        <Route 
-          path="/debug-roles" 
-          element={
-            <DevelopmentRoute>
-              <RoleDebug />
-            </DevelopmentRoute>
-          } 
-        />
-        <Route 
+        {/* Rutas /debug-maps y /debug-roles retiradas (paso 10).
+            Estaban gateadas por DEV+localhost, pero con un bypass por variable de entorno
+            (VITE_ENABLE_DEBUG_ROUTES): una variable mal puesta en Vercel las reabría en
+            producción, y RoleDebug podía CREAR perfiles en la base de datos desde el
+            navegador. Además, al importarse de forma estática, su código viajaba en el
+            bundle de todos los clientes aunque la ruta nunca fuera accesible. */}
+        <Route
           path="/role-monitor" 
           element={
             <AdminRoute allowInDevelopment={true}>

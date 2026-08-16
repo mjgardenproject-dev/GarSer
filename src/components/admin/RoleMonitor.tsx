@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Shield, AlertTriangle, CheckCircle, RefreshCw, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isAdminRole } from '../../lib/adminAccess';
 
 interface RoleInconsistency {
   user_id: string;
@@ -32,9 +33,14 @@ const RoleMonitor = () => {
       console.log('🔍 Verificando consistencia de roles en toda la base de datos...');
 
       // Obtener todos los perfiles
+      // `user_id`, NO `id`: en `profiles` son columnas distintas (`id` es la clave propia de la
+      // fila; `user_id` es el usuario de auth). Al comparar `profiles.id` con
+      // `gardener_profiles.user_id` la coincidencia no se daba NUNCA, así que este monitor
+      // marcaba a TODOS los jardineros como "deberían ser cliente" y el botón "Corregir todas"
+      // los habría degradado a cliente en bloque, dejándolos sin panel.
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, full_name, role');
+        .select('user_id, full_name, role');
 
       if (profilesError) throw profilesError;
 
@@ -49,17 +55,20 @@ const RoleMonitor = () => {
       const foundInconsistencies: RoleInconsistency[] = [];
 
       profiles?.forEach((profile: any) => {
-        const hasGardenerProfile = gardenerUserIds.has(profile.id);
         const currentRole = profile.role;
-        let expectedRole: 'client' | 'gardener' = 'client';
 
-        if (hasGardenerProfile) {
-          expectedRole = 'gardener';
-        }
+        // Los administradores quedan fuera: este monitor solo sabe de `client` y `gardener`,
+        // así que veía a un admin como "inconsistente" y proponía convertirlo en cliente.
+        // Aceptar esa corrección dejaba al admin sin acceso a su propio panel, sin forma de
+        // devolverse el rol desde la web.
+        if (isAdminRole(currentRole)) return;
+
+        const hasGardenerProfile = gardenerUserIds.has(profile.user_id);
+        const expectedRole: 'client' | 'gardener' = hasGardenerProfile ? 'gardener' : 'client';
 
         if (currentRole !== expectedRole) {
           foundInconsistencies.push({
-            user_id: profile.id,
+            user_id: profile.user_id,
             profile_role: currentRole,
             has_gardener_profile: hasGardenerProfile,
             expected_role: expectedRole,
@@ -91,12 +100,10 @@ const RoleMonitor = () => {
 
   const fixInconsistency = async (inconsistency: RoleInconsistency) => {
     try {
-      console.log(`🔧 Corrigiendo inconsistencia para usuario: ${inconsistency.user_id}`);
-
       const { error } = await supabase
         .from('profiles')
         .update({ role: inconsistency.expected_role })
-        .eq('id', inconsistency.user_id);
+        .eq('user_id', inconsistency.user_id);
 
       if (error) throw error;
 

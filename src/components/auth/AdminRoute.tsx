@@ -76,12 +76,9 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
   const isAdmin = isAdminRole(profileRole);
 
   if (!isAdmin) {
-    console.warn('🚫 AdminRoute: Acceso denegado. Usuario no es administrador:', {
-      userId: user.id,
-      email: user.email,
-      role: profileRole
-    });
-    
+    // Sin datos del usuario en el log: aquí se imprimían su id, su email y su rol, y esto
+    // es `warn`, así que sobrevive a la limpieza de la build y acababa en la consola de
+    // producción. Que el acceso se ha denegado ya lo dice la pantalla que se devuelve debajo.
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="max-w-md w-full bg-white rounded-lg shadow-md p-6 text-center">
@@ -102,12 +99,6 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
       </div>
     );
   }
-
-  console.log('✅ AdminRoute: Acceso permitido para administrador:', {
-    userId: user.id,
-    email: user.email,
-    role: profileRole
-  });
 
   return <>{children}</>;
 };

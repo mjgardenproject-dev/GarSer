@@ -46,7 +46,6 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   useEffect(() => {
     if (authLoading) return;
     if (!user?.id) return;
-    console.log('📥 GardenerDashboard: fetching bookings for gardener_id=', user.id);
     fetchBookings();
 
     // Trigger recurring availability maintenance (silent update)

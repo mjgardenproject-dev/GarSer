@@ -439,19 +439,38 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ## SECCIÓN 12 — Rendimiento y navegación (paso 12) 🟡
 
-- [ ] **12.1 — La web no descarga todo de golpe.** DevTools → Network, recarga en frío.
-  - ✅ **Éxito:** varios ficheros JS (chunks), no un único bundle enorme.
+- [ ] **12.1 — La web no descarga todo de golpe.** DevTools → Network → JS, recarga en frío
+  (marca *Disable cache*).
+  - ✅ **Éxito:** varios ficheros JS, y el principal ronda los **150 kB comprimidos**, no 368 kB.
+    El panel de admin y el de jardinero **no** se descargan al entrar como cliente.
 
-- [ ] **12.2 — Una URL inventada no rompe la web.** `garser.es/esto-no-existe`.
-  - ✅ **Éxito:** 404 con salida, no pantalla en blanco.
+- [ ] **12.2 — Cada zona carga al entrar.** Con la pestaña Network abierta, entra al panel de
+  jardinero y luego al de admin.
+  - ✅ **Éxito:** aparece un JS nuevo al entrar en cada zona, y la pantalla se muestra sin
+    quedarse en blanco más de un instante.
 
-- [ ] **12.3 — Volver de un pago fallido.** En `/reserva/confirmacion`, "Elegir otro horario".
-  - ✅ **Éxito:** te lleva al paso de horarios.
+- [ ] **12.3 — Una URL inventada no rompe la web.** `garser.es/esto-no-existe`.
+  - ✅ **Éxito:** página de error 404 con botones "Ir al inicio" y "Reservar un servicio".
+  - ❌ **Si falla:** pantalla en blanco, indistinguible de una web caída. El visitante se va.
 
-- [ ] **12.4 — Móvil real.** Recorre el funnel entero **desde el móvil**, no desde el simulador.
+- [ ] **12.4 — Volver de un pago fallido.** Provoca un pago fallido (tarjeta de test
+  `4000 0000 0000 0002`) y, en `/reserva/confirmacion`, pulsa **"Elegir otro horario"**.
+  - ✅ **Éxito:** te lleva de vuelta al paso de elegir horario.
+  - ❌ **Si falla (el botón no hace nada):** el cliente se queda atascado justo después de que
+    le falle el pago, que es el peor momento para que algo parezca roto.
+
+- [ ] **12.5 — Móvil real.** Recorre el funnel entero **desde el móvil**, no desde el simulador.
   - ✅ **Éxito:** nada descuadrado, textos legibles, botones alcanzables con el pulgar.
 
-- [ ] **12.5 — Copy sin faltas.** ✅ "jardinería" con tilde en las páginas públicas.
+- [ ] **12.6 — Copy con tildes.** Recorre la home, `/marbella` y `/para-jardineros`.
+  - ✅ **Éxito:** "jardinería", "césped", "página", "más"… todas con tilde, y las preguntas
+    frecuentes con sus signos de apertura (¿…?).
+  - ✅ La pestaña del navegador pone **"Servicios de jardinería en Costa del Sol | GarSer"**.
+
+- [ ] **12.7 — Ninguna etiqueta interna a la vista.** En las páginas públicas.
+  - ✅ **Éxito:** no aparece por ningún sitio "Foto de cobertura…", "Slot listo para foto real"
+    ni rutas de Storage. Si falta una imagen se ve un degradado de marca, sin texto técnico.
+  - Nota: esto deja de importar en cuanto completes la tarea **13.2** (subir las 7 imágenes).
 
 ---
 

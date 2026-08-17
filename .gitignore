@@ -68,3 +68,6 @@ deno.lock
 
 # Artefactos de sesiones de dogfooding (capturas e informes puntuales)
 dogfood-output/
+
+# Consultas sueltas que guarda el editor SQL de Supabase Studio
+supabase/snippets/

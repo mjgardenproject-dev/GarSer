@@ -159,14 +159,14 @@ Deno.serve(async (req) => {
       if (PRICE_CHANGE_TO_GARDENER.has(type) || cancelledByClient) {
         // El jardinero propuso el cambio: es a él a quien le importa el desenlace, y ve su
         // propio importe (íntegro), no el total del cliente.
-        to = details.gardener.email;
+        to = details.gardener.email ?? undefined;
         name = details.gardener.name || 'jardinero';
         counterpartName = details.client.name || '';
         bookingPairs = isPriceChange ? details.priceChangeGardenerPairs : details.gardenerPairs;
         bookingFeeNote = GARDENER_AMOUNT_NOTE;
       } else {
         // El resto informan al cliente de lo que hace el profesional.
-        to = details.client.email;
+        to = details.client.email ?? undefined;
         name = details.client.name || 'cliente';
         counterpartName = details.gardener.name || '';
         bookingPairs = isPriceChange ? details.priceChangeClientPairs : details.clientPairs;

@@ -195,10 +195,8 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     }
 
     if (inputValue.length >= 5) {
-      console.log('Starting autocomplete search for:', inputValue);
-      console.log('Google Maps loaded:', isGoogleMapsLoaded);
-      console.log('New AutocompleteSuggestion API available:', !!window.google?.maps?.places?.AutocompleteSuggestion);
-      
+      // Aquí se imprimía, tecla a tecla, la dirección que escribe el cliente.
+
       // Debounce la búsqueda
       timeoutRef.current = setTimeout(() => {
         searchAddresses(inputValue);

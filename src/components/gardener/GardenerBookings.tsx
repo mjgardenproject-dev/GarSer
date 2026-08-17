@@ -131,8 +131,11 @@ const GardenerBookings: React.FC = () => {
     switch (status) {
       case 'confirmed':
         return 'bg-blue-100 text-blue-800';
-      case 'in_progress':
-        return 'bg-green-100 text-green-800';
+      case 'no_show_client':
+      case 'no_show_gardener':
+        return 'bg-orange-100 text-orange-800';
+      case 'disputed':
+        return 'bg-purple-100 text-purple-800';
       case 'completed':
         return 'bg-gray-100 text-gray-800';
       default:
@@ -265,7 +268,7 @@ const GardenerBookings: React.FC = () => {
 
                 {booking.price_change_status === 'pending_client_acceptance' && (
                   <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm">
-                    Cambio de precio pendiente de respuesta del cliente.
+                    Tu solicitud de cambio de precio se ha enviado al cliente. Esperando su respuesta.
                   </div>
                 )}
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CheckCircle, XCircle, Search, X, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import DatabaseFix from '../debug/DatabaseFix';
 
 interface Application {
   id: string;
@@ -95,7 +94,7 @@ const ApplicationsAdmin: React.FC = () => {
     setErrorMsg('');
     
     try {
-      // @ts-ignore - Supabase type inference for RPC arguments can be problematic
+      // @ts-expect-error - la inferencia de tipos de Supabase para los argumentos de RPC no es fiable
       const { error } = await supabase.rpc('admin_review_gardener_application', {
         p_application_id: app.id,
         p_status: 'approved'
@@ -130,7 +129,7 @@ const ApplicationsAdmin: React.FC = () => {
     }
 
     try {
-      // @ts-ignore - Supabase type inference for RPC arguments can be problematic
+      // @ts-expect-error - la inferencia de tipos de Supabase para los argumentos de RPC no es fiable
       const { error } = await supabase.rpc('admin_review_gardener_application', {
         p_application_id: appToReject.id,
         p_status: 'rejected',
@@ -565,10 +564,6 @@ const ApplicationsAdmin: React.FC = () => {
         </div>
       )}
 
-      {/* Database Fix Tool */}
-      <div className="mt-8 border-t border-gray-200 pt-8">
-        <DatabaseFix />
-      </div>
     </div>
   );
 };

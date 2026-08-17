@@ -62,3 +62,12 @@ ehthumbs.db
 
 # Claude Code (local config, memory, skills — no pertenece al repo compartido)
 .claude/
+
+# Generado por comprobaciones puntuales de tipos con Deno; no es del toolchain del proyecto.
+deno.lock
+
+# Artefactos de sesiones de dogfooding (capturas e informes puntuales)
+dogfood-output/
+
+# Consultas sueltas que guarda el editor SQL de Supabase Studio
+supabase/snippets/

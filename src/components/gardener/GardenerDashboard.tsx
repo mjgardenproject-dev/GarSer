@@ -14,6 +14,7 @@ import BookingRequestsManager from './BookingRequestsManager';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
 import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
+import { cancelBooking, canCompleteBooking, getBookingServiceEnd } from '../../utils/bookingLifecycleService';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 // Eliminado PromotionalFlyer
 
@@ -45,7 +46,6 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   useEffect(() => {
     if (authLoading) return;
     if (!user?.id) return;
-    console.log('📥 GardenerDashboard: fetching bookings for gardener_id=', user.id);
     fetchBookings();
 
     // Trigger recurring availability maintenance (silent update)
@@ -236,6 +236,32 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     }
   };
 
+  // Cancelar una reserva YA ACEPTADA tiene consecuencias para el jardinero (se devuelve el
+  // dinero al cliente y se registra una penalización de 1★). Se avisa ANTES de ejecutarla:
+  // una sanción que aparece por sorpresa es una sanción injusta.
+  const handleCancelConfirmedBooking = async (bookingId: string) => {
+    const confirmed = window.confirm(
+      'Vas a cancelar una reserva que ya habías aceptado.\n\n' +
+      '· Se devolverán al cliente los gastos de gestión.\n' +
+      '· Se registrará una valoración de 1 estrella a nombre de GarSer con la observación ' +
+      '"Servicio no completado".\n\n¿Quieres continuar?'
+    );
+    if (!confirmed) return;
+    try {
+      const result = await cancelBooking(bookingId);
+      if (result.moneyStatus === 'failed') {
+        // La reserva queda cancelada, pero el dinero no se movió: no se oculta.
+        toast.error('Reserva cancelada, pero la devolución no se ha completado. Lo estamos revisando.');
+      } else {
+        toast.success('Reserva cancelada. Se ha avisado al cliente.');
+      }
+      fetchBookings();
+    } catch (error) {
+      console.error('Error cancelando la reserva:', error);
+      toast.error(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
@@ -257,12 +283,18 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         return 'Pendiente';
       case 'confirmed':
         return 'Confirmado';
-      case 'in_progress':
-        return 'Confirmado';
       case 'completed':
         return 'Completado';
       case 'cancelled':
         return 'Cancelado';
+      case 'expired':
+        return 'Caducada';
+      case 'no_show_client':
+        return 'Cliente ausente';
+      case 'no_show_gardener':
+        return 'No acudiste';
+      case 'disputed':
+        return 'En revisión';
       default:
         return status;
     }
@@ -409,7 +441,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
 
                     {booking.price_change_status === 'pending_client_acceptance' && (
                       <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm">
-                        Cambio de precio pendiente de aceptación del cliente.
+                        Tu solicitud de cambio de precio se ha enviado al cliente. Esperando su respuesta.
                       </div>
                     )}
 
@@ -431,12 +463,35 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         </div>
                       )}
                       
+                      {/* Ventana de completado (paso 8C): solo desde que el servicio ha
+                          terminado. Antes se mostraba en cuanto la reserva estaba confirmada,
+                          de modo que se podía cerrar —y cobrar— un servicio de dentro de 3 días. */}
+                      {booking.status === 'confirmed' && (
+                        canCompleteBooking(booking) ? (
+                          <button
+                            onClick={() => updateBookingStatus(booking.id, 'completed')}
+                            className="px-4 py-3 sm:py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                          >
+                            Servicio Completado
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-500 self-center">
+                            Podrás cerrarla cuando termine el servicio
+                            {getBookingServiceEnd(booking)
+                              ? ` (${format(getBookingServiceEnd(booking) as Date, "d MMM 'a las' HH:mm", { locale: es })})`
+                              : ''}
+                          </span>
+                        )
+                      )}
+
+                      {/* Cancelar una reserva YA CONFIRMADA. Hasta el paso 8C esto no existía:
+                          el jardinero solo podía rechazar solicitudes pendientes. */}
                       {booking.status === 'confirmed' && (
                         <button
-                          onClick={() => updateBookingStatus(booking.id, 'completed')}
-                          className="px-4 py-3 sm:py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                          onClick={() => handleCancelConfirmedBooking(booking.id)}
+                          className="px-4 py-3 sm:py-2 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
                         >
-                          Servicio Completado
+                          Cancelar reserva
                         </button>
                       )}
                       

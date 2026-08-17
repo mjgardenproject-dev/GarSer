@@ -14,7 +14,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml } from '../_shared/emailBrand.ts';
-import { buildBookingEmailDetails } from '../_shared/bookingEmailDetails.ts';
+import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
+import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,7 +27,14 @@ type EmailType =
   | 'gardener_rejected'
   | 'booking_accepted'
   | 'booking_rejected'
-  | 'booking_cancelled';
+  | 'booking_cancelled'
+  // Cambio de precio (paso 8B). Hasta ahora este flujo movía dinero sin avisar a nadie: sin
+  // notificaciones in-app, el email es el ÚNICO canal, así que el cliente solo se enteraba
+  // de que le habían cambiado el precio si entraba por su cuenta al chat o a Mis reservas.
+  | 'booking_price_change_proposed'
+  | 'booking_price_change_accepted'
+  | 'booking_price_change_rejected'
+  | 'booking_price_change_expired';
 
 interface EmailPayload {
   /**
@@ -56,34 +64,17 @@ interface EmailPayload {
   };
 }
 
-const BOOKING_EMAIL_TYPES = new Set<EmailType>(['booking_accepted', 'booking_rejected', 'booking_cancelled']);
+const BOOKING_EMAIL_TYPES = new Set<EmailType>([
+  'booking_accepted', 'booking_rejected', 'booking_cancelled',
+  'booking_price_change_proposed', 'booking_price_change_accepted',
+  'booking_price_change_rejected', 'booking_price_change_expired',
+]);
 
-function collectInternalServiceKeys(): string[] {
-  const keys: string[] = [];
-  const modern = Deno.env.get('SUPABASE_SECRET_KEYS');
-  if (modern) {
-    try {
-      const parsed = JSON.parse(modern) as Record<string, string>;
-      Object.values(parsed).forEach((value) => { if (value) keys.push(String(value)); });
-    } catch {
-      keys.push(modern);
-    }
-  }
-  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (legacy) keys.push(legacy);
-  return keys.filter(Boolean);
-}
-
-function presentedToken(req: Request): string {
-  const header = String(req.headers.get('Authorization') || req.headers.get('authorization') || '').trim();
-  return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : header;
-}
-
-function isInternalServiceCaller(req: Request): boolean {
-  const token = presentedToken(req);
-  if (!token) return false;
-  return collectInternalServiceKeys().some((key) => key === token);
-}
+// Quién recibe cada aviso de cambio de precio: la propuesta la sufre el CLIENTE (es quien
+// decide), y el desenlace le importa al JARDINERO (es quien lo pidió).
+const PRICE_CHANGE_TO_GARDENER = new Set<EmailType>([
+  'booking_price_change_accepted', 'booking_price_change_rejected',
+]);
 
 /**
  * Los avisos de alta/rechazo de jardinero solo los puede disparar un administrador.
@@ -159,12 +150,28 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Estos emails son SIEMPRE para el cliente (le informan de la respuesta del profesional).
-      to = details.client.email;
-      name = details.client.name || 'cliente';
-      counterpartName = details.gardener.name || '';
-      bookingPairs = details.clientPairs;
-      bookingFeeNote = details.clientFeeNote;
+      const isPriceChange = type.startsWith('booking_price_change');
+      // Una cancelacion la sufre la OTRA parte: si cancela el cliente hay que avisar al
+      // jardinero (tiene el hueco reservado), y viceversa. Antes este aviso iba siempre al
+      // cliente, de modo que un jardinero podia perder el trabajo sin enterarse.
+      const cancelledByClient =
+        type === 'booking_cancelled' && details.booking.cancellation_actor === 'client';
+      if (PRICE_CHANGE_TO_GARDENER.has(type) || cancelledByClient) {
+        // El jardinero propuso el cambio: es a él a quien le importa el desenlace, y ve su
+        // propio importe (íntegro), no el total del cliente.
+        to = details.gardener.email ?? undefined;
+        name = details.gardener.name || 'jardinero';
+        counterpartName = details.client.name || '';
+        bookingPairs = isPriceChange ? details.priceChangeGardenerPairs : details.gardenerPairs;
+        bookingFeeNote = GARDENER_AMOUNT_NOTE;
+      } else {
+        // El resto informan al cliente de lo que hace el profesional.
+        to = details.client.email ?? undefined;
+        name = details.client.name || 'cliente';
+        counterpartName = details.gardener.name || '';
+        bookingPairs = isPriceChange ? details.priceChangeClientPairs : details.clientPairs;
+        bookingFeeNote = details.clientFeeNote;
+      }
     } else if (type === 'gardener_approved' || type === 'gardener_rejected') {
       // Avisos de alta/rechazo de jardinero: solo administradores (o un servicio interno).
       if (!admin) {
@@ -185,33 +192,22 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      // ---- Contrato LEGACY de reserva (navegadores con la SPA anterior en caché) ----
-      // Se mantiene solo durante la ventana de despliegue; se retira en el paso siguiente,
-      // momento en el que estas tres ramas exigirán bookingId como el resto.
-      if (!admin) {
-        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
-      }
-      if (!isInternalServiceCaller(req)) {
-        const token = presentedToken(req);
-        const { data: caller } = token ? await admin.auth.getUser(token) : { data: null };
-        if (!caller?.user?.id) {
-          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-      }
-      if (user_id && admin) {
-        const { data: userData, error: userError } = await admin.auth.admin.getUserById(user_id);
-        if (!userError && userData?.user?.email) {
-          to = userData.user.email;
-        } else {
-          console.error('Error fetching user email:', userError);
-        }
-      }
-
-      if (data?.serviceName) bookingPairs.push(['Servicio', data.serviceName]);
-      if (data?.dateText) bookingPairs.push(['Fecha', data.dateText]);
-      if (data?.priceText) bookingPairs.push(['Precio del servicio', data.priceText]);
+      // ---- Contrato LEGACY: RETIRADO (paso 9) ----
+      // Aceptaba `user_id` + textos libres (`serviceName`, `dateText`, `priceText`) de
+      // cualquier usuario autenticado. Como registrarse es gratis y abierto, eso era un relay
+      // de phishing: cualquiera podía mandar a cualquier otro usuario un correo con la
+      // plantilla y el remitente de GarSer, y con el contenido que quisiera dentro.
+      //
+      // Existía solo como red durante la ventana de despliegue, para navegadores con la SPA
+      // anterior en caché. Ese contrato ya no lo usa nadie del front, y el coste de mantenerlo
+      // era dejar la puerta abierta. Ahora falla de forma segura: sin email, en vez de un email
+      // que no deberíamos mandar.
+      return new Response(JSON.stringify({
+        error: 'unsupported_email_type',
+        message: 'Tipo de email no soportado. Los avisos de reserva requieren bookingId.',
+      }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (!to) {
@@ -274,6 +270,50 @@ Deno.serve(async (req) => {
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
         footerNote: data?.reason ? `Motivo: ${data.reason}` : bookingFeeNote,
+      };
+    } else if (type === 'booking_price_change_proposed') {
+      subject = 'El profesional propone un nuevo precio para tu reserva';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `${escapeHtml(counterpartName || 'El profesional')} ha propuesto un nuevo precio para tu reserva. Revísalo y decide si lo aceptas; hasta entonces la reserva mantiene el precio actual.`,
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Revisar la propuesta', url: `${BRAND.site}/bookings` },
+        footerNote: 'Los gastos de gestión que ya abonaste no cambian. Si no respondes, la propuesta caduca y la reserva sigue con el precio original.',
+      };
+    } else if (type === 'booking_price_change_accepted') {
+      subject = 'El cliente ha aceptado tu nuevo precio';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Buenas noticias, ${escapeHtml(name)}`,
+        intro: `${escapeHtml(counterpartName || 'El cliente')} ha aceptado el nuevo precio. La reserva queda confirmada con el importe actualizado:`,
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
+        footerNote: bookingFeeNote,
+      };
+    } else if (type === 'booking_price_change_rejected') {
+      subject = 'El cliente no ha aceptado el cambio de precio';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `${escapeHtml(counterpartName || 'El cliente')} no ha aceptado el nuevo precio. La reserva continúa con el precio original:`,
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
+        footerNote: 'Puedes hablarlo con el cliente por el chat de la reserva.',
+      };
+    } else if (type === 'booking_price_change_expired') {
+      subject = 'La propuesta de cambio de precio ha caducado';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: 'La propuesta de cambio de precio ha caducado sin respuesta. La reserva mantiene su precio original:',
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
+        footerNote: 'Si sigue siendo necesario ajustar el precio, podéis acordarlo por el chat.',
       };
     } else {
       throw new Error('Invalid email type');

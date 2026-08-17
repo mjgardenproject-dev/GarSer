@@ -31,7 +31,9 @@ type PaymentAction =
   | 'cancel_attempt'
   | 'sync_payment_state'
   | 'finalize_booking_payment'
-  | 'finalize_price_change_payment';
+  | 'finalize_price_change_payment'
+  | 'cancel_booking'
+  | 'report_no_show';
 
 type PaymentPayload = {
   action?: PaymentAction;
@@ -44,8 +46,13 @@ type PaymentPayload = {
   // finalize_price_change_payment: lo mismo, pero cuando quien resuelve es el CLIENTE al
   // aceptar o rechazar un cambio de precio. No acepta `decision`: la deriva de
   // price_change_status en la BD, porque el actor no es quien decide el desenlace.
+  //
+  // cancel_booking / report_no_show: ciclo de vida (paso 8C). La AUTORIZACION y la politica
+  // economica viven en las RPC (cancel_booking / report_booking_no_show), que se invocan con
+  // la identidad del usuario; aqui solo se EJECUTA en Stripe la accion que la BD devuelve.
   bookingId?: string;
   decision?: 'accept' | 'reject';
+  reason?: string;
 };
 
 type AttemptSummary = {
@@ -1348,6 +1355,182 @@ Deno.serve(async (req: Request) => {
         context: { action: payload.action, bookingId, decision, piStatus, resultStatus },
       });
       return jsonResponse({ status: resultStatus, bookingId, decision });
+    }
+
+    // ===== Ciclo de vida (paso 8C): cancelación por ambas partes y reporte de no-show =====
+    // Reparto de responsabilidades a propósito:
+    //   · La RPC decide QUÉ pasa (valida participante con auth.uid(), cambia el estado, libera
+    //     la agenda, aplica la penalización) y devuelve `money_action`.
+    //   · Aquí solo se EJECUTA esa acción en Stripe. La política económica no se duplica.
+    // Por eso la RPC se invoca con la identidad del USUARIO: con la clave de servicio
+    // auth.uid() sería null y la RPC rechazaría siempre.
+    if (payload.action === 'cancel_booking' || payload.action === 'report_no_show') {
+      if (!stripeSecret) {
+        throw new Error('Falta STRIPE_SECRET_KEY para resolver el dinero de la reserva.');
+      }
+      const bookingId = asString(payload.bookingId);
+      if (!bookingId) {
+        throw new BookingPaymentHttpError({
+          status: 400,
+          code: 'invalid_lifecycle_request',
+          message: 'Falta bookingId.',
+        });
+      }
+
+      const publicKey = String(
+        Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') || '',
+      ).trim();
+      if (!publicKey) {
+        throw new Error('Falta SUPABASE_ANON_KEY para invocar la RPC con la identidad del usuario.');
+      }
+      const userClient = createClient(supabaseUrl, publicKey, {
+        global: { headers: { Authorization: req.headers.get('Authorization') || '' } },
+      });
+
+      const rpcName = payload.action === 'cancel_booking' ? 'cancel_booking' : 'report_booking_no_show';
+      const { data: rpcData, error: rpcError } = await userClient.rpc(rpcName, {
+        p_booking_id: bookingId,
+        p_reason: asString(payload.reason) || null,
+      });
+      if (rpcError) {
+        // La RPC ya distingue "no participas" de "estado no cancelable"; se propaga tal cual
+        // para que el front pueda mostrar el motivo real.
+        throw new BookingPaymentHttpError({
+          status: 400,
+          code: 'lifecycle_rpc_rejected',
+          message: rpcError.message || 'No se pudo resolver la reserva.',
+        });
+      }
+
+      const rpcResult = asRecord(rpcData);
+      const moneyAction = asString(rpcResult.money_action) || 'none';
+      const newStatus = asString(rpcResult.status);
+
+      const lifecycleAttempt = await getAttemptByBookingId(dbAdmin, bookingId);
+      const lifecyclePaymentIntentId = lifecycleAttempt?.stripe_payment_intent_id || null;
+      contextAttemptId = lifecycleAttempt?.id || '';
+
+      let moneyStatus = 'none';
+      if (moneyAction !== 'none' && lifecyclePaymentIntentId) {
+        try {
+          // Se consulta el estado REAL en Stripe antes de actuar: así reintentar es seguro
+          // (el estado de la reserva ya cambió y esta parte puede repetirse).
+          const pi = await stripeGet({
+            path: `/v1/payment_intents/${encodeURIComponent(lifecyclePaymentIntentId)}`,
+            stripeSecret,
+          });
+          const piStatus = asString((pi as Record<string, unknown>).status);
+
+          if (moneyAction === 'refund') {
+            if (piStatus === 'succeeded') {
+              const refundBody = new URLSearchParams();
+              refundBody.append('payment_intent', lifecyclePaymentIntentId);
+              await stripePost({
+                path: '/v1/refunds',
+                body: refundBody,
+                stripeSecret,
+                // Clave estable por reserva: si esto se reintenta, Stripe no devuelve dos veces.
+                idempotencyKey: `garser_refund_${bookingId}`,
+              });
+              moneyStatus = 'refunded';
+            } else if (piStatus === 'requires_capture') {
+              // Aún no se había capturado: basta con liberar la autorización.
+              await stripePost({
+                path: `/v1/payment_intents/${encodeURIComponent(lifecyclePaymentIntentId)}/cancel`,
+                body: new URLSearchParams(),
+                stripeSecret,
+              });
+              moneyStatus = 'released';
+            } else {
+              moneyStatus = `no_refund_needed_${piStatus}`;
+            }
+          } else if (moneyAction === 'capture') {
+            // Desiste el cliente: los gastos de gestión se cobran. Si el jardinero aún no
+            // había aceptado, el pago solo estaba autorizado y hay que capturarlo ahora.
+            if (piStatus === 'requires_capture') {
+              await stripePost({
+                path: `/v1/payment_intents/${encodeURIComponent(lifecyclePaymentIntentId)}/capture`,
+                body: new URLSearchParams(),
+                stripeSecret,
+                idempotencyKey: `garser_capture_${bookingId}`,
+              });
+              moneyStatus = 'captured';
+            } else if (piStatus === 'succeeded') {
+              moneyStatus = 'already_captured';
+            } else {
+              moneyStatus = `not_capturable_${piStatus}`;
+            }
+          } else if (moneyAction === 'release') {
+            if (piStatus === 'requires_capture' || piStatus === 'requires_confirmation' || piStatus === 'requires_payment_method') {
+              await stripePost({
+                path: `/v1/payment_intents/${encodeURIComponent(lifecyclePaymentIntentId)}/cancel`,
+                body: new URLSearchParams(),
+                stripeSecret,
+              });
+              moneyStatus = 'released';
+            } else if (piStatus === 'canceled') {
+              moneyStatus = 'already_released';
+            } else {
+              moneyStatus = `not_releasable_${piStatus}`;
+            }
+          }
+        } catch (moneyError) {
+          // La reserva YA está cancelada: no se revierte por un fallo de pasarela. Pero esto
+          // NO puede quedar en silencio (es dinero real), así que se marca y se registra para
+          // conciliación, y el llamante recibe el aviso en la respuesta.
+          moneyStatus = 'failed';
+          logBookingPaymentError('lifecycle_money_action', moneyError, { bookingId, moneyAction });
+          await persistServerTelemetry(dbAdmin, {
+            level: 'error',
+            event: 'booking.lifecycle_money_action_failed',
+            userId,
+            context: {
+              bookingId,
+              moneyAction,
+              paymentIntentId: lifecyclePaymentIntentId,
+              message: moneyError instanceof Error ? moneyError.message : 'unknown',
+            },
+          });
+        }
+      } else if (!lifecyclePaymentIntentId) {
+        moneyStatus = 'no_payment';
+      }
+
+      // Aviso a la otra parte. Se dispara desde el SERVIDOR (no desde el navegador de quien
+      // cancela): si se cerrara la pestaña justo después, el aviso se perdería y la
+      // contraparte se quedaría esperando un servicio que ya no existe.
+      if (payload.action === 'cancel_booking' && !rpcResult.idempotent) {
+        try {
+          const { error: cancelEmailError } = await dbAdmin.functions.invoke('send-email-notification', {
+            body: { type: 'booking_cancelled', bookingId },
+          });
+          if (cancelEmailError) throw cancelEmailError;
+        } catch (emailError) {
+          // No bloquea la cancelación, pero queda registrado (la lección de los emails que
+          // fallaban en silencio).
+          await persistServerTelemetry(dbAdmin, {
+            level: 'warn',
+            event: 'booking.cancellation_email_failed',
+            userId,
+            context: { bookingId, message: emailError instanceof Error ? emailError.message : 'unknown' },
+          });
+        }
+      }
+
+      await persistServerTelemetry(dbAdmin, {
+        level: moneyStatus === 'failed' ? 'error' : 'info',
+        event: 'booking.lifecycle_resolved',
+        userId,
+        context: { action: payload.action, bookingId, newStatus, moneyAction, moneyStatus },
+      });
+
+      return jsonResponse({
+        status: newStatus,
+        bookingId,
+        moneyAction,
+        moneyStatus,
+        penaltyApplied: rpcResult.penalty_applied === true,
+      });
     }
 
     if (payload.action === 'finalize_price_change_payment') {

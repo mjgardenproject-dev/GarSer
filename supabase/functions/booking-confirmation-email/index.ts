@@ -25,6 +25,7 @@ import {
   sendViaBrevo,
 } from '../_shared/emailBrand.ts';
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE, type DetailPair } from '../_shared/bookingEmailDetails.ts';
+import { isInternalServiceCaller, resolveServiceRoleKey } from '../_shared/functionAuth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -37,48 +38,12 @@ interface RequestPayload {
   bookingIds?: string[];
 }
 
-function resolveServiceRoleKey(): string | undefined {
-  const modernSecretKeys = Deno.env.get('SUPABASE_SECRET_KEYS');
-  if (modernSecretKeys) {
-    try {
-      const parsed = JSON.parse(modernSecretKeys) as Record<string, string>;
-      const preferred = parsed.default || Object.values(parsed)[0];
-      if (preferred) return preferred;
-    } catch {
-      // cae al legacy de abajo
-    }
-  }
-  return Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-}
-
 // Esta funcion se despliega con verify_jwt=false para que el webhook pueda invocarla con la
 // clave de servicio moderna (sb_secret_..., que NO es un JWT y el gateway rechazaba con 401
 // antes de ejecutarla: los emails de reserva no se enviaban nunca y el fallo era invisible).
-// Como el gateway ya no filtra, validamos aqui que el llamante presenta una clave de
-// servicio valida: sin esto, cualquiera podria disparar emails a terceros conociendo un
-// bookingId (vector de spam/phishing con la marca GarSer).
-function collectInternalServiceKeys(): string[] {
-  const keys: string[] = [];
-  const modern = Deno.env.get('SUPABASE_SECRET_KEYS');
-  if (modern) {
-    try {
-      const parsed = JSON.parse(modern) as Record<string, string>;
-      Object.values(parsed).forEach((value) => { if (value) keys.push(String(value)); });
-    } catch {
-      keys.push(modern);
-    }
-  }
-  const legacy = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (legacy) keys.push(legacy);
-  return keys.filter(Boolean);
-}
-
-function isInternalServiceCaller(req: Request): boolean {
-  const header = String(req.headers.get('Authorization') || req.headers.get('authorization') || '').trim();
-  const presented = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : header;
-  if (!presented) return false;
-  return collectInternalServiceKeys().some((key) => key === presented);
-}
+// Como el gateway ya no filtra, la puerta la guarda `isInternalServiceCaller`: sin ella,
+// cualquiera podria disparar emails a terceros conociendo un bookingId (spam/phishing con la
+// marca GarSer). La definicion vive en _shared/functionAuth.ts, una sola para todas.
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {

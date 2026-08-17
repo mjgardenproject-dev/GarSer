@@ -22,7 +22,7 @@ describe('MarbellaLandingPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('heading', { name: /reserva servicios de jardineria en marbella con una experiencia clara/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /reserva servicios de jardinería en marbella con una experiencia clara/i })).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Empezar nueva reserva' }).length).toBeGreaterThan(0);
   });
 });

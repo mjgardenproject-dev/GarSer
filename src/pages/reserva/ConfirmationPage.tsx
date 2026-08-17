@@ -1234,7 +1234,16 @@ const ConfirmationPage: React.FC = () => {
     return () => window.clearTimeout(timeoutId);
   }, [isPaymentSheetOpen, paymentAttempt?.attemptId, paymentAttempt?.bookingId, paymentAttempt?.status]);
 
-  const goBackToSlotSelection = () => setCurrentStep(3);
+  const goBackToSlotSelection = () => {
+    setCurrentStep(3);
+    // Dentro del funnel basta con cambiar el paso. Pero al volver de Stripe el usuario aterriza
+    // en /reserva/confirmacion, una ruta AUTÓNOMA que pinta esta pantalla directamente y no
+    // mira `currentStep`: allí el botón cambiaba el estado sin cambiar nada en pantalla, así
+    // que parecía roto justo después de un pago fallido, que es el peor momento posible.
+    if (location.pathname.startsWith('/reserva/confirmacion')) {
+      navigate('/reservar');
+    }
+  };
 
   const isPostPaymentSettlementPending =
     successfulPaymentReturn &&

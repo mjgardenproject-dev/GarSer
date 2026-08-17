@@ -27,7 +27,7 @@ const GardenersLandingPage: React.FC = () => {
         '@type': 'WebPage',
         name: seo.title,
         url: new URL(seo.path, SITE_URL).toString(),
-        about: 'Registro de jardineros y empresas de jardineria',
+        about: 'Registro de jardineros y empresas de jardinería',
         inLanguage: 'es',
         provider: {
           '@type': 'Organization',
@@ -121,7 +121,7 @@ const GardenersLandingPage: React.FC = () => {
             alt={gardenersContent.title}
             priority
             sizes="(max-width: 1024px) 100vw, 40vw"
-            placeholderLabel="Foto principal para la pagina de jardineros"
+            placeholderLabel="Foto principal para la página de jardineros"
             className="min-h-[320px]"
             imageClassName="min-h-[320px] lg:min-h-[100%]"
           />
@@ -171,7 +171,7 @@ const GardenersLandingPage: React.FC = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Lo que valoramos</p>
             <div className="mt-5 space-y-4">
               {[
-                'Experiencia real en trabajos de jardineria residencial.',
+                'Experiencia real en trabajos de jardinería residencial.',
                 'Capacidad para completar bien el perfil y la solicitud.',
                 'Seriedad en disponibilidad, herramientas y forma de trabajar.',
               ].map((item) => (

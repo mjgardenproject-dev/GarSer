@@ -15,9 +15,9 @@ const PublicFooter: React.FC = () => {
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[1.2fr,1fr,1fr] lg:px-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">GarSer</p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">Reserva servicios de jardineria con una web pensada para clientes reales.</h2>
+          <h2 className="mt-3 text-2xl font-semibold text-white">Reserva servicios de jardinería con una web pensada para clientes reales.</h2>
           <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">
-            La portada publica y la zona de cliente comparten una misma idea: empezar una reserva rapido, retomarla si ya la dejaste abierta y no perderte entre pantallas tecnicas.
+            La portada pública y la zona de cliente comparten una misma idea: empezar una reserva rápido, retomarla si ya la dejaste abierta y no perderte entre pantallas técnicas.
           </p>
           <div className="mt-5 flex flex-col gap-2">
             {contactEmail ? (
@@ -40,7 +40,7 @@ const PublicFooter: React.FC = () => {
               Empezar reserva
             </a>
             <Link to="/marbella" className="hover:text-white">
-              Jardineria en Marbella
+              Jardinería en Marbella
             </Link>
             <Link to="/para-jardineros" className="hover:text-white">
               Para jardineros

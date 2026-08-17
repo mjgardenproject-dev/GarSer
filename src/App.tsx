@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
@@ -8,36 +8,70 @@ import AuthForm from './components/auth/AuthForm';
 import ResetPassword from './components/auth/ResetPassword';
 import AdminRoute from './components/auth/AdminRoute';
 import Navbar from './components/layout/Navbar';
-import GardenerBookings from './components/gardener/GardenerBookings';
 import BottomNav from './components/layout/BottomNav';
-import ClientBookingLauncher from './components/client/ClientBookingLauncher';
 import ErrorBoundary from './components/common/ErrorBoundary';
-import MyAccount from './components/account/MyAccount';
 import LegacyBookingRedirect from './components/client/LegacyBookingRedirect';
 import LegacyCheckoutRedirect from './components/client/LegacyCheckoutRedirect';
-import GardenerPublicProfile from './components/public/GardenerPublicProfile';
-import BookingsList from './components/client/BookingsList';
-import GardenerDashboard from './components/gardener/GardenerDashboard';
-import ChatList from './components/chat/ChatList';
-import RoleMonitor from './components/admin/RoleMonitor';
-import GardenerApplicationWizard from './components/gardener/GardenerApplicationWizard';
-import GardenerStatusPage from './components/gardener/GardenerStatusPage';
-import BookingFlow from './pages/reserva/BookingFlow';
-import ConfirmationPage from './pages/reserva/ConfirmationPage';
+import NotFoundPage from './pages/public/NotFoundPage';
 import PublicHomePage from './pages/public/PublicHomePage';
-import MarbellaLandingPage from './pages/public/MarbellaLandingPage';
-import GardenersLandingPage from './pages/public/GardenersLandingPage';
 import { supabase } from './lib/supabase';
 import { fetchCurrentUserProfileRole, AppProfileRole } from './lib/adminAccess';
 import { hasWizardResume } from './utils/bookingResumeStorage';
 
 import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
-import AdminLayout from './pages/admin/AdminLayout';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import ServicesManagement from './pages/admin/ServicesManagement';
-import PhytosanitaryManagement from './pages/admin/PhytosanitaryManagement';
-import UserManagement from './pages/admin/UserManagement';
-import AdminSettings from './pages/admin/AdminSettings';
+
+// -----------------------------------------------------------------------------
+// Carga diferida por zonas (paso 12)
+//
+// Todo iba en un único archivo de 1,4 MB: el cliente que entra a reservar desde el móvil
+// descargaba también el panel de administración y el de jardinero, que no va a abrir nunca.
+// En una conexión móvil eso es tiempo de espera antes de ver nada, y ahí se pierden reservas.
+//
+// Se separa por ZONA, no por pantalla: quien entra como cliente no paga el panel del
+// jardinero, quien entra como jardinero no paga el del admin, y las landings públicas —que
+// son la puerta de entrada— quedan lo más ligeras posible.
+//
+// Lo que sigue siendo carga inmediata: la home pública, el login y los redirectores. Son lo
+// primero que ve alguien que llega, y diferirlos solo añadiría un parpadeo.
+// -----------------------------------------------------------------------------
+
+// Zona de administración
+const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const ServicesManagement = lazy(() => import('./pages/admin/ServicesManagement'));
+const PhytosanitaryManagement = lazy(() => import('./pages/admin/PhytosanitaryManagement'));
+const UserManagement = lazy(() => import('./pages/admin/UserManagement'));
+const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
+const RoleMonitor = lazy(() => import('./components/admin/RoleMonitor'));
+
+// Zona de jardinero
+const GardenerDashboard = lazy(() => import('./components/gardener/GardenerDashboard'));
+const GardenerBookings = lazy(() => import('./components/gardener/GardenerBookings'));
+const GardenerApplicationWizard = lazy(() => import('./components/gardener/GardenerApplicationWizard'));
+const GardenerStatusPage = lazy(() => import('./components/gardener/GardenerStatusPage'));
+
+// Funnel de reserva (el más pesado: análisis con IA, wizards manuales y checkout)
+const BookingFlow = lazy(() => import('./pages/reserva/BookingFlow'));
+const ConfirmationPage = lazy(() => import('./pages/reserva/ConfirmationPage'));
+
+// Zona de cliente y resto de páginas públicas
+const ClientBookingLauncher = lazy(() => import('./components/client/ClientBookingLauncher'));
+const BookingsList = lazy(() => import('./components/client/BookingsList'));
+const ChatList = lazy(() => import('./components/chat/ChatList'));
+const MyAccount = lazy(() => import('./components/account/MyAccount'));
+const GardenerPublicProfile = lazy(() => import('./components/public/GardenerPublicProfile'));
+const MarbellaLandingPage = lazy(() => import('./pages/public/MarbellaLandingPage'));
+const GardenersLandingPage = lazy(() => import('./pages/public/GardenersLandingPage'));
+
+/** Placeholder mientras llega el trozo de código de la zona. */
+const RouteFallback = () => (
+  <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600 mx-auto"></div>
+      <p className="mt-4 text-sm text-gray-500">Cargando…</p>
+    </div>
+  </div>
+);
 
 const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   if (!db) return null;
@@ -219,18 +253,20 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
       {!isAuthPage && !isAdminPage && !isMarketingPage && !isBookingPage && <Navbar applicationStatus={applicationStatus} />}
       
       {isAdminPage ? (
-        <Routes>
-          <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
-            <Route index element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="services" element={<ServicesManagement />} />
-            <Route path="phytosanitary" element={<PhytosanitaryManagement />} />
-            <Route path="users" element={<UserManagement />} />
-            <Route path="settings" element={<AdminSettings />} />
-            <Route path="applications" element={<Navigate to="/admin/users" replace />} />
-            <Route path="licenses" element={<Navigate to="/admin/phytosanitary" replace />} />
-          </Route>
-        </Routes>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="services" element={<ServicesManagement />} />
+              <Route path="phytosanitary" element={<PhytosanitaryManagement />} />
+              <Route path="users" element={<UserManagement />} />
+              <Route path="settings" element={<AdminSettings />} />
+              <Route path="applications" element={<Navigate to="/admin/users" replace />} />
+              <Route path="licenses" element={<Navigate to="/admin/phytosanitary" replace />} />
+            </Route>
+          </Routes>
+        </Suspense>
       ) : (
         <main
           className={
@@ -239,6 +275,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
               : 'mx-auto max-w-full px-3 pb-16 sm:max-w-7xl sm:px-6 sm:pb-0 lg:px-8'
           }
         >
+          <Suspense fallback={<RouteFallback />}>
           <Routes>
         <Route
           path="/"
@@ -480,7 +517,11 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             que sí manda distingue entre visitante y usuario con sesión. */}
         <Route path="/auth" element={<AuthForm />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        {/* Comodín: cualquier URL que no coincida con nada. Sin esto, una dirección mal
+            escrita dejaba la pantalla en blanco, sin explicación ni salida. */}
+        <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
         </main>
       )}
       {!isAuthPage && !isBookingPage && !isApplyPage && !isAdminPage && !isMarketingPage && user && <BottomNav />}

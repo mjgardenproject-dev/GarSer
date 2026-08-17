@@ -96,7 +96,7 @@ const CustomerExperienceSections: React.FC<CustomerExperienceSectionsProps> = ({
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Servicios destacados</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Trabajos habituales para viviendas con jardin</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">Trabajos habituales para viviendas con jardín</h2>
           </div>
         </div>
 
@@ -149,7 +149,7 @@ const CustomerExperienceSections: React.FC<CustomerExperienceSectionsProps> = ({
           <div className="grid gap-0 lg:grid-cols-[0.85fr,1.15fr]">
             <MarketingImageSlot
               slot="home.coverage"
-              alt="Cobertura de jardineria en Costa del Sol"
+              alt="Cobertura de jardinería en Costa del Sol"
               placeholderLabel="Foto de cobertura Costa del Sol"
               className="h-full rounded-none"
               imageClassName="min-h-[260px] lg:min-h-full"
@@ -186,7 +186,7 @@ const CustomerExperienceSections: React.FC<CustomerExperienceSectionsProps> = ({
         <div className="rounded-[2rem] border border-emerald-100 bg-gradient-to-br from-emerald-600 via-emerald-700 to-lime-700 p-6 text-white sm:p-8">
           <p className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-50">
             <CheckCircle2 className="h-4 w-4" />
-            Reserva mas clara
+            Reserva más clara
           </p>
           <h2 className="mt-5 text-3xl font-semibold tracking-tight">{isMarbella ? marbellaContent.finalCtaTitle : generalHomeContent.finalCtaTitle}</h2>
           <p className="mt-4 max-w-xl text-base leading-7 text-emerald-50">

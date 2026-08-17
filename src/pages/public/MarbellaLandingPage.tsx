@@ -23,7 +23,7 @@ const MarbellaLandingPage: React.FC = () => {
         '@type': 'WebPage',
         name: seo.title,
         url: new URL(seo.path, SITE_URL).toString(),
-        about: 'Jardineria en Marbella',
+        about: 'Jardinería en Marbella',
         inLanguage: 'es',
         provider: {
           '@type': 'Organization',

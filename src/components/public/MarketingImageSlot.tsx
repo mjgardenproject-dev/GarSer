@@ -50,12 +50,12 @@ const MarketingImageSlot: React.FC<MarketingImageSlotProps> = ({
             <div className="text-xs font-medium text-slate-500">Path: {assetPath}</div>
           </div>
         ) : (
+          // En producción, solo el degradado de marca. `placeholderLabel` es una nota interna
+          // para quien sube las fotos ("Foto de cobertura Costa del Sol"): enseñársela al
+          // cliente parece un gestor de contenidos a medio configurar. El texto alternativo
+          // sigue ahí para los lectores de pantalla.
           <div className="relative flex h-full min-h-[220px] flex-col justify-end p-5 text-left">
-            {placeholderLabel ? (
-              <p className="text-base font-semibold text-emerald-900/80">{placeholderLabel}</p>
-            ) : (
-              <span className="sr-only">{alt}</span>
-            )}
+            <span className="sr-only">{alt}</span>
           </div>
         )}
       </div>

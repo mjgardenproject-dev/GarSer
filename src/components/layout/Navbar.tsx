@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { fetchCurrentUserProfileRole, isAdminRole, type AppProfileRole } from '../../lib/adminAccess';
+import { useUnreadChats } from '../../hooks/useUnreadChats';
 
 interface NavbarProps {
   applicationStatus?: 'pending' | 'active' | 'denied' | null;
@@ -13,6 +14,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   const [logoError, setLogoError] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<AppProfileRole>(null);
+  const unreadChats = useUnreadChats();
   
   // Use prop if available, otherwise default to null (or we could keep local state if prop is undefined)
   // Since App always passes it, we can rely on prop.
@@ -99,7 +101,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   const navItems = user && !shouldHideNav ? [
     { path: '/dashboard', label: 'Dashboard', icon: User },
     { path: '/bookings', label: 'Reservas', icon: Calendar },
-    { path: '/chat', label: 'Chat', icon: MessageCircle },
+    { path: '/chat', label: 'Chat', icon: MessageCircle, badge: unreadChats },
     { path: '/account', label: 'Mi Cuenta', icon: Settings },
     ...(isAdmin ? [{ path: '/admin/applications', label: 'Solicitudes', icon: Shield }] as any[] : [])
   ] : [];
@@ -149,6 +151,11 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
                   >
                     <Icon className="w-4 h-4 mr-2" />
                     {item.label}
+                    {!!(item as { badge?: number }).badge && (
+                      <span className="ml-1.5 min-w-[18px] h-[18px] px-1 bg-green-600 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
+                        {(item as { badge?: number }).badge! > 99 ? '99+' : (item as { badge?: number }).badge}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -212,6 +219,11 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
                   >
                     <Icon className="w-4 h-4 mr-2" />
                     {item.label}
+                    {!!(item as { badge?: number }).badge && (
+                      <span className="ml-auto min-w-[18px] h-[18px] px-1 bg-green-600 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
+                        {(item as { badge?: number }).badge! > 99 ? '99+' : (item as { badge?: number }).badge}
+                      </span>
+                    )}
                   </button>
                 );
               })}

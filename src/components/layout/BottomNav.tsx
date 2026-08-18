@@ -2,17 +2,19 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Home, Calendar, MessageCircle, User as UserIcon, Briefcase } from 'lucide-react';
+import { useUnreadChats } from '../../hooks/useUnreadChats';
 
 const BottomNav: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile } = useAuth();
+  const unreadChats = useUnreadChats();
 
   const isGardener = profile?.role === 'gardener';
   const items = [
     { path: '/dashboard', label: isGardener ? 'Panel' : 'Inicio', icon: isGardener ? Briefcase : Home },
     { path: '/bookings', label: 'Reservas', icon: Calendar },
-    { path: '/chat', label: 'Chat', icon: MessageCircle },
+    { path: '/chat', label: 'Chat', icon: MessageCircle, badge: unreadChats },
   ];
 
   return (
@@ -29,11 +31,18 @@ const BottomNav: React.FC = () => {
                 className={`flex flex-col items-center justify-center text-xs transition-colors ${
                   isActive ? 'text-green-700 bg-green-50 font-semibold' : 'text-gray-600 hover:text-green-600'
                 }`}
-                aria-label={item.label}
+                aria-label={item.badge ? `${item.label} (${item.badge} sin leer)` : item.label}
                 aria-current={isActive ? 'page' : undefined}
                 data-active={isActive ? 'true' : 'false'}
               >
-                <Icon className="w-5 h-5 mb-1" />
+                <span className="relative">
+                  <Icon className="w-5 h-5 mb-1" />
+                  {!!item.badge && (
+                    <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 bg-green-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  )}
+                </span>
                 <span>{item.label}</span>
               </button>
             );

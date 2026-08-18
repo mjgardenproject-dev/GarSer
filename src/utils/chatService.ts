@@ -29,6 +29,19 @@ export interface ChatParticipants {
 
 export const CHAT_PAGE_SIZE = 50;
 
+/** Mensajes posteriores a `after` (catch-up tras una reconexión de Realtime). */
+export async function fetchMessagesSince(bookingId: string, after: string): Promise<ChatMessage[]> {
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('id, booking_id, sender_id, message, message_type, image_url, created_at')
+    .eq('booking_id', bookingId)
+    .gt('created_at', after)
+    .order('created_at', { ascending: true })
+    .limit(200);
+  if (error) throw error;
+  return (data || []) as ChatMessage[];
+}
+
 /** Página de mensajes más recientes anteriores a `before` (o el final del hilo). */
 export async function fetchMessagesPage(
   bookingId: string,
@@ -159,17 +172,32 @@ export async function fetchChatOverview(): Promise<Record<string, ChatOverviewRo
   return map;
 }
 
-/** Suscripción Realtime de un hilo (mensajes nuevos + cursores de lectura). */
+export interface ThreadSubscription {
+  unsubscribe: () => void;
+  /** Avisa al otro participante de que estoy escribiendo (throttle en el caller). */
+  sendTyping: () => void;
+}
+
+/**
+ * Suscripción Realtime de un hilo: mensajes nuevos, cursores de lectura,
+ * "escribiendo…" (broadcast) y presencia "en línea" (presence).
+ * Un solo canal por hilo; ambos participantes usan el mismo nombre.
+ */
 export function subscribeToThread(
   bookingId: string,
+  userId: string,
   handlers: {
     onMessage: (message: ChatMessage) => void;
     onReadCursorChange?: () => void;
     onStatusChange?: (connected: boolean) => void;
+    onPeerTyping?: (peerUserId: string) => void;
+    onPresenceChange?: (onlineUserIds: string[]) => void;
   }
-): () => void {
+): ThreadSubscription {
   const channel = supabase
-    .channel(`chat_${bookingId}`)
+    .channel(`chat_${bookingId}`, {
+      config: { broadcast: { self: false }, presence: { key: userId } },
+    })
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `booking_id=eq.${bookingId}` },
@@ -180,11 +208,27 @@ export function subscribeToThread(
       { event: '*', schema: 'public', table: 'chat_thread_reads', filter: `booking_id=eq.${bookingId}` },
       () => handlers.onReadCursorChange?.()
     )
+    .on('broadcast', { event: 'typing' }, (payload: { payload?: { userId?: string } }) => {
+      const typerId = payload?.payload?.userId;
+      if (typerId && typerId !== userId) handlers.onPeerTyping?.(typerId);
+    })
+    .on('presence', { event: 'sync' }, () => {
+      handlers.onPresenceChange?.(Object.keys(channel.presenceState()));
+    })
     .subscribe((status) => {
-      handlers.onStatusChange?.(status === 'SUBSCRIBED');
+      const connected = status === 'SUBSCRIBED';
+      handlers.onStatusChange?.(connected);
+      if (connected) {
+        channel.track({ online_at: new Date().toISOString() });
+      }
     });
 
-  return () => {
-    supabase.removeChannel(channel);
+  return {
+    unsubscribe: () => {
+      supabase.removeChannel(channel);
+    },
+    sendTyping: () => {
+      channel.send({ type: 'broadcast', event: 'typing', payload: { userId } });
+    },
   };
 }

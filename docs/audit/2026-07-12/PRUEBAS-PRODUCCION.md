@@ -518,6 +518,38 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ---
 
+## SECCIÓN 15 — Chat en tiempo real (fix 2026-08-17) 🟠
+
+> Contexto: el chat no entregaba nada en vivo porque `chat_messages` y `bookings` no estaban
+> en la publication `supabase_realtime` (migración `20260817150000`), la subida de imágenes
+> fallaba por la policy de storage y en móvil el BottomNav tapaba el cuadro de escribir.
+> Se necesitan **dos dispositivos** (o dos navegadores) con el cliente y el jardinero de una
+> misma reserva logueados a la vez.
+
+- [ ] **15.1** Con el chat abierto en ambos lados: un mensaje del cliente aparece en el móvil
+      del jardinero **sin recargar ni reabrir**, en menos de ~2 segundos (y al revés).
+- [ ] **15.2** Mientras uno escribe, el otro ve **"escribiendo…"** bajo el nombre; con ambos
+      dentro del chat se ve **"en línea"**.
+- [ ] **15.3** Ticks del emisor: reloj (enviando) → ✓ (enviado) → ✓✓ azul cuando el otro
+      lo lee con el hilo abierto.
+- [ ] **15.4** **En móvil**: el cuadro de escribir y el botón de enviar son accesibles; el
+      menú inferior (Inicio/Reservas/Chat) queda **detrás** del chat y no se ve la página de
+      fondo por debajo.
+- [ ] **15.5** **Imagen por chat**: se adjunta, se envía sin error y el otro la recibe en vivo
+      (antes fallaba siempre por la policy de storage).
+- [ ] **15.6** Con el chat cerrado: llega un mensaje → el **badge verde** con el número de no
+      leídos aparece en la barra de navegación y en la lista de chats sin recargar.
+- [ ] **15.7** Propuesta de **cambio de precio** (palmeras con rango abierto): al proponerla el
+      jardinero, el banner ámbar y el mensaje de sistema aparecen al cliente **en vivo**; al
+      aceptar/rechazar, el jardinero lo ve al momento.
+- [ ] **15.8** Corte de conexión: activar modo avión 30 s con el chat abierto, que el otro
+      envíe algo, desactivarlo → sale "Reconectando…" y al volver **aparecen los mensajes
+      perdidos** sin reabrir el chat.
+- [ ] **15.9** Al marcar un servicio como **completado**, aparece el mensaje de sistema
+      "Servicio completado: …" en el hilo de ambos.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

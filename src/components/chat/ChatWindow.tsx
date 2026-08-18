@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Send, MessageCircle, X, ImagePlus, Euro, ChevronUp, WifiOff, Loader2 } from 'lucide-react';
+import { Send, MessageCircle, X, ImagePlus, Euro, ChevronUp, WifiOff, Loader2, Check, CheckCheck, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO, isToday, isYesterday, isSameDay } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -11,7 +11,9 @@ import { formatEuro, getBookingAmounts } from '../../shared/bookingAmounts';
 import {
   ChatMessage,
   ChatParticipants,
+  ThreadSubscription,
   fetchMessagesPage,
+  fetchMessagesSince,
   fetchParticipants,
   fetchPeerReadCursor,
   markThreadRead,
@@ -61,6 +63,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   const [bookingMeta, setBookingMeta] = useState<BookingChatMeta | null>(null);
   const [peerReadAt, setPeerReadAt] = useState<string | null>(null);
   const [connected, setConnected] = useState(true);
+  const [peerTyping, setPeerTyping] = useState(false);
+  const [peerOnline, setPeerOnline] = useState(false);
 
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -77,6 +81,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messageIdsRef = useRef<Set<string>>(new Set());
+  const threadSubRef = useRef<ThreadSubscription | null>(null);
+  const lastMessageAtRef = useRef<string | null>(null);
+  const hadDisconnectRef = useRef(false);
+  const lastTypingSentRef = useRef(0);
+  const typingHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onlineIdsRef = useRef<string[]>([]);
 
   const isGardener = !!(user && bookingMeta && bookingMeta.gardener_id === user.id);
   const isClient = !!(user && bookingMeta && bookingMeta.client_id === user.id);
@@ -100,6 +110,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
 
   // Añade mensajes deduplicando por id (fetch inicial + Realtime + optimistas pueden solaparse)
   const appendMessage = useCallback((incoming: ChatMessage) => {
+    if (!incoming.pending && (!lastMessageAtRef.current || incoming.created_at > lastMessageAtRef.current)) {
+      lastMessageAtRef.current = incoming.created_at;
+    }
     setMessages((prev) => {
       if (messageIdsRef.current.has(incoming.id)) return prev;
       messageIdsRef.current.add(incoming.id);
@@ -131,6 +144,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
     if (!isOpen || !bookingId || !user?.id) return;
     let cancelled = false;
     messageIdsRef.current = new Set();
+    lastMessageAtRef.current = null;
+    hadDisconnectRef.current = false;
 
     (async () => {
       try {
@@ -140,6 +155,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
         ]);
         if (cancelled) return;
         page.messages.forEach((m) => messageIdsRef.current.add(m.id));
+        const newest = page.messages[page.messages.length - 1];
+        if (newest && (!lastMessageAtRef.current || newest.created_at > lastMessageAtRef.current)) {
+          lastMessageAtRef.current = newest.created_at;
+        }
         setMessages(page.messages);
         setHasMore(page.hasMore);
         setParticipants(parts);
@@ -151,10 +170,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       }
     })();
 
-    const unsubscribeThread = subscribeToThread(bookingId, {
+    const sub = subscribeToThread(bookingId, user.id, {
       onMessage: (msg) => {
         appendMessage(msg);
         if (msg.sender_id !== user.id) {
+          // El mensaje del otro sustituye a su "escribiendo…"
+          setPeerTyping(false);
           // Estamos con el hilo abierto: lo leído se actualiza al momento
           markThreadRead(bookingId, user.id);
         }
@@ -163,8 +184,39 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
         const peer = peerIdRef.current;
         if (peer) refreshPeerCursor(peer);
       },
-      onStatusChange: (ok) => setConnected(ok),
+      onStatusChange: (ok) => {
+        setConnected(ok);
+        if (ok && hadDisconnectRef.current) {
+          // Reconexión: recuperar lo que llegó mientras no había canal
+          const since = lastMessageAtRef.current;
+          (async () => {
+            try {
+              if (since) {
+                const missed = await fetchMessagesSince(bookingId, since);
+                missed.forEach(appendMessage);
+              }
+              await refreshBookingMeta();
+              const peer = peerIdRef.current;
+              if (peer) await refreshPeerCursor(peer);
+            } catch {
+              // Si el catch-up falla, la siguiente apertura recarga el hilo completo
+            }
+          })();
+        }
+        if (!ok) hadDisconnectRef.current = true;
+      },
+      onPeerTyping: () => {
+        setPeerTyping(true);
+        if (typingHideTimerRef.current) clearTimeout(typingHideTimerRef.current);
+        typingHideTimerRef.current = setTimeout(() => setPeerTyping(false), 3500);
+      },
+      onPresenceChange: (ids) => {
+        onlineIdsRef.current = ids;
+        const peer = peerIdRef.current;
+        setPeerOnline(!!peer && ids.includes(peer));
+      },
     });
+    threadSubRef.current = sub;
 
     const bookingChannel = supabase
       .channel(`booking_meta_${bookingId}`)
@@ -181,7 +233,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
 
     return () => {
       cancelled = true;
-      unsubscribeThread();
+      threadSubRef.current = null;
+      if (typingHideTimerRef.current) clearTimeout(typingHideTimerRef.current);
+      sub.unsubscribe();
       supabase.removeChannel(bookingChannel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -189,8 +243,22 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
 
   // Cursor del otro participante cuando ya conocemos quién es
   useEffect(() => {
-    if (isOpen && peerId) refreshPeerCursor(peerId);
+    if (isOpen && peerId) {
+      refreshPeerCursor(peerId);
+      // La presencia pudo llegar antes de saber quién es el otro participante
+      setPeerOnline(onlineIdsRef.current.includes(peerId));
+    }
   }, [isOpen, peerId, refreshPeerCursor]);
+
+  // Con el chat abierto, la página de fondo no debe poder hacer scroll (móvil)
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
 
   // Botón atrás del móvil: cierra el chat, no la página
   useEffect(() => {
@@ -263,6 +331,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
     el.style.height = `${Math.min(el.scrollHeight, 112)}px`;
   };
 
+  // "Escribiendo…" al otro lado, como mucho una señal cada 2 s
+  const notifyTyping = () => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2000) return;
+    lastTypingSentRef.current = now;
+    threadSubRef.current?.sendTyping();
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const text = newMessage.trim();
@@ -290,6 +366,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       const saved = await sendChatMessage({ bookingId, senderId: user.id, text, imageFile: image });
       setMessages((prev) => prev.map((m) => (m.id === optimistic.id ? saved : m)));
       messageIdsRef.current.add(saved.id);
+      if (!lastMessageAtRef.current || saved.created_at > lastMessageAtRef.current) {
+        lastMessageAtRef.current = saved.created_at;
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
@@ -369,13 +448,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full max-w-md h-[100dvh] sm:h-[600px] flex flex-col">
+    // z-[60]: por encima del BottomNav (z-50), que tapaba el cuadro de escribir en móvil.
+    // h-full en vez de 100dvh: el alto lo fija el overlay (inset-0), sin desajustes de
+    // viewport en navegadores móviles que dejaban ver la página de fondo por debajo.
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-0 sm:p-4">
+      <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full max-w-md h-full sm:h-[600px] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] border-b border-gray-200">
           <div className="flex items-center min-w-0">
             <MessageCircle className="w-5 h-5 text-green-600 mr-2 shrink-0" />
-            <h3 className="font-semibold text-gray-900 truncate">{headerName}</h3>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-gray-900 truncate leading-tight">{headerName}</h3>
+              {(peerTyping || peerOnline) && (
+                <p className={`text-xs leading-tight truncate ${peerTyping ? 'text-green-600' : 'text-gray-500'}`}>
+                  {peerTyping ? 'escribiendo…' : 'en línea'}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {canGardenerProposePrice && (
@@ -557,12 +646,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
                         {message.message && message.message !== 'Imagen' && (
                           <p className="text-sm whitespace-pre-wrap break-words">{message.message}</p>
                         )}
-                        <p className={`text-[10px] mt-0.5 ${isOwn ? 'text-green-100' : 'text-gray-500'}`}>
+                        <p className={`text-[10px] mt-0.5 flex items-center gap-1 ${isOwn ? 'text-green-100 justify-end' : 'text-gray-500'}`}>
                           {format(parseISO(message.created_at), 'HH:mm', { locale: es })}
                           {isOwn && (
-                            <span className="ml-1.5">
-                              {message.pending ? 'Enviando…' : isRead ? 'Leído' : 'Enviado'}
-                            </span>
+                            message.pending ? (
+                              <Clock className="w-3 h-3" aria-label="Enviando" />
+                            ) : isRead ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-sky-300" aria-label="Leído" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" aria-label="Enviado" />
+                            )
                           )}
                         </p>
                       </div>
@@ -604,7 +697,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
               ref={textareaRef}
               rows={1}
               value={newMessage}
-              onChange={(e) => { setNewMessage(e.target.value); autosizeTextarea(); }}
+              onChange={(e) => { setNewMessage(e.target.value); autosizeTextarea(); notifyTyping(); }}
               onKeyDown={handleKeyDown}
               placeholder="Escribe un mensaje…"
               className="flex-1 min-w-0 px-3.5 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent text-base sm:text-sm resize-none leading-snug"
@@ -625,7 +718,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       {/* Lightbox de imágenes */}
       {lightboxUrl && (
         <div
-          className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setLightboxUrl(null)}
         >
           <button

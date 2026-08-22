@@ -143,84 +143,100 @@ const areSameHeightRanges = (a: string, b: string): boolean => {
   return normalizeHeightRange(a) === normalizeHeightRange(b);
 };
 
+/**
+ * Resuelve la clave de banda de altura dentro de un mapa `{ banda: valor }` del jardinero.
+ *
+ * La banda llega en formatos distintos según el origen: el configurador del jardinero guarda
+ * `'0-4'`/`'>10'`, el análisis IA emite lo mismo, pero el formulario manual (y reservas ya
+ * guardadas) usan `'0-4m'`/`'>10m'`. La comparación literal solo casaba con el primero, así
+ * que un cliente que declaraba su palmera A MANO no encontraba NINGÚN jardinero mientras que
+ * con la misma palmera por fotos sí: el precio existía, pero la clave no coincidía.
+ *
+ * Orden de resolución: literal → normalizada (sin 'm', sin espacios) → numérica (una altura
+ * o un rango en metros contra los rangos configurados, entendiendo tanto '12+' como '>12').
+ */
+const resolvePalmHeightKey = (rangeMap: Record<string, unknown> | undefined, height: string): string | null => {
+  if (!rangeMap) return null;
+  const keys = Object.keys(rangeMap);
+  if (keys.length === 0) return null;
+
+  if (Object.prototype.hasOwnProperty.call(rangeMap, height)) return height;
+
+  const normalizedTarget = normalizeHeightRange(height);
+  const normalizedMatch = keys.find((key) => normalizeHeightRange(key) === normalizedTarget);
+  if (normalizedMatch) return normalizedMatch;
+
+  const matches = String(height || '').match(/(\d+(?:\.\d+)?)/g);
+  if (!matches || matches.length === 0) return null;
+  const heightNum = matches.length === 1
+    ? parseFloat(matches[0])
+    : (parseFloat(matches[0]) + parseFloat(matches[1])) / 2;
+
+  let openRangeMatch: string | null = null;
+  for (const range of keys) {
+    const normalized = normalizeHeightRange(range);
+    if (normalized.includes('+') || normalized.includes('>')) {
+      const min = parseFloat(normalized.replace('+', '').replace('>', ''));
+      if (Number.isFinite(min) && heightNum >= min) openRangeMatch = range;
+    } else if (normalized.includes('-')) {
+      const [min, max] = normalized.split('-').map(Number);
+      if (heightNum >= min && heightNum < max) return range;
+    }
+  }
+  return openRangeMatch;
+};
+
+/** Resuelve la clave de especie dentro de un mapa `{ especie: ... }` del jardinero. */
+const resolvePalmSpeciesKey = (speciesMap: Record<string, unknown> | undefined, species: string): string | null => {
+  if (!speciesMap) return null;
+  if (Object.prototype.hasOwnProperty.call(speciesMap, species)) return species;
+
+  const canonical = resolveSpeciesBusinessRule(species)?.canonicalName;
+  if (canonical && Object.prototype.hasOwnProperty.call(speciesMap, canonical)) return canonical;
+
+  const speciesLower = species.toLowerCase();
+  return Object.keys(speciesMap).find(
+    (key) => key.toLowerCase().includes(speciesLower) || speciesLower.includes(key.toLowerCase()),
+  ) || null;
+};
+
+/**
+ * Rendimiento (unidades/hora) configurado para una especie y banda, con la misma
+ * tolerancia de formatos que el precio. Antes este acceso era literal
+ * (`yield_units_per_hour[species][height]`) en tres sitios distintos: con una banda 'm'
+ * el rendimiento salía 0 y el jardinero por horas quedaba inelegible o con horas erróneas.
+ */
+export const findPalmYield = (config: any, species: string, height: string): number => {
+  const yields = config?.yield_units_per_hour;
+  const speciesKey = resolvePalmSpeciesKey(yields, species);
+  if (!speciesKey) return 0;
+  const heightKey = resolvePalmHeightKey(yields[speciesKey], height);
+  if (!heightKey) return 0;
+  return Number(yields[speciesKey][heightKey]) || 0;
+};
+
 export const findPalmPrice = (config: any, species: string, height: string): number => {
+    const speciesPriceFallback = (key: string): number => {
+        const value = config?.species_prices?.[key];
+        return typeof value === 'number' ? value : 0;
+    };
+
     if (!config || !config.height_prices) {
-        if (config?.species_prices?.[species] && typeof config.species_prices[species] === 'number') {
-            return config.species_prices[species];
-        }
-        return 0;
+        return speciesPriceFallback(species);
     }
 
-    if (config.height_prices[species]?.[height]) {
-        return config.height_prices[species][height];
+    const speciesKey = resolvePalmSpeciesKey(config.height_prices, species);
+    if (!speciesKey) {
+        const priceKey = resolvePalmSpeciesKey(config.species_prices, species);
+        return priceKey ? speciesPriceFallback(priceKey) : 0;
     }
 
-    const speciesLower = species.toLowerCase();
-    let speciesKey = resolveSpeciesBusinessRule(species)?.canonicalName || species;
-    let found = speciesKey !== species;
-
-    if (!found && !config.height_prices[speciesKey]) {
-        const configKeys = Object.keys(config.height_prices);
-        const match = configKeys.find(k => k.toLowerCase().includes(speciesLower) || speciesLower.includes(k.toLowerCase()));
-        if (match) {
-            speciesKey = match;
-            found = true;
-        }
+    const heightKey = resolvePalmHeightKey(config.height_prices[speciesKey], height);
+    if (heightKey) {
+        return Number(config.height_prices[speciesKey][heightKey]) || 0;
     }
 
-    if (!config.height_prices[speciesKey]) {
-        if (config.species_prices?.[speciesKey] && typeof config.species_prices[speciesKey] === 'number') {
-            return config.species_prices[speciesKey];
-        }
-        return 0;
-    }
-
-    if (config.height_prices[speciesKey][height]) {
-        return config.height_prices[speciesKey][height];
-    }
-
-    const matches = height.match(/(\d+(?:\.\d+)?)/g);
-    let heightNum = 0;
-    if (matches && matches.length > 0) {
-        if (matches.length === 1) {
-             heightNum = parseFloat(matches[0]);
-        } else {
-             const v1 = parseFloat(matches[0]);
-             const v2 = parseFloat(matches[1]);
-             heightNum = (v1 + v2) / 2;
-        }
-    } else {
-         if (config.species_prices?.[speciesKey]) return config.species_prices[speciesKey];
-         return 0; 
-    }
-
-    const ranges = Object.keys(config.height_prices[speciesKey]);
-    let bestRange = '';
-
-    for (const range of ranges) {
-        if (range.includes('+')) {
-            const min = parseFloat(range.replace('+', ''));
-            if (heightNum >= min) {
-                bestRange = range;
-            }
-        } else if (range.includes('-')) {
-            const [min, max] = range.split('-').map(Number);
-            if (heightNum >= min && heightNum < max) {
-                bestRange = range;
-                break;
-            }
-        }
-    }
-    
-    if (bestRange) {
-        return config.height_prices[speciesKey][bestRange] || 0;
-    }
-
-    if (config.species_prices?.[speciesKey]) {
-        return config.species_prices[speciesKey];
-    }
-
-    return 0;
+    return speciesPriceFallback(speciesKey);
 };
 
 const getPalmStatePercent = (config: any, state: string): number => {
@@ -249,7 +265,7 @@ export const calculatePalmHoursFromConfig = (
   // tabla genérica interna → slots bloqueados con un tiempo que no era el suyo.
   const hasConfiguredYields =
     config?.yield_units_per_hour &&
-    groups.some((group) => Number(config.yield_units_per_hour?.[group.species]?.[group.height] || 0) > 0);
+    groups.some((group) => findPalmYield(config, group.species, group.height) > 0);
 
   if (!hasConfiguredYields) {
     return calculatePalmHoursEngine(
@@ -270,7 +286,7 @@ export const calculatePalmHoursFromConfig = (
     const quantity = Math.max(0, Number(group.quantity || 0));
     if (quantity <= 0) continue;
 
-    const yieldForSpecies = Number(config.yield_units_per_hour?.[group.species]?.[group.height] || 0);
+    const yieldForSpecies = findPalmYield(config, group.species, group.height);
     if (!(yieldForSpecies > 0)) continue;
 
     const state = (group.state || 'normal').toLowerCase();
@@ -311,7 +327,7 @@ export function calculatePalmPriceEngine(
   for (const group of groups) {
     let basePrice = 0;
     if (useYield) {
-      const yieldForSpecies = config.yield_units_per_hour[group.species]?.[group.height] || 0;
+      const yieldForSpecies = findPalmYield(config, group.species, group.height);
       basePrice = calculatePriceFromYield(1, yieldForSpecies, precioPorHora);
     } else {
       basePrice = findPalmPrice(config, group.species, group.height);

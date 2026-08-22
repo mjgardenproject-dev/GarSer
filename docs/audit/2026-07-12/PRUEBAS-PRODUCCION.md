@@ -151,6 +151,19 @@ Rellena esto antes de empezar y ten la tabla a mano:
   con un jardinero configurado "por hora" y activa un extra (p. ej. tratamiento fitosanitario).
   - ✅ **Éxito:** el extra **está sumado** en el presupuesto.
 
+- [ ] **3.1b — Paridad manual/fotos en palmeras.** *(Añadida el 2026-08-22: en la primera pasada
+  esta prueba destapó dos fallos reales.)* Declara **la misma palmera** por los dos caminos:
+  primero con fotos y después con "Prefiero introducir los datos manualmente", eligiendo la misma
+  especie, banda de altura, estado y sin extras. Prueba también la **banda más alta** ("Más de X m").
+  - ✅ **Éxito:** por los dos caminos aparecen **los mismos jardineros** y el precio es **idéntico**,
+    y cuadra con la configuración del jardinero (base de la banda + retirada de restos si procede,
+    con los gastos de gestión desglosados aparte).
+  - ✅ **Éxito:** el extra de **tratamiento fitosanitario** aparece **apagado por defecto** también
+    en el camino de fotos: solo se suma si tú lo enciendes.
+  - ❌ **Si falla:** los jardineros desaparecen en el camino manual (fallo de casación de bandas) o
+    el precio trae un recargo no pedido (extra auto-activado). Ambos ya corregidos una vez; si
+    reaparecen, revisa que `booking-authority` y `booking-payment` estén redesplegados (sección 0).
+
 - [ ] **3.2 — El precio que ve el cliente y el que cobra Stripe coinciden.** Anota el total
   mostrado antes de pagar y compáralo con el importe del PaymentIntent en Stripe.
   - ✅ **Éxito:** céntimo a céntimo.

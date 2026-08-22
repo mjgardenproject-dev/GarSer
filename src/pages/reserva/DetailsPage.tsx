@@ -2003,7 +2003,12 @@ const DetailsPage: React.FC = () => {
                 quantity: 1, // Default to 1, user must confirm
                 state: normalizePalmState(primary.estado),
                 wasteRemoval: true,
-                hasPhytosanitary: supportsPhytosanitaryForSpecies(speciesMapped),
+                // El tratamiento fitosanitario es un EXTRA de pago: lo elige el cliente con su
+                // interruptor, apagado por defecto (igual que en el camino manual). Antes se
+                // activaba solo si la especie lo admitía, y el presupuesto salía con un
+                // recargo que el cliente no había pedido y que no cuadraba con la tarifa
+                // configurada por el jardinero.
+                hasPhytosanitary: false,
                 photoUrl: originalUrl || undefined,
                 imageIndex: globalIndex,
                 analysisLevel: primary.nivel_analisis,
@@ -3634,7 +3639,11 @@ const DetailsPage: React.FC = () => {
           group.observations = commonAnalysis.observations;
           (group as any).isFailed = commonAnalysis.isFailed;
           (group as any).analyzedIndices = commonAnalysis.analyzedIndices;
-          (group as any).hasPhytosanitary = supportsPhytosanitaryForSpecies(group.species);
+          // Extra de pago: se conserva lo que el cliente ya hubiera elegido con su interruptor
+          // (apagado si la especie no lo admite), nunca se activa solo. Antes un re-análisis
+          // lo encendía y el precio subía sin que el cliente hubiera tocado nada.
+          (group as any).hasPhytosanitary =
+            supportsPhytosanitaryForSpecies(group.species) && Boolean((group as any).hasPhytosanitary);
           (group as any).aiDetectedCount = detectedPalms.length;
           (group as any).aiDetectedSummary = summarizeDetectedPalms(detectedPalms);
           // Datos de la propuesta IA para confirmación del cliente: altura en metros

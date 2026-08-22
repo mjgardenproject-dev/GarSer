@@ -3,6 +3,7 @@ import {
   calculatePriceFromYield,
   calculatePalmPriceEngine,
   findPalmPrice,
+  findPalmYield,
   type PalmPricingGroup,
 } from '../domain/pricingEngine.ts';
 import { isHighestOpenRangeForSpecies } from '../domain/speciesBusinessRules.ts';
@@ -596,7 +597,9 @@ const getPalmBaseUnitPrice = (config: any, group: Pick<PalmPricingGroup, 'specie
     config?.yield_units_per_hour &&
     precioPorHora > 0;
   if (useYield) {
-    const yieldPerUnit = Number(config?.yield_units_per_hour?.[group.species]?.[group.height] || 0);
+    // findPalmYield y no acceso directo por clave: la banda puede llegar con sufijo 'm'
+    // (formulario manual, reservas guardadas) y el acceso literal la daba por no cubierta.
+    const yieldPerUnit = findPalmYield(config, group.species, group.height);
     return calculatePriceFromYield(1, yieldPerUnit, precioPorHora);
   }
   return findPalmPrice(config, group.species, group.height);

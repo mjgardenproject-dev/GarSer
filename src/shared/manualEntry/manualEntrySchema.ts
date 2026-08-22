@@ -548,14 +548,19 @@ export const MANUAL_ENTRY_SURVEYS: Record<ManualServiceKey, ManualServiceSurvey>
       {
         id: 'extras',
         title: 'Opciones adicionales',
-        description: 'Selecciona solo lo que necesites. Si no estás seguro, déjalo desactivado.',
+        description: 'El tratamiento fitosanitario viene incluido por ser esencial tras la poda. Puedes quitarlo, y activar el resto solo si lo necesitas.',
         fields: [
           {
+            // Viene ACTIVADO por defecto, igual que en el camino de fotos: tras podar, los
+            // cortes quedan abiertos y son la vía de entrada del picudo rojo. Se cobra la
+            // tarifa que haya puesto CADA jardinero (`config.phytosanitary`); si un
+            // profesional no la tiene configurada, no se cobra nada por este concepto.
             key: 'hasPhytosanitary',
             type: 'boolean',
             ui: 'toggle',
-            label: 'Tratamiento fitosanitario',
-            help: 'Aplicación preventiva contra plagas (no disponible en todas las especies).',
+            label: 'Tratamiento de insecticida y fungicida',
+            help: 'Esencial tras la poda: los cortes recientes son la vía de entrada de plagas graves como el picudo rojo. Puedes desactivarlo, pero no es recomendable.',
+            defaultValue: true,
             optional: true,
             visibleWhen: (answers) => speciesSupportsPhytosanitary(answers.species),
           },

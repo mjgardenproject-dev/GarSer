@@ -72,7 +72,7 @@ Sin esto, el sistema se rompe o se abusa en cuanto tenga usuarios reales.
 
 Cada fase deja el sistema **coherente y desplegable**. Se pueden parar entre fases.
 
-### Fase 1 — Cimientos de datos 🔴
+### Fase 1 — Cimientos de datos 🔴 ✅ **HECHA** (2026-08-23)
 
 *Sin front. Solo esquema. Nada de lo que hoy funciona cambia de comportamiento.*
 
@@ -85,8 +85,22 @@ Cada fase deja el sistema **coherente y desplegable**. Se pueden parar entre fas
 - Restricciones de longitud.
 - El trigger de agregados pasa a **ignorar las reseñas ocultas**.
 
-**Riesgo:** bajo. Solo añade. **Prueba:** la media no cambia; un segundo intento de reseña sobre
-la misma reserva falla; `anon` lee reseñas.
+**Riesgo:** bajo. Solo añade. **Verificado en local:**
+
+| Prueba | Resultado |
+|---|---|
+| Reseña legítima sobre reserva propia completada | ✅ 201 |
+| Segunda reseña sobre la misma reserva (F6) | ✅ 409 |
+| Reseña a un jardinero nunca contratado | ✅ 403 |
+| Visitante sin sesión leyendo reseñas (F5) | ✅ 200 |
+| Jardinero responde a su reseña | ✅ 200 |
+| Un tercero intenta responder | ✅ 403 |
+| Jardinero intenta cambiarse la nota | ✅ 0 filas, nota intacta |
+| Admin oculta una reseña | ✅ desaparece **y sale de la media** |
+
+**Nota de diseño:** la respuesta del jardinero se escribe **solo por RPC**, nunca por UPDATE
+directo. RLS decide sobre la FILA, no sobre la columna: con permiso de UPDATE sobre las reseñas
+dirigidas a él, un jardinero podría cambiarse la propia nota.
 
 ### Fase 2 — Pedir la reseña 🔴 *(cierra F4)*
 
@@ -147,7 +161,17 @@ genera un presupuesto nuevo por el camino de siempre.
 
 ---
 
-## 4. Decisiones que necesito de ti
+## 4. Decisiones tomadas (2026-08-23)
+
+1. **Reseñar NO es obligatorio** para volver a reservar.
+2. **Nota real desde la primera reseña**, como Google. Sin reseñas: *"Nuevo"*.
+3. **Autor mostrado como nombre + inicial** ("Laura F."), como Google: identifica lo justo sin
+   exponer al cliente.
+4. **No hay reseña del jardinero al cliente.** Fuera de alcance.
+
+---
+
+## 4b. Decisiones anteriores (ya cerradas)
 
 1. **¿La reseña es obligatoria para volver a reservar?** Mi recomendación: **no**. Forzarla
    produce reseñas de relleno de 5★ que no informan a nadie.

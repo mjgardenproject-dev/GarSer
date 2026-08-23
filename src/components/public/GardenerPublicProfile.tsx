@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Star, MapPin, Leaf, Calendar } from 'lucide-react';
+import ReviewList from '../reviews/ReviewList';
 
 const GardenerPublicProfile: React.FC = () => {
   const { gardenerId } = useParams();
@@ -78,8 +79,11 @@ const GardenerPublicProfile: React.FC = () => {
               <span className="inline-flex items-center gap-1">
                 <Star className="w-4 h-4 text-yellow-500" />
                 {/* Sin reseñas no se finge un 5.0: se dice que aún no tiene valoraciones. */}
+                {/* Un decimal y coma decimal, como el bloque de reseñas de abajo: la columna
+                    `rating` es numeric(3,2) y en crudo mostraba "2.75" junto a un "2,8" en la
+                    misma pantalla, dos cifras distintas para el mismo dato. */}
                 {Number(profile?.total_reviews) > 0
-                  ? `${profile?.rating} (${profile?.total_reviews} ${Number(profile?.total_reviews) === 1 ? 'reseña' : 'reseñas'})`
+                  ? `${Number(profile?.rating).toFixed(1).replace('.', ',')} (${profile?.total_reviews} ${Number(profile?.total_reviews) === 1 ? 'reseña' : 'reseñas'})`
                   : 'Sin valoraciones todavía'}
               </span>
               <span className="inline-flex items-center gap-1">
@@ -117,6 +121,13 @@ const GardenerPublicProfile: React.FC = () => {
           {!profile?.is_available && (
             <p className="mt-2 text-sm text-amber-700">Este jardinero actualmente no está disponible. Aun así, podrás ver fechas futuras si las configura.</p>
           )}
+        </div>
+
+        {/* Reseñas. Esta pantalla es pública, así que se leen de la vista con el autor ya
+            enmascarado: el nombre completo del cliente no sale de la base de datos. */}
+        <div className="mt-8 pt-6 border-t border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Reseñas de clientes</h3>
+          <ReviewList gardenerId={gardenerId as string} gardenerName={profile?.full_name} />
         </div>
       </div>
     </div>

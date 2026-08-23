@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, MapPin, Clock, User, MessageCircle, Bell } from 'lucide-react';
+import { Calendar, MapPin, Clock, User, MessageCircle, Bell, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -11,6 +11,7 @@ import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
 import BookingRequestsManager from './BookingRequestsManager';
+import GardenerReviews from './GardenerReviews';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
 import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
@@ -29,9 +30,9 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   // Evitar bloquear toda la UI: estado de carga sólo para reservas
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const isFetchingRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile'>(() => {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews'>(() => {
     const savedTab = localStorage.getItem('gardener_active_tab');
-    return (savedTab as 'dashboard' | 'requests' | 'availability' | 'profile') || 'dashboard';
+    return (savedTab as 'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews') || 'dashboard';
   });
 
   useEffect(() => {
@@ -315,6 +316,20 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   if (!pending && activeTab === 'profile') {
     return <ProfileSettings onBack={() => setActiveTab('dashboard')} />;
   }
+  if (!pending && activeTab === 'reviews') {
+    return (
+      <div className="max-w-full sm:max-w-3xl mx-auto px-2.5 py-4 sm:p-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab('dashboard')}
+          className="mb-4 text-sm text-gray-600 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded"
+        >
+          ← Volver al panel
+        </button>
+        <GardenerReviews />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
@@ -382,6 +397,15 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
               >
                 <Calendar className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
                 <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Reservas</span>
+              </button>
+              <button
+                onClick={pending ? undefined : () => setActiveTab('reviews')}
+                className={`flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white ${pending ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 hover:shadow'} transition-colors`}
+                aria-label="Ir a Reseñas"
+                disabled={pending}
+              >
+                <Star className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
+                <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Reseñas</span>
               </button>
               {/* Botón de flyer eliminado */}
               </div>

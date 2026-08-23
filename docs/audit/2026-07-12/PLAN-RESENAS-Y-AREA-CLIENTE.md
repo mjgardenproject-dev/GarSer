@@ -132,7 +132,7 @@ autofinalización a 24 h) por ir en el trigger. El **email** solo cubre la manua
 autofinalización es SQL puro y no puede invocar una edge function sin meter la clave de servicio
 en la base de datos. → **Fase 2b** pendiente si se quiere cobertura total por email.
 
-### Fase 3 — Ver las reseñas 🔴 *(cierra F1, F2, F3)*
+### Fase 3 — Ver las reseñas 🔴 ✅ **HECHA** (2026-08-23) *(cierra F1, F2, F3)*
 
 - Componente **`ReviewList`** reutilizable, estilo ficha de Google: nota, número, desglose por
   estrellas, lista con fecha, texto y la respuesta del jardinero debajo.
@@ -144,6 +144,16 @@ en la base de datos. → **Fase 2b** pendiente si se quiere cobertura total por 
 
 **Riesgo:** medio (toca ProvidersPage, que es crítica). Mitigación: el panel es un componente
 nuevo montado en un desplegable; si falla, las estrellas siguen como hoy.
+
+**Añadido no previsto:** la vista `public_gardener_reviews`. Desde el paso 1 `profiles` está
+cerrada a `anon`, así que resolver el autor desde el navegador obligaría a reabrir esa fuga de
+PII. La vista **enmascara en el servidor**: el nombre completo del cliente nunca sale de la base
+de datos, y sale ya como "Laura F.". Las penalizaciones automáticas salen firmadas como "GarSer".
+
+**Verificado en local, sin sesión iniciada:** media 2,8 con su desglose por estrellas, "Laura F."
+con la respuesta del profesional debajo, y la penalización con su distintivo. En el panel del
+jardinero, "Editar respuesta" en las de cliente y **ninguna acción** en la penalización, que no
+la escribió nadie a quien responder.
 
 ### Fase 4 — Área de cliente 🟠 *(cierra F8)*
 

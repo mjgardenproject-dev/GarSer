@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBooking } from "../../contexts/BookingContext";
-import { ChevronLeft, Star, AlertTriangle, Sprout, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Star, AlertTriangle, Sprout, RefreshCw, X } from 'lucide-react';
+import ReviewList from '../../components/reviews/ReviewList';
 import { supabase } from '../../lib/supabase';
 import {
   buildAuthoritativeQuoteSnapshot,
@@ -27,6 +28,8 @@ interface ProviderProfile { user_id: string; full_name: string; avatar_url?: str
 
 const ProvidersPage: React.FC = () => {
   const { bookingData, setBookingData, setCurrentStep } = useBooking();
+  /** Profesional cuyas reseñas se están mostrando en el panel, o null si está cerrado. */
+  const [reviewsFor, setReviewsFor] = useState<ProviderProfile | null>(null);
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<string>(bookingData.providerId);
@@ -797,10 +800,30 @@ const ProvidersPage: React.FC = () => {
                       )}
 
                       {!isPartial && (
-                          <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                          <div className="text-xs text-gray-500 flex items-center gap-1 mt-1 flex-wrap">
                             <Star className="w-3 h-3 text-yellow-400 fill-current" />
                             {p.rating_average ? Number(p.rating_average).toFixed(1) : 'Nuevo'}
                             {typeof p.rating_count === 'number' && ` (${p.rating_count})`}
+                            {/* Las estrellas solas no explican nada: para decidir a quién metes en
+                                tu casa hace falta leer QUÉ dijeron. `stopPropagation` porque la
+                                tarjeta entera es un botón que selecciona al profesional. */}
+                            {Number(p.rating_count) > 0 && (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(event) => { event.stopPropagation(); setReviewsFor(p); }}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    setReviewsFor(p);
+                                  }
+                                }}
+                                className="underline text-green-700 hover:text-green-800 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded"
+                              >
+                                ver reseñas
+                              </span>
+                            )}
                           </div>
                       )}
                     </div>
@@ -984,6 +1007,37 @@ const ProvidersPage: React.FC = () => {
             : []
         }
       />
+
+      {/* Panel de reseñas. Se monta como hoja inferior en móvil: es donde se lee, y no roba
+          el sitio a la lista de profesionales. */}
+      {reviewsFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Reseñas de ${reviewsFor.full_name}`}
+        >
+          <div className="absolute inset-0 bg-black/40" onClick={() => setReviewsFor(null)} />
+          <div className="relative w-full sm:max-w-lg max-h-[85vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="text-base font-semibold text-gray-900 truncate">
+                Reseñas de {reviewsFor.full_name}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setReviewsFor(null)}
+                aria-label="Cerrar reseñas"
+                className="p-1.5 rounded-lg hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+              >
+                <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4">
+              <ReviewList gardenerId={reviewsFor.user_id} gardenerName={reviewsFor.full_name} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

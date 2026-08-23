@@ -15,6 +15,7 @@ import { fetchBookingServiceDetails, type BookingServiceInput } from '../../util
 import ServiceDetailCard from './ServiceDetailCard';
 import PhotoGallery from '../common/PhotoGallery';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
+import { fetchProfileNames } from '../../utils/profileNames';
 
 interface GardenerBookingItem extends Booking {
   services?: { name: string } | null;
@@ -55,16 +56,12 @@ const GardenerBookings: React.FC = () => {
 
       if (bookingsData && bookingsData.length > 0) {
         const clientIds = [...new Set(bookingsData.map((b: any) => b.client_id))];
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, full_name, phone')
-          .in('id', clientIds);
-
-        if (profilesError) throw profilesError;
+        // Ver la nota de fetchProfileNames: la consulta por `id` no resolvia ningun nombre.
+        const profilesMap = await fetchProfileNames(clientIds);
 
         const bookingsWithProfiles = bookingsData.map((b: any) => ({
           ...b,
-          client_profile: profilesData?.find((p: any) => p.id === b.client_id) || null
+          client_profile: profilesMap[b.client_id] || null
         }));
 
         const mediaMap = await fetchBookingMediaMap(

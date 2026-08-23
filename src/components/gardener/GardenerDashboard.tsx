@@ -17,6 +17,7 @@ import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionSer
 import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
 import { cancelBooking, canCompleteBooking, getBookingServiceEnd } from '../../utils/bookingLifecycleService';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
+import { fetchProfileNames } from '../../utils/profileNames';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -128,22 +129,12 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       if (bookingsData && bookingsData.length > 0) {
         const clientIds = [...new Set(bookingsData.map((booking: any) => booking.client_id))];
         
-        const { data: profilesData, error: profilesError } = await withTimeout(
-          supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', clientIds)
-          , 10000) as { data: any[] | null, error: any };
+        // Ver la nota de fetchProfileNames: la consulta por `id` no resolvia ningun nombre.
+        const profilesMap = await withTimeout(fetchProfileNames(clientIds), 10000);
 
-        if (profilesError) {
-          console.error('❌ fetchBookings profiles error:', profilesError);
-          throw profilesError;
-        }
-
-        // Combinar los datos
         const bookingsWithProfiles = bookingsData.map((booking: any) => ({
           ...booking,
-          client_profile: profilesData?.find((profile: any) => profile.id === booking.client_id) || null
+          client_profile: profilesMap[booking.client_id] || null
         }));
 
         const mediaMap = await fetchBookingMediaMap(

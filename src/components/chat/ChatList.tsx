@@ -7,6 +7,7 @@ import { format, parseISO, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from './ChatWindow';
 import { fetchChatOverview } from '../../utils/chatService';
+import { fetchProfileNames } from '../../utils/profileNames';
 
 interface ChatItem {
   booking_id: string;
@@ -93,14 +94,12 @@ const ChatList: React.FC = () => {
       const uniqueUserIds = Array.from(new Set(rows.flatMap(b => [b.client_id, b.gardener_id]).filter(Boolean)));
       let namesMap: Record<string, string> = {};
       if (uniqueUserIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', uniqueUserIds as string[]);
-        namesMap = (profilesData || []).reduce((acc: Record<string, string>, p: any) => {
-          if (p?.id) acc[p.id] = p.full_name || '';
-          return acc;
-        }, {});
+        // Ver la nota de fetchProfileNames: por `id` no resolvia ninguno, asi que el chat
+        // mostraba siempre el generico en vez del nombre de la otra parte.
+        const profilesMap = await fetchProfileNames(uniqueUserIds as string[]);
+        namesMap = Object.fromEntries(
+          Object.entries(profilesMap).map(([id, profile]) => [id, profile.full_name || ''])
+        );
       }
 
       const items: ChatItem[] = rows.map((booking) => {

@@ -78,10 +78,14 @@ export async function fetchParticipants(bookingId: string): Promise<ChatParticip
   if (ids.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name')
-      .in('id', ids);
-    (profiles || []).forEach((p: { id: string; full_name: string | null }) => {
-      if (p.id) names[p.id] = p.full_name || 'Usuario';
+      .select('id, user_id, full_name')
+      .or(`id.in.(${ids.join(',')}),user_id.in.(${ids.join(',')})`);
+    // Se indexa por AMBAS claves para que resuelva tanto si el id que se busca es el de auth
+    // (`user_id`) como el de la propia fila (`id`).
+    (profiles || []).forEach((p: { id?: string; user_id?: string; full_name: string | null }) => {
+      const value = p.full_name || 'Usuario';
+      if (p.user_id) names[p.user_id] = value;
+      if (p.id && !names[p.id]) names[p.id] = value;
     });
   }
   return { clientId: booking.client_id, gardenerId: booking.gardener_id, names };

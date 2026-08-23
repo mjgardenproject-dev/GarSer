@@ -97,3 +97,48 @@ describe('paridad manual vs IA en el presupuesto autoritativo', () => {
     expect(quoteFor('4-10', { hasPhytosanitary: true }).totalPrice).toBe(108);
   });
 });
+
+/**
+ * Política de negocio decidida por el usuario (2026-08-22): el tratamiento fitosanitario
+ * viene ACTIVADO de serie en los dos caminos (fotos y manual), porque tras la poda los
+ * cortes son la vía de entrada del picudo rojo. El cliente puede quitarlo, con aviso.
+ * Se cobra la tarifa de CADA jardinero: nunca un importe estándar.
+ */
+describe('fitosanitario: incluido de serie y a tarifa de cada jardinero', () => {
+  it('el importe sale de la config del profesional, no de un valor fijo', () => {
+    const barato = { ...CONFIG, phytosanitary: 10 };
+    const caro = { ...CONFIG, phytosanitary: 40 };
+    const grupo = { id: 'g1', species: 'Phoenix canariensis', height: '4-10', quantity: 1, state: 'normal', hasPhytosanitary: true };
+    const precio = (cfg: unknown) =>
+      buildAuthoritativeBookingQuote({
+        bookingData: { palmGroups: [grupo], wasteRemoval: false } as any,
+        providerConfig: cfg,
+      }).totalPrice;
+
+    expect(precio(barato)).toBe(100); // 90 + 10
+    expect(precio(caro)).toBe(130);   // 90 + 40
+  });
+
+  it('un jardinero sin tarifa configurada no cobra el extra aunque venga activado', () => {
+    const sinTarifa = { ...CONFIG, phytosanitary: 0 };
+    const total = buildAuthoritativeBookingQuote({
+      bookingData: {
+        palmGroups: [{ id: 'g1', species: 'Phoenix canariensis', height: '4-10', quantity: 1, state: 'normal', hasPhytosanitary: true }],
+        wasteRemoval: false,
+      } as any,
+      providerConfig: sinTarifa,
+    }).totalPrice;
+    expect(total).toBe(90);
+  });
+
+  it('una especie que no admite el tratamiento nunca lo cobra', () => {
+    const total = buildAuthoritativeBookingQuote({
+      bookingData: {
+        palmGroups: [{ id: 'g1', species: 'Roystonea regia', height: '>6', quantity: 1, state: 'normal', hasPhytosanitary: true }],
+        wasteRemoval: false,
+      } as any,
+      providerConfig: { ...CONFIG, height_prices: { 'Roystonea regia': { '0-6': 55, '>6': 120 } } },
+    }).totalPrice;
+    expect(total).toBe(120);
+  });
+});

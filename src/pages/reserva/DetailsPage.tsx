@@ -778,6 +778,12 @@ const DetailsPage: React.FC = () => {
   const isManualActive = manualChoiceAvailable && dataInputMode === 'manual';
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
+  /**
+   * Se incrementa SOLO cuando los extras se cambian desde la tarjeta. Va en el `key` del
+   * asistente para remontarlo y que relea `initialItems`: sus toggles son estado interno y,
+   * sin esto, seguían mostrando (y reenviando) el valor anterior.
+   */
+  const [manualWizardSeed, setManualWizardSeed] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -1515,14 +1521,45 @@ const DetailsPage: React.FC = () => {
       }
   };
 
+  /**
+   * Extras que el cliente puede tocar TANTO en la tarjeta como en la encuesta manual.
+   * Son el mismo dato en dos sitios, así que hay que mantenerlos en sincronía: si solo se
+   * escribe en el grupo, un reenvío de la encuesta los reconstruye desde sus respuestas y
+   * borra lo que el cliente acababa de activar (el cepillado de tronco no llegaba a cobrarse).
+   */
+  const PALM_SHARED_EXTRA_KEYS = ['hasPhytosanitary', 'hasTrunkPeeling', 'hasAccessDifficulty'] as const;
+
+  const syncManualDraftExtras = (groupIndex: number, updates: Partial<PalmGroup>) => {
+      // Nota: además de escribir en el borrador hay que forzar que el asistente se resiembre
+      // (ver `manualWizardSeed`); si no, sigue con el valor que leyó al montarse y al reenviar
+      // la encuesta vuelve a pisar el extra recién activado.
+      const draft = manualDraft ?? persistedManualDraft;
+      if (!draft || !Array.isArray(draft.items) || groupIndex < 0 || groupIndex >= draft.items.length) return;
+
+      const touched = PALM_SHARED_EXTRA_KEYS.filter((key) => key in updates);
+      if (touched.length === 0) return;
+
+      const nextItems = draft.items.map((item, index) => {
+          if (index !== groupIndex) return item;
+          const patch: Record<string, unknown> = {};
+          touched.forEach((key) => { patch[key] = Boolean((updates as Record<string, unknown>)[key]); });
+          return { ...item, ...patch };
+      });
+      handleManualDraftChange({ ...draft, items: nextItems });
+      setManualWizardSeed((seed) => seed + 1);
+  };
+
   const updatePalmGroup = (groupId: string, updates: Partial<PalmGroup>) => {
       const n = [...(bookingData.palmGroups || [])];
-      const g = n.find(x => x.id === groupId);
-      if (g) {
-          Object.assign(g, updates);
-          Object.assign(g, applyPalmSpeciesRules(g));
-          updatePalmPricing(n);
-      }
+      const idx = n.findIndex(x => x.id === groupId);
+      if (idx === -1) return;
+      const g = n[idx];
+      Object.assign(g, updates);
+      Object.assign(g, applyPalmSpeciesRules(g));
+      // Los grupos manuales se construyen por índice desde `draft.items`, así que el índice
+      // del grupo es el de su respuesta en la encuesta.
+      syncManualDraftExtras(idx, updates);
+      updatePalmPricing(n);
   };
 
   const removePhoto = async (indexToRemove: number, includeLinkedResults = true) => {
@@ -1745,7 +1782,12 @@ const DetailsPage: React.FC = () => {
       };
       commitDetailsPatch(fullPatch, { saveAfterCommit: true });
       if (activeServiceId) {
-        updateServiceData(activeServiceId, { ...fullPatch, manualDraft: null });
+        // El borrador se CONSERVA (antes se ponía a null). Al volver desde la pantalla de
+        // jardineros, el asistente reaparecía vacío en la primera pregunta y la página se
+        // quedaba sin ningún botón de continuar: el cliente solo podía seguir rehaciendo la
+        // encuesta entera, y al reenviarla se sobrescribían los extras que hubiera tocado
+        // en la tarjeta. Conservarlo deja sus datos a la vista y editables.
+        updateServiceData(activeServiceId, { ...fullPatch, manualDraft: payload });
       }
 
       reportBookingEvent('info', {
@@ -2003,12 +2045,12 @@ const DetailsPage: React.FC = () => {
                 quantity: 1, // Default to 1, user must confirm
                 state: normalizePalmState(primary.estado),
                 wasteRemoval: true,
-                // El tratamiento fitosanitario es un EXTRA de pago: lo elige el cliente con su
-                // interruptor, apagado por defecto (igual que en el camino manual). Antes se
-                // activaba solo si la especie lo admitía, y el presupuesto salía con un
-                // recargo que el cliente no había pedido y que no cuadraba con la tarifa
-                // configurada por el jardinero.
-                hasPhytosanitary: false,
+                // Activado de serie cuando la especie lo admite: tras podar, los cortes son la
+                // vía de entrada del picudo rojo, así que se ofrece incluido y el cliente lo
+                // quita si no lo quiere (con aviso al desactivarlo). Se cobra la tarifa de
+                // CADA jardinero (`config.phytosanitary`); quien no la tenga configurada no
+                // cobra nada por este concepto.
+                hasPhytosanitary: supportsPhytosanitaryForSpecies(speciesMapped),
                 photoUrl: originalUrl || undefined,
                 imageIndex: globalIndex,
                 analysisLevel: primary.nivel_analisis,
@@ -3639,11 +3681,12 @@ const DetailsPage: React.FC = () => {
           group.observations = commonAnalysis.observations;
           (group as any).isFailed = commonAnalysis.isFailed;
           (group as any).analyzedIndices = commonAnalysis.analyzedIndices;
-          // Extra de pago: se conserva lo que el cliente ya hubiera elegido con su interruptor
-          // (apagado si la especie no lo admite), nunca se activa solo. Antes un re-análisis
-          // lo encendía y el precio subía sin que el cliente hubiera tocado nada.
+          // Re-análisis: se RESPETA lo que el cliente haya decidido. Viene activado de serie
+          // al crear el grupo, así que aquí solo hay que no pisarlo: si lo desactivó a
+          // propósito, un nuevo análisis no puede volver a encendérselo (y subirle el precio
+          // sin que él toque nada). `?? true` cubre los grupos previos a este campo.
           (group as any).hasPhytosanitary =
-            supportsPhytosanitaryForSpecies(group.species) && Boolean((group as any).hasPhytosanitary);
+            supportsPhytosanitaryForSpecies(group.species) && ((group as any).hasPhytosanitary ?? true);
           (group as any).aiDetectedCount = detectedPalms.length;
           (group as any).aiDetectedSummary = summarizeDetectedPalms(detectedPalms);
           // Datos de la propuesta IA para confirmación del cliente: altura en metros
@@ -4603,6 +4646,7 @@ const analyzeTreeGroup = async (id: string) => {
 
         {isManualActive && manualSurvey ? (
           <ManualEntryWizard
+            key={`manual-wizard-${activeServiceId}-${manualWizardSeed}`}
             survey={manualSurvey}
             submitting={manualSubmitting}
             initialItems={manualDraft?.items ?? persistedManualDraft?.items}

@@ -155,7 +155,7 @@ con la respuesta del profesional debajo, y la penalización con su distintivo. E
 jardinero, "Editar respuesta" en las de cliente y **ninguna acción** en la penalización, que no
 la escribió nadie a quien responder.
 
-### Fase 4 — Área de cliente 🟠 *(cierra F8)*
+### Fase 4 — Área de cliente 🟠 ✅ **HECHA** (2026-08-23) *(cierra F8)*
 
 Reescritura de `ClientBookingLauncher` con tu jerarquía:
 
@@ -168,6 +168,17 @@ Reescritura de `ClientBookingLauncher` con tu jerarquía:
    - Sin ninguna: *"Todavía no tienes ninguna reserva"*.
 
 **Riesgo:** bajo. Pantalla nueva que sustituye a una de 44 líneas.
+
+**Bloqueante encontrado al construirla — sexta aparición del mismo fallo.** Media docena de
+pantallas consultaban `profiles` por la columna `id` pasándole el id de **auth**, que vive en
+`user_id`. Cero filas: el cliente no veía a su jardinero, el jardinero no veía a su cliente, el
+chat mostraba genéricos y **"Mi Cuenta" cargaba vacía para todo el mundo**. Como todas caían a
+un texto por defecto, parecía que "no había nombre" en lugar de un error. Centralizado en
+`fetchProfileNames`, que busca por **ambas** columnas porque el histórico de migraciones usó las
+dos como clave contra `auth.uid()`.
+
+El botón **"volver a reservar" queda deshabilitado** hasta la Fase 5: repetir tiene que
+recalcular el precio contra la configuración vigente, no copiar el importe antiguo.
 
 ### Fase 5 — Volver a reservar 🟠
 

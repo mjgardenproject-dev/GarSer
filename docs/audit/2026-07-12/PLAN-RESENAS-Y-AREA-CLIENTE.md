@@ -211,12 +211,26 @@ precio.
 palmeras con fitosanitario calculadas contra la tarifa vigente. Continuar bloqueado hasta marcar
 la confirmación. Un tercero pidiendo el payload de una reserva ajena: **403**.
 
-### Fase 6 — Pulido de confianza 🟡
+### Fase 6 — Pulido de confianza 🟡 ✅ **HECHA** (2026-08-23)
 
-- Etiqueta **"Contratado anteriormente"** en ProvidersPage.
-- Botón **"Reseñas"** en el chat, para ambas partes.
-- **Consolidar las cuatro columnas de nota** en un par (F7).
-- Vista de admin para **ocultar** una reseña con motivo.
+- Etiqueta **"Contratado anteriormente"** en ProvidersPage. ✅
+- Botón **"Reseñas"** en el chat, para ambas partes. ✅
+- **Consolidar las cuatro columnas de nota** en un par (F7). ✅ *(los lectores usan ya
+  `rating_average`/`rating_count`; el par legacy se mantiene sincronizado por el trigger hasta
+  poder retirarlo sin riesgo — cambiar lectores y borrar columnas en la misma entrega es como se
+  provoca una caída en producción).*
+- Vista de admin para **ocultar** una reseña con motivo. ✅
+
+**AGUJERO GRAVE encontrado al consolidar.** `gardener_profiles` no tenía protección por columna,
+así que el jardinero —que legítimamente actualiza su perfil— **podía escribir su propia nota**.
+Y no era teórico: `ProfileSettings` enviaba `rating: gardenerProfile?.rating || 5.0` en cada
+guardado, de modo que un profesional sin reseñas **se autoasignaba un 5,0 con solo pulsar
+"guardar"**.
+
+Todo el trabajo de las fases 1-3 —que nadie pueda inflar su reputación— se caía por ahí. Cerrado
+con grants por columna, igual que el paso 2 hizo con `bookings.total_price`: RLS decide sobre la
+FILA; para decidir sobre la COLUMNA hacen falta permisos por columna. Verificado: el jardinero
+intentando ponerse un 5,0 y 99 reseñas → **403**; editando su biografía → **200**.
 
 ---
 
@@ -244,7 +258,14 @@ la confirmación. Un tercero pidiendo el payload de una reserva ajena: **403**.
 
 ---
 
-## 5. Orden recomendado
+## 5. Estado final
+
+**Las seis fases están hechas** (2026-08-23). El sistema de reseñas está completo: se piden, se
+ven, llegan al profesional, se responden, se moderan y no se pueden falsear.
+
+---
+
+## 5b. Orden recomendado (histórico)
 
 **Fases 1 → 2 → 3** son las que arreglan lo que reportaste, y las tres juntas ya dan un sistema
 de reseñas completo y usable. Las **4 → 5 → 6** son la mejora del área de cliente y se pueden

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useBooking } from "../../contexts/BookingContext";
-import { ChevronLeft, Star, AlertTriangle, Sprout, RefreshCw, X } from 'lucide-react';
+import { ChevronLeft, Star, AlertTriangle, Sprout, RefreshCw, X, BadgeCheck } from 'lucide-react';
 import ReviewList from '../../components/reviews/ReviewList';
 import { supabase } from '../../lib/supabase';
 import {
@@ -30,6 +30,38 @@ const ProvidersPage: React.FC = () => {
   const { bookingData, setBookingData, setCurrentStep } = useBooking();
   /** Profesional cuyas reseñas se están mostrando en el panel, o null si está cerrado. */
   const [reviewsFor, setReviewsFor] = useState<ProviderProfile | null>(null);
+  /**
+   * Profesionales que este cliente ya ha contratado antes. Haber trabajado con alguien y estar
+   * contento es la señal más fuerte que tiene el cliente para elegir, más que la nota media.
+   */
+  const [previouslyHired, setPreviouslyHired] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        // La sesión se lee aquí y no con `useAuth` a propósito: esta pantalla se renderiza
+        // también para visitantes sin sesión (el funnel anónimo es deliberado) y sus tests no
+        // montan el proveedor de auth. Un dato decorativo no debe poder tumbar la pantalla
+        // donde se elige profesional.
+        const { data: session } = await supabase.auth.getUser();
+        const clientId = session?.user?.id;
+        if (!clientId || !alive) return;
+
+        // Solo COMPLETADAS: una reserva cancelada o rechazada no es "haberle contratado".
+        const { data } = await supabase
+          .from('bookings')
+          .select('gardener_id')
+          .eq('client_id', clientId)
+          .eq('status', 'completed');
+        if (!alive) return;
+        setPreviouslyHired(new Set((data || []).map((row: { gardener_id: string }) => row.gardener_id)));
+      } catch {
+        // Sin etiqueta: el resto de la pantalla sigue funcionando igual.
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<string>(bookingData.providerId);
@@ -797,6 +829,13 @@ const ProvidersPage: React.FC = () => {
                               ))}
                               {coverage.missingGroups.length > 2 && <div>+ {coverage.missingGroups.length - 2} más…</div>}
                           </div>
+                      )}
+
+                      {previouslyHired.has(p.user_id) && (
+                          <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-800 border border-green-200">
+                            <BadgeCheck className="w-3 h-3" aria-hidden="true" />
+                            Contratado anteriormente
+                          </span>
                       )}
 
                       {!isPartial && (

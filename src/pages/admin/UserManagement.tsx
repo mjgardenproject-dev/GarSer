@@ -1,6 +1,7 @@
 import React from 'react';
 import ApplicationsAdmin from '../../components/admin/ApplicationsAdmin';
 import RoleMonitor from '../../components/admin/RoleMonitor';
+import ReviewModeration from '../../components/admin/ReviewModeration';
 
 const UserManagement: React.FC = () => {
   return (
@@ -11,6 +12,15 @@ const UserManagement: React.FC = () => {
         </h2>
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <ApplicationsAdmin />
+        </div>
+      </section>
+
+      <section aria-labelledby="reviews-heading">
+        <h2 id="reviews-heading" className="text-xl font-bold text-gray-900 mb-4 pb-2 border-b">
+          Reseñas
+        </h2>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <ReviewModeration />
         </div>
       </section>
 

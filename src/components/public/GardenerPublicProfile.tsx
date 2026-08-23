@@ -22,7 +22,9 @@ const GardenerPublicProfile: React.FC = () => {
         }
         const { data, error } = await supabase
           .from('public_gardener_directory')
-          .select('user_id, full_name, avatar_url, rating, total_reviews, services, max_distance, description, is_available')
+          // `rating_average`/`rating_count` es el par canonico. `rating`/`total_reviews` son
+          // legacy: duplican el dato y el trigger los mantiene sincronizados hasta retirarlos.
+          .select('user_id, full_name, avatar_url, rating_average, rating_count, services, max_distance, description, is_available')
           .eq('user_id', gardenerId)
           .maybeSingle();
 
@@ -82,8 +84,8 @@ const GardenerPublicProfile: React.FC = () => {
                 {/* Un decimal y coma decimal, como el bloque de reseñas de abajo: la columna
                     `rating` es numeric(3,2) y en crudo mostraba "2.75" junto a un "2,8" en la
                     misma pantalla, dos cifras distintas para el mismo dato. */}
-                {Number(profile?.total_reviews) > 0
-                  ? `${Number(profile?.rating).toFixed(1).replace('.', ',')} (${profile?.total_reviews} ${Number(profile?.total_reviews) === 1 ? 'reseña' : 'reseñas'})`
+                {Number(profile?.rating_count) > 0
+                  ? `${Number(profile?.rating_average).toFixed(1).replace('.', ',')} (${profile?.rating_count} ${Number(profile?.rating_count) === 1 ? 'reseña' : 'reseñas'})`
                   : 'Sin valoraciones todavía'}
               </span>
               <span className="inline-flex items-center gap-1">

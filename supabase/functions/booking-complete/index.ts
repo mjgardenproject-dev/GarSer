@@ -157,6 +157,33 @@ Deno.serve(async (req) => {
       if (updateError) {
         throw updateError;
       }
+
+      // Email al cliente pidiendole la valoracion. Se dispara AQUI y no en el trigger porque
+      // SQL no puede invocar una edge function sin pg_net, y meter la clave de servicio en la
+      // base de datos para lograrlo es peor negocio que este alcance parcial.
+      //
+      // ALCANCE: cubre la finalizacion MANUAL. Las autofinalizadas a las 24 h (paso 8C, puro
+      // SQL) reciben el aviso del CHAT -que si cubre las dos vias por ir en el trigger- pero
+      // todavia no el email. Anotado en el plan como Fase 2b.
+      //
+      // No bloquea la respuesta: si el email falla, la reserva ya esta completada y eso es lo
+      // que importa. Pero se registra, porque un email que no sale sin dejar rastro es
+      // exactamente el fallo que tuvimos durante semanas.
+      try {
+        const { error: reviewEmailError } = await admin.functions.invoke('send-email-notification', {
+          body: { type: 'booking_review_request', bookingId: normalizedBookingId },
+        });
+        if (reviewEmailError) {
+          console.error(
+            `[booking-complete] No se pudo pedir la valoracion por email | booking ${normalizedBookingId} | ${reviewEmailError.message}`,
+          );
+        }
+      } catch (reviewEmailException) {
+        console.error(
+          `[booking-complete] Excepcion al pedir la valoracion por email | booking ${normalizedBookingId} |`,
+          reviewEmailException,
+        );
+      }
     }
 
     const { data: mediaRows, error: mediaError } = await admin

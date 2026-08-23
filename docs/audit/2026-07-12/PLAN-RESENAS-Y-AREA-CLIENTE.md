@@ -102,7 +102,7 @@ Cada fase deja el sistema **coherente y desplegable**. Se pueden parar entre fas
 directo. RLS decide sobre la FILA, no sobre la columna: con permiso de UPDATE sobre las reseñas
 dirigidas a él, un jardinero podría cambiarse la propia nota.
 
-### Fase 2 — Pedir la reseña 🔴 *(cierra F4)*
+### Fase 2 — Pedir la reseña 🔴 ✅ **HECHA** (2026-08-23) *(cierra F4)*
 
 - Extender el trigger de mensajes de sistema para que, al pasar a `completed`, publique en el
   chat: **"Servicio finalizado. ¿Nos dejas tu valoración?"**.
@@ -111,6 +111,26 @@ dirigidas a él, un jardinero podría cambiarse la propia nota.
 - Email al cliente pidiendo la valoración (reutiliza `send-email-notification`).
 
 **Riesgo:** bajo, encapsulado en una función SQL que ya existe.
+
+**Bug preexistente encontrado al probarla — y grave.** `chat_display_name()` buscaba el perfil
+por `profiles.id`, pero recibe el id del usuario de auth, que vive en `profiles.user_id`
+(el mismo fallo que tenía el Monitor de Roles). No devolvía ninguna fila → `NULL` → y en SQL
+**concatenar con NULL da NULL**, así que el mensaje entero se volvía nulo y el helper lo
+descartaba en su guarda de texto vacío: **sin error y sin rastro**.
+
+Llevaban perdiéndose todos los mensajes que nombran al profesional:
+
+- *"X ha aceptado la reserva"*
+- *"X propone un nuevo precio del servicio"* — **el aviso de un cambio de dinero**
+- y el de servicio finalizado que añade esta fase
+
+Los que no lo nombran (solicitud, cancelación, precio aceptado/rechazado) sí funcionaban, que es
+justo lo que hacía el fallo tan difícil de ver: el chat "funcionaba".
+
+**Alcance del email:** el aviso del **chat cubre las dos vías** de finalización (manual y
+autofinalización a 24 h) por ir en el trigger. El **email** solo cubre la manual, porque la
+autofinalización es SQL puro y no puede invocar una edge function sin meter la clave de servicio
+en la base de datos. → **Fase 2b** pendiente si se quiere cobertura total por email.
 
 ### Fase 3 — Ver las reseñas 🔴 *(cierra F1, F2, F3)*
 

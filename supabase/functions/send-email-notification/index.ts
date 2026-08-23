@@ -8,6 +8,7 @@
 //   · booking_accepted                       → al cliente: el jardinero aceptó su reserva
 //   · booking_rejected                       → al cliente: la solicitud no fue aceptada
 //   · booking_cancelled                      → a cualquiera de las partes: reserva cancelada
+//   · booking_review_request                 → al cliente: servicio finalizado, pedimos valoracion
 //
 // Secretos (Supabase Secrets): SMTP_USER (remitente verificado en Brevo), SMTP_PASS (api-key),
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
@@ -28,6 +29,8 @@ type EmailType =
   | 'booking_accepted'
   | 'booking_rejected'
   | 'booking_cancelled'
+  // Al finalizar el servicio: se le pide al cliente su valoracion.
+  | 'booking_review_request'
   // Cambio de precio (paso 8B). Hasta ahora este flujo movía dinero sin avisar a nadie: sin
   // notificaciones in-app, el email es el ÚNICO canal, así que el cliente solo se enteraba
   // de que le habían cambiado el precio si entraba por su cuenta al chat o a Mis reservas.
@@ -65,7 +68,7 @@ interface EmailPayload {
 }
 
 const BOOKING_EMAIL_TYPES = new Set<EmailType>([
-  'booking_accepted', 'booking_rejected', 'booking_cancelled',
+  'booking_accepted', 'booking_rejected', 'booking_cancelled', 'booking_review_request',
   'booking_price_change_proposed', 'booking_price_change_accepted',
   'booking_price_change_rejected', 'booking_price_change_expired',
 ]);
@@ -270,6 +273,17 @@ Deno.serve(async (req) => {
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
         footerNote: data?.reason ? `Motivo: ${data.reason}` : bookingFeeNote,
+      };
+    } else if (type === 'booking_review_request') {
+      subject = '¿Qué tal ha ido el servicio?';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `${escapeHtml(counterpartName || 'El profesional')} ha dado por finalizado el servicio. Tu valoración ayuda a otros clientes a elegir bien, y al profesional a que le encuentren.`,
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Dejar mi valoración', url: `${BRAND.site}/bookings` },
+        footerNote: 'Solo te llevará un minuto. Puedes editarla durante las 48 horas siguientes.',
       };
     } else if (type === 'booking_price_change_proposed') {
       subject = 'El profesional propone un nuevo precio para tu reserva';

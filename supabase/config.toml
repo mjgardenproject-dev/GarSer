@@ -17,3 +17,32 @@ verify_jwt = false
 # que el llamante presenta la clave de servicio (requireInternalServiceAuth).
 [functions.booking-confirmation-email]
 verify_jwt = false
+
+# --------------------------------------------------------------------------------------
+# Las cuatro de abajo NO estaban declaradas, asi que al desplegarlas recibian el
+# verify_jwt=true por defecto y el gateway las rechazaba con 401 ANTES de ejecutarlas
+# (mismo fallo que dejo los emails de reserva sin enviarse durante semanas: con las claves
+# modernas `sb_secret_...`, que no son JWT, el gateway no las acepta).
+#
+# Esto NO afloja la seguridad: cada una valida al llamante por si misma, que es donde debe
+# estar la puerta. Se anotan aqui una por una para que quede explicito.
+# --------------------------------------------------------------------------------------
+
+# Exige un USUARIO real (la clave anon es publica: tenerla no es identidad) y aplica cuota
+# por usuario antes de llamar a Gemini. Ver resolveCallerUserId + consume_ai_pricing_quota.
+[functions.ai-pricing-estimator]
+verify_jwt = false
+
+# La invoca booking-payment con la clave de servicio para el email de cancelacion: con
+# verify_jwt=true ese aviso se perdia en silencio. Valida internamente que el llamante sea
+# un servicio interno, un admin, o parte de la reserva.
+[functions.send-email-notification]
+verify_jwt = false
+
+# Valida propietario y estado por su cuenta (admin.auth.getUser + guarda de fecha).
+[functions.booking-complete]
+verify_jwt = false
+
+# Valida al usuario por su cuenta (admin.auth.getUser).
+[functions.booking-manual-declaration]
+verify_jwt = false

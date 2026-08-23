@@ -180,7 +180,7 @@ dos como clave contra `auth.uid()`.
 El botón **"volver a reservar" queda deshabilitado** hasta la Fase 5: repetir tiene que
 recalcular el precio contra la configuración vigente, no copiar el importe antiguo.
 
-### Fase 5 — Volver a reservar 🟠
+### Fase 5 — Volver a reservar 🟠 ✅ **HECHA** (2026-08-23)
 
 - RPC `SECURITY DEFINER` que recupera `booking_quotes.input_payload` de una reserva del cliente
   (la tabla está cerrada a `service_role`, así que la puerta la guarda la función) y **precarga
@@ -192,6 +192,24 @@ recalcular el precio contra la configuración vigente, no copiar el importe anti
 
 **Riesgo:** medio (toca el flujo de dinero). Mitigación: no se reutiliza ningún importe; se
 genera un presupuesto nuevo por el camino de siempre.
+
+**Aclaración del usuario (2026-08-23):** el precio **no se recalcula "aparte"** — sencillamente
+no se toca. La RPC devuelve solo las características del trabajo y el funnel calcula en vivo en
+la pantalla de jardineros, como en cualquier reserva. Repetir es un **atajo de datos**, no de
+precio.
+
+**Dos cosas que se vieron al probarlo:**
+
+- **Las fotos no se restauran.** Caducan en una hora y, además, se **borran de Storage** al
+  completar la reserva. Restaurarlas dejaría imágenes rotas. Los *resultados* del análisis
+  (especie, altura, superficie, estado) sí se conservan: es lo que describe el trabajo.
+- **Forzar el modo manual era un error mío.** Parecía razonable —no hay fotos que analizar— pero
+  hace que el asistente arranque vacío y vuelva a preguntarlo todo, perdiendo justo lo que se
+  acaba de recuperar. Se conserva el modo original.
+
+**Verificado en local:** reserva original de 173,00 € → al repetirla, **381,00 €**, porque son 2
+palmeras con fitosanitario calculadas contra la tarifa vigente. Continuar bloqueado hasta marcar
+la confirmación. Un tercero pidiendo el payload de una reserva ajena: **403**.
 
 ### Fase 6 — Pulido de confianza 🟡
 

@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar, MapPin, Clock, MessageCircle, Star, PlayCircle, ListChecks, Plus, RotateCcw } from 'lucide-react';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { clearBookingResumeStorage, hasWizardResume } from '../../utils/bookingResumeStorage';
+import { clearBookingResumeStorage, hasWizardResume, writeBookingResume } from '../../utils/bookingResumeStorage';
+import { fetchRebookPayload } from '../../utils/rebookService';
+import { toast } from 'react-hot-toast';
 import {
   fetchClientBookingsOverview,
   type ClientBookingsOverview,
@@ -52,6 +54,40 @@ const ClientBookingLauncher = () => {
   const startNewBooking = () => {
     clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
     navigate('/reservar?start=1');
+  };
+
+  /**
+   * Repetir un servicio: precarga las características del anterior y deja al cliente en el paso
+   * de detalles para revisarlas. NO se arrastra ningún precio — lo calcula la pantalla de
+   * jardineros con las tarifas vigentes.
+   *
+   * Se siembra por el almacenamiento de borradores en vez de tocar el contexto: es la vía que
+   * el funnel ya usa para restaurar una reserva a medias, así que está probada y no añade
+   * cañería nueva a un flujo que mueve dinero.
+   */
+  const [rebooking, setRebooking] = useState<string | null>(null);
+
+  const handleRebook = async (bookingId: string) => {
+    if (!user?.id) return;
+    setRebooking(bookingId);
+    try {
+      const { payload, partial } = await fetchRebookPayload(bookingId);
+      clearBookingResumeStorage({ userId: user.id, flow: 'wizard', includeAnonFallback: true });
+      writeBookingResume(
+        'draft',
+        'wizard',
+        // Paso 2 = detalles: es donde están los datos y sus botones de editar.
+        { bookingData: payload, currentStep: 2 },
+        { userId: user.id },
+      );
+      if (partial) {
+        toast('Solo hemos podido recuperar la dirección y el servicio. Revisa el resto.', { icon: 'ℹ️' });
+      }
+      navigate('/reservar');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo repetir la reserva.');
+      setRebooking(null);
+    }
   };
 
   return (
@@ -142,7 +178,12 @@ const ClientBookingLauncher = () => {
                 </h3>
                 <div className="space-y-3">
                   {overview.reviewed.map((booking) => (
-                    <ReviewedCard key={booking.id} booking={booking} />
+                    <ReviewedCard
+                      key={booking.id}
+                      booking={booking}
+                      onRebook={() => void handleRebook(booking.id)}
+                      busy={rebooking === booking.id}
+                    />
                   ))}
                 </div>
               </div>
@@ -224,7 +265,7 @@ const ToReviewCard = ({ booking, onReview }: { booking: OverviewBooking; onRevie
   </CardShell>
 );
 
-const ReviewedCard = ({ booking }: { booking: OverviewBooking }) => (
+const ReviewedCard = ({ booking, onRebook, busy }: { booking: OverviewBooking; onRebook: () => void; busy: boolean }) => (
   <CardShell>
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
@@ -237,16 +278,14 @@ const ReviewedCard = ({ booking }: { booking: OverviewBooking }) => (
         <Stars value={booking.review_rating ?? 0} />
       </div>
     </div>
-    {/* El "volver a reservar" real llega en la fase 5: repetir tiene que recalcular el precio
-        contra la configuración vigente, no copiar el importe antiguo. */}
     <button
       type="button"
-      disabled
-      title="Disponible muy pronto"
-      className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-500 opacity-60 cursor-not-allowed"
+      onClick={onRebook}
+      disabled={busy}
+      className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
     >
       <RotateCcw className="w-4 h-4" aria-hidden="true" />
-      Volver a reservar este servicio
+      {busy ? 'Preparando…' : 'Volver a reservar este servicio'}
     </button>
   </CardShell>
 );

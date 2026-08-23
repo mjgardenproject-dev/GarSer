@@ -80,3 +80,41 @@ describe('detailsPagePresentation', () => {
     ).toBe('Continuar con 1 zona')
   })
 })
+
+describe('getDetailsContinueDisabled — repetición de servicio', () => {
+  const base = {
+    serviceFlags: getDetailsServiceFlags('Corte de césped'),
+    weedingManualConfirmed: false,
+    getPhytosanitaryValidation: () => ({ issues: [] as string[] }),
+    isPhytosanitaryZoneAnalyzed: () => true,
+  }
+
+  it('bloquea continuar mientras el cliente no confirme que el jardín sigue igual', () => {
+    expect(
+      getDetailsContinueDisabled({
+        ...base,
+        bookingData: { isRebooking: true, lawnZones: [{ quantity: 100, analysisLevel: 1 }] } as never,
+        rebookConfirmed: false,
+      }),
+    ).toBe(true)
+  })
+
+  it('deja continuar en cuanto lo confirma', () => {
+    expect(
+      getDetailsContinueDisabled({
+        ...base,
+        bookingData: { isRebooking: true, lawnZones: [{ quantity: 100, analysisLevel: 1 }] } as never,
+        rebookConfirmed: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('no afecta a una reserva normal: sin `isRebooking` no se pide nada', () => {
+    expect(
+      getDetailsContinueDisabled({
+        ...base,
+        bookingData: { lawnZones: [{ quantity: 100, analysisLevel: 1 }] } as never,
+      }),
+    ).toBe(false)
+  })
+})

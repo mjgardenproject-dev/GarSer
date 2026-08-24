@@ -7,6 +7,9 @@ import { format, parseISO, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from './ChatWindow';
 import { fetchChatOverview } from '../../utils/chatService';
+import { fetchProfileNames } from '../../utils/profileNames';
+import { fetchCurrentUserProfileRole } from '../../lib/adminAccess';
+import { Star } from 'lucide-react';
 
 interface ChatItem {
   booking_id: string;
@@ -67,6 +70,17 @@ const ChatList: React.FC = () => {
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
+  /** Rol del usuario: decide a dónde lleva el acceso a reseñas desde el chat. */
+  const [isGardener, setIsGardener] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let alive = true;
+    fetchCurrentUserProfileRole(user.id)
+      .then((role) => { if (alive) setIsGardener(role === 'gardener'); })
+      .catch(() => { /* sin rol: se trata como cliente, que es el caso mayoritario */ });
+    return () => { alive = false; };
+  }, [user?.id]);
   const knownBookingIdsRef = useRef<Set<string>>(new Set());
 
   const fetchChats = useCallback(async (opts: { silent?: boolean } = {}) => {
@@ -93,14 +107,12 @@ const ChatList: React.FC = () => {
       const uniqueUserIds = Array.from(new Set(rows.flatMap(b => [b.client_id, b.gardener_id]).filter(Boolean)));
       let namesMap: Record<string, string> = {};
       if (uniqueUserIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', uniqueUserIds as string[]);
-        namesMap = (profilesData || []).reduce((acc: Record<string, string>, p: any) => {
-          if (p?.id) acc[p.id] = p.full_name || '';
-          return acc;
-        }, {});
+        // Ver la nota de fetchProfileNames: por `id` no resolvia ninguno, asi que el chat
+        // mostraba siempre el generico en vez del nombre de la otra parte.
+        const profilesMap = await fetchProfileNames(uniqueUserIds as string[]);
+        namesMap = Object.fromEntries(
+          Object.entries(profilesMap).map(([id, profile]) => [id, profile.full_name || ''])
+        );
       }
 
       const items: ChatItem[] = rows.map((booking) => {
@@ -192,7 +204,27 @@ const ChatList: React.FC = () => {
         Volver al Panel
       </button>
 
-      <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">Mis Chats</h1>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Mis Chats</h1>
+        {/* Acceso a reseñas desde el chat, que es donde ambas partes siguen la conversación de
+            un servicio: el cliente va a valorar, el profesional a leer y responder. */}
+        <button
+          type="button"
+          onClick={() => {
+            if (isGardener) {
+              // El panel del jardinero recuerda la pestaña activa en localStorage.
+              try { localStorage.setItem('gardener_active_tab', 'reviews'); } catch { /* sin persistencia, se abre el panel igualmente */ }
+              navigate('/dashboard');
+            } else {
+              navigate('/bookings');
+            }
+          }}
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+        >
+          <Star className="w-4 h-4 text-yellow-500" aria-hidden="true" />
+          Reseñas
+        </button>
+      </div>
 
       {chats.length === 0 ? (
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">

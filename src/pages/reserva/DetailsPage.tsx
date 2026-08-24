@@ -784,6 +784,9 @@ const DetailsPage: React.FC = () => {
    * sin esto, seguían mostrando (y reenviando) el valor anterior.
    */
   const [manualWizardSeed, setManualWizardSeed] = useState(0);
+  /** Repetición de un servicio: el cliente debe declarar que el jardín sigue igual. */
+  const isRebooking = Boolean((bookingData as { isRebooking?: boolean }).isRebooking);
+  const [rebookConfirmed, setRebookConfirmed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -1548,6 +1551,23 @@ const DetailsPage: React.FC = () => {
       handleManualDraftChange({ ...draft, items: nextItems });
       setManualWizardSeed((seed) => seed + 1);
   };
+
+  /**
+   * Al REPETIR un servicio de palmeras hay que recalcular las horas una vez.
+   *
+   * `estimatedHours` no viaja en el payload guardado -solo las características del trabajo-, y
+   * la regla de continuar en palmeras exige que sea mayor que cero. Sin esto, el cliente veía
+   * sus palmeras precargadas y el botón de continuar apagado sin explicación, obligado a tocar
+   * algo al azar para desbloquearlo.
+   */
+  const rebookHoursComputedRef = useRef(false);
+  useEffect(() => {
+    if (!isRebooking || rebookHoursComputedRef.current) return;
+    const groups = bookingData.palmGroups || [];
+    if (groups.length === 0 || Number(bookingData.estimatedHours || 0) > 0) return;
+    rebookHoursComputedRef.current = true;
+    void updatePalmPricing(groups);
+  }, [isRebooking, bookingData.palmGroups, bookingData.estimatedHours]);
 
   const updatePalmGroup = (groupId: string, updates: Partial<PalmGroup>) => {
       const n = [...(bookingData.palmGroups || [])];
@@ -4640,6 +4660,33 @@ const analyzeTreeGroup = async (id: string) => {
           </div>
         ) : null}
 
+        {/* Repetición de un servicio anterior: los datos vienen precargados y editables, pero
+            el jardín pudo cambiar desde entonces. La confirmación es obligatoria para avanzar
+            (regla en getDetailsContinueDisabled), porque el profesional presupuesta sobre estos
+            datos y encontrarse otra cosa es justo lo que genera cambios de precio y roces. */}
+        {isRebooking && (
+          <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+            <h3 className="text-sm font-semibold text-blue-900">Estás repitiendo un servicio</h3>
+            <p className="mt-1 text-sm text-blue-800">
+              Hemos rellenado los datos de tu reserva anterior. Revísalos y edita lo que haya
+              cambiado: el precio se calculará de nuevo con las tarifas actuales de cada
+              profesional.
+            </p>
+            <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rebookConfirmed}
+                onChange={(event) => setRebookConfirmed(event.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500"
+              />
+              <span className="text-sm text-blue-900">
+                Confirmo que he comprobado el estado del jardín y que las condiciones son las
+                mismas que aparecen seleccionadas.
+              </span>
+            </label>
+          </div>
+        )}
+
         {manualChoiceAvailable ? (
           <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} />
         ) : null}
@@ -6767,6 +6814,7 @@ const analyzeTreeGroup = async (id: string) => {
               weedingManualConfirmed,
               getPhytosanitaryValidation: (zone) => getPhytosanitaryValidation(zone as any),
               isPhytosanitaryZoneAnalyzed: (zone) => isPhytosanitaryZoneAnalyzed(zone as any),
+              rebookConfirmed,
             })}
             className="w-full bg-green-600 hover:bg-green-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >

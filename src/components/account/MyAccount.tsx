@@ -29,7 +29,9 @@ function MyAccount() {
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        // `user_id` y no `id`: son columnas distintas y esta buscaba por la equivocada, asi
+        // que "Mi Cuenta" cargaba vacia para todo el mundo.
+        .or(`id.eq.${user.id},user_id.eq.${user.id}`)
         .limit(1);
       const p = data?.[0] || null;
       setMyProfile(p);

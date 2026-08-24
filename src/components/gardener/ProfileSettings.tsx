@@ -681,8 +681,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
             // But actually services are in 'data' from useForm
             services: watchedServices, // Preserve current state
             is_available: true,
-            rating: gardenerProfile?.rating || 5.0,
-            total_reviews: gardenerProfile?.total_reviews || 0
+            // La nota NO se envia: es un dato del sistema que calcula el trigger de resenas.
+            // Antes se mandaba `rating: gardenerProfile?.rating || 5.0`, asi que un profesional
+            // sin resenas se autoasignaba un 5,0 con solo pulsar "guardar". La base de datos ya
+            // lo impide por permisos de columna; enviarlo ahora ademas romperia el guardado.
         };
 
         await persistGardenerProfile(profileData);

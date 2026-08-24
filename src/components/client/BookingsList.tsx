@@ -12,6 +12,7 @@ import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { ClientBookingAmounts } from '../booking/BookingAmounts';
 import { formatEuro, getBookingAmounts } from '../../shared/bookingAmounts';
 import { cancelBooking } from '../../utils/bookingLifecycleService';
+import { fetchProfileNames } from '../../utils/profileNames';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: {
@@ -67,17 +68,14 @@ const BookingsList = () => {
       if (bookingsData && bookingsData.length > 0) {
         const gardenerIds = [...new Set(bookingsData.map((booking: any) => booking.gardener_id))];
         
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, full_name, phone')
-          .in('id', gardenerIds);
+        // fetchProfileNames y no una consulta directa: `profiles` se consultaba por `id`
+        // pasandole el id de auth, que vive en `user_id`. Devolvia cero filas y el cliente
+        // nunca veia el nombre de su jardinero.
+        const profilesMap = await fetchProfileNames(gardenerIds);
 
-        if (profilesError) throw profilesError;
-
-        // Combinar los datos
         const bookingsWithProfiles = bookingsData.map((booking: any) => ({
           ...booking,
-          gardener_profile: profilesData?.find((profile: any) => profile.id === booking.gardener_id) || null
+          gardener_profile: profilesMap[booking.gardener_id] || null
         }));
 
         const mediaMap = await fetchBookingMediaMap(

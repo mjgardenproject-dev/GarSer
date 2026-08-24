@@ -897,6 +897,54 @@ function normalizePhytosanitaryTasks(ai: any, payload: Payload): any[] {
   return buildPhytosanitaryTasksFromDetectedElements(ai, payload);
 }
 
+// Cuotas de análisis. Un cliente real que presupuesta su jardín entero hace unos pocos
+// análisis (uno por servicio); estos topes le sobran y a un abusador le cortan pronto.
+// Al anónimo se le da menos margen porque no hay nada que lo identifique de verdad.
+const QUOTA_LIMIT_AUTHENTICATED = 30; // por hora y usuario
+const QUOTA_LIMIT_ANONYMOUS = 15;     // por hora e IP
+
+// Tope de fotos por petición: acota el coste máximo de una sola llamada a Gemini.
+const MAX_PHOTOS_PER_REQUEST = 20;
+
+/**
+ * IP del cliente a partir de `x-forwarded-for`.
+ *
+ * Se toma la PRIMERA entrada a conciencia. La cadena es `cliente, proxy1, proxy2...`, así que
+ * la primera es la que el cliente declara y puede falsear, mientras que la última la añade el
+ * proxy y no se puede falsear. Aun así se elige la primera: con la última, todas las peticiones
+ * que compartan salto acabarían en el MISMO contador y un solo visitante intenso dejaría sin
+ * analizar a todos los demás. Entre "un abusador decidido rota cabeceras" y "los clientes
+ * legítimos se bloquean entre ellos", el segundo es el daño grave — y el coste de IA sigue
+ * acotado por el tope de fotos por petición y por la lista blanca de orígenes de imagen.
+ */
+function resolveClientIp(req: Request): string | null {
+  const forwarded = req.headers.get('x-forwarded-for') || '';
+  const first = forwarded.split(',')[0]?.trim();
+  if (first) return first;
+  const realIp = (req.headers.get('x-real-ip') || '').trim();
+  return realIp || null;
+}
+
+/** SHA-256 en hexadecimal: la IP en claro no llega a guardarse en la base de datos. */
+async function hashValue(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** A quién se le cuenta esta petición y con qué tope. */
+async function resolveQuotaSubject(
+  req: Request,
+  callerUserId: string | null,
+): Promise<{ subject: string | null; limit: number }> {
+  if (callerUserId) {
+    return { subject: `user:${callerUserId}`, limit: QUOTA_LIMIT_AUTHENTICATED };
+  }
+  const ip = resolveClientIp(req);
+  if (!ip) return { subject: null, limit: QUOTA_LIMIT_ANONYMOUS };
+  return { subject: `ip:${await hashValue(ip)}`, limit: QUOTA_LIMIT_ANONYMOUS };
+}
+
 // Tamaño máximo por imagen. El pipeline del funnel ya comprime antes de subir; esto es el
 // tope duro para que una imagen enorme no agote la memoria de la función.
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -1143,38 +1191,55 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
     if (!internalCaller) {
-      // Puerta 1 — usuario real. Traer la clave `anon` no basta: es pública, viaja en el
-      // bundle de la web y cualquiera la tiene. Solo cuenta un token que resuelva a un usuario.
-      // Esto no cierra el funnel a nadie: para analizar hacen falta fotos, y subirlas a Storage
-      // ya exige sesión (política `booking_photos_insert_auth`, `to authenticated`).
+      // Se limita a TODO el mundo, identificado o no. Antes se exigía usuario y se devolvía
+      // 401 al anónimo, dando por supuesto que analizar ya requería sesión. Era falso: la
+      // migración 20260205000000_allow_anon_uploads.sql habilita las subidas anónimas a
+      // propósito ("necesario para el flujo de reserva sin autenticación"), así que aquello
+      // dejaba sin analizar a cualquiera que no hubiera iniciado sesión.
       const callerUserId = await resolveCallerUserId(req, admin);
-      if (!callerUserId) {
-        return new Response(JSON.stringify({ error: 'unauthorized' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      const { subject, limit } = await resolveQuotaSubject(req, callerUserId);
+
+      if (!subject) {
+        // Sin usuario y sin IP no hay a quién limitar. Se deja pasar y se avisa: cortar aquí
+        // significaría tumbar el análisis de todos ante una rareza de cabeceras, que es
+        // exactamente el fallo que este cambio viene a reparar.
+        console.warn('[ai-pricing-estimator] Sin sujeto de cuota (ni usuario ni IP): se permite el análisis.');
+      } else {
+        const { data: quota, error: quotaError } = await admin.rpc('consume_ai_analysis_quota', {
+          p_subject: subject,
+          p_max_requests: limit,
         });
+
+        if (quotaError) {
+          // Fallo al contar: se PERMITE y se registra como error. Es la decisión deliberada
+          // opuesta a la anterior (503). Un bache transitorio de la base de datos no puede
+          // dejar la web sin presupuestar; la exposición queda acotada a esa ventana, y el
+          // log deja rastro para investigarlo.
+          console.error('[ai-pricing-estimator] Cuota no evaluable, se permite el análisis:', quotaError.message);
+        } else if (quota && quota.allowed === false) {
+          return new Response(JSON.stringify({
+            error: 'rate_limited',
+            message: 'Has hecho demasiados análisis en poco tiempo. Inténtalo de nuevo más tarde.',
+            reset_at: quota.reset_at,
+          }), {
+            status: 429,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '900' },
+          });
+        }
       }
 
-      // Puerta 2 — cuota. Sin esto el coste de IA es ilimitado: un bucle de un tercero vacía
-      // el presupuesto de Gemini y, al agotar la cuota del proyecto, deja sin análisis a los
-      // clientes de verdad. El contador se incrementa y se evalúa de forma atómica en la BD.
-      const { data: quota, error: quotaError } = await admin.rpc('consume_ai_pricing_quota', {
-        p_user_id: callerUserId,
-      });
-      if (quotaError) {
-        // Un fallo de la cuota no puede dejar la puerta abierta: si no se puede contar, no se gasta.
-        console.error('[ai-pricing-estimator] No se pudo evaluar la cuota:', quotaError.message);
-        return new Response(JSON.stringify({ error: 'quota_unavailable' }), {
-          status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      if (quota && quota.allowed === false) {
+      // Tope de fotos por petición: acota el coste MÁXIMO de una sola llamada, que la cuota
+      // por sí sola no limita (una petición con 200 fotos gasta como 200 análisis).
+      const photoCount =
+        (Array.isArray(payload.photo_urls) ? payload.photo_urls.length : 0) +
+        (Array.isArray(payload.hedge_faces?.face_a_urls) ? payload.hedge_faces.face_a_urls.length : 0) +
+        (Array.isArray(payload.hedge_faces?.face_b_urls) ? payload.hedge_faces.face_b_urls.length : 0);
+      if (photoCount > MAX_PHOTOS_PER_REQUEST) {
         return new Response(JSON.stringify({
-          error: 'rate_limited',
-          message: 'Has hecho demasiados análisis en poco tiempo. Inténtalo de nuevo más tarde.',
-          reset_at: quota.reset_at,
+          error: 'too_many_photos',
+          message: `Envía como máximo ${MAX_PHOTOS_PER_REQUEST} fotos por análisis.`,
         }), {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '900' },
+          status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
     }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Star, MapPin, Leaf, Calendar } from 'lucide-react';
+import ReviewList from '../reviews/ReviewList';
 
 const GardenerPublicProfile: React.FC = () => {
   const { gardenerId } = useParams();
@@ -21,7 +22,9 @@ const GardenerPublicProfile: React.FC = () => {
         }
         const { data, error } = await supabase
           .from('public_gardener_directory')
-          .select('user_id, full_name, avatar_url, rating, total_reviews, services, max_distance, description, is_available')
+          // `rating_average`/`rating_count` es el par canonico. `rating`/`total_reviews` son
+          // legacy: duplican el dato y el trigger los mantiene sincronizados hasta retirarlos.
+          .select('user_id, full_name, avatar_url, rating_average, rating_count, services, max_distance, description, is_available')
           .eq('user_id', gardenerId)
           .maybeSingle();
 
@@ -78,8 +81,11 @@ const GardenerPublicProfile: React.FC = () => {
               <span className="inline-flex items-center gap-1">
                 <Star className="w-4 h-4 text-yellow-500" />
                 {/* Sin reseñas no se finge un 5.0: se dice que aún no tiene valoraciones. */}
-                {Number(profile?.total_reviews) > 0
-                  ? `${profile?.rating} (${profile?.total_reviews} ${Number(profile?.total_reviews) === 1 ? 'reseña' : 'reseñas'})`
+                {/* Un decimal y coma decimal, como el bloque de reseñas de abajo: la columna
+                    `rating` es numeric(3,2) y en crudo mostraba "2.75" junto a un "2,8" en la
+                    misma pantalla, dos cifras distintas para el mismo dato. */}
+                {Number(profile?.rating_count) > 0
+                  ? `${Number(profile?.rating_average).toFixed(1).replace('.', ',')} (${profile?.rating_count} ${Number(profile?.rating_count) === 1 ? 'reseña' : 'reseñas'})`
                   : 'Sin valoraciones todavía'}
               </span>
               <span className="inline-flex items-center gap-1">
@@ -117,6 +123,13 @@ const GardenerPublicProfile: React.FC = () => {
           {!profile?.is_available && (
             <p className="mt-2 text-sm text-amber-700">Este jardinero actualmente no está disponible. Aun así, podrás ver fechas futuras si las configura.</p>
           )}
+        </div>
+
+        {/* Reseñas. Esta pantalla es pública, así que se leen de la vista con el autor ya
+            enmascarado: el nombre completo del cliente no sale de la base de datos. */}
+        <div className="mt-8 pt-6 border-t border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Reseñas de clientes</h3>
+          <ReviewList gardenerId={gardenerId as string} gardenerName={profile?.full_name} />
         </div>
       </div>
     </div>

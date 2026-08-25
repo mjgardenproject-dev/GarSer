@@ -23,6 +23,12 @@ interface Props {
   survey: ManualServiceSurvey;
   submitting?: boolean;
   initialItems?: ManualAnswers[];
+  /**
+   * Fase de arranque. Al repetir un servicio las respuestas ya vienen dadas, así que empezar
+   * por la primera pregunta obliga a recorrer la encuesta entera para no cambiar nada. Con
+   * `'summary'` el cliente ve todos los apartados y edita solo el que haya cambiado.
+   */
+  initialPhase?: 'item' | 'summary';
   initialWasteRemoval?: boolean;
   /** When false, the legal-consent step is skipped (e.g. gardener on-site correction). */
   requireConsent?: boolean;
@@ -53,6 +59,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
   survey,
   submitting = false,
   initialItems,
+  initialPhase = 'item',
   initialWasteRemoval,
   requireConsent = true,
   submitLabel,
@@ -71,7 +78,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
   );
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
-  const [phase, setPhase] = useState<WizardPhase>('item');
+  const [phase, setPhase] = useState<WizardPhase>(initialPhase);
   const [consentChecked, setConsentChecked] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);

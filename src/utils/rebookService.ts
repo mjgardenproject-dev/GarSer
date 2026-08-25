@@ -62,3 +62,23 @@ export async function fetchRebookPayload(bookingId: string): Promise<RebookResul
 }
 
 export { stripPhotoReferences };
+
+const BREAKDOWN_SECTIONS = [
+  'lawnZones', 'hedgeZones', 'treeGroups', 'shrubGroups', 'palmGroups',
+  'phytosanitaryZones', 'weedingZones',
+] as const;
+
+/**
+ * ¿Hay algo que resumir?
+ *
+ * Las reservas antiguas o creadas por otra vía no tienen presupuesto asociado, y de ellas solo
+ * se recupera la dirección y el servicio. Enseñar entonces una tarjeta de resumen vacía y pedir
+ * que se confirmen unas condiciones que no aparecen por ningún lado es peor que no enseñarla:
+ * en ese caso el cliente pasa directo a rellenar los datos.
+ */
+export function hasRebookBreakdown(payload: Record<string, unknown>): boolean {
+  return BREAKDOWN_SECTIONS.some((section) => {
+    const value = payload[section];
+    return Array.isArray(value) && value.length > 0;
+  });
+}

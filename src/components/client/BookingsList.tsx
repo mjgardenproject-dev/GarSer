@@ -166,7 +166,18 @@ const BookingsList = () => {
       writeBookingResume(
         'draft',
         'wizard',
-        { bookingData: { ...payload, rebookReviewPending: true }, currentStep: 2 },
+        // Ver ClientBookingLauncher: `rebookReviewPending` antepone el resumen y los
+        // `rebookSource*` son los datos con los que se encabeza.
+        {
+          bookingData: {
+            ...payload,
+            rebookReviewPending: true,
+            rebookSourceDate: booking.date,
+            rebookSourceService: booking.services?.name,
+            rebookSourceGardener: booking.gardener_profile?.full_name,
+          },
+          currentStep: 2,
+        },
         { userId: user.id },
       );
       if (partial) toast('Solo hemos podido recuperar la dirección y el servicio. Revisa el resto.', { icon: 'ℹ️' });

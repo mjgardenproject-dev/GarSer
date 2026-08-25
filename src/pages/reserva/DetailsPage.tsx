@@ -776,6 +776,7 @@ const DetailsPage: React.FC = () => {
   const manualChoiceAvailable = manualFlowEnabled && !!manualServiceKey && !isManualOnlyService(manualServiceKey);
   const dataInputMode: DataInputMode = bookingData.dataInputMode === 'manual' ? 'manual' : 'photos';
   const isManualActive = manualChoiceAvailable && dataInputMode === 'manual';
+
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
   /**
@@ -786,7 +787,26 @@ const DetailsPage: React.FC = () => {
   const [manualWizardSeed, setManualWizardSeed] = useState(0);
   /** Repetición de un servicio: el cliente debe declarar que el jardín sigue igual. */
   const isRebooking = Boolean((bookingData as { isRebooking?: boolean }).isRebooking);
-  const [rebookConfirmed, setRebookConfirmed] = useState(false);
+  /**
+   * Respuestas con las que reabrir el asistente al REPETIR un servicio.
+   *
+   * El payload guardado trae los grupos ya construidos (`palmGroups`, `hedgeZones`…), pero el
+   * asistente no se alimenta de ellos sino de sus propias respuestas, así que arrancaba en la
+   * primera pregunta y en blanco: el cliente veía "Paso 1 de 5 - ¿Qué especie de palmera es?"
+   * con todo por rellenar, justo lo que la repetición viene a ahorrarle. Las respuestas
+   * originales viajan dentro de `manualConsent`, que sí forma parte del presupuesto guardado.
+   */
+  const rebookManualItems = isRebooking
+    ? (bookingData as {
+        manualConsent?: { declaredVariables?: { items?: Array<Record<string, unknown>> } };
+      }).manualConsent?.declaredVariables?.items
+    : undefined;
+
+  // Se hereda del resumen previo: el cliente ya marco alli la casilla y volver a pedirsela
+  // aqui era pedir dos veces lo mismo en dos pantallas seguidas.
+  const [rebookConfirmed, setRebookConfirmed] = useState(
+    Boolean((bookingData as { rebookConfirmed?: boolean }).rebookConfirmed),
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -941,6 +961,16 @@ const DetailsPage: React.FC = () => {
   const activeServiceId = bookingData.serviceIds?.[0] || '';
   const isWeedingServiceSelected = serviceFlags.isWeeding;
   const persistedManualDraft = (bookingData.servicesData?.[activeServiceId] as { manualDraft?: ManualWizardSubmitPayload } | undefined)?.manualDraft;
+  /**
+   * El asistente arranca en su resumen: hay respuestas que revisar, no que rellenar.
+   *
+   * Se decide UNA vez, al entrar. Calculándolo en cada render se caía solo: el asistente
+   * escribe su borrador nada más montarse, con lo que la condición pasaba a falsa y el
+   * selector de modo reaparecía de golpe bajo el aviso.
+   */
+  const [startsOnRebookSummary] = useState(() =>
+    Boolean(!manualDraft && !persistedManualDraft && rebookManualItems?.length),
+  );
 
   const handleManualDraftChange = (payload: ManualWizardSubmitPayload) => {
     setManualDraft(payload);
@@ -4665,29 +4695,42 @@ const analyzeTreeGroup = async (id: string) => {
             (regla en getDetailsContinueDisabled), porque el profesional presupuesta sobre estos
             datos y encontrarse otra cosa es justo lo que genera cambios de precio y roces. */}
         {isRebooking && (
-          <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-            <h3 className="text-sm font-semibold text-blue-900">Estás repitiendo un servicio</h3>
-            <p className="mt-1 text-sm text-blue-800">
-              Hemos rellenado los datos de tu reserva anterior. Revísalos y edita lo que haya
-              cambiado: el precio se calculará de nuevo con las tarifas actuales de cada
-              profesional.
+          rebookConfirmed ? (
+            /* Ya confirmado en el resumen: aquí basta con recordar dónde está y que se puede
+               tocar todo. Repetir el bloque entero con su casilla era pedir lo mismo dos veces
+               en dos pantallas seguidas. */
+            <p className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              Datos de tu reserva anterior. Edita lo que haya cambiado.
             </p>
-            <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={rebookConfirmed}
-                onChange={(event) => setRebookConfirmed(event.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500"
-              />
-              <span className="text-sm text-blue-900">
-                Confirmo que he comprobado el estado del jardín y que las condiciones son las
-                mismas que aparecen seleccionadas.
-              </span>
-            </label>
-          </div>
+          ) : (
+            <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+              <h3 className="text-sm font-semibold text-blue-900">Estás repitiendo un servicio</h3>
+              <p className="mt-1 text-sm text-blue-800">
+                Hemos rellenado los datos de tu reserva anterior. Revísalos y edita lo que haya
+                cambiado: el precio se calculará de nuevo con las tarifas actuales de cada
+                profesional.
+              </p>
+              <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rebookConfirmed}
+                  onChange={(event) => setRebookConfirmed(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500"
+                />
+                <span className="text-sm text-blue-900">
+                  Confirmo que he comprobado el estado del jardín y que las condiciones son las
+                  mismas que aparecen seleccionadas.
+                </span>
+              </label>
+            </div>
+          )
         )}
 
-        {manualChoiceAvailable ? (
+        {/* El selector de modo se oculta al repetir con datos ya cargados: son dos tarjetas
+            grandes preguntando cómo calcular un presupuesto que ya está calculado, y el propio
+            asistente ofrece "Cambiar a fotos" en su cabecera. En cuanto se cambia a fotos, el
+            selector vuelve: es la única forma de regresar a la entrada manual. */}
+        {manualChoiceAvailable && !(startsOnRebookSummary && isManualActive) ? (
           <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} />
         ) : null}
 
@@ -4696,7 +4739,8 @@ const analyzeTreeGroup = async (id: string) => {
             key={`manual-wizard-${activeServiceId}-${manualWizardSeed}`}
             survey={manualSurvey}
             submitting={manualSubmitting}
-            initialItems={manualDraft?.items ?? persistedManualDraft?.items}
+            initialItems={manualDraft?.items ?? persistedManualDraft?.items ?? rebookManualItems}
+            initialPhase={startsOnRebookSummary ? 'summary' : 'item'}
             initialWasteRemoval={manualDraft?.wasteRemoval ?? persistedManualDraft?.wasteRemoval ?? bookingData.wasteRemoval}
             onDraftChange={handleManualDraftChange}
             onStepComplete={(stepId) =>

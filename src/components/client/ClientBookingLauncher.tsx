@@ -65,8 +65,19 @@ const ClientBookingLauncher = () => {
         'draft',
         'wizard',
         // `rebookReviewPending` hace que el funnel muestre primero el resumen en vez de soltar
-        // al cliente en la pantalla de detalles con toda la interfaz de análisis.
-        { bookingData: { ...payload, rebookReviewPending: true }, currentStep: 2 },
+        // al cliente en la pantalla de detalles con toda la interfaz de análisis. Los tres
+        // campos `rebookSource*` son solo para encabezar ese resumen: el payload guardado
+        // describe el trabajo, no de quién ni de cuándo venía.
+        {
+          bookingData: {
+            ...payload,
+            rebookReviewPending: true,
+            rebookSourceDate: booking.date,
+            rebookSourceService: booking.service_name,
+            rebookSourceGardener: booking.gardener_name,
+          },
+          currentStep: 2,
+        },
         { userId: user.id },
       );
       if (partial) {

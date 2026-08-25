@@ -9,6 +9,7 @@ import ChatWindow from './ChatWindow';
 import { fetchChatOverview } from '../../utils/chatService';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { fetchCurrentUserProfileRole } from '../../lib/adminAccess';
+import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { Star } from 'lucide-react';
 
 interface ChatItem {
@@ -38,24 +39,6 @@ interface BookingWithProfiles {
   } | null;
 }
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'confirmed': return 'text-blue-600 bg-blue-100';
-    case 'disputed': return 'text-purple-600 bg-purple-100';
-    case 'completed': return 'text-green-600 bg-green-100';
-    default: return 'text-gray-600 bg-gray-100';
-  }
-};
-
-const getStatusText = (status: string) => {
-  switch (status) {
-    case 'pending': return 'Pendiente';
-    case 'confirmed': return 'Confirmado';
-    case 'disputed': return 'En revisión';
-    case 'completed': return 'Completado';
-    default: return status;
-  }
-};
 
 // Hora si es de hoy; fecha corta si no
 const lastMessageTimeLabel = (iso?: string) => {
@@ -266,8 +249,8 @@ const ChatList: React.FC = () => {
                     <span aria-hidden>·</span>
                     <Calendar className="w-3 h-3 shrink-0" />
                     <span className="shrink-0">{format(parseISO(chat.date), 'dd/MM', { locale: es })} {chat.start_time?.slice(0, 5)}</span>
-                    <span className={`ml-auto shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${getStatusColor(chat.status)}`}>
-                      {getStatusText(chat.status)}
+                    <span className={`ml-auto shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${getBookingStatusTone(chat.status)}`}>
+                      {getBookingStatusLabel(chat.status, isGardener ? 'gardener' : 'client')}
                     </span>
                   </div>
 

@@ -18,6 +18,7 @@ import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/b
 import { cancelBooking, canCompleteBooking, getBookingServiceEnd } from '../../utils/bookingLifecycleService';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
+import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -254,43 +255,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'completed':
-        return 'bg-gray-100 text-gray-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'Pendiente';
-      case 'confirmed':
-        return 'Confirmado';
-      case 'completed':
-        return 'Completado';
-      case 'cancelled':
-        return 'Cancelado';
-      case 'expired':
-        return 'Caducada';
-      case 'no_show_client':
-        return 'Cliente ausente';
-      case 'no_show_gardener':
-        return 'No acudiste';
-      case 'disputed':
-        return 'En revisión';
-      default:
-        return status;
-    }
-  };
 
   const openChat = (bookingId: string, clientName: string) => {
     setSelectedChat({ bookingId, clientName });
@@ -431,8 +396,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                           </p>
                         </div>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
-                        {getStatusText(booking.status)}
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getBookingStatusTone(booking.status)}`}>
+                        {getBookingStatusLabel(booking.status, 'gardener')}
                       </span>
                     </div>
 

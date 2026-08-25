@@ -12,6 +12,7 @@ import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { ClientBookingAmounts } from '../booking/BookingAmounts';
 import { formatEuro, getBookingAmounts } from '../../shared/bookingAmounts';
 import { cancelBooking } from '../../utils/bookingLifecycleService';
+import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { fetchProfileNames } from '../../utils/profileNames';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
@@ -94,74 +95,6 @@ const BookingsList = () => {
       console.error('Error fetching bookings:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'completed':
-        return 'bg-gray-100 text-gray-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      case 'expired':
-        return 'bg-gray-100 text-gray-600';
-      case 'no_show_client':
-      case 'no_show_gardener':
-        return 'bg-orange-100 text-orange-800';
-      case 'disputed':
-        return 'bg-purple-100 text-purple-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'Pendiente';
-      case 'confirmed':
-        return 'Confirmado';
-      case 'completed':
-        return 'Completado';
-      case 'cancelled':
-        return 'Cancelado';
-      case 'expired':
-        return 'Caducada';
-      case 'no_show_client':
-        return 'No se pudo realizar';
-      case 'no_show_gardener':
-        return 'El profesional no acudió';
-      case 'disputed':
-        return 'En revisión';
-      default:
-        return status;
-    }
-  };
-
-  // Cancelación por el cliente. La política (paso 8C-D3) dice que si es el cliente quien
-  // desiste, los gastos de gestión se cobran; hay que decírselo ANTES, no después.
-  const handleCancelBooking = async (booking: BookingWithDetails) => {
-    const amounts = getBookingAmounts(booking as any);
-    const feeText = amounts?.managementFee != null ? formatEuro(amounts.managementFee) : 'los gastos de gestión';
-    const confirmed = window.confirm(
-      `¿Seguro que quieres cancelar esta reserva?\n\n` +
-      `Al cancelar tú, ${feeText} de gastos de gestión no se devuelven. ` +
-      `El importe del servicio no se te cobra.\n\nEsta acción no se puede deshacer.`
-    );
-    if (!confirmed) return;
-    try {
-      setCancellingId(booking.id);
-      await cancelBooking(booking.id);
-      await fetchBookings();
-    } catch (error) {
-      console.error('Error cancelando la reserva:', error);
-      window.alert(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
-    } finally {
-      setCancellingId(null);
     }
   };
 
@@ -285,8 +218,8 @@ const BookingsList = () => {
                     Jardinero: {booking.gardener_profile?.full_name}
                   </p>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
-                  {getStatusText(booking.status)}
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getBookingStatusTone(booking.status)}`}>
+                  {getBookingStatusLabel(booking.status, 'client')}
                 </span>
               </div>
 

@@ -16,6 +16,7 @@ import ServiceDetailCard from './ServiceDetailCard';
 import PhotoGallery from '../common/PhotoGallery';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
+import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 
 interface GardenerBookingItem extends Booking {
   services?: { name: string } | null;
@@ -124,32 +125,7 @@ const GardenerBookings: React.FC = () => {
   const mapsUrl = (address: string) =>
     `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'no_show_client':
-      case 'no_show_gardener':
-        return 'bg-orange-100 text-orange-800';
-      case 'disputed':
-        return 'bg-purple-100 text-purple-800';
-      case 'completed':
-        return 'bg-gray-100 text-gray-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return 'Confirmada';
-      case 'completed':
-        return 'Completada';
-      default:
-        return status;
-    }
-  };
 
   return (
     <>
@@ -204,8 +180,8 @@ const GardenerBookings: React.FC = () => {
                     <h3 className="text-lg font-semibold text-gray-900 truncate">{booking.services?.name}</h3>
                     <p className="text-gray-600 truncate">Cliente: {booking.client_profile?.full_name}</p>
                   </div>
-                  <span className={`shrink-0 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
-                    {getStatusText(booking.status)}
+                  <span className={`shrink-0 px-3 py-1 rounded-full text-sm font-medium ${getBookingStatusTone(booking.status)}`}>
+                    {getBookingStatusLabel(booking.status, 'gardener')}
                   </span>
                 </div>
 

@@ -199,7 +199,7 @@ const ChatList: React.FC = () => {
               try { localStorage.setItem('gardener_active_tab', 'reviews'); } catch { /* sin persistencia, se abre el panel igualmente */ }
               navigate('/dashboard');
             } else {
-              navigate('/bookings');
+              navigate('/valoraciones');
             }
           }}
           className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"

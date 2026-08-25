@@ -57,6 +57,7 @@ const ConfirmationPage = lazy(() => import('./pages/reserva/ConfirmationPage'));
 // Zona de cliente y resto de páginas públicas
 const ClientBookingLauncher = lazy(() => import('./components/client/ClientBookingLauncher'));
 const BookingsList = lazy(() => import('./components/client/BookingsList'));
+const ClientReviews = lazy(() => import('./components/client/ClientReviews'));
 const ChatList = lazy(() => import('./components/chat/ChatList'));
 const MyAccount = lazy(() => import('./components/account/MyAccount'));
 const GardenerPublicProfile = lazy(() => import('./components/public/GardenerPublicProfile'));
@@ -443,6 +444,16 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
               <LegacyBookingRedirect />
             </ErrorBoundary>
           } 
+        />
+        {/* Las valoraciones del cliente. El profesional tiene las suyas en su panel, así que
+            esta ruta es solo para clientes. */}
+        <Route
+          path="/valoraciones"
+          element={
+            <ProtectedRoute>
+              <ClientReviews />
+            </ProtectedRoute>
+          }
         />
         <Route 
           path="/bookings" 

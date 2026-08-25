@@ -27,6 +27,57 @@ export interface BookingLifecycleResult {
   penaltyApplied?: boolean;
 }
 
+/**
+ * Códigos cuyo mensaje del servidor SÍ se le puede enseñar al cliente: son reglas de negocio
+ * que le afectan y que puede entender ("esta reserva ya no se puede cancelar").
+ *
+ * El resto NO se enseña. La función devuelve cosas como "Falta STRIPE_SECRET_KEY para resolver
+ * el dinero de la reserva": es un problema de configuración nuestro, y enseñárselo a alguien
+ * que solo quería cancelar su reserva no le sirve de nada y expone las tripas del sistema.
+ */
+const CODIGOS_CON_MENSAJE_PARA_EL_CLIENTE = new Set([
+  'lifecycle_rpc_rejected',
+  'price_change_unresolved',
+  'slot_unavailable',
+  'not_booking_client',
+  'not_booking_gardener',
+  'booking_not_found',
+  'invalid_lifecycle_request',
+  'auth_required',
+]);
+
+interface ErrorDeFuncion {
+  mensaje: string;
+  code: string | null;
+}
+
+/**
+ * Traduce el error de `functions.invoke` a algo legible.
+ *
+ * `invoke` no lanza en errores HTTP: devuelve un `FunctionsHttpError` cuyo `.message` es
+ * siempre "Edge Function returned a non-2xx status code". Eso es lo que veía el cliente al
+ * fallar una cancelación. El cuerpo de la respuesta sí trae `{ error, code }`, y vive en
+ * `.context` como Response sin consumir.
+ */
+async function leerErrorDeFuncion(error: unknown): Promise<ErrorDeFuncion> {
+  const generico = 'No hemos podido completar la operación. Vuelve a intentarlo y, si sigue fallando, escríbenos.';
+  const contexto = (error as { context?: Response })?.context;
+  if (!contexto || typeof contexto.json !== 'function') {
+    return { mensaje: generico, code: null };
+  }
+  try {
+    const cuerpo = (await contexto.json()) as { error?: string; code?: string };
+    const code = cuerpo?.code || null;
+    const delServidor = typeof cuerpo?.error === 'string' ? cuerpo.error.trim() : '';
+    return {
+      mensaje: code && CODIGOS_CON_MENSAJE_PARA_EL_CLIENTE.has(code) && delServidor ? delServidor : generico,
+      code,
+    };
+  } catch {
+    return { mensaje: generico, code: null };
+  }
+}
+
 async function invokeLifecycle(
   action: 'cancel_booking' | 'report_no_show',
   bookingId: string,
@@ -37,7 +88,16 @@ async function invokeLifecycle(
   });
   // functions.invoke NO lanza en errores HTTP: devuelve { error }. Sin comprobarlo, una
   // cancelación rechazada parecería exitosa.
-  if (error) throw error;
+  if (error) {
+    const { mensaje, code } = await leerErrorDeFuncion(error);
+    // El código va al registro aunque no se le enseñe al cliente: es lo que hace falta para
+    // diagnosticar por qué falló una cancelación real.
+    reportBookingEvent('error', {
+      event: 'booking.lifecycle_action_failed',
+      context: { action, bookingId, errorCode: code },
+    });
+    throw new Error(mensaje);
+  }
   const result = (data || {}) as BookingLifecycleResult;
 
   reportBookingEvent(result.moneyStatus === 'failed' ? 'error' : 'info', {

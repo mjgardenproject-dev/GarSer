@@ -111,7 +111,9 @@ export function useConfirmDialog() {
               <h3 id="confirm-dialog-title" className="text-lg font-bold text-gray-900 mb-2">
                 {state.title}
               </h3>
-              <p id="confirm-dialog-message" className="text-gray-500 text-center mb-6 text-sm">
+              {/* `whitespace-pre-line`: hay avisos que enumeran consecuencias en varias líneas
+                  y sin esto se aplastaban en un párrafo corrido. */}
+              <p id="confirm-dialog-message" className="text-gray-500 text-center mb-6 text-sm whitespace-pre-line">
                 {state.message}
               </p>
 

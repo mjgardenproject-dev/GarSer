@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast';
 import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
+import { useConfirmDialog } from '../common/ConfirmDialog';
 import BookingRequestsManager from './BookingRequestsManager';
 import GardenerReviews from './GardenerReviews';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
@@ -41,6 +42,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     localStorage.setItem('gardener_active_tab', activeTab);
   }, [activeTab]);
 
+  const { openConfirm, confirmDialog } = useConfirmDialog();
   const [selectedChat, setSelectedChat] = useState<{
     bookingId: string;
     clientName: string;
@@ -232,27 +234,34 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   // Cancelar una reserva YA ACEPTADA tiene consecuencias para el jardinero (se devuelve el
   // dinero al cliente y se registra una penalización de 1★). Se avisa ANTES de ejecutarla:
   // una sanción que aparece por sorpresa es una sanción injusta.
-  const handleCancelConfirmedBooking = async (bookingId: string) => {
-    const confirmed = window.confirm(
-      'Vas a cancelar una reserva que ya habías aceptado.\n\n' +
-      '· Se devolverán al cliente los gastos de gestión.\n' +
-      '· Se registrará una valoración de 1 estrella a nombre de GarSer con la observación ' +
-      '"Servicio no completado".\n\n¿Quieres continuar?'
-    );
-    if (!confirmed) return;
-    try {
-      const result = await cancelBooking(bookingId);
-      if (result.moneyStatus === 'failed') {
-        // La reserva queda cancelada, pero el dinero no se movió: no se oculta.
-        toast.error('Reserva cancelada, pero la devolución no se ha completado. Lo estamos revisando.');
-      } else {
-        toast.success('Reserva cancelada. Se ha avisado al cliente.');
-      }
-      fetchBookings();
-    } catch (error) {
-      console.error('Error cancelando la reserva:', error);
-      toast.error(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
-    }
+  const handleCancelConfirmedBooking = (bookingId: string) => {
+    // Con el diálogo de la app y no con `window.confirm`: en móvil el nativo recorta el texto y
+    // parece un aviso del navegador, justo donde hay que explicar una penalización.
+    openConfirm({
+      title: 'Vas a cancelar una reserva aceptada',
+      message:
+        '· Se devolverán al cliente los gastos de gestión.\n' +
+        '· Se registrará una valoración de 1 estrella a nombre de GarSer con la observación ' +
+        '"Servicio no completado".',
+      confirmLabel: 'Sí, cancelar',
+      cancelLabel: 'No, mantenerla',
+      tone: 'danger',
+      onConfirm: async () => {
+        try {
+          const result = await cancelBooking(bookingId);
+          if (result.moneyStatus === 'failed') {
+            // La reserva queda cancelada, pero el dinero no se movió: no se oculta.
+            toast.error('Reserva cancelada, pero la devolución no se ha completado. Lo estamos revisando.');
+          } else {
+            toast.success('Reserva cancelada. Se ha avisado al cliente.');
+          }
+          fetchBookings();
+        } catch (error) {
+          console.error('Error cancelando la reserva:', error);
+          toast.error(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
+        }
+      },
+    });
   };
 
 
@@ -526,6 +535,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           otherUserName={selectedChat.clientName}
         />
       )}
+
+      {confirmDialog}
     </div>
   );
 };

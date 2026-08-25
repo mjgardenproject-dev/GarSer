@@ -563,6 +563,77 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ---
 
+## SECCIÓN 16 — Área de cliente unificada (fix 2026-08-25) 🟠
+
+> Contexto: había **dos implementaciones distintas** de "las reservas del cliente" —la página
+> `/bookings` y el bloque del inicio— con tarjetas que no se parecían ni hacían lo mismo, y
+> varios botones llevaban a una lista genérica en vez de a la acción concreta. Se unifican en
+> una sola tarjeta, se añade la pantalla `/valoraciones` y repetir un servicio pasa por un
+> resumen previo. Se prueba con la **cuenta de cliente** salvo donde se indique.
+
+### Tarjeta única y cancelación
+
+- [ ] **16.1** La tarjeta de una reserva se ve **igual** en el inicio y en `/bookings`: mismo
+      servicio, mismo profesional, mismo chip de estado, misma fecha y dirección.
+- [ ] **16.2** En el **inicio** los importes van plegados tras "Ver detalles"; en `/bookings`
+      se ven desplegados. Es la única diferencia esperada entre las dos.
+- [ ] **16.3** **Cancelar** aparece en las dos pantallas para reservas pendientes y
+      confirmadas, y **no** aparece en una completada.
+- [ ] **16.4** Al cancelar sale el **diálogo de la app** (no el del navegador), con los gastos
+      de gestión reales en el texto; Escape lo cierra y el foco arranca en "No, mantenerla".
+- [ ] **16.5** Si el cobro falla al cancelar, sale el aviso rojo de que la devolución no se
+      completó. La reserva **no** se da por buena en silencio.
+- [ ] **16.6** Filtrando por un estado sin resultados en `/bookings` sale el mensaje "No tienes
+      reservas con este estado", no una lista vacía.
+
+### Botones que abren lo que prometen
+
+- [ ] **16.7** "Hablar con {nombre}" abre el chat **de esa reserva** encima de la lista, sin
+      cambiar de pantalla. Vale en el inicio y en `/bookings`.
+- [ ] **16.8** Con el chat abierto, el **botón atrás del móvil** lo cierra y deja al cliente en
+      la lista, no fuera de la página. La X también, y se puede **reabrir** después.
+- [ ] **16.9** "Dejar mi valoración" abre el formulario **ahí mismo**, sobre esa reserva.
+- [ ] **16.10** Tras enviar la valoración, la lista **se refresca sola** y el botón desaparece.
+- [ ] **16.11** El CTA del **email de valoración** (`/bookings?review=<id>`) abre el formulario
+      directamente sobre esa reserva, y el parámetro desaparece de la URL.
+
+### Pantalla de valoraciones
+
+- [ ] **16.12** El botón **"Reseñas" del chat** lleva al cliente a `/valoraciones` (antes iba a
+      sus reservas). Con la **cuenta de jardinero** sigue llevando a su panel de reseñas.
+- [ ] **16.13** `/valoraciones` está también en el menú del cliente, y **no** en el del
+      jardinero ni en la barra inferior.
+- [ ] **16.14** La pantalla muestra arriba lo pendiente de valorar y debajo lo escrito, con la
+      nota, el texto y **la respuesta del profesional** cuando la hay.
+- [ ] **16.15** Dentro de las **48 h**, "Editar" reabre la valoración, permite cambiar nota y
+      texto, y al guardar se actualiza la media del profesional en su panel.
+- [ ] **16.16** Pasadas 48 h la valoración se abre en **solo lectura** y no ofrece editar.
+
+### Repetir un servicio
+
+- [ ] **16.17** "Volver a reservar" aparece en **cualquier** servicio completado, esté valorado
+      o no.
+- [ ] **16.18** Al pulsarlo sale una **tarjeta de resumen** con el servicio, el profesional,
+      cuándo se contrató, la dirección y el desglose del trabajo. **No** la pantalla de análisis.
+- [ ] **16.19** "Continuar" está apagado hasta marcar la casilla de confirmación.
+- [ ] **16.20** Tras continuar, la pantalla de detalles muestra un aviso **de una línea** (no
+      vuelve a pedir la misma confirmación) y el asistente abre en **"Revisa tus datos antes de
+      continuar"**, con los datos rellenos y un "Editar" por apartado.
+- [ ] **16.21** El precio final **no** es el de la vez anterior: se recalcula en la pantalla de
+      jardineros con las tarifas vigentes.
+- [ ] **16.22** Repitiendo una reserva **antigua sin presupuesto asociado**, se pasa directo a
+      rellenar los datos en vez de enseñar un resumen vacío.
+
+### No regresión
+
+- [ ] **16.23** Con la **cuenta de jardinero**: cancelar una reserva aceptada muestra el
+      diálogo de la app con las **dos consecuencias en líneas separadas** (devolución y 1★).
+- [ ] **16.24** Los estados de las reservas se leen bien en las cuatro pantallas que los
+      muestran (inicio del cliente, `/bookings`, lista de chats y panel del jardinero); el
+      jardinero ve "Cliente ausente"/"No acudiste" donde corresponde.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:
@@ -575,6 +646,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 5 verde — los emails llegan de verdad |
 | [ ] | Secciones 6 a 9 verdes — reseñas, cancelaciones, precios y ciclo de vida |
 | [ ] | Sección 10 verde — nadie puede abusar del correo ni de la IA |
+| [ ] | Sección 16 verde — el área de cliente unificada |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

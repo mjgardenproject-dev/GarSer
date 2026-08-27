@@ -802,11 +802,7 @@ const DetailsPage: React.FC = () => {
       }).manualConsent?.declaredVariables?.items
     : undefined;
 
-  // Se hereda del resumen previo: el cliente ya marco alli la casilla y volver a pedirsela
-  // aqui era pedir dos veces lo mismo en dos pantallas seguidas.
-  const [rebookConfirmed, setRebookConfirmed] = useState(
-    Boolean((bookingData as { rebookConfirmed?: boolean }).rebookConfirmed),
-  );
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -4690,40 +4686,16 @@ const analyzeTreeGroup = async (id: string) => {
           </div>
         ) : null}
 
-        {/* Repetición de un servicio anterior: los datos vienen precargados y editables, pero
-            el jardín pudo cambiar desde entonces. La confirmación es obligatoria para avanzar
-            (regla en getDetailsContinueDisabled), porque el profesional presupuesta sobre estos
-            datos y encontrarse otra cosa es justo lo que genera cambios de precio y roces. */}
+        {/* Repetición de un servicio anterior: un recordatorio de dónde vienen estos datos, y
+            nada más. La casilla que había aquí se ha retirado: al repetir con datos cargados,
+            el cliente ya decidió en el resumen previo (confirmar o venir a editar), y cuando no
+            hay datos que precargar los está introduciendo desde cero, así que no hay nada
+            heredado que reconocer. La declaración de veracidad se pide una sola vez, junto a
+            los datos, al final del asistente. */}
         {isRebooking && (
-          rebookConfirmed ? (
-            /* Ya confirmado en el resumen: aquí basta con recordar dónde está y que se puede
-               tocar todo. Repetir el bloque entero con su casilla era pedir lo mismo dos veces
-               en dos pantallas seguidas. */
-            <p className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-              Datos de tu reserva anterior. Edita lo que haya cambiado.
-            </p>
-          ) : (
-            <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-              <h3 className="text-sm font-semibold text-blue-900">Estás repitiendo un servicio</h3>
-              <p className="mt-1 text-sm text-blue-800">
-                Hemos rellenado los datos de tu reserva anterior. Revísalos y edita lo que haya
-                cambiado: el precio se calculará de nuevo con las tarifas actuales de cada
-                profesional.
-              </p>
-              <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rebookConfirmed}
-                  onChange={(event) => setRebookConfirmed(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500"
-                />
-                <span className="text-sm text-blue-900">
-                  Confirmo que he comprobado el estado del jardín y que las condiciones son las
-                  mismas que aparecen seleccionadas.
-                </span>
-              </label>
-            </div>
-          )
+          <p className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            Datos de tu reserva anterior. Edita lo que haya cambiado.
+          </p>
         )}
 
         {/* El selector de modo se oculta al repetir con datos ya cargados: son dos tarjetas
@@ -6858,7 +6830,6 @@ const analyzeTreeGroup = async (id: string) => {
               weedingManualConfirmed,
               getPhytosanitaryValidation: (zone) => getPhytosanitaryValidation(zone as any),
               isPhytosanitaryZoneAnalyzed: (zone) => isPhytosanitaryZoneAnalyzed(zone as any),
-              rebookConfirmed,
             })}
             className="w-full bg-green-600 hover:bg-green-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >

@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
-import { Calendar, MapPin, RotateCcw, User } from 'lucide-react';
+import { useMemo } from 'react';
+import { Calendar, MapPin, Pencil, RotateCcw, User } from 'lucide-react';
 
 import { useBooking } from '../../contexts/BookingContext';
 import ServiceDetailCard from '../../components/booking/ServiceDetailCard';
+import { buildConsentRecord } from '../../shared/manualEntry/legalCopy';
 import type { BookingServiceInput } from '../../utils/bookingServiceDetails';
 
 /**
@@ -10,8 +11,11 @@ import type { BookingServiceInput } from '../../utils/bookingServiceDetails';
  *
  * Repetir dejaba al cliente directamente en la pantalla de detalles, con toda la interfaz de
  * análisis por fotos y su texto, como si estuviera empezando de cero. Lo que necesita antes es
- * justo lo contrario: una tarjeta corta que le diga qué se va a repetir, para confirmarlo de un
- * vistazo. Después ya pasa a los apartados editables.
+ * justo lo contrario: una tarjeta corta que le diga qué se va a repetir.
+ *
+ * Y si la da por buena, **no tiene que ver nada más**: se va directo a elegir profesional. El
+ * paso por la pantalla de detalles solo tiene sentido para quien viene a cambiar algo, así que
+ * es una salida aparte y no el camino obligatorio de todos.
  */
 
 const formatPreviousDate = (iso?: string | null): string | null => {
@@ -22,8 +26,7 @@ const formatPreviousDate = (iso?: string | null): string | null => {
 };
 
 const RebookSummaryPage = () => {
-  const { bookingData, setBookingData } = useBooking();
-  const [confirmed, setConfirmed] = useState(false);
+  const { bookingData, setBookingData, setCurrentStep } = useBooking();
 
   // El payload guardado no distingue entre lo que describe el trabajo y lo que solo sirve para
   // pintar este resumen, así que se lee con un tipado laxo en vez de ensuciar BookingData.
@@ -37,9 +40,32 @@ const RebookSummaryPage = () => {
 
   const previousDate = useMemo(() => formatPreviousDate(source.rebookSourceDate), [source.rebookSourceDate]);
 
-  const proceed = () => {
-    // `rebookConfirmed` viaja en los datos de la reserva para que la pantalla de detalles no
-    // vuelva a pedir la misma confirmación que el cliente acaba de dar aquí.
+  /**
+   * Sello de aceptación de ESTA reserva.
+   *
+   * Al saltarse la pantalla de detalles no se pasa por `handleManualSubmit`, que es quien
+   * normalmente acuña el consentimiento. Sin esto viajaría al presupuesto el de la reserva
+   * anterior, con su `acceptedAt` de hace meses: el campo estaría, pero como prueba de que el
+   * cliente aceptó estas condiciones hoy no valdría nada. Las respuestas declaradas sí se
+   * conservan, que es lo que describe el trabajo.
+   */
+  const freshConsent = () => {
+    const previous = (bookingData as { manualConsent?: { declaredVariables?: unknown } }).manualConsent;
+    return { ...buildConsentRecord(), declaredVariables: previous?.declaredVariables };
+  };
+
+  /** Los datos valen tal cual: a elegir profesional, sin pasar por detalles. */
+  const confirmAndContinue = () => {
+    setBookingData({
+      rebookReviewPending: false,
+      rebookConfirmed: true,
+      manualConsent: freshConsent(),
+    } as never);
+    setCurrentStep(3);
+  };
+
+  /** Quiere cambiar algo: a la pantalla de detalles, con el asistente ya en su resumen. */
+  const editDetails = () => {
     setBookingData({ rebookReviewPending: false, rebookConfirmed: true } as never);
   };
 
@@ -101,30 +127,26 @@ const RebookSummaryPage = () => {
         </p>
       </div>
 
-      <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-xl border border-gray-200 bg-white p-4">
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(event) => setConfirmed(event.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-green-600 focus-visible:ring-2 focus-visible:ring-green-500"
-        />
-        <span className="text-sm text-gray-800">
-          Confirmo que he comprobado el estado del jardín y que las condiciones siguen siendo
-          las mismas.
-        </span>
-      </label>
-
-      <button
-        type="button"
-        onClick={proceed}
-        disabled={!confirmed}
-        className="mt-4 w-full rounded-xl bg-green-600 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
-      >
-        Continuar
-      </button>
-      <p className="mt-2 text-center text-xs text-gray-500">
-        En el paso siguiente puedes editar cualquier dato.
-      </p>
+      {/* Antes había aquí una casilla obligatoria de "confirmo el estado del jardín" y un solo
+          botón. Sobraba: pulsar el botón que dice "confirmar" ES la confirmación, y la
+          declaración de veracidad ya se pide una vez, junto a los datos, en el asistente. */}
+      <div className="mt-4 space-y-2">
+        <button
+          type="button"
+          onClick={confirmAndContinue}
+          className="w-full rounded-xl bg-green-600 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+        >
+          Confirmar y ver profesionales
+        </button>
+        <button
+          type="button"
+          onClick={editDetails}
+          className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+        >
+          <Pencil className="w-4 h-4" aria-hidden="true" />
+          Editar los datos
+        </button>
+      </div>
     </div>
   );
 };

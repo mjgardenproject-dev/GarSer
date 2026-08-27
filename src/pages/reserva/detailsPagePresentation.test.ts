@@ -89,22 +89,14 @@ describe('getDetailsContinueDisabled — repetición de servicio', () => {
     isPhytosanitaryZoneAnalyzed: () => true,
   }
 
-  it('bloquea continuar mientras el cliente no confirme que el jardín sigue igual', () => {
+  // Repetir ya NO exige una confirmación propia aquí. Quien viene con datos precargados ya
+  // decidió en el resumen previo, y quien no los trae los está introduciendo desde cero: no
+  // hay nada heredado que reconocer. La veracidad se declara una vez, al final del asistente.
+  it('no bloquea continuar por el mero hecho de estar repitiendo', () => {
     expect(
       getDetailsContinueDisabled({
         ...base,
         bookingData: { isRebooking: true, lawnZones: [{ quantity: 100, analysisLevel: 1 }] } as never,
-        rebookConfirmed: false,
-      }),
-    ).toBe(true)
-  })
-
-  it('deja continuar en cuanto lo confirma', () => {
-    expect(
-      getDetailsContinueDisabled({
-        ...base,
-        bookingData: { isRebooking: true, lawnZones: [{ quantity: 100, analysisLevel: 1 }] } as never,
-        rebookConfirmed: true,
       }),
     ).toBe(false)
   })
@@ -116,5 +108,15 @@ describe('getDetailsContinueDisabled — repetición de servicio', () => {
         bookingData: { lawnZones: [{ quantity: 100, analysisLevel: 1 }] } as never,
       }),
     ).toBe(false)
+  })
+
+  it('sigue aplicando las reglas del servicio al repetir: palmeras sin horas no continúan', () => {
+    expect(
+      getDetailsContinueDisabled({
+        ...base,
+        serviceFlags: getDetailsServiceFlags('Poda de palmeras'),
+        bookingData: { isRebooking: true, palmGroups: [{ quantity: 1 }], estimatedHours: 0 } as never,
+      }),
+    ).toBe(true)
   })
 })

@@ -14,7 +14,7 @@
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml } from '../_shared/emailBrand.ts';
+import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml, formatBookingDate } from '../_shared/emailBrand.ts';
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
@@ -37,7 +37,12 @@ type EmailType =
   | 'booking_price_change_proposed'
   | 'booking_price_change_accepted'
   | 'booking_price_change_rejected'
-  | 'booking_price_change_expired';
+  | 'booking_price_change_expired'
+  // Ciclo de cierre: se le pide al cliente que confirme que el trabajo se hizo, y se le avisa
+  // de lo que pasa con su incidencia.
+  | 'booking_client_confirmation_request'
+  | 'booking_incident_received'
+  | 'booking_incident_resolved';
 
 interface EmailPayload {
   /**
@@ -71,6 +76,7 @@ const BOOKING_EMAIL_TYPES = new Set<EmailType>([
   'booking_accepted', 'booking_rejected', 'booking_cancelled', 'booking_review_request',
   'booking_price_change_proposed', 'booking_price_change_accepted',
   'booking_price_change_rejected', 'booking_price_change_expired',
+  'booking_client_confirmation_request', 'booking_incident_received', 'booking_incident_resolved',
 ]);
 
 // Quién recibe cada aviso de cambio de precio: la propuesta la sufre el CLIENTE (es quien
@@ -78,6 +84,44 @@ const BOOKING_EMAIL_TYPES = new Set<EmailType>([
 const PRICE_CHANGE_TO_GARDENER = new Set<EmailType>([
   'booking_price_change_accepted', 'booking_price_change_rejected',
 ]);
+
+/**
+ * Enlace de confirmacion de un clic.
+ *
+ * El token se acuña AQUI, no lo manda el llamante. El contrato de esta funcion prohibe a
+ * proposito que nadie inyecte datos libres —era un relay de phishing—, y pasarle una URL
+ * desde fuera abriria justo esa puerta. Ademas asi el token en claro no cruza ninguna
+ * frontera de red salvo hacia el destinatario, y si Brevo falla no se ha quemado nada.
+ *
+ * Apunta a la SPA y no a la edge function: los escaneres de enlaces de correo (Outlook Safe
+ * Links, antivirus corporativos) hacen GET a todo lo que ven ANTES que el humano, y un GET
+ * que muta estado se consumiria solo. La pagina es HTML inerte para el escaner; la redencion
+ * real es un POST que dispara React al montar, y los escaneres no ejecutan JavaScript.
+ */
+// deno-lint-ignore no-explicit-any
+async function mintConfirmationUrl(admin: any, bookingId: string, deadlineAt: string | null): Promise<string | null> {
+  try {
+    const raw = crypto.getRandomValues(new Uint8Array(32));
+    const token = btoa(String.fromCharCode(...raw)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+    const hashHex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    const expires = deadlineAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const { error } = await admin.rpc('issue_booking_confirmation_token', {
+      p_booking_id: bookingId,
+      p_token_hash: `\\x${hashHex}`,
+      p_expires_at: expires,
+    });
+    if (error) {
+      console.error('[send-email-notification] no se pudo acuñar el token:', error.message);
+      return null;
+    }
+    return `${BRAND.site}/confirmar-servicio?t=${token}`;
+  } catch (error) {
+    console.error('[send-email-notification] fallo acuñando el token:', error);
+    return null;
+  }
+}
 
 /**
  * Los avisos de alta/rechazo de jardinero solo los puede disparar un administrador.
@@ -122,6 +166,8 @@ Deno.serve(async (req) => {
     let counterpartName = data?.counterpartName || '';
     let bookingPairs: Array<[string, string]> = [];
     let bookingFeeNote = '';
+    let confirmUrl: string | null = null;
+    let deadlineAt: string | null = null;
 
     if (BOOKING_EMAIL_TYPES.has(type) && bookingId) {
       // ---- Contrato vigente: todo se resuelve aquí, con la clave de servicio ----
@@ -174,6 +220,26 @@ Deno.serve(async (req) => {
         counterpartName = details.gardener.name || '';
         bookingPairs = isPriceChange ? details.priceChangeClientPairs : details.clientPairs;
         bookingFeeNote = details.clientFeeNote;
+      }
+
+      if (type === 'booking_client_confirmation_request') {
+        // Solo un servicio interno puede pedir este correo: lleva dentro un token que confirma
+        // el servicio sin sesion, asi que no puede acuñarlo cualquiera que sea parte de la
+        // reserva. Es el unico tipo con una restriccion mas estrecha que el resto.
+        if (!isInternalServiceCaller(req)) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const { data: row } = await admin
+          .from('bookings')
+          .select('confirmation_deadline_at')
+          .eq('id', bookingId)
+          .maybeSingle();
+        deadlineAt = row?.confirmation_deadline_at ?? null;
+        // Si el acuñado falla, el correo sale igual con el enlace a la app: peor que un clic,
+        // pero infinitamente mejor que no avisar de que el plazo corre.
+        confirmUrl = await mintConfirmationUrl(admin, bookingId, deadlineAt);
       }
     } else if (type === 'gardener_approved' || type === 'gardener_rejected') {
       // Avisos de alta/rechazo de jardinero: solo administradores (o un servicio interno).
@@ -282,7 +348,9 @@ Deno.serve(async (req) => {
         heading: `Hola ${escapeHtml(name)}`,
         intro: `${escapeHtml(counterpartName || 'El profesional')} ha dado por finalizado el servicio. Tu valoración ayuda a otros clientes a elegir bien, y al profesional a que le encuentren.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
-        cta: { label: 'Dejar mi valoración', url: `${BRAND.site}/bookings` },
+        // Enlace profundo: abre el formulario sobre ESTA reserva en vez de dejar al cliente
+        // en la lista buscandola.
+        cta: { label: 'Dejar mi valoración', url: `${BRAND.site}/bookings?review=${bookingId}` },
         footerNote: 'Solo te llevará un minuto. Puedes editarla durante las 48 horas siguientes.',
       };
     } else if (type === 'booking_price_change_proposed') {
@@ -328,6 +396,49 @@ Deno.serve(async (req) => {
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
         footerNote: 'Si sigue siendo necesario ajustar el precio, podéis acordarlo por el chat.',
+      };
+    } else if (type === 'booking_client_confirmation_request') {
+      // El unico correo del que depende que NO se cobre un servicio no prestado: si el cliente
+      // no responde, la reserva se da por completada. Por eso la fecha limite se imprime
+      // explicita y sale tal cual de la columna que aplica el reloj, sin recalcularla aqui.
+      const deadline = formatBookingDate(
+        deadlineAt ? deadlineAt.slice(0, 10) : null,
+        deadlineAt ? deadlineAt.slice(11, 19) : null,
+      );
+      subject = '¿Se hizo el trabajo? Confírmalo, por favor';
+      detailPairs = [...bookingPairs, ['Puedes responder hasta', deadline]];
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `¿${escapeHtml(counterpartName || 'El profesional')} hizo el trabajo? Confírmalo y cerramos la reserva.`,
+        bodyHtml: detailRows(detailPairs),
+        cta: confirmUrl
+          ? { label: 'Sí, el trabajo se hizo', url: confirmUrl }
+          : { label: 'Confirmar en la app', url: `${BRAND.site}/bookings` },
+        secondaryCta: { label: 'Ver la reserva en la app', url: `${BRAND.site}/bookings` },
+        footerNote: `Si no nos dices nada antes del ${deadline}, daremos el servicio por completado y los gastos de gestión quedarán cobrados. ¿Algo no fue bien? Abre una incidencia desde la app y lo revisamos.`,
+      };
+    } else if (type === 'booking_incident_received') {
+      subject = 'Hemos recibido tu incidencia';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: 'Hemos recibido lo que nos cuentas y lo estamos revisando. Te escribiremos en cuanto tengamos una respuesta.',
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver mi incidencia', url: `${BRAND.site}/bookings` },
+        footerNote: 'Mientras la revisamos, esta reserva no se cerrará ni se cobrará de forma automática.',
+      };
+    } else if (type === 'booking_incident_resolved') {
+      subject = 'Ya hemos revisado tu incidencia';
+      detailPairs = bookingPairs;
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: 'Hemos terminado de revisar tu incidencia. Puedes ver el detalle y lo que hemos decidido en la app.',
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Ver el detalle', url: `${BRAND.site}/bookings` },
+        footerNote: 'Si hemos devuelto los gastos de gestión, tu banco puede tardar entre 3 y 5 días hábiles en reflejarlo.',
       };
     } else {
       throw new Error('Invalid email type');

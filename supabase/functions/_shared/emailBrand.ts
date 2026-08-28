@@ -71,6 +71,12 @@ export interface BrandedEmailOptions {
   /** HTML adicional ya construido (p. ej. detailRows). No se escapa. */
   bodyHtml?: string;
   cta?: { label: string; url: string };
+  /**
+   * Segunda accion, en estilo secundario. La usa el aviso de confirmacion de servicio: la
+   * principal confirma de un clic y esta lleva a la app, para quien prefiera entrar y mirar
+   * la reserva antes de decidir.
+   */
+  secondaryCta?: { label: string; url: string };
   footerNote?: string;
 }
 
@@ -83,6 +89,18 @@ export function renderBrandedEmail(opts: BrandedEmailOptions): string {
            style="display:inline-block;background:${BRAND.green};color:#ffffff;text-decoration:none;
                   padding:12px 28px;border-radius:8px;font-weight:700;font-size:15px;">
           ${escapeHtml(opts.cta.label)}
+        </a>
+      </div>`
+    : '';
+
+  const secondaryCta = opts.secondaryCta
+    ? `
+      <div style="text-align:center;margin:0 0 8px;">
+        <a href="${escapeHtml(opts.secondaryCta.url)}"
+           style="display:inline-block;background:#ffffff;color:${BRAND.text};text-decoration:none;
+                  border:1px solid ${BRAND.border};padding:11px 24px;border-radius:8px;
+                  font-weight:600;font-size:14px;">
+          ${escapeHtml(opts.secondaryCta.label)}
         </a>
       </div>`
     : '';
@@ -102,6 +120,7 @@ export function renderBrandedEmail(opts: BrandedEmailOptions): string {
       ${opts.intro ? `<p style="margin:0 0 12px;font-size:15px;line-height:1.5;">${escapeHtml(opts.intro)}</p>` : ''}
       ${opts.bodyHtml || ''}
       ${cta}
+      ${secondaryCta}
       ${opts.footerNote ? `<p style="margin:16px 0 0;font-size:13px;color:${BRAND.muted};line-height:1.5;">${escapeHtml(opts.footerNote)}</p>` : ''}
     </div>
     <div style="text-align:center;margin-top:16px;font-size:12px;color:${BRAND.muted};">
@@ -120,6 +139,8 @@ export function renderPlainText(opts: BrandedEmailOptions & { detailPairs?: Arra
   (opts.detailPairs || []).forEach(([label, value]) => lines.push(`${label}: ${value}`));
   if (opts.detailPairs?.length) lines.push('');
   if (opts.cta) lines.push(`${opts.cta.label}: ${opts.cta.url}`, '');
+  // Sin esto, quien lea el correo en texto plano no veria la segunda opcion.
+  if (opts.secondaryCta) lines.push(`${opts.secondaryCta.label}: ${opts.secondaryCta.url}`, '');
   if (opts.footerNote) lines.push(opts.footerNote, '');
   lines.push(`— ${BRAND.name} · ${BRAND.site}`);
   return lines.join('\n');

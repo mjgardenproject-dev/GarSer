@@ -46,3 +46,9 @@ verify_jwt = false
 # Valida al usuario por su cuenta (admin.auth.getUser).
 [functions.booking-manual-declaration]
 verify_jwt = false
+
+# El reloj del ciclo de vida. La llama pg_cron por HTTP con un secreto DEDICADO
+# (`x-lifecycle-secret`), no con la clave de servicio: si ese secreto se filtrara, lo unico que
+# permite es disparar el tick, que es idempotente. La funcion valida ese secreto por si misma.
+[functions.booking-lifecycle-tick]
+verify_jwt = false

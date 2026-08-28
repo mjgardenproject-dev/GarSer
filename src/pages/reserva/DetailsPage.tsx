@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
-import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
+import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X, ShieldCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
@@ -103,7 +103,8 @@ import {
   isManualOnlyService,
 } from '../../shared/manualEntry/manualEntrySchema';
 import { validateManualBookingInput } from '../../shared/manualEntry/manualEntryValidation';
-import { buildConsentRecord, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
+import { buildConsentRecord, MANUAL_ENTRY_CONSENT_TEXT, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
+import { MANUAL_ENTRY_STRINGS } from '../../shared/manualEntry/strings';
 import { buildManualBookingPatch } from './manualEntryBuilders';
 import { recordManualDeclaration, ManualDeclarationError } from '../../utils/bookingManualDeclarationService';
 import { isManualBookingInputEnabled } from '../../utils/manualEntryFeatureFlag';
@@ -1932,7 +1933,17 @@ const DetailsPage: React.FC = () => {
     }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
-    setBookingData({ photos: filePhotos, description: descriptionRef.current });
+    // Desbroce es el unico servicio manual-only: no pasa por el asistente, asi que su casilla
+    // de veracidad tampoco pasaba por `handleManualSubmit` y su aceptacion no quedaba
+    // registrada en ningun sitio. Era el unico de los siete sin prueba de lo que acepto el
+    // cliente, y el texto que firma es el mismo.
+    setBookingData({
+      photos: filePhotos,
+      description: descriptionRef.current,
+      ...(serviceFlags.isWeeding && weedingManualConfirmed
+        ? { manualConsent: buildConsentRecord() }
+        : {}),
+    });
     
     // Explicit persist before leaving
     if (bookingData.serviceIds?.[0]) {
@@ -6798,17 +6809,28 @@ const analyzeTreeGroup = async (id: string) => {
         return (
           <div className="px-4 mb-28">
             <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+              {/* Mismo texto y misma forma que ven los otros seis servicios en el resumen del
+                  asistente: desbroce no pasa por el asistente, pero el cliente no tiene por que
+                  encontrarse aqui una redaccion distinta para decir lo mismo. */}
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={weedingManualConfirmed}
                   onChange={(e) => setWeedingManualConfirmed(e.target.checked)}
-                  className="mt-1 h-4 w-4 accent-green-600"
+                  aria-label={MANUAL_ENTRY_STRINGS.consent.checkboxAriaLabel}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-green-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                 />
-                <span className="text-xs text-gray-700 leading-relaxed">
-                  Confirmo que las variables indicadas para el calculo del presupuesto son correctas. Acepto que, en caso de no serlo, el profesional podra recalcular el precio del desbroce en persona y deberé abonar la diferencia.
+                <span className="flex-1 text-sm leading-relaxed text-gray-700">
+                  <ShieldCheck className="inline w-4 h-4 text-green-600 mr-1 -mt-0.5" aria-hidden />
+                  {MANUAL_ENTRY_STRINGS.consent.shortLabel}
                 </span>
               </label>
+              <details className="mt-3">
+                <summary className="cursor-pointer rounded text-xs font-medium text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500">
+                  {MANUAL_ENTRY_STRINGS.consent.fullTextToggle}
+                </summary>
+                <p className="mt-2 text-xs leading-relaxed text-gray-500">{MANUAL_ENTRY_CONSENT_TEXT}</p>
+              </details>
             </div>
           </div>
         );

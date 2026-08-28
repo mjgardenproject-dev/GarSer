@@ -40,6 +40,15 @@ export const MANUAL_ENTRY_STRINGS = {
     confirmCta: 'Confirmar y continuar',
     checkboxAriaLabel: 'Confirmo que la información proporcionada es real',
     mustAccept: 'Debes confirmar que los datos son reales para continuar.',
+    /**
+     * Etiqueta corta de la casilla. El texto legal íntegro sigue siendo el que se registra y
+     * se prueba (`MANUAL_ENTRY_CONSENT_TEXT`); esto es su resumen legible, con el texto
+     * completo a un toque en el desplegable de al lado.
+     */
+    shortLabel:
+      'Confirmo que los datos son reales. Si al llegar el profesional encuentra algo distinto, ' +
+      'te propondrá un precio nuevo antes de empezar.',
+    fullTextToggle: 'Leer el texto completo',
   },
   errors: {
     submitFailed: 'No hemos podido guardar tus datos. Inténtalo de nuevo.',

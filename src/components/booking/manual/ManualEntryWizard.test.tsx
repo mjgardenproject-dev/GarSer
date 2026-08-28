@@ -31,7 +31,9 @@ describe('ManualEntryWizard', () => {
     expect(onSwitchToPhotos).toHaveBeenCalled();
   });
 
-  it('walks to consent and gates submit on the veracity checkbox', () => {
+  // La veracidad se acepta EN el resumen, sin pantalla aparte: el cliente marca la casilla
+  // mirando los datos a los que se refiere, y el mismo botón que confirma es el que envía.
+  it('acepta la veracidad en el propio resumen y bloquea el envío hasta marcarla', () => {
     const { onSubmit } = renderWeeding();
 
     // Step 1: area
@@ -48,16 +50,13 @@ describe('ManualEntryWizard', () => {
     // Global waste step -> review
     fireEvent.click(screen.getByText('Revisar mis datos'));
 
-    // Summary -> next to consent
+    // El resumen ya es la última pantalla: datos, casilla y botón de envío juntos.
     expect(screen.getByText('Revisa tus datos antes de continuar')).toBeTruthy();
-    fireEvent.click(screen.getByText('Siguiente'));
-
-    // Consent: confirm button disabled until checkbox checked
     const confirmBtn = screen.getByText('Confirmar y continuar') as HTMLButtonElement;
     expect(confirmBtn.disabled).toBe(true);
+    expect(screen.queryByText('Siguiente')).toBeNull();
 
-    const checkbox = screen.getByRole('checkbox');
-    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('checkbox'));
     expect((screen.getByText('Confirmar y continuar') as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(screen.getByText('Confirmar y continuar'));
@@ -76,14 +75,16 @@ describe('ManualEntryWizard', () => {
     expect(screen.getByText(/no puede superar/i)).toBeTruthy();
   });
 
-  it('renders the exact published consent text', () => {
+  // El texto que se REGISTRA sigue siendo el íntegro, así que tiene que seguir estando en la
+  // pantalla aunque la casilla enseñe un resumen corto: plegado, pero presente.
+  it('mantiene el texto legal publicado íntegro en el resumen', () => {
     renderWeeding({ initialItems: [{ area: 50, state: 'normal' }] });
     fireEvent.click(screen.getByText('Siguiente')); // area -> state
     fireEvent.click(screen.getByText('Siguiente')); // state -> herbicide
     fireEvent.click(screen.getByText('Siguiente')); // herbicide -> waste
     fireEvent.click(screen.getByText('Revisar mis datos')); // waste -> summary
-    fireEvent.click(screen.getByText('Siguiente')); // summary -> consent
     expect(screen.getByText(MANUAL_ENTRY_CONSENT_TEXT)).toBeTruthy();
+    expect(screen.getByText('Leer el texto completo')).toBeTruthy();
   });
 
   it('preserves provided initial draft (mode switch keeps progress)', () => {

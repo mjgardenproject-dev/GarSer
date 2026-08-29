@@ -183,9 +183,15 @@ Deno.serve(async (req: Request) => {
       }, 401);
     }
 
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
-      global: { headers: { Authorization: req.headers.get('Authorization') || '' } },
-    });
+    // Cliente de servicio SIN cabeceras del llamante: `resolveOptionalUserId` pasa el token
+    // EXPLÍCITAMENTE a `admin.auth.getUser(token)`, así que no necesita heredar la cabecera. Si
+    // aquí se reenviaba el `Authorization` del cliente (anon o de un usuario autenticado),
+    // PostgREST usaba ESE JWT para decidir el rol de la conexión -no el rol del `apikey`-, así
+    // que todas las escrituras en `persistTelemetry` corrían como `anon`/`authenticated` en vez
+    // de `service_role`, y `booking_funnel_events` (revocada para esos dos roles a propósito)
+    // rechazaba el insert siempre con "permission denied". Al ser best-effort, el cliente nunca
+    // veía el fallo: la telemetría llevaba silenciosamente perdiéndose desde que existe.
+    const admin = createClient(supabaseUrl, serviceRoleKey);
 
     const userId = await resolveOptionalUserId(admin, req);
 

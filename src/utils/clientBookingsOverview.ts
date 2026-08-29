@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { fetchProfileNames } from './profileNames';
 import { fetchBookingMediaMap } from './bookingMediaService';
+import { needsClientConfirmation } from '../shared/bookingStatus';
 
 /**
  * Reservas del cliente agrupadas para la pantalla de inicio.
@@ -35,23 +36,35 @@ export interface OverviewBooking {
   proposed_price_reason: string | null;
   /** Solo en las completadas: la nota que dejó el cliente, si la dejó. */
   review_rating: number | null;
+  /** Cuándo se da por completada sola si el cliente no confirma nada. */
+  confirmation_deadline_at: string | null;
 }
 
 export interface ClientBookingsOverview {
+  /**
+   * El servicio ya terminó y sigue `confirmed`: nadie la ha cerrado. Va PRIMERO porque es la
+   * acción más importante que tiene el cliente -antes vivía escondida dentro de "upcoming"
+   * durante 24 h y luego desaparecía sin más, que es justo el hueco que dejaba cobrar un
+   * servicio sin que nadie preguntara nada-.
+   */
+  toConfirm: OverviewBooking[];
   upcoming: OverviewBooking[];
   toReview: OverviewBooking[];
   reviewed: OverviewBooking[];
+  /** Con una incidencia abierta: ni se cierra ni se cobra sola mientras se revisa. */
+  inReview: OverviewBooking[];
   /**
-   * Todo lo que no encaja arriba: canceladas, caducadas, con incidencia y también las
-   * pendientes o confirmadas cuya fecha ya pasó hace tiempo. Es un cajón de sastre A PROPÓSITO,
-   * calculado por descarte: antes esas reservas no aparecían en ningún grupo y desde el inicio
-   * se evaporaban sin decir qué había pasado con ellas.
+   * Todo lo que no encaja arriba: canceladas, caducadas y cualquier estado desconocido. Es un
+   * cajón de sastre A PROPÓSITO, calculado por descarte: antes esas reservas no aparecían en
+   * ningún grupo y desde el inicio se evaporaban sin decir qué había pasado con ellas.
    */
   closed: OverviewBooking[];
   isEmpty: boolean;
 }
 
-const EMPTY: ClientBookingsOverview = { upcoming: [], toReview: [], reviewed: [], closed: [], isEmpty: true };
+const EMPTY: ClientBookingsOverview = {
+  toConfirm: [], upcoming: [], toReview: [], reviewed: [], inReview: [], closed: [], isEmpty: true,
+};
 
 /** Fin del servicio, para decidir si una reserva confirmada sigue siendo "próxima". */
 const serviceStart = (booking: { date: string; start_time: string | null }): number => {
@@ -65,7 +78,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, services(name, icon)')
+    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, confirmation_deadline_at, services(name, icon)')
     .eq('client_id', clientId)
     .order('date', { ascending: false });
 
@@ -117,6 +130,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
     proposed_total_price: (row.proposed_total_price as number) ?? null,
     proposed_price_reason: (row.proposed_price_reason as string) ?? null,
     review_rating: ratingByBooking.get(String(row.id)) ?? null,
+    confirmation_deadline_at: (row.confirmation_deadline_at as string) ?? null,
   }));
 
   return groupClientBookings(mapped, Date.now());
@@ -127,21 +141,36 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
  * para poder comprobarla sin base de datos, que es donde están las decisiones delicadas.
  */
 export function groupClientBookings(mapped: OverviewBooking[], now: number): ClientBookingsOverview {
+  // Se decide ANTES que "próxima": una confirmada cuyo servicio ya terminó no es algo que está
+  // por venir, es algo que espera una respuesta. Da igual desde cuándo -si el reloj no la ha
+  // cerrado todavía por lo que sea, sigue necesitando confirmación, no esconderse en "cerradas"-.
+  const toConfirm = mapped
+    .filter((b) => needsClientConfirmation(b, now))
+    .sort((a, b) => serviceStart(a) - serviceStart(b));
+  const toConfirmIds = new Set(toConfirm.map((b) => b.id));
+
   // "Próxima" incluye las pendientes de aceptar: para el cliente también es algo que está por
   // venir y sobre lo que espera noticias. El margen de 24 h evita que un servicio de esta
   // mañana desaparezca de la vista antes de que el profesional lo cierre.
   const upcoming = mapped
-    .filter((b) => ['pending', 'confirmed'].includes(b.status) && serviceStart(b) >= now - 24 * 60 * 60 * 1000)
+    .filter(
+      (b) =>
+        !toConfirmIds.has(b.id) &&
+        ['pending', 'confirmed'].includes(b.status) &&
+        serviceStart(b) >= now - 24 * 60 * 60 * 1000,
+    )
     .sort((a, b) => serviceStart(a) - serviceStart(b));
 
   const completed = mapped.filter((b) => b.status === 'completed');
   const toReview = completed.filter((b) => b.review_rating === null);
   const reviewed = completed.filter((b) => b.review_rating !== null);
 
+  const inReview = mapped.filter((b) => b.status === 'disputed');
+
   // Por descarte, no por lista de estados: si mañana aparece un estado nuevo, cae aquí en vez
   // de desaparecer de la pantalla sin que nadie se entere.
-  const placed = new Set([...upcoming, ...toReview, ...reviewed].map((b) => b.id));
+  const placed = new Set([...toConfirm, ...upcoming, ...toReview, ...reviewed, ...inReview].map((b) => b.id));
   const closed = mapped.filter((b) => !placed.has(b.id));
 
-  return { upcoming, toReview, reviewed, closed, isEmpty: mapped.length === 0 };
+  return { toConfirm, upcoming, toReview, reviewed, inReview, closed, isEmpty: mapped.length === 0 };
 }

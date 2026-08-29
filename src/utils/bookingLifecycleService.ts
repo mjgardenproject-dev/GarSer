@@ -125,10 +125,20 @@ export async function reportNoShow(bookingId: string, reason?: string) {
   return invokeLifecycle('report_no_show', bookingId, reason);
 }
 
+/** Inicio real del servicio reservado. Espejo de `getBookingServiceEnd`, para el jardinero. */
+export function getBookingServiceStart(booking: {
+  date?: string | null;
+  start_time?: string | null;
+}): Date | null {
+  if (!booking?.date || !booking?.start_time) return null;
+  const start = new Date(`${booking.date}T${String(booking.start_time).slice(0, 8)}`);
+  return Number.isNaN(start.getTime()) ? null : start;
+}
+
 /**
- * Fin real del servicio reservado. Es la frontera de la ventana de completado: antes de esta
- * hora no se puede dar por finalizado (ni desde la UI ni por API), porque supondría cobrar un
- * servicio que todavía no se ha prestado.
+ * Fin real del servicio reservado. Es la frontera desde la que el CLIENTE puede confirmar (o
+ * abrir una incidencia): antes de esta hora no hay nada que confirmar todavía, porque el
+ * servicio no se ha prestado.
  */
 export function getBookingServiceEnd(booking: {
   date?: string | null;
@@ -142,15 +152,19 @@ export function getBookingServiceEnd(booking: {
   return end;
 }
 
-/** ¿Se puede ya marcar como completada? Solo desde que el servicio terminó. */
-export function canCompleteBooking(booking: {
+/**
+ * ¿Puede el jardinero avisar de que ha terminado? Desde que EMPIEZA el servicio, no desde que
+ * termina: acabar antes de lo estimado es normal, y no tiene por qué esperar sentado a que
+ * pase la hora prevista de fin. El botón ya no cierra la reserva -solo avisa-, así que no hay
+ * ningún riesgo económico en dejarlo pulsar pronto.
+ */
+export function canMarkGardenerFinished(booking: {
   status?: string | null;
   date?: string | null;
   start_time?: string | null;
-  duration_hours?: number | null;
 }): boolean {
   if (booking?.status !== 'confirmed') return false;
-  const end = getBookingServiceEnd(booking);
-  if (!end) return false;
-  return Date.now() >= end.getTime();
+  const start = getBookingServiceStart(booking);
+  if (!start) return false;
+  return Date.now() >= start.getTime();
 }

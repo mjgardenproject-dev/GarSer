@@ -39,7 +39,9 @@ verify_jwt = false
 [functions.send-email-notification]
 verify_jwt = false
 
-# Valida propietario y estado por su cuenta (admin.auth.getUser + guarda de fecha).
+# Capa de compatibilidad retroactiva: delega en la RPC mark_gardener_finished, que valida
+# propietario y ventana por su cuenta. Ya no completa ninguna reserva -ver el comentario de
+# cabecera del propio index.ts-.
 [functions.booking-complete]
 verify_jwt = false
 

@@ -95,3 +95,45 @@ export function isClosedWithoutService(status: string | null | undefined): boole
     normalized === 'disputed'
   );
 }
+
+/**
+ * Fin real del servicio, en milisegundos. Duplica el cálculo de `getBookingServiceEnd`
+ * (`src/utils/bookingLifecycleService.ts`) a propósito: ese módulo importa el cliente de
+ * Supabase, y este fichero se usa en sitios de puro display -incluidas pruebas- donde no
+ * conviene arrastrar esa dependencia por dos líneas de aritmética de fechas.
+ */
+function serviceEndMs(booking: { date?: string | null; start_time?: string | null; duration_hours?: number | null }): number | null {
+  if (!booking?.date || !booking?.start_time) return null;
+  const end = new Date(`${booking.date}T${String(booking.start_time).slice(0, 8)}`);
+  if (Number.isNaN(end.getTime())) return null;
+  end.setHours(end.getHours() + Math.max(Number(booking.duration_hours) || 1, 1));
+  return end.getTime();
+}
+
+/**
+ * ¿Tiene el cliente algo que confirmar? El servicio ya terminó y la reserva sigue `confirmed`:
+ * nadie la ha cerrado todavía. Es el hueco que antes se resolvía en silencio -la reserva vivía
+ * en "Confirmada" indefinidamente hasta que el reloj la cerraba a las 24 h sin preguntar nada-.
+ */
+export function needsClientConfirmation(
+  booking: { status?: string | null; date?: string | null; start_time?: string | null; duration_hours?: number | null },
+  now: number = Date.now(),
+): boolean {
+  if (booking.status !== 'confirmed') return false;
+  const end = serviceEndMs(booking);
+  return end !== null && now >= end;
+}
+
+/**
+ * ¿Puede el cliente abrir una incidencia sobre esta reserva? La puerta de entrada es solo
+ * temporal -que el servicio ya haya ocurrido-: la RPC `report_booking_incident` es quien decide
+ * de verdad qué tipos de incidencia admite cada estado y hasta cuándo, así que aquí basta con
+ * no ofrecer el botón para un servicio que todavía no ha pasado.
+ */
+export function canReportIncident(
+  booking: { date?: string | null; start_time?: string | null; duration_hours?: number | null },
+  now: number = Date.now(),
+): boolean {
+  const end = serviceEndMs(booking);
+  return end !== null && now >= end;
+}

@@ -11,6 +11,7 @@ import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { fetchRebookPayload } from '../../utils/rebookService';
 import { cancelBooking } from '../../utils/bookingLifecycleService';
+import { confirmBookingService } from '../../utils/bookingIncidentService';
 import { clearBookingResumeStorage, writeBookingResume } from '../../utils/bookingResumeStorage';
 import { formatEuro } from '../../shared/bookingAmounts';
 import ChatWindow from '../chat/ChatWindow';
@@ -157,6 +158,25 @@ const BookingsList = () => {
     });
   };
 
+  /**
+   * Confirmar no mueve dinero -los gastos de gestión ya se capturaron al aceptar el jardinero-,
+   * así que solo cierra la reserva. Se encadena directo con la valoración: el cliente ya está
+   * aquí y ya ha dicho que sí.
+   */
+  const handleConfirmService = async (booking: BookingWithDetails) => {
+    setBusyId(booking.id);
+    try {
+      await confirmBookingService(booking.id);
+      toast.success('¡Gracias! Servicio confirmado.');
+      await fetchBookings();
+      setReviewTarget(booking);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo confirmar el servicio.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleRebook = async (booking: BookingWithDetails) => {
     if (!user?.id) return;
     setBusyId(booking.id);
@@ -278,6 +298,8 @@ const BookingsList = () => {
               onRebook={() => void handleRebook(booking)}
               onAcceptPriceChange={() => void respondToPriceChange(booking, true)}
               onRejectPriceChange={() => void respondToPriceChange(booking, false)}
+              onConfirmService={() => void handleConfirmService(booking)}
+              onReportIncident={() => navigate(`/incidencias/${booking.id}`)}
             />
           ))}
         </div>

@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { clearBookingResumeStorage, hasWizardResume, writeBookingResume } from '../../utils/bookingResumeStorage';
 import { fetchRebookPayload } from '../../utils/rebookService';
 import { cancelBooking } from '../../utils/bookingLifecycleService';
+import { confirmBookingService } from '../../utils/bookingIncidentService';
 import {
   fetchClientBookingsOverview,
   type ClientBookingsOverview,
@@ -119,12 +120,33 @@ const ClientBookingLauncher = () => {
     });
   };
 
+  /**
+   * Confirmar no mueve dinero -los gastos de gestión ya se capturaron al aceptar el jardinero-,
+   * así que solo cierra la reserva. Se encadena directo con la valoración: el cliente ya está
+   * aquí y ya ha dicho que sí, preguntarle otra vez más tarde es el mismo viaje repetido dos veces.
+   */
+  const handleConfirmService = async (booking: OverviewBooking) => {
+    setBusyId(booking.id);
+    try {
+      await confirmBookingService(booking.id);
+      toast.success('¡Gracias! Servicio confirmado.');
+      await load();
+      setReviewTarget(booking);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo confirmar el servicio.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const cardHandlers = {
     onOpenChat: (booking: OverviewBooking) =>
       setChatTarget({ bookingId: booking.id, gardenerName: booking.gardener_name }),
     onCancel: handleCancel,
     onReview: (booking: OverviewBooking) => setReviewTarget(booking),
     onRebook: (booking: OverviewBooking) => void handleRebook(booking),
+    onConfirmService: (booking: OverviewBooking) => void handleConfirmService(booking),
+    onReportIncident: (booking: OverviewBooking) => navigate(`/incidencias/${booking.id}`),
   };
 
   return (
@@ -192,6 +214,34 @@ const ClientBookingLauncher = () => {
 
         {!loading && overview && !overview.isEmpty && (
           <div className="space-y-6">
+            {/* 0. El servicio ya terminó y espera confirmación: es lo más importante que tiene
+                   el cliente que hacer, antes incluso de lo que está por venir. */}
+            {overview.toConfirm.length > 0 && (
+              <div className="space-y-3">
+                {overview.toConfirm.map((booking) => (
+                  <ClientBookingCard
+                    key={booking.id}
+                    booking={booking}
+                    compact
+                    accent="attention"
+                    eyebrow="Confirma el servicio"
+                    busy={busyId === booking.id}
+                    {...cardHandlers}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Con una incidencia abierta: visible, pero sin urgencia -ya está en manos del
+                administrador y no reclama ninguna acción del cliente-. */}
+            {overview.inReview.length > 0 && (
+              <div className="space-y-3">
+                {overview.inReview.map((booking) => (
+                  <ClientBookingCard key={booking.id} booking={booking} compact busy={busyId === booking.id} {...cardHandlers} />
+                ))}
+              </div>
+            )}
+
             {/* 1. Lo que está por venir: tiene preferencia siempre. */}
             {overview.upcoming.length > 0 && (
               <div className="space-y-3">

@@ -23,6 +23,7 @@ const booking = (over: Partial<OverviewBooking> & { id: string }): OverviewBooki
   proposed_total_price: null,
   proposed_price_reason: null,
   review_rating: null,
+  confirmation_deadline_at: null,
   ...over,
 });
 
@@ -52,25 +53,69 @@ describe('groupClientBookings', () => {
     expect(result.reviewed.map((b) => b.id)).toEqual(['valorada']);
   });
 
-  it('mantiene una confirmada de hoy en "próximas" hasta 24 h después', () => {
+  it('mantiene una confirmada de hoy en "próximas" mientras el servicio no haya terminado', () => {
+    // Empieza a las 11:00, dura 2 h → termina a las 13:00. NOW son las 12:00: todavía en curso.
     const result = groupClientBookings(
-      [booking({ id: 'esta-manana', date: '2026-08-25', start_time: '08:00:00' })],
+      [booking({ id: 'en-curso', date: '2026-08-25', start_time: '11:00:00', duration_hours: 2 })],
       NOW,
     );
-    expect(result.upcoming.map((b) => b.id)).toEqual(['esta-manana']);
+    expect(result.upcoming.map((b) => b.id)).toEqual(['en-curso']);
+    expect(result.toConfirm).toHaveLength(0);
   });
 
-  it('recoge en "otras" lo cancelado, lo caducado y cualquier estado desconocido', () => {
+  it('mueve a "toConfirm" -no a "próximas"- una confirmada cuyo servicio ya terminó', () => {
+    // Antes esta reserva se quedaba en "próximas" durante 24 h desde el INICIO y luego
+    // desaparecía sin más: el hueco exacto que permitía cobrar un servicio sin preguntar nada.
+    // Empieza a las 08:00, dura 2 h → termina a las 10:00. NOW son las 12:00: ya terminó.
+    const result = groupClientBookings(
+      [booking({ id: 'esta-manana', date: '2026-08-25', start_time: '08:00:00', duration_hours: 2 })],
+      NOW,
+    );
+    expect(result.toConfirm.map((b) => b.id)).toEqual(['esta-manana']);
+    expect(result.upcoming).toHaveLength(0);
+  });
+
+  it('"toConfirm" va antes que "upcoming" y ordena por fecha de servicio', () => {
+    const result = groupClientBookings(
+      [
+        booking({ id: 'tarde', date: '2026-08-20', start_time: '08:00:00', duration_hours: 1 }),
+        booking({ id: 'pronto', date: '2026-08-10', start_time: '08:00:00', duration_hours: 1 }),
+      ],
+      NOW,
+    );
+    expect(result.toConfirm.map((b) => b.id)).toEqual(['pronto', 'tarde']);
+  });
+
+  it('agrupa las incidencias abiertas en "inReview", sin cerrarlas ni cobrarlas', () => {
+    const result = groupClientBookings(
+      [booking({ id: 'disputada', status: 'disputed', date: '2026-08-01' })],
+      NOW,
+    );
+    expect(result.inReview.map((b) => b.id)).toEqual(['disputada']);
+    expect(result.closed).toHaveLength(0);
+  });
+
+  it('recoge en "otras" lo cancelado y cualquier estado desconocido', () => {
     const result = groupClientBookings(
       [
         booking({ id: 'cancelada', status: 'cancelled', date: '2026-08-01' }),
-        booking({ id: 'caducada', status: 'confirmed', date: '2026-01-01' }),
         booking({ id: 'inventado', status: 'un_estado_futuro', date: '2026-08-01' }),
       ],
       NOW,
     );
     // Ninguna reserva puede evaporarse de la pantalla: lo que no encaja arriba, cae aquí.
-    expect(result.closed.map((b) => b.id).sort()).toEqual(['caducada', 'cancelada', 'inventado']);
+    expect(result.closed.map((b) => b.id).sort()).toEqual(['cancelada', 'inventado']);
+  });
+
+  it('una confirmada muy antigua sigue pidiendo confirmación, no se esconde en "otras"', () => {
+    // Si por lo que sea el reloj no la cerró, es más honesto seguir pidiendo la confirmación
+    // que darla por perdida en el cajón de sastre.
+    const result = groupClientBookings(
+      [booking({ id: 'caducada', status: 'confirmed', date: '2026-01-01' })],
+      NOW,
+    );
+    expect(result.toConfirm.map((b) => b.id)).toEqual(['caducada']);
+    expect(result.closed).toHaveLength(0);
   });
 
   it('no pierde ni duplica ninguna reserva al repartir', () => {
@@ -80,8 +125,8 @@ describe('groupClientBookings', () => {
       booking({ id: 'c', status: 'completed', date: '2026-08-02', review_rating: 5 }),
       booking({ id: 'd', status: 'cancelled', date: '2026-08-03' }),
     ];
-    const { upcoming, toReview, reviewed, closed } = groupClientBookings(rows, NOW);
-    const todas = [...upcoming, ...toReview, ...reviewed, ...closed].map((b) => b.id);
+    const { toConfirm, upcoming, toReview, reviewed, inReview, closed } = groupClientBookings(rows, NOW);
+    const todas = [...toConfirm, ...upcoming, ...toReview, ...reviewed, ...inReview, ...closed].map((b) => b.id);
     expect(todas.sort()).toEqual(['a', 'b', 'c', 'd']);
     expect(new Set(todas).size).toBe(4);
   });

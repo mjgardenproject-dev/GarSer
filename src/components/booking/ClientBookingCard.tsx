@@ -5,7 +5,13 @@ import { es } from 'date-fns/locale';
 
 import { ClientBookingAmounts } from './BookingAmounts';
 import { formatEuro } from '../../shared/bookingAmounts';
-import { getBookingStatusLabel, getBookingStatusTone, isCancellableStatus } from '../../shared/bookingStatus';
+import {
+  canReportIncident,
+  getBookingStatusLabel,
+  getBookingStatusTone,
+  isCancellableStatus,
+  needsClientConfirmation,
+} from '../../shared/bookingStatus';
 
 /**
  * Tarjeta de reserva del cliente. Única para "Mis reservas" y para el inicio.
@@ -46,6 +52,8 @@ export interface ClientBookingCardBooking {
   price_change_status?: string | null;
   proposed_total_price?: number | null;
   proposed_price_reason?: string | null;
+  /** Cuándo se da por completada sola si no se confirma nada. */
+  confirmation_deadline_at?: string | null;
 }
 
 interface Props {
@@ -63,6 +71,10 @@ interface Props {
   onRebook?: (booking: ClientBookingCardBooking) => void;
   onAcceptPriceChange?: (booking: ClientBookingCardBooking) => void;
   onRejectPriceChange?: (booking: ClientBookingCardBooking) => void;
+  /** El cliente confirma que el trabajo se hizo. Cierra la reserva y desbloquea la valoración. */
+  onConfirmService?: (booking: ClientBookingCardBooking) => void;
+  /** Abre el parte de incidencia. El cliente no cierra nada por su cuenta: lo revisa un admin. */
+  onReportIncident?: (booking: ClientBookingCardBooking) => void;
 }
 
 const ACCENTS: Record<NonNullable<Props['accent']>, string> = {
@@ -73,6 +85,16 @@ const ACCENTS: Record<NonNullable<Props['accent']>, string> = {
 
 /** `10:00:00` → `10:00`. La página completa mostraba los segundos. */
 const formatTime = (value?: string | null) => (value ? value.slice(0, 5) : null);
+
+/** Fecha límite del correo de confirmación, en el mismo formato que promete el email. */
+const formatDeadline = (iso?: string | null): string | null => {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const day = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).format(parsed);
+  const time = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' }).format(parsed);
+  return `${day} a las ${time}`;
+};
 
 const Stars = ({ value }: { value: number }) => (
   <span className="inline-flex items-center gap-0.5" aria-label={`Tu valoración: ${value} de 5`}>
@@ -108,6 +130,8 @@ const ClientBookingCard = ({
   onRebook,
   onAcceptPriceChange,
   onRejectPriceChange,
+  onConfirmService,
+  onReportIncident,
 }: Props) => {
   const [showDetails, setShowDetails] = useState(!compact);
 
@@ -119,6 +143,12 @@ const ClientBookingCard = ({
   const hasPriceChange = booking.price_change_status === 'pending_client_acceptance';
   const canCancel = isCancellableStatus(booking.status) && Boolean(onCancel);
   const isCompleted = booking.status === 'completed';
+  const isDisputed = booking.status === 'disputed';
+  const awaitingConfirmation = needsClientConfirmation(booking);
+  const deadlineText = formatDeadline(booking.confirmation_deadline_at);
+  // El enlace discreto de incidencias en una completada no compite con el bloque grande de
+  // confirmación: uno excluye al otro, nunca coinciden en la misma reserva.
+  const canOpenIncidentFromCompleted = isCompleted && !awaitingConfirmation && canReportIncident(booking) && Boolean(onReportIncident);
 
   return (
     <article className={`bg-white border rounded-xl p-4 shadow-sm ${ACCENTS[accent]}`}>
@@ -195,6 +225,51 @@ const ClientBookingCard = ({
             </button>
           </div>
         </div>
+      )}
+
+      {/* ¿Se hizo el trabajo?: NUNCA se pliega, igual que el cambio de precio -espera una
+          respuesta antes de que la reserva se cobre sola-. Mismo lenguaje visual: ámbar, motivo
+          y dos acciones. */}
+      {awaitingConfirmation && (onConfirmService || onReportIncident) && (
+        <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-amber-50">
+          <p className="text-sm font-semibold text-amber-900">¿Se hizo el trabajo?</p>
+          {deadlineText && (
+            <p className="mt-1 text-sm text-amber-800">
+              Si no nos dices nada antes del {deadlineText}, lo daremos por completado y los
+              gastos de gestión quedarán cobrados.
+            </p>
+          )}
+          <div className="mt-3 flex flex-col sm:flex-row gap-2">
+            {onConfirmService && (
+              <button
+                type="button"
+                onClick={() => onConfirmService(booking)}
+                disabled={busy}
+                className="flex-1 bg-green-600 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+              >
+                {busy ? 'Confirmando…' : 'Sí, confirmar'}
+              </button>
+            )}
+            {onReportIncident && (
+              <button
+                type="button"
+                onClick={() => onReportIncident(booking)}
+                disabled={busy}
+                className="flex-1 bg-white px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-700 border border-gray-300 hover:bg-gray-50 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+              >
+                Tengo una incidencia
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Con una incidencia abierta: ni se cierra ni se cobra sola mientras se revisa. */}
+      {isDisputed && (
+        <p className="mt-3 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2.5 text-sm text-purple-900">
+          Tienes una incidencia en revisión sobre este servicio. Te avisaremos por email en
+          cuanto tengamos una respuesta.
+        </p>
       )}
 
       {/* Nota de la valoración propia: cierra el ciclo sin ocupar sitio. */}
@@ -297,6 +372,18 @@ const ClientBookingCard = ({
             className="w-full rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 transition-colors"
           >
             {busy ? 'Cancelando…' : 'Cancelar reserva'}
+          </button>
+        )}
+
+        {/* Poca prominencia a propósito: no compite con "Volver a reservar" ni con valorar, es
+            la salida para cuando algo no fue bien mucho después de cerrarse. */}
+        {canOpenIncidentFromCompleted && (
+          <button
+            type="button"
+            onClick={() => onReportIncident?.(booking)}
+            className="w-full text-center text-xs font-medium text-gray-500 underline hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded"
+          >
+            ¿Algo no fue bien? Abre una incidencia
           </button>
         )}
       </div>

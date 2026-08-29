@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, MapPin, ArrowLeft, MessageCircle, Check, ChevronDown, Phone, Navigation, Loader2 } from 'lucide-react';
+import { Calendar, Clock, MapPin, ArrowLeft, MessageCircle, Check, ChevronDown, Phone, Navigation, Loader2, MessageSquareQuote, AlertTriangle } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -10,7 +10,8 @@ import { Booking } from '../../types';
 import { useNavigate } from 'react-router-dom';
 import ChatWindow from '../chat/ChatWindow';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
-import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
+import { markGardenerFinished, respondToIncident } from '../../utils/bookingIncidentService';
+import { canMarkGardenerFinished, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { fetchBookingServiceDetails, type BookingServiceInput } from '../../utils/bookingServiceDetails';
 import ServiceDetailCard from './ServiceDetailCard';
 import PhotoGallery from '../common/PhotoGallery';
@@ -18,13 +19,32 @@ import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 
+interface GardenerBookingIncident {
+  id: string;
+  kind: string;
+  description: string;
+  status: string;
+  gardener_response: string | null;
+}
+
 interface GardenerBookingItem extends Booking {
   services?: { name: string } | null;
   client_profile?: { id: string; full_name: string | null; phone: string | null } | null;
   media_urls?: string[];
   service_input?: BookingServiceInput | null;
   data_input_mode?: string | null;
+  /** Incidencia abierta (o resuelta reciente) sobre esta reserva, si la hay. */
+  incident?: GardenerBookingIncident | null;
 }
+
+const INCIDENT_KIND_LABELS: Record<string, string> = {
+  gardener_no_show: 'El cliente dice que no acudiste',
+  service_not_done: 'El cliente dice que no hiciste el trabajo',
+  service_incomplete: 'El cliente dice que el trabajo quedó incompleto',
+  billing: 'El cliente ha reportado un problema con el cobro',
+  behaviour: 'El cliente ha reportado un problema de trato',
+  other: 'El cliente ha reportado un problema',
+};
 
 const GardenerBookings: React.FC = () => {
   const { user } = useAuth();
@@ -36,6 +56,11 @@ const GardenerBookings: React.FC = () => {
   // Confirmación antes de completar: en móvil un toque accidental era irreversible
   const [confirmCompleteId, setConfirmCompleteId] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
+  // Alegación del jardinero sobre una incidencia: ve de qué se le acusa y puede dar su
+  // versión antes de que el administrador decida. Sin esto, un profesional se lleva una
+  // penalización y un reembolso en su contra sin saber por qué.
+  const [incidentDrafts, setIncidentDrafts] = useState<Record<string, string>>({});
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -50,7 +75,10 @@ const GardenerBookings: React.FC = () => {
         .from('bookings')
         .select(`*, services(name)`)
         .eq('gardener_id', user?.id)
-        .in('status', ['confirmed', 'completed'])
+        // 'disputed' incluido: es donde vive la incidencia que el jardinero tiene que poder
+        // ver y responder. Sin esto la reserva desaparecía de esta pantalla en cuanto el
+        // cliente abría una incidencia bloqueante.
+        .in('status', ['confirmed', 'completed', 'disputed'])
         .order('date', { ascending: true });
 
       if (bookingsError) throw bookingsError;
@@ -73,6 +101,18 @@ const GardenerBookings: React.FC = () => {
           }
         );
 
+        const bookingIds = bookingsWithProfiles.map((b: any) => b.id);
+        const { data: incidentRows } = await supabase
+          .from('booking_incidents')
+          .select('id, booking_id, kind, description, status, gardener_response')
+          .in('booking_id', bookingIds)
+          .in('status', ['open', 'in_review'])
+          .order('created_at', { ascending: false });
+        const incidentByBooking = new Map<string, GardenerBookingIncident>();
+        (incidentRows || []).forEach((row: any) => {
+          if (!incidentByBooking.has(row.booking_id)) incidentByBooking.set(row.booking_id, row);
+        });
+
         const enriched: GardenerBookingItem[] = await Promise.all(
           bookingsWithProfiles.map(async (booking: any) => {
             let service_input: BookingServiceInput | null = null;
@@ -85,6 +125,7 @@ const GardenerBookings: React.FC = () => {
               ...booking,
               media_urls: mediaMap[booking.id] || [],
               service_input,
+              incident: incidentByBooking.get(booking.id) || null,
             };
           })
         );
@@ -100,21 +141,44 @@ const GardenerBookings: React.FC = () => {
     }
   };
 
-  const completeBooking = async (bookingId: string) => {
+  /**
+   * "He terminado" (antes "completar"): ya NO cierra la reserva ni la cobra. Solo avisa al
+   * cliente, que es quien confirma -o el reloj a las 24h si no dice nada-.
+   */
+  const finishBooking = async (bookingId: string) => {
     setCompleting(true);
     try {
-      const result = await completeBookingAndCleanupMedia(bookingId);
-      if (result.cleanup?.status === 'failed') {
-        console.warn('La reserva se completó, pero la limpieza de fotos requiere revisión:', result.cleanup.warning);
-      }
-      toast.success('Servicio marcado como completado');
+      const result = await markGardenerFinished(bookingId);
+      toast.success(
+        result.idempotent
+          ? 'Ya habías avisado de que terminaste este servicio.'
+          : 'Avisado. El cliente tiene que confirmar para cerrar la reserva.',
+      );
       setConfirmCompleteId(null);
       await fetchBookings();
     } catch (e) {
-      console.error('Error actualizando estado de la reserva:', e);
-      toast.error('No se pudo completar la reserva. Inténtalo de nuevo.');
+      console.error('Error avisando de que el servicio terminó:', e);
+      toast.error(e instanceof Error ? e.message : 'No se pudo avisar. Inténtalo de nuevo.');
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const submitIncidentResponse = async (incidentId: string) => {
+    const text = (incidentDrafts[incidentId] || '').trim();
+    if (text.length < 10) {
+      toast.error('Explica un poco más tu versión (al menos 10 caracteres).');
+      return;
+    }
+    setRespondingId(incidentId);
+    try {
+      await respondToIncident(incidentId, text);
+      toast.success('Hemos enviado tu versión. La tendremos en cuenta al revisarla.');
+      await fetchBookings();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo enviar tu versión.');
+    } finally {
+      setRespondingId(null);
     }
   };
 
@@ -201,8 +265,9 @@ const GardenerBookings: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Acciones de contacto y navegación: lo primero que necesita el jardinero en el móvil */}
-                {booking.status === 'confirmed' && (
+                {/* Acciones de contacto y navegación: lo primero que necesita el jardinero en el móvil.
+                    También en disputa: el chat sigue siendo el sitio para aclarar lo que ha pasado. */}
+                {(booking.status === 'confirmed' || booking.status === 'disputed') && (
                   <div className="flex flex-wrap gap-2 mb-4">
                     {booking.client_profile?.phone && (
                       <a
@@ -232,6 +297,54 @@ const GardenerBookings: React.FC = () => {
                   </div>
                 )}
 
+                {booking.incident && (
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-900">
+                      <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                      {INCIDENT_KIND_LABELS[booking.incident.kind] || 'El cliente ha reportado un problema'}
+                    </p>
+                    <p className="mt-1 text-sm text-amber-800 break-words whitespace-pre-line">
+                      {booking.incident.description}
+                    </p>
+
+                    {booking.incident.gardener_response ? (
+                      <div className="mt-3 rounded-lg bg-white/70 p-3">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                          <MessageSquareQuote className="w-3.5 h-3.5" aria-hidden="true" />
+                          Tu versión
+                        </p>
+                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-line break-words">
+                          {booking.incident.gardener_response}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <label htmlFor={`incident-response-${booking.incident.id}`} className="block text-xs font-medium text-amber-900 mb-1.5">
+                          Danos tu versión antes de que lo revisemos
+                        </label>
+                        <textarea
+                          id={`incident-response-${booking.incident.id}`}
+                          value={incidentDrafts[booking.incident.id] || ''}
+                          onChange={(event) =>
+                            setIncidentDrafts((prev) => ({ ...prev, [booking.incident!.id]: event.target.value.slice(0, 2000) }))
+                          }
+                          rows={3}
+                          placeholder="Cuéntanos qué pasó de verdad, con el detalle que puedas."
+                          className="w-full p-2.5 border border-amber-300 rounded-lg text-base sm:text-sm bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void submitIncidentResponse(booking.incident!.id)}
+                          disabled={respondingId === booking.incident.id}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                        >
+                          {respondingId === booking.incident.id ? 'Enviando…' : 'Enviar mi versión'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <ServiceDetailCard
                   className="mb-4"
                   durationHours={booking.duration_hours}
@@ -253,13 +366,27 @@ const GardenerBookings: React.FC = () => {
 
                 {booking.status === 'confirmed' && (
                   <div className="flex justify-end">
-                    <button
-                      onClick={() => setConfirmCompleteId(booking.id)}
-                      className="flex items-center px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
-                    >
-                      <Check className="w-4 h-4 mr-2" />
-                      Servicio Completado
-                    </button>
+                    {booking.gardener_finished_at ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
+                        <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+                        Terminado · esperando confirmación del cliente
+                      </span>
+                    ) : canMarkGardenerFinished(booking) ? (
+                      <button
+                        onClick={() => setConfirmCompleteId(booking.id)}
+                        className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        He terminado
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-500 self-center">
+                        Podrás avisar en cuanto empiece el servicio
+                        {getBookingServiceStart(booking)
+                          ? ` (${format(getBookingServiceStart(booking) as Date, "d MMM 'a las' HH:mm", { locale: es })})`
+                          : ''}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -268,25 +395,27 @@ const GardenerBookings: React.FC = () => {
         )}
       </div>
 
-      {/* Confirmación antes de marcar como completado (dispara limpieza de fotos, no reversible) */}
+      {/* Confirmación antes de avisar de que el trabajo terminó. Ya no dispara limpieza de
+          fotos ni cierra la reserva: eso lo decide el cliente, o el reloj a las 24h. */}
       {confirmCompleteId && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 text-center">
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Check className="w-6 h-6 text-purple-600" />
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Check className="w-6 h-6 text-green-600" />
             </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">¿Marcar como completado?</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">¿Has terminado el trabajo?</h3>
             <p className="text-sm text-gray-600 mb-6">
-              Confirma que el trabajo está terminado. Esta acción cierra la reserva y no se puede deshacer.
+              Avisamos al cliente para que lo confirme. La reserva se cerrará cuando él confirme
+              o pasadas 24 h.
             </p>
             <div className="flex flex-col gap-3">
               <button
-                onClick={() => completeBooking(confirmCompleteId)}
+                onClick={() => finishBooking(confirmCompleteId)}
                 disabled={completing}
-                className="w-full bg-purple-600 text-white py-3 px-4 rounded-xl font-bold hover:bg-purple-700 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+                className="w-full bg-green-600 text-white py-3 px-4 rounded-xl font-bold hover:bg-green-700 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
               >
                 {completing && <Loader2 className="w-4 h-4 animate-spin" />}
-                {completing ? 'Completando…' : 'Sí, completar servicio'}
+                {completing ? 'Avisando…' : 'Sí, he terminado'}
               </button>
               <button
                 onClick={() => setConfirmCompleteId(null)}

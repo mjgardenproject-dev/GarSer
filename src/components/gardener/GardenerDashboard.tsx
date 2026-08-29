@@ -14,9 +14,9 @@ import { useConfirmDialog } from '../common/ConfirmDialog';
 import BookingRequestsManager from './BookingRequestsManager';
 import GardenerReviews from './GardenerReviews';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
-import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
+import { markGardenerFinished } from '../../utils/bookingIncidentService';
 import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
-import { cancelBooking, canCompleteBooking, getBookingServiceEnd } from '../../utils/bookingLifecycleService';
+import { cancelBooking, canMarkGardenerFinished, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
@@ -183,11 +183,16 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           response: status === 'confirmed' ? 'accept' : 'reject',
         });
       } else {
-        if (status === 'completed') {
-          const result = await completeBookingAndCleanupMedia(bookingId);
-          if (result.cleanup?.status === 'failed') {
-            toast.error(result.cleanup.warning || 'La reserva se ha completado, pero la limpieza de fotos requiere revisión.');
-          }
+        if (status === 'finished') {
+          // "He terminado" NO cierra la reserva: solo avisa al cliente, que es quien confirma
+          // (o el reloj a las 24h si no dice nada). Antes este mismo botón completaba y cobraba
+          // la reserva sin que el cliente confirmara nada.
+          const result = await markGardenerFinished(bookingId);
+          toast.success(
+            result.idempotent
+              ? 'Ya habías avisado de que terminaste este servicio.'
+              : 'Avisado. El cliente tiene que confirmar para cerrar la reserva.',
+          );
         } else {
           const { error } = await supabase
             .from('bookings')
@@ -452,22 +457,28 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         </div>
                       )}
                       
-                      {/* Ventana de completado (paso 8C): solo desde que el servicio ha
-                          terminado. Antes se mostraba en cuanto la reserva estaba confirmada,
-                          de modo que se podía cerrar —y cobrar— un servicio de dentro de 3 días. */}
+                      {/* "He terminado" (antes "Servicio Completado"): ya NO cierra la
+                          reserva, solo avisa al cliente. Pulsable desde que EMPIEZA el
+                          servicio -acabar antes de lo estimado es normal- y no desde que
+                          termina, que era la ventana de la version anterior. */}
                       {booking.status === 'confirmed' && (
-                        canCompleteBooking(booking) ? (
+                        booking.gardener_finished_at ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
+                            <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+                            Terminado · esperando confirmación del cliente
+                          </span>
+                        ) : canMarkGardenerFinished(booking) ? (
                           <button
-                            onClick={() => updateBookingStatus(booking.id, 'completed')}
-                            className="px-4 py-3 sm:py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                            onClick={() => updateBookingStatus(booking.id, 'finished')}
+                            className="px-4 py-3 sm:py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                           >
-                            Servicio Completado
+                            He terminado
                           </button>
                         ) : (
                           <span className="text-xs text-gray-500 self-center">
-                            Podrás cerrarla cuando termine el servicio
-                            {getBookingServiceEnd(booking)
-                              ? ` (${format(getBookingServiceEnd(booking) as Date, "d MMM 'a las' HH:mm", { locale: es })})`
+                            Podrás avisar en cuanto empiece el servicio
+                            {getBookingServiceStart(booking)
+                              ? ` (${format(getBookingServiceStart(booking) as Date, "d MMM 'a las' HH:mm", { locale: es })})`
                               : ''}
                           </span>
                         )

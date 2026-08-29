@@ -35,7 +35,9 @@ export interface BookingLifecycleResult {
  * el dinero de la reserva": es un problema de configuración nuestro, y enseñárselo a alguien
  * que solo quería cancelar su reserva no le sirve de nada y expone las tripas del sistema.
  */
-const CODIGOS_CON_MENSAJE_PARA_EL_CLIENTE = new Set([
+// Exportada: el servicio de incidencias añade sus propios códigos a esta misma lista, en vez
+// de mantener una segunda cuya deriva de la primera nadie notaría.
+export const CODIGOS_CON_MENSAJE_PARA_EL_CLIENTE = new Set([
   'lifecycle_rpc_rejected',
   'price_change_unresolved',
   'slot_unavailable',
@@ -46,7 +48,7 @@ const CODIGOS_CON_MENSAJE_PARA_EL_CLIENTE = new Set([
   'auth_required',
 ]);
 
-interface ErrorDeFuncion {
+export interface ErrorDeFuncion {
   mensaje: string;
   code: string | null;
 }
@@ -59,7 +61,7 @@ interface ErrorDeFuncion {
  * fallar una cancelación. El cuerpo de la respuesta sí trae `{ error, code }`, y vive en
  * `.context` como Response sin consumir.
  */
-async function leerErrorDeFuncion(error: unknown): Promise<ErrorDeFuncion> {
+export async function leerErrorDeFuncion(error: unknown): Promise<ErrorDeFuncion> {
   const generico = 'No hemos podido completar la operación. Vuelve a intentarlo y, si sigue fallando, escríbenos.';
   const contexto = (error as { context?: Response })?.context;
   if (!contexto || typeof contexto.json !== 'function') {

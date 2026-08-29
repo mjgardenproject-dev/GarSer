@@ -52,3 +52,8 @@ verify_jwt = false
 # permite es disparar el tick, que es idempotente. La funcion valida ese secreto por si misma.
 [functions.booking-lifecycle-tick]
 verify_jwt = false
+
+# Endpoint publico del enlace de un clic. Sin sesion a proposito: valida un token de un solo
+# uso hasheado, y confirmar no mueve dinero (los gastos de gestion ya se capturaron antes).
+[functions.booking-confirm-service]
+verify_jwt = false

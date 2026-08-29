@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -7,7 +7,8 @@ import {
   Briefcase, 
   Settings, 
   LogOut,
-  ShieldAlert
+  ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -16,6 +17,21 @@ import toast from 'react-hot-toast';
 const AdminLayout: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [openIncidents, setOpenIncidents] = useState(0);
+
+  // Sin este contador la sección es invisible hasta que a alguien se le ocurre mirar: es dinero
+  // de un cliente esperando, no algo que deba depender de que el admin lo recuerde por su cuenta.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { count } = await supabase
+        .from('booking_incidents')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['open', 'in_review']);
+      if (alive) setOpenIncidents(count || 0);
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -29,6 +45,7 @@ const AdminLayout: React.FC = () => {
 
   const navItems = [
     { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/admin/incidents', icon: AlertTriangle, label: 'Incidencias', badge: openIncidents },
     { to: '/admin/services', icon: Briefcase, label: 'Servicios' },
     { to: '/admin/phytosanitary', icon: Leaf, label: 'Certificados Fito.' },
     { to: '/admin/users', icon: Users, label: 'Usuarios' },
@@ -61,6 +78,11 @@ const AdminLayout: React.FC = () => {
             >
               <item.icon className="w-5 h-5" />
               <span className="font-medium">{item.label}</span>
+              {!!item.badge && (
+                <span className="ml-auto min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-xs font-bold rounded-full inline-flex items-center justify-center">
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -81,6 +103,11 @@ const AdminLayout: React.FC = () => {
             >
               <item.icon className="w-4 h-4" />
               <span className="text-sm font-medium">{item.label}</span>
+              {!!item.badge && (
+                <span className="min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

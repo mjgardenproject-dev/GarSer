@@ -33,7 +33,8 @@ type PaymentAction =
   | 'finalize_booking_payment'
   | 'finalize_price_change_payment'
   | 'cancel_booking'
-  | 'report_no_show';
+  | 'report_no_show'
+  | 'resolve_incident';
 
 type PaymentPayload = {
   action?: PaymentAction;
@@ -53,6 +54,11 @@ type PaymentPayload = {
   bookingId?: string;
   decision?: 'accept' | 'reject';
   reason?: string;
+  // resolve_incident: solo un ADMINISTRADOR puede llamarla (guarda en SQL, is_admin()). La RPC
+  // decide y devuelve `money_action`; aqui solo se ejecuta en Stripe, igual que cancel_booking.
+  incidentId?: string;
+  outcome?: 'refund' | 'no_action' | 'reject';
+  note?: string;
 };
 
 type AttemptSummary = {
@@ -1530,6 +1536,156 @@ Deno.serve(async (req: Request) => {
         moneyAction,
         moneyStatus,
         penaltyApplied: rpcResult.penalty_applied === true,
+      });
+    }
+
+    // ===== Resolucion de incidencias por el ADMINISTRADOR =====
+    // Mismo reparto que cancel_booking / report_no_show, calcado a proposito: la RPC decide
+    // (y ahi vive la guarda de admin, en SQL) y devuelve `money_action`; aqui solo se ejecuta
+    // en Stripe. La RPC se invoca con la identidad del USUARIO para que `is_admin()` pueda
+    // comprobar quien llama de verdad -con la clave de servicio auth.uid() seria null.
+    if (payload.action === 'resolve_incident') {
+      const incidentId = asString(payload.incidentId);
+      const outcome = asString(payload.outcome);
+      if (!incidentId || !['refund', 'no_action', 'reject'].includes(outcome)) {
+        throw new BookingPaymentHttpError({
+          status: 400,
+          code: 'invalid_lifecycle_request',
+          message: 'Falta incidentId o el desenlace no es valido.',
+        });
+      }
+
+      const publicKey = String(
+        Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') || '',
+      ).trim();
+      if (!publicKey) {
+        throw new Error('Falta SUPABASE_ANON_KEY para invocar la RPC con la identidad del usuario.');
+      }
+      const userClient = createClient(supabaseUrl, publicKey, {
+        global: { headers: { Authorization: req.headers.get('Authorization') || '' } },
+      });
+
+      const { data: rpcData, error: rpcError } = await userClient.rpc('resolve_booking_incident', {
+        p_incident_id: incidentId,
+        p_outcome: outcome,
+        p_note: asString(payload.note) || null,
+      });
+      if (rpcError) {
+        // La RPC ya distingue "no eres admin" de "resolucion no valida"; se propaga tal cual
+        // para que el panel muestre el motivo real.
+        throw new BookingPaymentHttpError({
+          status: 400,
+          code: 'lifecycle_rpc_rejected',
+          message: rpcError.message || 'No se pudo resolver la incidencia.',
+        });
+      }
+
+      const rpcResult = asRecord(rpcData);
+      const moneyAction = asString(rpcResult.money_action) || 'none';
+      const bookingId = asString(rpcResult.bookingId);
+
+      let moneyStatus = 'none';
+      let paymentIntentId: string | null = null;
+      if (moneyAction === 'refund') {
+        if (!stripeSecret) {
+          throw new Error('Falta STRIPE_SECRET_KEY para devolver los gastos de gestion.');
+        }
+        const attempt = bookingId ? await getAttemptByBookingId(dbAdmin, bookingId) : null;
+        paymentIntentId = attempt?.stripe_payment_intent_id || null;
+
+        if (!paymentIntentId) {
+          moneyStatus = 'no_payment';
+        } else {
+          try {
+            // Se consulta el estado REAL en Stripe antes de actuar: asi reintentar es seguro,
+            // que es justo lo que hace posible el boton "Reintentar reembolso" del panel.
+            const pi = await stripeGet({
+              path: `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`,
+              stripeSecret,
+            });
+            const piStatus = asString((pi as Record<string, unknown>).status);
+
+            if (piStatus === 'succeeded') {
+              const refundBody = new URLSearchParams();
+              refundBody.append('payment_intent', paymentIntentId);
+              await stripePost({
+                path: '/v1/refunds',
+                body: refundBody,
+                stripeSecret,
+                // Misma clave que cancel_booking A PROPOSITO: si esta reserva ya se reembolso
+                // por una cancelacion, Stripe no paga dos veces, solo devuelve el existente.
+                idempotencyKey: `garser_refund_${bookingId}`,
+              });
+              moneyStatus = 'refunded';
+            } else if (piStatus === 'requires_capture') {
+              await stripePost({
+                path: `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}/cancel`,
+                body: new URLSearchParams(),
+                stripeSecret,
+              });
+              moneyStatus = 'released';
+            } else {
+              moneyStatus = `no_refund_needed_${piStatus}`;
+            }
+          } catch (moneyError) {
+            // La incidencia YA quedo resuelta en la BD: no se revierte por un fallo de
+            // pasarela. Pero es dinero real, asi que se marca y se registra para conciliacion.
+            moneyStatus = 'failed';
+            logBookingPaymentError('incident_money_action', moneyError, { incidentId, bookingId });
+            await persistServerTelemetry(dbAdmin, {
+              level: 'error',
+              event: 'booking.incident_money_action_failed',
+              userId,
+              context: {
+                incidentId, bookingId, paymentIntentId,
+                message: moneyError instanceof Error ? moneyError.message : 'unknown',
+              },
+            });
+          }
+        }
+      }
+
+      // Solo hay algo que registrar cuando hay dinero de por medio: `no_action`/`reject`
+      // dejan `money_status` en NULL desde la propia RPC.
+      if (moneyAction === 'refund') {
+        await dbAdmin.rpc('record_incident_money_result', {
+          p_incident_id: incidentId,
+          p_money_status: moneyStatus,
+          p_payment_intent_id: paymentIntentId,
+        });
+      }
+
+      // Aviso al cliente. Se dispara desde el SERVIDOR: si el admin cierra la pestaña justo
+      // despues de resolver, el aviso no puede perderse.
+      if (bookingId) {
+        try {
+          const { error: resolvedEmailError } = await dbAdmin.functions.invoke('send-email-notification', {
+            body: { type: 'booking_incident_resolved', bookingId },
+          });
+          if (resolvedEmailError) throw resolvedEmailError;
+        } catch (emailError) {
+          await persistServerTelemetry(dbAdmin, {
+            level: 'warn',
+            event: 'booking.incident_resolved_email_failed',
+            userId,
+            context: { incidentId, bookingId, message: emailError instanceof Error ? emailError.message : 'unknown' },
+          });
+        }
+      }
+
+      await persistServerTelemetry(dbAdmin, {
+        level: moneyStatus === 'failed' ? 'error' : 'info',
+        event: 'booking.incident_resolved',
+        userId,
+        context: { incidentId, bookingId, outcome, moneyAction, moneyStatus },
+      });
+
+      return jsonResponse({
+        incidentId,
+        bookingId,
+        status: asString(rpcResult.status),
+        moneyAction,
+        moneyStatus,
       });
     }
 

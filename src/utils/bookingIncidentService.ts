@@ -35,8 +35,18 @@ export const INCIDENT_KIND_OPTIONS: IncidentKindOption[] = [
   { kind: 'other', label: 'Otro problema' },
 ];
 
-async function callRpc<T>(name: string, args: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.rpc(name, args);
+type IncidentRpcName =
+  | 'confirm_booking_service'
+  | 'report_booking_incident'
+  | 'respond_to_incident'
+  | 'mark_gardener_finished';
+
+async function callRpc<T>(name: IncidentRpcName, args: Record<string, unknown>): Promise<T> {
+  // `supabase.rpc()` resuelve la forma de `args` a partir del literal de `name`, y no hay forma
+  // razonable de expresarlo en un wrapper genérico para 4 RPCs sin repetir la firma de cada una.
+  // El cast es seguro: cada llamada real (más abajo en este fichero) pasa exactamente las claves
+  // que esa RPC espera, verificado en el navegador y contra la base de datos esta misma sesión.
+  const { data, error } = await supabase.rpc(name, args as never);
   if (error) {
     // Las RPC de este flujo lanzan con RAISE EXCEPTION y un mensaje pensado para leerse tal
     // cual ("Ya tienes una incidencia abierta sobre esta reserva"): a diferencia del camino de

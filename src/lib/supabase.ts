@@ -1,11 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '../types/generated/database.types';
 import {
   resolveSupabaseBrowserConfig,
   type SupabaseRuntimeDiagnostics,
 } from './supabaseConfig';
 
 const globalForSupabase = globalThis as typeof globalThis & {
-  __supabaseClient?: ReturnType<typeof createClient>;
+  __supabaseClient?: ReturnType<typeof createClient<Database>>;
   __supabaseRuntimeDiagnosticsLogged?: boolean;
 };
 
@@ -48,7 +49,7 @@ function resolveSupabaseStorage() {
 
 export const supabase =
   globalForSupabase.__supabaseClient ||
-  createClient(SUPABASE_URL, SUPABASE_PUBLIC_KEY, {
+  createClient<Database>(SUPABASE_URL, SUPABASE_PUBLIC_KEY, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,

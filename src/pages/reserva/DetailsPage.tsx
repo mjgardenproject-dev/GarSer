@@ -802,8 +802,6 @@ const DetailsPage: React.FC = () => {
         manualConsent?: { declaredVariables?: { items?: Array<Record<string, unknown>> } };
       }).manualConsent?.declaredVariables?.items
     : undefined;
-
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);

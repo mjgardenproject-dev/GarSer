@@ -19,11 +19,6 @@ type ContinueStateParams = {
   weedingManualConfirmed: boolean
   getPhytosanitaryValidation: (zone: unknown) => { issues: string[] }
   isPhytosanitaryZoneAnalyzed: (zone: unknown) => boolean
-  /**
-   * Solo al REPETIR un servicio: el cliente tiene que declarar que el jardín sigue igual.
-   * Los datos vienen de un trabajo anterior y el jardín pudo cambiar; sin esa confirmación,
-   * el profesional se encontraría con algo distinto a lo presupuestado.
-   */
 }
 
 const normalizeServiceName = (value: string) => value.trim().toLowerCase()

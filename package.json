@@ -10,7 +10,8 @@
     "test": "vitest run",
     "preview": "vite preview",
     "create:bucket": "node scripts/create_booking_photos_bucket.js",
-    "enforce:services": "node scripts/enforce_canonical_services.js"
+    "enforce:services": "node scripts/enforce_canonical_services.js",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit"
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^1.16.10",

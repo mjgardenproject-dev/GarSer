@@ -55,6 +55,12 @@ INSERT INTO auth.users (
   ('22222222-bbbb-4bbb-8bbb-222222222222','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'cliente.local@test.local', crypt('Test123456!', gen_salt('bf')), now(), now(), now(),
    '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Laura Fernández","role":"client"}'::jsonb,
+   '', '', '', '', '', '', '', ''),
+  -- Administrador local: hace falta para probar la cola de incidencias, que decide
+  -- devoluciones de dinero. Solo existe en la semilla local; produccion no la ejecuta.
+  ('33333333-cccc-4ccc-8ccc-333333333333','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   'admin.local@test.local', crypt('Test123456!', gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}'::jsonb, '{"full_name":"Admin Local","role":"admin"}'::jsonb,
    '', '', '', '', '', '', '', '')
 ON CONFLICT (id) DO NOTHING;
 
@@ -65,12 +71,16 @@ VALUES
    'email', now(), now(), now()),
   (gen_random_uuid(),'22222222-bbbb-4bbb-8bbb-222222222222','22222222-bbbb-4bbb-8bbb-222222222222',
    '{"sub":"22222222-bbbb-4bbb-8bbb-222222222222","email":"cliente.local@test.local","email_verified":true}'::jsonb,
+   'email', now(), now(), now()),
+  (gen_random_uuid(),'33333333-cccc-4ccc-8ccc-333333333333','33333333-cccc-4ccc-8ccc-333333333333',
+   '{"sub":"33333333-cccc-4ccc-8ccc-333333333333","email":"admin.local@test.local","email_verified":true}'::jsonb,
    'email', now(), now(), now())
 ON CONFLICT DO NOTHING;
 
 INSERT INTO public.profiles (user_id, full_name, phone, address, role) VALUES
   ('11111111-aaaa-4aaa-8aaa-111111111111','Miguel Ángel Ruiz','600112233','Marbella','gardener'),
-  ('22222222-bbbb-4bbb-8bbb-222222222222','Laura Fernández','600445566','Nueva Andalucía, Marbella','client')
+  ('22222222-bbbb-4bbb-8bbb-222222222222','Laura Fernández','600445566','Nueva Andalucía, Marbella','client'),
+  ('33333333-cccc-4ccc-8ccc-333333333333','Admin Local',NULL,NULL,'admin')
 ON CONFLICT DO NOTHING;
 
 -- Perfil operativo: Marbella centro, 40 km de radio (cubre Estepona–Fuengirola).

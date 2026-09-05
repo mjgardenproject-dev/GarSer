@@ -10,9 +10,11 @@ import { validateManualField } from '../../../shared/manualEntry/manualEntryVali
 import { MANUAL_ENTRY_STRINGS } from '../../../shared/manualEntry/strings';
 import { ManualFieldRenderer } from './fields/ManualFieldRenderer';
 import { ManualEntrySummary } from './ManualEntrySummary';
-import { ManualEntryConsent } from './ManualEntryConsent';
 
-type WizardPhase = 'item' | 'interstitial' | 'waste' | 'summary' | 'consent';
+// La fase 'consent' se retiró: ocupaba una pantalla entera al final para una sola frase, y
+// además separaba la declaración de veracidad de los datos a los que se refiere. Ahora se
+// acepta dentro del propio resumen, mirando lo que se acepta.
+type WizardPhase = 'item' | 'interstitial' | 'waste' | 'summary';
 
 export interface ManualWizardSubmitPayload {
   items: ManualAnswers[];
@@ -23,6 +25,12 @@ interface Props {
   survey: ManualServiceSurvey;
   submitting?: boolean;
   initialItems?: ManualAnswers[];
+  /**
+   * Fase de arranque. Al repetir un servicio las respuestas ya vienen dadas, así que empezar
+   * por la primera pregunta obliga a recorrer la encuesta entera para no cambiar nada. Con
+   * `'summary'` el cliente ve todos los apartados y edita solo el que haya cambiado.
+   */
+  initialPhase?: 'item' | 'summary';
   initialWasteRemoval?: boolean;
   /** When false, the legal-consent step is skipped (e.g. gardener on-site correction). */
   requireConsent?: boolean;
@@ -53,6 +61,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
   survey,
   submitting = false,
   initialItems,
+  initialPhase = 'item',
   initialWasteRemoval,
   requireConsent = true,
   submitLabel,
@@ -71,7 +80,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
   );
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
-  const [phase, setPhase] = useState<WizardPhase>('item');
+  const [phase, setPhase] = useState<WizardPhase>(initialPhase);
   const [consentChecked, setConsentChecked] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -142,7 +151,6 @@ export const ManualEntryWizard: React.FC<Props> = ({
 
   const goBack = () => {
     setShowErrors(false);
-    if (phase === 'consent') return setPhase('summary');
     if (phase === 'summary') return setPhase('waste');
     if (phase === 'waste') {
       if (survey.repeatable) return setPhase('interstitial');
@@ -282,36 +290,39 @@ export const ManualEntryWizard: React.FC<Props> = ({
       {/* Phase: summary */}
       {phase === 'summary' && (
         <div ref={headingRef} tabIndex={-1} className="outline-none">
-          <ManualEntrySummary survey={survey} items={items} wasteRemoval={wasteRemoval} onEditItem={editItem} />
-        </div>
-      )}
-
-      {/* Phase: consent */}
-      {phase === 'consent' && (
-        <div ref={headingRef} tabIndex={-1} className="outline-none">
-          <ManualEntryConsent checked={consentChecked} onChange={setConsentChecked} />
+          <ManualEntrySummary
+            survey={survey}
+            items={items}
+            wasteRemoval={wasteRemoval}
+            onEditItem={editItem}
+            requireConsent={requireConsent}
+            consentChecked={consentChecked}
+            onConsentChange={setConsentChecked}
+          />
         </div>
       )}
 
       {/* Footer navigation */}
-      <div className="mt-6 flex items-center gap-3">
+      {/* En móvil se apila con la acción principal arriba y a ancho completo: en una fila de
+          375 px "Confirmar y continuar" no cabe junto a "Atrás" y partía en dos líneas. */}
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:gap-3">
         {phase !== 'interstitial' && (
           <button
             type="button"
             onClick={goBack}
-            className="inline-flex items-center gap-1 py-3 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
           >
             <ArrowLeft className="w-4 h-4" aria-hidden />
             {W.back}
           </button>
         )}
-        <div className="flex-1" />
+        <div className="hidden sm:block sm:flex-1" />
         {phase === 'item' && (
           <button
             type="button"
             onClick={goNextFromItem}
             disabled={showErrors && currentStepErrors.length > 0}
-            className="inline-flex items-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
           >
             {W.next}
             <ArrowRight className="w-4 h-4" aria-hidden />
@@ -321,45 +332,28 @@ export const ManualEntryWizard: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setPhase('summary')}
-            className="inline-flex items-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
           >
             {W.continueToSummary}
             <ArrowRight className="w-4 h-4" aria-hidden />
           </button>
         )}
-        {phase === 'summary' && requireConsent && (
-          <button
-            type="button"
-            onClick={() => setPhase('consent')}
-            className="inline-flex items-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            {W.next}
-            <ArrowRight className="w-4 h-4" aria-hidden />
-          </button>
-        )}
-        {phase === 'summary' && !requireConsent && (
+        {/* Un único botón final: el que antes llevaba a la pantalla de consentimiento y el que
+            enviaba desde allí eran el mismo gesto partido en dos. La casilla sigue siendo
+            obligatoria, solo que ahora se marca sin cambiar de pantalla. */}
+        {phase === 'summary' && (
           <button
             type="button"
             onClick={confirm}
-            disabled={submitting}
-            className="inline-flex items-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            disabled={(requireConsent && !consentChecked) || submitting}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
           >
             {submitting ? 'Guardando…' : (submitLabel || MANUAL_ENTRY_STRINGS.consent.confirmCta)}
           </button>
         )}
-        {phase === 'consent' && (
-          <button
-            type="button"
-            onClick={confirm}
-            disabled={!consentChecked || submitting}
-            className="inline-flex items-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            {submitting ? 'Guardando…' : MANUAL_ENTRY_STRINGS.consent.confirmCta}
-          </button>
-        )}
       </div>
 
-      {phase === 'consent' && !consentChecked && (
+      {phase === 'summary' && requireConsent && !consentChecked && (
         <p className="text-xs text-gray-400 mt-2 text-right">{MANUAL_ENTRY_STRINGS.consent.mustAccept}</p>
       )}
     </div>

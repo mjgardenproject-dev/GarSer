@@ -186,6 +186,10 @@ export interface Booking {
   client_profile?: Profile; // Perfil del cliente
   created_at: string;
   updated_at: string;
+  /** El jardinero avisó de que terminó. NO cierra la reserva: solo adelanta el aviso al cliente. */
+  gardener_finished_at?: string | null;
+  /** Cuándo se da por completada sola si el cliente no confirma nada. */
+  confirmation_deadline_at?: string | null;
 }
 
 // Interfaz para bloques horarios seleccionables

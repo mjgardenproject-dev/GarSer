@@ -1,522 +1,332 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Calendar, ArrowLeft, ChevronDown } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, MapPin, MessageCircle, Star, ArrowLeft, ChevronDown } from 'lucide-react';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
-import { format, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale';
-import ChatWindow from '../chat/ChatWindow';
-import { useNavigate } from 'react-router-dom';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
-import { ClientBookingAmounts } from '../booking/BookingAmounts';
-import { formatEuro, getBookingAmounts } from '../../shared/bookingAmounts';
-import { cancelBooking } from '../../utils/bookingLifecycleService';
 import { fetchProfileNames } from '../../utils/profileNames';
+import { fetchRebookPayload } from '../../utils/rebookService';
+import { cancelBooking } from '../../utils/bookingLifecycleService';
+import { confirmBookingService } from '../../utils/bookingIncidentService';
+import { clearBookingResumeStorage, writeBookingResume } from '../../utils/bookingResumeStorage';
+import { formatEuro } from '../../shared/bookingAmounts';
+import ChatWindow from '../chat/ChatWindow';
+import ClientBookingCard from '../booking/ClientBookingCard';
+import ReviewModal from '../booking/ReviewModal';
+import { useConfirmDialog } from '../common/ConfirmDialog';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
-  services?: {
-    name: string;
-    icon?: string;
-  } | null;
-  gardener_profile?: {
-    user_id: string;
-    full_name: string;
-    phone?: string;
-  } | null;
+  services?: { name: string; icon?: string } | null;
+  gardener_profile?: { user_id?: string; full_name: string; phone?: string } | null;
+  media_urls?: string[];
+  review_rating?: number | null;
 }
+
+type StatusFilter = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
 
 const BookingsList = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { openConfirm, confirmDialog } = useConfirmDialog();
+
   const [bookings, setBookings] = useState<BookingWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedChat, setSelectedChat] = useState<{
-    bookingId: string;
-    gardenerName: string;
-  } | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedChat, setSelectedChat] = useState<{ bookingId: string; gardenerName: string } | null>(null);
   const [reviewTarget, setReviewTarget] = useState<BookingWithDetails | null>(null);
-  const [existingReview, setExistingReview] = useState<{ id: string; rating: number; comment?: string } | null>(null);
-  const [rating, setRating] = useState<number>(5);
-  const [comment, setComment] = useState<string>('');
-  const [submittingReview, setSubmittingReview] = useState(false);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
-  
 
-  useEffect(() => {
-    if (authLoading) return;
+  const fetchBookings = useCallback(async () => {
     if (!user?.id) return;
-    fetchBookings();
-  }, [user?.id, authLoading]);
-
-  const fetchBookings = async () => {
+    setLoading(true);
     try {
-      // Primero obtenemos las reservas básicas
-      const { data: bookingsData, error: bookingsError } = await supabase
+      const { data: bookingsData, error } = await supabase
         .from('bookings')
-        .select(`
-          *,
-          services(name, icon)
-        `)
-        .eq('client_id', user?.id)
+        .select('*, services(name, icon)')
+        .eq('client_id', user.id)
         .order('date', { ascending: false });
+      if (error) throw error;
 
-      if (bookingsError) throw bookingsError;
-
-      // Luego obtenemos los perfiles de los jardineros
-      if (bookingsData && bookingsData.length > 0) {
-        const gardenerIds = [...new Set(bookingsData.map((booking: any) => booking.gardener_id))];
-        
-        // fetchProfileNames y no una consulta directa: `profiles` se consultaba por `id`
-        // pasandole el id de auth, que vive en `user_id`. Devolvia cero filas y el cliente
-        // nunca veia el nombre de su jardinero.
-        const profilesMap = await fetchProfileNames(gardenerIds);
-
-        const bookingsWithProfiles = bookingsData.map((booking: any) => ({
-          ...booking,
-          gardener_profile: profilesMap[booking.gardener_id] || null
-        }));
-
-        const mediaMap = await fetchBookingMediaMap(
-          bookingsWithProfiles.map((b: any) => b.id),
-          Object.fromEntries(bookingsWithProfiles.map((b: any) => [b.id, b.notes]))
-        );
-        const withMedia = bookingsWithProfiles.map((booking: any) => ({
-          ...booking,
-          media_urls: mediaMap[booking.id] || [],
-        }));
-        setBookings(withMedia);
-      } else {
+      const rows = (bookingsData || []) as BookingWithDetails[];
+      if (rows.length === 0) {
         setBookings([]);
+        return;
       }
+
+      const [names, mediaMap, reviewsResult] = await Promise.all([
+        fetchProfileNames(rows.map((row) => row.gardener_id)),
+        // `statusByBooking` evita mostrar fotos legacy en reservas ya completadas, cuyos
+        // archivos se borran de Storage al cerrarlas.
+        fetchBookingMediaMap(
+          rows.map((row) => row.id),
+          Object.fromEntries(rows.map((row) => [row.id, row.notes])),
+          { statusByBooking: Object.fromEntries(rows.map((row) => [row.id, row.status])) },
+        ),
+        supabase.from('reviews').select('booking_id, rating').eq('client_id', user.id),
+      ]);
+
+      const ratingByBooking = new Map<string, number>();
+      (reviewsResult.data || []).forEach((review: { booking_id: string | null; rating: number }) => {
+        if (review.booking_id) ratingByBooking.set(review.booking_id, Number(review.rating));
+      });
+
+      setBookings(
+        rows.map((row) => ({
+          ...row,
+          gardener_profile: names[row.gardener_id]
+            ? { full_name: names[row.gardener_id].full_name || '', phone: names[row.gardener_id].phone || undefined }
+            : null,
+          media_urls: mediaMap[row.id] || [],
+          review_rating: ratingByBooking.get(row.id) ?? null,
+        })),
+      );
     } catch (error) {
-      console.error('Error fetching bookings:', error);
+      console.error('Error cargando reservas:', error);
+      toast.error('No se pudieron cargar tus reservas.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'completed':
-        return 'bg-gray-100 text-gray-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      case 'expired':
-        return 'bg-gray-100 text-gray-600';
-      case 'no_show_client':
-      case 'no_show_gardener':
-        return 'bg-orange-100 text-orange-800';
-      case 'disputed':
-        return 'bg-purple-100 text-purple-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
+  useEffect(() => {
+    if (authLoading) return;
+    void fetchBookings();
+  }, [authLoading, fetchBookings]);
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'Pendiente';
-      case 'confirmed':
-        return 'Confirmado';
-      case 'completed':
-        return 'Completado';
-      case 'cancelled':
-        return 'Cancelado';
-      case 'expired':
-        return 'Caducada';
-      case 'no_show_client':
-        return 'No se pudo realizar';
-      case 'no_show_gardener':
-        return 'El profesional no acudió';
-      case 'disputed':
-        return 'En revisión';
-      default:
-        return status;
-    }
-  };
+  /**
+   * Enlace profundo `?review=<bookingId>`: el CTA del email de valoración abre el formulario
+   * directamente sobre esa reserva, en vez de dejar al cliente en la lista buscándola.
+   */
+  useEffect(() => {
+    const target = searchParams.get('review');
+    if (!target || bookings.length === 0) return;
+    const booking = bookings.find((item) => item.id === target);
+    if (booking) setReviewTarget(booking);
+    // Se limpia el parámetro para que volver atrás no reabra el formulario.
+    const next = new URLSearchParams(searchParams);
+    next.delete('review');
+    setSearchParams(next, { replace: true });
+  }, [bookings, searchParams, setSearchParams]);
 
-  // Cancelación por el cliente. La política (paso 8C-D3) dice que si es el cliente quien
-  // desiste, los gastos de gestión se cobran; hay que decírselo ANTES, no después.
-  const handleCancelBooking = async (booking: BookingWithDetails) => {
-    const amounts = getBookingAmounts(booking as any);
-    const feeText = amounts?.managementFee != null ? formatEuro(amounts.managementFee) : 'los gastos de gestión';
-    const confirmed = window.confirm(
-      `¿Seguro que quieres cancelar esta reserva?\n\n` +
-      `Al cancelar tú, ${feeText} de gastos de gestión no se devuelven. ` +
-      `El importe del servicio no se te cobra.\n\nEsta acción no se puede deshacer.`
-    );
-    if (!confirmed) return;
+  const respondToPriceChange = async (booking: BookingWithDetails, accept: boolean) => {
+    setBusyId(booking.id);
     try {
-      setCancellingId(booking.id);
-      await cancelBooking(booking.id);
+      const { respondBookingPriceChange } = await import('../../utils/bookingPriceChangeService');
+      await respondBookingPriceChange({ bookingId: booking.id, accept, operationId: crypto.randomUUID() });
+      reportBookingEvent('info', {
+        event: 'booking.price_discrepancy_resolved',
+        context: { bookingId: booking.id, resolution: accept ? 'accepted' : 'rejected' },
+      });
+      toast.success(accept ? 'Nuevo precio aceptado.' : 'Propuesta rechazada.');
       await fetchBookings();
     } catch (error) {
-      console.error('Error cancelando la reserva:', error);
-      window.alert(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
+      toast.error(error instanceof Error ? error.message : 'No se pudo responder a la propuesta.');
     } finally {
-      setCancellingId(null);
+      setBusyId(null);
     }
   };
 
-  const openChat = (bookingId: string, gardenerName: string) => {
-    setSelectedChat({ bookingId, gardenerName });
+  const handleCancel = (booking: BookingWithDetails) => {
+    openConfirm({
+      title: '¿Cancelar esta reserva?',
+      message: `Se liberará el hueco del profesional. Los ${formatEuro(booking.management_fee)} de gastos de gestión que ya abonaste no se devuelven.`,
+      confirmLabel: 'Sí, cancelar',
+      cancelLabel: 'No, mantenerla',
+      tone: 'danger',
+      onConfirm: async () => {
+        setBusyId(booking.id);
+        try {
+          const result = await cancelBooking(booking.id);
+          // Un fallo de dinero no puede pasar en silencio: el cliente creería que todo fue bien.
+          if ((result as { moneyStatus?: string })?.moneyStatus === 'failed') {
+            toast.error('La reserva se canceló, pero hubo un problema con el cobro. Escríbenos y lo revisamos.');
+          } else {
+            toast.success('Reserva cancelada.');
+          }
+          await fetchBookings();
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
+        } finally {
+          setBusyId(null);
+        }
+      },
+    });
   };
 
-  const openReview = async (booking: BookingWithDetails) => {
-    setReviewTarget(booking);
-    setExistingReview(null);
-    setRating(5);
-    setComment('');
+  /**
+   * Confirmar no mueve dinero -los gastos de gestión ya se capturaron al aceptar el jardinero-,
+   * así que solo cierra la reserva. Se encadena directo con la valoración: el cliente ya está
+   * aquí y ya ha dicho que sí.
+   */
+  const handleConfirmService = async (booking: BookingWithDetails) => {
+    setBusyId(booking.id);
     try {
-      const { data } = await supabase
-        .from('reviews')
-        .select('id,rating,comment')
-        .eq('booking_id', booking.id)
-        .limit(1);
-      if (data && data.length > 0) {
-        setExistingReview({ id: data[0].id, rating: data[0].rating, comment: data[0].comment });
-        setRating(data[0].rating);
-        setComment(data[0].comment || '');
-      }
-    } catch {}
-  };
-
-  const submitReview = async () => {
-    if (!reviewTarget || !user?.id) return;
-    if (existingReview) { setReviewTarget(null); return; }
-    try {
-      setSubmittingReview(true);
-      const { error: insertError } = await supabase
-        .from('reviews')
-        .insert({
-          booking_id: reviewTarget.id,
-          client_id: user.id,
-          gardener_id: reviewTarget.gardener_id,
-          rating,
-          comment: comment || null,
-        });
-      if (insertError) throw insertError;
-
-      // Los agregados (rating_average/rating_count y rating/total_reviews) los recalcula un
-      // trigger SECURITY DEFINER sobre `reviews`. Antes se intentaba desde aquí, pero un
-      // cliente no puede escribir en el perfil de OTRO usuario (RLS lo deniega), así que la
-      // media nunca se actualizaba y el jardinero salía siempre como "Nuevo".
-
-      setReviewTarget(null);
-      setExistingReview(null);
-    } catch (e) {
-      console.error('Error guardando reseña:', e);
+      await confirmBookingService(booking.id);
+      toast.success('¡Gracias! Servicio confirmado.');
+      await fetchBookings();
+      setReviewTarget(booking);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo confirmar el servicio.');
     } finally {
-      setSubmittingReview(false);
+      setBusyId(null);
     }
   };
 
-  
+  const handleRebook = async (booking: BookingWithDetails) => {
+    if (!user?.id) return;
+    setBusyId(booking.id);
+    try {
+      const { payload, partial } = await fetchRebookPayload(booking.id);
+      clearBookingResumeStorage({ userId: user.id, flow: 'wizard', includeAnonFallback: true });
+      writeBookingResume(
+        'draft',
+        'wizard',
+        // Ver ClientBookingLauncher: `rebookReviewPending` antepone el resumen y los
+        // `rebookSource*` son los datos con los que se encabeza.
+        {
+          bookingData: {
+            ...payload,
+            rebookReviewPending: true,
+            rebookSourceDate: booking.date,
+            rebookSourceService: booking.services?.name,
+            rebookSourceGardener: booking.gardener_profile?.full_name,
+          },
+          currentStep: 2,
+        },
+        { userId: user.id },
+      );
+      if (partial) toast('Solo hemos podido recuperar la dirección y el servicio. Revisa el resto.', { icon: 'ℹ️' });
+      navigate('/reservar');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo repetir la reserva.');
+      setBusyId(null);
+    }
+  };
 
-  
-
-  const filteredBookings = statusFilter === 'all' ? bookings : bookings.filter(b => b.status === statusFilter);
+  const filteredBookings =
+    statusFilter === 'all' ? bookings : bookings.filter((booking) => booking.status === statusFilter);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600" aria-label="Cargando" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6">
+    <div className="max-w-full sm:max-w-3xl mx-auto px-4 py-4 sm:p-6">
       <button
+        type="button"
         onClick={() => navigate('/dashboard')}
-        className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
-        aria-label="Volver al Panel"
+        className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
       >
-        <ArrowLeft className="w-4 h-4" />
-        Volver al Panel
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+        Volver al inicio
       </button>
 
-      <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">Mis Reservas</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">Mis reservas</h1>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Estado</label>
+          <label htmlFor="status-filter" className="text-sm text-gray-600">Estado</label>
           <div className="relative">
             <select
+              id="status-filter"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="appearance-none border border-gray-300 rounded-md pl-3 pr-10 py-2.5 sm:py-2 text-base sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer"
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              className="appearance-none border border-gray-300 rounded-lg pl-3 pr-10 py-2.5 sm:py-2 text-base sm:text-sm bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 cursor-pointer"
             >
-              <option value="all">Todos</option>
-              <option value="pending">Pendiente</option>
-              <option value="confirmed">Confirmado</option>
-              <option value="completed">Completado</option>
-              <option value="cancelled">Cancelado</option>
+              <option value="all">Todas</option>
+              <option value="pending">Pendientes</option>
+              <option value="confirmed">Confirmadas</option>
+              <option value="completed">Completadas</option>
+              <option value="cancelled">Canceladas</option>
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
             </div>
           </div>
         </div>
       </div>
 
       {bookings.length === 0 ? (
-        <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-          <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600 text-lg">No tienes reservas aún</p>
-          <p className="text-gray-500">¡Explora nuestros servicios y haz tu primera reserva!</p>
+        <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center">
+          <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" aria-hidden="true" />
+          <p className="text-gray-700 font-medium">Todavía no tienes ninguna reserva</p>
+          <button
+            type="button"
+            onClick={() => navigate('/reservar?start=1')}
+            className="mt-4 text-sm font-semibold text-green-700 underline hover:text-green-800"
+          >
+            Empezar la primera
+          </button>
+        </div>
+      ) : filteredBookings.length === 0 ? (
+        /* Antes se comprobaba `bookings.length` pero se pintaba `filteredBookings`: al filtrar
+           por un estado sin resultados salía una lista vacía sin ningún mensaje, y parecía que
+           la app había fallado. */
+        <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center">
+          <p className="text-gray-700 font-medium">No tienes reservas con este estado</p>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className="mt-3 text-sm font-semibold text-green-700 underline hover:text-green-800"
+          >
+            Ver todas
+          </button>
         </div>
       ) : (
-        <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-4">
           {filteredBookings.map((booking) => (
-            <div key={booking.id} className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {booking.services?.name}
-                  </h3>
-                  <p className="text-gray-600">
-                    Jardinero: {booking.gardener_profile?.full_name}
-                  </p>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
-                  {getStatusText(booking.status)}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="flex items-center text-gray-600">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
-                </div>
-                <div className="flex items-center text-gray-600">
-                  <Clock className="w-4 h-4 mr-2" />
-                  {booking.start_time} ({booking.duration_hours}h)
-                </div>
-                <div className="flex items-center text-gray-600">
-                  <MapPin className="w-4 h-4 mr-2" />
-                  {booking.client_address}
-                </div>
-              </div>
-
-              <ClientBookingAmounts booking={booking} className="mb-4" />
-
-              {booking.price_change_status === 'pending_client_acceptance' && (
-                <div className="mb-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
-                  <p className="text-sm text-amber-900 font-medium mb-1">
-                    El jardinero propone un nuevo precio del servicio:{' '}
-                    <strong>{formatEuro(booking.proposed_total_price)}</strong>
-                  </p>
-                  {/* Se explicita el nuevo total porque los gastos de gestión ya abonados no se
-                      recobran: sin esta línea el cliente no sabe cuánto acaba pagando en total. */}
-                  <p className="text-xs text-amber-800 mb-3">
-                    El total de tu reserva pasaría a{' '}
-                    <strong>
-                      {formatEuro(
-                        getBookingAmounts({ ...booking, total_price: booking.proposed_total_price }).clientTotal,
-                      )}
-                    </strong>
-                    . Los gastos de gestión ya abonados no cambian.
-                  </p>
-                  {/* El motivo solo se pintaba en el chat: el cliente tenía que ir a buscarlo
-                      para entender por qué le suben el precio. Aquí está donde decide. */}
-                  {booking.proposed_price_reason && (
-                    <p className="text-xs text-amber-900 mb-3">
-                      <span className="font-medium">Motivo:</span> {booking.proposed_price_reason}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={async () => {
-                        try {
-                          const { respondBookingPriceChange } = await import('../../utils/bookingPriceChangeService');
-                          await respondBookingPriceChange({
-                            bookingId: booking.id,
-                            accept: true,
-                            operationId: crypto.randomUUID(),
-                          });
-                          reportBookingEvent('info', {
-                            event: 'booking.price_discrepancy_resolved',
-                            context: { bookingId: booking.id, resolution: 'accepted' },
-                          });
-                          fetchBookings();
-                        } catch (error) {
-                          console.error('Error accepting price:', error);
-                        }
-                      }}
-                      className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
-                    >
-                      Aceptar nuevo precio
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const { respondBookingPriceChange } = await import('../../utils/bookingPriceChangeService');
-                          await respondBookingPriceChange({
-                            bookingId: booking.id,
-                            accept: false,
-                            operationId: crypto.randomUUID(),
-                          });
-                          reportBookingEvent('info', {
-                            event: 'booking.price_discrepancy_resolved',
-                            context: { bookingId: booking.id, resolution: 'rejected' },
-                          });
-                          fetchBookings();
-                        } catch (error) {
-                          console.error('Error rejecting price:', error);
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
-                    >
-                      Rechazar
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {booking.notes && (
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                    <strong>Notas:</strong> {booking.notes.replace(/Fotos:\n(https?:\/\/[^\s]+[\n]?)+/g, '').trim()}
-                  </p>
-                </div>
-              )}
-
-              {(booking as any).media_urls?.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Fotos de la reserva</p>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {(booking as any).media_urls.slice(0, 8).map((url: string) => (
-                      <a key={url} href={url} target="_blank" rel="noreferrer" className="block rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-                        <img src={url} alt="Foto reserva" className="w-full h-20 object-cover" loading="lazy" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-2 flex-wrap">
-                {(booking.status === 'pending' || booking.status === 'confirmed') && (
-                  <button
-                    onClick={() => openChat(booking.id, booking.gardener_profile?.full_name || 'Jardinero')}
-                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                  >
-                    <MessageCircle className="w-4 h-4 mr-2" />
-                    Chat
-                  </button>
-                )}
-                {/* Cancelación por el cliente (paso 8). Hasta ahora no existía: el cliente no
-                    tenía ninguna forma de cancelar, ni siquiera una reserva ya confirmada. */}
-                {(booking.status === 'pending' || booking.status === 'confirmed') && (
-                  <button
-                    onClick={() => handleCancelBooking(booking)}
-                    disabled={cancellingId === booking.id}
-                    className="px-4 py-2 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium disabled:opacity-60"
-                  >
-                    {cancellingId === booking.id ? 'Cancelando…' : 'Cancelar reserva'}
-                  </button>
-                )}
-                {booking.status === 'completed' && (
-                  <button
-                    onClick={() => openReview(booking)}
-                    className="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors text-sm font-medium"
-                  >
-                    <Star className="w-4 h-4 mr-2" />
-                    Valorar
-                  </button>
-                )}
-              </div>
-            </div>
+            <ClientBookingCard
+              key={booking.id}
+              booking={booking}
+              busy={busyId === booking.id}
+              onOpenChat={() =>
+                setSelectedChat({
+                  bookingId: booking.id,
+                  gardenerName: booking.gardener_profile?.full_name || 'Jardinero',
+                })
+              }
+              onCancel={() => handleCancel(booking)}
+              onReview={() => setReviewTarget(booking)}
+              onRebook={() => void handleRebook(booking)}
+              onAcceptPriceChange={() => void respondToPriceChange(booking, true)}
+              onRejectPriceChange={() => void respondToPriceChange(booking, false)}
+              onConfirmService={() => void handleConfirmService(booking)}
+              onReportIncident={() => navigate(`/incidencias/${booking.id}`)}
+            />
           ))}
         </div>
       )}
 
-      {/* Chat Window */}
       {selectedChat && (
         <ChatWindow
           bookingId={selectedChat.bookingId}
-          isOpen={!!selectedChat}
+          isOpen
           onClose={() => setSelectedChat(null)}
           otherUserName={selectedChat.gardenerName}
         />
       )}
 
       {reviewTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-[1000]">
-          <div className="bg-white w-full sm:w-[480px] rounded-t-2xl sm:rounded-2xl p-6 shadow-xl max-h-[85vh] overflow-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Valorar servicio</h2>
-              <button onClick={() => { setReviewTarget(null); setExistingReview(null); }} className="text-sm text-gray-500">Cerrar</button>
-            </div>
-            <div className="mb-3 text-sm text-gray-700">Jardinero: {reviewTarget.gardener_profile?.full_name}</div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Puntuación</label>
-              <div className="flex items-center gap-1">
-                {[1,2,3,4,5].map((n, idx) => {
-                  const fullIndex = idx + 1;
-                  const filled = Math.max(Math.min(rating - idx, 1), 0);
-                  return (
-                    <div key={fullIndex} className="relative w-8 h-8" aria-label={`Estrella ${fullIndex}`}>
-                      <Star className="absolute inset-0 w-8 h-8 text-gray-300" />
-                      <div className="absolute inset-0 overflow-hidden" style={{ width: `${filled*100}%` }}>
-                        <Star className="w-8 h-8 text-yellow-500" />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => !existingReview && setRating(fullIndex - 0.5)}
-                        className="absolute left-0 top-0 h-full w-1/2"
-                        aria-label={`${fullIndex - 0.5} estrellas`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => !existingReview && setRating(fullIndex)}
-                        className="absolute right-0 top-0 h-full w-1/2"
-                        aria-label={`${fullIndex} estrellas`}
-                      />
-                    </div>
-                  );
-                })}
-                <span className="ml-2 text-sm text-gray-600">{rating.toFixed(1)} / 5</span>
-              </div>
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Comentario (opcional)</label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                disabled={!!existingReview}
-                rows={3}
-                className="w-full p-3 border border-gray-300 rounded-lg text-base sm:text-sm"
-                placeholder="Cuéntanos tu experiencia"
-              />
-            </div>
-            <div className="sticky bottom-0 bg-white flex items-center justify-end gap-2 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-              <button
-                type="button"
-                onClick={() => { setReviewTarget(null); setExistingReview(null); }}
-                className="px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={submitReview}
-                disabled={submittingReview || !!existingReview}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
-                {existingReview ? 'Ya valorado' : (submittingReview ? 'Enviando…' : 'Enviar reseña')}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ReviewModal
+          bookingId={reviewTarget.id}
+          gardenerId={reviewTarget.gardener_id}
+          gardenerName={reviewTarget.gardener_profile?.full_name}
+          onClose={() => setReviewTarget(null)}
+          /* Refrescar tras guardar: antes la lista no se recargaba y el cliente seguía viendo
+             "Dejar mi valoración", creyendo que no se había guardado. */
+          onSaved={() => { setReviewTarget(null); void fetchBookings(); }}
+        />
       )}
 
-      
+      {confirmDialog}
     </div>
   );
 };

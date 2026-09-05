@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings } from 'lucide-react';
+import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings, Star } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { fetchCurrentUserProfileRole, isAdminRole, type AppProfileRole } from '../../lib/adminAccess';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
@@ -102,6 +102,8 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
     { path: '/dashboard', label: 'Dashboard', icon: User },
     { path: '/bookings', label: 'Reservas', icon: Calendar },
     { path: '/chat', label: 'Chat', icon: MessageCircle, badge: unreadChats },
+    // El profesional lee las suyas en su panel; esta entrada es la del cliente que valora.
+    ...(!isGardener && !isAdmin ? [{ path: '/valoraciones', label: 'Valoraciones', icon: Star }] : []),
     { path: '/account', label: 'Mi Cuenta', icon: Settings },
     ...(isAdmin ? [{ path: '/admin/applications', label: 'Solicitudes', icon: Shield }] as any[] : [])
   ] : [];

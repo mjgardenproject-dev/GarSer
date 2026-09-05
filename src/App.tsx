@@ -43,6 +43,7 @@ const PhytosanitaryManagement = lazy(() => import('./pages/admin/PhytosanitaryMa
 const UserManagement = lazy(() => import('./pages/admin/UserManagement'));
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
 const RoleMonitor = lazy(() => import('./components/admin/RoleMonitor'));
+const IncidentsManagement = lazy(() => import('./pages/admin/IncidentsManagement'));
 
 // Zona de jardinero
 const GardenerDashboard = lazy(() => import('./components/gardener/GardenerDashboard'));
@@ -56,7 +57,10 @@ const ConfirmationPage = lazy(() => import('./pages/reserva/ConfirmationPage'));
 
 // Zona de cliente y resto de páginas públicas
 const ClientBookingLauncher = lazy(() => import('./components/client/ClientBookingLauncher'));
+const ConfirmServicePage = lazy(() => import('./pages/public/ConfirmServicePage'));
+const BookingIncidentPage = lazy(() => import('./pages/BookingIncidentPage'));
 const BookingsList = lazy(() => import('./components/client/BookingsList'));
+const ClientReviews = lazy(() => import('./components/client/ClientReviews'));
 const ChatList = lazy(() => import('./components/chat/ChatList'));
 const MyAccount = lazy(() => import('./components/account/MyAccount'));
 const GardenerPublicProfile = lazy(() => import('./components/public/GardenerPublicProfile'));
@@ -86,7 +90,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const { user, loading: authLoading } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
-    const isAuthPage = location.pathname === '/auth';
+    const isAuthPage = location.pathname === '/auth' || location.pathname === '/confirmar-servicio';
     const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
     const isApplyPage = location.pathname === '/apply';
     const isAdminPage = location.pathname.startsWith('/admin');
@@ -258,6 +262,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="incidents" element={<IncidentsManagement />} />
               <Route path="services" element={<ServicesManagement />} />
               <Route path="phytosanitary" element={<PhytosanitaryManagement />} />
               <Route path="users" element={<UserManagement />} />
@@ -444,6 +449,16 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             </ErrorBoundary>
           } 
         />
+        {/* Las valoraciones del cliente. El profesional tiene las suyas en su panel, así que
+            esta ruta es solo para clientes. */}
+        <Route
+          path="/valoraciones"
+          element={
+            <ProtectedRoute>
+              <ClientReviews />
+            </ProtectedRoute>
+          }
+        />
         <Route 
           path="/bookings" 
           element={
@@ -517,6 +532,17 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             que sí manda distingue entre visitante y usuario con sesión. */}
         <Route path="/auth" element={<AuthForm />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        {/* Publica a proposito: es el enlace de un clic del correo de confirmacion, y tiene
+            que funcionar aunque el cliente no tenga sesion abierta en el movil. */}
+        <Route path="/confirmar-servicio" element={<ConfirmServicePage />} />
+        <Route
+          path="/incidencias/:bookingId"
+          element={
+            <ProtectedRoute>
+              <BookingIncidentPage />
+            </ProtectedRoute>
+          }
+        />
         {/* Comodín: cualquier URL que no coincida con nada. Sin esto, una dirección mal
             escrita dejaba la pantalla en blanco, sin explicación ni salida. */}
         <Route path="*" element={<NotFoundPage />} />

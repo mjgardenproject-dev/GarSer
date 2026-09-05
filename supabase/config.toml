@@ -39,10 +39,23 @@ verify_jwt = false
 [functions.send-email-notification]
 verify_jwt = false
 
-# Valida propietario y estado por su cuenta (admin.auth.getUser + guarda de fecha).
+# Capa de compatibilidad retroactiva: delega en la RPC mark_gardener_finished, que valida
+# propietario y ventana por su cuenta. Ya no completa ninguna reserva -ver el comentario de
+# cabecera del propio index.ts-.
 [functions.booking-complete]
 verify_jwt = false
 
 # Valida al usuario por su cuenta (admin.auth.getUser).
 [functions.booking-manual-declaration]
+verify_jwt = false
+
+# El reloj del ciclo de vida. La llama pg_cron por HTTP con un secreto DEDICADO
+# (`x-lifecycle-secret`), no con la clave de servicio: si ese secreto se filtrara, lo unico que
+# permite es disparar el tick, que es idempotente. La funcion valida ese secreto por si misma.
+[functions.booking-lifecycle-tick]
+verify_jwt = false
+
+# Endpoint publico del enlace de un clic. Sin sesion a proposito: valida un token de un solo
+# uso hasheado, y confirmar no mueve dinero (los gastos de gestion ya se capturaron antes).
+[functions.booking-confirm-service]
 verify_jwt = false

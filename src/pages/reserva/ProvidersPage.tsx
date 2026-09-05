@@ -480,7 +480,13 @@ const ProvidersPage: React.FC = () => {
             ? 'Solo podemos mostrar profesionales con licencia fitosanitaria válida para este servicio.'
             : eligibleProviderIds.length === 0
               ? exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_coordinates')
-                ? 'Ningún profesional tiene una dirección operativa validada para filtrar la cobertura. Revisa su perfil de cobertura.'
+                /* `missing_coordinates` salta si faltan las coordenadas de CUALQUIERA de las dos
+                   partes, pero el aviso culpaba siempre al profesional. Cuando la dirección del
+                   cliente es la que no está geolocalizada, mandaba a revisar el sitio
+                   equivocado: se mira aquí para decir cuál de las dos falta. */
+                ? !bookingData.addressCoordinates
+                  ? 'No hemos podido situar tu dirección en el mapa, así que no podemos comprobar qué profesionales la cubren. Vuelve al primer paso y elige la dirección de las sugerencias.'
+                  : 'Ningún profesional tiene una dirección operativa validada para filtrar la cobertura. Revisa su perfil de cobertura.'
                 : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'outside_coverage')
                   ? 'No hay profesionales cuyo radio operativo cubra la dirección indicada.'
                   : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'no_reservable_availability')

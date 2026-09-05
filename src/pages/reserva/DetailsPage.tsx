@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
-import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
+import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X, ShieldCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
@@ -103,7 +103,8 @@ import {
   isManualOnlyService,
 } from '../../shared/manualEntry/manualEntrySchema';
 import { validateManualBookingInput } from '../../shared/manualEntry/manualEntryValidation';
-import { buildConsentRecord, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
+import { buildConsentRecord, MANUAL_ENTRY_CONSENT_TEXT, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
+import { MANUAL_ENTRY_STRINGS } from '../../shared/manualEntry/strings';
 import { buildManualBookingPatch } from './manualEntryBuilders';
 import { recordManualDeclaration, ManualDeclarationError } from '../../utils/bookingManualDeclarationService';
 import { isManualBookingInputEnabled } from '../../utils/manualEntryFeatureFlag';
@@ -776,6 +777,7 @@ const DetailsPage: React.FC = () => {
   const manualChoiceAvailable = manualFlowEnabled && !!manualServiceKey && !isManualOnlyService(manualServiceKey);
   const dataInputMode: DataInputMode = bookingData.dataInputMode === 'manual' ? 'manual' : 'photos';
   const isManualActive = manualChoiceAvailable && dataInputMode === 'manual';
+
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
   /**
@@ -786,7 +788,20 @@ const DetailsPage: React.FC = () => {
   const [manualWizardSeed, setManualWizardSeed] = useState(0);
   /** Repetición de un servicio: el cliente debe declarar que el jardín sigue igual. */
   const isRebooking = Boolean((bookingData as { isRebooking?: boolean }).isRebooking);
-  const [rebookConfirmed, setRebookConfirmed] = useState(false);
+  /**
+   * Respuestas con las que reabrir el asistente al REPETIR un servicio.
+   *
+   * El payload guardado trae los grupos ya construidos (`palmGroups`, `hedgeZones`…), pero el
+   * asistente no se alimenta de ellos sino de sus propias respuestas, así que arrancaba en la
+   * primera pregunta y en blanco: el cliente veía "Paso 1 de 5 - ¿Qué especie de palmera es?"
+   * con todo por rellenar, justo lo que la repetición viene a ahorrarle. Las respuestas
+   * originales viajan dentro de `manualConsent`, que sí forma parte del presupuesto guardado.
+   */
+  const rebookManualItems = isRebooking
+    ? (bookingData as {
+        manualConsent?: { declaredVariables?: { items?: Array<Record<string, unknown>> } };
+      }).manualConsent?.declaredVariables?.items
+    : undefined;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -941,6 +956,16 @@ const DetailsPage: React.FC = () => {
   const activeServiceId = bookingData.serviceIds?.[0] || '';
   const isWeedingServiceSelected = serviceFlags.isWeeding;
   const persistedManualDraft = (bookingData.servicesData?.[activeServiceId] as { manualDraft?: ManualWizardSubmitPayload } | undefined)?.manualDraft;
+  /**
+   * El asistente arranca en su resumen: hay respuestas que revisar, no que rellenar.
+   *
+   * Se decide UNA vez, al entrar. Calculándolo en cada render se caía solo: el asistente
+   * escribe su borrador nada más montarse, con lo que la condición pasaba a falsa y el
+   * selector de modo reaparecía de golpe bajo el aviso.
+   */
+  const [startsOnRebookSummary] = useState(() =>
+    Boolean(!manualDraft && !persistedManualDraft && rebookManualItems?.length),
+  );
 
   const handleManualDraftChange = (payload: ManualWizardSubmitPayload) => {
     setManualDraft(payload);
@@ -1906,7 +1931,17 @@ const DetailsPage: React.FC = () => {
     }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
-    setBookingData({ photos: filePhotos, description: descriptionRef.current });
+    // Desbroce es el unico servicio manual-only: no pasa por el asistente, asi que su casilla
+    // de veracidad tampoco pasaba por `handleManualSubmit` y su aceptacion no quedaba
+    // registrada en ningun sitio. Era el unico de los siete sin prueba de lo que acepto el
+    // cliente, y el texto que firma es el mismo.
+    setBookingData({
+      photos: filePhotos,
+      description: descriptionRef.current,
+      ...(serviceFlags.isWeeding && weedingManualConfirmed
+        ? { manualConsent: buildConsentRecord() }
+        : {}),
+    });
     
     // Explicit persist before leaving
     if (bookingData.serviceIds?.[0]) {
@@ -4660,34 +4695,23 @@ const analyzeTreeGroup = async (id: string) => {
           </div>
         ) : null}
 
-        {/* Repetición de un servicio anterior: los datos vienen precargados y editables, pero
-            el jardín pudo cambiar desde entonces. La confirmación es obligatoria para avanzar
-            (regla en getDetailsContinueDisabled), porque el profesional presupuesta sobre estos
-            datos y encontrarse otra cosa es justo lo que genera cambios de precio y roces. */}
+        {/* Repetición de un servicio anterior: un recordatorio de dónde vienen estos datos, y
+            nada más. La casilla que había aquí se ha retirado: al repetir con datos cargados,
+            el cliente ya decidió en el resumen previo (confirmar o venir a editar), y cuando no
+            hay datos que precargar los está introduciendo desde cero, así que no hay nada
+            heredado que reconocer. La declaración de veracidad se pide una sola vez, junto a
+            los datos, al final del asistente. */}
         {isRebooking && (
-          <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-            <h3 className="text-sm font-semibold text-blue-900">Estás repitiendo un servicio</h3>
-            <p className="mt-1 text-sm text-blue-800">
-              Hemos rellenado los datos de tu reserva anterior. Revísalos y edita lo que haya
-              cambiado: el precio se calculará de nuevo con las tarifas actuales de cada
-              profesional.
-            </p>
-            <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={rebookConfirmed}
-                onChange={(event) => setRebookConfirmed(event.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus-visible:ring-2 focus-visible:ring-blue-500"
-              />
-              <span className="text-sm text-blue-900">
-                Confirmo que he comprobado el estado del jardín y que las condiciones son las
-                mismas que aparecen seleccionadas.
-              </span>
-            </label>
-          </div>
+          <p className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            Datos de tu reserva anterior. Edita lo que haya cambiado.
+          </p>
         )}
 
-        {manualChoiceAvailable ? (
+        {/* El selector de modo se oculta al repetir con datos ya cargados: son dos tarjetas
+            grandes preguntando cómo calcular un presupuesto que ya está calculado, y el propio
+            asistente ofrece "Cambiar a fotos" en su cabecera. En cuanto se cambia a fotos, el
+            selector vuelve: es la única forma de regresar a la entrada manual. */}
+        {manualChoiceAvailable && !(startsOnRebookSummary && isManualActive) ? (
           <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} />
         ) : null}
 
@@ -4696,7 +4720,8 @@ const analyzeTreeGroup = async (id: string) => {
             key={`manual-wizard-${activeServiceId}-${manualWizardSeed}`}
             survey={manualSurvey}
             submitting={manualSubmitting}
-            initialItems={manualDraft?.items ?? persistedManualDraft?.items}
+            initialItems={manualDraft?.items ?? persistedManualDraft?.items ?? rebookManualItems}
+            initialPhase={startsOnRebookSummary ? 'summary' : 'item'}
             initialWasteRemoval={manualDraft?.wasteRemoval ?? persistedManualDraft?.wasteRemoval ?? bookingData.wasteRemoval}
             onDraftChange={handleManualDraftChange}
             onStepComplete={(stepId) =>
@@ -6782,17 +6807,28 @@ const analyzeTreeGroup = async (id: string) => {
         return (
           <div className="px-4 mb-28">
             <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+              {/* Mismo texto y misma forma que ven los otros seis servicios en el resumen del
+                  asistente: desbroce no pasa por el asistente, pero el cliente no tiene por que
+                  encontrarse aqui una redaccion distinta para decir lo mismo. */}
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={weedingManualConfirmed}
                   onChange={(e) => setWeedingManualConfirmed(e.target.checked)}
-                  className="mt-1 h-4 w-4 accent-green-600"
+                  aria-label={MANUAL_ENTRY_STRINGS.consent.checkboxAriaLabel}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-green-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                 />
-                <span className="text-xs text-gray-700 leading-relaxed">
-                  Confirmo que las variables indicadas para el calculo del presupuesto son correctas. Acepto que, en caso de no serlo, el profesional podra recalcular el precio del desbroce en persona y deberé abonar la diferencia.
+                <span className="flex-1 text-sm leading-relaxed text-gray-700">
+                  <ShieldCheck className="inline w-4 h-4 text-green-600 mr-1 -mt-0.5" aria-hidden />
+                  {MANUAL_ENTRY_STRINGS.consent.shortLabel}
                 </span>
               </label>
+              <details className="mt-3">
+                <summary className="cursor-pointer rounded text-xs font-medium text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500">
+                  {MANUAL_ENTRY_STRINGS.consent.fullTextToggle}
+                </summary>
+                <p className="mt-2 text-xs leading-relaxed text-gray-500">{MANUAL_ENTRY_CONSENT_TEXT}</p>
+              </details>
             </div>
           </div>
         );
@@ -6814,7 +6850,6 @@ const analyzeTreeGroup = async (id: string) => {
               weedingManualConfirmed,
               getPhytosanitaryValidation: (zone) => getPhytosanitaryValidation(zone as any),
               isPhytosanitaryZoneAnalyzed: (zone) => isPhytosanitaryZoneAnalyzed(zone as any),
-              rebookConfirmed,
             })}
             className="w-full bg-green-600 hover:bg-green-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >

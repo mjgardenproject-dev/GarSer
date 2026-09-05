@@ -10,14 +10,16 @@ import { toast } from 'react-hot-toast';
 import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
+import { useConfirmDialog } from '../common/ConfirmDialog';
 import BookingRequestsManager from './BookingRequestsManager';
 import GardenerReviews from './GardenerReviews';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
-import { completeBookingAndCleanupMedia } from '../../utils/bookingCompletionService';
+import { markGardenerFinished } from '../../utils/bookingIncidentService';
 import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
-import { cancelBooking, canCompleteBooking, getBookingServiceEnd } from '../../utils/bookingLifecycleService';
+import { cancelBooking, canMarkGardenerFinished, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
+import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -40,6 +42,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     localStorage.setItem('gardener_active_tab', activeTab);
   }, [activeTab]);
 
+  const { openConfirm, confirmDialog } = useConfirmDialog();
   const [selectedChat, setSelectedChat] = useState<{
     bookingId: string;
     clientName: string;
@@ -180,11 +183,16 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           response: status === 'confirmed' ? 'accept' : 'reject',
         });
       } else {
-        if (status === 'completed') {
-          const result = await completeBookingAndCleanupMedia(bookingId);
-          if (result.cleanup?.status === 'failed') {
-            toast.error(result.cleanup.warning || 'La reserva se ha completado, pero la limpieza de fotos requiere revisión.');
-          }
+        if (status === 'finished') {
+          // "He terminado" NO cierra la reserva: solo avisa al cliente, que es quien confirma
+          // (o el reloj a las 24h si no dice nada). Antes este mismo botón completaba y cobraba
+          // la reserva sin que el cliente confirmara nada.
+          const result = await markGardenerFinished(bookingId);
+          toast.success(
+            result.idempotent
+              ? 'Ya habías avisado de que terminaste este servicio.'
+              : 'Avisado. El cliente tiene que confirmar para cerrar la reserva.',
+          );
         } else {
           const { error } = await supabase
             .from('bookings')
@@ -231,66 +239,37 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   // Cancelar una reserva YA ACEPTADA tiene consecuencias para el jardinero (se devuelve el
   // dinero al cliente y se registra una penalización de 1★). Se avisa ANTES de ejecutarla:
   // una sanción que aparece por sorpresa es una sanción injusta.
-  const handleCancelConfirmedBooking = async (bookingId: string) => {
-    const confirmed = window.confirm(
-      'Vas a cancelar una reserva que ya habías aceptado.\n\n' +
-      '· Se devolverán al cliente los gastos de gestión.\n' +
-      '· Se registrará una valoración de 1 estrella a nombre de GarSer con la observación ' +
-      '"Servicio no completado".\n\n¿Quieres continuar?'
-    );
-    if (!confirmed) return;
-    try {
-      const result = await cancelBooking(bookingId);
-      if (result.moneyStatus === 'failed') {
-        // La reserva queda cancelada, pero el dinero no se movió: no se oculta.
-        toast.error('Reserva cancelada, pero la devolución no se ha completado. Lo estamos revisando.');
-      } else {
-        toast.success('Reserva cancelada. Se ha avisado al cliente.');
-      }
-      fetchBookings();
-    } catch (error) {
-      console.error('Error cancelando la reserva:', error);
-      toast.error(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
-    }
+  const handleCancelConfirmedBooking = (bookingId: string) => {
+    // Con el diálogo de la app y no con `window.confirm`: en móvil el nativo recorta el texto y
+    // parece un aviso del navegador, justo donde hay que explicar una penalización.
+    openConfirm({
+      title: 'Vas a cancelar una reserva aceptada',
+      message:
+        '· Se devolverán al cliente los gastos de gestión.\n' +
+        '· Se registrará una valoración de 1 estrella a nombre de GarSer con la observación ' +
+        '"Servicio no completado".',
+      confirmLabel: 'Sí, cancelar',
+      cancelLabel: 'No, mantenerla',
+      tone: 'danger',
+      onConfirm: async () => {
+        try {
+          const result = await cancelBooking(bookingId);
+          if (result.moneyStatus === 'failed') {
+            // La reserva queda cancelada, pero el dinero no se movió: no se oculta.
+            toast.error('Reserva cancelada, pero la devolución no se ha completado. Lo estamos revisando.');
+          } else {
+            toast.success('Reserva cancelada. Se ha avisado al cliente.');
+          }
+          fetchBookings();
+        } catch (error) {
+          console.error('Error cancelando la reserva:', error);
+          toast.error(error instanceof Error ? error.message : 'No se pudo cancelar la reserva.');
+        }
+      },
+    });
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'completed':
-        return 'bg-gray-100 text-gray-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'Pendiente';
-      case 'confirmed':
-        return 'Confirmado';
-      case 'completed':
-        return 'Completado';
-      case 'cancelled':
-        return 'Cancelado';
-      case 'expired':
-        return 'Caducada';
-      case 'no_show_client':
-        return 'Cliente ausente';
-      case 'no_show_gardener':
-        return 'No acudiste';
-      case 'disputed':
-        return 'En revisión';
-      default:
-        return status;
-    }
-  };
 
   const openChat = (bookingId: string, clientName: string) => {
     setSelectedChat({ bookingId, clientName });
@@ -431,8 +410,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                           </p>
                         </div>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(booking.status)}`}>
-                        {getStatusText(booking.status)}
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getBookingStatusTone(booking.status)}`}>
+                        {getBookingStatusLabel(booking.status, 'gardener')}
                       </span>
                     </div>
 
@@ -478,22 +457,28 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         </div>
                       )}
                       
-                      {/* Ventana de completado (paso 8C): solo desde que el servicio ha
-                          terminado. Antes se mostraba en cuanto la reserva estaba confirmada,
-                          de modo que se podía cerrar —y cobrar— un servicio de dentro de 3 días. */}
+                      {/* "He terminado" (antes "Servicio Completado"): ya NO cierra la
+                          reserva, solo avisa al cliente. Pulsable desde que EMPIEZA el
+                          servicio -acabar antes de lo estimado es normal- y no desde que
+                          termina, que era la ventana de la version anterior. */}
                       {booking.status === 'confirmed' && (
-                        canCompleteBooking(booking) ? (
+                        booking.gardener_finished_at ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
+                            <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+                            Terminado · esperando confirmación del cliente
+                          </span>
+                        ) : canMarkGardenerFinished(booking) ? (
                           <button
-                            onClick={() => updateBookingStatus(booking.id, 'completed')}
-                            className="px-4 py-3 sm:py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                            onClick={() => updateBookingStatus(booking.id, 'finished')}
+                            className="px-4 py-3 sm:py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
                           >
-                            Servicio Completado
+                            He terminado
                           </button>
                         ) : (
                           <span className="text-xs text-gray-500 self-center">
-                            Podrás cerrarla cuando termine el servicio
-                            {getBookingServiceEnd(booking)
-                              ? ` (${format(getBookingServiceEnd(booking) as Date, "d MMM 'a las' HH:mm", { locale: es })})`
+                            Podrás avisar en cuanto empiece el servicio
+                            {getBookingServiceStart(booking)
+                              ? ` (${format(getBookingServiceStart(booking) as Date, "d MMM 'a las' HH:mm", { locale: es })})`
                               : ''}
                           </span>
                         )
@@ -561,6 +546,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           otherUserName={selectedChat.clientName}
         />
       )}
+
+      {confirmDialog}
     </div>
   );
 };

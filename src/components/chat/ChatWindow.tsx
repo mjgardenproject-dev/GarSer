@@ -77,6 +77,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   const [proposalReason, setProposalReason] = useState('');
   const [priceActionLoading, setPriceActionLoading] = useState(false);
 
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -260,21 +262,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
     };
   }, [isOpen]);
 
-  // Botón atrás del móvil: cierra el chat, no la página
+  // Botón atrás del móvil: cierra el chat, no la página.
+  //
+  // La entrada del historial se empuja solo si no la hemos empujado ya. Antes se empujaba
+  // siempre y la limpieza del efecto hacía `history.back()`: como React monta los efectos dos
+  // veces en desarrollo, ese `back()` disparaba un `popstate` que llegaba cuando el segundo
+  // listener ya estaba puesto y cerraba el chat solo, nada más abrirlo. Consultar el estado
+  // real del historial hace el efecto idempotente sin depender de cuántas veces se monte.
   useEffect(() => {
     if (!isOpen) return;
-    const state = { garserChat: bookingId };
-    window.history.pushState(state, '');
-    const onPopState = () => onClose();
+    if (window.history.state?.garserChat !== bookingId) {
+      window.history.pushState({ garserChat: bookingId }, '');
+    }
+    const onPopState = () => onCloseRef.current();
     window.addEventListener('popstate', onPopState);
-    return () => {
-      window.removeEventListener('popstate', onPopState);
-      // Si el chat se cierra desde la X, consumimos la entrada que añadimos
-      if (window.history.state?.garserChat === bookingId) {
-        window.history.back();
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => window.removeEventListener('popstate', onPopState);
   }, [isOpen, bookingId]);
 
   // Mantener el final visible al llegar mensajes y cuando el teclado cambia el viewport
@@ -445,6 +447,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
     return otherUserName;
   }, [participants, peerId, otherUserName]);
 
+  const closeChat = () => {
+    if (window.history.state?.garserChat === bookingId) {
+      window.history.back();
+    }
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -477,7 +486,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={closeChat}
               className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
               aria-label="Cerrar chat"
             >

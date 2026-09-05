@@ -19,12 +19,6 @@ type ContinueStateParams = {
   weedingManualConfirmed: boolean
   getPhytosanitaryValidation: (zone: unknown) => { issues: string[] }
   isPhytosanitaryZoneAnalyzed: (zone: unknown) => boolean
-  /**
-   * Solo al REPETIR un servicio: el cliente tiene que declarar que el jardín sigue igual.
-   * Los datos vienen de un trabajo anterior y el jardín pudo cambiar; sin esa confirmación,
-   * el profesional se encontraría con algo distinto a lo presupuestado.
-   */
-  rebookConfirmed?: boolean
 }
 
 const normalizeServiceName = (value: string) => value.trim().toLowerCase()
@@ -66,15 +60,7 @@ export function getDetailsContinueDisabled(params: ContinueStateParams): boolean
     weedingManualConfirmed,
     getPhytosanitaryValidation,
     isPhytosanitaryZoneAnalyzed,
-    rebookConfirmed,
   } = params
-
-  // Se comprueba ANTES que nada: al repetir, la confirmación es obligatoria sea cual sea el
-  // servicio. `isRebooking` solo lo marca el flujo de repetición, así que una reserva normal
-  // no se ve afectada.
-  if ((bookingData as { isRebooking?: boolean }).isRebooking && !rebookConfirmed) {
-    return true
-  }
 
   if (serviceFlags.isPalm && (!bookingData.estimatedHours || bookingData.estimatedHours <= 0)) {
     return true

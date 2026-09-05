@@ -4,6 +4,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import AddressPage from './AddressPage';
 import ServicesPage from './ServicesPage';
 import DetailsPage from './DetailsPage';
+import RebookSummaryPage from './RebookSummaryPage';
+import { hasRebookBreakdown } from '../../utils/rebookService';
 
 import ProvidersPage from './ProvidersPage';
 import ConfirmationPage from './ConfirmationPage';
@@ -72,7 +74,12 @@ const BookingFlow: React.FC = () => {
       case 1:
         return <ServicesPage />;
       case 2:
-        return <DetailsPage />;
+        // Al repetir un servicio, primero el resumen. No es un paso nuevo del funnel: es la
+        // misma parada, con una pantalla de confirmación delante que se retira sola.
+        return (bookingData as { rebookReviewPending?: boolean }).rebookReviewPending &&
+          hasRebookBreakdown(bookingData as unknown as Record<string, unknown>)
+          ? <RebookSummaryPage />
+          : <DetailsPage />;
       case 3:
         return <ProvidersPage />;
       case 4:

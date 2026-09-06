@@ -1,0 +1,76 @@
+{
+  "version": "phytosanitary_v2",
+  "precioPorHora": 35,
+  "importe_minimo": 50,
+  "minimum_price": 50,
+  "minimum_fee": 50,
+  "tratamientos_activos": [
+    "insecticida",
+    "fungicida",
+    "ecologico_preventivo",
+    "endoterapia"
+  ],
+  "yields": {
+    "cesped_m2_per_hour": 400,
+    "setos_ml_per_hour": 60,
+    "plantas_m2_per_hour": 300,
+    "arboles_units_per_hour": 5,
+    "palmeras_units_per_hour": 4,
+    "endoterapia_units_per_hour": 3
+  },
+  "palmeras": {
+    "endoterapia": {
+      "precio_unico": 65
+    }
+  },
+  "pricing_modifiers": {
+    "eco": {
+      "percentage": 10
+    }
+  },
+  "detailed_pricing": {
+    "cesped": {
+      "minimo": 50,
+      "preventivo": 0.12,
+      "curativo": 0.2
+    },
+    "setos": {
+      "minimo": 50,
+      "bajos_preventivo": 1.2,
+      "bajos_curativo": 1.8,
+      "altos_preventivo": 1.8,
+      "altos_curativo": 2.6
+    },
+    "arboles": {
+      "minimo": 50,
+      "pequenos_preventivo": 15,
+      "pequenos_curativo": 25,
+      "medianos_preventivo": 25,
+      "medianos_curativo": 40,
+      "grandes_preventivo": 40,
+      "grandes_curativo": 65
+    },
+    "plantas": {
+      "minimo": 45,
+      "pequenas_preventivo": 0.15,
+      "pequenas_curativo": 0.25,
+      "medianas_preventivo": 0.2,
+      "medianas_curativo": 0.32,
+      "grandes_preventivo": 0.28,
+      "grandes_curativo": 0.45
+    },
+    "palmeras": {
+      "minimo": 60,
+      "pequenas_preventivo": 25,
+      "pequenas_curativo": 40,
+      "pequenas_cirugia": 90,
+      "medianas_preventivo": 35,
+      "medianas_curativo": 55,
+      "medianas_cirugia": 120,
+      "altas_preventivo": 50,
+      "altas_curativo": 75,
+      "altas_cirugia": 160
+    }
+  },
+  "pricing_method": "per_quantity"
+}

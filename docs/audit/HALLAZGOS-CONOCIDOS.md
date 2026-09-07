@@ -1,47 +1,58 @@
-# Archivo de las auditorías de septiembre de 2026
+# Pistas de una auditoría anterior — para verificar, no para creer
 
-Aquí está lo único que merecía sobrevivir al borrado de las seis ramas de auditoría: **los
-siete runners** y **los hallazgos documentados**. El código corregido no se guardó a
-propósito, porque estaba construido sobre una base equivocada y hay que rehacerlo.
+En septiembre de 2026 hubo una tanda de auditorías que se hizo sobre **una base de código
+distinta de `main`**: una línea local que nunca se subió a GitHub. Sus conclusiones
+describen un código que no es el que tienes delante.
 
-## Qué pasó, en tres frases
+**Nada de lo que hay aquí es un hallazgo. Son pistas de dónde mirar.** Antes de escribir en
+tu informe que algo falla, compruébalo tú contra el código actual. Ya ha pasado que un
+"fallo confirmado" de aquella tanda resultara estar perfectamente resuelto en `main`.
 
-Las seis auditorías salieron de `98b54ae`, un commit local que nunca se subió a GitHub y
-que es una línea paralela a `origin/main`, donde se hizo el mismo trabajo con las PR
-#8–#16. Producción va con `origin/main`. Resultado: se auditó, se midió y se corrigió
-código que no era el de producción, y algunos arreglos duplicaban cosas que main ya tenía
-resueltas —a veces mejor, como la captura diferida del pago—.
+## Cómo usar esta lista
 
-## Qué hay aquí
+Para cada punto: ve al fichero, míralo, y decide por ti mismo. Si está resuelto, no lo
+menciones. Si sigue roto, entonces sí es tuyo y lo documentas con la evidencia que hayas
+obtenido tú, no con la de aquí.
 
-- `scripts/readiness/` — los siete runners, uno por servicio, más el harness común. **Esto
-  es lo valioso**: miden por HTTP contra `booking-authority`, así que no dependen de la
-  base del código y se pueden reutilizar tal cual. Las cifras que esperan sí dependen de
-  las tarifas del `seed.sql`, así que al reusarlos hay que revalidar la tabla de
-  predicciones contra la configuración que tenga el jardinero sembrado.
-- `COORDINACION-SERVICIOS.md` — el registro de qué tocó cada rama y los hallazgos
-  transversales. La §0 explica el problema de la base; la §3 lista lo encontrado.
-- `PLAN-INTEGRACION.md` — el plan que se abandonó al decidir empezar de cero.
-- Los informes de fitosanitarios, el único servicio que llegó a cerrarse con GO.
+## Pistas comprobadas contra `main` el 2026-09-05
 
-## Hallazgos que se confirmaron y que seguirán ahí al reauditar sobre `origin/main`
+Estas dos **seguían presentes** en el momento de escribir esto. Verifícalas igualmente, por
+si alguien las ha tocado desde entonces:
 
-Comprobados contra `origin/main` (`50a6031`) el 2026-09-05:
+- **Redondeo de horas.** `src/shared/bookingQuoteCore.ts:1349`, `if (totalHours > 8)
+  totalHours *= 0.9;`. La multiplicación deja un residuo de coma flotante que el redondeo
+  posterior a media hora amplifica, y a veces suma media hora de más. Tres auditorías lo
+  encontraron por separado creyendo cada una que era un fallo de su servicio.
+- **Puerta de licencia fitosanitaria.** `booking-authority` no comprueba
+  `has_phytosanitary_license`: cero referencias. Un profesional sin carnet puede ser
+  reservado para un tratamiento con producto convencional, que es lo que reserva a quien lo
+  tiene el RD 1311/2012 — y lo que su propio panel le promete al cliente por escrito.
 
-- **El redondeo de horas.** `totalHours *= 0.9` deja un residuo de coma flotante que el
-  techo a media hora amplifica. Lo encontraron tres auditorías por separado (césped,
-  arbustos, desbroce). Sigue presente en main.
-- **La puerta de licencia fitosanitaria no existe.** Un profesional sin carnet puede ser
-  reservado para un tratamiento con producto convencional.
-- **No existe ningún reembolso, en ninguna parte.** El cliente paga la tarifa, el
-  profesional rechaza, la reserva se cancela y el dinero no vuelve.
-- **El cliente no puede cancelar su reserva** desde su área.
-- **El motor de fitosanitarios cobraba el preventivo a tarifa curativa**, facturaba las
-  plantas con los precios del césped y no distinguía intención en palmeras. El bloque es
-  idéntico en las dos líneas, así que sigue roto en main.
+## Pistas que resultaron ser FALSAS en `main`
 
-Y dos que **NO hay que volver a arreglar**, porque `origin/main` ya los resolvió:
+Se afirmaron en la tanda anterior y **no se cumplen** en el código actual. Están aquí para
+que no pierdas tiempo ni las repitas:
 
-- El catálogo público de profesionales: main tiene `public_gardener_directory`.
-- La captura del pago: main usa captura diferida a propósito (PR #9). Poner
-  `capture_method: 'automatic'` rompería ese diseño.
+- ~~«No existe ningún reembolso»~~ → **Sí existe.** `booking-payment/index.ts` llama a
+  `/v1/refunds` de Stripe cuando la acción de dinero es `refund`.
+- ~~«El cliente no puede cancelar su reserva»~~ → **Sí puede.** `BookingsList.tsx:136` tiene
+  el botón con su diálogo de confirmación.
+- ~~«El catálogo de profesionales deja fuera a los clientes nuevos»~~ → **Resuelto.** Existe
+  `public_gardener_directory` y el listado la usa.
+
+## Un diseño que NO hay que "arreglar"
+
+`booking-payment` usa `capture_method: 'manual'` **a propósito**: al reservar solo se
+autoriza el importe, y se captura cuando la reserva se confirma (PR #9, "captura diferida").
+Es deliberado. En la tanda anterior alguien lo tomó por un fallo y lo cambió a `automatic`,
+lo que habría cobrado al cliente antes de que el profesional aceptara.
+
+Si ves algo que parece un error pero está comentado como decisión, léelo dos veces antes de
+tocarlo.
+
+## Lo que sí quedó verificado como cierto y sigue siendo útil
+
+- La reseña de penalización del sistema **está implementada**: `booking_lifecycle_rpcs.sql`
+  inserta en `reviews` con `is_system_penalty` y `system_reason` cuando corresponde. Si tu
+  auditoría toca cancelaciones, comprueba que se dispara y que se distingue de una opinión
+  real, pero no la construyas de cero.

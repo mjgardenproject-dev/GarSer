@@ -59,14 +59,19 @@ reprodujiste, y a qué servicios crees que afecta.
 
 | # | Servicio que lo encontró | Qué falla | Dónde | Afecta a |
 |---|---|---|---|---|
-| _(vacío)_ | | | | |
+| T1 | transversal (ronda previa a los servicios, 2026-09-09) | **No se comprueba la licencia fitosanitaria en ninguna parte del backend.** Un trabajo con producto químico convencional (fitosanitarios no ecológicos, o desbroce con herbicida) es reservable con un jardinero **sin** carnet. `booking-authority` y `booking-payment` tienen 0 referencias a `has_phytosanitary_license`. `ProvidersPage` calcula `requiresCertifiedLicense` pero **nunca filtra la lista** por ese campo (solo cambia textos). Reproducido leyendo código; no probado E2E. | `src/pages/reserva/ProvidersPage.tsx:411-475` (no hay `.filter` por licencia) · `supabase/functions/booking-authority/index.ts` (0 refs) | fitosanitarios, desbroce. El arreglo correcto es un filtro en la capa compartida `booking-authority` / `ProvidersPage`, por eso se anota aquí. |
+| T2 | transversal (2026-09-09) | Redondeo de horas `if (totalHours > 8) totalHours *= 0.9;` + `Math.ceil(totalHours*2)/2`. **Comprobado y NO reproducido** en `main`: barrido `totalHours` 8,001–40,000 @ 0,001 → 0 casos de sobre-redondeo frente a referencia decimal exacta. Línea frágil pero sin sobrecoste observable hoy. Se deja anotado por si un servicio con horas altas lo re-encuentra: **no es un fallo confirmado**. | `src/shared/bookingQuoteCore.ts:1349-1350` | cualquier servicio que supere 8 h brutas (setos, césped grandes, desbroce) |
 
 ---
 
 ## 4. Cómo se cierra un servicio
 
 1. Runner en verde con el motor en proceso: `READINESS_ENGINE=local node scripts/readiness/<servicio>.mjs`
-2. `npx tsc --noEmit -p tsconfig.json` y `npx vitest run` sin fallos.
+2. **Tipos:** `npx tsc --noEmit -p tsconfig.app.json` — este es el gate real. `tsconfig.json`
+   tiene `"files": []` y sólo `references`, así que `tsc -p tsconfig.json` NO comprueba ningún
+   fichero (siempre pasa: es un no-op). Criterio: `main` arrastra **173 errores** (en su
+   mayoría `TS6133` de variables sin usar); el número **no puede subir de 173**, y cualquier
+   fichero que toque tu servicio queda **sin errores nuevos**. `npx vitest run` sin fallos.
 3. Informe al usuario. **Él abre la PR y decide el turno.**
 4. Tras el merge: `supabase db push` → `supabase functions deploy <fn> --use-api` → Vercel.
 5. Se ejecutan **todos** los runners, ya por HTTP, no solo el del servicio recién integrado.

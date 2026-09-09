@@ -984,7 +984,16 @@ async function syncAttemptWithStripePaymentIntent(
   const lastPaymentErrorCode = asString(lastPaymentError.code) || asString(lastPaymentError.decline_code) || null;
   const lastPaymentErrorMessage = asString(lastPaymentError.message) || null;
 
-  if (paymentIntentStatus === 'succeeded') {
+  // Captura diferida: el pago del cliente NO deja el PaymentIntent en `succeeded`, sino en
+  // `requires_capture` (importe AUTORIZADO, pendiente de capturar cuando el jardinero acepte).
+  // Ese es el momento de crear la reserva, exactamente igual que hace el webhook con
+  // `payment_intent.amount_capturable_updated`. Tratar `requires_capture` aquí permite que el
+  // front cierre la reserva sin depender de que el webhook llegue. Si el webhook llega
+  // después, `confirm_booking_payment_attempt` es idempotente (si el intento ya tiene
+  // `booking_id` devuelve el resumen sin volver a insertar), así que no se duplica.
+  // `succeeded` sigue entrando aquí para el caso en que la captura ya haya ocurrido (webhook
+  // de captura, o pago con captura automática en flujos legacy).
+  if (paymentIntentStatus === 'succeeded' || paymentIntentStatus === 'requires_capture') {
     const { data, error } = await admin.rpc('confirm_booking_payment_attempt', {
       p_attempt_id: attempt.id,
       p_stripe_event_id: buildBookingPaymentGatewaySyncEventId({
@@ -992,7 +1001,11 @@ async function syncAttemptWithStripePaymentIntent(
         paymentIntentId: resolvedPaymentIntentId,
       }),
       p_stripe_payment_intent_id: resolvedPaymentIntentId,
-      p_amount_total_cents: asInteger(paymentIntent.amount_received || paymentIntent.amount),
+      // En `requires_capture` aún no hay `amount_received` (>0 sólo tras la captura); el
+      // importe autorizado vive en `amount_capturable` / `amount`. Mismo orden que el webhook.
+      p_amount_total_cents: asInteger(
+        paymentIntent.amount_received || paymentIntent.amount_capturable || paymentIntent.amount,
+      ),
       p_currency: asString(paymentIntent.currency) || attempt.currency || 'eur',
       p_gateway_payload: {
         syncedFrom: source,

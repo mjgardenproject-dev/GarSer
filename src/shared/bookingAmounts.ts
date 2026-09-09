@@ -186,3 +186,78 @@ export function clientAmountsNote(amounts: BookingAmounts): string {
 /** Nota fija para el jardinero: su importe es integro. */
 export const GARDENER_AMOUNT_NOTE =
   'Íntegro para ti. GarSer cobra sus gastos de gestión aparte, al cliente.';
+
+/* ------------------------------------------------------------------------------------- *
+ * Política de reembolso al cancelar (lado CLIENTE).
+ *
+ * El mismo umbral que codifica la RPC `cancel_booking` (migración
+ * 20260909120000): con 24 h o más hasta el inicio del servicio, el cliente recupera
+ * íntegra la tarifa de gestión; con menos, la pierde. Se expone aquí para que el diálogo
+ * de confirmación pueda decir el importe exacto ANTES de confirmar, con el caso concreto
+ * del cliente, en vez de un texto fijo. La decisión autoritativa sigue siendo la del
+ * servidor: esto es sólo el aviso previo.
+ * ------------------------------------------------------------------------------------- */
+
+export const BOOKING_FREE_CANCELLATION_HOURS = 24;
+
+export interface CancellationRefundPreview {
+  /** true si, con la antelación actual, se devuelve la tarifa de gestión. */
+  refundable: boolean;
+  /** Importe que se le devolvería al cliente ahora mismo (0 si <24 h o comisión desconocida). */
+  refundAmount: number;
+  /** Importe que perdería si cancela ahora (0 si es reembolsable o comisión desconocida). */
+  forfeitAmount: number;
+  /** Horas hasta el inicio del servicio; null si no se pudo calcular. */
+  hoursUntilStart: number | null;
+  feeIsKnown: boolean;
+}
+
+/**
+ * Previsualización del reembolso por cancelar una reserva, para el diálogo de confirmación.
+ *
+ * @param row          fila de `bookings` (para leer `management_fee` vía `getBookingAmounts`)
+ * @param serviceStart instante de inicio del servicio (Date o ISO); si falta, no es reembolsable
+ * @param now          momento de referencia (inyectable para tests)
+ */
+export function getCancellationRefundPreview(
+  row: BookingAmountsRow | null | undefined,
+  serviceStart: Date | string | null | undefined,
+  now: Date = new Date(),
+): CancellationRefundPreview {
+  const amounts = getBookingAmounts(row);
+  const start =
+    serviceStart instanceof Date
+      ? serviceStart
+      : serviceStart
+        ? new Date(serviceStart)
+        : null;
+  const hoursUntilStart =
+    start && !Number.isNaN(start.getTime())
+      ? (start.getTime() - now.getTime()) / 3_600_000
+      : null;
+  const refundable =
+    hoursUntilStart !== null && hoursUntilStart >= BOOKING_FREE_CANCELLATION_HOURS;
+
+  return {
+    refundable,
+    refundAmount: refundable && amounts.feeIsKnown ? amounts.managementFee : 0,
+    forfeitAmount: !refundable && amounts.feeIsKnown ? amounts.managementFee : 0,
+    hoursUntilStart,
+    feeIsKnown: amounts.feeIsKnown,
+  };
+}
+
+/** Mensaje para el diálogo de confirmación de cancelación, con el importe concreto. */
+export function cancellationConfirmMessage(preview: CancellationRefundPreview): string {
+  if (!preview.feeIsKnown) {
+    return 'Se cancelará la reserva y se liberará el hueco del profesional.';
+  }
+  if (preview.refundable) {
+    return `Faltan más de 24 h para el servicio: se te devolverán íntegros los ${formatEuro(
+      preview.refundAmount,
+    )} de gastos de gestión. Se liberará el hueco del profesional.`;
+  }
+  return `Faltan menos de 24 h para el servicio: los ${formatEuro(
+    preview.forfeitAmount,
+  )} de gastos de gestión no se devuelven. Se liberará el hueco del profesional.`;
+}

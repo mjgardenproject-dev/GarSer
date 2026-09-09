@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { reportBookingEvent } from './bookingTelemetry';
+import { finalizeBookingPaymentWithRetry } from './bookingPaymentFinalize';
 
 export type PriceChangeStatus = 'none' | 'pending_client_acceptance' | 'accepted' | 'rejected' | 'expired';
 
@@ -62,13 +63,9 @@ export async function proposeBookingPriceChange(params: {
   if (error) throw error;
 
   // El cliente tiene que enterarse: sin notificaciones in-app, el email es el único canal.
+  // Proponer sólo dispara el aviso de PROPUESTA; el de aceptada/rechazada lo envía
+  // `respondBookingPriceChange`, que es quien conoce el desenlace.
   void notifyPriceChange(params.bookingId, 'booking_price_change_proposed');
-
-  // El jardinero propuso el cambio: es a él a quien le importa el desenlace.
-  void notifyPriceChange(
-    params.bookingId,
-    params.accept ? 'booking_price_change_accepted' : 'booking_price_change_rejected',
-  );
 
   return (data || null) as PriceChangeRpcResponse | null;
 }
@@ -86,26 +83,24 @@ export async function respondBookingPriceChange(params: {
   const { data, error } = await supabase.rpc('respond_booking_price_change', payload);
   if (error) throw error;
 
+  // Aviso del desenlace. `accept` sí existe aquí (a diferencia de proposeBookingPriceChange,
+  // donde se colaba una referencia a un campo inexistente que mandaba SIEMPRE el email de
+  // "rechazado" al proponer). Best-effort: nunca rompe el flujo.
+  void notifyPriceChange(
+    params.bookingId,
+    params.accept ? 'booking_price_change_accepted' : 'booking_price_change_rejected',
+  );
+
   // Captura diferida. Aceptar la propuesta confirma la reserva y rechazarla la cancela, así que
   // este es el momento de cobrar o liberar los gastos de gestión retenidos. Sin esta llamada la
   // autorización de Stripe caducaba a los 7 días: la reserva quedaba confirmada y GarSer no
   // cobraba nada. La decisión la deriva el servidor de price_change_status, no de aquí.
-  // Best-effort: la respuesta del cliente ya está persistida y no debe romperse por esto.
-  try {
-    const { error: finalizeError } = await supabase.functions.invoke('booking-payment', {
-      body: { action: 'finalize_price_change_payment', bookingId: params.bookingId },
-    });
-    if (finalizeError) throw finalizeError;
-  } catch (finalizeError) {
-    reportBookingEvent('error', {
-      event: 'booking.price_change_payment_finalize_failed',
-      context: {
-        bookingId: params.bookingId,
-        accept: params.accept,
-        message: finalizeError instanceof Error ? finalizeError.message : 'unknown',
-      },
-    });
-  }
+  // Idempotente y CON REINTENTOS (F3); lo que no se recupere aquí lo recoge la reconciliación
+  // de `booking-lifecycle-tick`.
+  await finalizeBookingPaymentWithRetry(
+    { action: 'finalize_price_change_payment', bookingId: params.bookingId },
+    { bookingId: params.bookingId, accept: params.accept },
+  );
 
   return (data || null) as PriceChangeRpcResponse | null;
 }

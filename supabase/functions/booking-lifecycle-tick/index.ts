@@ -176,6 +176,162 @@ async function expireStaleRequests(admin: any) {
   return { expired: Number(data || 0) };
 }
 
+/**
+ * Trabajo 4 (F3) — respaldo de la captura/liberación diferida del pago.
+ *
+ * La captura de la comisión (al aceptar) y la liberación de la autorización (al
+ * rechazar/cancelar) las dispara el navegador y, aunque ahora se reintenta desde el cliente,
+ * si el navegador se cierra del todo nadie las recupera: la reserva queda `confirmed` con el
+ * PaymentIntent en `requires_capture` y GarSer no cobra esa comisión.
+ *
+ * Aquí NO se decide política: la RPC ya devuelve QUÉ hacer según el estado de la reserva
+ * (`capture` para `confirmed`, `release` para cancelada/rechazada/caducada). Esta función sólo
+ * comprueba el estado REAL en Stripe y EJECUTA. Es idempotente y conservadora:
+ *   · `capture`: sólo si el PI sigue `requires_capture`. Si ya está `succeeded`, se marca y ya.
+ *   · `release`: sólo libera una autorización pendiente. NUNCA reembolsa un cargo capturado
+ *     (eso rompería la política de las 24 h). Si el PI está `succeeded`, se marca y se avisa.
+ */
+// deno-lint-ignore no-explicit-any
+async function reconcileStuckPayments(admin: any, stripeSecret: string | undefined) {
+  if (!stripeSecret) {
+    return { skipped: 'no_stripe_secret' as const };
+  }
+
+  const { data: rows, error } = await admin.rpc('list_bookings_pending_payment_reconciliation', {
+    p_limit: BATCH_LIMIT,
+  });
+  if (error) throw new Error(`list_bookings_pending_payment_reconciliation: ${error.message}`);
+
+  const candidates = (rows || []) as Array<{
+    booking_id: string;
+    attempt_id: string;
+    booking_status: string;
+    payment_intent_id: string;
+    desired_action: 'capture' | 'release';
+  }>;
+
+  const stripeGet = async (path: string) => {
+    const res = await fetch(`https://api.stripe.com${path}`, {
+      headers: { Authorization: `Bearer ${stripeSecret}` },
+    });
+    return { ok: res.ok, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+  };
+  const stripePost = async (path: string, idempotencyKey: string) => {
+    const res = await fetch(`https://api.stripe.com${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${stripeSecret}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: '',
+    });
+    return { ok: res.ok, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+  };
+
+  let captured = 0;
+  let released = 0;
+  let alreadySettled = 0;
+  let needsAttention = 0;
+  let failed = 0;
+
+  for (const row of candidates) {
+    const pi = row.payment_intent_id;
+    try {
+      const { ok, body } = await stripeGet(`/v1/payment_intents/${encodeURIComponent(pi)}`);
+      if (!ok) {
+        failed += 1;
+        await logEvent(admin, 'error', 'booking.payment_reconcile_stripe_get_failed', {
+          bookingId: row.booking_id, paymentIntentId: pi, body,
+        });
+        continue;
+      }
+      const status = String(body.status || '');
+
+      if (row.desired_action === 'capture') {
+        if (status === 'requires_capture') {
+          const cap = await stripePost(
+            `/v1/payment_intents/${encodeURIComponent(pi)}/capture`,
+            `garser_recon_capture_${row.booking_id}`,
+          );
+          if (!cap.ok) {
+            failed += 1;
+            await logEvent(admin, 'error', 'booking.payment_reconcile_capture_failed', {
+              bookingId: row.booking_id, paymentIntentId: pi, body: cap.body,
+            });
+            continue;
+          }
+          captured += 1;
+          await admin.rpc('mark_booking_payment_settled', { p_attempt_id: row.attempt_id, p_result: 'captured' });
+          await logEvent(admin, 'warn', 'booking.payment_reconcile_captured', {
+            bookingId: row.booking_id, paymentIntentId: pi,
+          });
+        } else if (status === 'succeeded') {
+          alreadySettled += 1;
+          await admin.rpc('mark_booking_payment_settled', { p_attempt_id: row.attempt_id, p_result: 'already_captured' });
+        } else if (status === 'canceled') {
+          // La autorización caducó/se canceló sin capturar: comisión perdida, nada que hacer.
+          needsAttention += 1;
+          await admin.rpc('mark_booking_payment_settled', { p_attempt_id: row.attempt_id, p_result: 'capture_lost' });
+          await logEvent(admin, 'error', 'booking.payment_reconcile_capture_lost', {
+            bookingId: row.booking_id, paymentIntentId: pi,
+          });
+        }
+        // Otros estados (requires_payment_method, processing…): se reintenta en la próxima pasada.
+      } else {
+        // desired_action === 'release'
+        if (['requires_capture', 'requires_payment_method', 'requires_confirmation'].includes(status)) {
+          const rel = await stripePost(
+            `/v1/payment_intents/${encodeURIComponent(pi)}/cancel`,
+            `garser_recon_release_${row.booking_id}`,
+          );
+          if (!rel.ok) {
+            failed += 1;
+            await logEvent(admin, 'error', 'booking.payment_reconcile_release_failed', {
+              bookingId: row.booking_id, paymentIntentId: pi, body: rel.body,
+            });
+            continue;
+          }
+          released += 1;
+          await admin.rpc('mark_booking_payment_settled', { p_attempt_id: row.attempt_id, p_result: 'released' });
+        } else if (status === 'canceled') {
+          alreadySettled += 1;
+          await admin.rpc('mark_booking_payment_settled', { p_attempt_id: row.attempt_id, p_result: 'already_released' });
+        } else if (status === 'succeeded') {
+          // Cargo capturado sobre una reserva cancelada. Distinguimos dos casos:
+          //  · ya reembolsado (cancelación/rechazo del profesional → refund) → cierre limpio.
+          //  · capturado y NO reembolsado → puede ser correcto (cancelación tardía del cliente
+          //    conserva la tarifa) o no; NO se toca desde aquí, se marca y se avisa.
+          const { body: refundList } = await stripeGet(
+            `/v1/refunds?payment_intent=${encodeURIComponent(pi)}&limit=100`,
+          );
+          const refunded = Array.isArray((refundList as { data?: unknown[] }).data)
+            && (refundList as { data: Array<Record<string, unknown>> }).data
+              .some((r) => String(r.status) === 'succeeded');
+          if (refunded) {
+            alreadySettled += 1;
+            await admin.rpc('mark_booking_payment_settled', { p_attempt_id: row.attempt_id, p_result: 'refunded_ok' });
+          } else {
+            needsAttention += 1;
+            await admin.rpc('mark_booking_payment_settled', { p_attempt_id: row.attempt_id, p_result: 'captured_on_cancelled_review' });
+            await logEvent(admin, 'warn', 'booking.payment_reconcile_captured_on_cancelled', {
+              bookingId: row.booking_id, paymentIntentId: pi,
+            });
+          }
+        }
+      }
+    } catch (rowError) {
+      failed += 1;
+      await logEvent(admin, 'error', 'booking.payment_reconcile_row_failed', {
+        bookingId: row.booking_id,
+        message: rowError instanceof Error ? rowError.message : String(rowError),
+      });
+    }
+  }
+
+  return { candidates: candidates.length, captured, released, alreadySettled, needsAttention, failed };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -196,6 +352,7 @@ Deno.serve(async (req) => {
   }
 
   const admin = createClient(supabaseUrl, serviceKey);
+  const stripeSecret = Deno.env.get('STRIPE_SECRET_KEY');
   const result: Record<string, unknown> = {};
   const errors: string[] = [];
 
@@ -204,6 +361,7 @@ Deno.serve(async (req) => {
     ['confirmationPrompts', (a: unknown) => sendConfirmationPrompts(a, supabaseUrl, serviceKey)],
     ['dueBookings', (a: unknown) => closeDueBookings(a, supabaseUrl, serviceKey)],
     ['staleRequests', (a: unknown) => expireStaleRequests(a)],
+    ['stuckPayments', (a: unknown) => reconcileStuckPayments(a, stripeSecret)],
   ] as const) {
     try {
       result[name] = await job(admin);

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BOOKING_MANAGEMENT_FEE_RATE,
+  cancellationConfirmMessage,
   clientAmountsNote,
   formatEuro,
   getBookingAmounts,
+  getCancellationRefundPreview,
   getQuoteAmounts,
 } from './bookingAmounts';
 
@@ -154,6 +156,49 @@ describe('clientAmountsNote', () => {
     expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'pending' }))).toContain('retenidos');
     expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'confirmed' }))).toContain('pagados');
     expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'cancelled' }))).toContain('No se te ha cobrado nada');
+  });
+});
+
+describe('getCancellationRefundPreview / cancellationConfirmMessage (F1)', () => {
+  const row = { total_price: 158, management_fee: 19.75, management_fee_source: 'payment_attempt', status: 'pending' };
+  const now = new Date('2026-09-09T12:00:00Z');
+
+  it('con >24 h de antelación devuelve la tarifa íntegra', () => {
+    const preview = getCancellationRefundPreview(row, '2026-09-11T09:00:00Z', now);
+    expect(preview.refundable).toBe(true);
+    expect(preview.refundAmount).toBe(19.75);
+    expect(preview.forfeitAmount).toBe(0);
+    expect(cancellationConfirmMessage(preview)).toContain('más de 24 h');
+    expect(cancellationConfirmMessage(preview)).toContain('19,75 €');
+  });
+
+  it('con <24 h de antelación la tarifa se pierde', () => {
+    const preview = getCancellationRefundPreview(row, '2026-09-10T09:00:00Z', now);
+    expect(preview.refundable).toBe(false);
+    expect(preview.refundAmount).toBe(0);
+    expect(preview.forfeitAmount).toBe(19.75);
+    expect(cancellationConfirmMessage(preview)).toContain('menos de 24 h');
+    expect(cancellationConfirmMessage(preview)).toContain('no se devuelven');
+  });
+
+  it('el corte está exactamente en 24 h (24 h justas ⇒ reembolsable)', () => {
+    expect(getCancellationRefundPreview(row, '2026-09-10T12:00:00Z', now).refundable).toBe(true);
+    expect(getCancellationRefundPreview(row, '2026-09-10T11:59:00Z', now).refundable).toBe(false);
+  });
+
+  it('si no consta una comisión fiable, no promete importes', () => {
+    const preview = getCancellationRefundPreview(
+      { total_price: 158, management_fee: 0, management_fee_source: 'unknown' },
+      '2026-09-11T09:00:00Z',
+      now,
+    );
+    expect(preview.feeIsKnown).toBe(false);
+    expect(preview.refundAmount).toBe(0);
+    expect(cancellationConfirmMessage(preview)).not.toContain('€');
+  });
+
+  it('sin fecha de inicio no es reembolsable', () => {
+    expect(getCancellationRefundPreview(row, null, now).refundable).toBe(false);
   });
 });
 

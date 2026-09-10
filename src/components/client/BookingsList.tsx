@@ -10,10 +10,10 @@ import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { fetchRebookPayload } from '../../utils/rebookService';
-import { cancelBooking } from '../../utils/bookingLifecycleService';
+import { cancelBooking, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { confirmBookingService } from '../../utils/bookingIncidentService';
 import { clearBookingResumeStorage, writeBookingResume } from '../../utils/bookingResumeStorage';
-import { formatEuro } from '../../shared/bookingAmounts';
+import { cancellationConfirmMessage, getCancellationRefundPreview } from '../../shared/bookingAmounts';
 import ChatWindow from '../chat/ChatWindow';
 import ClientBookingCard from '../booking/ClientBookingCard';
 import ReviewModal from '../booking/ReviewModal';
@@ -132,9 +132,13 @@ const BookingsList = () => {
   };
 
   const handleCancel = (booking: BookingWithDetails) => {
+    // Aviso previo con el importe concreto según la antelación: >24 h → devolución íntegra de
+    // la tarifa de gestión; <24 h → se pierde. Mismo umbral que la RPC `cancel_booking`; la
+    // decisión definitiva la toma el servidor.
+    const refundPreview = getCancellationRefundPreview(booking, getBookingServiceStart(booking));
     openConfirm({
       title: '¿Cancelar esta reserva?',
-      message: `Se liberará el hueco del profesional. Los ${formatEuro(booking.management_fee)} de gastos de gestión que ya abonaste no se devuelven.`,
+      message: cancellationConfirmMessage(refundPreview),
       confirmLabel: 'Sí, cancelar',
       cancelLabel: 'No, mantenerla',
       tone: 'danger',

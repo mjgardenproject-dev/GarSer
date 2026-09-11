@@ -583,9 +583,13 @@ describe('buildAuthoritativeBookingQuote', () => {
     // base 100 × estado 1.5 × restos 1.1 = 165; extras = tronco 10% (16.5) + fito 15 = 31.5;
     // (165 + 31.5) × acceso 1.2 = 235.8 × 2 uds = 471.6 → 472 €.
     expect(result.totalPrice).toBe(472);
-    // Horas desde los yields DEL JARDINERO también en per_quantity (§2):
-    // (2/1) × 1.5 × 1.1 × 1.2 = 3.96h → redondeo a 4h.
-    expect(result.estimatedHours).toBe(4);
+    // Horas desde los yields DEL JARDINERO también en per_quantity (§2). El pelado de
+    // tronco y el tratamiento fitosanitario son trabajo físico real y también cuentan como
+    // horas (auditoría de palmeras 2026-09-11/12, hallazgo #1a/#1b — antes solo afectaban
+    // al precio):
+    // (2/1) × estado 1.5 × restos 1.1 × acceso 1.2 × tronco 1.1 = 4,356h
+    // + fitosanitario 0,1h × 2 uds = 0,2h → 4,556h → redondeo a 5h.
+    expect(result.estimatedHours).toBe(5);
   });
 
   it('palmeras: el recargo de acceso no aplica en la banda de altura mínima de la especie', () => {

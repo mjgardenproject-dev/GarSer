@@ -326,6 +326,10 @@ export const MANUAL_RANGES = {
   // fotos iría a revisión; el manual no debe cobrarlo directo y crear la asimetría.
   hedge: { longitud_m: { min: 1, max: 200 }, altura_m: { min: 0.3, max: 6 }, caras: { min: 1, max: 2 } },
   palm: { altura_m: { min: 0.5, max: 25 }, quantity: { min: 1, max: 50 } },
+  // Grupo de árboles idénticos declarado por el cliente (stepper post-análisis, común a
+  // fotos y manual). Por encima de esto es una plantación/finca comercial que necesita
+  // presupuesto a medida, no autoservicio: mismo criterio que el tope de palmeras.
+  tree: { quantity: { min: 1, max: 20 } },
   shrub: { superficie_m2: { min: 1, max: 2000 } },
   phytosanitary: { area: { min: 1, max: 5000 } },
   weeding: { area: { min: 1, max: 10000 } },

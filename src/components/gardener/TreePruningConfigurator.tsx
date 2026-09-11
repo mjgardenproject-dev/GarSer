@@ -485,7 +485,7 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
             <div className="min-w-0">
               <span className="block text-sm font-medium text-gray-900">Dificultad Alta</span>
-              <span className="text-xs text-gray-500 block mt-1">Aplica si la IA detecta terreno irregular u obstáculos. No aplica a árboles de 0-3m.</span>
+              <span className="text-xs text-gray-500 block mt-1">Se aplica cuando el cliente confirma que el acceso al árbol es difícil (cercano a cables, en pendiente, obstáculos). Aplica a cualquier tamaño, incluidos los árboles de 0-3m.</span>
             </div>
             {renderPercentageInput('difficultyIncrease', config.difficultyIncrease, (v) => updateConfig({ difficultyIncrease: v }))}
           </div>

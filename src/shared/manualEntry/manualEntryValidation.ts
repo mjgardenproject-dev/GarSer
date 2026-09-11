@@ -242,6 +242,9 @@ export function validateManualBookingInput(
       groups.forEach((group, index) => {
         pushEnum(errors, `treeGroups[${index}].aiSizeBand`, group.aiSizeBand, TREE_BANDS, 'el tamaño del árbol');
         pushEnum(errors, `treeGroups[${index}].pruningType`, group.pruningType, TREE_PRUNING, 'el tipo de poda');
+        // Sin quantity, el grupo es 1 árbol (mismo comportamiento que bookingQuoteCore.ts);
+        // con quantity, tiene que caer dentro del tope de "grupo de árboles idénticos".
+        pushRange(errors, `treeGroups[${index}].quantity`, group.quantity ?? 1, MANUAL_RANGES.tree.quantity, 'la cantidad de árboles idénticos', true);
       });
       break;
     }

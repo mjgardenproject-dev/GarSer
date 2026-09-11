@@ -138,6 +138,19 @@ describe('validateManualBookingInput - other services', () => {
     expect(validateManualBookingInput('shrub', { shrubGroups: [{ area: 24, size: 'medianas' }] }).ok).toBe(true);
     expect(validateManualBookingInput('shrub', { shrubGroups: [{ area: 24, size: 'enormes' }] }).ok).toBe(false);
   });
+
+  it('caps treeGroups quantity to a coherent group size', () => {
+    // Sin quantity, el grupo sigue siendo 1 árbol (mismo default que bookingQuoteCore.ts).
+    expect(validateManualBookingInput('tree', { treeGroups: [{ aiSizeBand: 'small', pruningType: 'structural' }] }).ok).toBe(true);
+    expect(
+      validateManualBookingInput('tree', { treeGroups: [{ aiSizeBand: 'small', pruningType: 'structural', quantity: 20 }] }).ok,
+    ).toBe(true);
+    const tooMany = validateManualBookingInput('tree', {
+      treeGroups: [{ aiSizeBand: 'small', pruningType: 'structural', quantity: 500 }],
+    });
+    expect(tooMany.ok).toBe(false);
+    expect(tooMany.errors.some((e) => e.field === 'treeGroups[0].quantity' && e.code === 'out_of_range')).toBe(true);
+  });
 });
 
 describe('validateManualSerializableInput - server gate', () => {

@@ -801,6 +801,13 @@ Rellena esto antes de empezar y ten la tabla a mano:
       transversal T9, no arreglar aquí — sí aparece bien en "Mis Reservas" y en el dashboard, es
       solo esta pantalla). ❌ **La cabecera muestra `(1h)` aunque el servicio dure más**
       (transversal T6, ya conocido).
+- [ ] **18.16 — Email de confirmación de reserva (cliente + jardinero) tras el pago.** ✅
+      **Éxito en la creación de la reserva; ❌ fallo en el email (hallazgo transversal T11, no
+      arreglar aquí).** Con el webhook de Stripe llegando de verdad, la reserva se crea
+      correctamente, pero la llamada interna a `booking-confirmation-email` devuelve 401 y el
+      email nunca sale — comprueba la bandeja del cliente y del jardinero tras un pago real; si
+      no llega nada, confirma el hallazgo T11 antes de asumir que es un problema de SMTP/Brevo
+      en producción (podría ser el mismo 401).
 
 ---
 

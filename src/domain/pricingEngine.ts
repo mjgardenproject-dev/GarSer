@@ -254,6 +254,13 @@ const getPalmStatePercent = (config: any, state: string): number => {
   return surcharges.normal ?? 0;
 };
 
+/**
+ * Tiempo fijo (h) que añade aplicar un tratamiento fitosanitario a una palmera, además del
+ * tiempo de poda. Es trabajo real (mezclar/aplicar el producto) que no depende de la tarifa
+ * de la palmera, así que se suma como tiempo fijo por unidad, no como un multiplicador.
+ */
+const PALM_PHYTOSANITARY_TIME_HOURS = 0.1;
+
 export const calculatePalmHoursFromConfig = (
   groups: PalmPricingGroup[],
   config: any,
@@ -304,7 +311,22 @@ export const calculatePalmHoursFromConfig = (
         ? 1 + (Number(config.access_difficulty || 0) / 100)
         : 1;
 
-    totalHours += (quantity / yieldForSpecies) * stateMult * wasteMult * accessMult;
+    // Pelado de tronco y fitosanitario son trabajo físico real: antes solo subían el
+    // precio (calculatePalmPriceEngine) y dejaban las horas -y el bloqueo de calendario-
+    // iguales con o sin el extra (hallazgo #1a/#1b, auditoría de palmeras 2026-09-12).
+    const hasTrunkPeeling = group.hasTrunkPeeling ?? group.needsTrunkFinish;
+    const trunkMult =
+      canApplyTrunkPeeling(group.species, hasTrunkPeeling) && config.trunk_finish
+        ? 1 + (Number(config.trunk_finish || 0) / 100)
+        : 1;
+
+    const hasPhytosanitary = group.hasPhytosanitary ?? group.needsPhytosanitary;
+    const phytosanitaryHours =
+      hasPhytosanitary && supportsPhytosanitaryForSpecies(group.species)
+        ? PALM_PHYTOSANITARY_TIME_HOURS * quantity
+        : 0;
+
+    totalHours += (quantity / yieldForSpecies) * stateMult * wasteMult * accessMult * trunkMult + phytosanitaryHours;
   }
 
   return Math.round(totalHours * 100) / 100;

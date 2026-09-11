@@ -127,12 +127,22 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     // Solo para migración de datos antiguos que no tengan este campo.
     // Si es un array vacío [], respetamos la decisión del usuario de borrar todo.
     if (value && value.selected_species === undefined) {
-        const detectedSpecies: PalmSpecies[] = [];
+        const detectedSpecies = new Set<PalmSpecies>();
         Object.entries(merged.species_prices).forEach(([species, price]) => {
-            if ((price as number) > 0) detectedSpecies.push(species as PalmSpecies);
+            if ((price as number) > 0) detectedSpecies.add(species as PalmSpecies);
         });
-        if (detectedSpecies.length > 0) {
-            merged.selected_species = detectedSpecies;
+        // El precio real de un jardinero per_quantity vive en height_prices, no en
+        // species_prices (que aquí solo es un fallback legado y por defecto está a 0 en
+        // las 6 especies): sin esto, un jardinero con las 21 combinaciones especie×banda
+        // ya tarifadas pero sin `selected_species` (el caso sembrado) se detectaba como
+        // "sin especies" y el primer autoguardado persistía `selected_species: []` sin que
+        // el jardinero tocara nada (auditoría de palmeras 2026-09-11/12, hallazgo #3).
+        Object.entries(merged.height_prices || {}).forEach(([species, bands]) => {
+            const hasAnyBandPrice = Object.values(bands || {}).some((price) => Number(price) > 0);
+            if (hasAnyBandPrice) detectedSpecies.add(species as PalmSpecies);
+        });
+        if (detectedSpecies.size > 0) {
+            merged.selected_species = Array.from(detectedSpecies);
         }
     }
     

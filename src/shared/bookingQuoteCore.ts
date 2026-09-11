@@ -241,6 +241,14 @@ const DEFAULT_SHRUB_SURCHARGES = { media: 20, alta: 50 };
 const LAWN_MAX_PLAUSIBLE_AREA_M2 = 2000;
 
 /**
+ * Cantidad plausible de palmeras idénticas en un único grupo residencial, mismo criterio
+ * que el tope ya usado en árboles (`MANUAL_RANGES.tree.quantity.max`) para el stepper
+ * equivalente. Sin este aviso, un grupo de 500 palmeras se facturaba y agendaba sin ningún
+ * aviso (auditoría de palmeras 2026-09-11/12, hallazgo #2). Solo avisa, no bloquea.
+ */
+const PALM_MAX_PLAUSIBLE_QUANTITY = 20;
+
+/**
  * Resuelve un % de recargo respetando el 0 explícito del jardinero.
  * El patrón anterior (`surcharges.media || 20`) pisaba un 0 configurado a
  * propósito con el default → sobrecobro para jardineros que decidieron no
@@ -1331,6 +1339,14 @@ export function buildAuthoritativeBookingQuote(params: {
     metadata.pricingContext.palmGroups.forEach((group) => {
       if (group.isPriced && group.quantity > 0 && group.isTerminalOpenRange) {
         pushWarning('palm_terminal_range', 'Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.');
+      }
+      // Anti-alucinación / declaración manual absurda: mismo patrón que lawn_area_implausible
+      // y hedge_length_implausible (auditoría de palmeras 2026-09-11/12, hallazgo #2).
+      if (group.quantity > PALM_MAX_PLAUSIBLE_QUANTITY) {
+        pushWarning(
+          'palm_quantity_implausible',
+          `La cantidad declarada (${group.quantity} palmeras) supera lo habitual para un encargo residencial (${PALM_MAX_PLAUSIBLE_QUANTITY}): confirma la medida antes de continuar.`,
+        );
       }
     });
   }

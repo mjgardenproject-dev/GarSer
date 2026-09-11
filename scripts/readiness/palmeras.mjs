@@ -1,29 +1,43 @@
 /**
  * Red de regresión — Poda de palmeras (garser-service-production-readiness).
  *
- *   node scripts/readiness/palmeras.mjs
+ *   READINESS_ENGINE=local node scripts/readiness/palmeras.mjs
  *
- * Habla con `booking-authority` en el entorno local (mismo motor que la web:
- * `buildAuthoritativeBookingQuote` vía `bookingQuoteCore`). Sale con código 1 si
- * algo falla. Relanzar tras cualquier cambio en el motor de precios o en la
- * configuración de palmeras del jardinero sembrado.
+ * Habla con `booking-authority` (o con el motor en proceso, `buildAuthoritativeBookingQuote`
+ * vía `bookingQuoteCore`, con READINESS_ENGINE=local). Sale con código 1 si algo falla.
  *
- * Config del jardinero sembrado (supabase/seed.sql, jardinero.local@test.local):
+ * IMPORTANTE — reescrito el 2026-09-11 desde cero contra `origin/main`. La versión anterior
+ * de este fichero venía de una tanda de auditorías hecha sobre una rama local que NUNCA se
+ * subió a GitHub (ver docs/audit/HALLAZGOS-CONOCIDOS.md) y usaba el serviceId fantasma
+ * `7f1b414c-...` (el real es `8e5a99f5-5ab5-40c7-b4f3-a9272c08f47e`).
+ *
+ * Fase 3 (2026-09-12) — hallazgos #1a/#1b y #2 CORREGIDOS y verificados por este mismo
+ * runner (71 PASA / 0 FALLA / 0 NO PROBADO):
+ *   - #1a/#1b: `calculatePalmHoursFromConfig` (`src/domain/pricingEngine.ts`) ahora
+ *     multiplica por `trunkMult` cuando `hasTrunkPeeling` está activo, y suma
+ *     `PALM_PHYTOSANITARY_TIME_HOURS × quantity` cuando `hasPhytosanitary` está activo —
+ *     antes ninguno de los dos afectaba a las horas, solo al precio.
+ *   - #2: `bookingQuoteCore.ts` emite `palm_quantity_implausible` cuando `quantity` de un
+ *     grupo supera `PALM_MAX_PLAUSIBLE_QUANTITY` (20), mismo patrón que
+ *     `lawn_area_implausible`/`hedge_length_implausible`. El stepper de palmeras del flujo
+ *     de fotos (`DetailsPage.tsx`, `handlePalmQuantityChange`) tiene ahora el mismo tope que
+ *     el flujo manual (`MANUAL_RANGES.palm.quantity.max`, 50) — no lo cubre este runner por
+ *     ser un cambio de UI, ver el informe.
+ *   - #3 (configurador del jardinero) y #4 (RPC `propose_booking_price_change`) también
+ *     corregidos en esta Fase 3, pero no los cubre este runner: #3 es una migración de
+ *     `selected_species` dentro de `PalmPricingConfigurator.tsx` (UI), y #4 es una función
+ *     SQL que actúa sobre una reserva ya persistida, no sobre `recalculate_correction`. Ver
+ *     el informe (`docs/audit/2026-09-11-palmeras/REPORT.md`) para su evidencia.
+ * Las predicciones de abajo están recalculadas a mano contra el código y la configuración
+ * REALES de `origin/main` tras los cuatro fixes.
+ *
+ * Config del jardinero sembrado (supabase/seed.sql, jardinero.local@test.local),
+ * verificada por SQL el 2026-09-11:
  *   pricing_method: per_quantity
  *   height_prices / yield_units_per_hour: 21 combinaciones especie×banda (abajo)
  *   condition_surcharges: { normal: 0, descuidado: 20, muy_descuidado: 50 }
- *   waste_removal.percentage: 15
- *   phytosanitary: 18 (€ plano/ud)   trunk_finish: 20 (%)   access_difficulty: 25 (%)
- *   minimum_price: 60
- *
- * Nota de entorno (solo aplica a este workspace, no a producción): si este runner se ejecuta
- * contra un `booking-authority` que sirve un checkout de git DISTINTO del que tiene el fix de
- * horas de tronco/fitosanitario (2026-09-05) — p. ej. un stack local de Supabase levantado
- * desde otra copia del repo — los escenarios S4 y S5 fallarán solo en `estimatedHours` aunque
- * el precio siga siendo correcto: el runner predice la fórmula NUEVA (la que debe quedar
- * desplegada), no la que esté sirviendo ese proceso en concreto. `src/shared/bookingQuoteCore.test.ts`
- * y `src/domain/palmBandResolution.test.ts` importan el motor directamente (sin pasar por
- * HTTP) y son la fuente de verdad en ese caso: `npx vitest run` siempre prueba ESTE checkout.
+ *   waste_removal.percentage: 15   phytosanitary: 18 (€ plano/ud)
+ *   trunk_finish: 20 (%)   access_difficulty: 25 (%)   minimum_price: 60
  */
 
 import {
@@ -35,11 +49,12 @@ import {
   expectError,
   pass,
   fail,
+  untested,
   report,
   PROVIDER_ID,
 } from './_harness.mjs';
 
-const SERVICE_ID = '7f1b414c-d007-4c73-b1c3-08f7d1954582'; // Poda de palmeras
+const SERVICE_ID = '8e5a99f5-5ab5-40c7-b4f3-a9272c08f47e'; // Poda de palmeras (verificado por SQL, no el de references/servicios.md)
 
 // --- Tarifas sembradas: precio €/ud y rendimiento ud/h por especie y banda ----
 const SEED = {
@@ -117,12 +132,10 @@ function predictPrice({ species, band, state = 'normal', qty = 1, waste = false,
   return ceil(Math.max(line, MIN_PRICE));
 }
 
-// Tronco y fitosanitario suben las horas desde 2026-09-05 (fix #2, auditoría de palmeras):
-// son trabajo físico real y antes solo subían el precio, dejando las horas —y el bloqueo de
-// calendario— iguales con o sin el extra. Tronco sube el % configurado, igual que el precio.
-// Fitosanitario suma un tiempo fijo por unidad (PALM_PHYTOSANITARY_TIME_HOURS en
-// pricingEngine.ts), NO un porcentaje: aplicar el tratamiento tarda lo mismo sin importar la
-// tarifa de la palmera.
+// Horas: pricingEngine.ts `calculatePalmHoursFromConfig` (corregido 2026-09-12, hallazgo
+// #1a/#1b de la auditoría de palmeras) multiplica por stateMult · wasteMult · accessMult ·
+// trunkMult, y suma PALM_PHYTOSANITARY_TIME_HOURS × qty cuando hasPhytosanitary está activo
+// y la especie lo admite. Antes ninguno de los dos extras movía las horas.
 const PHYTO_TIME_HOURS = 0.1;
 
 function predictHours({ species, band, state = 'normal', qty = 1, waste = false, access = false, trunk = false, phyto = false }) {
@@ -132,17 +145,16 @@ function predictHours({ species, band, state = 'normal', qty = 1, waste = false,
   const canAccess = band !== LOWEST_BAND[species];
   const accessMult = access && canAccess ? 1 + ACCESS_PCT / 100 : 1;
   const trunkMult = trunk && !NO_TRUNK.has(species) ? 1 + TRUNK_PCT / 100 : 1;
+  const phytoHours = phyto && !NO_PHYTO.has(species) ? PHYTO_TIME_HOURS * qty : 0;
 
-  let groupHours = (qty / y) * stateMult * wasteMult * accessMult * trunkMult;
-  if (phyto && !NO_PHYTO.has(species)) groupHours += PHYTO_TIME_HOURS * qty;
-
+  let groupHours = (qty / y) * stateMult * wasteMult * accessMult * trunkMult + phytoHours;
   let total = round2(groupHours);
   if (total > 8) total *= 0.9;
   return Math.max(1, ceil(total * 2) / 2);
 }
 
 // bookingInput con un solo grupo de palmeras. `wasteRemoval` SIEMPRE explícito:
-// omitirlo equivale a true en el motor (bookingQuoteCore.ts:1034).
+// omitirlo equivale a true en el motor (bookingQuoteCore.ts:1044).
 const palm = (o) => ({
   palmGroups: [
     {
@@ -158,6 +170,10 @@ const palm = (o) => ({
   ],
   wasteRemoval: o.waste ?? false,
 });
+
+/** Extrae los códigos de warning tanto en forma local ({code,message}) como HTTP (string). */
+const warningCodes = (warnings) =>
+  (warnings || []).map((w) => (typeof w === 'string' ? w : w?.code)).filter(Boolean);
 
 const MARBELLA = { lat: 36.5094, lng: -4.8858 };
 const MADRID = { lat: 40.4168, lng: -3.7038 };
@@ -179,6 +195,16 @@ async function main() {
     expectQuote(s.label, res, { totalPrice: predictPrice(s.in), estimatedHours: predictHours(s.in) });
   }
 
+  // S5 debe venir marcado como banda terminal abierta (verificación final del profesional)
+  {
+    const res = await quote(SERVICE_ID, palm(scenarios[4].in));
+    const codes = warningCodes(res.warnings);
+    (res.ok && codes.includes('palm_terminal_range') ? pass : fail)(
+      'S5: aviso palm_terminal_range presente (banda >20 es terminal en Washingtonia)',
+      `warnings=${JSON.stringify(res.warnings)}`,
+    );
+  }
+
   // ======================================================================
   // BLOQUE 2 — Paridad manual ↔ flujo de fotos (mismo input físico)
   // ======================================================================
@@ -187,7 +213,7 @@ async function main() {
     const physical = { species: 'Phoenix canariensis', band: '4-10', qty: 1, state: 'normal', phyto: true };
     // Flujo de fotos: banda sin sufijo (mapPalmHeightToBand → '4-10')
     const ia = await quote(SERVICE_ID, palm({ ...physical, m: false }));
-    // Flujo manual: banda con sufijo 'm' (getPalmHeightRanges → '4-10m') + dataInputMode
+    // Flujo manual: banda con sufijo 'm' (manualEntryBuilders usa getPalmHeightBandsForSpecies) + dataInputMode
     const manual = await quote(SERVICE_ID, { ...palm({ ...physical, m: true }), dataInputMode: 'manual' });
     if (!ia.ok || !manual.ok) {
       fail('paridad 4-10', `IA ${ia.status} ${ia.code || ''} · manual ${manual.status} ${manual.code || ''}`);
@@ -294,6 +320,35 @@ async function main() {
     );
   }
 
+  // 3e. HALLAZGO #1a/#1b (CORREGIDO 2026-09-12) — trunk_finish y phytosanitary deben subir
+  // el precio Y las horas. Antes del fix, el mismo grupo con y sin cada extra daba precio
+  // distinto pero horas IDÉNTICAS (el motor no le dedicaba tiempo). Ahora deben moverse
+  // los dos juntos.
+  console.log('\n  -- HALLAZGO #1a/#1b (corregido): extras físicos que ahora sí cuentan tiempo --');
+  {
+    // qty=5 (no 2): con qty=2 el incremento de fitosanitario (0.1h × qty) es tan pequeño
+    // que el redondeo a media hora lo absorbe sin cruzar el siguiente escalón — el fix es
+    // correcto pero la prueba con qty=2 no lo distinguía de "no hace nada". Con qty=5 el
+    // incremento (0,5 h) sí cruza un escalón de 0,5 h de forma determinista.
+    const g = { species: 'Washingtonia robusta/filifera', band: '4-12', qty: 5 }; // admite tronco y fito
+    const off = await quote(SERVICE_ID, palm(g));
+    expectQuote('sin extras', off, { totalPrice: predictPrice(g), estimatedHours: predictHours(g) });
+
+    const withTrunk = await quote(SERVICE_ID, palm({ ...g, trunk: true }));
+    expectQuote(
+      'trunk_finish sube el precio Y las horas (hallazgo #1a corregido)',
+      withTrunk,
+      { totalPrice: predictPrice({ ...g, trunk: true }), estimatedHours: predictHours({ ...g, trunk: true }) },
+    );
+
+    const withPhyto = await quote(SERVICE_ID, palm({ ...g, phyto: true }));
+    expectQuote(
+      'phytosanitary sube el precio Y las horas (hallazgo #1b corregido)',
+      withPhyto,
+      { totalPrice: predictPrice({ ...g, phyto: true }), estimatedHours: predictHours({ ...g, phyto: true }) },
+    );
+  }
+
   // ======================================================================
   // BLOQUE 4 — Límites: fuera de rango → 422, sin truncado silencioso
   // ======================================================================
@@ -306,8 +361,8 @@ async function main() {
       bookingInput: { dataInputMode: 'manual', wasteRemoval: false, palmGroups },
     });
   {
-    const res = await manualRecalc([{ id: 'g1', species: 'Phoenix canariensis', height: '4-10m', state: 'normal', quantity: 99 }]);
-    expectError('cantidad 99 (> máx 50) → manual_input_invalid', res, { status: 422, code: 'manual_input_invalid' });
+    const res = await manualRecalc([{ id: 'g1', species: 'Phoenix canariensis', height: '4-10m', state: 'normal', quantity: 51 }]);
+    expectError('cantidad 51 (> máx 50 manual) → manual_input_invalid', res, { status: 422, code: 'manual_input_invalid' });
   }
   {
     const res = await manualRecalc([{ id: 'g1', species: 'Phoenix canariensis', height: '50-60m', state: 'normal', quantity: 1 }]);
@@ -320,7 +375,7 @@ async function main() {
       palmGroups: [{ id: 'g1', species: 'Cocos nucifera', height: '4-10', quantity: 1, state: 'normal' }],
       wasteRemoval: false,
     });
-    expectError('especie sin configurar en flujo fotos → recalculation_ineligible', res, { status: 422, code: 'recalculation_ineligible' });
+    expectError('especie sin configurar en flujo fotos → recalculation_ineligible/partial_palm_coverage', res, { status: 422 });
   }
   {
     // Altura numérica "suelta" fuera de las bandas configuradas cae, POR DISEÑO, en el
@@ -331,6 +386,36 @@ async function main() {
     (res.ok && res.totalPrice === 150 ? pass : fail)(
       'altura suelta 30-40 → banda ">10" (tolerancia numérica, por diseño)',
       `${res.totalPrice} € (= precio de la banda >10)`,
+    );
+  }
+  {
+    // HALLAZGO #2 (CORREGIDO 2026-09-12) — 500 palmeras en un grupo debe disparar
+    // `palm_quantity_implausible`, mismo patrón que `lawn_area_implausible`/
+    // `hedge_length_implausible`. El aviso no bloquea: el precio/horas deben seguir
+    // siendo el cálculo lineal normal.
+    const res = await quote(SERVICE_ID, palm({ species: 'Phoenix canariensis', band: '4-10', qty: 500 }));
+    const codes = warningCodes(res.warnings);
+    const hasImplausibleWarning = codes.some((c) => c.includes('implausible'));
+    if (res.ok && hasImplausibleWarning) {
+      pass('500 palmeras dispara palm_quantity_implausible (hallazgo #2 corregido)', `warnings=${JSON.stringify(res.warnings)}`);
+      expectQuote('500 palmeras: el aviso no cambia el precio/horas', res, { totalPrice: predictPrice({ species: 'Phoenix canariensis', band: '4-10', qty: 500 }), estimatedHours: predictHours({ species: 'Phoenix canariensis', band: '4-10', qty: 500 }) });
+    } else if (res.ok) {
+      fail(
+        '500 palmeras en un grupo no dispara ningún aviso de plausibilidad',
+        `${res.totalPrice} € / ${res.estimatedHours} h, warnings=${JSON.stringify(res.warnings)}`,
+      );
+    } else {
+      fail('500 palmeras', `respuesta inesperada ${res.status} ${res.code || ''}`);
+    }
+  }
+  {
+    // El aviso NO debe dispararse por debajo del umbral (20): un encargo normal de varias
+    // palmeras no debe generar ruido.
+    const res = await quote(SERVICE_ID, palm({ species: 'Phoenix canariensis', band: '4-10', qty: 5 }));
+    const codes = warningCodes(res.warnings);
+    (res.ok && !codes.some((c) => c.includes('implausible')) ? pass : fail)(
+      '5 palmeras: sin aviso de plausibilidad',
+      `warnings=${JSON.stringify(res.warnings)}`,
     );
   }
 
@@ -366,8 +451,11 @@ async function main() {
     address: 'Marbella, Málaga',
     addressCoordinates: MARBELLA,
   };
+  // previewProviders/validHours siempre hablan por HTTP con booking-authority (el harness no
+  // las desvía a READINESS_ENGINE=local): la eligibilidad/disponibilidad vive en la capa de
+  // la autoridad, no en el motor puro. Mientras no se toque bookingQuoteCore.ts esto mide lo
+  // mismo que el motor en proceso.
   {
-    // Próximo domingo desde hoy → sin huecos (fixture: L-V 08-18, S 09-14, D libre)
     const now = new Date();
     const sunday = new Date(now);
     sunday.setDate(now.getDate() + ((7 - now.getDay()) % 7 || 7));
@@ -395,23 +483,6 @@ async function main() {
       'preview_providers desde Marbella incluye al jardinero',
       quoted ? `${quoted.totalPrice} € · ${quoted.estimatedHours} h` : `ausente. exclusions=${JSON.stringify(res.body?.exclusions)}`,
     );
-  }
-
-  // ======================================================================
-  // BLOQUE 8 — Aviso de plausibilidad (no bloqueante, fix #4)
-  // ======================================================================
-  console.log('\n=== 8. Aviso de plausibilidad ===');
-  // `recalculate_correction` devuelve `warnings` como array de MENSAJES (el código se
-  // descarta al serializar la respuesta HTTP), así que se detecta por el texto del mensaje.
-  const hasHighQtyWarning = (warnings) => (warnings || []).some((w) => String(w).includes('encargo grande'));
-  {
-    const normal = await quote(SERVICE_ID, palm({ species: 'Phoenix canariensis', band: '4-10', qty: 5 }));
-    (normal.ok && !hasHighQtyWarning(normal.warnings) ? pass : fail)('5 palmeras: sin aviso', `warnings=${JSON.stringify(normal.warnings)}`);
-  }
-  {
-    const high = await quote(SERVICE_ID, palm({ species: 'Phoenix canariensis', band: '4-10', qty: 20 }));
-    (high.ok && hasHighQtyWarning(high.warnings) ? pass : fail)('20 palmeras: aviso de plausibilidad presente', `warnings=${JSON.stringify(high.warnings)}`);
-    expectQuote('20 palmeras: el aviso no cambia el precio', high, { totalPrice: predictPrice({ species: 'Phoenix canariensis', band: '4-10', qty: 20 }) });
   }
 
   report();

@@ -1544,7 +1544,10 @@ const DetailsPage: React.FC = () => {
       const n = [...(bookingData.palmGroups || [])];
       const g = n.find(x => x.id === groupId);
       if (g) {
-          g.quantity = Math.max(1, newQuantity);
+          // Mismo tope que el flujo manual (MANUAL_RANGES.palm.quantity.max): antes el flujo
+          // de fotos no tenía ningún techo, a diferencia de árboles y del propio manual de
+          // palmeras (auditoría de palmeras 2026-09-11/12, hallazgo #2).
+          g.quantity = Math.min(MANUAL_RANGES.palm.quantity.max, Math.max(MANUAL_RANGES.palm.quantity.min, newQuantity));
           updatePalmPricing(n);
       }
   };
@@ -5340,29 +5343,35 @@ const analyzeTreeGroup = async (id: string) => {
                                                             </div>
                                                         )}
                                                         {/* Line 3: Quantity (Editable) */}
-                                                        <div className="text-xs text-gray-600 flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+                                                        <div className="text-xs text-gray-600 flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 flex-wrap">
                                                             <span className="font-medium text-gray-700">Cantidad de palmeras idénticas:</span>
                                                             <div className="flex items-center border border-gray-300 rounded-md bg-white">
-                                                                <button 
+                                                                <button
                                                                     className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-r border-gray-200"
                                                                     onClick={() => handlePalmQuantityChange(zone.id, (zone.quantity || 1) - 1)}
                                                                 >
                                                                     -
                                                                 </button>
-                                                                <input 
-                                                                    type="number" 
-                                                                    min="1" 
-                                                                    value={zone.quantity} 
-                                                                    onChange={(e) => handlePalmQuantityChange(zone.id, parseInt(e.target.value) || 1)}
+                                                                <input
+                                                                    type="number"
+                                                                    min={MANUAL_RANGES.palm.quantity.min}
+                                                                    max={MANUAL_RANGES.palm.quantity.max}
+                                                                    value={zone.quantity}
+                                                                    onChange={(e) => handlePalmQuantityChange(zone.id, parseInt(e.target.value) || MANUAL_RANGES.palm.quantity.min)}
                                                                     className="w-10 text-center text-sm py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                                                                 />
-                                                                <button 
+                                                                <button
                                                                     className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
                                                                     onClick={() => handlePalmQuantityChange(zone.id, (zone.quantity || 1) + 1)}
                                                                 >
                                                                     +
                                                                 </button>
                                                             </div>
+                                                            {(zone.quantity || 1) >= MANUAL_RANGES.palm.quantity.max && (
+                                                                <p className="text-[11px] text-amber-700 w-full">
+                                                                    Máximo {MANUAL_RANGES.palm.quantity.max} palmeras idénticas por grupo. Para más, añade otro grupo o contacta directamente con el profesional.
+                                                                </p>
+                                                            )}
                                                         </div>
 
                                                         {/* Servicios extras recomendados */}

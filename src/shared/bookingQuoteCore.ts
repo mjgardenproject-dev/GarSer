@@ -231,6 +231,15 @@ const DEFAULT_HEDGE_SURCHARGES = { media: 20, alta: 50 };
 const DEFAULT_SHRUB_SURCHARGES = { media: 20, alta: 50 };
 
 /**
+ * Rango plausible de una zona de césped residencial, alineado con el mismo límite que el
+ * prompt a Gemini ya declara ("PLAUSIBLE AREA RANGE", ai-pricing-estimator/new_prompts.ts).
+ * Ahí es una instrucción al modelo, no una validación: si la IA no la respeta (o alucina la
+ * medida), esta es la única red de seguridad del lado del motor. Solo avisa, no bloquea — el
+ * mismo patrón que `palm_terminal_range` / `tree_complexity_review` más abajo.
+ */
+const LAWN_MAX_PLAUSIBLE_AREA_M2 = 2000;
+
+/**
  * Resuelve un % de recargo respetando el 0 explícito del jardinero.
  * El patrón anterior (`surcharges.media || 20`) pisaba un 0 configurado a
  * propósito con el default → sobrecobro para jardineros que decidieron no
@@ -1261,6 +1270,12 @@ export function buildAuthoritativeBookingQuote(params: {
     const lawnWasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
     bookingData.lawnZones.forEach((zone) => {
       if (zone.quantity > 0) totalHours += (zone.quantity / yieldM2) * getDurationMultiplier(zone.state) * lawnWasteMult;
+      if (Number(zone.quantity) > LAWN_MAX_PLAUSIBLE_AREA_M2) {
+        pushWarning(
+          'lawn_area_implausible',
+          `La superficie declarada (${zone.quantity} m²) supera lo habitual para un jardín residencial (${LAWN_MAX_PLAUSIBLE_AREA_M2} m²): confirma la medida antes de continuar.`,
+        );
+      }
     });
   }
 

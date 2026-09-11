@@ -150,9 +150,16 @@ async function scenarios() {
 
   // E11: longitud inverosímil por fotos (fix #3) — antes facturaba 1650 €/18 h sin ningún
   // aviso; ahora debe traer 'hedge_length_implausible' en warnings.
+  // Ojo con la forma de `warnings`: en local (buildAuthoritativeBookingQuote directo) son
+  // objetos {code, message}; por HTTP, booking-authority/index.ts los aplana a solo el string
+  // del mensaje (confirmado con curl directo: el texto llega, el `code` no cruza la API). Un
+  // check que solo mire `.code` da un falso FALLA en modo HTTP con el aviso realmente presente.
   const e11 = await quote(SETOS, hedge(300, '2-4m', 1, 'normal', false));
-  const w11 = (e11.warnings || []).map((x) => x.code).join(' | ');
-  if (e11.ok && (e11.warnings || []).some((x) => x.code === 'hedge_length_implausible')) {
+  const hasHedgeLengthWarning = (list) => (list || []).some((x) =>
+    (typeof x === 'object' && x?.code === 'hedge_length_implausible') ||
+    (typeof x === 'string' && x.includes('supera lo habitual para un seto residencial')));
+  const w11 = JSON.stringify(e11.warnings || []);
+  if (e11.ok && hasHedgeLengthWarning(e11.warnings)) {
     pass('E11 longitud inverosímil 300 ml (fix #3)', `${e11.totalPrice} € · ${e11.estimatedHours} h · warnings=${w11}`);
   } else {
     fail('E11 longitud inverosímil 300 ml (fix #3)', `esperado warning 'hedge_length_implausible', obtenido warnings=${w11 || '(ninguno)'}`);

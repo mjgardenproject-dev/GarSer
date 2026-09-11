@@ -1268,8 +1268,20 @@ export function buildAuthoritativeBookingQuote(params: {
   if (bookingData.lawnZones?.length) {
     const yieldM2 = Number(config.yield_m2_per_hour);
     const lawnWasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
+    // El % de condition_surcharges es tiempo Y precio a la vez: si el trabajo tarda un 50 %
+    // más, cuesta un 50 % más, y viceversa — no dos magnitudes independientes. Por eso las
+    // horas usan aquí la MISMA resolución que el precio (mismos fallbacks, más abajo en este
+    // bloque) en vez del multiplicador fijo `getDurationMultiplier` que usan setos/desbroce/
+    // arbustos: ese fijo es lo que hacía que un jardinero con un recargo distinto del 20/50 %
+    // por defecto reservara un tiempo que no correspondía a lo que cobraba.
+    const lawnSurcharges = config.condition_surcharges || {};
     bookingData.lawnZones.forEach((zone) => {
-      if (zone.quantity > 0) totalHours += (zone.quantity / yieldM2) * getDurationMultiplier(zone.state) * lawnWasteMult;
+      const state = String(zone.state || 'normal').toLowerCase();
+      let lawnStatePercent = 0;
+      if (state.includes('muy')) lawnStatePercent = resolveSurchargePercent(lawnSurcharges.muy_descuidado, 50);
+      else if (state.includes('descuidad')) lawnStatePercent = resolveSurchargePercent(lawnSurcharges.descuidado, 20);
+      const lawnDurationMult = 1 + lawnStatePercent / 100;
+      if (zone.quantity > 0) totalHours += (zone.quantity / yieldM2) * lawnDurationMult * lawnWasteMult;
       if (Number(zone.quantity) > LAWN_MAX_PLAUSIBLE_AREA_M2) {
         pushWarning(
           'lawn_area_implausible',

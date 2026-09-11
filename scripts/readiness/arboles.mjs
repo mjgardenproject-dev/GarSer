@@ -173,17 +173,25 @@ async function sweepVariables() {
   console.log(`  formacion.small yield (2.5/h): horas = ${y2.estimatedHours} (esperado ${Math.ceil(3 * 0.4 * 2) / 2})`);
   console.log(`  estructural.small yield (2.0/h): horas = ${y3.estimatedHours} (esperado ${Math.ceil(3 * 0.5 * 2) / 2})`);
 
-  console.log('\n  --- HALLAZGO A VERIFICAR: sin límite de `quantity` por grupo ---\n');
+  console.log('\n  --- Hallazgo #1 corregido: tope de `quantity` por grupo (MANUAL_RANGES.tree.quantity.max=20) ---\n');
   const bigQty = await quote(SERVICE_ID, {
     dataInputMode: 'manual',
     treeGroups: [tree({ pruningType: 'structural', aiSizeBand: 'large', quantity: 500 })],
     wasteRemoval: false,
   });
+  // OJO: READINESS_ENGINE=local llama a buildAuthoritativeBookingQuote() directamente
+  // (ver quoteLocal() en _harness.mjs) y se salta la capa de validación manual — esa capa
+  // solo vive en la función edge real (booking-authority/index.ts), que valida ANTES de
+  // despachar la acción cuando dataInputMode === 'manual'. Por eso este caso sigue dando
+  // 200 en local aunque el fix ya esté aplicado: el 422 solo se observa por HTTP contra la
+  // función desplegada, o directamente con validateManualBookingInput() en unit test (ver
+  // 'caps treeGroups quantity to a coherent group size' en manualEntryValidation.test.ts,
+  // que sí lo cubre y pasa).
   console.log(
-    `  treeGroups[0].quantity = 500 en modo manual → status ${bigQty.status}` +
+    `  treeGroups[0].quantity = 500 en modo manual (motor local, sin pasar por la validación manual) → status ${bigQty.status}` +
       (bigQty.status === 422
-        ? ' (rechazado, hay límite)'
-        : ` (ACEPTADO: ${bigQty.totalPrice}€ / ${bigQty.estimatedHours}h — no hay validación de rango para 'quantity' en manualEntryValidation.ts, a diferencia de palmGroups[].quantity)`),
+        ? ' (rechazado)'
+        : ` (${bigQty.totalPrice}€ / ${bigQty.estimatedHours}h — esperado en local; el tope real se aplica en validateManualBookingInput(), verificado por vitest, y se re-confirma por HTTP tras desplegar)`),
   );
 }
 

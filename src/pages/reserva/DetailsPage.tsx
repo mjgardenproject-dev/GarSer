@@ -101,6 +101,7 @@ import {
   MANUAL_ENTRY_SURVEYS,
   resolveManualServiceKey,
   isManualOnlyService,
+  MANUAL_RANGES,
 } from '../../shared/manualEntry/manualEntrySchema';
 import { validateManualBookingInput } from '../../shared/manualEntry/manualEntryValidation';
 import { buildConsentRecord, MANUAL_ENTRY_CONSENT_TEXT, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
@@ -111,7 +112,6 @@ import { isManualBookingInputEnabled } from '../../utils/manualEntryFeatureFlag'
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import { useAuth } from '../../contexts/AuthContext';
 // import { TreeBookingGroup } from '../../domain/treePruning';
-// import { TreePruningBooking } from '../../components/client/TreePruningBooking';
 
 type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
 type PhytosanitaryTreatmentValue = 'insecticida' | 'fungicida' | 'ecologico_preventivo' | 'endoterapia';
@@ -5681,24 +5681,30 @@ const analyzeTreeGroup = async (id: string) => {
                                                                         <div className="flex items-center border border-gray-300 rounded-md bg-white">
                                                                             <button
                                                                                 className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-r border-gray-200"
-                                                                                onClick={() => updateTreeGroup(zone.id, { quantity: Math.max(1, quantity - 1) })}
+                                                                                onClick={() => updateTreeGroup(zone.id, { quantity: Math.max(MANUAL_RANGES.tree.quantity.min, quantity - 1) })}
                                                                             >
                                                                                 -
                                                                             </button>
                                                                             <input
                                                                                 type="number"
-                                                                                min="1"
+                                                                                min={MANUAL_RANGES.tree.quantity.min}
+                                                                                max={MANUAL_RANGES.tree.quantity.max}
                                                                                 value={quantity}
-                                                                                onChange={(e) => updateTreeGroup(zone.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                                                                                onChange={(e) => updateTreeGroup(zone.id, { quantity: Math.min(MANUAL_RANGES.tree.quantity.max, Math.max(MANUAL_RANGES.tree.quantity.min, parseInt(e.target.value) || MANUAL_RANGES.tree.quantity.min)) })}
                                                                                 className="w-10 text-center text-sm py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                                                                             />
                                                                             <button
                                                                                 className="px-2 py-0.5 hover:bg-gray-100 text-gray-600 border-l border-gray-200"
-                                                                                onClick={() => updateTreeGroup(zone.id, { quantity: quantity + 1 })}
+                                                                                onClick={() => updateTreeGroup(zone.id, { quantity: Math.min(MANUAL_RANGES.tree.quantity.max, quantity + 1) })}
                                                                             >
                                                                                 +
                                                                             </button>
                                                                         </div>
+                                                                        {quantity >= MANUAL_RANGES.tree.quantity.max && (
+                                                                            <p className="text-[11px] text-amber-700 w-full">
+                                                                                Máximo {MANUAL_RANGES.tree.quantity.max} árboles idénticos por grupo. Para más, añade otro grupo o contacta directamente con el profesional.
+                                                                            </p>
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             );

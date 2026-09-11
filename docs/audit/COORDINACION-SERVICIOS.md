@@ -73,7 +73,47 @@ reprodujiste, y a qué servicios crees que afecta.
    mayoría `TS6133` de variables sin usar); el número **no puede subir de 173**, y cualquier
    fichero que toque tu servicio queda **sin errores nuevos**. `npx vitest run` sin fallos.
 3. Informe al usuario. **Él abre la PR y decide el turno.**
-4. Tras el merge: `supabase db push` → `supabase functions deploy <fn> --use-api` → Vercel.
+4. **Tras el merge, dos cosas en el mismo momento. Las dos, siempre.**
+
+   **4a · Producción.** El orden importa: la base de datos, luego las funciones, luego el
+   front.
+
+   ```bash
+   supabase db push
+   ```
+   ```bash
+   supabase functions deploy <fn> --use-api
+   ```
+
+   Y por último Vercel.
+
+   **4b · El entorno local compartido.** Lo hace el usuario, no un chat de servicio:
+   reiniciar Supabase corta a todas las sesiones unos segundos. Sin este paso, el stack
+   sigue sirviendo las funciones y el esquema de antes del merge, y los chats miden código
+   viejo sin enterarse. **Ya pasó el 2026-09-10**: se mezcló el #18 con el arreglo del
+   pago, el stack no se actualizó, y un chat de servicio vio el pago fallar igual que antes.
+
+   Traer el código y reiniciar, para que Supabase cargue las funciones nuevas:
+
+   ```bash
+   cd ~/Downloads/GarSer-referencia && git pull && supabase stop && supabase start
+   ```
+
+   Aplicar las migraciones a la base local, sin borrar datos:
+
+   ```bash
+   cd ~/Downloads/GarSer-referencia && supabase migration up
+   ```
+
+   Comprobar que no queda ninguna pendiente. **Si no imprime nada, está al día**:
+
+   ```bash
+   cd ~/Downloads/GarSer-referencia && comm -23 <(ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 | sort -u) <(docker exec -i supabase_db_GarSer-referencia psql -U postgres -d postgres -tAc "select version from supabase_migrations.schema_migrations" | sort -u)
+   ```
+
+   Y avisar a los chats activos: *«El entorno compartido se ha actualizado con el merge de
+   la PR #N. Rebasa tu worktree sobre `origin/main` y repite las pruebas que pasen por lo
+   que ha cambiado: lo medido antes ya no vale.»*
 5. Se ejecutan **todos** los runners, ya por HTTP, no solo el del servicio recién integrado.
 6. Siguiente servicio.
 

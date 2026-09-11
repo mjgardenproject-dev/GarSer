@@ -11,6 +11,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 CONTAINER="${SUPABASE_DB_CONTAINER:-supabase_db_GarSer-main_4}"
 case "$SERVICE" in
   fitosanitarios) SERVICE_ID='47a66caa-7671-45ec-b321-df6179249efd' ;;
+  setos) SERVICE_ID='7092ee0e-1779-45cf-bc2d-5235a757c618' ;;
   *) echo "servicio desconocido: $SERVICE" >&2; exit 1 ;;
 esac
 CONFIG="$(cat "$DIR/fixtures/$SERVICE.config.json")"

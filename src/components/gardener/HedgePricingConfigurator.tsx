@@ -124,10 +124,16 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
   const config = useMemo(() => {
     if (!value) return EMPTY_CONFIG;
+    // Si el flag no viene explícito, no basta con mirar `selected_categories` (legacy de antes
+    // de la matriz por bandas): un jardinero que ya tiene la banda 4-6m tarifada en BD —
+    // guardada por cualquier camino anterior a este interruptor — también cuenta como
+    // "especialista", o el primer guardado (incluido el autoguardado, sin que el jardinero
+    // toque nada) borra esa tarifa por inferir "Desactivado" (auditoría 2026-09-11, hallazgo #2).
     const legacySpecialist =
       value.specialist_enabled !== undefined
         ? value.specialist_enabled
-        : Boolean((value.selected_categories || []).includes('Setos Gran Altura (>3m)'));
+        : Boolean((value.selected_categories || []).includes('Setos Gran Altura (>3m)')) ||
+          Number(value.pricing_matrix?.['4-6m'] || 0) > 0;
     const legacyMatrix = deriveMatrixFromLegacy(value);
     const mergedMatrix = hasAnyMatrixValue(value.pricing_matrix)
       ? {

@@ -8,6 +8,7 @@ import {
 } from '../domain/pricingEngine.ts';
 import { isHighestOpenRangeForSpecies } from '../domain/speciesBusinessRules.ts';
 import { calculateTreePruningQuoteForTrees } from '../domain/pricing/treePruningPricing.ts';
+import { HEDGE_MAX_PLAUSIBLE_LENGTH_M } from '../domain/hedgeBusinessRules.ts';
 import type { PhytosanitaryYields } from '../types/index.ts';
 import type { TreePruningServiceConfig } from '../types/treePruning.ts';
 import { getPrecioPorHora, getPricingMethod } from '../utils/hourlyPricing.ts';
@@ -1271,9 +1272,10 @@ export function buildAuthoritativeBookingQuote(params: {
     // El % de condition_surcharges es tiempo Y precio a la vez: si el trabajo tarda un 50 %
     // más, cuesta un 50 % más, y viceversa — no dos magnitudes independientes. Por eso las
     // horas usan aquí la MISMA resolución que el precio (mismos fallbacks, más abajo en este
-    // bloque) en vez del multiplicador fijo `getDurationMultiplier` que usan setos/desbroce/
-    // arbustos: ese fijo es lo que hacía que un jardinero con un recargo distinto del 20/50 %
-    // por defecto reservara un tiempo que no correspondía a lo que cobraba.
+    // bloque) en vez del multiplicador fijo `getDurationMultiplier` que usan desbroce/arbustos
+    // (setos corregido más abajo, auditoría 2026-09-11): ese fijo es lo que hacía que un
+    // jardinero con un recargo distinto del 20/50 % por defecto reservara un tiempo que no
+    // correspondía a lo que cobraba.
     const lawnSurcharges = config.condition_surcharges || {};
     bookingData.lawnZones.forEach((zone) => {
       const state = String(zone.state || 'normal').toLowerCase();
@@ -1294,12 +1296,32 @@ export function buildAuthoritativeBookingQuote(params: {
   if (bookingData.hedgeZones?.length) {
     const yields = config.yield_ml_per_hour || {};
     const hedgeWasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
+    // Mismo stateMult que el bloque de precio (más abajo, `:1424`+ en el momento de este fix):
+    // el % de condition_surcharges es tiempo y precio a la vez, igual que en césped más arriba.
+    // Antes usaba el `getDurationMultiplier` fijo (1,3/1,7) — con la config sembrada (20/50 %)
+    // eso reservaba hasta 2 h de más en un tramo largo sin que el precio reflejara esa hora
+    // (auditoría 2026-09-11, hallazgo #1).
+    const hedgeSurcharges = config.condition_surcharges || DEFAULT_HEDGE_SURCHARGES;
     bookingData.hedgeZones.forEach((zone) => {
       const height = zone.height || '0-2m';
       const yieldMl = Number(yields[height]);
       const length = Number(zone.length || 0);
       const faces = Number(zone.faces_to_trim || 1);
-      totalHours += (length * faces / yieldMl) * getDurationMultiplier(zone.state || 'normal') * hedgeWasteMult;
+      const hedgeState = String(zone.state || 'normal').toLowerCase();
+      let hedgeStatePercent = 0;
+      if (hedgeState.includes('alta') || hedgeState.includes('muy_descuidado')) hedgeStatePercent = resolveSurchargePercent(hedgeSurcharges.alta, DEFAULT_HEDGE_SURCHARGES.alta);
+      else if (hedgeState.includes('media') || hedgeState.includes('descuidado')) hedgeStatePercent = resolveSurchargePercent(hedgeSurcharges.media, DEFAULT_HEDGE_SURCHARGES.media);
+      const hedgeDurationMult = 1 + hedgeStatePercent / 100;
+      totalHours += (length * faces / yieldMl) * hedgeDurationMult * hedgeWasteMult;
+      // Anti-alucinación: un seto declarado por fotos no pasa por el rango duro del flujo
+      // manual (1-200 ml) — sin este aviso se facturaba cualquier longitud en silencio
+      // (auditoría 2026-09-11, hallazgo #3). Mismo patrón que lawn_area_implausible arriba.
+      if (length > HEDGE_MAX_PLAUSIBLE_LENGTH_M) {
+        pushWarning(
+          'hedge_length_implausible',
+          `La longitud declarada (${length} ml) supera lo habitual para un seto residencial (${HEDGE_MAX_PLAUSIBLE_LENGTH_M} ml): confirma la medida antes de continuar.`,
+        );
+      }
     });
   }
 

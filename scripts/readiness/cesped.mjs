@@ -17,47 +17,58 @@
  *   waste_removal.percentage: 15
  *
  * Reglas del motor usadas para las predicciones (a mano, releídas de
- * src/shared/bookingQuoteCore.ts contra origin/main, no asumidas de una tanda anterior):
+ * src/shared/bookingQuoteCore.ts contra origin/main + el fix de Fase 3, no asumidas de una
+ * tanda anterior):
  *
- *   PRECIO  precio_zona = 0.18 · q · stateMult_precio · wasteMult
- *           stateMult_precio: 1 / 1.20 / 1.50   ← resolveSurchargePercent(config, ...) (:1438-1439)
+ *   PRECIO  precio_zona = 0.18 · q · stateMult · wasteMult
+ *   HORAS   h_zona = (q / 150) · stateMult · wasteMult      ← MISMO stateMult que el precio
+ *           stateMult: 1 / 1.20 / 1.50 ← resolveSurchargePercent(condition_surcharges, fallback
+ *           20/50) — calculado dos veces con la misma fórmula, una en el bloque de horas
+ *           (:~1272-1284) y otra en el de precio (:~1460-1461), porque son dos pasadas
+ *           distintas sobre las zonas; no hay manera de compartir la variable sin reestructurar
+ *           la función.
  *           wasteMult: 1.15 si wasteRemoval, si no 1
  *           PRECIO = MAX(ceil(Σ zonas), 45)
- *
- *   HORAS   h_zona = (q / 150) · durMult_horas · wasteMult
- *           durMult_horas: 1.0 / 1.3 / 1.7  ← getDurationMultiplier(state), FIJO (:412-419)
- *           si Σh > 8  →  Σh · 0.9                                          (:1349)
+ *           si Σh > 8  →  Σh · 0.9                                          (:1349, sin tocar)
  *           HORAS = MAX(1, ceil(Σh · 2) / 2)
  *
- * ESTADO TRAS LA FASE 3 (2026-09-11, autorizada por el usuario):
+ * ESTADO TRAS LA FASE 3 (2026-09-11/12, autorizado por el usuario en dos pasadas):
  *
- * · Corregido (esta rama): la superficie de césped por fotos ahora emite un aviso de
- *   plausibilidad (`lawn_area_implausible`) por encima de LAWN_MAX_PLAUSIBLE_AREA_M2 = 2000 m²,
- *   alineado con el propio rango que el prompt a Gemini ya declaraba. Ver 2A.4.
+ * · Corregido — hallazgo #2 (aviso de plausibilidad): la superficie de césped por fotos
+ *   ahora emite `lawn_area_implausible` por encima de LAWN_MAX_PLAUSIBLE_AREA_M2 = 2000 m²,
+ *   alineado con el rango que el prompt a Gemini ya declaraba. Ver 2A.4.
  *
- * · NO corregido aquí, deliberadamente (transversal, ver COORDINACION-SERVICIOS.md §3.2):
- *   - T3: el multiplicador de horas para "descuidado"/"muy_descuidado" está FIJO en el código
- *     (getDurationMultiplier, 1.3/1.7) y no lee `condition_surcharges`, que es la config que el
- *     PRECIO sí usa. La usan también setos (:1275), desbroce (:1302) y arbustos (:1312) — tocarla
- *     es transversal. Y NO es correcto atarla al recargo de precio: el recargo es lo que el
- *     jardinero decide COBRAR, el multiplicador es lo que la faena tarda de verdad. Un jardinero
- *     que ponga 0 % de recargo para "muy_descuidado" seguiría necesitando más tiempo real, y
- *     igualar horas a precio le reservaría de menos y no llegaría. Confirmado y corregido de
- *     rumbo tras revisión del usuario (2026-09-11): no se toca.
- *   - T7 (consecuencia, no exclusiva de "descuidado"): un trabajo que no cabe en un único día
- *     (>10 bloques en el fixture L-V) se queda sin ningún hueco reservable en ninguna fecha, sin
- *     ningún aviso al cliente de por qué. Pasa con CUALQUIER estado si el área es suficiente
- *     (verificado también con 1700 m² en estado NORMAL, ajeno al multiplicador fijo) — es un
- *     hueco de producto (sin reserva multi-día ni aviso de "trabajo extenso"), no un efecto
- *     secundario de T3.
- *   - T2: redondeo de horas por residuo de coma flotante
- *     (`(5000/150)*0.9 = 30.000000000000004` en vez de 30 exacto). Vive en el código compartido
- *     "después de los bloques por servicio" (bookingQuoteCore.ts:1349-1350) — no es mío.
+ * · Corregido — hallazgo #1 (multiplicador de horas): la primera propuesta (calcar el % de
+ *   precio en las horas) se rechazó porque igualaba dos conceptos distintos — precio es lo
+ *   que se cobra, tiempo es lo que tarda. El usuario decidió una segunda vuelta: en césped,
+ *   SÍ son la misma magnitud por diseño ("si se incrementa el tiempo se incrementa
+ *   paulatinamente el precio e viceversa"), así que el % configurado por el jardinero pasa a
+ *   regir horas Y precio con la misma fórmula, sea `per_quantity` o `per_hour` (en `per_hour`
+ *   el precio ya es `estimatedHours · precioPorHora`, así que corregir las horas basta — no
+ *   hace falta tocar esa rama). Ya NO se llama a `getDurationMultiplier` desde el bloque de
+ *   césped (sigue viva para setos/desbroce/arbustos, sin tocar). Esto además arregla el
+ *   síntoma de disponibilidad de la Fase 2 (1000 m² muy_descuidado pasa de 10,5 h → 9,0 h y
+ *   vuelve a caber en un día de 10 bloques).
  *
- * Los tres puntos de arriba quedan como `untested(...)` citando su número de §3.2, no como
- * FALLA: un FALLA permanente aquí bloquearía cualquier integración futura de OTRO servicio
- * cuando se ejecuten todos los runners tras un merge (ver COORDINACION-SERVICIOS.md §4.5).
- * Cuando la ronda transversal los corrija, se reconvierten en aserciones reales.
+ * · Sigue sin corregir aquí (transversal, ver COORDINACION-SERVICIOS.md §3.2):
+ *   - T2: redondeo de horas por residuo de coma flotante en el código compartido "después de
+ *     los bloques por servicio" (bookingQuoteCore.ts:1349-1350). No es de césped en solitario.
+ *   - T7: un trabajo que no cabe en un único día (>10 bloques) se queda sin ningún hueco ni
+ *     aviso — pasa con CUALQUIER estado si el área basta (verificado con 1700 m² NORMAL, que
+ *     el fix de arriba no toca: stateMult=1 tanto antes como después). Es un hueco de
+ *     producto (falta reserva multi-día / aviso de "trabajo extenso"), no algo que un fix de
+ *     césped pueda cerrar solo.
+ *
+ * AVISO METODOLÓGICO para quien retome este runner: `quote()` respeta READINESS_ENGINE=local
+ * (motor en proceso, ve el fix al instante), pero `previewProviders()`/`validHours()` llaman
+ * SIEMPRE por HTTP a `booking-authority`, que en este entorno compartido sirve el checkout de
+ * referencia (`~/Downloads/GarSer-referencia`), no este worktree. Mientras el fix de arriba no
+ * esté desplegado ahí, esas dos funciones calculan la ELEGIBILIDAD con las horas ANTIGUAS
+ * (10,5 h, no 9,0 h) aunque `quote()` ya muestre las nuevas — un mismo escenario puede dar
+ * `estimatedHours` correcto y `eligibleProviderIds` con el criterio viejo a la vez. Por eso
+ * 2A.7 verifica "cabe en un día" con aritmética local sobre `quote().estimatedHours` (siempre
+ * fiable) y dejamos el cruce con `previewProviders` como comprobación aparte, no como el
+ * criterio de PASA/FALLA.
  */
 
 import {
@@ -98,14 +109,14 @@ async function scenarios() {
     await quote(LAWN, photos(1000, 'normal', false)), { totalPrice: 180, estimatedHours: 7 });
   expectQuote('S2  mínimo: 100 m² normal (18 € teóricos → 45)',
     await quote(LAWN, photos(100, 'normal', false)), { totalPrice: 45, estimatedHours: 1 });
-  expectQuote('S3  recargo estado descuidado 1000 m² (precio ·1,20; horas ·1,3 fijo → 8 h por redondeo)',
+  expectQuote('S3  recargo estado descuidado 1000 m² (precio y horas ·1,20 → 8,0 h exactas)',
     await quote(LAWN, photos(1000, 'descuidado', false)), { totalPrice: 216, estimatedHours: 8 });
-  expectQuote('S4  recargo estado muy_descuidado 1000 m² (precio ·1,50; horas ·1,7 fijo → 10,5 h)',
-    await quote(LAWN, photos(1000, 'muy_descuidado', false)), { totalPrice: 270, estimatedHours: 10.5 });
+  expectQuote('S4  recargo estado muy_descuidado 1000 m² (precio y horas ·1,50 → 10,0h→·0,9→9,0 h)',
+    await quote(LAWN, photos(1000, 'muy_descuidado', false)), { totalPrice: 270, estimatedHours: 9 });
   expectQuote('S5  retirada de restos 1000 m² normal',
     await quote(LAWN, photos(1000, 'normal', true)), { totalPrice: 207, estimatedHours: 8 });
-  expectQuote('S6  combinado descuidado + retirada 1000 m² (·1,3·1,15=9,97 → ·0,9 → 9 h)',
-    await quote(LAWN, photos(1000, 'descuidado', true)), { totalPrice: 249, estimatedHours: 9 });
+  expectQuote('S6  combinado descuidado + retirada 1000 m² (·1,20·1,15=9,2 → ·0,9 → 8,5 h)',
+    await quote(LAWN, photos(1000, 'descuidado', true)), { totalPrice: 249, estimatedHours: 8.5 });
   expectQuote('S7  6000 m² se precia igual (con aviso de plausibilidad — ver 2A.4)',
     await quote(LAWN, photos(6000, 'normal', false)), { totalPrice: 1080, estimatedHours: 36 });
 
@@ -158,32 +169,30 @@ async function variableSweep() {
   // minimum_price → validado por S2 y el bloque 2A.5.
 }
 
-/* ------------------------------------------- 2A.3b Multiplicador de horas fijo (T3, transversal) */
+/* -------------------------------------- 2A.3b Coherencia horas↔precio (hallazgo #1, CORREGIDO) */
 
 async function priceHoursConsistency() {
-  console.log('\n── 2A.3b · Multiplicador de horas fijo vs. recargo de precio (T3 — transversal, NO se arregla aquí) ─');
-  // getDurationMultiplier (bookingQuoteCore.ts:412-419) usa 1.0/1.3/1.7 fijos para "normal"/
-  // "descuidado"/"muy_descuidado"; el PRECIO de las mismas zonas usa el % que el jardinero
-  // configura en condition_surcharges (resolveSurchargePercent, :1438-1439). Con este
-  // jardinero (20 %/50 %) la diferencia es real y medible en muy_descuidado: 10,5 h reales
-  // frente a las 9,0 h que darían las horas si usaran el mismo 50 % que ya paga el precio.
-  //
-  // NO se corrige atando las horas al recargo de precio: son dos cosas distintas por diseño.
-  // El recargo es lo que el jardinero decide COBRAR de más; el multiplicador es lo que la
-  // faena tarda de verdad. Un jardinero que ponga 0 % de recargo para "muy_descuidado" (p.ej.
-  // como promoción) seguiría necesitando más tiempo real — igualar horas a precio le
-  // reservaría el tiempo de un césped normal y no llegaría. Además, `getDurationMultiplier` la
-  // comparten setos (:1275), desbroce (:1302) y arbustos (:1312): tocarla es transversal.
-  // Documentado como T3 en COORDINACION-SERVICIOS.md §3.2; se deja como observación, no como
-  // aserción, para no bloquear la integración de otros servicios con un FALLA permanente.
+  console.log('\n── 2A.3b · Las horas usan el mismo % configurado que el precio (hallazgo #1) ─');
+  // Antes del fix, getDurationMultiplier (1.0/1.3/1.7 fijos) gobernaba las horas mientras el
+  // precio leía condition_surcharges (1.20/1.50 en este jardinero): 1000 m² muy_descuidado
+  // daba 10,5 h en vez de las 9,0 h coherentes. El bloque de césped ya no llama a
+  // getDurationMultiplier: calcula el mismo stateMult que el precio, dos veces (una por
+  // bloque, misma fórmula y mismos fallbacks 20 %/50 %).
   const res = await quote(LAWN, photos(1000, 'muy_descuidado', false));
-  untested('T3 · horas de muy_descuidado (1000 m²) usan multiplicador fijo, no el recargo configurado',
-    `motor: ${res.estimatedHours} h (1,7 fijo) · si usara el 50 % configurado (igual que el precio) serían 9,0 h — ` +
-    `diferencia real, pero NO se corrige acoplando horas a precio (ver comentario). Transversal: T3 en COORDINACION-SERVICIOS.md §3.2.`);
+  if (res.ok && res.estimatedHours === 9) {
+    pass('horas de muy_descuidado (1000 m²) coherentes con el 50 % configurado', `${res.estimatedHours} h`);
+  } else {
+    fail('horas de muy_descuidado (1000 m²) coherentes con el 50 % configurado',
+      `esperado 9 h (50 % configurado, igual que el precio); obtenido ${res.estimatedHours} h`);
+  }
 
   const res2 = await quote(LAWN, photos(1400, 'descuidado', false));
-  untested('T3 · horas de descuidado (1400 m²) usan multiplicador fijo, no el recargo configurado',
-    `motor: ${res2.estimatedHours} h (1,3 fijo) · con el 20 % configurado serían 10,5 h — mismo T3.`);
+  if (res2.ok && res2.estimatedHours === 10.5) {
+    pass('horas de descuidado (1400 m²) coherentes con el 20 % configurado', `${res2.estimatedHours} h`);
+  } else {
+    fail('horas de descuidado (1400 m²) coherentes con el 20 % configurado',
+      `esperado 10,5 h (20 % configurado, igual que el precio); obtenido ${res2.estimatedHours} h`);
+  }
 }
 
 /* ---------------------------------------------------------------- 2A.4 Límites */
@@ -273,9 +282,10 @@ async function minimumPrice() {
 async function priceChange() {
   console.log('\n── 2A.6 · Recálculo con variables corregidas por el jardinero ─');
   // El jardinero corrige la superficie 1000 → 1400 m² y el estado a descuidado.
-  // 0.18·1400·1.20 = 302,4 → 303 € ;  horas reales (·1,3 fijo, ver 2A.3b) → 11 h
+  // 0.18·1400·1.20 = 302,4 → 303 € ; horas con el mismo 20 % (ver 2A.3b): (1400/150)·1.20=11,2
+  // → >8 → ·0,9=10,08 → redondeo a 0,5 h → 10,5 h
   expectQuote('recalculate_correction 1400 m² descuidado',
-    await quote(LAWN, photos(1400, 'descuidado', false)), { totalPrice: 303, estimatedHours: 11 });
+    await quote(LAWN, photos(1400, 'descuidado', false)), { totalPrice: 303, estimatedHours: 10.5 });
 }
 
 /* ---------------------------------------------------------------- 2A.7 Disponibilidad */
@@ -330,8 +340,10 @@ async function availability() {
   }
 
   // La jornada laborable sembrada es L-V 08:00-18:00 = 10 bloques de 1h (sábado solo 5).
-  // Un trabajo moderadamente difícil sigue cabiendo en un día:
-  // 700 m² muy_descuidado sin retirada → 8 h (cabe en los 10 bloques del laborable).
+  // Un trabajo moderadamente difícil sigue cabiendo en un día: 700 m² muy_descuidado sin
+  // retirada → 7 h con el fix (antes 8 h con el multiplicador fijo). Comprobación local
+  // (fiable siempre) + cruce con previewProviders, que en este caso da igual el estado del
+  // despliegue porque tanto 7 h como las 8 h de antes caben en los 10 bloques.
   const modQ = await quote(LAWN, photos(700, 'muy_descuidado', false));
   const modPP = await previewProviders(
     LAWN,
@@ -339,30 +351,48 @@ async function availability() {
     { selectedDate: inDaysIso(7), windowDays: 21 },
   );
   const modEligible = (modPP.body?.eligibleProviderIds || []).includes(PROVIDER_ID);
-  if (modQ.ok && modQ.estimatedHours === 8 && modEligible) {
-    pass('700 m² muy_descuidado cabe en un día (8 h) y el jardinero es elegible',
+  if (modQ.ok && modQ.estimatedHours === 7 && modEligible) {
+    pass('700 m² muy_descuidado cabe en un día (7 h con el fix) y el jardinero es elegible',
       `q=${modQ.totalPrice} €/${modQ.estimatedHours} h · jardinero elegible`);
   } else {
-    fail('700 m² muy_descuidado cabe en un día (8 h) y el jardinero es elegible',
+    fail('700 m² muy_descuidado cabe en un día (7 h con el fix) y el jardinero es elegible',
       `q=${modQ.totalPrice}/${modQ.estimatedHours}h · elegible=${modEligible} · excl=${JSON.stringify(modPP.body?.exclusions?.[PROVIDER_ID])}`);
   }
 
-  // T3 (transversal, NO se arregla aquí): 1000 m² muy_descuidado calcula 10,5 h (ver S4),
-  // que necesita 11 bloques consecutivos — más de los 10 que tiene CUALQUIER día de la
-  // semana sembrado (L-V 08-18). Es consecuencia del multiplicador fijo de horas (2A.3b);
-  // no se corrige aquí por lo explicado ahí (el recargo de precio y el tiempo real son cosas
-  // distintas por diseño). Se deja como observación.
+  // Hallazgo #1 (CORREGIDO): 1000 m² muy_descuidado calculaba 10,5 h (11 bloques, no cabía
+  // en ningún día de 10). Con el fix da 9,0 h (ver 2A.3b) → 9 bloques → SÍ cabe. La
+  // comprobación de peso es aritmética local sobre quote().estimatedHours, que `quote()`
+  // siempre resuelve con el motor fresco (respeta READINESS_ENGINE=local). El cruce con
+  // previewProviders (HTTP) solo es fiable cuando ese endpoint sirve el fix desplegado — ver
+  // el AVISO METODOLÓGICO de cabecera — así que en local queda como observación y en HTTP
+  // real como aserción.
   const bigQ = await quote(LAWN, photos(1000, 'muy_descuidado', false));
+  console.log(`  · 1000 m² muy_descuidado: ${bigQ.totalPrice} €/${bigQ.estimatedHours} h (necesita ${bigQ.ok ? Math.ceil(bigQ.estimatedHours) : '?'} bloques de 1h)`);
+  if (bigQ.ok && Math.ceil(bigQ.estimatedHours) <= 10) {
+    pass('1000 m² muy_descuidado (9,0h) cabe en un día laborable — aritmética local',
+      `${bigQ.estimatedHours} h → ${Math.ceil(bigQ.estimatedHours)} bloques ≤ 10 (antes del fix: 10,5h → 11 bloques, no cabía)`);
+  } else {
+    fail('1000 m² muy_descuidado (9,0h) cabe en un día laborable — aritmética local',
+      `${bigQ.estimatedHours} h → ${bigQ.ok ? Math.ceil(bigQ.estimatedHours) : 'n/a'} bloques (> 10 o consulta fallida)`);
+  }
+
   const bigPP = await previewProviders(
     LAWN,
     { address: 'Marbella centro', addressCoordinates: IN_COVERAGE, ...photos(1000, 'muy_descuidado', false) },
     { selectedDate: inDaysIso(7), windowDays: 21 },
   );
   const bigEligible = (bigPP.body?.eligibleProviderIds || []).includes(PROVIDER_ID);
-  console.log(`  · 1000 m² muy_descuidado: ${bigQ.totalPrice} €/${bigQ.estimatedHours} h (necesita ${Math.ceil(bigQ.estimatedHours)} bloques de 1h)`);
-  untested('T3 · 1000 m² muy_descuidado (10,5h, multiplicador fijo) sin ningún hueco en 21 días',
-    `elegible=${bigEligible} · exclusion=${JSON.stringify(bigPP.body?.exclusions?.[PROVIDER_ID])} — ` +
-    `consecuencia de T3 (ver 2A.3b); no se corrige acoplando horas a precio. Transversal: T3 en COORDINACION-SERVICIOS.md §3.2.`);
+  if (process.env.READINESS_ENGINE === 'local') {
+    untested('1000 m² muy_descuidado elegible por previewProviders (HTTP, cruce)',
+      `elegible=${bigEligible} · exclusion=${JSON.stringify(bigPP.body?.exclusions?.[PROVIDER_ID])} — ` +
+      `el HTTP local sirve el checkout de referencia (sin el fix todavía), calcula 10,5h por dentro. ` +
+      `Reejecutar sin READINESS_ENGINE=local tras desplegar para que esta comprobación cuente de verdad.`);
+  } else if (bigEligible) {
+    pass('1000 m² muy_descuidado elegible por previewProviders (HTTP, desplegado)', `elegible=${bigEligible}`);
+  } else {
+    fail('1000 m² muy_descuidado elegible por previewProviders (HTTP, desplegado)',
+      `esperaba elegible=true tras el fix; exclusion=${JSON.stringify(bigPP.body?.exclusions?.[PROVIDER_ID])}`);
+  }
 
   // T7 (transversal, NO se arregla aquí): un trabajo que no cabe en un solo día se queda sin
   // ningún hueco reservable y sin ningún aviso al cliente de por qué — y esto pasa con

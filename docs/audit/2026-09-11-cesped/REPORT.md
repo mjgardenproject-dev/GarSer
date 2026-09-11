@@ -1,34 +1,32 @@
 # Preparación para producción — Corte de césped
 
-**Veredicto: NO-GO**
+**Veredicto: NO-GO** (actualizado 2026-09-12 — ver §9)
 
-Cuatro bloqueantes: dos propios de césped (arreglables en esta rama) y dos transversales
-(compartidos con otros servicios, se anotan y no se tocan aquí). Ninguno pierde dinero
-directamente, pero dos de ellos hacen que la agenda del jardinero no refleje el trabajo real
-y uno deja al cliente sin forma de responder a una propuesta de precio desde la pantalla que
-ve primero.
+Los dos bloqueantes **propios** de césped, corregidos y verificados en esta rama (§9). Sigue
+NO-GO por dos bloqueantes **transversales** — no se arreglan aquí, pero están confirmados en
+el propio flujo de césped, no son hipotéticos:
 
-1. **[Propio]** Las horas de césped "descuidado"/"muy descuidado" usan un multiplicador fijo
-   (1,3/1,7) que ignora el recargo de estado que el jardinero configura — el PRECIO de esas
-   mismas zonas sí usa ese recargo. Un jardín de 1000 m² muy descuidado calcula 10,5 h en vez
-   de las 9,0 h coherentes con el 50 % que el jardinero cobra de más, y con eso deja de caber
-   en cualquier día de la semana sembrado (máximo 10 bloques), dejando al jardinero sin
-   ningún hueco reservable para ese trabajo. §1.1
-2. **[Propio]** El flujo de fotos no tiene ningún tope ni aviso de plausibilidad para la
-   superficie de césped — ni el que sí tiene el flujo manual (5000 m²) ni un aviso propio.
-   Probado con 50 000 m²: precia 9000 €/300 h sin un solo warning. §1.2
+1. ~~Las horas de "descuidado"/"muy descuidado" usaban un multiplicador fijo que ignoraba el
+   recargo configurado por el jardinero.~~ **Corregido el 2026-09-12** — ver §9.1.
+2. ~~El flujo de fotos no tenía tope ni aviso de plausibilidad de superficie.~~ **Corregido
+   el 2026-09-11** — ver §9.2.
 3. **[Transversal — no se arregla en esta rama]** Al aceptar una propuesta de cambio de
    precio, `duration_hours` y la agenda quedan congelados en el valor anterior a la
    corrección; solo cambia el precio. Probado end-to-end: 1000→1400 m², precio 216→303 €
-   correcto, horas siguen en 8 cuando el propio motor dice que deberían ser 11. §7, T4
+   correcto, horas siguen en 8 cuando el motor (ya corregido) dice que deberían ser 10,5.
+   §7, T4
 4. **[Transversal — no se arregla en esta rama]** El botón "Aceptar nuevo precio"/"Rechazar"
    del **dashboard** del cliente (la pantalla de inicio, lo primero que ve al entrar) no hace
    nada al pulsarlo — ni con clic real ni programático. Los mismos botones sí funcionan en
    "Mis reservas" → "Ver todas". §7, T5
 
-Grave adicional, no bloqueante por sí solo pero relacionado con el bloqueante 1: el redondeo
-de horas por coma flotante (`bookingQuoteCore.ts:1349-1350`) está confirmado con una entrada
-real de césped, no solo sospechado — ver §7, T2. Es transversal, tampoco se arregla aquí.
+Grave adicional, transversal, tampoco se arregla aquí: el redondeo de horas por coma
+flotante (`bookingQuoteCore.ts:1349-1350`) está confirmado con una entrada real de césped,
+no solo sospechado — ver §7, T2.
+
+Las secciones 1 a 8 son el informe **original de Fase 1-2** (2026-09-11), tal cual se entregó
+antes de corregir nada — es el registro de lo que se encontró. La Sección 9 documenta la
+Fase 3: qué se corrigió, cómo, y con qué evidencia.
 
 ---
 
@@ -170,19 +168,23 @@ FALLA.
 
 ## 7. Hallazgos transversales
 
-Documentados en detalle en `docs/audit/COORDINACION-SERVICIOS.md` §3.2 (T2 actualizado, T3-T6
+Documentados en detalle en `docs/audit/COORDINACION-SERVICIOS.md` §3.2 (T2 actualizado, T4-T7
 nuevos). **No se tocan en esta rama** — afectan a ficheros que no son de césped en solitario.
+
+> Nota (2026-09-12): esta sección documentaba también una **T3** — el mismo patrón del
+> hallazgo #1 (multiplicador de horas fijo vs. recargo configurado), que se creyó transversal
+> porque `getDurationMultiplier` la comparten setos/desbroce/arbustos. Al corregir el
+> hallazgo #1 (§9.1) resultó que el fix cabía entero dentro del bloque de césped, sin tocar
+> `getDurationMultiplier` ni ningún otro servicio — **no era transversal**, y la fila T3 se
+> retiró de §3.2. Si setos/desbroce/arbustos tienen el mismo problema en su propio bloque, es
+> cosa de sus auditorías investigarlo y decidirlo por separado; no se puede asumir que les
+> aplique el mismo razonamiento de negocio que a césped.
 
 - **T2 — Redondeo de horas por coma flotante, ahora confirmado con una entrada real.** La
   ronda transversal (2026-09-09) lo había marcado como "no reproducido" tras barrer
   `totalHours` en decimal; ese método no lo encuentra porque el residuo depende de la cadena
   real de división/multiplicación, no del valor decimal final. Césped lo reprodujo dos veces
   (motor en proceso y HTTP) con `5000 m² ÷ 150 m²/h × 0,9`. `bookingQuoteCore.ts:1349-1350`.
-- **T3 — El patrón del hallazgo #1 (multiplicador de horas fijo vs. recargo configurado)
-  también existe en setos, desbroce y arbustos**, porque los cuatro bloques llaman a la misma
-  `getDurationMultiplier` fija. El fix de césped (hallazgo #1 de este informe) se puede hacer
-  dentro de mi bloque sin tocar la función compartida ni los otros bloques — pero quien
-  audite setos/desbroce/arbustos debería saber que el mismo patrón les espera.
 - **T4 — `respond_booking_price_change` no actualiza `duration_hours` al aceptar un cambio de
   precio.** Solo cambia `total_price`. Afecta a los 7 servicios: cualquier corrección de
   cantidad/superficie que cambie el precio también cambia las horas reales, y la RPC no se
@@ -204,11 +206,12 @@ nuevos). **No se tocan en esta rama** — afectan a ficheros que no son de césp
 - **`GOOGLE_API_KEY` no está configurada en el entorno local** (`supabase/functions/.env`).
   Sin ella no se puede probar el flujo de fotos de verdad (2B queda NO PROBADO). Añadirla y
   volver a ejecutar 2B antes de dar la paridad IA↔manual por cerrada al 100 %.
-- **Turno de corrección.** Los hallazgos #1 y #2 de este informe son míos y puedo corregirlos
-  en esta rama en cuanto lo autorices. Los hallazgos T2, T4, T5 y T6 (§7) son transversales:
-  necesitan coordinarse con las otras seis auditorías antes de tocar
-  `bookingQuoteCore.ts:1349-1350`, la RPC `respond_booking_price_change` o
-  `ClientBookingLauncher.tsx` — decide cuándo entra la ronda transversal.
+- **Turno de corrección.** Los hallazgos #1 y #2 ya están corregidos en esta rama (§9). Los
+  hallazgos T2, T4, T5, T6 y T7 (§7) son transversales: necesitan coordinarse con las otras
+  seis auditorías antes de tocar `bookingQuoteCore.ts:1349-1350`, la RPC
+  `respond_booking_price_change` o `ClientBookingLauncher.tsx` — decide cuándo entra la ronda
+  transversal. Mientras no entre, un césped desplegado seguirá teniendo T4 y T5 en su propio
+  flujo de cambio de precio, aunque el motor de césped ya esté limpio.
 - **2A.8 (bloque de hold huérfano) quedó NO PROBADO.** La base de datos compartida por las
   siete auditorías no tenía ningún `payment_attempt` sin una `booking_schedule_hold`
   colgando ya. Para cerrarlo hace falta generar uno fresco con `create_quote` (requiere
@@ -217,8 +220,90 @@ nuevos). **No se tocan en esta rama** — afectan a ficheros que no son de césp
 - **Imágenes de servicios rotas** (placeholder gris en el paso "Servicios" del funnel) — ya
   documentado como pendiente en `produccion-8-items.md`, no es un hallazgo nuevo de esta
   auditoría, solo lo confirmo de paso.
-- **Datos de prueba creados en la base de datos compartida** (`GarSer-referencia`), visibles
-  para las otras seis auditorías: 2 reservas de césped (una completada con reseña 5★, otra
-  cancelada) a nombre de `cliente.local@test.local` / `jardinero.local@test.local`. No tocan
-  la configuración de ningún otro servicio; no debería hacer falta limpiarlos, pero aviso por
-  si alguna otra auditoría cuenta filas de `bookings` o `reviews` y le extraña el número.
+- **Datos de prueba creados en la base de datos compartida** (`GarSer-referencia`) durante la
+  Fase 2, ya limpiados por identificador tras la Fase 3 (§9.3): 2 reservas de césped, 2
+  presupuestos, 2 intentos de pago y 1 reseña, todos a nombre de
+  `cliente.local@test.local` / `jardinero.local@test.local`. El jardinero volvió a
+  `rating_average=0, rating_count=0` ("Nuevo"). No debería quedar ningún resto visible para
+  las otras seis auditorías.
+
+---
+
+## 9. Fase 3 — Correcciones aplicadas (2026-09-11/12)
+
+Autorizada por el usuario en dos vueltas. Cada fix, en un commit separado del runner y la
+documentación; verificado con el runner en verde, `tsc` sin subir de la base de `main` (172)
+y `vitest run` completo, antes de darlo por cerrado.
+
+### 9.1 · Hallazgo #1 — horas ligadas al multiplicador fijo (commit `4ce071f`)
+
+**Primera propuesta, rechazada.** Igualar las horas al mismo `%` que ya usaba el precio.
+El usuario la rechazó: precio y tiempo son magnitudes distintas por diseño — el recargo es
+lo que el jardinero decide *cobrar*, el multiplicador es lo que la faena *tarda* de verdad.
+Un jardinero con un 0 % de recargo (p. ej. un gesto comercial) seguiría necesitando el mismo
+tiempo real; acoplarlas le habría reservado de menos.
+
+**Segunda vuelta, autorizada.** El usuario reconsideró la regla de negocio para césped
+específicamente: el `%` que configura el jardinero **es** a la vez precio y tiempo —"si se
+incrementa el tiempo se incrementa paulatinamente el precio e viceversa"— y pidió que
+aplicara a las dos magnitudes por igual, sea el servicio `per_hour` o `per_quantity`.
+Instrucción explícita: quitar el multiplicador fijo de horas y usar el mismo porcentaje que
+el precio en los dos casos.
+
+**Implementación.** Dentro del bloque `if (bookingData.lawnZones?.length)` de horas
+(`bookingQuoteCore.ts`, antes llamaba a `getDurationMultiplier`), se calcula ahora el mismo
+`stateMult` que ya calculaba el bloque de precio — misma fórmula, mismos fallbacks (20 %/50 %
+si el jardinero no configuró nada). **No se toca** `getDurationMultiplier` en sí (sigue
+usándola setos, desbroce y arbustos sin cambios) ni la rama `per_hour` de precio
+(`estimatedHours × precioPorHora`): al corregir `estimatedHours`, esa rama hereda el `%`
+correcto sin tocarla, así que "independientemente de si se factura por tiempo o por
+cantidad" queda cubierto con un solo cambio.
+
+| Escenario | Antes del fix | Después del fix | Coherente con el % configurado |
+|---|---|---|---|
+| 1000 m² descuidado (20 %) | 216 € · 8 h | 216 € · 8 h | Sí (coincidía por redondeo) |
+| 1000 m² muy descuidado (50 %) | 270 € · **10,5 h** | 270 € · **9,0 h** | Sí |
+| 1000 m² descuidado + retirada | 249 € · 9 h | 249 € · 8,5 h | Sí |
+| Cambio de precio: 1400 m² descuidado | 303 € · 11 h | 303 € · 10,5 h | Sí |
+| 700 m² muy descuidado | 189 € · 8 h | 189 € · 7 h | Sí |
+
+Consecuencia de disponibilidad verificada: 1000 m² muy descuidado ya no se queda sin hueco.
+Antes necesitaba 11 bloques (no cabía en ningún día de 10); ahora necesita 9 y cabe. La
+comprobación se hizo con aritmética local sobre `estimatedHours` porque `previewProviders`/
+`valid_hours` del entorno local siguen sirviendo el checkout de referencia sin este fix
+desplegado (mismo aviso que en 0.4 de la skill) — se recomprobarán de verdad por HTTP tras
+el despliegue.
+
+**Retirado de transversal.** Esto también significa que el hallazgo **no era T3**: el fix
+cupo entero en el bloque de césped, así que la fila T3 se retiró de
+`COORDINACION-SERVICIOS.md` §3.2 (ver nota en §7 de este informe).
+
+Runner: 2A.3b pasó de documentar el hallazgo (`untested`) a comprobarlo (`pass`/`fail`) — en
+verde tras el fix.
+
+### 9.2 · Hallazgo #2 — sin tope de plausibilidad en fotos (commit `3a58345`)
+
+Añadida la constante `LAWN_MAX_PLAUSIBLE_AREA_M2 = 2000` y un `pushWarning`
+(`'lawn_area_implausible'`) por zona que la supere, dentro del bloque de césped — mismo
+patrón que los avisos ya existentes de palmeras y árboles. Verificado con frontera exacta:
+2000 m² sin aviso, 2001 m² con aviso.
+
+```json
+{"warnings":[{"code":"lawn_area_implausible","message":"La superficie declarada (50000 m²) supera lo habitual para un jardín residencial (2000 m²): confirma la medida antes de continuar."}]}
+```
+
+### 9.3 · Cierre
+
+- Runner: `READINESS_ENGINE=local node scripts/readiness/cesped.mjs` → **29 PASA · 0 FALLA ·
+  7 NO PROBADO**, código de salida 0.
+- `npx tsc --noEmit -p tsconfig.app.json`: 172 antes del fix, 172 después — no sube.
+- `npx vitest run`: 433/433 en verde.
+- Commits en `auditoria/cesped`: el fix del hallazgo #2, el fix del hallazgo #1, y el runner +
+  documentación, cada uno por separado.
+- Datos de prueba de la Fase 2 borrados de la base compartida por identificador (2 reservas,
+  2 presupuestos, 2 intentos de pago, 1 reseña) y jardinero repuesto a "Nuevo"
+  (`rating_average=0, rating_count=0`); 8 huecos de disponibilidad del 14 de septiembre que
+  quedaron huérfanos al mover la fecha de una reserva de prueba por SQL, restaurados a
+  disponibles. Verificado con consultas antes y después, no por suposición.
+
+Pendiente de ti: abrir la PR cuando lo consideres.

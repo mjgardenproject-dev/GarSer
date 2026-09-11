@@ -742,9 +742,9 @@ Rellena esto antes de empezar y ten la tabla a mano:
       banda.
 - [ ] **18.3 — Dificultad alta.** 1 árbol estructural mediano con "Acceso difícil".
       ✅ **Éxito:** precio = tarifa de banda × (1 + `difficultyIncrease`/100). Verificado también
-      con un árbol PEQUEÑO (0-3 m): el motor SÍ cobra el recargo en esa banda — el texto del
-      panel del jardinero ("No aplica a árboles de 0-3m") es incorrecto, no el cálculo (hallazgo
-      Grave §1 del informe; pendiente de decisión de negocio, no bloqueante).
+      con un árbol PEQUEÑO (0-3 m): el motor SÍ cobra el recargo en esa banda. **Corregido
+      (2026-09-11):** el texto del panel del jardinero decía "No aplica a árboles de 0-3m" —
+      decisión de negocio: el recargo aplica a todos los tamaños, y el texto ya lo refleja.
 - [ ] **18.4 — Retirada de restos.** 1 árbol de formación grande con "Retirada de restos"
       activada. ✅ **Éxito:** precio = tarifa de banda × (1 + `wasteRemovalMultiplier`/100),
       redondeado al alza al euro.
@@ -754,11 +754,14 @@ Rellena esto antes de empezar y ten la tabla a mano:
 - [ ] **18.6 — Fuera de rango.** Fuerza un tamaño de árbol inválido (solo posible manipulando la
       llamada, no desde la UI). ✅ **Éxito:** 422 `manual_input_invalid`, nunca un precio en 0
       silencioso.
-- [ ] **18.7 — Cantidad sin límite (hallazgo Grave §2, no bloqueante).** Sube el stepper "Cantidad
-      de árboles idénticos" a un valor absurdo (p. ej. 50) tras analizar/declarar un árbol.
-      ❌ **Se acepta sin aviso ni tope**: `treeGroups[].quantity` no tiene el `Math.min` que sí
-      tiene la cantidad de palmeras (máx. 50). El precio final se muestra siempre antes de pagar,
-      así que no es un cobro oculto, pero sí un fat-finger fácil de disparar sin darse cuenta.
+- [ ] **18.7 — Tope de cantidad (corregido 2026-09-11).** Sube el stepper "Cantidad de árboles
+      idénticos" a un valor absurdo (p. ej. 500) tras analizar/declarar un árbol.
+      ✅ **Éxito:** se detiene en 20 con el aviso "Máximo 20 árboles idénticos por grupo. Para
+      más, añade otro grupo o contacta directamente con el profesional." — verificado con el
+      input a 500 (clamp a 20) y con el modo manual por HTTP tras desplegar (422
+      `manual_input_invalid` con `treeGroups[0].quantity` fuera de rango; en local con
+      `READINESS_ENGINE=local` no se observa porque el motor en proceso no pasa por la
+      validación manual — ver nota en `scripts/readiness/arboles.mjs`).
 - [ ] **18.8 — Paridad manual/fotos.** Declara el mismo árbol (tamaño, tipo de poda, dificultad,
       retirada) por los dos caminos. ✅ **Éxito:** mismo precio y mismas horas céntimo a céntimo
       (verificado: 240 € / 2,5 h en ambos, con `READINESS_ENGINE=local`).

@@ -634,6 +634,92 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ---
 
+## SECCIÓN 17 — Corte de césped (auditoría 2026-09-11) 🔴
+
+> Contexto: auditoría de preparación para producción del servicio de césped. Motor y flujo
+> manual verificados en local con evidencia real (curl a `booking-authority` con
+> `recalculate_correction`, capturas de la BD, PaymentIntents en Stripe). Veredicto **NO-GO**:
+> 4 bloqueantes. Las pruebas de abajo traducen esos hallazgos a garser.es — **repítelas
+> después de cada corrección**, no solo antes de salir.
+
+### Precio y horas del motor
+
+- [ ] **17.1 — Caso base.** Reserva manual de césped, 1000 m², estado normal, sin retirada de
+  restos, con la tarifa real del jardinero que uses en producción.
+  - ✅ **Éxito:** precio = `price_per_m2 × 1000`, horas = `ceil(1000/yield_m2_per_hour)` (o el
+    valor que corresponda tras el ajuste de horas altas), y el precio mostrado al cliente
+    coincide céntimo a céntimo con el que aparece en el panel del jardinero.
+
+- [ ] **17.2 — Recargo de estado: precio y horas por separado.** Mismo jardín, pero
+  "descuidado" y luego "muy descuidado".
+  - ✅ **Éxito (precio):** sube exactamente el % que el jardinero tiene configurado en
+    `condition_surcharges`.
+  - ❌ **Fallo conocido, hallazgo #1 (bloqueante):** las HORAS no suben el mismo % que el
+    precio — suben un 30 %/70 % fijo en vez del % configurado. Compara a mano: si el
+    jardinero tiene configurado, por ejemplo, un 20 % para "descuidado", las horas deberían
+    subir ~20 %, no 30 %. Si el jardinero configuró un % distinto del 20/50 por defecto, la
+    diferencia es más visible que en el entorno de prueba (que coincidía por redondeo en el
+    caso concreto de "descuidado").
+
+- [ ] **17.3 — Redondeo de horas (hallazgo #4, bloqueante).** Prueba manual con una superficie
+  que dé una hora "redonda" tras el ajuste de horas largas — por ejemplo, con
+  `yield_m2_per_hour=150`, un jardín de **5000 m²** en estado normal (horas teóricas exactas:
+  `(5000/150)·0,9 = 30,0`).
+  - ✅ **Éxito:** horas mostradas = **30,0 h**.
+  - ❌ **Si falla (30,5 h):** confirma el fallo de coma flotante. Prueba con la superficie/
+    rendimiento reales de tu jardinero de producción — el fallo depende de la división exacta,
+    así que el número que lo dispara cambia con cada configuración.
+
+- [ ] **17.4 — Sin tope de plausibilidad en fotos (hallazgo #5, grave).** Sube fotos de un
+  jardín pequeño pero, si tienes acceso de prueba al analizador, fuerza o edita una superficie
+  desproporcionada (miles de m²) antes de confirmar.
+  - ❌ **Si el sistema no avisa ni bloquea:** confirma que no hay red de seguridad ante una
+    alucinación de la IA en la medición. No es bloqueante para salir si el resto del funnel
+    funciona, pero debe quedar en el radar.
+
+### Cambio de precio (hallazgos #2 y #3, ambos bloqueantes)
+
+- [ ] **17.5 — El jardinero corrige la medida real y el precio sube.** Como jardinero, en una
+  solicitud pendiente, usa "Recalcular con las medidas reales del jardín" con una superficie
+  mayor que la declarada, y "Proponer".
+  - ✅ **Éxito:** el precio propuesto coincide con lo que darías a mano con las tarifas del
+    jardinero para la nueva superficie.
+
+- [ ] **17.6 — El cliente acepta desde el INICIO (dashboard).** Con la cuenta de cliente, en la
+  pantalla de inicio ("Hola de nuevo, …"), pulsa **"Aceptar nuevo precio"** directamente ahí,
+  sin ir a "Ver todas".
+  - ❌ **Fallo conocido:** el botón no hace nada — ni cambia el estado ni se ve ningún error.
+    Confirma yendo a **"Mis reservas" → "Ver todas"**: los mismos botones, en esa pantalla, sí
+    funcionan. Si en producción el dashboard sigue así, cualquier cliente que no descubra "Ver
+    todas" se queda sin forma de responder a una propuesta de precio.
+
+- [ ] **17.7 — Tras aceptar, ¿cambian las horas?** Con el cambio de 17.5 ya aceptado
+  (usa "Ver todas" para que funcione), compara la duración que muestra la reserva antes y
+  después.
+  - ❌ **Fallo conocido:** el precio sube pero las horas y la franja horaria (inicio-fin) se
+    quedan como antes de la corrección. Comprueba también si esto adelanta indebidamente el
+    aviso de "¿Se hizo el trabajo?" al cliente (aparece cuando pasa `hora_inicio + horas_ANTIGUAS`,
+    no las horas reales del trabajo corregido).
+
+### Ciclo de vida (para no-regresión, ya verificado en local con evidencia)
+
+- [ ] **17.8 — Pago, aceptación y desglose.** Reserva de césped completa hasta el pago con
+  tarjeta de test. ✅ el PaymentIntent queda `requires_capture` por los gastos de gestión, y
+  el desglose cliente/jardinero (total, gastos de gestión, importe al profesional) coincide
+  con lo mostrado en pantalla.
+
+- [ ] **17.9 — Cierre, reseña y repetir.** Completa el servicio, confírmalo como cliente, deja
+  una reseña, y usa "Volver a reservar". ✅ la reseña se ve al elegir profesional en la
+  reserva repetida, y el precio se recalcula con las tarifas vigentes (no el de la vez
+  anterior).
+
+- [ ] **17.10 — Cancelación con más de 24 h.** Cancela una reserva de césped **pendiente**
+  (jardinero aún sin aceptar) programada para dentro de más de 24 h.
+  - ✅ **Éxito:** el PaymentIntent queda `canceled` en Stripe (`amount_capturable: 0`), y el
+    cliente ve que no se le ha cobrado nada.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

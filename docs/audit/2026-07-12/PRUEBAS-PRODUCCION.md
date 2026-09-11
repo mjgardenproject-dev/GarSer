@@ -720,6 +720,62 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ---
 
+## SECCIÓN 18 — Poda de árboles (auditoría 2026-09-11) 🔴
+
+> Traducido de `scripts/readiness/arboles.mjs` (rama `auditoria/arboles`), verificado en local
+> con `READINESS_ENGINE=local` (motor en proceso) y por HTTP contra `booking-authority` —
+> **15/15 PASA**. En producción se repite por HTTP contra el `serviceId` real (compruébalo con
+> `select id from public.services where name ilike '%árbol%'`, no asumas el de aquí) y con la
+> tarifa que el jardinero de pruebas tenga configurada en ese proyecto — los números de abajo son
+> los de la config sembrada local (`formacion` 35/60/110 €, `estructural` 45/80/150 €,
+> `difficultyIncrease` 30 %, `wasteRemovalMultiplier` 15 %, `minimumPrice` 60 €) y **no van a
+> coincidir** salvo que configures esa misma tarifa antes de probar.
+
+> **Nota (2026-09-11, segunda vuelta):** esta sección se reescribe tras rebasar la auditoría
+> sobre `origin/main` — el stack de referencia compartido ya sirve el fix de
+> `booking-payment` (PR #18) y las conclusiones de la primera vuelta sobre el pago quedan
+> obsoletas. Ver el informe de la conversación para el detalle final; placeholder mientras
+> se completa la Fase 2 fresca.
+
+- [ ] **18.1 — Escenario base.** 2 árboles de poda estructural, tamaño grande, sin dificultad ni
+      retirada. ✅ **Éxito:** precio = 2 × tarifa `estructural.large`; horas = `ceil((2 × 1/yield)
+      × 2) / 2`.
+- [ ] **18.2 — Mínimo.** 1 árbol de formación pequeño (por debajo del mínimo del jardinero).
+      ✅ **Éxito:** factura exactamente el `minimumPrice` configurado, no el precio teórico de la
+      banda.
+- [ ] **18.3 — Dificultad alta.** 1 árbol estructural mediano con "Acceso difícil".
+      ✅ **Éxito:** precio = tarifa de banda × (1 + `difficultyIncrease`/100).
+      ⚠️ **Repite este paso con un árbol PEQUEÑO (0-3 m).** El panel del jardinero dice
+      literalmente *"No aplica a árboles de 0-3m"* junto al campo de Dificultad Alta — comprueba
+      si producción sigue cobrando el recargo en esa banda. Si el negocio decidió que sí debía
+      aplicar, tacha este aviso; si no, es un cobro indebido.
+- [ ] **18.4 — Retirada de restos.** 1 árbol de formación grande con "Retirada de restos"
+      activada. ✅ **Éxito:** precio = tarifa de banda × (1 + `wasteRemovalMultiplier`/100),
+      redondeado al alza al euro.
+- [ ] **18.5 — Árbol muy grande (>9 m).** Selecciona "Muy grande (>9 m)".
+      ✅ **Éxito:** cobra el precio y usa el rendimiento de la banda "Grande" (es el diseño:
+      "Caso especial ≥9m: usa precio 5-9m"), y aparece el aviso *"El profesional tendrá que
+      verificar el pago porque es un servicio muy complejo"*.
+- [ ] **18.6 — Fuera de rango.** Fuerza un tamaño de árbol inválido (solo posible manipulando la
+      llamada, no desde la UI). ✅ **Éxito:** 422 `manual_input_invalid`, nunca un precio en 0
+      silencioso.
+- [ ] **18.7 — Cantidad sin límite.** *(Hallazgo, no una prueba de "debe pasar"; documenta lo que
+      encuentres.)* Declara un grupo de árboles idénticos con una cantidad absurda (p. ej. 500).
+      ❌ **Si en producción también se acepta sin aviso ni error**, confirma el hallazgo:
+      `treeGroups[].quantity` no tiene el mismo límite que `palmGroups[].quantity`.
+- [ ] **18.8 — Paridad manual/fotos.** Declara el mismo árbol (tamaño, tipo de poda, dificultad,
+      retirada) por los dos caminos. ✅ **Éxito:** mismo precio y mismas horas céntimo a céntimo.
+- [ ] **18.9 — Configurador del jardinero.** Cambia el precio mínimo (o cualquier tarifa) en el
+      panel del jardinero, guarda, y repite el escenario 18.2 desde el lado del cliente.
+      ✅ **Éxito:** el precio del cliente refleja el cambio sin recargar caché ni reiniciar nada.
+- [ ] **18.10 — Ciclo completo con pago real.** Reserva un árbol, paga con la tarjeta de test,
+      y comprueba en Stripe que el PaymentIntent llega a `requires_capture` **y que la reserva se
+      crea** (`bookings` tiene la fila, no solo Stripe tiene el cargo autorizado).
+- [ ] **18.11 — Resto del ciclo de vida** (cambio de precio, cancelación, finalización, reseña,
+      volver a reservar): ver el resultado final en el informe de la conversación.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

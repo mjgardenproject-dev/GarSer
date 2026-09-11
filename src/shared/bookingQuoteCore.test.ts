@@ -348,10 +348,11 @@ describe('buildAuthoritativeBookingQuote', () => {
     const normal = build('normal');
     expect(normal.estimatedHours).toBe(2);
     expect(normal.totalPrice).toBe(60);
-    // Muy descuidado: 200/100 × 1.7 = 3.4h → 3.5h × 30 € = 105 €.
+    // Muy descuidado: las horas usan el mismo % configurado que el precio (50 %), no un
+    // multiplicador fijo — 200/100 × 1.5 = 3h × 30 € = 90 €.
     const neglected = build('muy descuidado');
-    expect(neglected.estimatedHours).toBe(3.5);
-    expect(neglected.totalPrice).toBe(105);
+    expect(neglected.estimatedHours).toBe(3);
+    expect(neglected.totalPrice).toBe(90);
   });
 
   it('palmeras per_hour: usa el motor de palmeras (precio por unidad), no horas × tarifa', () => {

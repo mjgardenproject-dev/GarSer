@@ -720,22 +720,19 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ---
 
-## SECCIÓN 18 — Poda de árboles (auditoría 2026-09-11) 🔴
+## SECCIÓN 18 — Poda de árboles (auditoría 2026-09-11, GO) 🟢
 
 > Traducido de `scripts/readiness/arboles.mjs` (rama `auditoria/arboles`), verificado en local
-> con `READINESS_ENGINE=local` (motor en proceso) y por HTTP contra `booking-authority` —
-> **15/15 PASA**. En producción se repite por HTTP contra el `serviceId` real (compruébalo con
-> `select id from public.services where name ilike '%árbol%'`, no asumas el de aquí) y con la
-> tarifa que el jardinero de pruebas tenga configurada en ese proyecto — los números de abajo son
-> los de la config sembrada local (`formacion` 35/60/110 €, `estructural` 45/80/150 €,
+> con `READINESS_ENGINE=local` (motor en proceso) tras rebasar sobre `origin/main` —
+> **15/15 PASA**. Ciclo de vida completo (reserva → pago real → cambio de precio → finalización →
+> reseña → repetir, y por separado reserva → pago real → cancelación) verificado en el navegador
+> contra el stack local, con evidencia en Stripe y en BD — ver el informe de la conversación del
+> 2026-09-11 para el detalle línea a línea. En producción se repite por HTTP contra el
+> `serviceId` real (`select id from public.services where name ilike '%árbol%'`, no asumas el de
+> aquí) y con la tarifa que el jardinero real tenga configurada — los números de abajo son los de
+> la config sembrada local (`formacion` 35/60/110 €, `estructural` 45/80/150 €,
 > `difficultyIncrease` 30 %, `wasteRemovalMultiplier` 15 %, `minimumPrice` 60 €) y **no van a
 > coincidir** salvo que configures esa misma tarifa antes de probar.
-
-> **Nota (2026-09-11, segunda vuelta):** esta sección se reescribe tras rebasar la auditoría
-> sobre `origin/main` — el stack de referencia compartido ya sirve el fix de
-> `booking-payment` (PR #18) y las conclusiones de la primera vuelta sobre el pago quedan
-> obsoletas. Ver el informe de la conversación para el detalle final; placeholder mientras
-> se completa la Fase 2 fresca.
 
 - [ ] **18.1 — Escenario base.** 2 árboles de poda estructural, tamaño grande, sin dificultad ni
       retirada. ✅ **Éxito:** precio = 2 × tarifa `estructural.large`; horas = `ceil((2 × 1/yield)
@@ -744,35 +741,63 @@ Rellena esto antes de empezar y ten la tabla a mano:
       ✅ **Éxito:** factura exactamente el `minimumPrice` configurado, no el precio teórico de la
       banda.
 - [ ] **18.3 — Dificultad alta.** 1 árbol estructural mediano con "Acceso difícil".
-      ✅ **Éxito:** precio = tarifa de banda × (1 + `difficultyIncrease`/100).
-      ⚠️ **Repite este paso con un árbol PEQUEÑO (0-3 m).** El panel del jardinero dice
-      literalmente *"No aplica a árboles de 0-3m"* junto al campo de Dificultad Alta — comprueba
-      si producción sigue cobrando el recargo en esa banda. Si el negocio decidió que sí debía
-      aplicar, tacha este aviso; si no, es un cobro indebido.
+      ✅ **Éxito:** precio = tarifa de banda × (1 + `difficultyIncrease`/100). Verificado también
+      con un árbol PEQUEÑO (0-3 m): el motor SÍ cobra el recargo en esa banda — el texto del
+      panel del jardinero ("No aplica a árboles de 0-3m") es incorrecto, no el cálculo (hallazgo
+      Grave §1 del informe; pendiente de decisión de negocio, no bloqueante).
 - [ ] **18.4 — Retirada de restos.** 1 árbol de formación grande con "Retirada de restos"
       activada. ✅ **Éxito:** precio = tarifa de banda × (1 + `wasteRemovalMultiplier`/100),
       redondeado al alza al euro.
 - [ ] **18.5 — Árbol muy grande (>9 m).** Selecciona "Muy grande (>9 m)".
-      ✅ **Éxito:** cobra el precio y usa el rendimiento de la banda "Grande" (es el diseño:
-      "Caso especial ≥9m: usa precio 5-9m"), y aparece el aviso *"El profesional tendrá que
-      verificar el pago porque es un servicio muy complejo"*.
+      ✅ **Éxito:** cobra el precio y usa el rendimiento de la banda "Grande", y aparece el aviso
+      *"El profesional tendrá que verificar el pago porque es un servicio muy complejo"*.
 - [ ] **18.6 — Fuera de rango.** Fuerza un tamaño de árbol inválido (solo posible manipulando la
       llamada, no desde la UI). ✅ **Éxito:** 422 `manual_input_invalid`, nunca un precio en 0
       silencioso.
-- [ ] **18.7 — Cantidad sin límite.** *(Hallazgo, no una prueba de "debe pasar"; documenta lo que
-      encuentres.)* Declara un grupo de árboles idénticos con una cantidad absurda (p. ej. 500).
-      ❌ **Si en producción también se acepta sin aviso ni error**, confirma el hallazgo:
-      `treeGroups[].quantity` no tiene el mismo límite que `palmGroups[].quantity`.
+- [ ] **18.7 — Cantidad sin límite (hallazgo Grave §2, no bloqueante).** Sube el stepper "Cantidad
+      de árboles idénticos" a un valor absurdo (p. ej. 50) tras analizar/declarar un árbol.
+      ❌ **Se acepta sin aviso ni tope**: `treeGroups[].quantity` no tiene el `Math.min` que sí
+      tiene la cantidad de palmeras (máx. 50). El precio final se muestra siempre antes de pagar,
+      así que no es un cobro oculto, pero sí un fat-finger fácil de disparar sin darse cuenta.
 - [ ] **18.8 — Paridad manual/fotos.** Declara el mismo árbol (tamaño, tipo de poda, dificultad,
-      retirada) por los dos caminos. ✅ **Éxito:** mismo precio y mismas horas céntimo a céntimo.
-- [ ] **18.9 — Configurador del jardinero.** Cambia el precio mínimo (o cualquier tarifa) en el
-      panel del jardinero, guarda, y repite el escenario 18.2 desde el lado del cliente.
-      ✅ **Éxito:** el precio del cliente refleja el cambio sin recargar caché ni reiniciar nada.
-- [ ] **18.10 — Ciclo completo con pago real.** Reserva un árbol, paga con la tarjeta de test,
-      y comprueba en Stripe que el PaymentIntent llega a `requires_capture` **y que la reserva se
-      crea** (`bookings` tiene la fila, no solo Stripe tiene el cargo autorizado).
-- [ ] **18.11 — Resto del ciclo de vida** (cambio de precio, cancelación, finalización, reseña,
-      volver a reservar): ver el resultado final en el informe de la conversación.
+      retirada) por los dos caminos. ✅ **Éxito:** mismo precio y mismas horas céntimo a céntimo
+      (verificado: 240 € / 2,5 h en ambos, con `READINESS_ENGINE=local`).
+- [ ] **18.9 — Configurador del jardinero.** Cambia el precio mínimo en el panel del jardinero,
+      guarda, y repite el escenario 18.2 desde el lado del cliente. ✅ **Éxito:** verificado en
+      vivo — `minimumPrice: 60→99`, el cliente vio `99 €` en la siguiente cotización sin recargar
+      caché ni reiniciar nada.
+- [ ] **18.10 — Ciclo completo con pago real.** Reserva un árbol, paga con la tarjeta de test, y
+      comprueba en Stripe que el PaymentIntent llega a `requires_capture` y que `bookings` tiene
+      la fila. ✅ **Éxito, verificado dos veces** con tarjeta de test real: PaymentIntents
+      `pi_3UEWpZ2MwFyGXuB70eJndOHo` (13,00 €) y `pi_3UEX1z2MwFyGXuB70GOUMXJT` (7,50 €), ambos
+      `requires_capture`, ambos con su `booking_id` poblado.
+- [ ] **18.11 — Cambio de precio.** El jardinero recalcula con la medida real y propone un precio
+      nuevo; el cliente lo acepta desde "Mis reservas" (`/bookings`, no desde el dashboard de
+      inicio — ver 18.13). ✅ **Éxito en el precio**: verificado 104 €→225 € coincidiendo
+      exactamente con el cálculo a mano. ❌ **Fallo transversal (T4 en
+      `COORDINACION-SERVICIOS.md`, no arreglar aquí)**: `duration_hours` y `end_time` de la
+      reserva NO se actualizan tras aceptar — quedan en el valor de antes del cambio.
+- [ ] **18.12 — Cancelación con liberación de la retención.** Cliente cancela una reserva
+      pendiente >24 h antes de la fecha, con el pago ya autorizado (no capturado) en Stripe.
+      ✅ **Éxito, verificado con pago real**: `bookings.status→cancelled`, PaymentIntent
+      `pi_3UEX1z2MwFyGXuB70GOUMXJT` pasa a `status: canceled` en Stripe
+      (`amount_capturable=0`), "No se te ha cobrado nada" en pantalla. **No probado**: cancelar
+      después de que el jardinero acepte, o después de que el pago se capture (ahí haría falta un
+      `refund`, no un `cancel`).
+- [ ] **18.13 — Botón "Aceptar nuevo precio" del DASHBOARD de inicio.** ❌ **Fallo transversal
+      (T5, no arreglar aquí)**: no hace nada al pulsarlo — sin request, sin cambio de estado.
+      Los mismos botones SÍ funcionan en "Mis reservas" → "Ver todas" (usa esa ruta en 18.11).
+- [ ] **18.14 — Finalización, reseña y repetir.** Jardinero marca "He terminado" → cliente
+      confirma "¿Se hizo el trabajo?" → dejar reseña → "Volver a reservar". ✅ **Éxito, ciclo
+      completo verificado**: `bookings.status→completed`, reseña guardada en `reviews` (5,0,
+      comentario), `rating_average`/`rating_count` del jardinero actualizados, y "Volver a
+      reservar" muestra "Contratado anteriormente · 5.0 (1) ver reseñas" con el precio
+      recalculado a tarifas vigentes.
+- [ ] **18.15 — "Solicitudes de Reserva" del jardinero.** Antes de aceptar, comprueba dos cosas:
+      ❌ **el nombre del cliente aparece como "Cliente desconocido"** siempre (hallazgo
+      transversal T9, no arreglar aquí — sí aparece bien en "Mis Reservas" y en el dashboard, es
+      solo esta pantalla). ❌ **La cabecera muestra `(1h)` aunque el servicio dure más**
+      (transversal T6, ya conocido).
 
 ---
 

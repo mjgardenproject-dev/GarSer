@@ -811,6 +811,110 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ---
 
+## SECCIÓN 19 — Poda de setos (auditoría 2026-09-11) 🟢
+
+> Traducido de `scripts/readiness/setos.mjs` (rama `auditoria/setos`). Fase 2 (2026-09-11):
+> NO-GO, 2 bloqueantes + 1 grave, verificados en local con `READINESS_ENGINE=local` y en el
+> navegador contra el stack local con evidencia real: pago con tarjeta de test (PaymentIntent
+> `pi_3UEYrf2MwFyGXuB714kx1Few`, `requires_capture`, 24,25 €), reserva persistida
+> (`bookings id=1d41286d-3b54-4923-bb9e-ccea6a53dc19`), y el hallazgo #2 reproducido en vivo con
+> lectura SQL antes/después. **Fase 3, mismo día, autorizada por el usuario: los 3 hallazgos
+> quedaron corregidos** (motor en proceso 35/35 PASA, `tsc` 172→172 sin errores nuevos, `vitest`
+> 434/434 — detalle en `docs/audit/2026-09-11-setos/REPORT.md` §9). **Los puntos de abajo siguen
+> sin marcar `[ ]` porque describen la prueba EN PRODUCCIÓN, que no se puede ejecutar hasta que
+> esta rama se fusione y `booking-authority` se redespliegue — no confundir "corregido en la
+> rama" con "verificado en garser.es".** Los números de abajo son los de la config sembrada
+> local (`pricing_matrix` 3,5/5,5/8,0 €/ml, `yield_ml_per_hour` 25/15/8 ml/h,
+> `condition_surcharges` media 20 %/alta 50 %, `waste_removal` 15 %, `minimum_price` 50 €,
+> `precioPorHora` 30 €) y **no van a coincidir** salvo que el jardinero real de producción tenga
+> exactamente esa tarifa — recalcula a mano con la suya antes de leer ✅/❌. El `serviceId` real
+> se obtiene con `select id from public.services where name ilike '%seto%'` — el de
+> `references/servicios.md` (`3788349c-…`) es fantasma, no existe.
+
+### Precio y horas del motor (hallazgo #1, bloqueante — corregido en `auditoria/setos`)
+
+- [ ] **19.1 — Caso base.** Manual o fotos, 40 ml de seto de 0-2 m, estado normal, 1 cara, sin
+  retirada. ✅ **Éxito:** precio = `pricing_matrix['0-2m'] × 40`; horas =
+  `ceil((40/yield_ml_per_hour['0-2m']) × 2)/2`. Con la tarifa sembrada: 140,00 € / 2,0 h.
+
+- [ ] **19.2 — Recargo de estado: precio y horas por separado.** Mismo seto pero "Descuidado" y
+  luego "Muy descuidado".
+  - ✅ **Éxito (precio):** sube exactamente el % que el jardinero tiene configurado en
+    `condition_surcharges.media`/`alta`.
+  - ✅ **Corregido (2026-09-11, `bookingQuoteCore.ts`, bloque `hedgeZones` de horas):** antes,
+    las HORAS no subían ese mismo % — subían un 30 %/70 % fijo (`getDurationMultiplier`), no el
+    `condition_surcharges` real. Con la config sembrada (`media: 20`, `alta: 50`), 40 ml/0-2m/
+    Descuidado con retirada mostraba **194,00 € y 2,5 h** antes del fix; con el fix, el motor en
+    proceso da **194,00 € y 2,0 h** (verificado con `READINESS_ENGINE=local`, pendiente de
+    confirmar en pantalla real tras desplegar `booking-authority` — ver nota de cabecera). Con
+    "Muy descuidado" + 2 caras + retirada en un tramo largo, la diferencia llegaba a 2 horas
+    completas (1139,00 € / 14,5 h antes → 12,5 h con el fix). **Verificar en producción:**
+    repite 19.2 con la tarifa real del jardinero — si su `condition_surcharges` no es 20/50,
+    comprueba que las horas mostradas usan exactamente ese %, no un 30/70 fijo.
+
+- [ ] **19.3 — Redondeo por encima de 8 horas (T2, transversal, ya documentado — solo
+  confirmar que no ha empeorado).** Un tramo que cruce el umbral de 8 h brutas. No es un
+  hallazgo nuevo de setos: no lo dupliques en `COORDINACION-SERVICIOS.md`, solo anota si lo
+  ves.
+
+### Configurador del jardinero (hallazgo #2, bloqueante — corregido en `auditoria/setos`)
+
+- [ ] **19.4 — Abrir el configurador de setos SIN tocar nada.** Con una cuenta de jardinero que
+  tenga la banda "Setos de gran altura (4-6m)" ya tarifada pero que **nunca haya usado el
+  interruptor "Activar columna 4-6m"** (p. ej., la configuró antes de que ese interruptor
+  existiera), entra en Mi Perfil → Servicios → Configurar "Poda de setos", y **no toques
+  ningún campo**.
+  - ✅ **Corregido (2026-09-11, `HedgePricingConfigurator.tsx:127-134`), reproducido en local
+    antes y después con evidencia SQL:** antes del fix, a los ~1 segundo de abrir el panel
+    aparecía el toast "Configuración guardada y servicio sincronizado" sin ninguna acción del
+    jardinero, y la banda 4-6m quedaba vacía en BD (`pricing_matrix['4-6m']` → `""`). Con el
+    fix, el mismo gesto (abrir sin tocar nada) deja el interruptor en "Activado" y conserva
+    `pricing_matrix['4-6m']`/`yield_ml_per_hour['4-6m']` — verificado con lectura SQL
+    antes/después, ver `docs/audit/2026-09-11-setos/REPORT.md` §9.2. **Verificar en
+    producción:** el mismo gesto (abrir sin tocar nada) con un jardinero real que tenga 4-6m
+    tarifado y el flag ausente — comprobar con SQL que la banda sigue intacta después.
+  - **Impacto real que evita el fix:** antes, cualquier jardinero de producción que configuró
+    setos altos antes de que existiera el interruptor perdía esa banda de precio la próxima vez
+    que abría su propio panel de ajustes, sin ninguna acción explícita ni aviso.
+
+### Plausibilidad (hallazgo #3, grave — corregido en `auditoria/setos`)
+
+- [ ] **19.5 — Seto desproporcionado por fotos.** Fuerza (o edita tras el análisis) una longitud
+  de varios cientos de metros en el flujo de fotos.
+  - ✅ **Corregido (2026-09-11, `bookingQuoteCore.ts`, bloque `hedgeZones` de horas):** nuevo
+    `pushWarning('hedge_length_implausible', …)` cuando la longitud supera 200 ml (SSOT
+    `HEDGE_MAX_PLAUSIBLE_LENGTH_M`), mismo patrón que `lawn_area_implausible` de césped.
+    Verificado con `READINESS_ENGINE=local`: 300 ml ahora trae el warning; antes facturaba
+    1650 €/18 h sin ningún aviso. **Verificar en producción:** una longitud >200 ml debe traer
+    el aviso en la respuesta de `booking-authority` (campo `warnings`).
+
+### Ciclo de vida (para no-regresión, ya verificado en local con evidencia)
+
+- [ ] **19.6 — Pago y desglose.** Reserva de setos completa (manual, 40 ml/0-2m/Descuidado/1
+  cara/con retirada) hasta el pago con tarjeta de test. ✅ **Éxito, verificado con pago real**:
+  PaymentIntent `pi_3UEYrf2MwFyGXuB714kx1Few` queda `requires_capture` por 24,25 € (los gastos
+  de gestión), y `bookings` guarda `total_price=194.00`, `management_fee=24.25`,
+  `client_total_price=218.25` — coincide céntimo a céntimo con lo mostrado en pantalla.
+
+- [ ] **19.7 — Bloqueo de calendario redondeado al alza.** Con 2,5 h de `estimatedHours`, el
+  bloque de agenda reservado es de 3 h completas (`duration_hours=3`, `09:00-12:00`). Esto es
+  el comportamiento esperado (`Math.max(1, Math.ceil(estimatedHours))`), no un fallo — no lo
+  confundas con el hallazgo #1.
+
+- [ ] **19.8 — Disponibilidad y cobertura.** Un jardinero sin huecos en domingo no debe
+  ofrecer horas ese día; una dirección fuera de su radio no debe verlo en el listado. ✅
+  **Verificado por HTTP en local** (`valid_hours` domingo → `[]` con `no_reservable_availability`;
+  `preview_providers` fuera de cobertura → excluido con `outside_coverage`).
+
+- [ ] **19.9 — Cambio de precio, cancelación, finalización y reseña.** **No ejecutado para
+  setos en esta auditoría** — son los mismos componentes genéricos (`ClientBookingLauncher`,
+  `BookingsList`, `respond_booking_price_change`, `BookingRequestsManager`) ya verificados y
+  documentados como hallazgos transversales T4/T5/T6/T9/T11 por las auditorías de césped y
+  árboles (ver SECCIONES 17-18 arriba). Si los repites para setos, es de esperar que reproduzcan
+  los mismos síntomas — no lo cuentes como hallazgo nuevo de setos si es así.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

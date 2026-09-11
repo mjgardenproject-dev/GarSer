@@ -1,0 +1,1 @@
+{"minimum_price": 50, "precioPorHora": 30, "waste_removal": {"percentage": 15}, "pricing_matrix": {"0-2m": 3.5, "2-4m": 5.5, "4-6m": 8.0}, "pricing_method": "per_quantity", "yield_ml_per_hour": {"0-2m": 25, "2-4m": 15, "4-6m": 8}, "condition_surcharges": {"alta": 50, "media": 20}}

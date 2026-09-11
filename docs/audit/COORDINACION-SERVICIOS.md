@@ -38,6 +38,7 @@ antes de integrar nada.
 | `src/shared/manualEntry/manualEntrySchema.ts` | `auditoria/arboles` | **Fase 3 (2026-09-11):** añadida la entrada `tree: { quantity: { min: 1, max: 20 } }` a `MANUAL_RANGES` (arregla el hallazgo #1: el stepper "Cantidad de árboles idénticos" no tenía tope). Solo se añade una clave nueva al objeto — no se toca ninguna entrada de `lawn`/`hedge`/`palm`/`shrub`/`phytosanitary`/`weeding`. |
 | `src/shared/manualEntry/manualEntryValidation.ts` | `auditoria/arboles` | **Fase 3 (2026-09-11):** dentro de `case 'tree':`, añadida una llamada a `pushRange` para `treeGroups[i].quantity` contra el nuevo `MANUAL_RANGES.tree.quantity` (con `?? 1` como default, mismo patrón que `hedge.faces_to_trim`, para no romper los grupos que no declaran `quantity`). Solo se toca el bloque `case 'tree':`; el resto de `case`s (lawn/hedge/palm/shrub/phytosanitary/weeding) sin cambios. |
 | `src/pages/reserva/DetailsPage.tsx` | `auditoria/arboles` | **Fase 3 (2026-09-11):** en el bloque del stepper "Cantidad de árboles idénticos" (import de `MANUAL_RANGES` añadido a la lista ya existente desde `manualEntrySchema`), se añade `Math.min(MANUAL_RANGES.tree.quantity.max, …)` a los tres sitios que mutan `quantity` (botón `-`, `onChange`, botón `+`) y un aviso cuando se llega al tope. También se borra la línea `// import { TreePruningBooking } from '../../components/client/TreePruningBooking';` (código muerto, hallazgo #4). Ningún otro bloque de servicio tocado. |
+| `src/shared/bookingQuoteCore.ts` | `auditoria/setos` | **Fase 3 (2026-09-11), las dos dentro del bloque `if (bookingData.hedgeZones?.length)` de horas (import de `HEDGE_MAX_PLAUSIBLE_LENGTH_M` añadido desde `../domain/hedgeBusinessRules.ts`, misma SSOT que ya usan `manualEntrySchema.ts` y `ai-pricing-estimator`):** (1) sustituida la llamada a `getDurationMultiplier` por el mismo `resolveSurchargePercent(config.condition_surcharges.media/alta, DEFAULT_HEDGE_SURCHARGES)` que ya usaba el bloque de precio — arregla el hallazgo #1, mismo patrón exacto que el fix de césped citado arriba. (2) añadido un `pushWarning('hedge_length_implausible', …)` por zona con `length > HEDGE_MAX_PLAUSIBLE_LENGTH_M` (200 ml) — arregla el hallazgo #3, mismo patrón que `lawn_area_implausible`. También se actualizó el comentario que dejó el fix de césped (línea ~1274) para quitar "setos" de la lista de servicios que aún usan el multiplicador fijo — **sigue siendo cierto para desbroce (`:1351`) y arbustos (`:1361`)**, sin tocar. **No toca** `getDurationMultiplier` en sí ni ningún bloque de otro servicio: contenido en el bloque de setos, **no es transversal** — ver la nota de evaluación transversal más abajo. Verificado: `READINESS_ENGINE=local` 35 PASA/0 FALLA/1 NO PROBADO, `tsc` 172→172 (sin nuevos), `vitest` 434/434. |
 
 La Fase 2 de césped fue de solo lectura. En Fase 3 (autorizada por el usuario en dos vueltas,
 2026-09-11 y 2026-09-12) se corrigieron los dos hallazgos propios de césped: #2 (aviso de
@@ -47,12 +48,42 @@ resultar que el fix cabía entero dentro del bloque de césped sin tocar `getDur
 ni otro servicio, **T3 se retiró** — no era del apartado que le correspondía. El número T3
 queda sin usar a propósito, para no reescribir las referencias cruzadas de T2/T7 a los demás.
 T2, T4, T5, T6 y T7 siguen **anotados, no arreglados**, a la espera de la ronda transversal.
+Setos repitió el mismo patrón en Fase 3 (autorizada 2026-09-11): sus hallazgos #1 y #3, igual
+que los de césped, cupieron enteros en el bloque propio sin tocar código compartido.
+
+**Evaluación transversal de la auditoría de setos (pedida explícitamente por el usuario
+2026-09-11):** de los 3 hallazgos de setos, **ninguno necesita arreglo central** — los tres se
+corrigieron ya, cada uno contenido en un fichero que es "de setos" (el bloque `hedgeZones` de
+`bookingQuoteCore.ts`, o `HedgePricingConfigurator.tsx`, que no comparte código con los otros
+seis configuradores). Dos matices que sí conviene que las próximas auditorías tengan presentes,
+sin ser hallazgos nuevos que haya que anotar aquí como T-algo:
+- **El patrón del hallazgo #1 (horas con un multiplicador fijo en vez del % real del
+  jardinero) sigue vivo, sin tocar, en desbroce (`bookingQuoteCore.ts:1351`) y arbustos
+  (`:1361`)** — cada uno lo verá como un hallazgo propio de su Fase 1/2 cuando le toque, y el
+  fix es el mismo que césped y setos ya aplicaron dos veces: sustituir `getDurationMultiplier`
+  por el `stateMult` que ya calcula el bloque de precio de ese mismo servicio, sin tocar la
+  función compartida. No hace falta pedir autorización para "lo transversal": es un fix
+  contenido, como los dos anteriores.
+- **El hallazgo #2 (autoguardado que dispara en el primer render y puede vaciar un campo mal
+  inferido) es específico de `HedgePricingConfigurator.tsx`**, pero el mecanismo que lo permite
+  — `useAutoSave` (`src/hooks/useAutoSave.ts`) compara el `config` derivado (siempre con la
+  forma completa de `EMPTY_CONFIG`) contra el `initialConfig` crudo de BD con `deepEqual`
+  estricto por número de claves, así que CUALQUIER configurador dispara un guardado al primer
+  render si el jardinero tiene un campo legacy/ausente — no se ha comprobado si algún otro
+  configurador (`LawnPricingConfigurator`, `PalmPricingConfigurator`, `TreePruningConfigurator`,
+  `ShrubPricingConfigurator`, el de desbroce, el de fitosanitarios) tiene su propio
+  `processConfigForSave`-equivalente con una condición similar que pueda vaciar un campo ya
+  configurado. Esto **no se ha tocado ni verificado en ninguno de los otros seis** — queda como
+  aviso para que cada auditoría revise su propio configurador con esta pregunta concreta: *"si
+  lo abro sin tocar nada, ¿el primer autoguardado puede borrar algo que ya estaba bien puesto?"*
 
 Los ficheros que suelen aparecer aquí, para que sepas cuáles vigilar:
 `src/shared/bookingQuoteCore.ts`, `src/pages/reserva/ProvidersPage.tsx`,
 `src/shared/manualEntry/manualEntrySchema.ts`, `src/pages/reserva/manualEntryBuilders.ts`,
 `supabase/functions/booking-authority/index.ts`, `src/types/index.ts`,
 `scripts/readiness/_harness.mjs`.
+
+| `scripts/readiness/restore-fixture.sh` | `auditoria/setos` | Añadido el caso `setos` (`SERVICE_ID='7092ee0e-1779-45cf-bc2d-5235a757c618'`) al lado del ya existente `fitosanitarios`. Aditivo — un `case` más, no toca el de fitosanitarios. Hizo falta porque `HedgePricingConfigurator` reescribe `additional_config` al abrirse (ver hallazgo #2 en el informe de setos): tras verificarlo en vivo hubo que restaurar `pricing_matrix`/`yield_ml_per_hour` de la banda 4-6m antes de seguir midiendo. Fixture guardado en `scripts/readiness/fixtures/setos.config.json` (nuevo, propio de esta rama). No toca `_harness.mjs` ni el fixture de fitosanitarios. |
 
 ---
 
@@ -149,7 +180,7 @@ reprodujiste, y a qué servicios crees que afecta.
 | Rama | Servicio | Estado |
 |---|---|---|
 | `auditoria/cesped` | Corte de césped | Fases 1-3 completas (2026-09-12). Corregidos los dos hallazgos propios: #2 (aviso de plausibilidad) y #1 (horas ligadas al % configurado, no a `getDurationMultiplier`). T2/T4/T5/T6/T7 anotados aquí, sin tocar — esperan ronda transversal. Runner en verde, listo para PR |
-| `auditoria/setos` | Poda de setos | Sin empezar |
+| `auditoria/setos` | Poda de setos | Fases 1-3 completas (2026-09-11). Corregidos los 3 hallazgos propios: #1 horas ligadas al `condition_surcharges` real del jardinero en vez del multiplicador fijo `getDurationMultiplier` (mismo patrón que césped #1); #2 `specialist_enabled` se infiere también desde `pricing_matrix['4-6m'] > 0`, no solo desde el flag explícito o el legacy `selected_categories` — el autoguardado del primer render ya no vacía la banda 4-6m (reproducido y corregido en vivo, con evidencia SQL antes/después); #3 nuevo aviso `hedge_length_implausible` (>200 ml) en el flujo de fotos, mismo patrón que `lawn_area_implausible` de césped. Ninguno era transversal — evaluación explícita en la nota de arriba, con dos avisos (no hallazgos) para desbroce/arbustos (mismo patrón #1 sin corregir en sus bloques) y para las seis auditorías restantes (revisar su propio configurador por el mecanismo que causó #2). Runner en verde: 35 PASA / 0 FALLA / 1 NO PROBADO (transversal T7, no de setos). `tsc` 172→172 (sin errores nuevos), `vitest` 434/434. serviceId real `7092ee0e-1779-45cf-bc2d-5235a757c618` (el de `references/servicios.md` era fantasma). Informe: `docs/audit/2026-09-11-setos/REPORT.md`. Listo para PR. |
 | `auditoria/arboles` | Poda de árboles | Fases 1-3 completas (2026-09-11). Veredicto GO. Corregidos los 4 hallazgos propios: tope de `quantity` (20, manual + UI), texto del configurador de dificultad alta, y 2 ficheros de código muerto. Runner en verde, 434/434 tests, 172 errores de tipo (≤173 de main). T4/T5/T6/T9/T10 anotados aquí, sin tocar — esperan ronda transversal. Listo para PR |
 | `auditoria/palmeras` | Poda de palmeras | Sin empezar |
 | `auditoria/arbustos` | Poda de plantas y arbustos | Sin empezar |

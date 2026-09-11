@@ -173,6 +173,40 @@ reprodujiste, y a qué servicios crees que afecta.
 5. Se ejecutan **todos** los runners, ya por HTTP, no solo el del servicio recién integrado.
 6. Siguiente servicio.
 
+**Hecho para setos el 2026-09-11 (merge y despliegue realizados por el chat, no por el
+usuario, que estaba remoto desde el móvil — excepción puntual, no el flujo por defecto):**
+PR #22 (fix) y #23 (ajuste del runner) fusionadas por squash, `booking-authority` redesplegado
+(`supabase functions deploy booking-authority --project-ref hleqspdnjfswrmozjkai --use-api`),
+`supabase db push --dry-run` confirmó que no había migraciones pendientes. Entorno local
+compartido actualizado: `git pull` + `supabase stop && supabase start` +
+`supabase migration up` (0 aplicadas) en `~/Downloads/GarSer-referencia`, sin migraciones
+pendientes tras reiniciar. **No había forma de avisar a las sesiones activas en tiempo real**
+(sin herramienta de mensajería entre sesiones en este entorno) — si tu sesión estaba en medio
+de algo cuando Supabase se reinició (hora aproximada: 2026-09-11 ~19:40 UTC) y algo falló sin
+motivo aparente, es probablemente por eso; vuelve a intentarlo.
+
+**Paso 5 (todos los runners por HTTP) ejecutado — hallazgo a tener en cuenta si aún no has
+empezado tu Fase 1:** además de setos (ya corregido) y árboles (15/15 PASA, sin cambios),
+**arbustos, desbroce, palmeras y fitosanitarios fallan sus runners al completo**
+(`missing_provider_config`/`inactive_service` en prácticamente todos los escenarios) — **no es
+un fallo del entorno ni de este merge**, es el mismo patrón que setos y árboles ya encontraron
+en su propia Fase 1: el `serviceId` hardcodeado en el runner heredado de la tanda anterior es
+**fantasma** (no existe en este entorno). Confirmado comparando contra
+`select id, name from public.services`:
+
+| Servicio | `serviceId` en el runner (fantasma) | `serviceId` real en BD |
+|---|---|---|
+| Arbustos | `40798630-0bce-4fac-9208-b75ffb59d280` | `649bcd71-514e-4438-ad64-1136172de98a` |
+| Desbroce | `e2bb35b1-d9e8-47bf-a609-e908f6d258ca` | `d946c65f-c588-4103-baca-0317667f04aa` |
+| Palmeras | `7f1b414c-d007-4c73-b1c3-08f7d1954582` | `8e5a99f5-5ab5-40c7-b4f3-a9272c08f47e` |
+| Fitosanitarios | `47a66caa-7671-45ec-b321-df6179249efd` | `fc96088a-81f8-4efc-8908-b28a401ea556` |
+
+`references/servicios.md` (la skill) también tiene estos cuatro IDs desactualizados — no te
+fíes de ese fichero para el `serviceId`, verifica siempre contra la BD (esto ya lo dice la
+skill, pero conviene subrayarlo: van 3 de 3 servicios auditados hasta ahora con el ID
+fantasma). **No se ha tocado ningún runner de estos cuatro servicios** — corresponde a cada
+auditoría arreglar el suyo en su propia Fase 1/2, igual que hicieron césped, árboles y setos.
+
 ---
 
 ## 5. Estado de las auditorías
@@ -180,7 +214,7 @@ reprodujiste, y a qué servicios crees que afecta.
 | Rama | Servicio | Estado |
 |---|---|---|
 | `auditoria/cesped` | Corte de césped | Fases 1-3 completas (2026-09-12). Corregidos los dos hallazgos propios: #2 (aviso de plausibilidad) y #1 (horas ligadas al % configurado, no a `getDurationMultiplier`). T2/T4/T5/T6/T7 anotados aquí, sin tocar — esperan ronda transversal. Runner en verde, listo para PR |
-| `auditoria/setos` | Poda de setos | Fases 1-3 completas (2026-09-11). Corregidos los 3 hallazgos propios: #1 horas ligadas al `condition_surcharges` real del jardinero en vez del multiplicador fijo `getDurationMultiplier` (mismo patrón que césped #1); #2 `specialist_enabled` se infiere también desde `pricing_matrix['4-6m'] > 0`, no solo desde el flag explícito o el legacy `selected_categories` — el autoguardado del primer render ya no vacía la banda 4-6m (reproducido y corregido en vivo, con evidencia SQL antes/después); #3 nuevo aviso `hedge_length_implausible` (>200 ml) en el flujo de fotos, mismo patrón que `lawn_area_implausible` de césped. Ninguno era transversal — evaluación explícita en la nota de arriba, con dos avisos (no hallazgos) para desbroce/arbustos (mismo patrón #1 sin corregir en sus bloques) y para las seis auditorías restantes (revisar su propio configurador por el mecanismo que causó #2). Runner en verde: 35 PASA / 0 FALLA / 1 NO PROBADO (transversal T7, no de setos). `tsc` 172→172 (sin errores nuevos), `vitest` 434/434. serviceId real `7092ee0e-1779-45cf-bc2d-5235a757c618` (el de `references/servicios.md` era fantasma). Informe: `docs/audit/2026-09-11-setos/REPORT.md`. Listo para PR. |
+| `auditoria/setos` | Poda de setos | Fases 1-3 completas (2026-09-11). Corregidos los 3 hallazgos propios: #1 horas ligadas al `condition_surcharges` real del jardinero en vez del multiplicador fijo `getDurationMultiplier` (mismo patrón que césped #1); #2 `specialist_enabled` se infiere también desde `pricing_matrix['4-6m'] > 0`, no solo desde el flag explícito o el legacy `selected_categories` — el autoguardado del primer render ya no vacía la banda 4-6m (reproducido y corregido en vivo, con evidencia SQL antes/después); #3 nuevo aviso `hedge_length_implausible` (>200 ml) en el flujo de fotos, mismo patrón que `lawn_area_implausible` de césped. Ninguno era transversal — evaluación explícita en la nota de arriba, con dos avisos (no hallazgos) para desbroce/arbustos (mismo patrón #1 sin corregir en sus bloques) y para las seis auditorías restantes (revisar su propio configurador por el mecanismo que causó #2). Runner en verde: **35 PASA / 0 FALLA / 1 NO PROBADO, verificado por HTTP contra `booking-authority` ya desplegado** (transversal T7, no de setos). `tsc` 172→172 (sin errores nuevos), `vitest` 434/434. serviceId real `7092ee0e-1779-45cf-bc2d-5235a757c618` (el de `references/servicios.md` era fantasma). **Fusionado y desplegado (2026-09-11): PR #22 (fix) y #23 (ajuste del runner al contrato de `warnings` por HTTP — el motor en local expone `{code,message}`, la API los aplana a `message` string; no era un fallo del fix #3, solo de cómo lo comprobaba el runner) — merge, `supabase functions deploy booking-authority --use-api` y actualización del entorno local compartido hechos por el chat (el usuario estaba remoto sin poder hacerlo).** Informe: `docs/audit/2026-09-11-setos/REPORT.md` §9. Servicio en producción — **estado: GO**. |
 | `auditoria/arboles` | Poda de árboles | Fases 1-3 completas (2026-09-11). Veredicto GO. Corregidos los 4 hallazgos propios: tope de `quantity` (20, manual + UI), texto del configurador de dificultad alta, y 2 ficheros de código muerto. Runner en verde, 434/434 tests, 172 errores de tipo (≤173 de main). T4/T5/T6/T9/T10 anotados aquí, sin tocar — esperan ronda transversal. Listo para PR |
 | `auditoria/palmeras` | Poda de palmeras | Sin empezar |
 | `auditoria/arbustos` | Poda de plantas y arbustos | Sin empezar |

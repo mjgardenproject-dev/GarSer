@@ -1463,6 +1463,15 @@ export function buildAuthoritativeBookingQuote(params: {
     // (auditoría 2026-09-12, hallazgo #2).
     const weedingDifficultyMedia = Math.max(0, toSafeNumber(config.suplementos?.dificultad_media));
     const weedingDifficultyAlta = Math.max(0, toSafeNumber(config.suplementos?.dificultad_alta));
+    // El herbicida suma el mismo % de tiempo que suma de precio (decisión del usuario,
+    // auditoría 2026-09-12, hallazgo #4): en `calculateWeedingQuote` el precio con herbicida
+    // es (base+herbicida)*stateMult*wasteMult = base*(1+herbicidePerM2/pricePerM2)*stateMult*
+    // wasteMult — el mismo factor (1+herbicidePerM2/pricePerM2) se aplica aquí a las horas.
+    // Con la config sembrada (0,15/0,35) el herbicida suma un 42,9 % de precio Y de tiempo.
+    const weedingPricePerM2 = Math.max(0, toSafeNumber(config.precio_desbroce_m2));
+    const weedingHerbicidePerM2 = Math.max(0, toSafeNumber(config.precio_herbicida_m2));
+    const weedingHerbicideMult =
+      weedingPricePerM2 > 0 ? 1 + weedingHerbicidePerM2 / weedingPricePerM2 : 1;
     bookingData.weedingZones.forEach((zone) => {
       const weedingState = normalizeWeedingState(zone.state);
       const weedingStatePercent =
@@ -1472,7 +1481,9 @@ export function buildAuthoritativeBookingQuote(params: {
             ? weedingDifficultyMedia
             : 0;
       const weedingDurationMult = 1 + weedingStatePercent / 100;
-      totalHours += (Number(zone.area || 0) / yieldM2) * weedingDurationMult * weedingWasteMult;
+      const weedingZoneHerbicideMult = zone.applyHerbicide ? weedingHerbicideMult : 1;
+      totalHours +=
+        (Number(zone.area || 0) / yieldM2) * weedingDurationMult * weedingWasteMult * weedingZoneHerbicideMult;
       // Anti-alucinación: mismo patrón que lawn_area_implausible/hedge_length_implausible/
       // palm_quantity_implausible/shrub_area_implausible (auditoría de desbroce 2026-09-12,
       // hallazgo #3). Desbroce era el único de los 5 servicios de área/cantidad sin ninguno.

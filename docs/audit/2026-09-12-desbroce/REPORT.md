@@ -1,14 +1,17 @@
 # Preparación para producción — Desbroce de malas hierbas
 
-**Veredicto: GO** (Fases 1-3 completas, 2026-09-12)
+**Veredicto: GO** (Fases 1-3 completas, 2026-09-12 — dos rondas de corrección)
 
-Los dos hallazgos bloqueantes de la Fase 2 (§1, hallazgos #1 y #2) están corregidos y
-reverificados: la validación de rango ya se ejecuta en el único camino real del cliente, y
-las horas ya usan el recargo real del jardinero en vez de un multiplicador fijo. También el
-hallazgo grave #3 (sin aviso de plausibilidad). El detalle completo de qué se tocó, cómo se
-reverificó y qué queda pendiente está en **§9 — Fase 3: Corrección**, al final de este
-informe. El hallazgo menor #4 (herbicida sin tiempo estimado) se deja sin tocar a propósito:
-es una pregunta de negocio, no un bug de código — ver §9.
+Los 4 hallazgos de §1 están corregidos y reverificados: la validación de rango ya se
+ejecuta en el único camino real del cliente, las horas ya usan el recargo real del
+jardinero en vez de un multiplicador fijo, existe aviso de plausibilidad de superficie, y
+aplicar herbicida ya suma tiempo proporcionalmente a como suma precio. **Segunda ronda
+(2026-09-12, autorizada explícitamente por el usuario)**: el hallazgo #1 se corrigió más a
+fondo de lo descrito en la primera ronda — en vez de solo parchear el editor ad-hoc, se
+retiró por completo y desbroce pasa a usar el mismo `ManualEntryWizard` genérico que los
+otros 6 servicios, con encuesta, validación y registro de auditoría (`manual_declaration`)
+ya existentes y probados. El detalle completo de las dos rondas está en **§9** y **§10**,
+al final de este informe.
 
 **Histórico — veredicto original de Fase 1+2 (previo a la corrección): NO-GO**, por estos
 dos motivos, ambos ya resueltos en §9:
@@ -387,11 +390,129 @@ hallazgo #1 ya corregido pero invisible a este modo de medición — ver arriba)
 
 `npx vitest run`: **437 → 437**, todo verde.
 
-Ficheros tocados por esta rama en Fase 3: `src/shared/bookingQuoteCore.ts` (bloque de
-desbroce, más la eliminación de `getDurationMultiplier` que quedó huérfana),
+Ficheros tocados por esta rama en Fase 3 (primera ronda): `src/shared/bookingQuoteCore.ts`
+(bloque de desbroce, más la eliminación de `getDurationMultiplier` que quedó huérfana),
 `src/pages/reserva/DetailsPage.tsx` (`commitSimplePhotoCollectionPatch`),
 `scripts/readiness/desbroce.mjs`, y este informe. Nada de otro servicio, ni
 `_harness.mjs`, ni ningún fichero compartido más allá de los dos ya citados en
 `bookingQuoteCore.ts`/`DetailsPage.tsx` (que también tocan otras auditorías, en sus propios
-bloques — ver el registro en `COORDINACION-SERVICIOS.md` §2, actualizado). La PR la abre
-el usuario.
+bloques — ver el registro en `COORDINACION-SERVICIOS.md` §2, actualizado).
+
+## 10. Fase 3, segunda ronda (2026-09-12) — herbicida con tiempo real y unificación con el asistente genérico
+
+El usuario pidió explícitamente cerrar los dos puntos que la primera ronda había dejado
+abiertos: que el herbicida sume tiempo, y que desbroce deje de depender del editor ad-hoc
+retirando la encuesta muerta en favor del asistente genérico. Los dos están hechos.
+
+### Hallazgo #4 — herbicida con tiempo proporcional al recargo de precio
+
+Pregunté cómo debía repartirse el tiempo del herbicida (rendimiento nuevo, tiempo fijo, o
+dejarlo tal cual) y el usuario respondió con una regla precisa: **el mismo % que el
+herbicida suma al precio, lo suma también a las horas.**
+
+**Fix:** `src/shared/bookingQuoteCore.ts`, mismo bloque de horas de desbroce. En
+`calculateWeedingQuote` el precio con herbicida ya era
+`(base+herbicida)×stateMult×wasteMult = base×(1+herbicidaPerM2/precioPerM2)×stateMult×wasteMult`
+— se aplica exactamente ese mismo factor `(1+herbicidaPerM2/precioPerM2)` a las horas,
+solo cuando `zone.applyHerbicide` es `true`. Con la config sembrada
+(0,15/0,35=42,9 %), aplicar herbicida suma un 42,9 % de precio **y** de tiempo.
+
+**Verificación:**
+- Runner, S4 (1000 m², normal, con herbicida, sin retirada): `500 € · 11,0 h` — antes de
+  esta ronda eran horas sin verificar (`estimatedHours: undefined` en el `expectQuote`);
+  ahora se afirma el valor exacto y pasa: `(1000/120)×1,0×1×1,42857=11,905h; >8h→×0,9=
+  10,714h; ceil(10,714×2)/2=11,0h`.
+- En vivo, navegador, con dificultad alta + herbicida a la vez (300 m², dificultad alta,
+  con herbicida, con retirada): el motor en proceso da `270 € · 6,5 h`
+  (`(300/120)×1,5×1,2×1,42857=6,4286h→ceil(6,4286×2)/2=6,5h`) — verificado con
+  `READINESS_ENGINE=local` directamente, no por HTTP: la pantalla mostró `4,5 h` porque la
+  función desplegada en el entorno compartido sigue sirviendo el motor de
+  `GarSer-referencia`, sin este fix ni el de horas de la primera ronda — la misma
+  limitación estructural que ya se explicó para el hallazgo #1/4b: los cambios de motor no
+  se ven por HTTP hasta el despliegue.
+
+### Hallazgo original #1 (revisitado) — retirado el editor ad-hoc, unificado con `ManualEntryWizard`
+
+La primera ronda dejó dicho: *"elegí el fix mínimo (arreglar el editor ad-hoc que ya
+existe) en vez de resucitar el asistente genérico"*. El usuario pidió resucitarlo. Hecho.
+
+**Qué cambió:** `isManualActive` (línea ~757 de `DetailsPage.tsx`) pasa a ser
+`isManualOnlyActive || (manualChoiceAvailable && dataInputMode === 'manual')`, donde
+`isManualOnlyActive = isManualOnlyService(manualServiceKey)`. Esto activa el asistente
+genérico para desbroce **siempre**, sin pasar por la pantalla de elección foto/manual (que
+sigue sin mostrarse, correctamente, porque no hay elección que hacer) y, deliberadamente,
+**sin depender de `manualFlowEnabled`** (`VITE_ENABLE_MANUAL_BOOKING_INPUT`, que en
+`.env.example` vale `false` por defecto): ese flag existe para ofrecer el asistente como
+alternativa a las fotos en los otros 6 servicios, pero desbroce no tiene fotos que
+ofrecer — si el flag estuviera apagado en producción sin este bypass, desbroce se habría
+quedado sin ninguna forma de declarar datos. No pude comprobar el valor real de esa
+variable en Vercel, pero el bypass es correcto sea cual sea: si el flag está encendido, no
+cambia nada; si está apagado, es lo único que evita que el servicio quede inservible.
+
+**Qué se retiró de `DetailsPage.tsx`** (334 líneas netas menos), todo exclusivo de
+desbroce y sin tocar ningún otro servicio: el editor ad-hoc "Detalles del Desbroce"
+(superficie/estado/herbicida a mano), sus 3 `useEffect` de inicialización/hidratación,
+`createDefaultWeedingZone`/`updateSingleWeedingZone`/`handleWeedingAreaChange`/
+`handleWeedingStateChange`/`handleToggleWeedingHerbicide`, el estado
+`weedingManualConfirmed` y su casilla de consentimiento manual, la validación de desbroce
+en `handleContinue` (ya inalcanzable: ese botón está oculto en modo manual), la rama de
+desbroce en el botón "Datos de prueba", y el import de `weedingPersistence.ts` — que al
+quedar sin ningún otro consumidor en todo el repo, se **eliminó** como fichero completo
+(no solo el import). También se ocultó el enlace "Cambiar a fotos" del asistente para
+servicios manual-only (`showSwitchToPhotos={!isManualOnlyActive}`): antes aparecía sin
+hacer nada útil, porque `isManualActive` no depende de `dataInputMode` para estos
+servicios.
+
+**Verificación en vivo, reserva nueva de principio a fin:**
+1. Al seleccionar "Desbroce de malas hierbas" y llegar a "Detalles", aparece el asistente
+   genérico ("Paso 1 de 3 — ¿Qué superficie hay que desbrozar?", con los límites 1-10.000 m²
+   ya visibles en la UI) en vez del formulario antiguo. Sin "Cambiar a fotos".
+2. Recorrido completo: superficie 300 m² → dificultad alta → herbicida sí → retirada de
+   restos sí → pantalla de resumen ("Revisa tus datos antes de continuar", con los 4 valores
+   listados) → casilla de consentimiento → "Confirmar y continuar".
+3. Precio mostrado: **303,75 €** (270,00 € profesional + 33,75 € gestión) — coincide con
+   `(300×0,35+300×0,15)×1,5×1,2=270€` calculado a mano.
+4. Pago real con tarjeta de test (`4242 4242 4242 4242`) → `PAGO CONFIRMADO`. Reserva en BD
+   (`id=dcdbe049-6444-4c0e-8556-448d7a7ac715`): `status=pending`, `total_price=270.00`,
+   **`manual_declaration_id` poblado** (`0fa36176-9f3b-44f4-93be-d8cbe359aac5`) — la
+   auditoría que la primera ronda decía que desbroce era "el único de los siete sin
+   prueba de lo que aceptó el cliente" ya existe: `booking_manual_declarations` guarda
+   `{"items":[{"area":300,"state":"dificultad_alta","applyHerbicide":true}],
+   "serviceKey":"weeding","wasteRemoval":true}`.
+5. Panel del jardinero, "Solicitudes de Reserva": la solicitud de desbroce ahora muestra
+   **"Datos introducidos manualmente por el cliente · no verificados por IA"** y el aviso
+   "Revisa las medidas al llegar" — exactamente igual que Poda de árboles y Poda de setos
+   en la misma pantalla, y ya **no** dice "Analizado por IA (fotos)". El campo "Con
+   herbicida: Sí" aparece correctamente en el detalle.
+6. Aceptación del jardinero → `bookings.status: pending→confirmed`. Ciclo completo cerrado
+   por segunda vez con una reserva distinta.
+
+**Riesgo que no pude descartar del todo:** la firma compartida `ContinueStateParams` de
+`detailsPagePresentation.ts` sigue teniendo su rama `isWeeding` y el parámetro
+`weedingManualConfirmed` (ahora un valor inerte `false` desde `DetailsPage.tsx`, ver §9).
+No la toqué porque es un fichero con su propia batería de tests
+(`detailsPagePresentation.test.ts`) y limpiarla es cosmético, no funcional — la rama ya es
+inalcanzable porque el botón que la invoca está oculto en modo manual. Lo dejo anotado por
+si algún día se quiere una limpieza completa.
+
+### Cierre verificado (segunda ronda)
+
+```
+READINESS_ENGINE=local SUPABASE_PROJECT_DIR=~/Downloads/GarSer-referencia \
+  SUPABASE_DB_CONTAINER=supabase_db_GarSer-referencia \
+  node scripts/readiness/desbroce.mjs
+```
+→ **19 PASA · 0 FALLA · 3 NO PROBADO** (uno menos que la primera ronda: las horas de S4
+pasan de `untested` a `PASA` con un valor afirmado).
+
+`npx tsc --noEmit -p tsconfig.app.json`: **171** (una menos que el baseline de 172 — se
+eliminó, de paso, un error de tipos preexistente en el `manualConsent` ternario que
+desapareció junto con el bloque que lo causaba).
+
+`npx vitest run`: **437 → 437**, todo verde.
+
+Ficheros tocados en esta segunda ronda: `src/shared/bookingQuoteCore.ts` (mismo bloque de
+horas de desbroce), `src/pages/reserva/DetailsPage.tsx` (334 líneas netas menos),
+`src/utils/weedingPersistence.ts` (**eliminado**, huérfano), `scripts/readiness/desbroce.mjs`,
+y este informe. Añadido como un segundo commit al PR #28 ya abierto, a petición explícita
+del usuario.

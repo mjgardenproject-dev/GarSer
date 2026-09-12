@@ -51,14 +51,16 @@ async function main() {
     await quote(SERVICE_ID, { weedingZones: [{ area: 1000, state: 'dificultad_alta', applyHerbicide: false }], wasteRemoval: false }),
     { totalPrice: 525, estimatedHours: 11.5 });
 
-  // Mismo T2 que S2 (estado normal, mismo (1000/120) con residuo de coma flotante): el
-  // herbicida solo suma precio, no horas — el motor no reserva tiempo extra por aplicarlo
-  // (hallazgo #4, menor, pendiente de decisión de negocio — ver informe).
-  await expectQuote('S4 con herbicida: 1000m², normal, sin retirada (solo precio)',
+  // Hallazgo #4 CORREGIDO (Fase 3, 2026-09-12, a petición explícita del usuario): el
+  // herbicida suma el MISMO % de tiempo que suma de precio. En `calculateWeedingQuote` el
+  // precio con herbicida es base*(1+herbicidePerM2/pricePerM2)*stateMult*wasteMult — aquí se
+  // aplica el mismo factor (1+0,15/0,35=1,428571) a las horas. Cálculo:
+  // (1000/120)*1,0*1*1,428571=11,9048h; >8h→×0,9=10,7143h; ceil(10,7143*2)/2=11,0h — un
+  // valor limpio, sin el residuo de coma flotante de T2 (no hay ×0.9 que deje resto exacto
+  // aquí porque 10,7143*2=21,42857, cuyo techo es 22 de forma estable).
+  await expectQuote('S4 con herbicida: 1000m², normal, sin retirada',
     await quote(SERVICE_ID, { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: true }], wasteRemoval: false }),
-    { totalPrice: 500, estimatedHours: undefined });
-  untested('S4 horas: 7,5h exactas esperadas (mismo cálculo que S2, herbicida no cambia horas)',
-    'Mismo T2 que S2 — ver esa cita. Transversal, no se toca en esta rama.');
+    { totalPrice: 500, estimatedHours: 11 });
 
   await expectQuote('S5 mínimo: 50m², normal, sin herbicida, sin retirada',
     await quote(SERVICE_ID, { weedingZones: [{ area: 50, state: 'normal', applyHerbicide: false }], wasteRemoval: false }),

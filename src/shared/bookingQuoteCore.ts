@@ -265,6 +265,15 @@ const PALM_MAX_PLAUSIBLE_QUANTITY = 20;
 const SHRUB_MAX_PLAUSIBLE_AREA_M2 = 500;
 
 /**
+ * Superficie plausible de una parcela de desbroce residencial, mismo criterio que
+ * `LAWN_MAX_PLAUSIBLE_AREA_M2`. Desbroce era el único de los cinco servicios de área/cantidad
+ * (césped, setos, palmeras, arbustos, fitosanitarios) sin ningún aviso de plausibilidad — una
+ * superficie absurda no generaba ni un warning aunque pasara la validación de rango (auditoría
+ * 2026-09-12, hallazgo #3). Solo avisa, no bloquea — mismo patrón que los anteriores.
+ */
+const WEEDING_MAX_PLAUSIBLE_AREA_M2 = 2000;
+
+/**
  * Resuelve un % de recargo respetando el 0 explícito del jardinero.
  * El patrón anterior (`surcharges.media || 20`) pisaba un 0 configurado a
  * propósito con el default → sobrecobro para jardineros que decidieron no
@@ -431,15 +440,6 @@ const buildIneligibleQuote = (
     reason: code,
   },
 });
-
-const getDurationMultiplier = (state: string) => {
-  const normalized = String(state || 'normal').toLowerCase();
-  if (normalized.includes('muy') && normalized.includes('descuidad')) return 1.7;
-  if (normalized.includes('descuidad')) return 1.3;
-  if (normalized.includes('alta')) return 1.7;
-  if (normalized.includes('media')) return 1.3;
-  return 1.0;
-};
 
 const buildShrubBreakdown = (bookingData: SerializableBookingData, config: any, globalWaste: boolean): BookingQuoteLine[] => {
   const priceTable = config?.prices_per_m2 || {};
@@ -1373,10 +1373,10 @@ export function buildAuthoritativeBookingQuote(params: {
     // El % de condition_surcharges es tiempo Y precio a la vez: si el trabajo tarda un 50 %
     // más, cuesta un 50 % más, y viceversa — no dos magnitudes independientes. Por eso las
     // horas usan aquí la MISMA resolución que el precio (mismos fallbacks, más abajo en este
-    // bloque) en vez del multiplicador fijo `getDurationMultiplier` que usan desbroce/arbustos
-    // (setos corregido más abajo, auditoría 2026-09-11): ese fijo es lo que hacía que un
-    // jardinero con un recargo distinto del 20/50 % por defecto reservara un tiempo que no
-    // correspondía a lo que cobraba.
+    // bloque) en vez de un multiplicador fijo (setos, arbustos y desbroce corregidos con el
+    // mismo patrón en auditorías posteriores — ver sus propios bloques más abajo): un fijo
+    // es lo que hacía que un jardinero con un recargo distinto del 20/50 % por defecto
+    // reservara un tiempo que no correspondía a lo que cobraba.
     const lawnSurcharges = config.condition_surcharges || {};
     bookingData.lawnZones.forEach((zone) => {
       const state = String(zone.state || 'normal').toLowerCase();
@@ -1456,8 +1456,32 @@ export function buildAuthoritativeBookingQuote(params: {
     // El desbroce usa suplementos.retirada_restos (no waste_removal.percentage). La retirada
     // también consume tiempo: sin este multiplicador se bloqueaban slots de menos (§7.6).
     const weedingWasteMult = globalWaste ? 1 + Number(config.suplementos?.retirada_restos || 0) / 100 : 1;
+    // Mismo stateMult que el bloque de precio (`calculateWeedingQuote`, más arriba): el % de
+    // suplementos.dificultad_media/alta es tiempo y precio a la vez, igual que césped/setos/
+    // arbustos. Antes usaba el `getDurationMultiplier` fijo (1,3/1,7) — con la config sembrada
+    // (20/50 %) eso reservaba hasta 1,5-2 h de más sin que el precio reflejara esa hora
+    // (auditoría 2026-09-12, hallazgo #2).
+    const weedingDifficultyMedia = Math.max(0, toSafeNumber(config.suplementos?.dificultad_media));
+    const weedingDifficultyAlta = Math.max(0, toSafeNumber(config.suplementos?.dificultad_alta));
     bookingData.weedingZones.forEach((zone) => {
-      totalHours += (Number(zone.area || 0) / yieldM2) * getDurationMultiplier(zone.state || 'normal') * weedingWasteMult;
+      const weedingState = normalizeWeedingState(zone.state);
+      const weedingStatePercent =
+        weedingState === 'dificultad_alta'
+          ? weedingDifficultyAlta
+          : weedingState === 'dificultad_media'
+            ? weedingDifficultyMedia
+            : 0;
+      const weedingDurationMult = 1 + weedingStatePercent / 100;
+      totalHours += (Number(zone.area || 0) / yieldM2) * weedingDurationMult * weedingWasteMult;
+      // Anti-alucinación: mismo patrón que lawn_area_implausible/hedge_length_implausible/
+      // palm_quantity_implausible/shrub_area_implausible (auditoría de desbroce 2026-09-12,
+      // hallazgo #3). Desbroce era el único de los 5 servicios de área/cantidad sin ninguno.
+      if (Number(zone.area) > WEEDING_MAX_PLAUSIBLE_AREA_M2) {
+        pushWarning(
+          'weeding_area_implausible',
+          `La superficie declarada (${zone.area} m²) supera lo habitual para una parcela residencial (${WEEDING_MAX_PLAUSIBLE_AREA_M2} m²): confirma la medida antes de continuar.`,
+        );
+      }
     });
   }
 

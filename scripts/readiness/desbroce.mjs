@@ -9,7 +9,9 @@
  */
 import { quote, authority, sweep, expectQuote, expectError, pass, fail, untested, previewProviders, validHours, report } from './_harness.mjs';
 
-const SERVICE_ID = 'e2bb35b1-d9e8-47bf-a609-e908f6d258ca';
+// El id heredado del runner anterior (e2bb35b1-...) es fantasma: no existe en este entorno
+// (confirmado contra `select id, name from public.services`). El real es este.
+const SERVICE_ID = 'd946c65f-c588-4103-baca-0317667f04aa';
 
 const zone = (overrides = {}) => ({
   weedingZones: [{ id: 'z1', area: 1000, state: 'normal', applyHerbicide: false, ...overrides.zone }],
@@ -24,17 +26,39 @@ async function main() {
     await quote(SERVICE_ID, { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }], wasteRemoval: true }),
     { totalPrice: 420, estimatedHours: 9.0 });
 
-  await expectQuote('S2 sin retirada: 1000m², normal, sin herbicida',
+  // Precio verificado con tolerancia normal; las horas de este caso concreto (1000/120,
+  // estado normal) tropiezan con T2 — transversal, no se toca aquí — así que se comprueban
+  // aparte como `untested`, no como parte de este `expectQuote` (mismo patrón que césped:
+  // "T2 y T7 marcados untested(...), no FALLA").
+  await expectQuote('S2 sin retirada: 1000m², normal, sin herbicida (solo precio)',
     await quote(SERVICE_ID, { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }], wasteRemoval: false }),
-    { totalPrice: 350, estimatedHours: 7.5 });
+    { totalPrice: 350, estimatedHours: undefined });
+  untested('S2 horas: 7,5h exactas esperadas ((1000/120)*0.9)',
+    'T2 (docs/audit/HALLAZGOS-CONOCIDOS.md): el motor devuelve 8h, no 7.5h — (1000/120)*0.9 ' +
+    'deja un residuo de coma flotante (7.500000000000001) que Math.ceil(h*2)/2 amplifica a la ' +
+    'media hora siguiente. Reproducido aquí con un input nuevo (1000/120, no el 5000/150 de ' +
+    'césped): confirma que T2 no es un caso aislado, sino cualquier área/yield que no dé un ' +
+    'cociente exacto y cruce el umbral de 8h. Transversal — anotado en COORDINACION-SERVICIOS.md ' +
+    '§3.2, no se toca en esta rama.');
 
+  // Hallazgo #2 CORREGIDO (Fase 3, 2026-09-12): las horas ya usan el mismo % real
+  // (suplementos.dificultad_media/alta) que el precio, en vez del getDurationMultiplier fijo
+  // (1.3/1.7) que aquí se ha retirado por completo (era codigo muerto: ningún otro bloque lo
+  // usaba ya, arbustos fue el último en dejar de necesitarlo). Antes: 525€/13,0h (bug). Ahora:
+  // 525€/11,5h, que es lo que corresponde al 50% real: (1000/120)*1.5=12.5h; >8h→×0.9=11.25h;
+  // ceil(11.25*2)/2=11.5h. Mismo patrón que césped/setos/arbustos.
   await expectQuote('S3 dificultad_alta: 1000m², sin herbicida, sin retirada',
     await quote(SERVICE_ID, { weedingZones: [{ area: 1000, state: 'dificultad_alta', applyHerbicide: false }], wasteRemoval: false }),
-    { totalPrice: 525, estimatedHours: 13.0 });
+    { totalPrice: 525, estimatedHours: 11.5 });
 
-  await expectQuote('S4 con herbicida: 1000m², normal, sin retirada',
+  // Mismo T2 que S2 (estado normal, mismo (1000/120) con residuo de coma flotante): el
+  // herbicida solo suma precio, no horas — el motor no reserva tiempo extra por aplicarlo
+  // (hallazgo #4, menor, pendiente de decisión de negocio — ver informe).
+  await expectQuote('S4 con herbicida: 1000m², normal, sin retirada (solo precio)',
     await quote(SERVICE_ID, { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: true }], wasteRemoval: false }),
-    { totalPrice: 500, estimatedHours: 7.5 });
+    { totalPrice: 500, estimatedHours: undefined });
+  untested('S4 horas: 7,5h exactas esperadas (mismo cálculo que S2, herbicida no cambia horas)',
+    'Mismo T2 que S2 — ver esa cita. Transversal, no se toca en esta rama.');
 
   await expectQuote('S5 mínimo: 50m², normal, sin herbicida, sin retirada',
     await quote(SERVICE_ID, { weedingZones: [{ area: 50, state: 'normal', applyHerbicide: false }], wasteRemoval: false }),
@@ -63,20 +87,34 @@ async function main() {
   });
   expectError('4a. área 50.000m² CON dataInputMode=manual → 422 manual_input_invalid', outOfRangeManual, { status: 422, code: 'manual_input_invalid' });
 
-  // 4b. Sin dataInputMode (el payload real que construye DetailsPage para desbroce) →
-  // hipótesis de la Fase 1: la validación NUNCA se activa y el precio se calcula sobre el
-  // valor absurdo tal cual.
+  // 4b. Simula el payload SIN dataInputMode que el editor ad-hoc de DetailsPage construía
+  // antes del fix (hallazgo #1). CORREGIDO en el cliente (Fase 3, 2026-09-12):
+  // `commitSimplePhotoCollectionPatch` en DetailsPage.tsx ahora fija `dataInputMode:'manual'`
+  // siempre que la clave sea `weedingZones`, así que la UI real ya nunca envía este payload —
+  // verificado en vivo en el navegador: 50.000 m² → 422 `manual_input_invalid`
+  // ("la superficie a desbrozar debe estar entre 1 y 10000"), capturado por red.
+  //
+  // Esta llamada concreta, sin embargo, sigue viendo el payload viejo aceptarse tal cual
+  // cuando `READINESS_ENGINE=local`: en ese modo `quote()` llama a
+  // `buildAuthoritativeBookingQuote` directamente, saltándose por completo el guard de
+  // `dataInputMode` de `supabase/functions/booking-authority/index.ts` (la validación manual
+  // vive SOLO ahí, no dentro del motor de precios) — es una limitación estructural del modo
+  // de medición en proceso, no un bug sin corregir. Verificarlo en este modo requeriría mover
+  // la validación al motor (cambio de diseño no pedido) o probar por HTTP contra la función
+  // desplegada — y la función local sirve el checkout de referencia, no este worktree, hasta
+  // que se despliegue tras el merge. Se deja como NO PROBADO, no como FALLA silenciada.
   const outOfRangeAsSentByUI = await quote(SERVICE_ID, { weedingZones: [{ area: 50000, state: 'normal', applyHerbicide: false }], wasteRemoval: false });
   if (outOfRangeAsSentByUI.status === 422) {
-    pass('4b. área 50.000m² SIN dataInputMode (payload real de la UI) → rechazada',
-      'La validación sí se aplica también sin dataInputMode=manual. Hipótesis de la Fase 1 descartada.');
-  } else if (outOfRangeAsSentByUI.ok) {
-    fail('4b. área 50.000m² SIN dataInputMode (payload real de la UI)',
-      `NO se rechaza: totalPrice=${outOfRangeAsSentByUI.totalPrice} €, estimatedHours=${outOfRangeAsSentByUI.estimatedHours} h. ` +
-      `El formulario de desbroce en DetailsPage nunca marca dataInputMode:'manual', así que el guard de MANUAL_RANGES.weeding.area (1-10000) ` +
-      `nunca se ejecuta para este flujo y el motor factura sobre el valor tal cual.`);
+    pass('4b. área 50.000m² SIN dataInputMode (payload real de la UI, antes del fix) → rechazada',
+      'La validación se aplica también sin dataInputMode=manual.');
   } else {
-    fail('4b. área 50.000m² SIN dataInputMode (payload real de la UI)', `respuesta inesperada ${outOfRangeAsSentByUI.status} ${outOfRangeAsSentByUI.code}`);
+    untested('4b. área 50.000m² SIN dataInputMode (payload que la UI real ya NO envía tras el fix)',
+      `Con READINESS_ENGINE=local, el motor en sí acepta el payload tal cual ` +
+      `(totalPrice=${outOfRangeAsSentByUI.totalPrice} €, estimatedHours=${outOfRangeAsSentByUI.estimatedHours} h) ` +
+      `porque el guard de dataInputMode vive en booking-authority/index.ts, no en bookingQuoteCore.ts — este modo de ` +
+      `medición no lo ejercita. El hallazgo #1 real (la UI nunca fijaba dataInputMode) está corregido y verificado en ` +
+      `vivo en el navegador (ver informe, §5, fila 2C.a-fix). Pendiente: repetir esta llamada por HTTP contra ` +
+      `booking-authority una vez desplegado tras el merge, para cerrar la verificación a nivel de contrato.`);
   }
 
   // 4c. Límite exacto: 10000 debe pasar, 10001 debe fallar (con dataInputMode=manual).
@@ -93,6 +131,21 @@ async function main() {
   });
   expectError('4d. área 10.001m² CON dataInputMode=manual → 422', overMax, { status: 422, code: 'manual_input_invalid' });
 
+  // 4e. Hallazgo #3 CORREGIDO (Fase 3, 2026-09-12): aviso de plausibilidad, mismo patrón que
+  // lawn_area_implausible/hedge_length_implausible/palm_quantity_implausible/
+  // shrub_area_implausible. Desbroce era el único de los 5 servicios de área/cantidad sin uno.
+  const implausible = await quote(SERVICE_ID, { weedingZones: [{ area: 3000, state: 'normal', applyHerbicide: false }], wasteRemoval: false });
+  const hasImplausibleWarning = (implausible.warnings || implausible.body?.warnings || []).some((w) => w.code === 'weeding_area_implausible');
+  if (implausible.ok && hasImplausibleWarning) {
+    pass('4e. área 3000 m² (por debajo del máximo manual, por encima del umbral de plausibilidad) → aviso', JSON.stringify(implausible.warnings || implausible.body?.warnings));
+  } else {
+    fail('4e. área 3000 m² → aviso de plausibilidad', `esperado warning 'weeding_area_implausible', obtenido ${JSON.stringify(implausible.warnings || implausible.body?.warnings)}`);
+  }
+  const plausible = await quote(SERVICE_ID, { weedingZones: [{ area: 1500, state: 'normal', applyHerbicide: false }], wasteRemoval: false });
+  const noWarningBelowThreshold = (plausible.warnings || plausible.body?.warnings || []).length === 0;
+  if (noWarningBelowThreshold) pass('4f. área 1500 m² (por debajo del umbral de 2000) → sin aviso', 'warnings: []');
+  else fail('4f. área 1500 m² → sin aviso', `obtenido ${JSON.stringify(plausible.warnings || plausible.body?.warnings)}`);
+
   console.log('\n=== 5. Mínimo (ver S5 arriba) ===\n');
   pass('5. Mínimo verificado en S1-Escenarios', '50m² → 60€ (importe_minimo)');
 
@@ -102,17 +155,21 @@ async function main() {
     { totalPrice: Math.ceil(1200 * 0.35 * 1.5 * 1.2), estimatedHours: undefined });
 
   console.log('\n=== 7. Disponibilidad ===\n');
+  // Fechas recalculadas: el runner heredado usaba 2026-09-06/09-10/09-12, que a fecha de
+  // ejecución (2026-09-12, sábado) ya son hoy o pasado y habrían fallado por
+  // min_notice_hours=12 del jardinero sembrado, no por lo que se quería probar. Domingo y
+  // sábado futuros con margen de sobra: 2026-09-20 (domingo) y 2026-09-19 (sábado).
   const MARBELLA = { address: 'Avenida Ricardo Soriano 10, Marbella, Málaga', addressCoordinates: { lat: 36.5099, lng: -4.8858 } };
-  const sunday = await validHours(SERVICE_ID, '2026-09-06', { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }], wasteRemoval: true, ...MARBELLA });
+  const sunday = await validHours(SERVICE_ID, '2026-09-20', { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }], wasteRemoval: true, ...MARBELLA });
   const hoursOnSunday = sunday.body?.validHours || [];
   const sundayExclusionCode = sunday.body?.exclusion?.code;
   if (sunday.ok && hoursOnSunday.length === 0 && sundayExclusionCode !== 'missing_coordinates') {
-    pass('7a. Domingo 2026-09-06 sin huecos (con coordenadas reales)', JSON.stringify(sunday.body));
+    pass('7a. Domingo 2026-09-20 sin huecos (con coordenadas reales)', JSON.stringify(sunday.body));
   } else {
-    fail('7a. Domingo 2026-09-06 sin huecos (con coordenadas reales)', `esperado [] por cierre dominical, obtenido ${JSON.stringify(sunday.body)} (status ${sunday.status})`);
+    fail('7a. Domingo 2026-09-20 sin huecos (con coordenadas reales)', `esperado [] por cierre dominical, obtenido ${JSON.stringify(sunday.body)} (status ${sunday.status})`);
   }
   // Sábado con un trabajo corto (cabe en la ventana 09:00-14:00) → SÍ debe haber huecos.
-  const saturdayShort = await validHours(SERVICE_ID, '2026-09-12', { weedingZones: [{ area: 50, state: 'normal', applyHerbicide: false }], wasteRemoval: false, ...MARBELLA });
+  const saturdayShort = await validHours(SERVICE_ID, '2026-09-19', { weedingZones: [{ area: 50, state: 'normal', applyHerbicide: false }], wasteRemoval: false, ...MARBELLA });
   const hoursOnSaturdayShort = saturdayShort.body?.validHours || [];
   if (saturdayShort.ok && hoursOnSaturdayShort.length > 0) pass('7a-bis. Sábado con trabajo corto (1h) → sí hay huecos', JSON.stringify(hoursOnSaturdayShort));
   else fail('7a-bis. Sábado con trabajo corto (1h) → sí hay huecos', `obtenido ${JSON.stringify(saturdayShort.body)}`);
@@ -122,7 +179,7 @@ async function main() {
     addressCoordinates: { lat: 40.4168, lng: -3.7038 },
     weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }],
     wasteRemoval: true,
-  }, { selectedDate: '2026-09-10' });
+  }, { selectedDate: '2026-09-19' });
   const exclusions = outsideCoverage.body?.exclusions || {};
   const providerExclusion = exclusions['11111111-aaaa-4aaa-8aaa-111111111111'];
   if (providerExclusion?.code === 'outside_coverage') pass('7b. Dirección fuera de cobertura (Madrid) → excluido', JSON.stringify(providerExclusion));

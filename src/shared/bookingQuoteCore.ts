@@ -254,6 +254,17 @@ const LAWN_MAX_PLAUSIBLE_AREA_M2 = 2000;
 const PALM_MAX_PLAUSIBLE_QUANTITY = 20;
 
 /**
+ * Superficie plausible de un macizo de plantas/arbustos residencial, alineada con el
+ * mismo límite que el prompt a Gemini ya declara ("Residential shrub beds measure between
+ * 1 and 500 m2", ai-pricing-estimator/new_prompts.ts) — ahí es una instrucción al modelo,
+ * no una validación; esta es la única red de seguridad del lado del motor. Sin este aviso
+ * no había ninguna forma de detectar una superficie absurda por ningún camino (auditoría
+ * 2026-09-12, hallazgo #4). Solo avisa, no bloquea — mismo patrón que
+ * lawn_area_implausible/hedge_length_implausible/palm_quantity_implausible.
+ */
+const SHRUB_MAX_PLAUSIBLE_AREA_M2 = 500;
+
+/**
  * Resuelve un % de recargo respetando el 0 explícito del jardinero.
  * El patrón anterior (`surcharges.media || 20`) pisaba un 0 configurado a
  * propósito con el default → sobrecobro para jardineros que decidieron no
@@ -431,11 +442,11 @@ const getDurationMultiplier = (state: string) => {
 };
 
 const buildShrubBreakdown = (bookingData: SerializableBookingData, config: any, globalWaste: boolean): BookingQuoteLine[] => {
-  const lines: BookingQuoteLine[] = [];
   const priceTable = config?.prices_per_m2 || {};
   const surcharges = config?.condition_surcharges || DEFAULT_SHRUB_SURCHARGES;
   const wastePercent = Number(config?.waste_removal?.percentage || 0);
 
+  const rawLines: Array<{ desc: string; raw: number }> = [];
   (bookingData.shrubGroups || []).forEach((group: any) => {
     const size = (group.size || 'pequeñas') as keyof typeof priceTable;
     const unitPrice = Number(priceTable[size] || 0);
@@ -446,14 +457,29 @@ const buildShrubBreakdown = (bookingData: SerializableBookingData, config: any, 
     else if (state.includes('descuidad')) surchargePercent = resolveSurchargePercent(surcharges.media, DEFAULT_SHRUB_SURCHARGES.media);
     const stateMult = 1 + surchargePercent / 100;
     const wasteMult = globalWaste ? 1 + wastePercent / 100 : 1;
-    const linePrice = roundUp(area * unitPrice * stateMult * wasteMult);
+    const rawPrice = area * unitPrice * stateMult * wasteMult;
 
-    if (linePrice > 0) {
-      lines.push({
+    if (rawPrice > 0) {
+      rawLines.push({
         desc: `${area} m2 de arbustos (${group.size || 'pequeñas'}, ${group.state || 'normal'})`,
-        price: linePrice,
+        raw: rawPrice,
       });
     }
+  });
+
+  // El total autoritativo redondea la SUMA una sola vez (más abajo, applyMinimumPrice). Si
+  // cada línea se redondeara por separado hacia arriba, con 2+ grupos la suma del desglose
+  // podía superar lo realmente cobrado sin ninguna línea de ajuste (auditoría 2026-09-12,
+  // hallazgo #5: 33m² + 17m² sumaba 292€ en pantalla cobrando 291€). Se reparte aquí el
+  // mismo redondeo único: todas las líneas menos la última se redondean normalmente, y la
+  // última absorbe el resto para que la suma coincida siempre con roundUp(suma cruda).
+  const target = roundUp(rawLines.reduce((sum, line) => sum + line.raw, 0));
+  let allocated = 0;
+  const lines: BookingQuoteLine[] = rawLines.map((line, index) => {
+    const isLast = index === rawLines.length - 1;
+    const price = isLast ? target - allocated : Math.round(line.raw);
+    allocated += price;
+    return { desc: line.desc, price };
   });
 
   return lines;
@@ -1438,10 +1464,26 @@ export function buildAuthoritativeBookingQuote(params: {
   if (bookingData.shrubGroups?.length) {
     const yields = config.yield_m2_per_hour || {};
     const shrubWasteMult = globalWaste ? 1 + Number(config.waste_removal?.percentage || 0) / 100 : 1;
+    // Mismo stateMult que el bloque de precio (buildShrubBreakdown, más arriba): el % de
+    // condition_surcharges es tiempo y precio a la vez. Antes usaba el getDurationMultiplier
+    // fijo (1,3/1,7) — con la config sembrada (20/50 %) eso reservaba más tiempo del que el
+    // precio reflejaba (auditoría 2026-09-12, hallazgo #3; mismo patrón que césped/setos).
+    const shrubSurcharges = config.condition_surcharges || DEFAULT_SHRUB_SURCHARGES;
     bookingData.shrubGroups.forEach((group) => {
       const size = (group.size || 'pequeñas') as keyof typeof yields;
       const yieldM2 = Number(yields[size] || 0);
-      totalHours += (Number(group.area || 0) / yieldM2) * getDurationMultiplier(group.state || 'normal') * shrubWasteMult;
+      const shrubState = String(group.state || 'normal').toLowerCase();
+      let shrubStatePercent = 0;
+      if (shrubState.includes('muy')) shrubStatePercent = resolveSurchargePercent(shrubSurcharges.alta, DEFAULT_SHRUB_SURCHARGES.alta);
+      else if (shrubState.includes('descuidad')) shrubStatePercent = resolveSurchargePercent(shrubSurcharges.media, DEFAULT_SHRUB_SURCHARGES.media);
+      const shrubDurationMult = 1 + shrubStatePercent / 100;
+      totalHours += (Number(group.area || 0) / yieldM2) * shrubDurationMult * shrubWasteMult;
+      if (Number(group.area) > SHRUB_MAX_PLAUSIBLE_AREA_M2) {
+        pushWarning(
+          'shrub_area_implausible',
+          `La superficie declarada (${group.area} m²) supera lo habitual para un macizo residencial (${SHRUB_MAX_PLAUSIBLE_AREA_M2} m²): confirma la medida antes de continuar.`,
+        );
+      }
     });
   }
 

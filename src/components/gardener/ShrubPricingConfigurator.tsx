@@ -10,6 +10,7 @@ import { getPrecioPorHora } from '../../utils/hourlyPricing';
 
 const EMPTY_CONFIG: ShrubPricingConfig = {
   prices_per_m2: { pequeñas: '' as any, medianas: '' as any, grandes: '' as any },
+  condition_surcharges: { media: '' as any, alta: '' as any },
   waste_removal: { percentage: '' as any },
   minimum_price: '' as any,
   yield_m2_per_hour: { pequeñas: '' as any, medianas: '' as any, grandes: '' as any },
@@ -44,6 +45,10 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         ...value,
         minimum_price: getVal(value.minimum_price),
         prices_per_m2: { ...EMPTY_CONFIG.prices_per_m2, ...(value.prices_per_m2 || {}) },
+        condition_surcharges: {
+          media: getVal(value.condition_surcharges?.media),
+          alta: getVal(value.condition_surcharges?.alta)
+        },
         waste_removal: { percentage: getVal(value.waste_removal?.percentage) }
       };
     }
@@ -59,6 +64,10 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         medianas: getVal(value.prices_per_m2?.medianas),
         grandes: getVal(value.prices_per_m2?.grandes)
       },
+      condition_surcharges: {
+        media: getVal(value.condition_surcharges?.media),
+        alta: getVal(value.condition_surcharges?.alta)
+      },
       waste_removal: { percentage: getVal(value.waste_removal?.percentage) },
       yield_m2_per_hour: {
         pequeñas: getVal(value.yield_m2_per_hour?.pequeñas),
@@ -67,6 +76,16 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
       }
     };
   }, [value]);
+
+  const handleSurchargeChange = (level: 'media' | 'alta', value: number) => {
+    onChange({
+      ...config,
+      condition_surcharges: {
+        ...config.condition_surcharges,
+        [level]: value
+      }
+    });
+  };
 
   const handlePriceChange = (size: ShrubSize, newPrice: number) => {
     onChange({
@@ -111,6 +130,8 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
     if (isInvalid(cfg.minimum_price)) errors.push('minimum_price');
     if (isInvalid(cfg.waste_removal?.percentage)) errors.push('waste_removal');
+    if (isInvalid(cfg.condition_surcharges?.media)) errors.push('media');
+    if (isInvalid(cfg.condition_surcharges?.alta)) errors.push('alta');
     return errors;
   }, []);
 
@@ -381,6 +402,51 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           <hr className="border-gray-200 my-8" />
         </>
       )}
+
+      <div className="mb-8">
+        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Recargo por Estado</h4>
+        <p className="text-xs text-gray-500 mt-1 mb-4">Incremento sobre el total según el estado de las plantas.</p>
+        <div className="space-y-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 pr-4">
+              <span className="block text-sm font-medium text-gray-900">Descuidadas</span>
+              <span className="text-xs text-gray-500">Brotes largos e irregulares, bordes invadiendo caminos o césped.</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-gray-400 font-medium">+</span>
+              <div className="w-[6.5rem]">
+                <UnifiedNumericInput
+                  value={config.condition_surcharges?.media || 0}
+                  autoSelect
+                  onChange={(val) => handleSurchargeChange('media', val)}
+                  suffix="%"
+                  hasError={validationErrors.includes('media')}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 pr-4">
+              <span className="block text-sm font-medium text-gray-900">Muy descuidadas</span>
+              <span className="text-xs text-gray-500">Formas perdidas, madera seca visible o invasión de malas hierbas.</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-gray-400 font-medium">+</span>
+              <div className="w-[6.5rem]">
+                <UnifiedNumericInput
+                  value={config.condition_surcharges?.alta || 0}
+                  autoSelect
+                  onChange={(val) => handleSurchargeChange('alta', val)}
+                  suffix="%"
+                  hasError={validationErrors.includes('alta')}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr className="border-gray-200 my-8" />
 
       <div>
         <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Gestión de Residuos</h4>

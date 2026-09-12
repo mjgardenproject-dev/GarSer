@@ -2395,13 +2395,27 @@ const DetailsPage: React.FC = () => {
                 if (aiSize.includes('grandes')) size = 'grandes';
                 else if (aiSize.includes('medianas')) size = 'medianas';
 
-                totalHours += Math.ceil(m2 * 0.15) || 1; 
+                // Estado propuesto por la IA (activa condition_surcharges media/alta del
+                // motor): sin esto, todo macizo analizado por este botón global se facturaba
+                // y agendaba como si estuviera siempre "normal", aunque Gemini sí devuelve
+                // estado_plantas (auditoría 2026-09-12, hallazgo #1). Mismo mapeo que usa
+                // adaptShrubAnalysisResult para el camino "Analizar esta zona".
+                const aiState = String(t.estado_plantas || '').toLowerCase();
+                const state: 'normal' | 'descuidado' | 'muy_descuidado' = aiState.includes('muy')
+                    ? 'muy_descuidado'
+                    : aiState.includes('descuidad')
+                        ? 'descuidado'
+                        : 'normal';
+
+                totalHours += Math.ceil(m2 * 0.15) || 1;
                 totalAiQty += m2;
 
                 newShrubGroups.push({
                     id: `ai-shrub-${Date.now()}-${idx}`,
                     size: size,
                     area: m2,
+                    state,
+                    stateProposedByAI: state !== 'normal',
                     wasteRemoval: true,
                     photoUrls: validUrls,
                     analysisLevel: t.nivel_analisis,

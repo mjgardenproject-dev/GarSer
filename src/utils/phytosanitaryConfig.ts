@@ -244,13 +244,20 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
   const normalizedComboTwoModifier = Number(normalized.pricing_modifiers?.combo?.two_treatments_percentage || 0);
   const normalizedComboThreeModifier = Number(normalized.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0);
   const hasAnyCirugia = [detailed.palmeras.pequenas_cirugia, detailed.palmeras.medianas_cirugia, detailed.palmeras.altas_cirugia].some((n) => Number(n || 0) > 0);
+  const hasEndoterapiaPrice = Number(normalized.palmeras?.endoterapia?.precio_unico || 0) > 0;
   const tratamientos: PhytosanitaryType[] = ['insecticida', 'fungicida', 'ecologico_preventivo'];
-  if (hasAnyCirugia) tratamientos.push('endoterapia');
+  if (hasAnyCirugia || hasEndoterapiaPrice) tratamientos.push('endoterapia');
   const selectedLegacy = tratamientos.map(toLegacyType).filter(Boolean) as LegacyPhytosanitaryType[];
   const palmHighTraditional = Math.max(Number(detailed.palmeras.medianas_curativo || 0), Number(detailed.palmeras.altas_curativo || 0));
   const treeHighPreventivo = Math.max(Number(detailed.arboles.medianos_preventivo || 0), Number(detailed.arboles.grandes_preventivo || 0));
   const treeHighCurativo = Math.max(Number(detailed.arboles.medianos_curativo || 0), Number(detailed.arboles.grandes_curativo || 0));
   const maxCirugia = Math.max(Number(detailed.palmeras.pequenas_cirugia || 0), Number(detailed.palmeras.medianas_cirugia || 0), Number(detailed.palmeras.altas_cirugia || 0));
+  // La endoterapia (inyección en tronco, precio por tronco) y la cirugía de palmeras (por
+  // ejemplar intervenido) son dos servicios distintos con dos precios distintos. Escribir
+  // aquí `maxCirugia` machacaba el precio de endoterapia del profesional en CADA guardado
+  // —en el fixture, de 65 a 160 €/tronco, un +146 % silencioso—, así que se conserva el que
+  // tenga configurado y solo se recurre a la cirugía cuando nunca ha fijado uno.
+  const endoterapiaUnitPrice = Number(normalized.palmeras?.endoterapia?.precio_unico || 0) || maxCirugia;
 
   return {
     ...normalizedWithoutLegacyHourlyRate,
@@ -309,7 +316,7 @@ export const toPersistedPhytosanitaryConfig = (config: PhytosanitaryPricingConfi
         hasta_3m: Number(detailed.palmeras.pequenas_curativo || 0),
         mas_de_3m: palmHighTraditional
       },
-      endoterapia: { precio_unico: maxCirugia }
+      endoterapia: { precio_unico: endoterapiaUnitPrice }
     },
     detailed_pricing: detailed,
     type_prices: {

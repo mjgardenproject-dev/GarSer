@@ -32,6 +32,7 @@ import {
   adaptTreeAnalysisResult,
 } from './detailsPageAdapters';
 import {
+  serviceAsksForWasteRemoval,
   type ManualAnswers,
   type ManualServiceKey,
 } from '../../shared/manualEntry/manualEntrySchema';
@@ -297,7 +298,12 @@ function buildPhytosanitaryZones(items: ManualAnswers[]) {
     const intent = (sanitizeString(answers.intent) || 'preventive') as 'preventive' | 'curative';
     const curativeTarget = sanitizeString(answers.curativeTarget) as 'insects' | 'fungus' | 'both' | '';
     const productPreference = (sanitizeString(answers.productPreference) || 'chemical') as 'chemical' | 'ecological';
-    const aboveThreeMeters = sanitizeBoolean(answers.aboveThreeMeters);
+    // La altura solo la declaran los setos; el resto de ámbitos traen su porte en `sizeBand`.
+    const aboveThreeMeters = affectedType === 'Setos' ? sanitizeBoolean(answers.aboveThreeMeters) : false;
+    // Porte declarado. El motor lo traduce a la métrica del tamaño correspondiente, que es lo
+    // que selecciona la tarifa: sin él, un árbol grande se facturaba como pequeño o mediano.
+    const sizeBand = sanitizeString(answers.sizeBand) || undefined;
+    const wantsEndotherapy = affectedType === 'Palmeras' ? sanitizeBoolean(answers.wantsEndotherapy) : false;
 
     let requestedTreatment: 'insecticida' | 'fungicida' | 'combo' | undefined;
     if (intent === 'curative') {
@@ -308,15 +314,21 @@ function buildPhytosanitaryZones(items: ManualAnswers[]) {
 
     return {
       id: manualId('phytosanitary', index),
-      type: requestedTreatment || 'preventivo',
+      // La endoterapia viaja en `type` porque es como el motor la reconoce también en el
+      // flujo de fotos; así los dos caminos entran por la misma puerta.
+      type: [requestedTreatment || 'preventivo', wantsEndotherapy ? 'endoterapia' : null]
+        .filter(Boolean)
+        .join('+'),
       area,
       affectedType,
+      sizeBand,
       intent,
       curativeTarget: intent === 'curative' && curativeTarget ? curativeTarget : undefined,
       productPreference,
       aboveThreeMeters,
       aboveTwoMeters: aboveThreeMeters,
       requestedTreatment,
+      wantsEndotherapy,
       wantsEco: productPreference === 'ecological',
       scope: [],
       wasteRemoval: true,
@@ -393,7 +405,12 @@ export function buildManualBookingPatch(params: {
   items: ManualAnswers[];
   wasteRemoval: boolean;
 }): ManualBuildResult {
-  const { serviceKey, items, wasteRemoval } = params;
+  const { serviceKey, items } = params;
+  // Los servicios que no facturan retirada de restos tampoco la declaran. Al cliente ya no se
+  // le pregunta (ver `serviceAsksForWasteRemoval`), así que dejar el flag en `true` por
+  // omisión hacía que la solicitud le prometiera al profesional una «retirada de restos
+  // incluida» que nadie había pedido ni nadie iba a cobrar.
+  const wasteRemoval = serviceAsksForWasteRemoval(serviceKey) ? params.wasteRemoval : false;
   const base: Partial<BookingData> = {
     dataInputMode: 'manual',
     wasteRemoval,

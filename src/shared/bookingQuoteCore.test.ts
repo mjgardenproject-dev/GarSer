@@ -203,11 +203,13 @@ describe('buildAuthoritativeBookingQuote', () => {
     // Zona legacy con solo type (sin intent/curativeTarget/productPreference):
     // fungicida → tarifa CURATIVA (100 × 1 = 100), no la preventiva (50).
     expect(build({ type: 'fungicida' }).totalPrice).toBe(100);
-    // combo → curativa + recargo de 2 tratamientos: 100 × 1.2 = 120.
-    expect(build({ type: 'insecticida+fungicida' }).totalPrice).toBe(120);
+    // insecticida + fungicida → DOS tratamientos facturables que se suman, sin recargo por
+    // combinarlos (regla de negocio fijada el 2026-09-12): 100 + 100 = 200.
+    expect(build({ type: 'insecticida+fungicida' }).totalPrice).toBe(200);
     // eco preventivo → tarifa preventiva + modificador eco: 50 × 1.1 = 55.
     expect(build({ type: 'ecologico_preventivo' }).totalPrice).toBe(55);
-    // Con campos canónicos (flujo manual/nuevo): curativo eco aplica el % eco sin alterar el combo.
+    // Con campos canónicos (flujo manual/nuevo): un solo tratamiento curativo con producto
+    // ecológico aplica el % eco sobre la tarifa curativa: 100 × 1,1 = 110.
     expect(build({ type: 'fungicida+ecologico_preventivo', intent: 'curative', curativeTarget: 'fungus', productPreference: 'ecological' }).totalPrice).toBe(110);
   });
 

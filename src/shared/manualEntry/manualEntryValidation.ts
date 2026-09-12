@@ -140,6 +140,12 @@ const SHRUB_STATES = ['normal', 'descuidado', 'muy descuidado', 'muy_descuidado'
 const TREE_BANDS = ['small', 'medium', 'large', 'over_9'];
 const TREE_PRUNING = ['structural', 'shaping', 'estructural', 'formacion'];
 const PALM_STATES = ['normal', 'descuidado', 'muy descuidado', 'muy_descuidado'];
+const PHYTO_SIZE_BANDS: Record<string, string[]> = {
+  'Árboles': ['pequenos', 'medianos', 'grandes'],
+  'Palmeras': ['pequenas', 'medianas', 'altas'],
+  'Plantas bajas': ['pequenas', 'medianas', 'grandes'],
+};
+
 const PHYTO_AFFECTED = ['Césped', 'Plantas bajas', 'Setos', 'Árboles', 'Palmeras'];
 const PHYTO_INTENT = ['preventive', 'curative', 'weed_control'];
 const PHYTO_TARGET = ['insects', 'fungus', 'both'];
@@ -280,6 +286,12 @@ export function validateManualBookingInput(
         pushEnum(errors, `phytosanitaryZones[${index}].intent`, zone.intent ?? 'preventive', PHYTO_INTENT, 'la intención del tratamiento', true);
         pushEnum(errors, `phytosanitaryZones[${index}].curativeTarget`, zone.curativeTarget, PHYTO_TARGET, 'el objetivo del tratamiento', true);
         pushEnum(errors, `phytosanitaryZones[${index}].productPreference`, zone.productPreference, PHYTO_PRODUCT, 'el tipo de producto', true);
+        // El porte solo lo declaran los ámbitos que se facturan por ejemplar o por porte; en
+        // césped y setos no existe, por eso es opcional y se valida contra el juego del ámbito.
+        const bands = PHYTO_SIZE_BANDS[String(zone.affectedType || '')];
+        if (bands) {
+          pushEnum(errors, `phytosanitaryZones[${index}].sizeBand`, (zone as any).sizeBand, bands, 'el tamaño dominante', true);
+        }
       });
       break;
     }

@@ -1052,6 +1052,11 @@ const DetailsPage: React.FC = () => {
     }
   ) => {
     const patch = {
+      // Desbroce es manual-only (nunca pasa por el asistente de fotos/IA): sin esto,
+      // `dataInputMode` se quedaba `undefined` para siempre en este camino y el guard de
+      // rango de `MANUAL_RANGES.weeding.area` (booking-authority) nunca se ejecutaba —
+      // una superficie absurda se cotizaba y cobraba tal cual, sin aviso.
+      ...(key === 'weedingZones' ? { dataInputMode: 'manual' as const } : {}),
       ...extraPatch,
       [key]: items,
     } as Partial<BookingData>;

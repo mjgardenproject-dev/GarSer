@@ -17,7 +17,7 @@ import {
   normalizePhytosanitaryPricingConfig,
   toPersistedPhytosanitaryConfig
 } from '../../utils/phytosanitaryConfig';
-import { getPrecioPorHora } from '../../utils/hourlyPricing';
+import { getPrecioPorHora, getPricingMethod } from '../../utils/hourlyPricing';
 
 const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
 const isInvalid = (v: any) => v === undefined || v === null || v === '';
@@ -48,34 +48,29 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
   const isDirty = useMemo(() => !deepEqual(config, normalizedInitialConfig), [config, normalizedInitialConfig]);
   const detailed = useMemo(() => normalizeDetailedPhytosanitaryPricing(config.detailed_pricing), [config.detailed_pricing]);
 
+  // El método de cobro se resuelve con `getPricingMethod`, la misma función que usa el motor,
+  // y no comparando `config.pricing_method` en crudo: cuando esa clave no está —el caso del
+  // profesional sembrado y de cualquiera que no la haya fijado nunca— el motor factura
+  // igualmente por cantidad, pero la comparación literal daba `false` y esta pantalla
+  // escondía las tarifas por categoría. El resultado era un configurador que prometía «tus
+  // tarifas fijas por categoría» sin enseñar ni una: imposible dar de alta el servicio.
+  const pricingMethod = getPricingMethod(config);
+
   const updateConfig = (next: PhytosanitaryPricingConfig) => onChange(toPersistedPhytosanitaryConfig(next));
   const setDetailedPricing = (next: PhytosanitaryDetailedPricing) => updateConfig({ ...config, detailed_pricing: next });
   const setGlobalMinimum = (valueNum: number) => updateConfig({ ...config, importe_minimo: valueNum, minimum_price: valueNum, minimum_fee: valueNum });
 
-  const setPricingModifier = (
-    modifier: 'eco' | 'combo_two',
-    valueNum: number
-  ) => {
-    const nextModifiers = {
-      ...config.pricing_modifiers,
-      eco: {
-        percentage: Number(config.pricing_modifiers?.eco?.percentage || 0)
-      },
-      combo: {
-        two_treatments_percentage: Number(config.pricing_modifiers?.combo?.two_treatments_percentage || 0),
-        three_plus_treatments_percentage: Number(config.pricing_modifiers?.combo?.three_plus_treatments_percentage || 0)
-      }
-    };
-
-    if (modifier === 'eco') {
-      nextModifiers.eco.percentage = valueNum;
-    } else if (modifier === 'combo_two') {
-      nextModifiers.combo.two_treatments_percentage = valueNum;
-    }
-
+  // Solo queda el recargo ecológico: el de combinación de tratamientos se retiró al fijarse
+  // que los tratamientos combinados se suman sin recargo. Las claves antiguas de `combo` que
+  // un profesional pueda tener guardadas se conservan tal cual — el motor ya no las lee, y
+  // borrarlas aquí sería modificar su configuración sin que lo haya pedido.
+  const setEcoModifier = (valueNum: number) => {
     updateConfig({
       ...config,
-      pricing_modifiers: nextModifiers
+      pricing_modifiers: {
+        ...config.pricing_modifiers,
+        eco: { percentage: valueNum },
+      },
     });
   };
 
@@ -193,7 +188,6 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
 
     if (Number(cfg.importe_minimo || cfg.minimum_price || 0) <= 0) errors.push('servicio_minimo');
     if (Number(cfg.pricing_modifiers?.eco?.percentage || 0) < 0) errors.push('modifier_eco');
-    if (Number(cfg.pricing_modifiers?.combo?.two_treatments_percentage || 0) < 0) errors.push('modifier_combo');
 
     // Validate yields
     if (!cfg.yields) {
@@ -307,7 +301,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
             type="button"
             onClick={() => updateConfig({ ...config, pricing_method: 'per_quantity' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_quantity'
+              pricingMethod === 'per_quantity'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -318,7 +312,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
             type="button"
             onClick={() => updateConfig({ ...config, pricing_method: 'per_hour' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_hour'
+              pricingMethod === 'per_hour'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -327,13 +321,13 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-3">
-          {config.pricing_method === 'per_hour' 
-            ? 'El precio se calculará multiplicando las horas estimadas por tu tarifa horaria.' 
+          {pricingMethod === 'per_hour'
+            ? 'El precio se calculará multiplicando las horas estimadas por tu tarifa horaria.'
             : 'El precio se calculará usando tus tarifas fijas por categoría.'}
         </p>
       </div>
 
-      {config.pricing_method === 'per_hour' && (
+      {pricingMethod === 'per_hour' && (
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
@@ -427,7 +421,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
               />
             </div>
           </div>
-          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && (
+          {pricingMethod === 'per_hour' && getPrecioPorHora(config) > 0 && (
             <div className="p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
               <p className="text-xs text-blue-800">
                 <span className="font-semibold">Regla de cálculo:</span> tiempo estimado por rendimiento x `precioPorHora`.
@@ -442,7 +436,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
 
       <hr className="border-gray-200 my-8" />
 
-      {config.pricing_method === 'per_quantity' && (
+      {pricingMethod === 'per_quantity' && (
         <>
           <div>
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Tarifas por Categoría (Precio Fijo)</h4>
@@ -538,6 +532,31 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
                       'palmeras_altas_curativo', detailed.palmeras.altas_curativo, (v) => setCategoryField('palmeras', 'altas_curativo', v)
                     )}
                     <div><p className="text-[11px] text-gray-500 mb-1">Cirugía por plagas (Curativo intensivo)</p>{renderEuroInput('palmeras_altas_cirugia', detailed.palmeras.altas_cirugia, (v) => setCategoryField('palmeras', 'altas_cirugia', v))}</div>
+                  </div>
+
+                  {/* La endoterapia se cobra por TRONCO inyectado, no por ejemplar, y es
+                      independiente del tamaño. Hasta ahora no tenía campo propio: el guardado
+                      le asignaba el precio de la cirugía más cara, que es otro servicio. */}
+                  <div className="pt-4 mt-2 border-t border-gray-100">
+                    <p className="text-xs font-semibold text-gray-700 mb-1">Endoterapia (inyección en tronco)</p>
+                    <p className="text-[11px] text-gray-500 mb-2">
+                      Precio por tronco inyectado. Se suma al tratamiento por pulverización cuando el cliente pide las dos cosas.
+                    </p>
+                    <div className="max-w-[12rem]">
+                      {renderEuroInput(
+                        'palmeras_endoterapia',
+                        Number(config.palmeras?.endoterapia?.precio_unico || 0),
+                        (v) => updateConfig({
+                          ...config,
+                          palmeras: {
+                            // `tradicional` se conserva tal cual: la sigue leyendo el backend
+                            // hasta que se despliegue el motor nuevo.
+                            tradicional: config.palmeras?.tradicional ?? { hasta_3m: 0, mas_de_3m: 0 },
+                            endoterapia: { precio_unico: v },
+                          },
+                        }),
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -645,7 +664,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
                 value={Number(config.pricing_modifiers?.eco?.percentage || 0) === 0 ? '' : Number(config.pricing_modifiers?.eco?.percentage || 0)}
                 placeholder="-"
                 onChange={(e) => {
-                  setPricingModifier('eco', parseFloat(e.target.value) || 0);
+                  setEcoModifier(parseFloat(e.target.value) || 0);
                   if (validationErrors.includes('modifier_eco')) {
                     setValidationErrors((prev) => prev.filter((x) => x !== 'modifier_eco'));
                   }
@@ -654,30 +673,14 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
               <span className="text-gray-500 text-sm font-medium w-4">%</span>
             </div>
           </div>
-          <div className="flex items-center justify-between py-3 gap-3">
-            <div className="min-w-0">
-              <span className="block text-sm font-medium text-gray-900">Fungicida + insecticida</span>
-              <span className="text-xs text-gray-500">Combinación de dos tratamientos en una misma intervención.</span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-gray-400 text-sm font-medium">+</span>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                className={`h-10 w-[6.5rem] px-3 pr-8 border rounded-lg text-right text-base sm:text-sm tabular-nums focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('modifier_combo') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
-                value={Number(config.pricing_modifiers?.combo?.two_treatments_percentage || 0) === 0 ? '' : Number(config.pricing_modifiers?.combo?.two_treatments_percentage || 0)}
-                placeholder="-"
-                onChange={(e) => {
-                  setPricingModifier('combo_two', parseFloat(e.target.value) || 0);
-                  if (validationErrors.includes('modifier_combo')) {
-                    setValidationErrors((prev) => prev.filter((x) => x !== 'modifier_combo'));
-                  }
-                }}
-              />
-              <span className="text-gray-500 text-sm font-medium w-4">%</span>
-            </div>
-          </div>
+          {/* El suplemento «fungicida + insecticida» se retiró el 2026-09-12: por decisión de
+              negocio, pedir los dos tratamientos son dos intervenciones facturables y se suma
+              el precio de cada una, sin porcentaje por combinarlas. Mantener aquí un campo que
+              el motor ya no lee habría prometido al profesional un recargo inexistente. */}
+          <p className="text-xs text-gray-500 pt-3 border-t border-gray-100">
+            Si un cliente pide insecticida y fungicida a la vez, se cobran los dos tratamientos
+            completos, cada uno a la tarifa de su categoría. No hay recargo por combinarlos.
+          </p>
         </div>
       </div>
 

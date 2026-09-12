@@ -4,6 +4,7 @@ import {
   getFieldOptions,
   getVisibleFields,
   MANUAL_GLOBAL_WASTE_FIELD,
+  serviceAsksForWasteRemoval,
   type ManualAnswers,
   type ManualServiceSurvey,
 } from '../../../shared/manualEntry/manualEntrySchema';
@@ -90,10 +91,14 @@ export const ManualEntrySummary: React.FC<Props> = ({
         );
       })}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex justify-between py-3">
-        <span className="text-sm text-gray-500">{MANUAL_GLOBAL_WASTE_FIELD.label}</span>
-        <span className="text-sm font-medium text-gray-900">{wasteRemoval ? 'Sí' : 'No'}</span>
-      </div>
+      {/* Los servicios que no facturan retirada tampoco la resumen: mostrar «Retirada de
+          restos: Sí» en un tratamiento fitosanitario prometía algo que nadie cobraba. */}
+      {serviceAsksForWasteRemoval(survey.serviceKey) && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex justify-between py-3">
+          <span className="text-sm text-gray-500">{MANUAL_GLOBAL_WASTE_FIELD.label}</span>
+          <span className="text-sm font-medium text-gray-900">{wasteRemoval ? 'Sí' : 'No'}</span>
+        </div>
+      )}
 
       {requireConsent && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">

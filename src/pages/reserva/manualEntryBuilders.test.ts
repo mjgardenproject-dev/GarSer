@@ -195,4 +195,46 @@ describe('manualEntryBuilders - palm species rules', () => {
     expect(group.isTerminalOpenRange).toBe(true);
     expect(group.allowsPriceChange).toBe(true);
   });
+
+  it('phytosanitary: declara el porte y la endoterapia, y no promete retirada de restos', () => {
+    const { patch, declaredVariables } = buildManualBookingPatch({
+      serviceKey: 'phytosanitary',
+      // El cliente pide retirada, pero este servicio no la factura: no debe declararse, o la
+      // solicitud le prometería al profesional un trabajo que nadie le paga.
+      items: [{
+        affectedType: 'Palmeras', area: 6, sizeBand: 'medianas',
+        intent: 'preventive', productPreference: 'chemical', wantsEndotherapy: true,
+      }],
+      wasteRemoval: true,
+    });
+    const zone = (patch.phytosanitaryZones || [])[0] as any;
+    expect(patch.wasteRemoval).toBe(false);
+    expect(zone.wasteRemoval).toBe(false);
+    // El porte selecciona la tarifa; la endoterapia viaja en `type`, como en el flujo de fotos.
+    expect(zone.sizeBand).toBe('medianas');
+    expect(zone.wantsEndotherapy).toBe(true);
+    expect(zone.type).toContain('endoterapia');
+    expect((declaredVariables as any).items[0].sizeBand).toBe('medianas');
+  });
+
+  it('phytosanitary: la altura solo la declaran los setos', () => {
+    const build = (affectedType: string) => buildManualBookingPatch({
+      serviceKey: 'phytosanitary',
+      items: [{ affectedType, area: 10, intent: 'preventive', productPreference: 'chemical', aboveThreeMeters: true }],
+      wasteRemoval: false,
+    });
+    expect(((build('Setos').patch.phytosanitaryZones || [])[0] as any).aboveThreeMeters).toBe(true);
+    // Árboles y palmeras declaran su porte con `sizeBand`, que distingue tres escalones.
+    expect(((build('Árboles').patch.phytosanitaryZones || [])[0] as any).aboveThreeMeters).toBe(false);
+    expect(((build('Palmeras').patch.phytosanitaryZones || [])[0] as any).aboveThreeMeters).toBe(false);
+  });
+
+  it('los servicios que sí facturan retirada la siguen declarando', () => {
+    const { patch } = buildManualBookingPatch({
+      serviceKey: 'lawn',
+      items: [{ superficie_m2: 100, estado_jardin: 'normal' }],
+      wasteRemoval: true,
+    });
+    expect(patch.wasteRemoval).toBe(true);
+  });
 });

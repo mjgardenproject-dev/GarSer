@@ -310,6 +310,33 @@ const PHYTOSANITARY_TARGET_OPTIONS: ManualEnumOption[] = [
   { value: 'both', label: 'Ambos', help: 'Insecticida y fungicida combinados.', icon: 'SprayCan' },
 ];
 
+/**
+ * Tamaño del ejemplar / porte dominante. El precio por unidad depende de él —un árbol grande
+ * cuesta más del cuádruple que uno pequeño en la tarifa sembrada—, y hasta la auditoría de
+ * 2026-09-12 el formulario no lo preguntaba: se deducía del interruptor de altura, que solo
+ * distingue dos escalones, así que las tarifas `grandes_*` de árboles, `altas_*` de palmeras
+ * y los portes mediano y grande de plantas no se podían facturar desde aquí.
+ *
+ * Los valores son los que consume `derivePhytosanitaryMetricsFromZone` en el motor.
+ */
+const PHYTOSANITARY_TREE_SIZE_OPTIONS: ManualEnumOption[] = [
+  { value: 'pequenos', label: 'Pequeños', help: 'Hasta unos 3 m: se tratan desde el suelo.', icon: 'Sprout' },
+  { value: 'medianos', label: 'Medianos', help: 'Entre 3 y 6 m aproximadamente.', icon: 'Trees' },
+  { value: 'grandes', label: 'Grandes', help: 'Más de 6 m: requieren altura y más producto.', icon: 'TreePine' },
+];
+
+const PHYTOSANITARY_PALM_SIZE_OPTIONS: ManualEnumOption[] = [
+  { value: 'pequenas', label: 'Pequeñas', help: 'Tronco de hasta unos 3 m.', icon: 'Sprout' },
+  { value: 'medianas', label: 'Medianas', help: 'Tronco de entre 3 y 6 m.', icon: 'Palmtree' },
+  { value: 'altas', label: 'Altas', help: 'Más de 6 m de tronco.', icon: 'TreePalm' },
+];
+
+const PHYTOSANITARY_PLANT_SIZE_OPTIONS: ManualEnumOption[] = [
+  { value: 'pequenas', label: 'Pequeñas', help: 'Macizos bajos, tapizantes o de flor.', icon: 'Flower2' },
+  { value: 'medianas', label: 'Medianas', help: 'Arbustos de hasta metro y medio.', icon: 'Shrub' },
+  { value: 'grandes', label: 'Grandes', help: 'Arbustos grandes o muy densos.', icon: 'Trees' },
+];
+
 const PHYTOSANITARY_PRODUCT_OPTIONS: ManualEnumOption[] = [
   { value: 'chemical', label: 'Convencional', help: 'Producto fitosanitario estándar.', icon: 'FlaskConical' },
   { value: 'ecological', label: 'Ecológico', help: 'Producto de origen ecológico (puede tener recargo).', icon: 'Leaf' },
@@ -359,6 +386,21 @@ export const MANUAL_GLOBAL_WASTE_STEP: ManualStep = {
   description: 'Se aplica a todo el servicio.',
   fields: [MANUAL_GLOBAL_WASTE_FIELD],
 };
+
+/**
+ * Servicios que NO facturan retirada de restos, y a los que por tanto no se les pregunta.
+ *
+ * Un tratamiento fitosanitario es una aplicación de producto: no genera los restos vegetales
+ * que sí deja una poda o un corte, y su `additional_config` no tiene `waste_removal`, así que
+ * el motor no cobra nada por ella. Preguntarlo igualmente producía una respuesta inerte —el
+ * cliente podía desactivarla creyendo que ahorraba, o dejarla creyendo que la contrataba, y
+ * al profesional le llegaba «Retirada de restos incluida» sin haberla cobrado.
+ */
+export const MANUAL_SERVICE_KEYS_WITHOUT_WASTE_REMOVAL: ManualServiceKey[] = ['phytosanitary'];
+
+export function serviceAsksForWasteRemoval(key: ManualServiceKey | null | undefined): boolean {
+  return !!key && !MANUAL_SERVICE_KEYS_WITHOUT_WASTE_REMOVAL.includes(key);
+}
 
 export const MANUAL_ENTRY_SURVEYS: Record<ManualServiceKey, ManualServiceSurvey> = {
   lawn: {
@@ -656,6 +698,28 @@ export const MANUAL_ENTRY_SURVEYS: Record<ManualServiceKey, ManualServiceSurvey>
         ],
       },
       {
+        id: 'size',
+        title: '¿De qué tamaño son?',
+        description: 'El producto y el tiempo que lleva tratar un ejemplar dependen de su porte.',
+        fields: [
+          {
+            key: 'sizeBand',
+            type: 'enum',
+            ui: 'cards',
+            label: 'Tamaño dominante',
+            dynamicOptions: (answers) => {
+              if (answers.affectedType === 'Árboles') return PHYTOSANITARY_TREE_SIZE_OPTIONS;
+              if (answers.affectedType === 'Palmeras') return PHYTOSANITARY_PALM_SIZE_OPTIONS;
+              return PHYTOSANITARY_PLANT_SIZE_OPTIONS;
+            },
+            visibleWhen: (answers) =>
+              answers.affectedType === 'Árboles' ||
+              answers.affectedType === 'Palmeras' ||
+              answers.affectedType === 'Plantas bajas',
+          },
+        ],
+      },
+      {
         id: 'intent',
         title: '¿Es un tratamiento preventivo o curativo?',
         fields: [{ key: 'intent', type: 'enum', ui: 'cards', label: 'Intención del tratamiento', options: PHYTOSANITARY_INTENT_OPTIONS }],
@@ -680,18 +744,37 @@ export const MANUAL_ENTRY_SURVEYS: Record<ManualServiceKey, ManualServiceSurvey>
         fields: [{ key: 'productPreference', type: 'enum', ui: 'cards', label: 'Tipo de producto', options: PHYTOSANITARY_PRODUCT_OPTIONS }],
       },
       {
+        // Solo setos: árboles, palmeras y plantas declaran su porte en el paso 'size', que
+        // distingue tres escalones en vez de dos y es el que casa con las tarifas reales.
         id: 'height',
-        title: '¿Supera los 2-3 metros de altura?',
-        description: 'Importante para setos altos, árboles y palmeras grandes.',
+        title: '¿Son setos altos?',
+        description: 'Los setos por encima de 2 m llevan más producto y más tiempo.',
         fields: [
           {
             key: 'aboveThreeMeters',
             type: 'boolean',
             ui: 'toggle',
-            label: 'Supera los 2-3 m de altura',
+            label: 'Supera los 2 m de altura',
             optional: true,
-            visibleWhen: (answers) =>
-              answers.affectedType === 'Setos' || answers.affectedType === 'Árboles' || answers.affectedType === 'Palmeras',
+            defaultValue: false,
+            visibleWhen: (answers) => answers.affectedType === 'Setos',
+          },
+        ],
+      },
+      {
+        id: 'endotherapy',
+        title: '¿Quieres endoterapia?',
+        description: 'Inyección del producto directamente en el tronco. Se cobra por tronco tratado, aparte del tratamiento por pulverización.',
+        fields: [
+          {
+            key: 'wantsEndotherapy',
+            type: 'boolean',
+            ui: 'toggle',
+            label: 'Añadir endoterapia (inyección en tronco)',
+            help: 'Indicada contra el picudo rojo y otras plagas del tronco, cuando la pulverización no llega.',
+            optional: true,
+            defaultValue: false,
+            visibleWhen: (answers) => answers.affectedType === 'Palmeras',
           },
         ],
       },

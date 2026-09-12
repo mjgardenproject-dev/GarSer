@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Camera, Plus } from 'lucide-react';
 import {
   getVisibleFields,
   MANUAL_GLOBAL_WASTE_FIELD,
+  serviceAsksForWasteRemoval,
   type ManualAnswers,
   type ManualServiceSurvey,
 } from '../../../shared/manualEntry/manualEntrySchema';
@@ -125,13 +126,19 @@ export const ManualEntryWizard: React.FC<Props> = ({
     return map;
   }, [currentStepErrors]);
 
+  // Hay servicios que no facturan retirada de restos (fitosanitarios: es una aplicación de
+  // producto, no una poda). Preguntarla allí daba una respuesta que no cambiaba el precio
+  // pero sí lo que el profesional leía en la solicitud.
+  const asksWaste = serviceAsksForWasteRemoval(survey.serviceKey);
+  const extraPhases = asksWaste ? 3 : 2;
+
   const progressPct = useMemo(() => {
-    if (phase === 'item') return Math.round(((activeStepIndex + 1) / (visibleSteps.length + 3)) * 100);
-    if (phase === 'interstitial') return Math.round(((visibleSteps.length + 0.5) / (visibleSteps.length + 3)) * 100);
-    if (phase === 'waste') return Math.round(((visibleSteps.length + 1) / (visibleSteps.length + 3)) * 100);
-    if (phase === 'summary') return Math.round(((visibleSteps.length + 2) / (visibleSteps.length + 3)) * 100);
+    if (phase === 'item') return Math.round(((activeStepIndex + 1) / (visibleSteps.length + extraPhases)) * 100);
+    if (phase === 'interstitial') return Math.round(((visibleSteps.length + 0.5) / (visibleSteps.length + extraPhases)) * 100);
+    if (phase === 'waste') return Math.round(((visibleSteps.length + 1) / (visibleSteps.length + extraPhases)) * 100);
+    if (phase === 'summary') return Math.round(((visibleSteps.length + extraPhases - 1) / (visibleSteps.length + extraPhases)) * 100);
     return 100;
-  }, [phase, activeStepIndex, visibleSteps.length]);
+  }, [phase, activeStepIndex, visibleSteps.length, extraPhases]);
 
   const goNextFromItem = () => {
     if (currentStepErrors.length > 0) {
@@ -146,12 +153,18 @@ export const ManualEntryWizard: React.FC<Props> = ({
       return;
     }
     // Finished the active item.
-    setPhase(survey.repeatable ? 'interstitial' : 'waste');
+    setPhase(survey.repeatable ? 'interstitial' : (asksWaste ? 'waste' : 'summary'));
   };
 
   const goBack = () => {
     setShowErrors(false);
-    if (phase === 'summary') return setPhase('waste');
+    if (phase === 'summary') {
+      if (asksWaste) return setPhase('waste');
+      if (survey.repeatable) return setPhase('interstitial');
+      setActiveItemIndex(items.length - 1);
+      setActiveStepIndex(Math.max(0, visibleSteps.length - 1));
+      return setPhase('item');
+    }
     if (phase === 'waste') {
       if (survey.repeatable) return setPhase('interstitial');
       setActiveItemIndex(items.length - 1);
@@ -263,7 +276,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
             </button>
             <button
               type="button"
-              onClick={() => setPhase('waste')}
+              onClick={() => setPhase(asksWaste ? 'waste' : 'summary')}
               className="py-3 px-4 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
             >
               {W.finishItems}

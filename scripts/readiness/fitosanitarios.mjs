@@ -21,10 +21,25 @@
 
 import {
   quote, expectQuote, validHours, previewProviders, bundleModule,
-  pass, fail, untested, report,
+  pass, fail, untested, report, sql,
 } from './_harness.mjs';
 
-const SERVICE_ID = 'fc96088a-81f8-4efc-8908-b28a401ea556';
+/**
+ * El id se resuelve por NOMBRE, no se escribe a mano.
+ *
+ * `supabase/seed.sql` genera los UUID de `services` al sembrar, así que cambian cada vez que
+ * se recrea la base local. Los runners de las cinco auditorías anteriores llevaban el id
+ * escrito y los cinco acabaron apuntando a un servicio fantasma: todos sus escenarios morían
+ * en `missing_provider_config` sin medir nada, y en verde aparente si nadie miraba el código
+ * de error. Resolverlo aquí cuesta una consulta y quita la trampa para siempre.
+ */
+const SERVICE_ID = (() => {
+  const fromEnv = process.env.PHYTOSANITARY_SERVICE_ID;
+  if (fromEnv) return fromEnv;
+  const row = sql("select id from public.services where name = 'Servicios fitosanitarios' limit 1;");
+  if (!row) throw new Error('No se encuentra el servicio «Servicios fitosanitarios» en la base local.');
+  return row.trim();
+})();
 
 const manualEntrySchema = () => bundleModule('src/shared/manualEntry/manualEntrySchema.ts');
 
@@ -86,6 +101,12 @@ const photos = (o) => ({
 
 const TUESDAY_DATE = '2026-09-15';
 const SUNDAY_DATE = '2026-09-13';
+
+// Sin dirección, `valid_hours` y `preview_providers` responden `missing_coordinates` y no
+// llegan a mirar el calendario: la prueba del domingo pasaría por la razón equivocada.
+const MARBELLA = { address: 'Av. Ricardo Soriano, 20, 29601 Marbella, Málaga, España', addressCoordinates: { lat: 36.5101, lng: -4.8825 } };
+const FUERA_DE_COBERTURA = { address: 'Gran Vía 1, Madrid', addressCoordinates: { lat: 40.4200, lng: -3.7050 } };
+const conDireccion = (input, lugar = MARBELLA) => ({ ...input, ...lugar });
 
 async function main() {
   console.log(`\nServicios fitosanitarios · ${SERVICE_ID}`);
@@ -399,14 +420,35 @@ async function main() {
   console.log('\n── 8 · Disponibilidad ──');
   if (process.env.READINESS_ENGINE === 'local') {
     untested('domingo sin horas · dirección fuera de cobertura',
-      '`valid_hours` y `preview_providers` solo existen en booking-authority; con el motor en proceso no son alcanzables. Se cierran por HTTP tras integrar en main.');
+      '`valid_hours` y `preview_providers` solo existen en booking-authority; con el motor en proceso no son alcanzables. Se cierran ejecutando el runner por HTTP.');
   } else {
-    const dom = await validHours(SERVICE_ID, SUNDAY_DATE, manual({ area: 1000 }));
-    if (!(dom.body?.hours || []).length) pass('domingo sin horas reservables', JSON.stringify(dom.body).slice(0, 160));
-    else fail('domingo sin horas reservables', `devolvió ${JSON.stringify(dom.body?.hours)}`);
+    const base = conDireccion(manual({ area: 1000 }));
 
-    const lejos = await previewProviders(SERVICE_ID, manual({ area: 1000 }), { selectedDate: TUESDAY_DATE });
-    pass('preview_providers responde', JSON.stringify(lejos.body).slice(0, 160));
+    // Un martes laborable SÍ debe ofrecer horas: si no, el resto del bloque no demuestra nada.
+    const laborable = await validHours(SERVICE_ID, TUESDAY_DATE, base);
+    const horasLaborable = laborable.body?.validHours || [];
+    if (horasLaborable.length > 0) pass('martes laborable ofrece horas', `${horasLaborable.length} horas: ${horasLaborable.slice(0, 4).join(', ')}…`);
+    else fail('martes laborable ofrece horas', `ninguna — ${JSON.stringify(laborable.body).slice(0, 220)}`);
+
+    const dom = await validHours(SERVICE_ID, SUNDAY_DATE, base);
+    const horasDomingo = dom.body?.validHours || [];
+    const exclusionDomingo = dom.body?.exclusion?.code;
+    if (horasDomingo.length === 0 && exclusionDomingo !== 'missing_coordinates') {
+      pass('domingo sin horas reservables', `exclusión: ${exclusionDomingo || 'sin horas'}`);
+    } else if (exclusionDomingo === 'missing_coordinates') {
+      fail('domingo sin horas reservables', 'respondió `missing_coordinates`: la llamada no llevaba dirección, así que no llegó a mirar el calendario');
+    } else {
+      fail('domingo sin horas reservables', `devolvió ${JSON.stringify(horasDomingo)}`);
+    }
+
+    const cerca = await previewProviders(SERVICE_ID, base, { selectedDate: TUESDAY_DATE });
+    if ((cerca.body?.eligibleProviderIds || []).length > 0) pass('el profesional aparece desde una dirección cubierta', JSON.stringify(cerca.body.eligibleProviderIds));
+    else fail('el profesional aparece desde una dirección cubierta', `excluido: ${JSON.stringify(cerca.body?.exclusions).slice(0, 260)}`);
+
+    const lejos = await previewProviders(SERVICE_ID, conDireccion(manual({ area: 1000 }), FUERA_DE_COBERTURA), { selectedDate: TUESDAY_DATE });
+    const excl = lejos.body?.exclusions?.[Object.keys(lejos.body?.exclusions || {})[0]]?.code;
+    if ((lejos.body?.eligibleProviderIds || []).length === 0) pass('una dirección fuera de cobertura lo excluye', `código: ${excl || 'sin elegibles'}`);
+    else fail('una dirección fuera de cobertura lo excluye', `siguió elegible: ${JSON.stringify(lejos.body.eligibleProviderIds)}`);
   }
 
   untested('puerta de licencia fitosanitaria (has_phytosanitary_license)',

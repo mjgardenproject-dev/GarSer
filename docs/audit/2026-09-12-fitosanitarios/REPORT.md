@@ -440,3 +440,82 @@ merge y el redespliegue (paso 5 de §4 en `COORDINACION-SERVICIOS.md`).
 - **`BookingRequestsManager` sigue mostrando «Retirada de restos incluida»** aunque el flag
   llegue en `false`; el componente es compartido, así que aquí solo se corrigió el origen del
   dato. Anotado como T13.
+
+---
+
+# Anexo — Verificación por HTTP contra el motor corregido (2026-09-12)
+
+La Fase 3 se cerró con una salvedad: los precios que mostraba la web salían del motor viejo,
+porque el Supabase compartido lo servía el checkout de referencia. El usuario autorizó cerrarla
+levantando una instancia propia desde este worktree. **Salvedad resuelta.**
+
+## Cómo
+
+Al no haber otras sesiones activas, se paró el stack de referencia (sus datos quedan en su
+volumen de Docker, intactos) y se arrancó `supabase start` **desde este worktree**. Los
+contenedores pasan a llamarse `supabase_*_fitosanitarios` y el edge runtime monta los ficheros
+de esta rama — comprobado:
+
+```
+docker inspect supabase_edge_runtime_fitosanitarios →
+  /Users/javier/Downloads/auditorias/fitosanitarios/src/shared/bookingQuoteCore.ts
+```
+
+## Un hallazgo del propio montaje
+
+**Los `serviceId` cambian cada vez que se recrea la base local**: `seed.sql` los genera con
+`gen_random_uuid()`, no son fijos. El de fitosanitarios pasó de `fc96088a-…` a
+`d4e65cea-…` sin que nadie tocara nada. **Esto explica los «serviceId fantasma» que las cinco
+auditorías anteriores encontraron en sus runners heredados**: no era que la skill estuviera
+desactualizada, es que el id caduca con la base. El runner ya no lo lleva escrito: lo resuelve
+por nombre con una consulta (`PHYTOSANITARY_SERVICE_ID` lo sobrescribe si hace falta).
+
+## Resultado
+
+```
+node scripts/readiness/fitosanitarios.mjs        (HTTP, sin READINESS_ENGINE)
+  78 PASA · 0 FALLA · 1 NO PROBADO
+```
+
+El único NO PROBADO es la puerta de licencia (T1, transversal). El bloque de disponibilidad,
+que antes no podía ejecutarse, ahora pasa de verdad — y de paso se corrigió: **las dos
+aserciones anteriores pasaban por la razón equivocada**, porque las llamadas no llevaban
+dirección y `booking-authority` respondía `missing_coordinates` sin llegar a mirar el
+calendario. Ahora comprueba los cuatro casos que importan:
+
+| Caso | Resultado |
+|---|---|
+| Martes laborable | 8 horas ofrecidas |
+| Domingo | sin horas · `no_reservable_availability` |
+| Dirección cubierta | el profesional aparece |
+| Dirección fuera de cobertura | excluido · `outside_coverage` |
+
+## Los bloqueantes, ya en pantalla
+
+Con la web cotizando contra el motor corregido:
+
+| Caso navegado | Antes (motor de `main`) | Ahora | Configurado |
+|---|---|---|---|
+| Césped 1000 m² preventivo | 200 € | **120 €** | 1000 × 0,12 ✓ |
+| Césped 1000 m² curativo insectos+hongos | 460 € | **400 €** | 2 × 200, sin recargo ✓ |
+| 10 árboles **grandes** preventivo | 250 € | **400 €** | 10 × 40 ✓ |
+
+El tercero es el más ilustrativo: ese porte ni siquiera era declarable antes de esta rama.
+
+**Pago real de principio a fin contra el motor nuevo:** reserva
+`1fc77a3a-97c0-4a2b-bd6b-18cf9df15424` (400 € / 3 h), PaymentIntent `pi_3UEoby2MwFyGXuB71a4Hux02`
+en `requires_capture` (5000 cts autorizados, 0 cobrados) → tras aceptar el profesional,
+`confirmed` y **`succeeded` con `amount_received: 5000`**.
+
+## Rectificación: T13 era un falso positivo
+
+Se había anotado que el panel del profesional seguía mostrando «Retirada de restos incluida»
+pese a llegar `wasteRemoval: false`. Falso: el panel **sí** condiciona al flag. Lo que se
+observó era una reserva creada antes del cambio del builder, con `true` ya guardado. Con una
+reserva nueva (`declared_variables.wasteRemoval = false`) el panel no la menciona. La fila
+queda tachada en `COORDINACION-SERVICIOS.md` para que nadie la vuelva a anotar.
+
+## Estado del entorno al terminar
+
+El stack de este worktree queda **levantado y sirviendo el código corregido**. Para devolver
+el entorno compartido a su sitio, ver la última sección de acciones manuales.

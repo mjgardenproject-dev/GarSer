@@ -308,6 +308,10 @@ export interface ShrubPricingConfig {
     medianas: number;
     grandes: number;
   };
+  condition_surcharges: {
+    media: number;
+    alta: number;
+  };
   waste_removal: {
     percentage: number;
   };

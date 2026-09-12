@@ -76,6 +76,8 @@ export interface AITask {
   tipo_plantacion?: string | null;
   indices_imagenes?: number[]; // Added for multi-image tracking
   tamano_dominante?: string | null;
+  /** Estado del macizo de plantas/arbustos (activa condition_surcharges media/alta del motor). */
+  estado_plantas?: string | null;
 
   // Phytosanitary
   cantidad_o_superficie?: number | null;

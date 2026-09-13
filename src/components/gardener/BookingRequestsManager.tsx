@@ -73,7 +73,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [requests, setRequests] = useState<BookingRequestWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
-  const [priceDrafts, setPriceDrafts] = useState<Record<string, { amount: string; reason: string; loading?: boolean }>>({});
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, { amount: string; reason: string; duration?: string; loading?: boolean }>>({});
   // On-site variable correction (manual bookings): recompute price with the engine.
   const [correctionFor, setCorrectionFor] = useState<BookingRequestWithDetails | null>(null);
   const [correctionLoading, setCorrectionLoading] = useState(false);
@@ -347,6 +347,16 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       toast.error('Introduce un precio válido para proponer el cambio.');
       return;
     }
+    // D5: opcional. Vacío = sin cambio de duración. La RPC vuelve a validar 1-12h; esto es
+    // solo para no hacer un viaje de red en vano.
+    let durationValue: number | undefined;
+    if ((draft.duration || '').trim() !== '') {
+      durationValue = Number(draft.duration);
+      if (!Number.isInteger(durationValue) || durationValue < 1 || durationValue > 12) {
+        toast.error('La nueva duración debe ser un número entero de horas, entre 1 y 12.');
+        return;
+      }
+    }
     setPriceDrafts((prev) => ({ ...prev, [request.id]: { ...draft, loading: true } }));
     try {
       await proposeBookingPriceChange({
@@ -354,6 +364,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         proposedTotalPrice: value,
         reason: draft.reason,
         operationId: crypto.randomUUID(),
+        proposedDurationHours: durationValue,
       });
 
       // Audit trail for discrepancy analysis (manual bookings carry declared variables).
@@ -582,6 +593,27 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                       >
                         Proponer
                       </button>
+                    </div>
+                    {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia. */}
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="12"
+                        step="1"
+                        value={priceDrafts[request.id]?.duration || ''}
+                        onChange={(e) =>
+                          setPriceDrafts((prev) => ({
+                            ...prev,
+                            [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), duration: e.target.value }
+                          }))
+                        }
+                        placeholder={`Nueva duración (h), actual: ${request.duration_hours}`}
+                        className="w-40 px-3 py-2 border border-blue-200 rounded-md text-sm"
+                      />
+                      <span className="text-xs text-blue-700">
+                        horas totales (opcional — solo cambia la hora de fin)
+                      </span>
                     </div>
                   </div>
                 )}

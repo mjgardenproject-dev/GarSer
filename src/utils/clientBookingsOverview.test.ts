@@ -22,6 +22,7 @@ const booking = (over: Partial<OverviewBooking> & { id: string }): OverviewBooki
   price_change_status: null,
   proposed_total_price: null,
   proposed_price_reason: null,
+  proposed_duration_hours: null,
   review_rating: null,
   confirmation_deadline_at: null,
   ...over,

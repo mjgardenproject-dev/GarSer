@@ -34,6 +34,8 @@ export interface OverviewBooking {
   price_change_status: string | null;
   proposed_total_price: number | null;
   proposed_price_reason: string | null;
+  /** D5: duración propuesta junto al precio, si el jardinero también pidió alargar/acortar. */
+  proposed_duration_hours: number | null;
   /** Solo en las completadas: la nota que dejó el cliente, si la dejó. */
   review_rating: number | null;
   /** Cuándo se da por completada sola si el cliente no confirma nada. */
@@ -78,7 +80,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, confirmation_deadline_at, services(name, icon)')
+    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_duration_hours, confirmation_deadline_at, services(name, icon)')
     .eq('client_id', clientId)
     .order('date', { ascending: false });
 
@@ -129,6 +131,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
     price_change_status: (row.price_change_status as string) ?? null,
     proposed_total_price: (row.proposed_total_price as number) ?? null,
     proposed_price_reason: (row.proposed_price_reason as string) ?? null,
+    proposed_duration_hours: (row.proposed_duration_hours as number) ?? null,
     review_rating: ratingByBooking.get(String(row.id)) ?? null,
     confirmation_deadline_at: (row.confirmation_deadline_at as string) ?? null,
   }));

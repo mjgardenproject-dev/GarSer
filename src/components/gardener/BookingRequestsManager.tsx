@@ -149,19 +149,22 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       const serviceIdsFiltered = serviceIds.filter(Boolean);
 
       // Fetch clients data
+      // T9 (transversal): `bookings.client_id` guarda `profiles.user_id`, no `profiles.id`
+      // (son columnas distintas) — filtrar por `id` nunca encontraba fila y el nombre caía
+      // siempre al fallback "Cliente desconocido".
       let clientsResult: { data: any[] | null; error: any } = { data: [], error: null };
       if (clientIdsFiltered.length === 1) {
         const singleId = clientIdsFiltered[0] as string;
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, phone')
-          .eq('id', singleId);
+          .select('user_id, full_name, phone')
+          .eq('user_id', singleId);
         clientsResult = { data, error } as any;
       } else if (clientIdsFiltered.length > 1) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, phone')
-          .in('id', clientIdsFiltered as string[]);
+          .select('user_id, full_name, phone')
+          .in('user_id', clientIdsFiltered as string[]);
         clientsResult = { data, error } as any;
       }
 
@@ -198,7 +201,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         console.warn('Error fetching services for requests:', servicesResult.error);
       }
 
-      const clientsMap = new Map(clientsResult.data?.map(c => [c.id, c]) || []);
+      const clientsMap = new Map(clientsResult.data?.map(c => [c.user_id, c]) || []);
       const servicesMap = new Map((servicesResult.data || []).map(s => [s.id, { ...s, hourly_rate: 0 }]) || []);
 
       // Transformar los datos para que coincidan con la interfaz esperada

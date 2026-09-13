@@ -2,11 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
-import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
-import { readWeedingHerbicideState, writeWeedingHerbicideState } from '../../utils/weedingPersistence';
 import { AnalysisLoadingAnimation } from '../../components/shared/AnalysisLoadingAnimation';
 import { AnalysisFailedCard } from '../../components/shared/AnalysisFailedCard';
 import { buildZonePhotoRemovalConfirmation, ZonePhotoGallery } from '../../components/shared/ZonePhotoGallery';
@@ -71,7 +70,6 @@ import {
   buildPhytosanitaryDevZone,
   buildShrubDevGroup,
   buildTreeDevGroup,
-  buildWeedingDevZone,
   isDetailsDevAnalysisEnabled,
 } from './detailsPageDevSeeds';
 import {
@@ -104,8 +102,7 @@ import {
   MANUAL_RANGES,
 } from '../../shared/manualEntry/manualEntrySchema';
 import { validateManualBookingInput } from '../../shared/manualEntry/manualEntryValidation';
-import { buildConsentRecord, MANUAL_ENTRY_CONSENT_TEXT, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
-import { MANUAL_ENTRY_STRINGS } from '../../shared/manualEntry/strings';
+import { buildConsentRecord, MANUAL_ENTRY_LEGAL_VERSION } from '../../shared/manualEntry/legalCopy';
 import { buildManualBookingPatch } from './manualEntryBuilders';
 import { recordManualDeclaration, ManualDeclarationError } from '../../utils/bookingManualDeclarationService';
 import { isManualBookingInputEnabled } from '../../utils/manualEntryFeatureFlag';
@@ -245,28 +242,6 @@ const normalizeDetectedWeedingState = (value?: string | null): 'normal' | 'dific
   if (normalized.includes('media')) return 'dificultad_media';
   return 'normal';
 };
-
-const WEEDING_STATE_OPTIONS: Array<{
-  value: 'normal' | 'dificultad_media' | 'dificultad_alta';
-  label: string;
-  description: string;
-}> = [
-  {
-    value: 'normal',
-    label: 'Dificultad Normal',
-    description: 'Terreno regular, maleza ligera (< 30cm) y sin obstáculos relevantes.'
-  },
-  {
-    value: 'dificultad_media',
-    label: 'Dificultad Media',
-    description: 'Zonas con pendiente, terreno irregular o maleza herbácea densa (> 30cm).'
-  },
-  {
-    value: 'dificultad_alta',
-    label: 'Dificultad Alta',
-    description: 'Zonas de difícil acceso, maleza leñosa/zarzas, o presencia de piedras/escombros.'
-  }
-];
 
 // Deprecated normalizer - removed
 
@@ -776,7 +751,16 @@ const DetailsPage: React.FC = () => {
   // Desbroce (y futuros servicios manual-only) no usan fotos → sin selector foto/manual.
   const manualChoiceAvailable = manualFlowEnabled && !!manualServiceKey && !isManualOnlyService(manualServiceKey);
   const dataInputMode: DataInputMode = bookingData.dataInputMode === 'manual' ? 'manual' : 'photos';
-  const isManualActive = manualChoiceAvailable && dataInputMode === 'manual';
+  // Un servicio manual-only no tiene alternativa de fotos, así que el asistente genérico
+  // (ManualEntryWizard) debe estar SIEMPRE activo para él — independientemente de
+  // `manualFlowEnabled` (VITE_ENABLE_MANUAL_BOOKING_INPUT, que por defecto es 'false' en
+  // `.env.example`). Ese flag existe para ofrecer el asistente como ALTERNATIVA a las fotos
+  // en los otros 6 servicios; para desbroce no hay elección que desactivar, y si el flag
+  // estuviera apagado en producción sin este bypass, el servicio quedaría sin ninguna forma
+  // de declarar datos (auditoría 2026-09-12, corrección del hallazgo #1 original — antes
+  // existía un editor ad-hoc como único camino, ahora retirado en favor de este asistente).
+  const isManualOnlyActive = !!manualServiceKey && isManualOnlyService(manualServiceKey);
+  const isManualActive = isManualOnlyActive || (manualChoiceAvailable && dataInputMode === 'manual');
 
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
@@ -861,7 +845,6 @@ const DetailsPage: React.FC = () => {
   const isAnyTreeZoneAnalyzing = treeAnalyzingZoneIds.size > 0;
   const [shrubAnalyzingZoneIds, setShrubAnalyzingZoneIds] = useState<Set<string>>(new Set());
   const [shrubUploads, setShrubUploads] = useState<Record<string, Set<number>>>({});
-  const [weedingManualConfirmed, setWeedingManualConfirmed] = useState(false);
   const isAnyPhytosanitaryZoneAnalyzing = phytosanitaryAnalyzingZoneIds.size > 0;
 
   useEffect(() => {
@@ -954,7 +937,6 @@ const DetailsPage: React.FC = () => {
 
   const [, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
   const activeServiceId = bookingData.serviceIds?.[0] || '';
-  const isWeedingServiceSelected = serviceFlags.isWeeding;
   const persistedManualDraft = (bookingData.servicesData?.[activeServiceId] as { manualDraft?: ManualWizardSubmitPayload } | undefined)?.manualDraft;
   /**
    * El asistente arranca en su resumen: hay respuestas que revisar, no que rellenar.
@@ -1208,80 +1190,12 @@ const DetailsPage: React.FC = () => {
     fetchServiceName();
   }, [bookingData.serviceIds]);
 
-  useEffect(() => {
-    if (!activeServiceId) return;
-    if (!isWeedingServiceSelected) return;
-    if (!bookingData.weedingZones || bookingData.weedingZones.length === 0) return;
-
-    let hasChanges = false;
-    const hydratedZones = bookingData.weedingZones.map((zone) => {
-      const persistedState = readWeedingHerbicideState(activeServiceId, zone.id);
-      if (persistedState === null || persistedState === zone.applyHerbicide) return zone;
-      hasChanges = true;
-      return { ...zone, applyHerbicide: persistedState };
-    });
-
-    if (!hasChanges) return;
-    commitSimplePhotoCollectionPatch('weedingZones', hydratedZones, {}, { saveAfterCommit: true });
-  }, [
-    activeServiceId,
-    isWeedingServiceSelected,
-    bookingData.weedingZones
-      ? JSON.stringify(bookingData.weedingZones.map((z) => ({ id: z.id, applyHerbicide: z.applyHerbicide })))
-      : ''
-  ]);
-
-  useEffect(() => {
-    if (!isWeedingServiceSelected) return;
-
-    const currentZones = bookingData.weedingZones || [];
-    const primary = currentZones[0];
-    const mustCreate = currentZones.length === 0;
-    const mustNormalizeToSingle = currentZones.length > 1;
-    const mustStripAiArtifacts = Boolean(
-      primary && (
-        (primary.photoUrls?.length || 0) > 0
-        || (primary.files?.length || 0) > 0
-        || (primary.selectedIndices?.length || 0) > 0
-        || (primary.analyzedIndices?.length || 0) > 0
-        || primary.analysisLevel !== undefined
-        || (primary.observations?.length || 0) > 0
-        || (primary as any).isFailed === true
-      )
-    );
-
-    if (!mustCreate && !mustNormalizeToSingle && !mustStripAiArtifacts) return;
-
-    const nextZone = primary
-      ? resetAnalysisCommonFields({
-          ...primary,
-          photoUrls: [],
-          files: [],
-          selectedIndices: [],
-          analyzedIndices: [],
-        })
-      : createDefaultWeedingZone();
-    const nextZones = [nextZone];
-
-    commitSimplePhotoCollectionPatch('weedingZones', nextZones, {}, { saveAfterCommit: true });
-  }, [isWeedingServiceSelected, activeServiceId, bookingData.weedingZones]);
-
-  useEffect(() => {
-    if (!isWeedingServiceSelected) {
-      setWeedingManualConfirmed(false);
-    }
-  }, [isWeedingServiceSelected]);
-
-  const handleToggleWeedingHerbicide = (zoneIndex: number) => {
-    if (!activeServiceId || !bookingData.weedingZones || !bookingData.weedingZones[zoneIndex]) return;
-    const updated = [...bookingData.weedingZones];
-    const zone = updated[zoneIndex];
-    const nextApplyHerbicide = !zone.applyHerbicide;
-    updated[zoneIndex] = { ...zone, applyHerbicide: nextApplyHerbicide };
-
-    writeWeedingHerbicideState(activeServiceId, zone.id, nextApplyHerbicide);
-    commitSimplePhotoCollectionPatch('weedingZones', updated, {}, { saveAfterCommit: true });
-  };
+  // El editor ad-hoc de desbroce (que necesitaba estos 3 efectos para mantener siempre una
+  // única `weedingZones[0]` viva y su persistencia de herbicida en localStorage) se retiró
+  // en favor de `ManualEntryWizard` (auditoría 2026-09-12): el asistente gestiona su propio
+  // borrador de respuestas y solo escribe `weedingZones` una vez, al enviar
+  // (`buildManualBookingPatch` en `handleManualSubmit`), así que no hace falta forzar aquí
+  // ninguna zona por defecto ni hidratar nada desde localStorage.
 
   // Sync lawn zones to global state
   useEffect(() => {
@@ -1878,19 +1792,11 @@ const DetailsPage: React.FC = () => {
       }
     }
 
-    if (serviceFlags.isWeeding) {
-      const zone = bookingData.weedingZones?.[0];
-      const hasValidArea = Number(zone?.area || 0) > 0;
-      const hasValidState = zone?.state === 'normal' || zone?.state === 'dificultad_media' || zone?.state === 'dificultad_alta';
-      if (!zone || !hasValidArea || !hasValidState) {
-        toast.error('Completa la superficie y el estado de la parcela para continuar.');
-        return;
-      }
-      if (!weedingManualConfirmed) {
-        toast.error('Debes confirmar los datos del desbroce para continuar.');
-        return;
-      }
-    }
+    // El bloque de validación de desbroce que vivía aquí se retiró (auditoría 2026-09-12):
+    // este botón "Continuar" está oculto en modo manual (`{!isManualActive && (...)}`, más
+    // abajo) y desbroce ahora es siempre manual-only-activo, así que `handleContinue` ya no
+    // se invoca para este servicio — su validación vive en `ManualEntryWizard` y
+    // `handleManualSubmit`.
 
     if (debugService === 'Poda de palmeras') {
         if (!bookingData.palmGroups || bookingData.palmGroups.length === 0) {
@@ -1939,16 +1845,9 @@ const DetailsPage: React.FC = () => {
     }
     // Filter out strings from photos to match File[] type for bookingData
     const filePhotos = photos.filter((p): p is File => p instanceof File);
-    // Desbroce es el unico servicio manual-only: no pasa por el asistente, asi que su casilla
-    // de veracidad tampoco pasaba por `handleManualSubmit` y su aceptacion no quedaba
-    // registrada en ningun sitio. Era el unico de los siete sin prueba de lo que acepto el
-    // cliente, y el texto que firma es el mismo.
     setBookingData({
       photos: filePhotos,
       description: descriptionRef.current,
-      ...(serviceFlags.isWeeding && weedingManualConfirmed
-        ? { manualConsent: buildConsentRecord() }
-        : {}),
     });
     
     // Explicit persist before leaving
@@ -2725,14 +2624,10 @@ const DetailsPage: React.FC = () => {
       return;
     }
 
-    if (serviceFlags.isWeeding) {
-      const currentZones = bookingData.weedingZones || [];
-      const baseZones = currentZones.length > 0 ? currentZones : [undefined];
-      const nextZones = baseZones.map((zone, index) => buildWeedingDevZone(zone, index));
-      commitSimplePhotoCollectionPatch('weedingZones', nextZones, {}, { saveAfterCommit: true });
-      setWeedingManualConfirmed(true);
-      toast.success('Datos de prueba aplicados a desbroce');
-    }
+    // Desbroce ya no tiene un atajo de "datos de prueba" propio: pasa por
+    // `ManualEntryWizard` como los demás servicios manuales (auditoría 2026-09-12), que no
+    // tiene equivalente a este botón — su botón "Datos de prueba" es el de la Details Page
+    // del flujo de fotos/IA, y desbroce nunca ha tenido ese flujo.
   };
 
   // --- NEW: Lawn Zone Logic ---
@@ -4217,43 +4112,9 @@ const analyzeTreeGroup = async (id: string) => {
           });
       }
   };
-  // --- Weeding Manual Logic (single-zone, no AI) ---
-  const createDefaultWeedingZone = () => ({
-      id: `weeding-${Date.now()}`,
-      area: 0,
-      state: 'normal' as const,
-      applyHerbicide: false,
-      wasteRemoval: true,
-      photoIds: [] as string[],
-      photoUrls: [] as string[],
-      files: [] as File[],
-      selectedIndices: [] as number[],
-      analyzedIndices: [] as number[]
-  });
-
-  const updateSingleWeedingZone = (updater: (zone: any) => any) => {
-      const current = bookingData.weedingZones || [];
-      const baseZone = current[0] || createDefaultWeedingZone();
-      const nextZone = updater(baseZone);
-      const nextZones = [nextZone];
-      commitSimplePhotoCollectionPatch('weedingZones', nextZones, {}, { saveAfterCommit: true });
-  };
-
-  const handleWeedingAreaChange = (value: string) => {
-      const parsed = Number(value.replace(',', '.'));
-      const safeArea = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-      updateSingleWeedingZone((zone) => ({
-          ...zone,
-          area: safeArea
-      }));
-  };
-
-  const handleWeedingStateChange = (state: 'normal' | 'dificultad_media' | 'dificultad_alta') => {
-      updateSingleWeedingZone((zone) => ({
-          ...zone,
-          state
-      }));
-  };
+  // El editor ad-hoc de desbroce (single-zone, sin IA) que vivía aquí se retiró en favor de
+  // `ManualEntryWizard` (auditoría 2026-09-12) — ver el comentario junto a
+  // `isManualOnlyActive`, más arriba.
 
   const addPhytosanitaryZone = () => {
     const newZone = {
@@ -4760,6 +4621,9 @@ const analyzeTreeGroup = async (id: string) => {
             }
             onSubmit={handleManualSubmit}
             onSwitchToPhotos={() => handleSelectInputMode('photos')}
+            // Un servicio manual-only (desbroce) no tiene flujo de fotos al que volver — el
+            // enlace "Cambiar a fotos" sería un no-op confuso, así que se oculta para él.
+            showSwitchToPhotos={!isManualOnlyActive}
           />
         ) : null}
 
@@ -6627,92 +6491,14 @@ const analyzeTreeGroup = async (id: string) => {
 
 
 
-      {/* --- Waste Removal Switch --- */}
-      {/* Show only if there are valid results for Trees or Palms or Shrubs */}
-      {bookingData.weedingZones && bookingData.weedingZones.length > 0 && (
-          <div className="mb-6 space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Detalles del Desbroce</h3>
-              {(() => {
-                const zone = bookingData.weedingZones?.[0];
-                if (!zone) return null;
-                return (
-                  <div key={zone.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-5">
-                      <div>
-                          <label htmlFor="weeding-area" className="block text-xs text-gray-500 mb-1">Superficie estimada</label>
-                          <div className="relative">
-                            <input
-                                id="weeding-area"
-                                type="number"
-                                min={0}
-                                step={1}
-                                inputMode="numeric"
-                                value={zone.area || ''}
-                                onChange={(e) => handleWeedingAreaChange(e.target.value)}
-                                placeholder="0"
-                                className="w-full rounded-lg border border-gray-300 px-3 py-2 pr-12 text-base text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">m²</span>
-                          </div>
-                          {Number(zone.area) > 10000 && (
-                              <p className="text-[11px] text-amber-700 mt-1">
-                                  Revisa la superficie: más de 10.000 m² excede lo habitual en parcelas residenciales. El profesional verificará la medida en persona.
-                              </p>
-                          )}
-                          <p className="text-[11px] text-gray-500 mt-1">
-                              Truco: cuéntala a pasos (1 paso ≈ 0,8 m) y multiplica largo × ancho.
-                          </p>
-                      </div>
-
-                      <div>
-                          <span className="block text-xs text-gray-500 mb-2">Estado de la parcela</span>
-                          <div className="space-y-2">
-                              {WEEDING_STATE_OPTIONS.map((option) => {
-                                  const selected = zone.state === option.value;
-                                  return (
-                                    <label
-                                      key={option.value}
-                                      className={`block rounded-xl border p-3 cursor-pointer transition-colors ${selected ? 'border-green-600 bg-green-50' : 'border-gray-200 bg-white hover:border-green-300'}`}
-                                    >
-                                      <div className="flex items-start gap-3">
-                                        <input
-                                          type="radio"
-                                          name="weeding-state"
-                                          checked={selected}
-                                          onChange={() => handleWeedingStateChange(option.value)}
-                                          className="mt-0.5 h-4 w-4 accent-green-600"
-                                        />
-                                        <div>
-                                          <div className="text-sm font-semibold text-gray-900">{option.label}</div>
-                                          <div className="text-xs text-gray-500 mt-0.5">{option.description}</div>
-                                        </div>
-                                      </div>
-                                    </label>
-                                  );
-                              })}
-                          </div>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1">
-                          <div>
-                              <span className="text-gray-700 font-medium text-sm block">Aplicar herbicida</span>
-                              <span className="text-gray-500 text-xs">Previene rebrotes (requiere profesional certificado)</span>
-                          </div>
-                          <button
-                              type="button"
-                              role="switch"
-                              aria-checked={zone.applyHerbicide}
-                              aria-label="Aplicar herbicida"
-                              onClick={() => handleToggleWeedingHerbicide(0)}
-                              className={`${zone.applyHerbicide ? 'bg-green-600' : 'bg-gray-200'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2`}
-                          >
-                              <span className={`${zone.applyHerbicide ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
-                          </button>
-                      </div>
-                  </div>
-                );
-              })()}
-          </div>
-      )}
+      {/* El editor ad-hoc de "Detalles del Desbroce" (superficie/estado/herbicida a mano,
+          sin ManualEntryWizard) se retiró aquí: desbroce ahora usa el mismo asistente
+          genérico que los otros 6 servicios (ver `isManualOnlyActive` más arriba),
+          auditoría 2026-09-12. Su única ruta viva quedaba sin validar el rango de
+          superficie y etiquetaba la solicitud como "Analizado por IA (fotos)" ante el
+          jardinero pese a ser datos manuales — ambos corregidos al pasar por el asistente
+          (`ManualEntryWizard` + `buildWeedingZones`, que sí fijan `dataInputMode: 'manual'`
+          y pasan por la validación de `MANUAL_RANGES.weeding.area`). */}
 
       {((bookingData.treeGroups && bookingData.treeGroups.filter(g => !((g as any).isFailed === true || g.analysisLevel === 3)).length > 0) || 
         (bookingData.palmGroups && bookingData.palmGroups.length > 0) || 
@@ -6836,38 +6622,6 @@ const analyzeTreeGroup = async (id: string) => {
         document.body
       )}
 
-      {(() => {
-        if (!serviceFlags.isWeeding) return null;
-        return (
-          <div className="px-4 mb-28">
-            <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-              {/* Mismo texto y misma forma que ven los otros seis servicios en el resumen del
-                  asistente: desbroce no pasa por el asistente, pero el cliente no tiene por que
-                  encontrarse aqui una redaccion distinta para decir lo mismo. */}
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={weedingManualConfirmed}
-                  onChange={(e) => setWeedingManualConfirmed(e.target.checked)}
-                  aria-label={MANUAL_ENTRY_STRINGS.consent.checkboxAriaLabel}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-green-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-                />
-                <span className="flex-1 text-sm leading-relaxed text-gray-700">
-                  <ShieldCheck className="inline w-4 h-4 text-green-600 mr-1 -mt-0.5" aria-hidden />
-                  {MANUAL_ENTRY_STRINGS.consent.shortLabel}
-                </span>
-              </label>
-              <details className="mt-3">
-                <summary className="cursor-pointer rounded text-xs font-medium text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500">
-                  {MANUAL_ENTRY_STRINGS.consent.fullTextToggle}
-                </summary>
-                <p className="mt-2 text-xs leading-relaxed text-gray-500">{MANUAL_ENTRY_CONSENT_TEXT}</p>
-              </details>
-            </div>
-          </div>
-        );
-      })()}
-
         </div>{/* end photos-mode gate */}
 
       </div>
@@ -6881,7 +6635,11 @@ const analyzeTreeGroup = async (id: string) => {
             disabled={getDetailsContinueDisabled({
               bookingData,
               serviceFlags,
-              weedingManualConfirmed,
+              // Esta CTA está oculta cuando `isManualActive` (justo arriba), y desbroce es
+              // manual-only-activo siempre — su rama `isWeeding` en
+              // `getDetailsContinueDisabled` ya no se alcanza nunca desde aquí. El parámetro
+              // sigue siendo obligatorio en la firma compartida; `false` es un valor inerte.
+              weedingManualConfirmed: false,
               getPhytosanitaryValidation: (zone) => getPhytosanitaryValidation(zone as any),
               isPhytosanitaryZoneAnalyzed: (zone) => isPhytosanitaryZoneAnalyzed(zone as any),
             })}

@@ -513,7 +513,11 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2" />
-                    {formatTimeBlocks(request.booking_blocks || [])} ({request.booking_blocks?.length || 0}h)
+                    {/* T6 (transversal): `request.booking_blocks` es un array sintético de un único
+                        elemento creado solo para formatear el rango de texto — no son filas reales de
+                        `booking_blocks`, así que su `.length` siempre daba "(1h)" aunque el servicio
+                        durase más. La duración real ya vive en `request.duration_hours`. */}
+                    {formatTimeBlocks(request.booking_blocks || [])} ({request.duration_hours}h)
                   </div>
                   <div className="flex items-center text-gray-600">
                     <MapPin className="w-4 h-4 mr-2" />

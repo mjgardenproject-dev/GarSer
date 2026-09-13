@@ -29,9 +29,21 @@
  * node scripts/readiness/arboles.mjs                       # HTTP contra booking-authority
  * READINESS_ENGINE=local node scripts/readiness/arboles.mjs # motor en proceso (este worktree)
  */
-import { quote, expectQuote, sweep, previewProviders, validHours, report, PROVIDER_ID } from './_harness.mjs';
+import { quote, expectQuote, sweep, previewProviders, validHours, report, PROVIDER_ID, sql } from './_harness.mjs';
 
-const SERVICE_ID = 'feebd2eb-8347-435c-acda-10537b77e934'; // Poda de árboles — verificado 2026-09-11
+/**
+ * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
+ * `supabase/seed.sql` genera los UUID de `services` en cada `db reset`, así que un id fijo
+ * apunta a un servicio fantasma en cuanto se resiembra: es justo lo que le pasaba a este
+ * runner (todos los escenarios morían en `missing_provider_config` sin medir nada).
+ */
+const SERVICE_ID = (() => {
+  const fromEnv = process.env.TREE_SERVICE_ID;
+  if (fromEnv) return fromEnv;
+  const row = sql("select id from public.services where name = 'Poda de árboles' limit 1;");
+  if (!row) throw new Error('No se encuentra el servicio «Poda de árboles» en la base local.');
+  return row.trim();
+})();
 
 const tree = (overrides = {}) => ({
   id: overrides.id || 't1',

@@ -7,11 +7,23 @@
  *
  * Uso: node scripts/readiness/desbroce.mjs
  */
-import { quote, authority, sweep, expectQuote, expectError, pass, fail, untested, previewProviders, validHours, report } from './_harness.mjs';
+import { quote, authority, sweep, expectQuote, expectError, pass, fail, untested, previewProviders, validHours, report, sql } from './_harness.mjs';
 
 // El id heredado del runner anterior (e2bb35b1-...) es fantasma: no existe en este entorno
 // (confirmado contra `select id, name from public.services`). El real es este.
-const SERVICE_ID = 'd946c65f-c588-4103-baca-0317667f04aa';
+/**
+ * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
+ * `supabase/seed.sql` genera los UUID de `services` en cada `db reset`, así que un id fijo
+ * apunta a un servicio fantasma en cuanto se resiembra: es justo lo que le pasaba a este
+ * runner (todos los escenarios morían en `missing_provider_config` sin medir nada).
+ */
+const SERVICE_ID = (() => {
+  const fromEnv = process.env.WEEDING_SERVICE_ID;
+  if (fromEnv) return fromEnv;
+  const row = sql("select id from public.services where name = 'Desbroce de malas hierbas' limit 1;");
+  if (!row) throw new Error('No se encuentra el servicio «Desbroce de malas hierbas» en la base local.');
+  return row.trim();
+})();
 
 const zone = (overrides = {}) => ({
   weedingZones: [{ id: 'z1', area: 1000, state: 'normal', applyHerbicide: false, ...overrides.zone }],

@@ -48,7 +48,7 @@
 
 import {
   quote, expectQuote, expectError, sweep,
-  previewProviders, validHours, sql, bundleModule,
+  previewProviders, validHours, sql, bundleModule, nextOpenWeekdayIso,
   pass, fail, untested, report, PROVIDER_ID,
 } from './_harness.mjs';
 
@@ -78,7 +78,19 @@ function expectManualInvalid(label, result) {
   return false;
 }
 
-const SETOS = '7092ee0e-1779-45cf-bc2d-5235a757c618';
+/**
+ * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
+ * `supabase/seed.sql` genera los UUID de `services` en cada `db reset`, así que un id fijo
+ * apunta a un servicio fantasma en cuanto se resiembra: es justo lo que le pasaba a este
+ * runner (todos los escenarios morían en `missing_provider_config` sin medir nada).
+ */
+const SETOS = (() => {
+  const fromEnv = process.env.HEDGE_SERVICE_ID;
+  if (fromEnv) return fromEnv;
+  const row = sql("select id from public.services where name = 'Poda de setos' limit 1;");
+  if (!row) throw new Error('No se encuentra el servicio «Poda de setos» en la base local.');
+  return row.trim();
+})();
 const IN_COVERAGE = { lat: 36.51, lng: -4.882 };
 const OUT_OF_COVERAGE = { lat: 40.4168, lng: -3.7038 };
 
@@ -263,16 +275,19 @@ function nextSundayIso() {
   d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
   return d.toISOString().slice(0, 10);
 }
-function inDaysIso(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
 async function availability() {
   console.log('\n── 2A.7 · Disponibilidad y cobertura ─────────────────────────');
   const inCov = { address: 'Marbella centro', addressCoordinates: IN_COVERAGE };
+  // Fase 0 (2026-09-13): antes era `weekday` — un offset fijo desde "hoy" que caía en
+  // fin de semana según cuándo se relanzara el runner. Se pregunta a la BD cuál es el
+  // próximo día laborable con huecos sembrados.
+  const weekday = nextOpenWeekdayIso();
 
-  const wd = await validHours(SETOS, inDaysIso(7), { ...inCov, ...hedge(30, '0-2m', 1, 'normal', false) });
+  const wd = await validHours(SETOS, weekday, { ...inCov, ...hedge(30, '0-2m', 1, 'normal', false) });
   const wdHours = wd.body?.validHours || [];
   (wd.status === 200 && wdHours.length > 0 ? pass : fail)(
-    `valid_hours laborable ${inDaysIso(7)}`, `${wdHours.length} horas: ${JSON.stringify(wdHours)}`);
+    `valid_hours laborable ${weekday}`, `${wdHours.length} horas: ${JSON.stringify(wdHours)}`);
 
   const sunday = nextSundayIso();
   const vh = await validHours(SETOS, sunday, { ...inCov, ...hedge(30, '0-2m', 1, 'normal', false) });
@@ -283,7 +298,7 @@ async function availability() {
   const pp = await previewProviders(
     SETOS,
     { address: 'Calle de Alcalá 1, Madrid', addressCoordinates: OUT_OF_COVERAGE, ...hedge(30, '0-2m', 1, 'normal', false) },
-    { selectedDate: inDaysIso(7), windowDays: 14 },
+    { selectedDate: weekday, windowDays: 14 },
   );
   const excl = pp.body?.exclusions?.[PROVIDER_ID];
   const inQuotes = Boolean(pp.body?.quotes?.[PROVIDER_ID]);
@@ -297,7 +312,7 @@ async function availability() {
   const pp46 = await previewProviders(
     SETOS,
     { ...inCov, ...hedge(30, '4-6m', 1, 'normal', false) },
-    { selectedDate: inDaysIso(7), windowDays: 14 },
+    { selectedDate: weekday, windowDays: 14 },
   );
   const elig46 = (pp46.body?.eligibleProviderIds || []).includes(PROVIDER_ID);
   (elig46 ? pass : fail)('preview_providers seto 4-6m → jardinero elegible',

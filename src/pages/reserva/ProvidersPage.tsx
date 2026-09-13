@@ -85,8 +85,18 @@ const ProvidersPage: React.FC = () => {
 
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
 
+  // T10 (transversal): `String(startHour + durationHours).padStart(2,'0')` con horas
+  // fraccionarias (.5) daba literalmente "10.5:00" en vez de "10:30" — convierte la fracción
+  // a minutos. Mismo patrón que `addHoursToTime` en ChatWindow.tsx/ClientBookingCard.tsx.
+  const addHoursToTime = (startHour: number, hours: number): string => {
+    const totalMinutes = Math.round(startHour * 60 + hours * 60);
+    const endHour = Math.floor(totalMinutes / 60) % 24;
+    const endMinute = totalMinutes % 60;
+    return `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
+  };
+
   const buildTimeSlotLabel = (startHour: number, durationHours: number) => {
-    return `${String(startHour).padStart(2,'0')}:00 - ${String(startHour + durationHours).padStart(2,'0')}:00`;
+    return `${String(startHour).padStart(2,'0')}:00 - ${addHoursToTime(startHour, durationHours)}`;
   };
 
   const clearSelectedTimeSlot = () => {
@@ -1013,7 +1023,7 @@ const ProvidersPage: React.FC = () => {
           {/* Rango horario seleccionado */}
           {selectedHour != null && (
             <div className="mt-3 text-sm text-green-700 tabular-nums" aria-live="polite">
-              Horario del trabajo: {String(selectedHour).padStart(2,'0')}:00 – {String(selectedHour + getEstimatedHours(selectedProvider)).padStart(2,'0')}:00
+              Horario del trabajo: {String(selectedHour).padStart(2,'0')}:00 – {addHoursToTime(selectedHour, getEstimatedHours(selectedProvider))}
             </div>
           )}
         </div>

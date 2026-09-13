@@ -136,8 +136,18 @@ async function main() {
   // 4e. Hallazgo #3 CORREGIDO (Fase 3, 2026-09-12): aviso de plausibilidad, mismo patrón que
   // lawn_area_implausible/hedge_length_implausible/palm_quantity_implausible/
   // shrub_area_implausible. Desbroce era el único de los 5 servicios de área/cantidad sin uno.
+  //
+  // El motor en proceso (READINESS_ENGINE=local) devuelve warnings como objetos
+  // `{code,message}`, pero booking-authority los aplana a string plano por HTTP (mismo
+  // contrato que setos ya documentó: PR #23, "ajuste del runner al contrato de warnings por
+  // HTTP" — no era un fallo del fix, solo de cómo lo comprobaba el runner). Se acepta
+  // cualquiera de las dos formas para que el runner sirva igual en local y por HTTP.
+  const hasWeedingImplausibleWarning = (warnings) =>
+    (warnings || []).some((w) =>
+      typeof w === 'string' ? w.includes('weeding_area_implausible') || w.toLowerCase().includes('parcela residencial') : w.code === 'weeding_area_implausible',
+    );
   const implausible = await quote(SERVICE_ID, { weedingZones: [{ area: 3000, state: 'normal', applyHerbicide: false }], wasteRemoval: false });
-  const hasImplausibleWarning = (implausible.warnings || implausible.body?.warnings || []).some((w) => w.code === 'weeding_area_implausible');
+  const hasImplausibleWarning = hasWeedingImplausibleWarning(implausible.warnings || implausible.body?.warnings);
   if (implausible.ok && hasImplausibleWarning) {
     pass('4e. área 3000 m² (por debajo del máximo manual, por encima del umbral de plausibilidad) → aviso', JSON.stringify(implausible.warnings || implausible.body?.warnings));
   } else {

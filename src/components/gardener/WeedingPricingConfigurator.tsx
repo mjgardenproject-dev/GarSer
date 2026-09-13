@@ -13,7 +13,9 @@ interface Props {
   initialConfig?: WeedingPricingConfig;
   onChange: (config: WeedingPricingConfig) => void;
   onSave?: (config: WeedingPricingConfig) => Promise<void>;
-  licenseStatus?: 'pending' | 'approved' | 'rejected' | null;
+  licenseStatus?: 'pending' | 'approved' | 'rejected' | 'expired' | null;
+  /** D3: guía al jardinero a la pestaña de licencia. Opcional para no romper otros usos/tests. */
+  onGoToLicense?: () => void;
 }
 
 const EMPTY_CONFIG: WeedingPricingConfig = {
@@ -28,17 +30,22 @@ const EMPTY_CONFIG: WeedingPricingConfig = {
   }
 };
 
-const WeedingPricingConfigurator: React.FC<Props> = ({ 
-  value, 
-  initialConfig, 
-  onChange, 
-  onSave, 
-  licenseStatus = null 
+const WeedingPricingConfigurator: React.FC<Props> = ({
+  value,
+  initialConfig,
+  onChange,
+  onSave,
+  licenseStatus = null,
+  onGoToLicense
 }) => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isHerbicideEnabled, setIsHerbicideEnabled] = useState<boolean>(() => {
     return (value?.precio_herbicida_m2 || 0) > 0;
   });
+  // D3: sin licencia vigente no se puede ACTIVAR el herbicida — antes era solo un aviso
+  // ("recuerda que debes subir tu carnet") que no impedía nada; el jardinero podía guardar
+  // el precio de herbicida sin carnet y el motor lo cobraba igual.
+  const isLicenseActive = licenseStatus === 'approved';
 
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
 
@@ -219,19 +226,6 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
 
       <hr className="border-gray-200 my-8" />
 
-      {/* Herbicide License Warning */}
-      {isHerbicideEnabled && (!licenseStatus || licenseStatus === 'rejected') && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Licencia fitosanitaria requerida</p>
-            <p className="text-xs text-amber-700 mt-1">
-              Has activado la aplicación de herbicida. Recuerda que debes subir tu carnet de manipulador de productos fitosanitarios en la sección superior para poder ofrecer este servicio.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Velocidad de trabajo (Obligatorio) */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
@@ -286,6 +280,11 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
           <label className="relative inline-flex items-center cursor-pointer">
             <button
               type="button"
+              // D3: sin licencia vigente no se puede ACTIVAR el herbicida — `disabled` sólo
+              // bloquea ENCENDERLO (si ya estaba encendido de antes, sigue pudiendo apagarse).
+              // Antes esto era solo un aviso que no impedía nada: el jardinero podía guardar
+              // el precio de herbicida sin carnet y el motor lo cobraba igual.
+              disabled={!isHerbicideEnabled && !isLicenseActive}
               onClick={() => {
                 const newVal = !isHerbicideEnabled;
                 setIsHerbicideEnabled(newVal);
@@ -293,11 +292,12 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
                   updateConfig({ precio_herbicida_m2: 0 });
                 }
               }}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2 ${
+              className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2 ${
                 isHerbicideEnabled ? 'bg-green-600' : 'bg-gray-200'
-              }`}
+              } ${!isHerbicideEnabled && !isLicenseActive ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
               role="switch"
               aria-checked={isHerbicideEnabled}
+              aria-disabled={!isHerbicideEnabled && !isLicenseActive}
             >
               <span
                 aria-hidden="true"
@@ -308,6 +308,33 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
             </button>
           </label>
         </div>
+
+        {!isHerbicideEnabled && !isLicenseActive && (
+          <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800">
+                {licenseStatus === 'expired' ? 'Tu licencia ha caducado' : 'Licencia fitosanitaria requerida'}
+              </p>
+              <p className="text-xs text-amber-700 mt-1">
+                {licenseStatus === 'expired'
+                  ? 'No puedes activar el herbicida hasta que vuelvas a subir tu carnet y sea aprobado.'
+                  : licenseStatus === 'pending'
+                    ? 'Tu carnet está en revisión. Podrás activar el herbicida en cuanto se apruebe.'
+                    : 'Por ley (RD 1311/2012), aplicar herbicida exige el carnet de manipulador de productos fitosanitarios verificado. Sube tu carnet para poder activarlo.'}
+              </p>
+              {onGoToLicense && (
+                <button
+                  type="button"
+                  onClick={onGoToLicense}
+                  className="mt-2 text-xs font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-950"
+                >
+                  {licenseStatus === 'expired' ? 'Renovar mi carnet' : 'Subir mi carnet ahora'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {isHerbicideEnabled && (
           <div className="mt-4 pt-4">

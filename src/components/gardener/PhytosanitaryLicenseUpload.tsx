@@ -8,7 +8,7 @@ import { GardenerLicense } from '../../types';
 import toast from 'react-hot-toast';
 
 interface PhytosanitaryLicenseUploadProps {
-  onStatusChange: (status: 'pending' | 'approved' | 'rejected' | null) => void;
+  onStatusChange: (status: 'pending' | 'approved' | 'rejected' | 'expired' | null) => void;
 }
 
 const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({ onStatusChange }) => {
@@ -51,11 +51,12 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
         console.error('Error fetching license:', error);
       }
       
-      setLicense(data as GardenerLicense);
-      if (data?.license_number) {
-        setLicenseNumber(data.license_number);
+      const typedLicense = data as GardenerLicense | null;
+      setLicense(typedLicense);
+      if (typedLicense?.license_number) {
+        setLicenseNumber(typedLicense.license_number);
       }
-      onStatusChange(data?.status || null);
+      onStatusChange(typedLicense?.status || null);
     } catch (e) {
       console.error(e);
     } finally {
@@ -189,6 +190,10 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
   const renderStatus = () => {
     if (!license) return null;
 
+    const formattedExpiry = license.expires_at
+      ? new Date(license.expires_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+      : null;
+
     switch (license.status) {
       case 'approved':
         return (
@@ -196,7 +201,10 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
             <CheckCircle className="w-5 h-5" />
             <div>
               <p className="font-medium">Licencia verificada</p>
-              <p className="text-xs opacity-80">Estás habilitado para configurar y realizar tratamientos químicos.</p>
+              <p className="text-xs opacity-80">
+                Estás habilitado para configurar y realizar tratamientos químicos.
+                {formattedExpiry && ` Caduca el ${formattedExpiry}.`}
+              </p>
             </div>
           </div>
         );
@@ -220,6 +228,19 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
             </div>
           </div>
         );
+      case 'expired':
+        return (
+          <div className="flex items-center gap-2 text-red-700 bg-red-50 p-3 rounded-lg border border-red-200 mb-4">
+            <AlertTriangle className="w-5 h-5" />
+            <div>
+              <p className="font-medium">Licencia caducada{formattedExpiry ? ` el ${formattedExpiry}` : ''}</p>
+              <p className="text-xs opacity-80">
+                Ya no puedes ofrecer tratamientos químicos. Vuelve a subir tu carnet vigente
+                para que lo revisemos otra vez.
+              </p>
+            </div>
+          </div>
+        );
       default:
         return null;
     }
@@ -238,7 +259,7 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
 
       {renderStatus()}
 
-      {(!license || license.status === 'rejected') && (
+      {(!license || license.status === 'rejected' || license.status === 'expired') && (
         <div className="space-y-4 mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
         <div className="flex items-center justify-between mb-1">
           <label className="block text-sm font-medium text-gray-700">

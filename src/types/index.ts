@@ -28,7 +28,7 @@ export interface GardenerProfile extends Profile {
   description: string;
   is_available: boolean;
   has_phytosanitary_license?: boolean;
-  license_verification_status?: 'pending' | 'approved' | 'rejected' | null;
+  license_verification_status?: 'pending' | 'approved' | 'rejected' | 'expired' | null;
   license_verified_at?: string | null;
   license_expires_at?: string | null;
 }
@@ -38,7 +38,7 @@ export interface GardenerLicense {
   gardener_id: string;
   license_number?: string;
   document_url: string;
-  status: 'pending' | 'approved' | 'rejected' | 'replaced';
+  status: 'pending' | 'approved' | 'rejected' | 'replaced' | 'expired';
   reviewed_at?: string;
   reviewed_by?: string;
   expires_at?: string;

@@ -27,12 +27,14 @@ interface Props {
   initialConfig?: PhytosanitaryPricingConfig;
   onChange: (config: PhytosanitaryPricingConfig) => void;
   onSave?: (config: PhytosanitaryPricingConfig) => Promise<void>;
-  licenseStatus?: 'pending' | 'approved' | 'rejected' | null;
+  licenseStatus?: 'pending' | 'approved' | 'rejected' | 'expired' | null;
+  /** D3: guía al jardinero a la pestaña de licencia. Opcional para no romper otros usos/tests. */
+  onGoToLicense?: () => void;
 }
 
 export type { PhytosanitaryPricingConfig } from '../../types';
 
-const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, licenseStatus = null }) => {
+const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, licenseStatus = null, onGoToLicense }) => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [openSections, setOpenSections] = useState<Record<DetailedCategoryKey, boolean>>({
@@ -221,14 +223,47 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
 
   return (
     <div className="space-y-3">
+      {/* D3: ahora esto es cierto de verdad (T1 filtra en booking-authority, no solo el
+          texto) — sin licencia vigente, ningún cliente que pida tratamiento químico verá a
+          este jardinero. El botón lleva directo a subir el carnet. */}
       {(!licenseStatus || licenseStatus === 'rejected') && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-amber-800">Licencia fitosanitaria requerida para químicos</p>
             <p className="text-xs text-amber-700 mt-1">
-              Puedes configurar tus tarifas ahora. Sin embargo, <strong>solo aparecerás en búsquedas de tratamientos ecológicos</strong> hasta que subas y se verifique tu carnet de manipulador de productos fitosanitarios.
+              Puedes configurar tus tarifas ahora. Sin embargo, <strong>no aparecerás en búsquedas de tratamientos con producto químico</strong> hasta que subas y se apruebe tu carnet de manipulador de productos fitosanitarios. Sí aparecerás para tratamientos ecológicos.
             </p>
+            {onGoToLicense && (
+              <button
+                type="button"
+                onClick={onGoToLicense}
+                className="mt-2 text-xs font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-950"
+              >
+                Subir mi carnet ahora
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {licenseStatus === 'expired' && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-800">Tu licencia ha caducado</p>
+            <p className="text-xs text-red-700 mt-1">
+              Ya no apareces en búsquedas de tratamientos con producto químico. Vuelve a subir tu carnet vigente para que lo revisemos y puedas ofrecerlos de nuevo.
+            </p>
+            {onGoToLicense && (
+              <button
+                type="button"
+                onClick={onGoToLicense}
+                className="mt-2 text-xs font-semibold text-red-900 underline underline-offset-2 hover:text-red-950"
+              >
+                Renovar mi carnet
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -239,7 +274,7 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
           <div>
             <p className="text-sm font-semibold text-blue-800">Licencia en revisión</p>
             <p className="text-xs text-blue-700 mt-1">
-              Tu licencia está siendo verificada. Mientras tanto, puedes configurar tus tarifas, pero <strong>solo aparecerás en búsquedas de tratamientos ecológicos</strong>.
+              Tu licencia está siendo verificada. Mientras tanto, puedes configurar tus tarifas, pero <strong>no aparecerás en búsquedas de tratamientos con producto químico</strong> hasta que se apruebe.
             </p>
           </div>
         </div>

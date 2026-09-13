@@ -19,6 +19,10 @@ const LicenseVerificationAdmin: React.FC = () => {
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [docError, setDocError] = useState(false);
   const [processing, setProcessing] = useState(false);
+  // D1 (decisión del usuario, 2026-09-13): la caducidad la escribe el admin ANTES de
+  // aprobar. Sin fecha (o con una ya pasada) no se puede aprobar — lo exige también la RPC
+  // `review_gardener_license`, esto es solo para no dejar pulsar "Aprobar" en vano.
+  const [expiresAt, setExpiresAt] = useState('');
 
   useEffect(() => {
     fetchPendingLicenses();
@@ -78,6 +82,7 @@ const LicenseVerificationAdmin: React.FC = () => {
     setSelectedLicense(license);
     setSignedUrl(null);
     setDocError(false);
+    setExpiresAt('');
     try {
       const { data, error } = await supabase.storage
         .from('private_licenses')
@@ -94,49 +99,31 @@ const LicenseVerificationAdmin: React.FC = () => {
 
   const handleAction = async (status: 'approved' | 'rejected') => {
     if (!selectedLicense) return;
+    if (status === 'approved' && !expiresAt) {
+      toast.error('Indica la fecha de caducidad de la licencia antes de aprobarla.');
+      return;
+    }
     setProcessing(true);
     try {
-      // 1. Update license status
-      const { error: licenseError } = await supabase
-        .from('gardener_licenses')
-        .update({ 
-          status,
-          reviewed_at: new Date().toISOString()
-        })
-        .eq('id', selectedLicense.id);
+      // Una sola llamada, atómica en el servidor (review_gardener_license): antes esto eran
+      // dos UPDATE sueltos desde el navegador, uno por tabla y sin transacción entre ambos —
+      // si el segundo fallaba, la licencia quedaba aprobada en una tabla y sin reflejar en
+      // la otra. La RPC también exige la caducidad para aprobar, no solo esta pantalla.
+      const { error } = await supabase.rpc('review_gardener_license', {
+        p_license_id: selectedLicense.id,
+        p_status: status,
+        p_expires_at: status === 'approved' ? new Date(`${expiresAt}T23:59:59`).toISOString() : undefined,
+      });
 
-      if (licenseError) throw licenseError;
-
-      // 2. If approved, update gardener profile
-      if (status === 'approved') {
-        const { error: profileError } = await supabase
-          .from('gardener_profiles')
-          .update({
-            has_phytosanitary_license: true,
-            license_verification_status: 'approved',
-            license_verified_at: new Date().toISOString()
-          })
-          .eq('user_id', selectedLicense.gardener_id);
-          
-        if (profileError) throw profileError;
-      } else if (status === 'rejected') {
-        const { error: profileError } = await supabase
-          .from('gardener_profiles')
-          .update({
-            has_phytosanitary_license: false,
-            license_verification_status: 'rejected'
-          })
-          .eq('user_id', selectedLicense.gardener_id);
-          
-        if (profileError) throw profileError;
-      }
+      if (error) throw error;
 
       toast.success(`Licencia ${status === 'approved' ? 'aprobada' : 'rechazada'} correctamente`);
       setSelectedLicense(null);
+      setExpiresAt('');
       fetchPendingLicenses();
     } catch (e: any) {
       console.error(e);
-      toast.error('Error al actualizar la licencia');
+      toast.error(e?.message || 'Error al actualizar la licencia');
     } finally {
       setProcessing(false);
     }
@@ -247,8 +234,29 @@ const LicenseVerificationAdmin: React.FC = () => {
                   </p>
                 )}
               </div>
+
+              {/* D1: la caducidad se escribe ANTES de aprobar, no después. Sin fecha futura
+                  no se puede aprobar (aquí y también en la RPC). */}
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <label htmlFor="license-expires-at" className="block font-semibold text-amber-900 mb-1 text-sm">
+                  Fecha de caducidad de la licencia
+                </label>
+                <p className="text-xs text-amber-800 mb-2">
+                  Compruébala en el documento. Cuando pase esta fecha, la licencia caduca sola:
+                  el profesional dejará de aparecer para tratamientos químicos y tendrá que
+                  volver a subir el carnet y esperar tu aprobación.
+                </p>
+                <input
+                  id="license-expires-at"
+                  type="date"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                  min={new Date().toISOString().slice(0, 10)}
+                  className="px-3 py-2 border border-amber-300 rounded-lg text-sm"
+                />
+              </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-200 bg-white flex gap-3 justify-end rounded-b-2xl">
               <button
                 onClick={() => handleAction('rejected')}
@@ -260,7 +268,8 @@ const LicenseVerificationAdmin: React.FC = () => {
               </button>
               <button
                 onClick={() => handleAction('approved')}
-                disabled={processing || (!signedUrl && !docError)}
+                disabled={processing || (!signedUrl && !docError) || !expiresAt}
+                title={!expiresAt ? 'Indica antes la fecha de caducidad' : undefined}
                 className="px-6 py-2.5 bg-green-600 text-white hover:bg-green-700 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-green-600/20"
               >
                 <CheckCircle className="w-5 h-5" />

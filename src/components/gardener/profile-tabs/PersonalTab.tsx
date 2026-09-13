@@ -7,7 +7,7 @@ import SaveStatusIndicator from '../../common/SaveStatusIndicator';
 
 interface PersonalTabProps {
   loading: boolean;
-  setLicenseStatus: (status: 'pending' | 'approved' | 'rejected' | null) => void;
+  setLicenseStatus: (status: 'pending' | 'approved' | 'rejected' | 'expired' | null) => void;
   initialData?: {
     full_name: string;
     phone: string;

@@ -80,7 +80,6 @@ const ProvidersPage: React.FC = () => {
   const [availabilityError, setAvailabilityError] = useState('');
   const [providersReloadToken, setProvidersReloadToken] = useState(0);
   const [emptyStateHint, setEmptyStateHint] = useState('');
-  const [requiresCertifiedLicense, setRequiresCertifiedLicense] = useState(false);
   const reqIdRef = useRef<number>(0);
   const monthFormatter = useMemo(() => new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }), []);
 
@@ -409,7 +408,6 @@ const ProvidersPage: React.FC = () => {
           (bookingData.weedingZones || []).some((z: any) => z.applyHerbicide === true);
 
         const requiresChemical = isPhytosanitaryChemical || isWeedingHerbicide;
-        setRequiresCertifiedLicense(requiresChemical);
 
         const preview = gardenerIds.length > 0
           ? await previewProviderQuotes({
@@ -476,23 +474,32 @@ const ProvidersPage: React.FC = () => {
         setPreviewQuotes(nextPreviewQuotes);
         setEarliestByProvider(nextEarliestByProvider);
         setEmptyStateHint(
-          requiresChemical
-            ? 'Solo podemos mostrar profesionales con licencia fitosanitaria válida para este servicio.'
-            : eligibleProviderIds.length === 0
-              ? exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_coordinates')
-                /* `missing_coordinates` salta si faltan las coordenadas de CUALQUIERA de las dos
-                   partes, pero el aviso culpaba siempre al profesional. Cuando la dirección del
-                   cliente es la que no está geolocalizada, mandaba a revisar el sitio
-                   equivocado: se mira aquí para decir cuál de las dos falta. */
-                ? !bookingData.addressCoordinates
-                  ? 'No hemos podido situar tu dirección en el mapa, así que no podemos comprobar qué profesionales la cubren. Vuelve al primer paso y elige la dirección de las sugerencias.'
-                  : 'Ningún profesional tiene una dirección operativa validada para filtrar la cobertura. Revisa su perfil de cobertura.'
-                : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'outside_coverage')
-                  ? 'No hay profesionales cuyo radio operativo cubra la dirección indicada.'
-                  : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'no_reservable_availability')
-                    ? 'No hay huecos reservables válidos para la duración estimada en la fecha consultada.'
-                    : 'La elegibilidad y disponibilidad se validan en backend. Prueba otra fecha o revisa los detalles del servicio.'
-              : 'Prueba otra fecha o revisa los detalles del servicio para ampliar opciones.'
+          // T1 (transversal, 2026-09-13): antes esto SIEMPRE mostraba el mensaje de licencia
+          // cuando el trabajo era químico, sin mirar la exclusión real — mentía en los dos
+          // sentidos: la atribuía a la licencia aunque la causa fuera otra (p. ej. T7, que
+          // el trabajo no cabe en un día), Y no existía ningún código de exclusión real por
+          // licencia porque el backend no la comprobaba. Ahora sí existe
+          // (`missing_phytosanitary_license`, bookingEligibilityCore.ts), así que el mensaje
+          // se decide por la MISMA exclusión real que los demás casos, no por adivinarlo.
+          eligibleProviderIds.length === 0
+            ? exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_coordinates')
+              /* `missing_coordinates` salta si faltan las coordenadas de CUALQUIERA de las dos
+                 partes, pero el aviso culpaba siempre al profesional. Cuando la dirección del
+                 cliente es la que no está geolocalizada, mandaba a revisar el sitio
+                 equivocado: se mira aquí para decir cuál de las dos falta. */
+              ? !bookingData.addressCoordinates
+                ? 'No hemos podido situar tu dirección en el mapa, así que no podemos comprobar qué profesionales la cubren. Vuelve al primer paso y elige la dirección de las sugerencias.'
+                : 'Ningún profesional tiene una dirección operativa validada para filtrar la cobertura. Revisa su perfil de cobertura.'
+              : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'outside_coverage')
+                ? 'No hay profesionales cuyo radio operativo cubra la dirección indicada.'
+                : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'no_reservable_availability')
+                  ? 'No hay huecos reservables válidos para la duración estimada en la fecha consultada.'
+                  : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_phytosanitary_license')
+                    ? 'Este tratamiento necesita producto químico y ningún profesional disponible tiene ahora mismo la licencia fitosanitaria vigente. Prueba con un tratamiento ecológico, si tu servicio lo permite.'
+                    : requiresChemical
+                      ? 'Este servicio pide producto químico, para el que hace falta licencia fitosanitaria vigente. Si no ves resultados, revisa también la fecha y la dirección: puede no ser solo por la licencia.'
+                      : 'La elegibilidad y disponibilidad se validan en backend. Prueba otra fecha o revisa los detalles del servicio.'
+            : 'Prueba otra fecha o revisa los detalles del servicio para ampliar opciones.'
         );
         
         // Ensure selected provider is valid for the current filters
@@ -515,7 +522,6 @@ const ProvidersPage: React.FC = () => {
         setPreviewQuotes({});
         setEarliestByProvider({});
         setEmptyStateHint('');
-        setRequiresCertifiedLicense(false);
         setLoadError('No se pudieron cargar los profesionales. Reintenta.');
       } finally {
         setLoading(false);
@@ -732,9 +738,11 @@ const ProvidersPage: React.FC = () => {
               No hay profesionales disponibles
             </h3>
             <p className="text-gray-600 mb-6 leading-relaxed">
-              {requiresCertifiedLicense
-                ? 'Este servicio requiere una licencia fitosanitaria válida y ahora mismo no hay disponibilidad compatible en tu zona.'
-                : 'Ahora mismo no hay ningún profesional compatible con este servicio y tus filtros actuales.'}
+              {/* T1 (transversal): antes este título afirmaba SIEMPRE que la causa era la
+                  licencia cuando el trabajo era químico, aunque la exclusión real fuera otra
+                  (cobertura, agenda...). El porqué exacto vive en emptyStateHint, más abajo,
+                  que sí se calcula a partir de la exclusión real que devuelve el backend. */}
+              Ahora mismo no hay ningún profesional compatible con este servicio y tus filtros actuales.
             </p>
             {emptyStateHint && (
               <p className="mb-4 text-sm text-gray-500">

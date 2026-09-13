@@ -10,6 +10,12 @@ export type ProviderProfileLike = {
   max_distance: number | null;
   operational_latitude: number | null;
   operational_longitude: number | null;
+  // T1 (transversal, 2026-09-13): campos requeridos, no opcionales, a propósito — así
+  // cualquier sitio que construya un ProviderProfileLike sin pasarlos falla en tiempo de
+  // compilación en vez de dejar pasar silenciosamente a un jardinero sin licencia vigente
+  // para un tratamiento que la exige.
+  license_verification_status: string | null;
+  license_expires_at: string | null;
 };
 
 export type ProviderExclusionCode =
@@ -18,7 +24,8 @@ export type ProviderExclusionCode =
   | 'missing_provider_profile'
   | 'missing_coordinates'
   | 'outside_coverage'
-  | 'no_reservable_availability';
+  | 'no_reservable_availability'
+  | 'missing_phytosanitary_license';
 
 export type ProviderExclusion = {
   code: ProviderExclusionCode;
@@ -117,6 +124,46 @@ export const getValidStartHours = (hours: number[], duration: number) => {
   return valid;
 };
 
+/**
+ * T1 (transversal) — ¿este trabajo necesita el carnet de manipulador de productos
+ * fitosanitarios (RD 1311/2012)? Solo lo piden fitosanitarios con producto NO ecológico y
+ * desbroce con herbicida — exactamente el mismo criterio que ya usaba `ProvidersPage.tsx`
+ * para el TEXTO (nunca para filtrar), ahora reutilizado aquí para filtrar de verdad.
+ *
+ * D2 (decisión del usuario, 2026-09-13): palmeras se queda FUERA de esta puerta a
+ * propósito, aunque su extra fitosanitario (p.ej. Picudo Rojo) tenga la misma base legal.
+ *
+ * `productPreference` ausente cuenta como químico (no como eco): un dato que falta no
+ * puede blanquear el filtro.
+ */
+export function bookingRequiresPhytosanitaryLicense(
+  bookingInput: SerializableBookingData,
+): boolean {
+  const requiresChemicalPhytosanitary = (bookingInput.phytosanitaryZones || []).some(
+    (zone) => zone?.productPreference !== 'ecological',
+  );
+  const requiresHerbicide = (bookingInput.weedingZones || []).some(
+    (zone) => zone?.applyHerbicide === true,
+  );
+  return requiresChemicalPhytosanitary || requiresHerbicide;
+}
+
+/**
+ * T1 + D1 — una licencia está VIGENTE cuando el admin la aprobó Y la fecha de caducidad
+ * (que el admin escribe al aprobar, `review_gardener_license`) todavía no ha pasado. El
+ * booleano `has_phytosanitary_license` NO es la fuente de verdad por sí solo: se deja de
+ * usar aquí a propósito porque no sabe de caducidad.
+ */
+export function isPhytosanitaryLicenseActive(
+  profile?: Pick<ProviderProfileLike, 'license_verification_status' | 'license_expires_at'> | null,
+): boolean {
+  if (!profile) return false;
+  if (profile.license_verification_status !== 'approved') return false;
+  if (!profile.license_expires_at) return false;
+  const expiresAtMs = new Date(profile.license_expires_at).getTime();
+  return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+}
+
 const toExclusionFromQuote = (quote: BookingQuoteResult): ProviderExclusion => {
   const firstWarning = quote.warnings[0]?.message
     || 'La configuración del profesional no es operativa para este servicio.';
@@ -178,6 +225,22 @@ export function evaluateOperationalEligibility(params: {
         ),
       };
     }
+  }
+
+  // T1 (transversal): un profesional sin licencia vigente para el tratamiento que se pide
+  // no es elegible, punto — hasta ahora nada en el backend comprobaba esto y el filtro solo
+  // existía como texto en ProvidersPage (nunca filtraba la lista de verdad).
+  if (
+    bookingRequiresPhytosanitaryLicense(params.bookingInput)
+    && !isPhytosanitaryLicenseActive(params.profile)
+  ) {
+    return {
+      eligible: false,
+      exclusion: buildProviderExclusion(
+        'missing_phytosanitary_license',
+        'El profesional no tiene una licencia fitosanitaria vigente para este tratamiento.',
+      ),
+    };
   }
 
   const quote = buildAuthoritativeBookingQuote({

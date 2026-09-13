@@ -411,7 +411,11 @@ async function getProviderProfile(
 ): Promise<(ProviderProfileLike & { address?: string | null }) | null> {
   const { data, error } = await admin
     .from('gardener_profiles')
-    .select('address, max_distance, operational_latitude, operational_longitude')
+    // T1 (transversal, 2026-09-13): campos de licencia — evaluateOperationalEligibility los
+    // exige para volver a validar la elegibilidad justo antes de cobrar (ver
+    // bookingEligibilityCore.ts). Sin ellos, esta revalidación trataría a CUALQUIER
+    // jardinero como sin licencia y rechazaría el pago de trabajos químicos ya elegibles.
+    .select('address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at')
     .eq('user_id', gardenerId)
     .maybeSingle();
 

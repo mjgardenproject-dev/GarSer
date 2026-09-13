@@ -177,6 +177,23 @@ async function expireStaleRequests(admin: any) {
 }
 
 /**
+ * Trabajo 5 (T1 + D1) — caducar licencias fitosanitarias aprobadas cuya fecha ya pasó.
+ *
+ * El admin escribe la caducidad al aprobar (`review_gardener_license`), pero nadie más
+ * mira el reloj: sin este job, una licencia caducada seguiría marcada 'approved' para
+ * siempre y `isPhytosanitaryLicenseActive` (bookingEligibilityCore.ts) sólo la habría
+ * excluido si comparara la fecha en cada evaluación — lo hace, pero D1 pide además que el
+ * ESTADO visible cambie a 'expired' (el jardinero tiene que enterarse y volver a subir el
+ * documento, no quedarse en un "approved" que ya no significa nada).
+ */
+// deno-lint-ignore no-explicit-any
+async function expirePhytosanitaryLicenses(admin: any) {
+  const { data, error } = await admin.rpc('expire_due_phytosanitary_licenses');
+  if (error) throw new Error(`expire_due_phytosanitary_licenses: ${error.message}`);
+  return { expired: Number(data || 0) };
+}
+
+/**
  * Trabajo 4 (F3) — respaldo de la captura/liberación diferida del pago.
  *
  * La captura de la comisión (al aceptar) y la liberación de la autorización (al
@@ -362,6 +379,7 @@ Deno.serve(async (req) => {
     ['dueBookings', (a: unknown) => closeDueBookings(a, supabaseUrl, serviceKey)],
     ['staleRequests', (a: unknown) => expireStaleRequests(a)],
     ['stuckPayments', (a: unknown) => reconcileStuckPayments(a, stripeSecret)],
+    ['phytosanitaryLicenses', (a: unknown) => expirePhytosanitaryLicenses(a)],
   ] as const) {
     try {
       result[name] = await job(admin);

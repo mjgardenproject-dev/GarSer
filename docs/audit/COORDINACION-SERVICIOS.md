@@ -317,6 +317,77 @@ tocado ningún runner de arbustos, desbroce ni fitosanitarios** — corresponde 
 auditoría arreglar el suyo en su propia Fase 1/2, igual que hicieron césped, árboles,
 setos y palmeras.
 
+**Desbroce fusionado (2026-09-12/13): PR [#28](https://github.com/mjgardenproject-dev/GarSer/pull/28)
+(hallazgos #1-#3: validación manual, horas reales, aviso de plausibilidad) y PR
+[#29](https://github.com/mjgardenproject-dev/GarSer/pull/29) (hallazgo #4 — herbicida con
+tiempo proporcional — y la unificación de desbroce con `ManualEntryWizard`), ambas
+mezcladas por el usuario. El #29 necesitó un rebase + `--force-with-lease` sobre
+`origin/main` antes de poder abrirse: el squash-merge del #28 dejó el commit de la segunda
+ronda huérfano en la rama con un conflicto real (no solo un diff feo) contra el nuevo
+commit de `main` — si a otra auditoría le pasa lo mismo (dos rondas de fix, la primera ya
+fusionada por squash antes de subir la segunda), el arreglo es exactamente ese: `git fetch
+origin && git rebase origin/main` (git detecta solo que el commit ya squasheado es
+equivalente y lo salta) y luego `git push --force-with-lease` — seguro solo si eres el
+único que ha tocado esa rama.
+
+**Secuencia de cierre para este merge (dada al usuario el 2026-09-13):**
+```bash
+cd ~/Downloads/GarSer-referencia && git pull
+cd ~/Downloads/GarSer-referencia && supabase functions deploy booking-authority --project-ref hleqspdnjfswrmozjkai --use-api
+cd ~/Downloads/GarSer-referencia && supabase stop && supabase start
+cd ~/Downloads/GarSer-referencia && supabase migration up
+comm -23 <(ls ~/Downloads/GarSer-referencia/supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 | sort -u) <(docker exec -i supabase_db_GarSer-referencia psql -U postgres -d postgres -tAc "select version from supabase_migrations.schema_migrations" | sort -u)
+cd ~/Downloads/auditorias/desbroce && SUPABASE_PROJECT_DIR=~/Downloads/GarSer-referencia SUPABASE_DB_CONTAINER=supabase_db_GarSer-referencia bash -c 'for r in scripts/readiness/*.mjs; do node "$r" || echo "FALLA $r"; done'
+```
+**Corrección (2026-09-13) al primer intento de este último paso:** sin
+`SUPABASE_PROJECT_DIR`, el harness intenta `supabase status -o json` desde
+`~/Downloads/auditorias/desbroce` (que no es el checkout donde está el stack levantado) y
+falla para los 7 runners con *"No se pudo leer 'supabase status'"*; y `fitosanitarios.mjs`
+en concreto además necesita `SUPABASE_DB_CONTAINER`, porque llama a `sql()` directamente
+con el nombre de contenedor por defecto del harness (`supabase_db_GarSer-main_4`), que no
+es el real en este entorno. Las dos variables ya están en el comando de arriba — si otra
+auditoría corre este mismo paso 6 fuera de `GarSer-referencia`, necesita las dos.
+
+Ninguna migración nueva esperada (ni el #28 ni el #29 tocan `supabase/migrations/`). Si tu
+sesión estaba en medio de algo cuando se reinició Supabase para este merge y algo falló sin
+motivo aparente, es probablemente por eso — rebasa tu worktree sobre `origin/main` y
+repite lo que dependa de `bookingQuoteCore.ts` o `DetailsPage.tsx` (los dos ficheros
+compartidos que esta rama tocó, cada uno contenido en su propio bloque de desbroce — ver
+la fila de cada uno en §2).
+
+**Paso 6 ejecutado (2026-09-13) — resultado por servicio, para que cada sesión sepa si el
+fallo que ve es suyo o preexistente:**
+
+| Runner | Resultado | ¿Causado por el merge de desbroce? |
+|---|---|---|
+| `desbroce.mjs` | 18 PASA/1 FALLA al momento de correrlo, **19/0 tras un ajuste al propio runner** (ver abajo) | — (es el que se acaba de mezclar) |
+| `fitosanitarios.mjs` | 78 PASA/0 FALLA | No afectado |
+| `arboles.mjs`, `cesped.mjs`, `arbustos.mjs`, `palmeras.mjs`, `setos.mjs` | Cada uno con 1-3 FALLA | **No** — las cuatro causas son preexistentes, ninguna toca código de desbroce ni ningún fichero que esta rama haya modificado |
+
+Dos causas, ninguna relacionada con este merge:
+
+1. **Avisos de plausibilidad aplanados a string por HTTP.** `booking-authority` devuelve
+   `warnings` como `{code,message}` en el motor en proceso pero como texto plano por HTTP
+   (mismo contrato que setos ya documentó: PR #23, *"ajuste del runner al contrato de
+   warnings por HTTP — no era un fallo del fix, solo de cómo lo comprobaba el runner"*).
+   Afecta a los runners que comprueban `warning.code` en vez del texto: `desbroce.mjs`
+   (`4e`, corregido en el momento — ver abajo), `arbustos.mjs` (`shrub_area_implausible`),
+   `palmeras.mjs` (`palm_terminal_range` y el aviso de 500 palmeras), y probablemente
+   `cesped.mjs` (`lawn_area_implausible` y el par 2000/2001 m²). El aviso en sí **sí se
+   dispara correctamente** en los cuatro casos — se ve el texto completo en el `obtenido`
+   de cada fallo — el defecto está en cómo cada runner lo comprueba, no en el motor.
+2. **Fecha de prueba caducada.** `cesped.mjs` y `setos.mjs` tienen `2026-09-20` hardcodeado
+   esperando un día laborable; hoy (2026-09-13) esa fecha ya es un **domingo**, no lo que
+   era cuando se escribió el runner. Hace falta mover la fecha a otro laborable futuro con
+   margen (`min_notice_hours`), como ya se hizo en `desbroce.mjs` por el mismo motivo (ver
+   su comentario en el propio fichero).
+
+**Arreglado en `desbroce.mjs` (2026-09-13, mismo turno):** `4e` ahora acepta el aviso tanto
+en forma de objeto (`{code}`, motor en proceso) como de string (HTTP) — reverificado por
+HTTP contra la función ya desplegada: **19 PASA/0 FALLA/3 NO PROBADO**. **No se ha tocado
+ningún runner de arbustos, cesped, palmeras ni setos** — corresponde a cada auditoría
+arreglar el suyo, igual que ya se dijo para el `serviceId` fantasma más arriba.
+
 ---
 
 ## 5. Estado de las auditorías

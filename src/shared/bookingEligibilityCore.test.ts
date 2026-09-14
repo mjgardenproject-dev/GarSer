@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bookingRequiresPhytosanitaryLicense,
   evaluateOperationalEligibility,
   getClientCoordinates,
   getProviderCoordinates,
   getValidStartHours,
+  isPhytosanitaryLicenseActive,
 } from './bookingEligibilityCore';
 import type { SerializableBookingData } from './bookingQuoteCore';
 
@@ -47,6 +49,9 @@ describe('bookingEligibilityCore', () => {
         max_distance: 50,
         operational_latitude: 40.417,
         operational_longitude: -3.703,
+        // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+        license_verification_status: 'approved',
+        license_expires_at: '2099-01-01T00:00:00Z',
       },
       providerDates: new Map([
         ['2026-06-15', [9, 10]],
@@ -74,6 +79,9 @@ describe('bookingEligibilityCore', () => {
         max_distance: 5,
         operational_latitude: 41.3874,
         operational_longitude: 2.1686,
+        // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+        license_verification_status: 'approved',
+        license_expires_at: '2099-01-01T00:00:00Z',
       },
       providerDates: new Map([
         ['2026-06-15', [9, 10]],
@@ -97,6 +105,9 @@ describe('bookingEligibilityCore', () => {
       max_distance: 25,
       operational_latitude: 0,
       operational_longitude: 0,
+      // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+      license_verification_status: 'approved',
+      license_expires_at: '2099-01-01T00:00:00Z',
     })).toBeNull();
     expect(getClientCoordinates({
       addressCoordinates: { lat: 0, lng: 0 },
@@ -110,6 +121,9 @@ describe('bookingEligibilityCore', () => {
         max_distance: 25,
         operational_latitude: 0,
         operational_longitude: 0,
+        // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+        license_verification_status: 'approved',
+        license_expires_at: '2099-01-01T00:00:00Z',
       },
       providerDates: new Map([
         ['2026-06-15', [9, 10]],
@@ -133,6 +147,9 @@ describe('bookingEligibilityCore', () => {
       max_distance: 25,
       operational_latitude: lat,
       operational_longitude: lng,
+      // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+      license_verification_status: 'approved',
+      license_expires_at: '2099-01-01T00:00:00Z',
     });
     expect(getProviderCoordinates(profile(95, -3.7))).toBeNull();
     expect(getProviderCoordinates(profile(40.4, 190))).toBeNull();
@@ -149,6 +166,9 @@ describe('bookingEligibilityCore', () => {
         max_distance: 50,
         operational_latitude: null,
         operational_longitude: null,
+        // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+        license_verification_status: 'approved',
+        license_expires_at: '2099-01-01T00:00:00Z',
       },
       providerDates: new Map([
         ['2026-06-15', [9, 10]],
@@ -176,6 +196,9 @@ describe('bookingEligibilityCore', () => {
         max_distance: 50,
         operational_latitude: 40.417,
         operational_longitude: -3.703,
+        // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+        license_verification_status: 'approved',
+        license_expires_at: '2099-01-01T00:00:00Z',
       },
       providerDates: new Map([
         ['2026-06-15', [9]],
@@ -206,6 +229,9 @@ describe('bookingEligibilityCore', () => {
         max_distance: 50,
         operational_latitude: 40.417,
         operational_longitude: -3.703,
+        // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+        license_verification_status: 'approved',
+        license_expires_at: '2099-01-01T00:00:00Z',
       },
       providerDates: new Map([
         ['2026-06-15', [9, 10]],
@@ -233,6 +259,9 @@ describe('bookingEligibilityCore', () => {
         max_distance: 50,
         operational_latitude: 40.417,
         operational_longitude: -3.703,
+        // T1 (transversal): campos requeridos por ProviderProfileLike, sin relación con lo que prueba este caso.
+        license_verification_status: 'approved',
+        license_expires_at: '2099-01-01T00:00:00Z',
       },
       providerDates: new Map([
         ['2026-06-15', [9, 10, 12]],
@@ -274,5 +303,292 @@ describe('getValidStartHours (bordes del rango 7:00–20:00)', () => {
   it('respeta la contigüidad: un hueco rompe la franja reservable', () => {
     // 7 y 8 son contiguos (válidos para 2h). 10 está aislado, no cabe 2h.
     expect(getValidStartHours([7, 8, 10], 2)).toEqual([7]);
+  });
+});
+
+describe('T1 (transversal) — puerta de licencia fitosanitaria', () => {
+  describe('bookingRequiresPhytosanitaryLicense', () => {
+    it('no requiere licencia sin zonas fitosanitarias ni de desbroce', () => {
+      expect(bookingRequiresPhytosanitaryLicense(bookingInput)).toBe(false);
+    });
+
+    it('requiere licencia si hay una zona fitosanitaria con producto químico', () => {
+      expect(
+        bookingRequiresPhytosanitaryLicense({
+          ...bookingInput,
+          phytosanitaryZones: [{ area: 20, productPreference: 'chemical' }],
+        }),
+      ).toBe(true);
+    });
+
+    it('NO requiere licencia si todas las zonas fitosanitarias son ecológicas', () => {
+      expect(
+        bookingRequiresPhytosanitaryLicense({
+          ...bookingInput,
+          phytosanitaryZones: [
+            { area: 20, productPreference: 'ecological' },
+            { area: 10, productPreference: 'ecological' },
+          ],
+        }),
+      ).toBe(false);
+    });
+
+    it('requiere licencia si CUALQUIER zona fitosanitaria es química, aunque otra sea eco', () => {
+      expect(
+        bookingRequiresPhytosanitaryLicense({
+          ...bookingInput,
+          phytosanitaryZones: [
+            { area: 20, productPreference: 'ecological' },
+            { area: 10, productPreference: 'chemical' },
+          ],
+        }),
+      ).toBe(true);
+    });
+
+    it('sin productPreference cuenta como químico (dato ausente no blanquea el filtro)', () => {
+      expect(
+        bookingRequiresPhytosanitaryLicense({
+          ...bookingInput,
+          phytosanitaryZones: [{ area: 20 }],
+        }),
+      ).toBe(true);
+    });
+
+    it('requiere licencia si desbroce pide herbicida', () => {
+      expect(
+        bookingRequiresPhytosanitaryLicense({
+          ...bookingInput,
+          weedingZones: [{ area: 100, applyHerbicide: true }],
+        }),
+      ).toBe(true);
+    });
+
+    it('NO requiere licencia en desbroce sin herbicida', () => {
+      expect(
+        bookingRequiresPhytosanitaryLicense({
+          ...bookingInput,
+          weedingZones: [{ area: 100, applyHerbicide: false }],
+        }),
+      ).toBe(false);
+    });
+  });
+
+  describe('isPhytosanitaryLicenseActive', () => {
+    it('activa: aprobada y con caducidad futura', () => {
+      expect(
+        isPhytosanitaryLicenseActive({
+          license_verification_status: 'approved',
+          license_expires_at: '2099-01-01T00:00:00Z',
+        }),
+      ).toBe(true);
+    });
+
+    it('inactiva: aprobada pero ya caducada (D1 — la fecha manda, no solo el estado)', () => {
+      expect(
+        isPhytosanitaryLicenseActive({
+          license_verification_status: 'approved',
+          license_expires_at: '2020-01-01T00:00:00Z',
+        }),
+      ).toBe(false);
+    });
+
+    it('inactiva: aprobada pero sin fecha de caducidad registrada', () => {
+      expect(
+        isPhytosanitaryLicenseActive({
+          license_verification_status: 'approved',
+          license_expires_at: null,
+        }),
+      ).toBe(false);
+    });
+
+    it('inactiva: pending, rejected o expired, aunque la fecha sea futura', () => {
+      for (const status of ['pending', 'rejected', 'expired']) {
+        expect(
+          isPhytosanitaryLicenseActive({
+            license_verification_status: status,
+            license_expires_at: '2099-01-01T00:00:00Z',
+          }),
+        ).toBe(false);
+      }
+    });
+
+    it('inactiva: sin perfil', () => {
+      expect(isPhytosanitaryLicenseActive(null)).toBe(false);
+      expect(isPhytosanitaryLicenseActive(undefined)).toBe(false);
+    });
+  });
+
+  describe('evaluateOperationalEligibility — filtra por licencia de verdad (no solo texto)', () => {
+    const inCoverageProfile = {
+      max_distance: 50,
+      operational_latitude: 40.417,
+      operational_longitude: -3.703,
+    };
+    const chemicalBookingInput: SerializableBookingData = {
+      ...bookingInput,
+      phytosanitaryZones: [{ area: 20, productPreference: 'chemical' }],
+    };
+
+    it('excluye con missing_phytosanitary_license al jardinero sin licencia vigente', () => {
+      const result = evaluateOperationalEligibility({
+        bookingInput: chemicalBookingInput,
+        providerConfig, // el contenido no importa: la puerta de licencia corta antes de cotizar
+        providerConfigVersion: 'cfg-1',
+        profile: {
+          ...inCoverageProfile,
+          license_verification_status: 'rejected',
+          license_expires_at: null,
+        },
+        providerDates: new Map([['2026-06-15', [9, 10]]]),
+        requestedDate: '2026-06-15',
+        windowEndDate: '2026-06-15',
+      });
+
+      expect(result).toEqual({
+        eligible: false,
+        exclusion: {
+          code: 'missing_phytosanitary_license',
+          message: 'El profesional no tiene una licencia fitosanitaria vigente para este tratamiento.',
+        },
+      });
+    });
+
+    it('excluye igual si la licencia aprobada ya caducó', () => {
+      const result = evaluateOperationalEligibility({
+        bookingInput: chemicalBookingInput,
+        providerConfig,
+        providerConfigVersion: 'cfg-1',
+        profile: {
+          ...inCoverageProfile,
+          license_verification_status: 'approved',
+          license_expires_at: '2020-01-01T00:00:00Z',
+        },
+        providerDates: new Map([['2026-06-15', [9, 10]]]),
+        requestedDate: '2026-06-15',
+        windowEndDate: '2026-06-15',
+      });
+
+      expect(result.eligible).toBe(false);
+      if (!result.eligible) {
+        expect(result.exclusion.code).toBe('missing_phytosanitary_license');
+      }
+    });
+
+    it('NO excluye por licencia cuando el tratamiento es ecológico', () => {
+      const result = evaluateOperationalEligibility({
+        bookingInput: {
+          ...bookingInput,
+          phytosanitaryZones: [{ area: 20, productPreference: 'ecological' }],
+        },
+        providerConfig,
+        providerConfigVersion: 'cfg-1',
+        profile: {
+          ...inCoverageProfile,
+          license_verification_status: 'rejected',
+          license_expires_at: null,
+        },
+        providerDates: new Map([['2026-06-15', [9, 10]]]),
+        requestedDate: '2026-06-15',
+        windowEndDate: '2026-06-15',
+      });
+
+      // No es la puerta de licencia la que decide aquí (providerConfig no sabe cotizar
+      // fitosanitarios): lo único que importa a este test es que NO sea
+      // missing_phytosanitary_license.
+      if (!result.eligible) {
+        expect(result.exclusion.code).not.toBe('missing_phytosanitary_license');
+      }
+    });
+
+    it('no llega a comprobar licencia si ya está fuera de cobertura (el orden de exclusión manda)', () => {
+      const result = evaluateOperationalEligibility({
+        bookingInput: chemicalBookingInput,
+        providerConfig,
+        providerConfigVersion: 'cfg-1',
+        profile: {
+          max_distance: 5,
+          operational_latitude: 41.3851,
+          operational_longitude: 2.1686, // Barcelona — lejos del cliente (Madrid)
+          license_verification_status: 'rejected',
+          license_expires_at: null,
+        },
+        providerDates: new Map([['2026-06-15', [9, 10]]]),
+        requestedDate: '2026-06-15',
+        windowEndDate: '2026-06-15',
+      });
+
+      expect(result).toEqual({
+        eligible: false,
+        exclusion: {
+          code: 'outside_coverage',
+          message: 'La dirección del cliente queda fuera del radio operativo del profesional.',
+        },
+      });
+    });
+  });
+});
+
+describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
+  // 1500 m² / 100 m²/h = 15 h → >8h, así que el motor aplica el descuento ×0.9 (T2) = 13.5h →
+  // 14h redondeadas al bloque — por encima de MAX_SINGLE_DAY_DURATION_HOURS (12, el mismo
+  // tope que ya exige el CHECK de `duration_hours` en BD).
+  const bigJobInput: SerializableBookingData = {
+    ...bookingInput,
+    lawnZones: [{ quantity: 1500, state: 'normal' }],
+  };
+
+  const profile = {
+    max_distance: 50,
+    operational_latitude: 40.417,
+    operational_longitude: -3.703,
+    license_verification_status: 'approved',
+    license_expires_at: '2099-01-01T00:00:00Z',
+  };
+
+  it('avisa de que el trabajo no cabe en un día cuando estimatedHours supera el tope de 12h — sin ni mirar la agenda del profesional', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: bigJobInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile,
+      // Agenda deliberadamente amplísima (un día entero libre) para demostrar que el aviso no
+      // depende de lo ocupado que esté el profesional: ni con el día entero libre cabría.
+      providerDates: new Map([
+        ['2026-06-15', Array.from({ length: 16 }, (_, i) => 6 + i)], // 6h-22h, 16h seguidas
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+    });
+
+    expect(result).toEqual({
+      eligible: false,
+      exclusion: {
+        code: 'service_exceeds_single_day',
+        message: 'Este trabajo necesita 14 horas seguidas y ningún servicio se puede reservar por más de 12 horas en un solo día. Prueba a reducir el alcance del trabajo — de momento no ofrecemos reservas repartidas en varios días.',
+      },
+    });
+  });
+
+  it('un trabajo normal (2h, muy por debajo del tope) sin hueco real sigue devolviendo no_reservable_availability, no service_exceeds_single_day', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: twoHourBookingInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile,
+      providerDates: new Map([
+        ['2026-06-15', [9]],
+        ['2026-06-16', [14]],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-16',
+    });
+
+    expect(result).toEqual({
+      eligible: false,
+      exclusion: {
+        code: 'no_reservable_availability',
+        message: 'El profesional no tiene un hueco reservable válido para la duración estimada.',
+      },
+    });
   });
 });

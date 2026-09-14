@@ -412,6 +412,36 @@ export function sql(query) {
   }).trim();
 }
 
+/**
+ * Fase 0 (2026-09-13): próxima fecha con jornada laborable sembrada COMPLETA para el
+ * jardinero, buscada en la BD en vez de asumida con un offset fijo.
+ *
+ * Varios runners usaban `inDaysIso(7)`/`inDaysIso(10)` para decir "un día laborable
+ * cualquiera con huecos" — pero cuál es un fijo relativo a HOY, y el fixture solo siembra
+ * L-V con jornada completa (10 bloques) y sábado a medias (5): en cuanto la fecha real de
+ * ejecución cambia, ese offset puede caer en fin de semana y el runner falla sin que el
+ * motor tenga ninguna culpa (`valid_hours laborable`, `validHours=[]`). Aquí se pregunta a
+ * la BD cuál es, en vez de suponerlo.
+ */
+export function nextOpenWeekdayIso(minBlocks = 10, gardenerId = PROVIDER_ID) {
+  const row = sql(`
+    select date::text from public.availability
+    where gardener_id = '${gardenerId}'
+      and date > current_date
+      and date <= current_date + 30
+    group by date
+    having count(*) filter (where is_available) >= ${minBlocks}
+    order by date asc
+    limit 1;
+  `);
+  if (!row) {
+    throw new Error(
+      `No hay ningún día con ${minBlocks}+ bloques libres sembrados para ${gardenerId} en los próximos 30 días.`
+    );
+  }
+  return row.trim();
+}
+
 if (process.argv[2] === 'services') {
   const rows = sql('select id, name from public.services order by name;');
   console.log('\nServicios:\n');

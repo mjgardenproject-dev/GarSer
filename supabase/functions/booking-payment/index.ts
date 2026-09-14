@@ -411,7 +411,11 @@ async function getProviderProfile(
 ): Promise<(ProviderProfileLike & { address?: string | null }) | null> {
   const { data, error } = await admin
     .from('gardener_profiles')
-    .select('address, max_distance, operational_latitude, operational_longitude')
+    // T1 (transversal, 2026-09-13): campos de licencia — evaluateOperationalEligibility los
+    // exige para volver a validar la elegibilidad justo antes de cobrar (ver
+    // bookingEligibilityCore.ts). Sin ellos, esta revalidación trataría a CUALQUIER
+    // jardinero como sin licencia y rechazaría el pago de trabajos químicos ya elegibles.
+    .select('address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at')
     .eq('user_id', gardenerId)
     .maybeSingle();
 
@@ -1520,8 +1524,14 @@ Deno.serve(async (req: Request) => {
       // contraparte se quedaría esperando un servicio que ya no existe.
       if (payload.action === 'cancel_booking' && !rpcResult.idempotent) {
         try {
+          // T11 (transversal) — `createClient(url, serviceRoleKey)` sin `global: { headers }`
+          // deja el cliente de `functions` sin Authorization: `functions.invoke()`, a
+          // diferencia de `.rpc()`/`.from()`, no reutiliza la clave de servicio por su cuenta.
+          // Sin esta cabecera explícita, la llamada fallaba con 401 en silencio (mismo
+          // mecanismo que T11 en booking-payment-webhook).
           const { error: cancelEmailError } = await dbAdmin.functions.invoke('send-email-notification', {
             body: { type: 'booking_cancelled', bookingId },
+            headers: { Authorization: `Bearer ${serviceRoleKey}` },
           });
           if (cancelEmailError) throw cancelEmailError;
         } catch (emailError) {
@@ -1672,8 +1682,11 @@ Deno.serve(async (req: Request) => {
       // despues de resolver, el aviso no puede perderse.
       if (bookingId) {
         try {
+          // T11 (transversal) — mismo hueco de Authorization que las otras llamadas a
+          // `functions.invoke()` de este fichero: ver el comentario en `cancel_booking` arriba.
           const { error: resolvedEmailError } = await dbAdmin.functions.invoke('send-email-notification', {
             body: { type: 'booking_incident_resolved', bookingId },
+            headers: { Authorization: `Bearer ${serviceRoleKey}` },
           });
           if (resolvedEmailError) throw resolvedEmailError;
         } catch (emailError) {

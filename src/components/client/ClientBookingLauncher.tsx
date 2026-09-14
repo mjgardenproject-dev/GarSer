@@ -8,6 +8,7 @@ import { clearBookingResumeStorage, hasWizardResume, writeBookingResume } from '
 import { fetchRebookPayload } from '../../utils/rebookService';
 import { cancelBooking } from '../../utils/bookingLifecycleService';
 import { confirmBookingService } from '../../utils/bookingIncidentService';
+import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import {
   fetchClientBookingsOverview,
   type ClientBookingsOverview,
@@ -139,6 +140,29 @@ const ClientBookingLauncher = () => {
     }
   };
 
+  /**
+   * T5 (transversal): estos dos handlers faltaban en el dashboard — los botones "Aceptar nuevo
+   * precio"/"Rechazar" se renderizaban pero no hacían nada (`onClick` llamaba a `undefined?.()`).
+   * Mismo patrón que `respondToPriceChange` en BookingsList.tsx, donde sí funcionan.
+   */
+  const respondToPriceChange = async (booking: OverviewBooking, accept: boolean) => {
+    setBusyId(booking.id);
+    try {
+      const { respondBookingPriceChange } = await import('../../utils/bookingPriceChangeService');
+      await respondBookingPriceChange({ bookingId: booking.id, accept, operationId: crypto.randomUUID() });
+      reportBookingEvent('info', {
+        event: 'booking.price_discrepancy_resolved',
+        context: { bookingId: booking.id, resolution: accept ? 'accepted' : 'rejected' },
+      });
+      toast.success(accept ? 'Nuevo precio aceptado.' : 'Propuesta rechazada.');
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo responder a la propuesta.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const cardHandlers = {
     onOpenChat: (booking: OverviewBooking) =>
       setChatTarget({ bookingId: booking.id, gardenerName: booking.gardener_name }),
@@ -147,6 +171,8 @@ const ClientBookingLauncher = () => {
     onRebook: (booking: OverviewBooking) => void handleRebook(booking),
     onConfirmService: (booking: OverviewBooking) => void handleConfirmService(booking),
     onReportIncident: (booking: OverviewBooking) => navigate(`/incidencias/${booking.id}`),
+    onAcceptPriceChange: (booking: OverviewBooking) => void respondToPriceChange(booking, true),
+    onRejectPriceChange: (booking: OverviewBooking) => void respondToPriceChange(booking, false),
   };
 
   return (

@@ -1153,6 +1153,7 @@ export type Database = {
           notes: string | null
           price_change_status: string | null
           pricing_context: Json
+          proposed_duration_hours: number | null
           proposed_price_at: string | null
           proposed_price_by: string | null
           proposed_price_expires_at: string | null
@@ -1204,6 +1205,7 @@ export type Database = {
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
+          proposed_duration_hours?: number | null
           proposed_price_at?: string | null
           proposed_price_by?: string | null
           proposed_price_expires_at?: string | null
@@ -1255,6 +1257,7 @@ export type Database = {
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
+          proposed_duration_hours?: number | null
           proposed_price_at?: string | null
           proposed_price_by?: string | null
           proposed_price_expires_at?: string | null
@@ -2293,6 +2296,7 @@ export type Database = {
         Returns: Json
       }
       expire_due_booking_requests: { Args: never; Returns: number }
+      expire_due_phytosanitary_licenses: { Args: never; Returns: number }
       expire_pending_price_change: {
         Args: { p_booking_id: string }
         Returns: boolean
@@ -2325,6 +2329,20 @@ export type Database = {
         Returns: string
       }
       lifecycle_tick_setting: { Args: { p_name: string }; Returns: string }
+      list_bookings_pending_payment_reconciliation: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt_id: string
+          booking_id: string
+          booking_status: string
+          desired_action: string
+          payment_intent_id: string
+        }[]
+      }
+      mark_booking_payment_settled: {
+        Args: { p_attempt_id: string; p_result: string }
+        Returns: undefined
+      }
       mark_confirmation_prompt_failed: {
         Args: { p_booking_id: string; p_error?: string }
         Returns: undefined
@@ -2350,25 +2368,17 @@ export type Database = {
         }
         Returns: Json
       }
-      propose_booking_price_change:
-        | {
-            Args: {
-              p_booking_id: string
-              p_proposed_total_price: number
-              p_reason?: string
-            }
-            Returns: undefined
-          }
-        | {
-            Args: {
-              p_booking_id: string
-              p_expires_in_minutes?: number
-              p_operation_id?: string
-              p_proposed_total_price: number
-              p_reason?: string
-            }
-            Returns: Json
-          }
+      propose_booking_price_change: {
+        Args: {
+          p_booking_id: string
+          p_expires_in_minutes?: number
+          p_operation_id?: string
+          p_proposed_duration_hours?: number
+          p_proposed_total_price: number
+          p_reason?: string
+        }
+        Returns: Json
+      }
       purge_stale_ai_analysis_quota: { Args: never; Returns: number }
       record_incident_money_result: {
         Args: {
@@ -2426,6 +2436,10 @@ export type Database = {
         Args: { p_booking_id: string }
         Returns: undefined
       }
+      resize_booking_schedule: {
+        Args: { p_booking_id: string; p_new_duration_hours: number }
+        Returns: undefined
+      }
       resolve_booking_incident: {
         Args: { p_incident_id: string; p_note?: string; p_outcome: string }
         Returns: Json
@@ -2437,19 +2451,14 @@ export type Database = {
           source: string
         }[]
       }
-      respond_booking_price_change:
-        | {
-            Args: { p_accept: boolean; p_booking_id: string }
-            Returns: undefined
-          }
-        | {
-            Args: {
-              p_accept: boolean
-              p_booking_id: string
-              p_operation_id?: string
-            }
-            Returns: Json
-          }
+      respond_booking_price_change: {
+        Args: {
+          p_accept: boolean
+          p_booking_id: string
+          p_operation_id?: string
+        }
+        Returns: Json
+      }
       respond_booking_request: {
         Args: {
           p_booking_id: string
@@ -2464,6 +2473,10 @@ export type Database = {
       }
       respond_to_review: {
         Args: { p_response: string; p_review_id: string }
+        Returns: Json
+      }
+      review_gardener_license: {
+        Args: { p_expires_at?: string; p_license_id: string; p_status: string }
         Returns: Json
       }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }

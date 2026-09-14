@@ -37,7 +37,9 @@ interface ServicesTabProps {
     setWeedingConfig: any;
   };
   savedConfigs: any;
-  licenseStatus: 'pending' | 'approved' | 'rejected' | null;
+  licenseStatus: 'pending' | 'approved' | 'rejected' | 'expired' | null;
+  /** D3: lleva al jardinero a la pestaña donde sube/renueva su carnet, cerrando este panel. */
+  onGoToLicense: () => void;
 }
 
 const ServicesTab: React.FC<ServicesTabProps> = ({
@@ -50,7 +52,8 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
   configs,
   setConfigs,
   savedConfigs,
-  licenseStatus
+  licenseStatus,
+  onGoToLicense
 }) => {
   const [slideOverService, setSlideOverService] = useState<any>(null);
 
@@ -129,21 +132,23 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
               />
             )}
             {slideOverService.name === 'Servicios fitosanitarios' && (
-              <PhytosanitaryPricingConfigurator 
-                value={configs.phytosanitaryConfig} 
+              <PhytosanitaryPricingConfigurator
+                value={configs.phytosanitaryConfig}
                 initialConfig={savedConfigs['Servicios fitosanitarios']}
-                onChange={setConfigs.setPhytosanitaryConfig} 
+                onChange={setConfigs.setPhytosanitaryConfig}
                 onSave={(c) => handleWrapperSave('Servicios fitosanitarios', c)}
-                licenseStatus={licenseStatus} 
+                licenseStatus={licenseStatus}
+                onGoToLicense={() => { setSlideOverService(null); onGoToLicense(); }}
               />
             )}
             {slideOverService.name === 'Desbroce de malas hierbas' && (
-              <WeedingPricingConfigurator 
-                value={configs.weedingConfig} 
+              <WeedingPricingConfigurator
+                value={configs.weedingConfig}
                 initialConfig={savedConfigs['Desbroce de malas hierbas']}
-                onChange={setConfigs.setWeedingConfig} 
+                onChange={setConfigs.setWeedingConfig}
                 onSave={(c) => handleWrapperSave('Desbroce de malas hierbas', c)}
-                licenseStatus={licenseStatus} 
+                licenseStatus={licenseStatus}
+                onGoToLicense={() => { setSlideOverService(null); onGoToLicense(); }}
               />
             )}
           </div>

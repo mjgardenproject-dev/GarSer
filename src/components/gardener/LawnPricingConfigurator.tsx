@@ -6,7 +6,7 @@ import { LawnPricingConfig, LawnSpecies, LawnRange } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import { getPrecioPorHora } from '../../utils/hourlyPricing';
+import { getPrecioPorHora, getPricingMethod } from '../../utils/hourlyPricing';
 
 type LegacyLawnRange = '0-50' | '50-200' | '200+';
 
@@ -79,6 +79,12 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
   const config = useMemo(() => normalizeConfig(value), [value]);
 
+  // T12 (transversal): se resuelve con `getPricingMethod`, la misma SSOT que usa el motor, en
+  // vez de comparar `config.pricing_method` en crudo — cuando esa clave no está, el motor
+  // factura igualmente por cantidad, pero la comparación literal daba `false` y esta pantalla
+  // escondía toda la sección de tarifas.
+  const pricingMethod = getPricingMethod(config);
+
   const handlePriceChange = (newPrice: number) => {
     onChange({
       ...config,
@@ -114,7 +120,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
   const validateConfig = useCallback((cfg: LawnPricingConfig): string[] => {
     const errors: string[] = [];
-    if (cfg.pricing_method === 'per_hour') {
+    if (getPricingMethod(cfg) === 'per_hour') {
       if (isInvalid(cfg.precioPorHora)) errors.push('precioPorHora');
     } else {
       if (isInvalid(cfg.price_per_m2)) errors.push('price_per_m2');
@@ -207,7 +213,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             type="button"
             onClick={() => onChange({ ...config, pricing_method: 'per_quantity' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_quantity'
+              pricingMethod === 'per_quantity'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -218,7 +224,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             type="button"
             onClick={() => onChange({ ...config, pricing_method: 'per_hour' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_hour'
+              pricingMethod === 'per_hour'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -227,13 +233,13 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-3">
-          {config.pricing_method === 'per_hour' 
+          {pricingMethod === 'per_hour' 
             ? 'El precio se calculará multiplicando las horas estimadas por tu tarifa horaria.' 
             : 'El precio se calculará multiplicando los m² analizados por tu tarifa unitaria.'}
         </p>
       </div>
 
-      {config.pricing_method === 'per_hour' && (
+      {pricingMethod === 'per_hour' && (
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
@@ -278,7 +284,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             <p className="text-[10px] text-gray-500 mt-1">¿Cuántos m² puedes cortar en una hora?</p>
           </div>
 
-          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && config.yield_m2_per_hour && config.yield_m2_per_hour > 0 && (
+          {pricingMethod === 'per_hour' && getPrecioPorHora(config) > 0 && config.yield_m2_per_hour && config.yield_m2_per_hour > 0 && (
             <div className="md:col-span-2 p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
               <p className="text-xs text-blue-800">
                 <span className="font-semibold">Nota:</span> Con esta velocidad y tu `precioPorHora`, la tarifa equivalente es <span className="font-bold">{(getPrecioPorHora(config) / config.yield_m2_per_hour).toFixed(2)}€/m²</span>.
@@ -290,7 +296,7 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
       <hr className="border-gray-200 my-8" />
 
-      {config.pricing_method === 'per_quantity' && (
+      {pricingMethod === 'per_quantity' && (
         <>
           <div>
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Tarifa por m² (Precio Fijo)</h4>

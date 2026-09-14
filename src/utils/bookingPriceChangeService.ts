@@ -10,6 +10,10 @@ type PriceChangeRpcResponse = {
   proposed_total_price?: number;
   final_total_price?: number;
   expires_at?: string;
+  // D5 (2026-09-13): cambio de duración adjunto a la propuesta de precio. Solo mueve la
+  // hora de FIN — start_time nunca cambia en este flujo.
+  proposed_duration_hours?: number | null;
+  final_duration_hours?: number | null;
 };
 
 // Aviso por email de cada movimiento del cambio de precio (paso 8B).
@@ -50,6 +54,12 @@ export async function proposeBookingPriceChange(params: {
   reason?: string;
   expiresInMinutes?: number;
   operationId?: string;
+  /**
+   * D5 — nueva duración total del servicio (en horas), solo si el jardinero también pide
+   * alargar o acortar. Mueve únicamente la hora de FIN; el motor de la RPC valida el rango
+   * 1-12h y, al aceptar, que las horas de más (si alarga) sigan libres.
+   */
+  proposedDurationHours?: number;
 }) {
   const payload: Record<string, any> = {
     p_booking_id: params.bookingId,
@@ -58,6 +68,9 @@ export async function proposeBookingPriceChange(params: {
   };
   if (typeof params.expiresInMinutes === 'number') payload.p_expires_in_minutes = params.expiresInMinutes;
   if (params.operationId) payload.p_operation_id = params.operationId;
+  if (typeof params.proposedDurationHours === 'number') {
+    payload.p_proposed_duration_hours = params.proposedDurationHours;
+  }
 
   const { data, error } = await supabase.rpc('propose_booking_price_change', payload);
   if (error) throw error;

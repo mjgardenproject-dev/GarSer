@@ -52,9 +52,22 @@ import {
   untested,
   report,
   PROVIDER_ID,
+  sql,
 } from './_harness.mjs';
 
-const SERVICE_ID = '8e5a99f5-5ab5-40c7-b4f3-a9272c08f47e'; // Poda de palmeras (verificado por SQL, no el de references/servicios.md)
+/**
+ * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
+ * `supabase/seed.sql` genera los UUID de `services` en cada `db reset`, así que un id fijo
+ * apunta a un servicio fantasma en cuanto se resiembra: es justo lo que le pasaba a este
+ * runner (todos los escenarios morían en `missing_provider_config` sin medir nada).
+ */
+const SERVICE_ID = (() => {
+  const fromEnv = process.env.PALM_SERVICE_ID;
+  if (fromEnv) return fromEnv;
+  const row = sql("select id from public.services where name = 'Poda de palmeras' limit 1;");
+  if (!row) throw new Error('No se encuentra el servicio «Poda de palmeras» en la base local.');
+  return row.trim();
+})();
 
 // --- Tarifas sembradas: precio €/ud y rendimiento ud/h por especie y banda ----
 const SEED = {

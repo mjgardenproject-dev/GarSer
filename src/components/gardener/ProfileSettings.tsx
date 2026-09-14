@@ -101,7 +101,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [shrubConfig, setShrubConfig] = useState<ShrubPricingConfig | undefined>(undefined);
   const [phytosanitaryConfig, setPhytosanitaryConfig] = useState<PhytosanitaryPricingConfig | undefined>(undefined);
   const [weedingConfig, setWeedingConfig] = useState<WeedingPricingConfig | undefined>(undefined);
-  const [licenseStatus, setLicenseStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
+  const [licenseStatus, setLicenseStatus] = useState<'pending' | 'approved' | 'rejected' | 'expired' | null>(null);
 
   // Refactor State
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(() => {
@@ -823,6 +823,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     }}
                     savedConfigs={savedConfigs}
                     licenseStatus={licenseStatus}
+                    onGoToLicense={() => handleTabChange('personal')}
                   />
                 </div>
               )}

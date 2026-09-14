@@ -73,11 +73,23 @@
 
 import {
   quote, expectQuote, expectError, sweep,
-  previewProviders, validHours, sql,
+  previewProviders, validHours, sql, nextOpenWeekdayIso,
   pass, fail, untested, report, PROVIDER_ID,
 } from './_harness.mjs';
 
-const LAWN = 'fe9d2d9e-3f62-4184-aa80-a3289d7c378a';
+/**
+ * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
+ * `supabase/seed.sql` genera los UUID de `services` en cada `db reset`, así que un id fijo
+ * apunta a un servicio fantasma en cuanto se resiembra: es justo lo que le pasaba a este
+ * runner (todos los escenarios morían en `missing_provider_config` sin medir nada).
+ */
+const LAWN = (() => {
+  const fromEnv = process.env.LAWN_SERVICE_ID;
+  if (fromEnv) return fromEnv;
+  const row = sql("select id from public.services where name = 'Corte de césped' limit 1;");
+  if (!row) throw new Error('No se encuentra el servicio «Corte de césped» en la base local.');
+  return row.trim();
+})();
 const IN_COVERAGE = { lat: 36.51, lng: -4.882 };        // junto al jardinero (Marbella)
 const OUT_OF_COVERAGE = { lat: 40.4168, lng: -3.7038 }; // Madrid — ~430 km del jardinero (radio 40 km)
 
@@ -295,24 +307,23 @@ function nextSundayIso() {
   d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
   return d.toISOString().slice(0, 10);
 }
-function inDaysIso(n) {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 async function availability() {
   console.log('\n── 2A.7 · Disponibilidad y cobertura ─────────────────────────');
   const inCov = { address: 'Marbella centro', addressCoordinates: IN_COVERAGE };
   const sunday = nextSundayIso();
+  // Fase 0 (2026-09-13): antes era `weekday` — un offset fijo desde "hoy" que caía en
+  // fin de semana según cuándo se relanzara el runner (el fixture solo siembra L-V completo
+  // y sábado a medias). Se pregunta a la BD cuál es el próximo día laborable con huecos.
+  const weekday = nextOpenWeekdayIso();
 
   // Control positivo: un día laborable dentro de cobertura devuelve horas.
-  const wd = await validHours(LAWN, inDaysIso(7), { ...inCov, ...photos(500, 'normal', false) });
+  const wd = await validHours(LAWN, weekday, { ...inCov, ...photos(500, 'normal', false) });
   const wdHours = wd.body?.validHours || [];
   if (wd.status === 200 && wdHours.length > 0) {
-    pass(`valid_hours laborable ${inDaysIso(7)}`, `${wdHours.length} horas: ${JSON.stringify(wdHours)}`);
+    pass(`valid_hours laborable ${weekday}`, `${wdHours.length} horas: ${JSON.stringify(wdHours)}`);
   } else {
-    fail(`valid_hours laborable ${inDaysIso(7)}`, `status ${wd.status}, validHours=${JSON.stringify(wdHours)}`);
+    fail(`valid_hours laborable ${weekday}`, `status ${wd.status}, validHours=${JSON.stringify(wdHours)}`);
   }
 
   // Domingo: sin huecos sembrados (fixture solo L-V y S).
@@ -324,7 +335,6 @@ async function availability() {
     fail(`valid_hours domingo ${sunday}`, `status ${vh.status}, validHours=${JSON.stringify(hours)}`);
   }
 
-  const weekday = inDaysIso(7);
   const pp = await previewProviders(
     LAWN,
     { address: 'Calle de Alcalá 1, Madrid', addressCoordinates: OUT_OF_COVERAGE, ...photos(500, 'normal', false) },
@@ -348,7 +358,7 @@ async function availability() {
   const modPP = await previewProviders(
     LAWN,
     { address: 'Marbella centro', addressCoordinates: IN_COVERAGE, ...photos(700, 'muy_descuidado', false) },
-    { selectedDate: inDaysIso(7), windowDays: 21 },
+    { selectedDate: weekday, windowDays: 21 },
   );
   const modEligible = (modPP.body?.eligibleProviderIds || []).includes(PROVIDER_ID);
   if (modQ.ok && modQ.estimatedHours === 7 && modEligible) {
@@ -379,7 +389,7 @@ async function availability() {
   const bigPP = await previewProviders(
     LAWN,
     { address: 'Marbella centro', addressCoordinates: IN_COVERAGE, ...photos(1000, 'muy_descuidado', false) },
-    { selectedDate: inDaysIso(7), windowDays: 21 },
+    { selectedDate: weekday, windowDays: 21 },
   );
   const bigEligible = (bigPP.body?.eligibleProviderIds || []).includes(PROVIDER_ID);
   if (process.env.READINESS_ENGINE === 'local') {
@@ -403,7 +413,7 @@ async function availability() {
   const t7PP = await previewProviders(
     LAWN,
     { address: 'Marbella centro', addressCoordinates: IN_COVERAGE, ...photos(1700, 'normal', false) },
-    { selectedDate: inDaysIso(7), windowDays: 21 },
+    { selectedDate: weekday, windowDays: 21 },
   );
   const t7Eligible = (t7PP.body?.eligibleProviderIds || []).includes(PROVIDER_ID);
   console.log(`  · 1700 m² normal (control T7, sin recargo de estado): ${t7Q.totalPrice} €/${t7Q.estimatedHours} h`);
@@ -416,7 +426,7 @@ async function availability() {
 
 async function orphanHoldBlocks() {
   console.log('\n── 2A.8 · Bloques de hold huérfanos NO cuentan ────────────────');
-  const date = inDaysIso(10); // laborable con huecos sembrados (verificado por SQL: 10 bloques libres)
+  const date = nextOpenWeekdayIso(); // laborable con huecos sembrados, resuelto contra la BD (Fase 0)
 
   const row = sql(`select a.id as attempt_id, a.quote_id, q.client_id, q.service_id
                    from public.booking_payment_attempts a

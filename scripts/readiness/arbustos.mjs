@@ -30,9 +30,21 @@
  * Los Escenarios 3 y 4 ahora predicen (y obtienen) las HORAS correctas. Ver
  * docs/audit/2026-09-12-arbustos-NOTAS-INTERNAS.md y docs/audit/2026-09-12-arbustos/REPORT.md.
  */
-import { quote, expectQuote, sweep, previewProviders, validHours, report, pass, fail, untested, PROVIDER_ID } from './_harness.mjs';
+import { quote, expectQuote, sweep, previewProviders, validHours, report, pass, fail, untested, PROVIDER_ID, sql } from './_harness.mjs';
 
-const SERVICE_ID = '649bcd71-514e-4438-ad64-1136172de98a';
+/**
+ * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
+ * `supabase/seed.sql` genera los UUID de `services` en cada `db reset`, así que un id fijo
+ * apunta a un servicio fantasma en cuanto se resiembra: es justo lo que le pasaba a este
+ * runner (todos los escenarios morían en `missing_provider_config` sin medir nada).
+ */
+const SERVICE_ID = (() => {
+  const fromEnv = process.env.SHRUB_SERVICE_ID;
+  if (fromEnv) return fromEnv;
+  const row = sql("select id from public.services where name = 'Poda de plantas y arbustos' limit 1;");
+  if (!row) throw new Error('No se encuentra el servicio «Poda de plantas y arbustos» en la base local.');
+  return row.trim();
+})();
 
 const shrubInput = (groups, wasteRemoval, extra = {}) => ({
   shrubGroups: groups,

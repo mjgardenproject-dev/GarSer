@@ -52,6 +52,8 @@ export interface ClientBookingCardBooking {
   price_change_status?: string | null;
   proposed_total_price?: number | null;
   proposed_price_reason?: string | null;
+  /** D5: cambio de duración adjunto a la propuesta de precio (solo mueve la hora de fin). */
+  proposed_duration_hours?: number | null;
   /** Cuándo se da por completada sola si no se confirma nada. */
   confirmation_deadline_at?: string | null;
 }
@@ -85,6 +87,17 @@ const ACCENTS: Record<NonNullable<Props['accent']>, string> = {
 
 /** `10:00:00` → `10:00`. La página completa mostraba los segundos. */
 const formatTime = (value?: string | null) => (value ? value.slice(0, 5) : null);
+
+/** D5 — "10:00:00" + 3h => "13:00". Solo para previsualizar el nuevo fin propuesto. */
+const addHoursToTime = (startTime?: string | null, hours?: number | null): string | null => {
+  if (!startTime || !hours || hours <= 0) return null;
+  const [h, m] = startTime.split(':').map(Number);
+  if (!Number.isFinite(h)) return null;
+  const totalMinutes = h * 60 + (Number.isFinite(m) ? m : 0) + hours * 60;
+  const endHour = Math.floor(totalMinutes / 60) % 24;
+  const endMinute = totalMinutes % 60;
+  return `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
+};
 
 /** Fecha límite del correo de confirmación, en el mismo formato que promete el email. */
 const formatDeadline = (iso?: string | null): string | null => {
@@ -198,6 +211,18 @@ const ClientBookingCard = ({
             {gardenerFirstName} propone un nuevo precio del servicio:{' '}
             <strong>{formatEuro(booking.proposed_total_price)}</strong>
           </p>
+          {/* D5: la propuesta puede traer también un cambio de duración (solo la hora de fin
+              se mueve; el inicio nunca cambia). */}
+          {booking.proposed_duration_hours != null
+            && booking.proposed_duration_hours !== booking.duration_hours && (
+            <p className="mt-1 text-sm text-amber-900">
+              Y una nueva duración: <strong>{booking.proposed_duration_hours} h</strong>
+              {addHoursToTime(booking.start_time, booking.proposed_duration_hours) && (
+                <> (fin a las {addHoursToTime(booking.start_time, booking.proposed_duration_hours)})</>
+              )}
+              {booking.duration_hours != null && <> — antes {booking.duration_hours} h</>}.
+            </p>
+          )}
           {booking.proposed_price_reason && (
             <p className="mt-1 text-sm text-amber-800">
               <span className="font-medium">Motivo:</span> {booking.proposed_price_reason}

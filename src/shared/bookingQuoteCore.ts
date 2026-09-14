@@ -1549,6 +1549,14 @@ export function buildAuthoritativeBookingQuote(params: {
   if (!Number.isFinite(totalHours) || totalHours < 0) totalHours = 0;
 
   if (totalHours > 8) totalHours *= 0.9;
+  // T2 (transversal): la cadena real cantidad/rendimiento[*0.9] no siempre da un número
+  // exacto en coma flotante — p. ej. (5000/150)*0.9 = 30.000000000000004, no 30 — y el
+  // `Math.ceil` de abajo sube medio bloque de más justo cuando el valor real cruza un
+  // entero o un medio entero (reproducido con césped y desbroce: 30h→30,5h, 7,5h→8h,
+  // 15h→15,5h). Se absorbe el ruido redondeando a 6 decimales — muy por debajo de
+  // cualquier granularidad real de tarifa (€/m², €/ml, €/ud) — antes de redondear al
+  // medio bloque de agenda.
+  totalHours = Math.round(totalHours * 1e6) / 1e6;
   const estimatedHours = Math.max(1, Math.ceil(totalHours * 2) / 2);
 
   const applyMinimumPrice = (calculatedPrice: number) => {

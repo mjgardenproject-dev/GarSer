@@ -6,7 +6,7 @@ import { ShrubPricingConfig, ShrubSize } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import { getPrecioPorHora } from '../../utils/hourlyPricing';
+import { getPrecioPorHora, getPricingMethod } from '../../utils/hourlyPricing';
 
 const EMPTY_CONFIG: ShrubPricingConfig = {
   prices_per_m2: { pequeñas: '' as any, medianas: '' as any, grandes: '' as any },
@@ -33,49 +33,67 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Initialize config safely (handling legacy configs)
-  const config = React.useMemo(() => {
-    if (!value) return EMPTY_CONFIG;
-    
+  //
+  // Autoguardado espurio (transversal, cerrando la pregunta que quedaba abierta para
+  // arbustos): esta normalización vivía en línea dentro del `useMemo`, cerrada sobre `value`.
+  // `useAutoSave` comparaba ese `config` normalizado contra `initialValue: initialConfig ||
+  // EMPTY_CONFIG` SIN normalizar — cualquier campo ausente en BD (p. ej. `hourly_rate:
+  // undefined` que aquí se inyecta siempre) hacía que `deepEqual` los viera distintos y
+  // autoguardaba al segundo de abrir el configurador, sin que el jardinero tocase nada.
+  // Reproducido en vivo: `additional_config` cambiaba nada más entrar. Se extrae a función
+  // para poder normalizar los dos lados igual (mismo patrón ya usado en
+  // `LawnPricingConfigurator.tsx`, el único de los 7 que nunca tuvo este problema).
+  const normalizeConfig = (incoming?: ShrubPricingConfig): ShrubPricingConfig => {
+    if (!incoming) return EMPTY_CONFIG;
+
     // Check if it's a legacy config (has species_prices instead of prices_per_m2)
-    const isLegacy = !value.prices_per_m2 && ('species_prices' in value);
-    
+    const isLegacy = !incoming.prices_per_m2 && ('species_prices' in incoming);
+
     if (isLegacy) {
       return {
         ...EMPTY_CONFIG,
-        ...value,
-        minimum_price: getVal(value.minimum_price),
-        prices_per_m2: { ...EMPTY_CONFIG.prices_per_m2, ...(value.prices_per_m2 || {}) },
+        ...incoming,
+        minimum_price: getVal(incoming.minimum_price),
+        prices_per_m2: { ...EMPTY_CONFIG.prices_per_m2, ...(incoming.prices_per_m2 || {}) },
         condition_surcharges: {
-          media: getVal(value.condition_surcharges?.media),
-          alta: getVal(value.condition_surcharges?.alta)
+          media: getVal(incoming.condition_surcharges?.media),
+          alta: getVal(incoming.condition_surcharges?.alta)
         },
-        waste_removal: { percentage: getVal(value.waste_removal?.percentage) }
+        waste_removal: { percentage: getVal(incoming.waste_removal?.percentage) }
       };
     }
 
     return {
       ...EMPTY_CONFIG,
-      ...value,
+      ...incoming,
       hourly_rate: undefined,
-      precioPorHora: getVal(value.precioPorHora ?? value.hourly_rate),
-      minimum_price: getVal(value.minimum_price),
+      precioPorHora: getVal(incoming.precioPorHora ?? incoming.hourly_rate),
+      minimum_price: getVal(incoming.minimum_price),
       prices_per_m2: {
-        pequeñas: getVal(value.prices_per_m2?.pequeñas),
-        medianas: getVal(value.prices_per_m2?.medianas),
-        grandes: getVal(value.prices_per_m2?.grandes)
+        pequeñas: getVal(incoming.prices_per_m2?.pequeñas),
+        medianas: getVal(incoming.prices_per_m2?.medianas),
+        grandes: getVal(incoming.prices_per_m2?.grandes)
       },
       condition_surcharges: {
-        media: getVal(value.condition_surcharges?.media),
-        alta: getVal(value.condition_surcharges?.alta)
+        media: getVal(incoming.condition_surcharges?.media),
+        alta: getVal(incoming.condition_surcharges?.alta)
       },
-      waste_removal: { percentage: getVal(value.waste_removal?.percentage) },
+      waste_removal: { percentage: getVal(incoming.waste_removal?.percentage) },
       yield_m2_per_hour: {
-        pequeñas: getVal(value.yield_m2_per_hour?.pequeñas),
-        medianas: getVal(value.yield_m2_per_hour?.medianas),
-        grandes: getVal(value.yield_m2_per_hour?.grandes)
+        pequeñas: getVal(incoming.yield_m2_per_hour?.pequeñas),
+        medianas: getVal(incoming.yield_m2_per_hour?.medianas),
+        grandes: getVal(incoming.yield_m2_per_hour?.grandes)
       }
     };
-  }, [value]);
+  };
+
+  const config = React.useMemo(() => normalizeConfig(value), [value]);
+
+  // T12 (transversal): se resuelve con `getPricingMethod`, la misma SSOT que usa el motor, en
+  // vez de comparar `config.pricing_method` en crudo — cuando esa clave no está, el motor
+  // factura igualmente por cantidad, pero la comparación literal daba `false` y esta pantalla
+  // escondía toda la sección de tarifas.
+  const pricingMethod = getPricingMethod(config);
 
   const handleSurchargeChange = (level: 'media' | 'alta', value: number) => {
     onChange({
@@ -115,7 +133,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     const errors: string[] = [];
     const sizes: ShrubSize[] = ['pequeñas', 'medianas', 'grandes'];
     
-    if (cfg.pricing_method === 'per_hour') {
+    if (getPricingMethod(cfg) === 'per_hour') {
       if (isInvalid(cfg.precioPorHora)) errors.push('precioPorHora');
     } else {
       sizes.forEach(s => {
@@ -141,7 +159,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
   const { status } = useAutoSave({
     value: config,
-    initialValue: initialConfig || EMPTY_CONFIG,
+    initialValue: normalizeConfig(initialConfig),
     onSave: async (val) => {
       if (onSave) {
         await onSave(val);
@@ -234,7 +252,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             type="button"
             onClick={() => onChange({ ...config, pricing_method: 'per_quantity' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_quantity'
+              pricingMethod === 'per_quantity'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -245,7 +263,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             type="button"
             onClick={() => onChange({ ...config, pricing_method: 'per_hour' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_hour'
+              pricingMethod === 'per_hour'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -254,13 +272,13 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-3">
-          {config.pricing_method === 'per_hour' 
+          {pricingMethod === 'per_hour' 
             ? 'El precio se calculará multiplicando las horas estimadas por tu tarifa horaria.' 
             : 'El precio se calculará multiplicando los m² analizados por tu tarifa unitaria.'}
         </p>
       </div>
 
-      {config.pricing_method === 'per_hour' && (
+      {pricingMethod === 'per_hour' && (
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
@@ -341,7 +359,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             </div>
           </div>
           
-          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && (
+          {pricingMethod === 'per_hour' && getPrecioPorHora(config) > 0 && (
             <div className="p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
               <p className="text-xs font-semibold text-blue-800 mb-2 uppercase">Precios unitarios equivalentes (€/m²):</p>
               <div className="grid grid-cols-3 gap-2">
@@ -366,7 +384,7 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
       <hr className="border-gray-200 my-8" />
 
       {/* Tabla de Precios por m² */}
-      {config.pricing_method === 'per_quantity' && (
+      {pricingMethod === 'per_quantity' && (
         <>
           <div>
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Tarifas por m² según altura (Precio Fijo)</h4>

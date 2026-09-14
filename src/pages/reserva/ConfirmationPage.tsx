@@ -2115,6 +2115,22 @@ const ConfirmationPage: React.FC = () => {
 
                           if (latest?.status && latest.status !== 'payment_pending') {
                             toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage).detail);
+                            return;
+                          }
+
+                          // T8 (transversal): si el sondeo agota sus intentos (~12 s) y el
+                          // intento SIGUE en 'payment_pending' (ni terminal ni éxito), ninguna
+                          // de las ramas de arriba se dispara y el formulario vuelve a su
+                          // estado inicial en silencio — el cliente no sabe si Stripe llegó a
+                          // procesar el cobro. No reintentamos solos: un reintento sobre el
+                          // mismo PaymentIntent ya confirmado por Stripe falla con un error de
+                          // procesamiento confuso. Solo avisamos y dejamos que sea el cliente
+                          // quien decida cuándo volver a intentarlo.
+                          if (latest?.status === 'payment_pending') {
+                            toast(
+                              'Seguimos esperando la confirmación de Stripe. Si no se confirma en unos segundos, actualiza la página antes de volver a intentarlo.',
+                              { icon: 'ℹ️', duration: 6000 },
+                            );
                           }
                         }}
                       />

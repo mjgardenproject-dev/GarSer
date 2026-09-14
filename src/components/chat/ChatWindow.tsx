@@ -40,10 +40,25 @@ type BookingChatMeta = {
   proposed_total_price?: number | null;
   proposed_price_reason?: string | null;
   proposed_price_expires_at?: string | null;
+  // D5: para poder mostrar/proponer el cambio de duración junto al de precio.
+  duration_hours?: number | null;
+  start_time?: string | null;
+  proposed_duration_hours?: number | null;
   pricing_context?: {
     service_type?: string;
     allows_price_change?: boolean;
   } | null;
+};
+
+/** D5 — "10:00" + 3h => "13:00". Solo para mostrar la hora de fin propuesta en el chat. */
+const addHoursToTime = (startTime?: string | null, hours?: number | null): string | null => {
+  if (!startTime || !hours || hours <= 0) return null;
+  const [h, m] = startTime.split(':').map(Number);
+  if (!Number.isFinite(h)) return null;
+  const totalMinutes = h * 60 + (Number.isFinite(m) ? m : 0) + hours * 60;
+  const endHour = Math.floor(totalMinutes / 60) % 24;
+  const endMinute = totalMinutes % 60;
+  return `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
 };
 
 // Separador de día entre mensajes ("Hoy", "Ayer", "12 de julio")
@@ -75,6 +90,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   const [showPricePanel, setShowPricePanel] = useState(false);
   const [proposalPrice, setProposalPrice] = useState('');
   const [proposalReason, setProposalReason] = useState('');
+  // D5: opcional — vacío significa "no propongo cambio de duración".
+  const [proposalDuration, setProposalDuration] = useState('');
   const [priceActionLoading, setPriceActionLoading] = useState(false);
 
   const onCloseRef = useRef(onClose);
@@ -129,7 +146,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   const refreshBookingMeta = useCallback(async () => {
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, client_id, gardener_id, status, total_price, management_fee, management_fee_source, price_change_status, proposed_total_price, proposed_price_reason, proposed_price_expires_at, pricing_context')
+      .select('id, client_id, gardener_id, status, total_price, management_fee, management_fee_source, price_change_status, proposed_total_price, proposed_price_reason, proposed_price_expires_at, duration_hours, start_time, proposed_duration_hours, pricing_context')
       .eq('id', bookingId)
       .single();
     if (!error && data) setBookingMeta(data as BookingChatMeta);
@@ -400,6 +417,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       toast.error('Introduce un precio válido');
       return;
     }
+    // D5: opcional. Vacío = sin cambio de duración. Si se rellena, tiene que ser un entero
+    // 1-12 — la RPC valida lo mismo, esto es solo para no hacer un viaje de red en vano.
+    let durationValue: number | undefined;
+    if (proposalDuration.trim() !== '') {
+      durationValue = Number(proposalDuration);
+      if (!Number.isInteger(durationValue) || durationValue < 1 || durationValue > 12) {
+        toast.error('La nueva duración debe ser un número entero de horas, entre 1 y 12');
+        return;
+      }
+    }
     setPriceActionLoading(true);
     try {
       await proposeBookingPriceChange({
@@ -407,10 +434,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
         proposedTotalPrice: value,
         reason: proposalReason,
         operationId: crypto.randomUUID(),
+        proposedDurationHours: durationValue,
       });
       toast.success('Propuesta de precio enviada');
       setProposalPrice('');
       setProposalReason('');
+      setProposalDuration('');
       setShowPricePanel(false);
       await refreshBookingMeta();
     } catch (error: any) {
@@ -508,6 +537,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
             <p className="text-sm font-medium text-amber-900">
               Propuesta de nuevo precio del servicio: {formatEuro(bookingMeta.proposed_total_price)}
             </p>
+            {/* D5: la propuesta puede traer también un cambio de duración (solo la hora de
+                fin se mueve; el inicio nunca cambia). */}
+            {bookingMeta.proposed_duration_hours != null
+              && bookingMeta.proposed_duration_hours !== bookingMeta.duration_hours && (
+              <p className="text-xs text-amber-800 mt-0.5">
+                Nueva duración: {bookingMeta.proposed_duration_hours} h
+                {addHoursToTime(bookingMeta.start_time, bookingMeta.proposed_duration_hours) && (
+                  <> (fin a las {addHoursToTime(bookingMeta.start_time, bookingMeta.proposed_duration_hours)})</>
+                )}
+                {bookingMeta.duration_hours != null && <> — antes {bookingMeta.duration_hours} h</>}.
+              </p>
+            )}
             {/* Solo al cliente: es el único para quien el total difiere del precio del servicio. */}
             {isClient && (
               <p className="text-xs text-amber-800 mt-0.5">
@@ -578,8 +619,31 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
               value={proposalReason}
               onChange={(e) => setProposalReason(e.target.value)}
               placeholder="Motivo (opcional)"
-              className="w-full px-3 py-2 border border-blue-200 rounded-lg text-base sm:text-sm"
+              className="w-full px-3 py-2 border border-blue-200 rounded-lg text-base sm:text-sm mb-2"
             />
+            {/* D5: opcional, solo mueve la hora de FIN. La de inicio nunca se toca. */}
+            <label className="block text-[11px] font-medium text-blue-700 mb-1">
+              Nueva duración total (opcional — solo cambia la hora de fin)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                max="12"
+                step="1"
+                inputMode="numeric"
+                value={proposalDuration}
+                onChange={(e) => setProposalDuration(e.target.value)}
+                placeholder={bookingMeta?.duration_hours ? `Actual: ${bookingMeta.duration_hours} h` : 'Horas'}
+                className="w-24 px-3 py-2 border border-blue-200 rounded-lg text-base sm:text-sm"
+              />
+              <span className="text-xs text-blue-700">
+                horas
+                {addHoursToTime(bookingMeta?.start_time, Number(proposalDuration) || undefined) && (
+                  <> — fin a las {addHoursToTime(bookingMeta?.start_time, Number(proposalDuration) || undefined)}</>
+                )}
+              </span>
+            </div>
           </div>
         )}
 

@@ -62,6 +62,10 @@ type ProviderProfileRow = {
   max_distance: number | null;
   operational_latitude: number | null;
   operational_longitude: number | null;
+  // T1 (transversal, 2026-09-13): ver bookingEligibilityCore.ts — puerta de licencia
+  // fitosanitaria para preview_providers/valid_hours/create_quote.
+  license_verification_status: string | null;
+  license_expires_at: string | null;
 };
 
 type ProviderExclusion = {
@@ -191,7 +195,7 @@ async function fetchProviderProfiles(
   if (providerIds.length === 0) return {};
   const { data, error } = await admin
     .from('gardener_profiles')
-    .select('user_id, address, max_distance, operational_latitude, operational_longitude')
+    .select('user_id, address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at')
     .in('user_id', providerIds);
 
   if (error || !data) return {};

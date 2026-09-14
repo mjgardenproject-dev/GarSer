@@ -73,7 +73,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [requests, setRequests] = useState<BookingRequestWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
-  const [priceDrafts, setPriceDrafts] = useState<Record<string, { amount: string; reason: string; loading?: boolean }>>({});
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, { amount: string; reason: string; duration?: string; loading?: boolean }>>({});
   // On-site variable correction (manual bookings): recompute price with the engine.
   const [correctionFor, setCorrectionFor] = useState<BookingRequestWithDetails | null>(null);
   const [correctionLoading, setCorrectionLoading] = useState(false);
@@ -149,19 +149,22 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       const serviceIdsFiltered = serviceIds.filter(Boolean);
 
       // Fetch clients data
+      // T9 (transversal): `bookings.client_id` guarda `profiles.user_id`, no `profiles.id`
+      // (son columnas distintas) — filtrar por `id` nunca encontraba fila y el nombre caía
+      // siempre al fallback "Cliente desconocido".
       let clientsResult: { data: any[] | null; error: any } = { data: [], error: null };
       if (clientIdsFiltered.length === 1) {
         const singleId = clientIdsFiltered[0] as string;
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, phone')
-          .eq('id', singleId);
+          .select('user_id, full_name, phone')
+          .eq('user_id', singleId);
         clientsResult = { data, error } as any;
       } else if (clientIdsFiltered.length > 1) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, full_name, phone')
-          .in('id', clientIdsFiltered as string[]);
+          .select('user_id, full_name, phone')
+          .in('user_id', clientIdsFiltered as string[]);
         clientsResult = { data, error } as any;
       }
 
@@ -198,7 +201,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         console.warn('Error fetching services for requests:', servicesResult.error);
       }
 
-      const clientsMap = new Map(clientsResult.data?.map(c => [c.id, c]) || []);
+      const clientsMap = new Map(clientsResult.data?.map(c => [c.user_id, c]) || []);
       const servicesMap = new Map((servicesResult.data || []).map(s => [s.id, { ...s, hourly_rate: 0 }]) || []);
 
       // Transformar los datos para que coincidan con la interfaz esperada
@@ -347,6 +350,16 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       toast.error('Introduce un precio válido para proponer el cambio.');
       return;
     }
+    // D5: opcional. Vacío = sin cambio de duración. La RPC vuelve a validar 1-12h; esto es
+    // solo para no hacer un viaje de red en vano.
+    let durationValue: number | undefined;
+    if ((draft.duration || '').trim() !== '') {
+      durationValue = Number(draft.duration);
+      if (!Number.isInteger(durationValue) || durationValue < 1 || durationValue > 12) {
+        toast.error('La nueva duración debe ser un número entero de horas, entre 1 y 12.');
+        return;
+      }
+    }
     setPriceDrafts((prev) => ({ ...prev, [request.id]: { ...draft, loading: true } }));
     try {
       await proposeBookingPriceChange({
@@ -354,6 +367,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         proposedTotalPrice: value,
         reason: draft.reason,
         operationId: crypto.randomUUID(),
+        proposedDurationHours: durationValue,
       });
 
       // Audit trail for discrepancy analysis (manual bookings carry declared variables).
@@ -499,7 +513,11 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2" />
-                    {formatTimeBlocks(request.booking_blocks || [])} ({request.booking_blocks?.length || 0}h)
+                    {/* T6 (transversal): `request.booking_blocks` es un array sintético de un único
+                        elemento creado solo para formatear el rango de texto — no son filas reales de
+                        `booking_blocks`, así que su `.length` siempre daba "(1h)" aunque el servicio
+                        durase más. La duración real ya vive en `request.duration_hours`. */}
+                    {formatTimeBlocks(request.booking_blocks || [])} ({request.duration_hours}h)
                   </div>
                   <div className="flex items-center text-gray-600">
                     <MapPin className="w-4 h-4 mr-2" />
@@ -582,6 +600,27 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                       >
                         Proponer
                       </button>
+                    </div>
+                    {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia. */}
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="12"
+                        step="1"
+                        value={priceDrafts[request.id]?.duration || ''}
+                        onChange={(e) =>
+                          setPriceDrafts((prev) => ({
+                            ...prev,
+                            [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), duration: e.target.value }
+                          }))
+                        }
+                        placeholder={`Nueva duración (h), actual: ${request.duration_hours}`}
+                        className="w-40 px-3 py-2 border border-blue-200 rounded-md text-sm"
+                      />
+                      <span className="text-xs text-blue-700">
+                        horas totales (opcional — solo cambia la hora de fin)
+                      </span>
                     </div>
                   </div>
                 )}

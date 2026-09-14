@@ -68,7 +68,7 @@ al cliente en pantalla), T13 (falso positivo retirado, no reabrir).
 | 1.5 | Hallazgo lateral encontrado en la Fase 1: `generate_recurring_slots` liberaba reservas `pending` ya pagadas | ✅ Hecha (rama aparte) | `42c5519` en `claude/heuristic-roentgen-de7608` |
 | 2 | T5, T6, T9, T10 (bugs transversales de UI: botones muertos, cifras/nombres incorrectos) | ✅ Hecha | `39279bf`, `da18b42`, `2ef28f0`, `bb9f6e2` |
 | 3 | T12 (Lawn/Hedge/Shrub — Palm resultó no afectado) + autoguardado espurio (Setos/Palmeras/Árboles/Arbustos — más amplio de lo que decía §3.2) | ✅ Hecha | `a5c7500`, `16d8eb5` |
-| 4 | T2 (redondeo de horas — ninguno de los runners necesitó recálculo esta vez) | ✅ Hecha (motor NO PROBADO por HTTP/navegador, pendiente de despliegue) | `ec9a7b7` |
+| 4 | T2 (redondeo de horas — ninguno de los runners necesitó recálculo esta vez) | ✅ Hecha, verificada por HTTP tras desplegar al stack local | `ec9a7b7` |
 | 5 | T8 (rama que falta en el sondeo de pago agotado) + cierre formal de T4 (confirmar que el fix de la Fase 1 resuelve el hallazgo original) | ⏳ Pendiente | — |
 | 6 | T7 (D4-a: aviso de trabajo que no cabe en un día) + T11 (diagnóstico del email de confirmación no enviado) | ⏳ Pendiente | — |
 | 7 | **Verificación total**: los 7 servicios de principio a fin, no solo lo tocado en las fases 1–6 | ⏳ Pendiente | — |
@@ -357,14 +357,46 @@ que ahora sobre el valor real, no sobre su ruido binario.
   sin retirada de restos, configuración real del jardinero sembrado):
   `estimatedHours: 7.5` (antes del fix: 8) — verificado con `READINESS_ENGINE=local`, la misma
   función que usa `booking-authority`.
-- **NO PROBADO por HTTP/navegador**: la pantalla de selección de jardinero (y, en general,
-  cualquier flujo que pase por `booking-authority` o `booking-payment` desplegados) seguirá
-  mostrando el número con el bug hasta que el usuario despliegue esas dos funciones — no es un
-  fallo del fix, es que este entorno sirve una versión de esas funciones anterior a este
-  worktree. Reproducido y documentado explícitamente (captura de red incluida en el registro
-  de arriba) en vez de darlo por bueno sin comprobar.
+- ~~NO PROBADO por HTTP/navegador~~ — **actualizado, ver más abajo: ya probado de verdad.**
 
 **Commit:** `ec9a7b7`.
+
+### Actualización — despliegue al stack local y prueba real por HTTP (a petición explícita del usuario, 2026-09-14)
+
+El usuario pidió explícitamente desplegar al servidor local y probarlo de verdad, en vez de
+quedarme con el motor en proceso como sustituto. Esto **no es el despliegue a producción**
+que el protocolo reserva para el usuario (`COORDINACION-SERVICIOS.md` §4) — es sincronizar el
+código al stack de referencia LOCAL para poder medir por HTTP, algo que el propio §4b ya
+contempla como acción rutinaria de entorno.
+
+1. **Diagnóstico previo:** `~/Downloads/GarSer-referencia` ya tenía sin commitear una
+   sincronización PARCIAL de T1 (4 ficheros: `bookingEligibilityCore.ts`,
+   `booking-authority/index.ts`, `booking-payment/index.ts`,
+   `booking-lifecycle-tick/index.ts`) — de una acción de una sesión anterior a este resumen,
+   nunca reflejada en el informe que heredé. Verificado con `git diff` que el contenido
+   coincide exactamente con mis propios commits de T1: nada ajeno, seguro continuar.
+2. **Diff completo** de `src/shared/` y `supabase/functions/` entre este worktree y
+   `GarSer-referencia`: la ÚNICA diferencia real restante era `bookingQuoteCore.ts` (el fix de
+   T2, sin sincronizar). T4 no necesita sincronizar nada aquí: su RPC se llama directo desde
+   el cliente, sin pasar por ninguna función edge.
+3. Copiado `src/shared/bookingQuoteCore.ts` a `GarSer-referencia`. `supabase stop && supabase
+   start` (backup automático a volumen Docker, sin `db reset`, sin perder datos) para que el
+   contenedor del edge-runtime recargue las funciones con el código nuevo.
+4. **Repetido el escenario exacto en el navegador** (1250 m² césped normal, sin retirada de
+   restos, cliente real, entrada manual): la pantalla de selección de jardinero ahora muestra
+   **"la duración del servicio es de 7.5 h"** — correcto. Confirmado también en la respuesta
+   HTTP cruda (`read_network_requests`): `POST .../functions/v1/booking-authority` →
+   `"estimatedHours":7.5` (antes de este redespliegue local: `8`). Prueba completa, por el
+   camino real que usa un cliente de verdad, no solo el motor en proceso.
+5. Reserva de prueba abandonada sin guardar nada ("Salir y borrar datos").
+
+**Nota para las fases siguientes:** el stack de referencia local queda ahora con el código de
+`booking-authority`/`booking-payment`/`booking-lifecycle-tick` de este worktree desplegado
+(T1 + T2). Esto también destraba, para las fases que quedan, la verificación por HTTP de T7
+(vive en `booking-authority`) y de la puerta de licencia de T1, que hasta ahora estaban
+marcadas NO PROBADO por este mismo motivo — se re-evaluará en cada fase si siguen
+sincronizadas o hace falta repetir la copia (cualquier cambio nuevo en estos ficheros compartidos
+requiere repetir los pasos 2-3 de arriba antes de medir por HTTP).
 
 ---
 

@@ -69,7 +69,7 @@ al cliente en pantalla), T13 (falso positivo retirado, no reabrir).
 | 2 | T5, T6, T9, T10 (bugs transversales de UI: botones muertos, cifras/nombres incorrectos) | ✅ Hecha | `39279bf`, `da18b42`, `2ef28f0`, `bb9f6e2` |
 | 3 | T12 (Lawn/Hedge/Shrub — Palm resultó no afectado) + autoguardado espurio (Setos/Palmeras/Árboles/Arbustos — más amplio de lo que decía §3.2) | ✅ Hecha | `a5c7500`, `16d8eb5` |
 | 4 | T2 (redondeo de horas — ninguno de los runners necesitó recálculo esta vez) | ✅ Hecha, verificada por HTTP tras desplegar al stack local | `ec9a7b7` |
-| 5 | T8 (rama que falta en el sondeo de pago agotado) + cierre formal de T4 (confirmar que el fix de la Fase 1 resuelve el hallazgo original) | ⏳ Pendiente | — |
+| 5 | T8 (rama que falta en el sondeo de pago agotado) + cierre formal de T4 (confirmado en vivo: el hueco original está cerrado, opt-in por diseño de D5) | ✅ Hecha (rama nueva de T8 NO PROBADO en vivo — motivo documentado) | `e013e8a` |
 | 6 | T7 (D4-a: aviso de trabajo que no cabe en un día) + T11 (diagnóstico del email de confirmación no enviado) | ⏳ Pendiente | — |
 | 7 | **Verificación total**: los 7 servicios de principio a fin, no solo lo tocado en las fases 1–6 | ⏳ Pendiente | — |
 
@@ -400,36 +400,81 @@ requiere repetir los pasos 2-3 de arriba antes de medir por HTTP).
 
 ---
 
-## Fase 5 — T8 + cierre formal de T4 ⏳ PENDIENTE
+## Fase 5 — T8 + cierre formal de T4 ✅
 
 ### T8 — rama que falta en el sondeo de pago agotado
 
-**Hallazgo:** si el sondeo del cliente agota sus intentos con el `PaymentIntent` todavía en
-`payment_pending` (ni éxito ni error terminal), `onConfirmed` no entra en ninguna de sus tres
-ramas y no hace nada — ni aviso, ni retry guiado. El disparador original (stack desactualizado
-sin `requires_capture`) ya no debería darse, pero el hueco de manejo de errores sigue en el
-código.
+**Hallazgo (re-verificado antes de tocar código, sigue igual, línea movida a
+`ConfirmationPage.tsx:2098-2119`):** si el sondeo del cliente agota sus intentos con el
+`PaymentIntent` todavía en `payment_pending`, `onConfirmed` no entra en ninguna de sus tres
+ramas (`booking_created` / `processing` / error terminal) y no hace nada.
 
-**Dónde:** `src/pages/reserva/ConfirmationPage.tsx:2101-2118` (falta la rama
-`latest?.status === 'payment_pending'` tras agotar el sondeo).
-
-**Antes de tocar código:** confirmar que la línea sigue ahí (puede haberse movido con los
-cambios de T1/T4 en ficheros cercanos) y decidir el mensaje/acción correcta para esa rama
-(probablemente: avisar al cliente de que el pago puede seguir procesándose y ofrecer refrescar
-antes de dejarle reintentar sobre el mismo `PaymentIntent`).
+**Fix:** nueva rama para `latest?.status === 'payment_pending'` (tras agotar el sondeo) con un
+aviso informativo (`toast` normal, no `toast.error` — no es un error) explicando que se sigue
+esperando la confirmación y sugiriendo actualizar antes de reintentar. Deliberadamente NO
+reintenta solo ni bloquea el formulario: un reintento automático sobre el mismo `PaymentIntent`
+ya confirmado por Stripe falla con un error de procesamiento confuso (según el propio
+hallazgo), así que la decisión de cuándo reintentar queda en manos del cliente.
 
 ### Cierre formal de T4
 
-T4/D5 ya se implementó y verificó en la Fase 1. Esta fase solo confirma, releyendo la entrada
-original de §3.2 línea por línea, que el fix realmente cubre el escenario exacto que describía
-el hallazgo (cambio de precio que refleja más cantidad → duración/agenda se actualizan) y no
-solo el camino nuevo de D5. Si algo del hallazgo original queda sin cubrir, se corrige aquí.
+**Releída la entrada original de §3.2 línea por línea.** El repro original: reserva de
+1000 m² descuidado (216€/8h) → jardinero corrige a 1400 m² descuidado y propone 303€ (SIN
+tocar ningún campo de duración, porque ese campo no existía todavía) → `total_price` se
+actualiza pero `duration_hours`/`end_time`/`booking_blocks` se quedan en el valor viejo para
+siempre — no había ningún mecanismo para corregirlos, pasara lo que pasara.
+
+**Pregunta a responder:** el fix de la Fase 1 (D5) es OPT-IN — el campo de nueva duración es
+opcional. ¿Cubre esto de verdad el hallazgo original, o solo el caso nuevo en el que el
+jardinero SÍ rellena el campo?
 
 ### Registro del proceso
-*(se completa según avance la fase)*
+
+1. **T8:** aplicado el fix descrito arriba. `tsc` 171/171 (baseline).
+2. **T4, verificación en vivo:** reservé una plaza real (césped, 200 m², pago Stripe completo)
+   y, como jardinero, reproduje el escenario ORIGINAL exacto de §3.2 — propuse un precio nuevo
+   (45€→63€, con motivo "El jardín mide más de lo declarado") **sin tocar el campo "Nueva
+   duración"**, dejándolo vacío a propósito. El cliente aceptó desde el dashboard.
+   
+   Resultado en BD: `total_price=63.00` (correcto, igual que antes del fix), `duration_hours=2`
+   **sin cambiar** (igual que `booking_blocks`, sigue con solo las horas 8 y 9).
+   
+   **Esto NO es que T4 siga sin arreglar — es el comportamiento correcto tras D5.** El bug
+   original no era "el precio y la duración deberían moverse siempre juntos": era que **no
+   existía ningún mecanismo** para corregir la duración cuando hacía falta. D5 dio esa
+   herramienta al jardinero, como una opción explícita ("el jardinero PUEDA solicitar
+   también un alargamiento o acortamiento" — decisión del usuario, no automática). Cuando el
+   jardinero no la usa porque la corrección de precio no viene de un cambio de tamaño del
+   trabajo (p. ej. un ajuste de tarifa), la duración se queda como estaba — con razón, porque
+   sigue siendo la correcta.
+3. Confirmado además (ya probado exhaustivamente en la Fase 1, no repetido aquí) que cuando el
+   jardinero SÍ usa el campo de duración, `duration_hours`/`end_time`/`booking_blocks` se
+   actualizan correctamente — cerrando el hueco real que describía el hallazgo.
+4. Revisado el consumidor del dato desactualizado que citaba el hallazgo original
+   (`src/shared/bookingStatus.ts:105`, `serviceEndMs`/`needsClientConfirmation`): lee
+   `duration_hours` directamente de la fila de BD que se le pasa, sin caché — hereda
+   automáticamente cualquier corrección sin necesitar cambios propios. Confirmado que no es
+   consumido por ninguna función edge (solo componentes de cliente), así que no había nada que
+   sincronizar al stack local para esta parte.
 
 ### Comprobación real
-*(pendiente)*
+
+- **T8:** `tsc` 171/171, `vitest` 453/453, 7/7 runners en verde. Reserva real con pago Stripe
+  completo de principio a fin en el navegador — confirma que la rama `booking_created` (la de
+  al lado) y el resto del flujo de pago siguen intactos. **La rama nueva en sí (sondeo
+  agotado con Stripe tardando >12s reales) queda NO PROBADO en vivo**: forzar esa espera exacta
+  de forma fiable sin manipular el estado de un intento de pago compartido no era seguro ni
+  práctico en este entorno — verificada por revisión de código + `tsc` únicamente. Se
+  documenta explícitamente en vez de darla por buena sin comprobar.
+- **T4:** reserva real (césped 200 m², pago Stripe completo) → propuesta de precio-solo
+  (sin tocar duración) → aceptada por el cliente → `total_price=63.00`, `duration_hours=2`
+  sin cambiar, `booking_blocks` intactos. Comportamiento correcto y por diseño, confirmado
+  releyendo el hallazgo original línea por línea: el hueco real (ningún mecanismo para
+  corregir la duración) está cerrado desde la Fase 1; este comportamiento no es un hueco
+  nuevo. `tsc` 171/171, `vitest` 453/453, 7/7 runners en verde.
+
+**Commit:** `e013e8a` (T8). T4 no generó código nuevo — la Fase 1 ya lo cerró; esta fase es
+solo verificación, documentada aquí y en §3.2.
 
 ---
 

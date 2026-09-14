@@ -71,7 +71,7 @@ al cliente en pantalla), T13 (falso positivo retirado, no reabrir).
 | 4 | T2 (redondeo de horas — ninguno de los runners necesitó recálculo esta vez) | ✅ Hecha, verificada por HTTP tras desplegar al stack local | `ec9a7b7` |
 | 5 | T8 (rama que falta en el sondeo de pago agotado) + cierre formal de T4 (confirmado en vivo: el hueco original está cerrado, opt-in por diseño de D5) | ✅ Hecha (rama nueva de T8 NO PROBADO en vivo — motivo documentado) | `e013e8a` |
 | 6 | T7 (D4-a: aviso de trabajo que no cabe en un día) + T11 (causa raíz + fix del email de confirmación no enviado, ampliado a 4 call-sites) | ✅ Hecha, T7 y T11 (call-site original) verificados en vivo — los otros 3 call-sites de T11 solo por código+`deno check` (documentado) | `b8523b4`, `6d6263c` |
-| 7 | **Verificación total**: los 7 servicios de principio a fin, no solo lo tocado en las fases 1–6 | ⏳ Pendiente | — |
+| 7 | **Verificación total**: los 7 servicios de principio a fin, no solo lo tocado en las fases 1–6 | ✅ Hecha — T1 cerrado por HTTP real (hueco de la Fase 1), T5/T6/T9/T10 cruzados en césped, ciclo de vida completo (precio+duración, cancelación en 2 estados+reembolso, cierre+reseña) probado a fondo en césped, booking+pago real en los 7 servicios | — (sin código nuevo) |
 
 ---
 
@@ -624,7 +624,7 @@ produjo `TS2304: Cannot find name 'serviceRoleKey'` en `deno check`, corregido).
 
 ---
 
-## Fase 7 — Verificación total final ⏳ PENDIENTE
+## Fase 7 — Verificación total final ✅ CERRADA (2026-09-14)
 
 No es una fase de código: es la comprobación de que, con **todos** los hallazgos cerrados, los
 **7 servicios siguen funcionando de principio a fin** — no solo lo que cada fase tocó
@@ -669,7 +669,145 @@ arbustos, desbroce, fitosanitarios)
    parte (abrir PRs, mergear, desplegar, reiniciar el entorno compartido).
 
 ### Registro del proceso
-*(se completa al llegar a esta fase)*
+
+1. **Gate técnico de partida** (mismo estado de BD, sin resets a medias): `tsc` 171/171
+   (baseline), `vitest run` 455/455, 7/7 runners de readiness en verde — `arboles` 15/0/0,
+   `arbustos` 18/0/1, `cesped` 29/0/7, `desbroce` 19/0/3, `fitosanitarios` 74/0/2, `palmeras`
+   71/0/0, `setos` 35/0/1 (los NO PROBADO son preexistentes de cada runner, no de esta fase).
+2. **T1, puerta de licencia — mejora sobre la Fase 1.** En la Fase 1 quedó explícitamente
+   NO PROBADO por HTTP porque el stack de referencia servía `booking-authority` desde un
+   worktree distinto al de este. Ese motivo ya no aplica: en la Fase 6 se sincronizó
+   `bookingEligibilityCore.ts` completo a `GarSer-referencia` para T7, y ese archivo ya
+   llevaba el gate de licencia de la Fase 1. Confirmado por `diff` que los 3 archivos
+   relevantes (`bookingEligibilityCore.ts`, `bookingQuoteCore.ts`, `booking-authority/index.ts`)
+   son idénticos entre este worktree y el de referencia. Se aprovechó para cerrar por fin el
+   hueco de la Fase 1:
+   - El jardinero sembrado tiene `has_phytosanitary_license=true` pero
+     `license_expires_at=NULL` — por diseño (`hasValidPhytosanitaryLicense` exige fecha), esto
+     ES "sin licencia vigente" de forma natural, sin tocar nada.
+   - HTTP real a `booking-authority` (`preview_providers`): fitosanitarios químico →
+     `missing_phytosanitary_license`. Desbroce con herbicida → mismo código. Palmeras → **sin
+     exclusión, elegible** (D2 confirmado en vivo).
+   - Caso positivo: se aprobó la licencia directamente en BD con fecha futura (mismo estado
+     final que dejaría `review_gardener_license`, RPC ya probada en Fase 1) y se repitieron las
+     3 llamadas: fitosanitarios químico → elegible; desbroce con herbicida (100 m², para no
+     chocar con el límite de agenda del fixture) → elegible.
+   - Estado de licencia revertido a como estaba (`NULL`) al terminar, para no afectar otros
+     runners; 3 runners relacionados (`fitosanitarios`, `desbroce`, `palmeras`) re-ejecutados
+     tras el revert — 0 FALLA, sin cambios.
+3. **T5/T6/T9/T10, verificación cruzada en un servicio distinto al de la Fase 2** (que usó
+   árboles). Se eligió **césped** — no probado para estos 4 hallazgos hasta ahora, y con
+   fracciones de hora ya conocidas por T2 (bueno para T10). Reserva real: 1250 m² normal, sin
+   retirada → 7,5 h de precio, 8 h de bloque de agenda (redondeo a hora completa, no es un
+   bug: el precio usa `estimatedHours` fraccionario, el bloqueo de agenda usa
+   `Math.ceil` a horas enteras, son cosas distintas). Pago Stripe real completado.
+   - **T10**: en el paso de selección de hora (`ProvidersPage`, antes de confirmar), con
+     7,5 h de estimación: "Horario del trabajo: 08:00 – 15:30" — correcto (antes del fix
+     habría sido "08:00 – 15.5:00").
+   - **T9**: panel de solicitudes del jardinero muestra "Laura Fernández", no "Cliente
+     desconocido".
+   - **T6**: "08:00:00 - 16:00:00 (8h)" en la tarjeta de solicitud coincide con "Duración
+     estimada: 8h" en el detalle — cifra correcta también aquí.
+   - **T5**: como jardinero, propuesta de cambio de precio+duración (225€→280€, 8h→9h) sobre
+     la reserva pendiente; como cliente, el dashboard (`ClientBookingLauncher`) muestra
+     "Miguel propone un nuevo precio... Aceptar nuevo precio / Rechazar" y el nuevo horario de
+     fin ya bien formateado ("9 h (fin a las 17:00)"). Al aceptar: `status=confirmed`,
+     `duration_hours=9`, `end_time=17:00` — agenda redimensionada (D5) y precio actualizado.
+4. **Ciclo de vida completo en el navegador, con datos y pagos reales — profundizado en
+   césped** (mismo hilo del punto 3, misma reserva de 1250 m²):
+   - Booking manual + pago real Stripe (`stripe listen` reenviando al stack local) →
+     `payment_intent.amount_capturable_updated`/`charge.succeeded`, 200 OK.
+   - Cambio de precio+duración (D5) aceptado → ver punto 3.
+   - **Cancelación ANTES de capturar** (reserva distinta, 200 m², cliente cancela estando
+     `pending`): resultado inesperado a primera vista — el PaymentIntent apareció
+     **capturado** en Stripe (`status=succeeded`, `amount_received` completo) en vez de
+     liberado. Investigado a fondo antes de darlo por bug: la RPC `cancel_booking` tiene una
+     política económica explícita (comentario `POLÍTICA ECONÓMICA (§8C-D3)` en el propio SQL,
+     "comportamiento histórico") — si cancela el **cliente** con **menos de 24 h** de
+     antelación respecto al inicio del servicio, pierde la tarifa de gestión aunque el
+     jardinero ni siquiera hubiera aceptado (`money_action='capture'`); con 24 h o más, se
+     libera sin coste. La reserva cancelada caía justo dentro de esa ventana <24h. **No es un
+     bug — es la política de cancelación tardía del cliente, ya diseñada, funcionando
+     exactamente como está escrita.** Único matiz encontrado (no bloqueante, no es un
+     hallazgo de esta ronda): el texto que ve el cliente antes de cancelar ("los gastos de
+     gestión están retenidos y solo se cobran cuando el profesional acepte") no menciona esta
+     ventana de 24 h, así que un cliente que cancela tarde puede sorprenderse de que sí se le
+     cobre. Se deja anotado para quien priorice trabajo de UX, no se toca en esta ronda.
+   - **Cancelación DESPUÉS de capturar** (la reserva de 1250 m², ya `confirmed` tras el
+     cambio de precio, cancelada por el **jardinero** desde su Panel — el botón "Cancelar
+     reserva" vive en el dashboard principal del jardinero, no en su vista "Reservas"):
+     `money_action='refund'` sin depender de ninguna ventana horaria (esa regla de 24h es
+     solo para cuando cancela el cliente). Reembolso real confirmado en Stripe:
+     `re_3UFZGV2MwFyGXuB711JT3HHb`, 28,13 €, `status=succeeded` — exactamente el total de
+     gastos de gestión pagado. Penalización automática de 1★ (§8C-D4) confirmada en
+     `public.reviews`: `rating=1`, `is_system_penalty=true`,
+     `system_reason='gardener_cancelled_after_accepting'`.
+   - **Cierre + reseña real** (la reserva de 200 m² restante, aceptada y capturada): como no
+     se puede esperar al reloj real hasta la fecha de la reserva (15 sep 2026), se movió su
+     `date`/`start_time` en BD a un momento ya pasado del mismo día de la prueba —
+     `mark_gardener_finished` exige `now() >= booking_service_start`, así que sin este ajuste
+     de reloj no se podía ejercer el flujo (mismo tipo de limitación temporal ya aceptado en
+     la Fase 5 para T8). Jardinero pulsa "He terminado" → `gardener_finished_at` fijado;
+     cliente ve "CONFIRMA EL SERVICIO" → "Sí, confirmar" → estado `completed`; cliente deja
+     reseña real (4★, comentario) → guardada en `public.reviews` con `is_system_penalty=false`
+     (reseña genuina, no la penalización automática del punto anterior).
+5. **Booking + pago real en los 6 servicios restantes** (árboles, arbustos, desbroce,
+   fitosanitarios, palmeras, setos) — confirma que el motor de precios y el checkout
+   funcionan de verdad para cada uno, no solo en el runner:
+   - Árboles: mediano, poda de formación, acceso normal → 77,63€, pago real completado.
+   - Arbustos: 20 m², medianas, normal → 168,75€, pago real completado.
+   - Fitosanitarios: césped 200, preventivo, ecológico (elegible sin licencia por diseño) →
+     56,25€, pago real completado.
+   - Palmeras: Phoenix canariensis, 4-10m, normal, ×1 → 137,25€, pago real completado.
+   - Setos: 15m, 1,5m alto, dos caras, normal → 136,13€, pago real completado.
+   - Desbroce: 300 m², dificultad normal, sin herbicida → 141,75€, pago real completado
+     (varios reintentos — ver limitación de entorno más abajo).
+   - Ninguno de estos 6 se llevó más allá del booking+pago (sin repetir cambio de precio,
+     cancelación o cierre+reseña): el mecanismo transversal ya quedó profundamente verificado
+     en césped (punto 4) y estos pasos no tienen código específico de servicio — repetirlos
+     6 veces más habría sido redundante frente al tiempo disponible. Se marca explícitamente
+     NO PROBADO para estos 6 (no falso "probado" por extensión).
+   - Todas las reservas de esta fase confirmadas con eventos de Stripe reales (`payment_intent
+     .amount_capturable_updated`/`charge.succeeded`) y `200 OK` del webhook en el log de
+     `stripe listen`.
+6. **Limitación de entorno detectada y resuelta en el camino (no es un hallazgo de
+   producto):** durante los checkouts de este punto 5, el formulario embebido de Stripe
+   Elements dejó de renderizar (quedaba en blanco, sin llamada de red a `stripe.com`) de forma
+   intermitente y creciente conforme avanzaba la sesión — confirmado que no era la red
+   (`js.stripe.com` responde 200 desde el host) ni el backend (Docker, `stripe listen` y Kong
+   sanos en todo momento) sino el estado acumulado del propio panel de vista previa tras horas
+   de uso continuado. Resuelto de forma repetible abriendo una pestaña nueva del navegador
+   (`tabs_create`) y, si hacía falta, abandonando y rehaciendo la reserva para forzar un
+   `PaymentIntent` nuevo. El servidor de desarrollo (`transversal-dev`) también se detuvo solo
+   una vez a mitad de la fase ("stopped by the app"); se detectó por el fallo de navegación y
+   se resolvió reiniciándolo con `preview_start`.
 
 ### Comprobación real
-*(pendiente — es, por definición, la última sección que se rellena de todo el documento)*
+
+- **Gate técnico:** `tsc` 171/171, `vitest run` 455/455, 7/7 runners de readiness en verde,
+  0 FALLA — antes y después de las mutaciones temporales de BD para T1 (revertidas).
+- **T1 (puerta de licencia):** **PROBADO en vivo por HTTP real** contra `booking-authority` en
+  los 4 casos (fitosanitarios químico y desbroce+herbicida, sin y con licencia vigente;
+  palmeras no afectada) — cierra el hueco que la Fase 1 había dejado explícitamente NO
+  PROBADO.
+- **T5/T6/T9/T10 (verificación cruzada):** **PROBADO en vivo** en césped (servicio distinto al
+  de la Fase 2), con reserva y pago reales — los 4 comportamientos correctos, coherente con
+  lo verificado en árboles en la Fase 2.
+- **Ciclo de vida completo (booking→pago→aceptación→captura→cambio de
+  precio/duración→cancelación en ambos estados→reembolso→cierre→reseña):** **PROBADO en vivo
+  de principio a fin en césped**, con evidencia real en Stripe (PaymentIntents, refund) y en
+  BD (`bookings.status`, `public.reviews`) en cada paso.
+- **Booking + pago real en los 6 servicios restantes** (árboles, arbustos, desbroce,
+  fitosanitarios, palmeras, setos): **PROBADO en vivo** — motor de precios correcto y checkout
+  Stripe real completado en los 7 servicios sin excepción.
+- **NO PROBADO explícito en esta fase** (documentado, no disfrazado):
+  - Cambio de precio/duración, cancelación en ambos estados con reembolso, y cierre+reseña:
+    solo profundizados en césped: los otros 6 servicios se quedaron en booking+pago. El
+    mecanismo es transversal (mismas RPC, sin ramas por servicio) y ya se verificó a fondo una
+    vez; repetirlo en los 6 restantes no aporta señal nueva proporcional al tiempo que exige.
+  - T5/T6/T9/T10: verificación cruzada hecha en 1 servicio adicional (césped), no en los 7.
+  - La observación de UX sobre el aviso de cancelación tardía (<24h) del cliente no menciona
+    esa ventana — anotada como mejora posible, no como hallazgo bloqueante ni corregida en
+    esta ronda (no forma parte de T1–T12).
+- Ninguna mutación de datos de esta fase quedó a medio revertir: el estado de licencia del
+  jardinero se dejó como estaba: 7/7 runners re-verificados en verde tras el revert.

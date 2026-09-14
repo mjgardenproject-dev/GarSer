@@ -915,6 +915,109 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ---
 
+## Sección 20 — Ronda transversal (T1–T12, turno 2, 2026-09-14)
+
+> Los hallazgos T1–T12 de `COORDINACION-SERVICIOS.md` §3.2 son transversales: no son de un
+> servicio concreto, así que estas pruebas valen para cualquier servicio en el que las
+> ejecutes. Todo lo de aquí abajo está **verificado en local** (7 servicios, Fases 1-7 del
+> turno 2, `docs/audit/2026-09-09-transversal/PLAN-IMPLEMENTACION-TURNO2.md`) — falta
+> confirmarlo contra producción tras el deploy.
+
+- [ ] **20.1 — Puerta de licencia fitosanitaria (T1).** Con un jardinero sin licencia vigente
+  (sin fecha de caducidad futura aprobada), un trabajo de fitosanitarios químico o de desbroce
+  con herbicida no debe listarlo como profesional disponible; palmeras SÍ debe listarlo (no
+  entra en esta puerta, D2). ✅ **Éxito**: `preview_providers` devuelve el jardinero excluido
+  con `missing_phytosanitary_license` en los dos primeros casos, y elegible en palmeras. ❌ Si
+  falla: revisa `hasValidPhytosanitaryLicense()` en `bookingEligibilityCore.ts` y que la
+  licencia realmente no tenga `license_expires_at` futura en BD.
+
+- [ ] **20.2 — Redondeo de horas por coma flotante (T2).** Un trabajo cuya `(cantidad/yield)*0.9`
+  cruce el umbral de 8h con un residuo binario (p. ej. céspedes de 5000 m² o 1250 m²) no debe
+  facturar 0,5h de más. ✅ **Éxito**: `estimatedHours` sale exacto (30.0, 7.5, 15.0 según el
+  caso), no 30.5/8.0/15.5. ❌ Si falla: revisa que `Math.round(totalHours * 1e6) / 1e6` siga
+  aplicándose justo antes del `Math.ceil` en `bookingQuoteCore.ts`.
+
+- [ ] **20.3 — Cambio de precio con cambio de duración (T4/D5).** El jardinero propone un
+  nuevo precio y, opcionalmente, una nueva duración (solo mueve la hora de FIN) sobre una
+  reserva `pending`. Al aceptar el cliente, la agenda debe redimensionarse sin dejar huecos ni
+  solapes. ✅ **Éxito**: `bookings.duration_hours`/`end_time` cambian, y `booking_blocks` +
+  `availability_blocks` + `availability` reflejan el nuevo rango. ❌ Si falla: revisa
+  `resize_booking_schedule()` — debe fallar entero (transacción atómica) si el alargue choca
+  con horas ya ocupadas de otro cliente.
+
+- [ ] **20.4 — Aceptar/rechazar cambio de precio desde el dashboard (T5).** Desde el dashboard
+  principal del cliente (`/`, "Hola de nuevo"), no solo desde "Mis reservas", los botones
+  "Aceptar nuevo precio"/"Rechazar" de una tarjeta con propuesta pendiente deben funcionar. ✅
+  **Éxito**: al aceptar, la reserva pasa a `confirmed` con el precio/duración nuevos; al
+  rechazar, se cancela. ❌ Si falla: revisa `cardHandlers` en `ClientBookingLauncher.tsx`.
+
+- [ ] **20.5 — Duración correcta en el panel del jardinero (T6).** La cabecera de cada
+  solicitud pendiente ("Solicitudes de Reserva") debe mostrar la MISMA duración que el
+  detalle de abajo ("Duración estimada: Xh"), no siempre "(1h)". ✅ **Éxito**: ambas cifras
+  coinciden para cualquier duración. ❌ Si falla: revisa que `BookingRequestsManager.tsx` lea
+  `request.duration_hours` en la cabecera, no `.length` de un array sintético.
+
+- [ ] **20.6 — Aviso honesto cuando el trabajo no cabe en un día (T7).** Un trabajo cuya
+  duración estimada supere las 12h (p. ej. un césped de varios miles de m²) no debe agotar la
+  ventana de 14 días sin decir por qué. ✅ **Éxito**: mensaje "Este trabajo necesita X horas
+  seguidas y ningún servicio se puede reservar por más de 12 horas en un solo día..." — sin
+  llegar a mirar la agenda de ningún profesional (`quotes: {}` en la respuesta cruda). ❌ Si
+  falla: revisa `MAX_SINGLE_DAY_DURATION_HOURS` y la exclusión `service_exceeds_single_day` en
+  `bookingEligibilityCore.ts`.
+
+- [ ] **20.7 — Rama que falta en el sondeo de pago agotado (T8).** Si el sondeo del cliente
+  tras pagar agota sus intentos sin que el webhook haya confirmado el `PaymentIntent`, el
+  cliente no debe quedarse en una pantalla de carga infinita. **NO PROBADO en vivo en local**
+  (requiere forzar >12s de latencia real de Stripe) — confirmar en producción con cuidado, o
+  dejar constancia explícita de que sigue sin poder probarse ahí tampoco.
+
+- [ ] **20.8 — Nombre real del cliente en las solicitudes (T9).** El panel de solicitudes del
+  jardinero debe mostrar el nombre real del cliente, no "Cliente desconocido". ✅ **Éxito**:
+  aparece el nombre. ❌ Si falla: revisa que `BookingRequestsManager.tsx` filtre `profiles`
+  por `user_id`, no por `id`.
+
+- [ ] **20.9 — Horario con fracción de hora bien formateado (T10).** Tras elegir hora, con una
+  duración fraccionaria (p. ej. 1.5h, 2.5h, 7.5h), el texto "Horario del trabajo: HH:MM –
+  HH:MM" debe mostrar minutos reales (15:30), no la fracción pegada al literal (15.5:00). ✅
+  **Éxito**: formato correcto. ❌ Si falla: revisa `addHoursToTime()` en `ProvidersPage.tsx`.
+
+- [ ] **20.10 — Emails transaccionales por webhook (T11).** Tras un pago real: (a) el email de
+  confirmación de reserva debe intentar enviarse de verdad (no morir en un 401 silencioso); lo
+  mismo para (b) el aviso al cliente de que el jardinero terminó, y (c) los avisos de
+  cancelación e incidencia resuelta. ✅ **Éxito**: en Mailpit/el proveedor de email real
+  configurado, llega el mensaje (o, si SMTP no está configurado, el log del servidor muestra
+  el intento de envío, no un error de autorización). **Verificado en vivo de principio a fin
+  en local solo para (a)**; (b) y (c) comparten el mismo fix pero no se dispararon en vivo por
+  alcance de tiempo — si fallan en producción, revisa que las 4 llamadas a
+  `admin.functions.invoke(...)` lleven `headers: { Authorization: Bearer <service_role_key> }`
+  explícito (no basta con que el cliente se haya creado con la clave de servicio).
+
+- [ ] **20.11 — Configuradores de precio sin `pricing_method` en BD (T12).** El panel de
+  precios del jardinero para césped, setos y arbustos (Lawn/Hedge/Shrub) debe mostrar todos
+  sus campos de tarifa aunque al perfil le falte la clave `pricing_method` guardada. ✅
+  **Éxito**: se ven los campos de tarifa por categoría. ❌ Si falla: revisa que el
+  configurador use `getPricingMethod()` (la SSOT), no `config.pricing_method` en crudo.
+
+### Ciclo de vida completo (para no-regresión, ya verificado en local con evidencia real)
+
+- [ ] **20.12 — Booking + pago real en los 7 servicios.** Cada uno de los 7 servicios debe
+  completar una reserva manual + pago con tarjeta de test de principio a fin. ✅ **Verificado
+  en local con pago real en los 7** (césped, árboles, arbustos, desbroce, fitosanitarios,
+  palmeras, setos) — PaymentIntents reales, webhook `200 OK`, reserva creada en `pending`.
+
+- [ ] **20.13 — Ciclo completo (aceptación+captura, cambio de precio, cancelación en ambos
+  estados+reembolso, cierre+reseña).** **Verificado en local a fondo solo en césped** (los
+  otros 6 servicios comparten el mismo mecanismo transversal, sin código específico de
+  servicio en estos pasos, así que no se repitió 6 veces más): aceptación del jardinero
+  captura el pago (`payment_intent.succeeded`/`charge.captured`); cancelación del cliente con
+  <24h de antelación captura el pago igualmente (política de negocio §8C-D3, no un bug —
+  cancelar con ≥24h sí libera sin coste); cancelación del jardinero tras aceptar reembolsa de
+  verdad y penaliza con 1★ automática; cierre + reseña quedan registrados. Si repites esto en
+  otro servicio en producción, es de esperar que reproduzca el mismo comportamiento — no lo
+  cuentes como hallazgo nuevo de ese servicio si es así.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

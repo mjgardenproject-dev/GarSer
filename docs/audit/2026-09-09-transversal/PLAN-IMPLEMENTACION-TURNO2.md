@@ -70,7 +70,7 @@ al cliente en pantalla), T13 (falso positivo retirado, no reabrir).
 | 3 | T12 (Lawn/Hedge/Shrub — Palm resultó no afectado) + autoguardado espurio (Setos/Palmeras/Árboles/Arbustos — más amplio de lo que decía §3.2) | ✅ Hecha | `a5c7500`, `16d8eb5` |
 | 4 | T2 (redondeo de horas — ninguno de los runners necesitó recálculo esta vez) | ✅ Hecha, verificada por HTTP tras desplegar al stack local | `ec9a7b7` |
 | 5 | T8 (rama que falta en el sondeo de pago agotado) + cierre formal de T4 (confirmado en vivo: el hueco original está cerrado, opt-in por diseño de D5) | ✅ Hecha (rama nueva de T8 NO PROBADO en vivo — motivo documentado) | `e013e8a` |
-| 6 | T7 (D4-a: aviso de trabajo que no cabe en un día) + T11 (diagnóstico del email de confirmación no enviado) | ⏳ Pendiente | — |
+| 6 | T7 (D4-a: aviso de trabajo que no cabe en un día) + T11 (causa raíz + fix del email de confirmación no enviado, ampliado a 4 call-sites) | ✅ Hecha, T7 y T11 (call-site original) verificados en vivo — los otros 3 call-sites de T11 solo por código+`deno check` (documentado) | `b8523b4`, `6d6263c` |
 | 7 | **Verificación total**: los 7 servicios de principio a fin, no solo lo tocado en las fases 1–6 | ⏳ Pendiente | — |
 
 ---
@@ -478,7 +478,7 @@ solo verificación, documentada aquí y en §3.2.
 
 ---
 
-## Fase 6 — T7 (D4-a) + T11 ⏳ PENDIENTE
+## Fase 6 — T7 (D4-a) + T11 ✅ CERRADA (2026-09-14)
 
 ### T7 — trabajo que no cabe en un día
 
@@ -486,37 +486,141 @@ solo verificación, documentada aquí y en §3.2.
 jornada más larga disponible del profesional y avisar al cliente de que el trabajo no cabe en
 un único día — sin construir un sistema de reserva multi-día.
 
-**Dónde:** no hay ningún sitio que calcule esto hoy; el síntoma se observa en
+**Dónde:** no había ningún sitio que calculara esto; el síntoma se observaba en
 `supabase/functions/booking-authority/index.ts` (`preview_providers`/`valid_hours`, exclusión
 genérica `no_reservable_availability`, indistinguible de "esta fecha en concreto no tiene
 hueco").
 
-**Nota de alcance:** T7 vive en una función desplegada (`booking-authority`) que este entorno
-no sirve en vivo por HTTP (mismo motivo que el filtro de T1) — el fix se verificará con
-`READINESS_ENGINE=local` + tests unitarios, y el camino HTTP quedará NO PROBADO hasta que el
-usuario despliegue, igual que T1.
+**Implementado en `src/shared/bookingEligibilityCore.ts`** (importado por `booking-authority`):
+un primer diseño comparaba el hueco libre más largo de cada fecha escaneada contra la duración
+pedida, dentro de la rama `!earliestSlot` — se demostró que es lógicamente imposible: por
+construcción, `getValidStartHours(...).length > 0` equivale a que el hueco más largo sea
+`>= duración`, así que al llegar a esa rama TODAS las fechas ya tienen, necesariamente, un
+hueco más corto que lo pedido. La comparación siempre salía verdadera y el código era papel
+mojado (confirmado porque 2 de 3 tests nuevos fallaban). Rediseño final: comparar la duración
+contra `MAX_SINGLE_DAY_DURATION_HOURS = 12`, el mismo tope que ya aplica todo el sistema
+(`duration_hours <= 12` en ~7 migraciones SQL), de forma incondicional y ANTES de escanear
+ninguna agenda — nuevo código de exclusión `service_exceeds_single_day`. Mensaje también
+ajustado en `src/pages/reserva/ProvidersPage.tsx` (mismo patrón que el mensaje de T1).
 
 ### T11 — email de confirmación no se envía nunca
 
-**Hallazgo:** `admin.functions.invoke('booking-confirmation-email', ...)` dentro de
-`booking-payment-webhook/index.ts:644` devuelve `401 Unauthorized`, aunque la misma llamada por
-`curl` con la misma `service_role_key` funciona (`200 OK`). Hipótesis sin confirmar: la versión
-de `supabase-js` resuelta por el import sin pin (`esm.sh/@supabase/supabase-js@2`) puede
-diferir entre aislados de Deno y cambiar cómo `functions.invoke()` construye la cabecera
-`Authorization`.
+**Hallazgo original:** `admin.functions.invoke('booking-confirmation-email', ...)` dentro de
+`booking-payment-webhook/index.ts:644` devolvía `401 Unauthorized`, aunque la misma llamada por
+`curl` con la misma `service_role_key` funcionaba (`200 OK`). Hipótesis sin confirmar en el
+hallazgo original: la versión de `supabase-js` resuelta por el import sin pin
+(`esm.sh/@supabase/supabase-js@2`) podía diferir entre aislados de Deno y cambiar cómo
+`functions.invoke()` construye la cabecera `Authorization`.
 
-**Plan:** esto es un diagnóstico, no un fix claro todavía. Pasos sugeridos por el propio
-hallazgo: loguear temporalmente la cabecera `Authorization` que recibe
-`isInternalServiceCaller`, o sustituir `admin.functions.invoke(...)` por un `fetch()` crudo con
-la cabecera explícita. Si tras investigar no se llega a una causa confirmada y corregible con
-confianza, se documenta como **NO PROBADO / diagnóstico abierto** en vez de aplicar un fix a
-ciegas — este es exactamente el tipo de hallazgo que el usuario pidió no disfrazar de resuelto.
+**Causa raíz confirmada** (leyendo el bundle real resuelto por esm.sh —
+`@supabase/supabase-js@2.116.0` y `@supabase/functions-js@2.116.0`, no la hipótesis de
+versión): `createClient(url, key)` fija `this.headers = options.global.headers ?? {}` — vacío
+si no se pasa `global.headers`. `.rpc()`/`.from()` resuelven la clave de servicio por su
+cuenta; `functions.invoke()` no: nunca manda `Authorization` salvo que se le pase explícito
+(por construcción o por llamada). No era un problema de versión entre aislados de Deno, sino de
+esta llamada en concreto.
+
+**Alcance ampliado:** un `grep -rln ".functions.invoke("` sobre todas las edge functions
+encontró el mismo patrón en 4 sitios de 3 archivos, no solo el documentado originalmente:
+`booking-payment-webhook/index.ts` (confirmación de reserva creada),
+`booking-complete/index.ts` (aviso al cliente de que el jardinero terminó), y
+`booking-payment/index.ts` ×2 (cancelación e incidencia resuelta). Los 4 comparten la misma
+causa raíz y se corrigieron con el mismo fix mínimo: `headers: { Authorization: `Bearer
+${serviceRoleKey}` } }` explícito en la llamada. En `booking-payment-webhook/index.ts` la
+llamada vive en `processStripeEvent(admin, ...)`, una función que no recibe `serviceRoleKey`
+como parámetro (solo `admin`) — se usa el resolver local del propio archivo
+`resolveServiceRoleKey()` en vez de la variable externa (que no estaba en scope: primer intento
+produjo `TS2304: Cannot find name 'serviceRoleKey'` en `deno check`, corregido).
 
 ### Registro del proceso
-*(se completa según avance la fase)*
+
+1. Re-verificación previa: se confirmó que ambos hallazgos seguían reproduciendo contra el
+   código actual antes de tocar nada.
+2. T7: primer diseño (`longestContiguousRun` + comparación en la rama `!earliestSlot`) escrito,
+   testeado, y descartado al demostrarse lógicamente imposible (ver arriba). Reddiseño con el
+   tope de 12 h, tests reescritos. `vitest` 455/455 (+2 sobre la Fase 5).
+3. T11: diagnóstico llevado hasta la causa raíz real inspeccionando el bundle de supabase-js
+   resuelto en producción (esm.sh), no solo la hipótesis del hallazgo original. Corrección
+   aplicada a los 4 call-sites tras el `grep` de alcance.
+4. Verificación de tipos: `deno check` en los 4 archivos de edge functions tocados/relacionados
+   (`booking-payment-webhook`, `booking-complete`, `booking-payment`, `booking-authority` por
+   import indirecto de T7). `booking-payment-webhook` no tenía baseline registrada — se
+   estableció vía `git stash` del archivo (14 errores pre-existentes). El primer intento del
+   fix T11 ahí subió a 15 (1 error nuevo, `serviceRoleKey` fuera de scope); corregido con el
+   resolver local del archivo, vuelta a 14/14 sin regresión.
+5. `tsc --noEmit` 171/171, `vitest` 455/455, 7/7 runners de readiness en verde
+   (`READINESS_ENGINE=local`, apuntando al contenedor de `GarSer-referencia` vía
+   `SUPABASE_DB_CONTAINER`/`SUPABASE_PROJECT_DIR`), 0 FALLA en los 7 servicios.
+6. Sincronizados a `~/Downloads/GarSer-referencia`: `bookingEligibilityCore.ts`,
+   `ProvidersPage.tsx`, y los 3 archivos de edge functions de T11. `supabase stop && supabase
+   start` (con backup/restore automático de datos, sin `db reset`) para que el edge runtime
+   sirviera el código corregido.
+7. Verificación T7 en vivo por HTTP directo a `booking-authority` (`preview_providers`,
+   césped 2200/2500/3000 m²): la exclusión `service_exceeds_single_day` se dispara con el
+   mensaje correcto (14h/15h/18h según el área) sin ni mirar la disponibilidad del
+   profesional (`quotes: {}`, sin llamada a agenda).
+8. Verificación T7 en el navegador: reserva manual de césped 3000 m² de principio a fin hasta
+   `ProvidersPage`. **Se encontró y corrigió un problema de infraestructura de pruebas, no de
+   código**: el servidor de desarrollo lanzado por nombre (`garser-dev`) resolvía
+   `.claude/launch.json` del directorio de trabajo primario de la sesión
+   (`~/Downloads/GarSer-main 4`, un clon **no relacionado** con esta auditoría), no el de
+   `~/Downloads/auditorias/transversal` — servía código sin ninguno de los cambios de esta
+   auditoría, lo que producía el mensaje genérico "no hay profesionales disponibles" en vez del
+   mensaje de T7. Confirmado añadiendo un log de diagnóstico temporal (revertido después de
+   confirmar) y comparando con la petición de red real (que sí devolvía
+   `service_exceeds_single_day` correctamente — la API nunca falló, solo el frontend servido no
+   era el correcto). Fix: se añadió una configuración `transversal-dev` a
+   `~/Downloads/GarSer-main 4/.claude/launch.json` que lanza `npm run dev --prefix
+   ~/Downloads/auditorias/transversal -- --port 5180`, sirviendo el worktree correcto. Con esa
+   corrección, el mensaje de T7 apareció exacto en el navegador.
+9. Verificación T11 en vivo: reserva real (césped 200 m², pago Stripe con tarjeta de test) de
+   principio a fin en el navegador. El primer intento no generó ningún correo porque no había
+   ningún receptor de webhooks de Stripe escuchando en local — se arrancó `stripe listen
+   --forward-to http://127.0.0.1:54321/functions/v1/booking-payment-webhook` (el secreto de
+   firma que imprime coincide exactamente con el ya configurado en
+   `supabase/functions/.env`, señal de que la CLI de Stripe mantiene un secreto estable por
+   cuenta) y se repitió la reserva con el listener activo. El log muestra el evento
+   `payment_intent.amount_capturable_updated` reenviado y procesado con `200`, y el log del
+   edge runtime confirma `serving the request with supabase/functions/booking-confirmation-email`
+   seguido de `MOCK EMAIL (client) -> cliente.local@test.local | ...` y `MOCK EMAIL (gardener)
+   -> ...` — antes del fix, esta invocación ni siquiera llegaba a producirse (moría en el 401
+   silencioso). El log "MOCK EMAIL" es el propio comportamiento esperado de
+   `booking-confirmation-email/index.ts` cuando faltan credenciales SMTP en local (fallback
+   deliberado, no un error) — por eso Mailpit se queda vacío aunque el envío sea correcto.
+10. Commits atómicos: `b8523b4` (T7), `6d6263c` (T11).
 
 ### Comprobación real
-*(pendiente)*
+
+- **T7 (motor, HTTP directo a `booking-authority`):** `preview_providers` con césped
+  2200/2500/3000 m² → `service_exceeds_single_day` con "14/15/18 horas seguidas..." exacto,
+  `quotes: {}` (no llega a mirar agenda). **PROBADO en vivo por HTTP real** contra el stack
+  local (no `READINESS_ENGINE=local`).
+- **T7 (frontend, navegador):** reserva manual césped 3000 m² hasta `ProvidersPage` →
+  mensaje "Este trabajo necesita más horas seguidas de las que caben en una sola jornada. De
+  momento no ofrecemos reservas repartidas en varios días — prueba a reducir el alcance del
+  trabajo." renderizado tal cual. **PROBADO en vivo en el navegador.**
+- **T11 (`booking-confirmation-email`, el call-site del hallazgo original):** reserva real
+  con pago Stripe completo + `stripe listen` reenviando al stack local → log del edge runtime
+  confirma la invocación llega a MOCK EMAIL para cliente y jardinero. **PROBADO en vivo de
+  principio a fin** (pago real → webhook real → invocación de función real).
+- **T11 (los otros 3 call-sites: `booking-complete`, `booking-payment` ×2 — cancelación e
+  incidencia resuelta):** mismo fix, byte a byte, que el call-site ya probado; mismo mecanismo
+  de causa raíz confirmado. Verificados por `deno check` (sin regresión de baseline en ninguno
+  de los 3 archivos) y revisión de código, pero **NO PROBADO en vivo end-to-end** — disparar
+  una cancelación o una resolución de incidencia real habría requerido más pasos de flujo
+  (reserva aceptada + cancelación, o reserva con incidencia abierta + resolución) que no se
+  ejecutaron en esta fase por alcance de tiempo. Se documenta explícitamente en vez de darlo
+  por probado solo porque el patrón es idéntico.
+- `tsc --noEmit` 171/171 (sin regresión). `vitest run` 455/455 (sin regresión, +2 sobre Fase
+  5 por los tests nuevos de T7). `deno check`: `booking-authority` 25/25 (import indirecto de
+  T7, sin regresión), `booking-payment` 13/13 (sin regresión), `booking-complete` 0/0 (sin
+  regresión), `booking-payment-webhook` 14/14 (baseline establecida esta fase vía `git stash`;
+  el primer intento del fix subió a 15, corregido de vuelta a 14). 7/7 runners de readiness en
+  verde, 0 FALLA en los 7 servicios (arboles 15/0/0, arbustos 18/0/1, cesped 29/0/7, desbroce
+  19/0/3, fitosanitarios 74/0/2, palmeras 71/0/0, setos 35/0/1 — los NO PROBADO de cada runner
+  son preexistentes y no relacionados con T7/T11).
+
+**Commits:** `b8523b4` (T7), `6d6263c` (T11).
 
 ---
 

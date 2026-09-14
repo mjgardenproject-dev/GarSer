@@ -64,8 +64,14 @@ Deno.serve(async (req) => {
     if (!result.idempotent) {
       const admin = createClient(supabaseUrl, serviceRoleKey);
       try {
+        // T11 (transversal) — `createClient(url, serviceRoleKey)` sin `global: { headers }`
+        // deja el cliente de `functions` sin Authorization: a diferencia de `.rpc()`/`.from()`,
+        // `functions.invoke()` no reutiliza la clave por su cuenta. Sin esta cabecera
+        // explícita, la llamada fallaba con 401 en silencio (mismo mecanismo que T11 en
+        // booking-payment-webhook).
         const { error: mailError } = await admin.functions.invoke('send-email-notification', {
           body: { type: 'booking_client_confirmation_request', bookingId },
+          headers: { Authorization: `Bearer ${serviceRoleKey}` },
         });
         if (mailError) throw mailError;
       } catch (mailException) {

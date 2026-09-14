@@ -641,8 +641,18 @@ async function processStripeEvent(
           // OJO: functions.invoke NO lanza en errores HTTP (401/500): devuelve { error }.
           // Sin comprobarlo, un rechazo del gateway o de la funcion de email pasaba
           // completamente desapercibido (ni logs ni alerta) y los emails no se enviaban.
+          //
+          // T11 (transversal) — la causa real del 401: `createClient(url, serviceRoleKey)`
+          // SIN un tercer argumento `{ global: { headers } }` deja `this.headers` (el objeto
+          // que `FunctionsClient` usa para todas sus peticiones) vacío — a diferencia de
+          // `.from()`/`.rpc()`, que SÍ resuelven la clave de servicio por su cuenta,
+          // `functions.invoke()` nunca manda `Authorization` si no se lo pasas explícito. Por
+          // eso el mismo `serviceRoleKey` funcionaba por `curl` (cabecera puesta a mano) y en
+          // `admin.rpc(...)` de esta misma función, pero no aquí: no era un problema de
+          // versión de supabase-js entre aislados de Deno, sino de esta llamada en concreto.
           const { error: emailInvokeError } = await admin.functions.invoke('booking-confirmation-email', {
             body: { bookingId: confirmedBookingId },
+            headers: { Authorization: `Bearer ${resolveServiceRoleKey()}` },
           });
           if (emailInvokeError) throw emailInvokeError;
         } catch (emailError) {

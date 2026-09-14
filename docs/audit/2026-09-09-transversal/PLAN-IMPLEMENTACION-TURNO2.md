@@ -67,7 +67,7 @@ al cliente en pantalla), T13 (falso positivo retirado, no reabrir).
 | 1 | T1 (licencia fitosanitaria con caducidad) + T4/D5 (cambio de duración junto al de precio) | ✅ Hecha | `21661dc`, `11a08ca`, `c5263a5` |
 | 1.5 | Hallazgo lateral encontrado en la Fase 1: `generate_recurring_slots` liberaba reservas `pending` ya pagadas | ✅ Hecha (rama aparte) | `42c5519` en `claude/heuristic-roentgen-de7608` |
 | 2 | T5, T6, T9, T10 (bugs transversales de UI: botones muertos, cifras/nombres incorrectos) | ✅ Hecha | `39279bf`, `da18b42`, `2ef28f0`, `bb9f6e2` |
-| 3 | T12 (5 configuradores restantes) + autoguardado espurio en el primer render (Setos/Palmeras confirmados, Arbustos sin revisar) | ⏳ Pendiente (siguiente) | — |
+| 3 | T12 (Lawn/Hedge/Shrub — Palm resultó no afectado) + autoguardado espurio (Setos/Palmeras/Árboles/Arbustos — más amplio de lo que decía §3.2) | ✅ Hecha | `a5c7500`, `16d8eb5` |
 | 4 | T2 (redondeo de horas, con recálculo a mano de los runners afectados) | ⏳ Pendiente | — |
 | 5 | T8 (rama que falta en el sondeo de pago agotado) + cierre formal de T4 (confirmar que el fix de la Fase 1 resuelve el hallazgo original) | ⏳ Pendiente | — |
 | 6 | T7 (D4-a: aviso de trabajo que no cabe en un día) + T11 (diagnóstico del email de confirmación no enviado) | ⏳ Pendiente | — |
@@ -205,59 +205,86 @@ atómicos, cada uno revertible sin afectar a los demás.
 
 ---
 
-## Fase 3 — T12 (configuradores restantes) + autoguardado espurio ⏳ PENDIENTE
+## Fase 3 — T12 (configuradores restantes) + autoguardado espurio ✅
 
-**Cierra:** T12 (5 configuradores: Lawn, Hedge, Palm, Shrub — Phytosanitary ya corregido en su
-propia auditoría) + confirma/cierra la pregunta abierta del autoguardado en el primer render.
+**Cierra:** T12 completo (Lawn/Hedge/Shrub — Palm resultó no afectado) + la pregunta abierta
+del autoguardado en el primer render, para los 7 servicios.
 
-### T12 — `getPricingMethod()` vs comparación en crudo
-
-**Hallazgo (§3.2, D6 = "lo que veas recomendable"):** los configuradores comparan
-`config.pricing_method === 'per_quantity'` en crudo en vez de usar la SSOT
-`getPricingMethod()` (`src/utils/hourlyPricing.ts:19`), que sí resuelve el caso "falta la
-clave" como `per_quantity` (igual que hace el motor). Cuando falta la clave, el motor cobra
-por cantidad pero la pantalla esconde toda la sección de tarifas — el jardinero no puede
-configurar ni ver lo que cobra.
-
-**Alcance real conocido (de §3.2, a re-verificar antes de tocar código):** de los 7 servicios
-sembrados, solo a fitosanitarios (ya corregido, no tocar) y a desbroce (descartado — no aplica,
-`WeedingPricingConfigurator` no tiene ese patrón) les faltaba la clave. Los 5 restantes
-(`LawnPricingConfigurator`, `HedgePricingConfigurator`, `PalmPricingConfigurator`,
-`ShrubPricingConfigurator`) funcionan hoy "por coincidencia" (tienen la clave a
-`per_quantity`), no por diseño — el fix es preventivo para cuando a algún jardinero le falte.
-
-**Antes de tocar código:** releer cada uno de los 5 ficheros y confirmar con `grep` que el
-patrón sigue ahí y no ha cambiado desde el 2026-09-12.
-
-### Autoguardado espurio en el primer render
-
-**Pregunta abierta de §2/§3.2:** `useAutoSave` compara el `config` derivado contra el
-`initialValue` crudo de BD; si la derivación añade/quita una clave (p. ej. `hourly_rate:
-undefined`) sin que el componente normalice igual los dos lados, el configurador autoguarda
-solo con abrirlo, sin que el jardinero toque nada.
-
-**Estado por servicio (de §3.2):**
-| Servicio | Estado |
-|---|---|
-| Setos | ✅ Afectado, confirmado |
-| Palmeras | ✅ Afectado, confirmado (causa distinta: migración de `selected_species`) |
-| Césped | ❌ Descartado (inmune, normaliza los dos lados) |
-| Árboles | ❌ Descartado (inmune) |
-| Fitosanitarios | ❌ Descartado, comprobado explícitamente (3ª comprobación) |
-| Desbroce | ❌ Descartado, comprobado explícitamente (4ª comprobación) |
-| **Arbustos** | ❓ **Sin revisar — es la única pregunta que queda abierta** |
-
-**Plan:** revisar `ShrubPricingConfigurator.tsx` primero (confirmar/descartar arbustos, cierra
-la pregunta para los 7), después decidir si Setos y Palmeras necesitan fix ahora o si ya lo
-recibieron en sus propias auditorías de servicio (revisar `COORDINACION-SERVICIOS.md` §5 antes
-de tocar nada — puede que ya estén cerrados y esto sea solo confirmar, no programar).
+**⚠️ La fase creció bastante respecto a lo planeado** — la re-verificación "antes de tocar
+código" encontró que el estado que daba por bueno §3.2 era incompleto en dos sitios. Ver
+Registro del proceso.
 
 ### Registro del proceso
-*(se completa según avance la fase)*
+
+1. **Re-verifiqué T12 contra el código actual antes de tocar nada** (`grep` de
+   `config.pricing_method` en los 6 configuradores). Resultado, distinto de lo que decía
+   §3.2: **Palm NO está afectado** — a diferencia de Lawn/Hedge/Shrub, `PalmPricingConfigurator`
+   ya resuelve `pricing_method` con `getPricingMethod()` en el punto donde deriva `config`
+   (línea ~104), así que las comparaciones `config.pricing_method === '...'` que parecían en
+   crudo en realidad leen un valor ya normalizado. Falso positivo dentro de un falso
+   positivo, mismo tipo de corrección que ya recibió T13/Weeding. **T12 real: 3
+   configuradores** (Lawn, Hedge, Shrub), no 4.
+2. Antes de tocar el autoguardado, **releí `COORDINACION-SERVICIOS.md` §5** como decía el
+   plan. Setos y Palmeras figuran con su propio hallazgo de autoguardado "corregido y
+   verificado en vivo" en sus auditorías — pero por precaución los re-comprobé en vivo de
+   todos modos (ya me había llevado una sorpresa con Palm en el punto 1).
+3. **Sorpresa real, con reservas en vivo (gardener `11111111-...`, stack de referencia):**
+   abrí cada uno de los 7 configuradores sin tocar nada y comparé `additional_config`
+   (hash+longitud) antes/después.
+   - Arbustos (la única pregunta que quedaba abierta): **afectado** — confirma la sospecha.
+   - Setos y Palmeras: **siguen afectados**, pese al fix ya documentado. Ambos corrigieron un
+     disparador concreto (el que se había reproducido y medido en su momento) pero no la
+     causa de fondo. El código de Setos incluso llevaba un comentario sin resolver
+     reconociéndolo: *"Note: maybe need a processed base like in isDirty, let's use value
+     since initialValue is only to skip first render"*.
+   - Árboles: **NUEVO, nunca antes probado**. §3.2 lo daba por descartado con el
+     razonamiento "cerró su Fase 2/3 sin mencionarlo" — es decir, nunca se había comprobado
+     explícitamente, solo se había asumido. Estaba afectado, con una variante de causa propia
+     (ver abajo).
+   - Césped, Desbroce, Fitosanitarios: re-confirmados sin problema (por si acaso, dado lo de
+     los tres puntos anteriores).
+4. Diagnostiqué la causa común (Setos/Palmeras/Arbustos): `useAutoSave` compara
+   `value: config` (normalizado en un `useMemo` en cada render) contra
+   `initialValue: initialConfig || EMPTY_CONFIG` (crudo, sin pasar por la misma
+   normalización) — cualquier campo cuya forma cruda difiera de la normalizada (p. ej.
+   `hourly_rate: undefined`, inyectado siempre) hace que `deepEqual` los vea distintos y
+   dispara el guardado al segundo de abrir la pantalla. Árboles tiene una variante propia: un
+   `useEffect(() => { if (value) setConfig(value); }, [value])` pone `config` al `value`
+   CRUDO nada más llegar, sin pasar por la normalización que sí aplicaba (correctamente) al
+   lado `initialValue`.
+5. Apliqué el mismo fix probado en los 4 (extraer la normalización a una función con nombre y
+   usarla en los dos lados de la comparación) — el patrón que `LawnPricingConfigurator.tsx`
+   ya usaba de origen, por eso siempre fue inmune. En Setos y Arbustos esta misma extracción
+   dejó T12 resuelto de paso (ya no quedaba ningún `config.pricing_method` en crudo).
+6. Verifiqué en vivo, uno a uno, con capturas de red y de BD: los 4 dejaron de autoguardar al
+   abrir; un cambio real (arbustos, precio mínimo 45→46) se sigue guardando con normalidad —
+   el fix no toca el autoguardado legítimo.
 
 ### Comprobación real
-*(pendiente — no se cierra esta fase sin runners + tsc + vitest + prueba en vivo de al menos
-un configurador de cada tipo tocado)*
+
+- **T12** (Lawn/Hedge/Shrub): `grep` final confirma cero comparaciones `pricing_method`/`cfg`
+  en crudo en los 3 ficheros. Verificado visualmente que "Método de Cobro" sigue marcando la
+  opción correcta en los 3 configuradores tras el cambio.
+- **Autoguardado**, con hash MD5 de `additional_config` antes/después de abrir cada
+  configurador, sin tocar nada:
+
+  | Servicio | Antes del fix | Después del fix |
+  |---|---|---|
+  | Corte de césped | sin cambio (ya era inmune) | sin cambio |
+  | Desbroce | sin cambio (ya era inmune) | sin cambio |
+  | Fitosanitarios | sin cambio (ya era inmune) | sin cambio |
+  | Poda de árboles | **cambiaba** (nunca antes probado) | sin cambio ✅ |
+  | Poda de palmeras | **cambiaba** (fix previo incompleto) | sin cambio ✅ |
+  | Poda de plantas y arbustos | **cambiaba** (pregunta abierta) | sin cambio ✅ |
+  | Poda de setos | **cambiaba** (fix previo incompleto) | sin cambio ✅ |
+
+- Edición real de prueba en Arbustos (precio mínimo 45→46): se guardó correctamente
+  (`additional_config->>'minimum_price' = '46'`), restaurado a 45 después de comprobarlo.
+- `tsc` 171/171 (baseline) en ambos commits, `vitest` 453/453, 7/7 runners de readiness en
+  verde (0 FALLA) tras el fix completo.
+
+**Commits:** `a5c7500` (T12 — Lawn, el único caso puro) y `16d8eb5` (autoguardado — Setos,
+Palmeras, Árboles y Arbustos, que de paso cierra T12 para Setos y Arbustos).
 
 ---
 

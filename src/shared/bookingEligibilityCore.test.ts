@@ -527,3 +527,68 @@ describe('T1 (transversal) — puerta de licencia fitosanitaria', () => {
     });
   });
 });
+
+describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
+  // 1500 m² / 100 m²/h = 15 h → >8h, así que el motor aplica el descuento ×0.9 (T2) = 13.5h →
+  // 14h redondeadas al bloque — por encima de MAX_SINGLE_DAY_DURATION_HOURS (12, el mismo
+  // tope que ya exige el CHECK de `duration_hours` en BD).
+  const bigJobInput: SerializableBookingData = {
+    ...bookingInput,
+    lawnZones: [{ quantity: 1500, state: 'normal' }],
+  };
+
+  const profile = {
+    max_distance: 50,
+    operational_latitude: 40.417,
+    operational_longitude: -3.703,
+    license_verification_status: 'approved',
+    license_expires_at: '2099-01-01T00:00:00Z',
+  };
+
+  it('avisa de que el trabajo no cabe en un día cuando estimatedHours supera el tope de 12h — sin ni mirar la agenda del profesional', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: bigJobInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile,
+      // Agenda deliberadamente amplísima (un día entero libre) para demostrar que el aviso no
+      // depende de lo ocupado que esté el profesional: ni con el día entero libre cabría.
+      providerDates: new Map([
+        ['2026-06-15', Array.from({ length: 16 }, (_, i) => 6 + i)], // 6h-22h, 16h seguidas
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+    });
+
+    expect(result).toEqual({
+      eligible: false,
+      exclusion: {
+        code: 'service_exceeds_single_day',
+        message: 'Este trabajo necesita 14 horas seguidas y ningún servicio se puede reservar por más de 12 horas en un solo día. Prueba a reducir el alcance del trabajo — de momento no ofrecemos reservas repartidas en varios días.',
+      },
+    });
+  });
+
+  it('un trabajo normal (2h, muy por debajo del tope) sin hueco real sigue devolviendo no_reservable_availability, no service_exceeds_single_day', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: twoHourBookingInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile,
+      providerDates: new Map([
+        ['2026-06-15', [9]],
+        ['2026-06-16', [14]],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-16',
+    });
+
+    expect(result).toEqual({
+      eligible: false,
+      exclusion: {
+        code: 'no_reservable_availability',
+        message: 'El profesional no tiene un hueco reservable válido para la duración estimada.',
+      },
+    });
+  });
+});

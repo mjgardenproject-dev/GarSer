@@ -502,9 +502,15 @@ const ProvidersPage: React.FC = () => {
                 : 'Ningún profesional tiene una dirección operativa validada para filtrar la cobertura. Revisa su perfil de cobertura.'
               : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'outside_coverage')
                 ? 'No hay profesionales cuyo radio operativo cubra la dirección indicada.'
-                : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'no_reservable_availability')
-                  ? 'No hay huecos reservables válidos para la duración estimada en la fecha consultada.'
-                  : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_phytosanitary_license')
+                : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'service_exceeds_single_day')
+                  /* T7 (D4-a): antes esto caía en el mismo mensaje genérico de
+                     `no_reservable_availability` de abajo, indistinguible de "prueba otro día" —
+                     cuando el problema real es que el trabajo, tal y como está declarado, no
+                     cabe en ninguna jornada de ningún profesional. */
+                  ? 'Este trabajo necesita más horas seguidas de las que caben en una sola jornada. De momento no ofrecemos reservas repartidas en varios días — prueba a reducir el alcance del trabajo.'
+                  : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'no_reservable_availability')
+                    ? 'No hay huecos reservables válidos para la duración estimada en la fecha consultada.'
+                    : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_phytosanitary_license')
                     ? 'Este tratamiento necesita producto químico y ningún profesional disponible tiene ahora mismo la licencia fitosanitaria vigente. Prueba con un tratamiento ecológico, si tu servicio lo permite.'
                     : requiresChemical
                       ? 'Este servicio pide producto químico, para el que hace falta licencia fitosanitaria vigente. Si no ves resultados, revisa también la fecha y la dirección: puede no ser solo por la licencia.'

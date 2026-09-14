@@ -25,7 +25,8 @@ export type ProviderExclusionCode =
   | 'missing_coordinates'
   | 'outside_coverage'
   | 'no_reservable_availability'
-  | 'missing_phytosanitary_license';
+  | 'missing_phytosanitary_license'
+  | 'service_exceeds_single_day';
 
 export type ProviderExclusion = {
   code: ProviderExclusionCode;
@@ -104,6 +105,17 @@ export const buildSlotSelection = (
     durationHours: safeDuration,
   };
 };
+
+/**
+ * T7 (transversal, D4-a) — tope de horas de UNA reserva de un solo día. No es un número
+ * inventado para esta comprobación: es el mismo `duration_hours <= 12` que ya exige, desde
+ * hace tiempo, el CHECK de `bookings`/`booking_payment_attempts` y cada RPC del ciclo de vida
+ * (`create_broadcast_booking_requests`, `booking_authority_foundations`, etc. — todas paran en
+ * 12). Un presupuesto por encima de esto NUNCA podría convertirse en una reserva real, así que
+ * conviene decirlo aquí, con un motivo claro, en vez de dejar que el cliente lo descubra al
+ * no ver huecos en ninguna fecha.
+ */
+export const MAX_SINGLE_DAY_DURATION_HOURS = 12;
 
 export const getValidStartHours = (hours: number[], duration: number) => {
   const sorted = Array.from(new Set(hours.filter((hour) => Number.isFinite(hour)))).sort((a, b) => a - b);
@@ -256,6 +268,24 @@ export function evaluateOperationalEligibility(params: {
   }
 
   const durationHours = Math.max(1, Math.ceil(quote.estimatedHours));
+
+  // T7 (D4-a, fix mínimo y honesto — sin sistema de reserva multi-día): un presupuesto por
+  // encima de `MAX_SINGLE_DAY_DURATION_HOURS` no podría convertirse NUNCA en una reserva real
+  // (lo rechaza el CHECK de `duration_hours` en BD, igual en las 7+ RPC del ciclo de vida) —
+  // así que no tiene sentido seguir buscando hueco en ninguna fecha ni en ningún profesional:
+  // se avisa aquí, de una vez, con un motivo claro. Antes esto caía en el mismo
+  // `no_reservable_availability` genérico que "esta fecha en concreto no tiene hueco",
+  // indistinguible para el cliente de "prueba otro día" cuando ningún día serviría jamás.
+  if (durationHours > MAX_SINGLE_DAY_DURATION_HOURS) {
+    return {
+      eligible: false,
+      exclusion: buildProviderExclusion(
+        'service_exceeds_single_day',
+        `Este trabajo necesita ${durationHours} horas seguidas y ningún servicio se puede reservar por más de ${MAX_SINGLE_DAY_DURATION_HOURS} horas en un solo día. Prueba a reducir el alcance del trabajo — de momento no ofrecemos reservas repartidas en varios días.`,
+      ),
+    };
+  }
+
   const requestedDateHours = params.providerDates.get(params.requestedDate) || [];
   const validHoursForRequestedDate = getValidStartHours(requestedDateHours, durationHours);
   const orderedDates = Array.from(params.providerDates.keys()).sort();

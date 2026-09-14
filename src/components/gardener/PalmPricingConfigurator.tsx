@@ -81,14 +81,22 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
   // Initialize config with passed value or EMPTY structure
   // Si value es undefined o le faltan claves nuevas, fusionamos con EMPTY_CONFIG
-  const config = React.useMemo(() => {
-    if (!value) return EMPTY_CONFIG;
-    
-    const condition_surcharges = { ...EMPTY_CONFIG.condition_surcharges, ...(value.condition_surcharges || {}) };
-    
+  //
+  // Autoguardado espurio (transversal): esta normalización vivía en línea dentro del
+  // `useMemo`, cerrada sobre `value`, mientras `useAutoSave` comparaba ese `config`
+  // normalizado contra `initialValue: initialConfig || EMPTY_CONFIG` SIN normalizar. El
+  // hallazgo #3 de la auditoría de palmeras (2026-09-11/12, migración de `selected_species`)
+  // ya corrigió un disparador concreto, pero dejó este problema de fondo intacto —
+  // reproducido en vivo de nuevo (2026-09-14): `additional_config` sigue cambiando solo con
+  // abrir el configurador. Se extrae a función para normalizar los dos lados igual.
+  const normalizeConfig = (incoming?: PalmPricingConfig): PalmPricingConfig => {
+    if (!incoming) return EMPTY_CONFIG;
+
+    const condition_surcharges = { ...EMPTY_CONFIG.condition_surcharges, ...(incoming.condition_surcharges || {}) };
+
     // Migración de datos legados para condition_surcharges
-    if (value && (value as any).condition_surcharges) {
-        const legacySurcharges = (value as any).condition_surcharges;
+    if (incoming && (incoming as any).condition_surcharges) {
+        const legacySurcharges = (incoming as any).condition_surcharges;
         if ('descuidada' in legacySurcharges) {
             condition_surcharges.descuidado = legacySurcharges['descuidada'];
         }
@@ -100,33 +108,33 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     // Deep merge manual muy básico para asegurar que existen todas las claves nuevas
     const merged = {
         ...EMPTY_CONFIG,
-        ...value,
-        pricing_method: getPricingMethod(value, { allowLegacyYieldCalculation: true }),
+        ...incoming,
+        pricing_method: getPricingMethod(incoming, { allowLegacyYieldCalculation: true }),
         hourly_rate: undefined,
-        precioPorHora: getVal(value.precioPorHora ?? value.hourly_rate),
-        minimum_price: getVal(value.minimum_price),
-        species_prices: { ...EMPTY_CONFIG.species_prices, ...value.species_prices },
-        height_prices: { ...EMPTY_CONFIG.height_prices, ...value.height_prices },
+        precioPorHora: getVal(incoming.precioPorHora ?? incoming.hourly_rate),
+        minimum_price: getVal(incoming.minimum_price),
+        species_prices: { ...EMPTY_CONFIG.species_prices, ...incoming.species_prices },
+        height_prices: { ...EMPTY_CONFIG.height_prices, ...incoming.height_prices },
         condition_surcharges: {
             normal: 0,
             descuidado: getVal(condition_surcharges.descuidado),
             muy_descuidado: getVal(condition_surcharges.muy_descuidado)
         },
         waste_removal: {
-            option: value.waste_removal?.option || 'not_included',
-            percentage: getVal(value.waste_removal?.percentage)
+            option: incoming.waste_removal?.option || 'not_included',
+            percentage: getVal(incoming.waste_removal?.percentage)
         },
-        access_difficulty: value.access_difficulty ?? EMPTY_CONFIG.access_difficulty,
-        phytosanitary: value.phytosanitary ?? EMPTY_CONFIG.phytosanitary,
-        trunk_finish: value.trunk_finish ?? EMPTY_CONFIG.trunk_finish,
-        selected_species: value.selected_species || [],
-        yield_units_per_hour: value.yield_units_per_hour || EMPTY_CONFIG.yield_units_per_hour
+        access_difficulty: incoming.access_difficulty ?? EMPTY_CONFIG.access_difficulty,
+        phytosanitary: incoming.phytosanitary ?? EMPTY_CONFIG.phytosanitary,
+        trunk_finish: incoming.trunk_finish ?? EMPTY_CONFIG.trunk_finish,
+        selected_species: incoming.selected_species || [],
+        yield_units_per_hour: incoming.yield_units_per_hour || EMPTY_CONFIG.yield_units_per_hour
     };
-    
+
     // Si selected_species es undefined (no existe en la config entrante), intentamos poblarlo
     // Solo para migración de datos antiguos que no tengan este campo.
     // Si es un array vacío [], respetamos la decisión del usuario de borrar todo.
-    if (value && value.selected_species === undefined) {
+    if (incoming && incoming.selected_species === undefined) {
         const detectedSpecies = new Set<PalmSpecies>();
         Object.entries(merged.species_prices).forEach(([species, price]) => {
             if ((price as number) > 0) detectedSpecies.add(species as PalmSpecies);
@@ -145,9 +153,11 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
             merged.selected_species = Array.from(detectedSpecies);
         }
     }
-    
+
     return merged;
-  }, [value]);
+  };
+
+  const config = React.useMemo(() => normalizeConfig(value), [value]);
 
   // Derived state for active species in each category
   const activePalms = PALM_SPECIES.filter(s => config.selected_species?.includes(s));
@@ -273,7 +283,7 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
 
   const { status } = useAutoSave({
     value: config,
-    initialValue: initialConfig || EMPTY_CONFIG,
+    initialValue: normalizeConfig(initialConfig),
     onSave: async (val) => {
       if (onSave) {
         await onSave(val);

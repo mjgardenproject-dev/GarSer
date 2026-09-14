@@ -6,7 +6,7 @@ import { HedgePricingConfig, HedgeHeightBand } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useAutoSave } from '../../hooks/useAutoSave';
 import SaveStatusIndicator from '../common/SaveStatusIndicator';
-import { getPrecioPorHora } from '../../utils/hourlyPricing';
+import { getPrecioPorHora, getPricingMethod } from '../../utils/hourlyPricing';
 
 export const HEDGE_HEIGHT_BANDS: HedgeHeightBand[] = ['0-2m', '2-4m', '4-6m'];
 
@@ -122,44 +122,53 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [minimumPriceError, setMinimumPriceError] = useState(false);
 
-  const config = useMemo(() => {
-    if (!value) return EMPTY_CONFIG;
+  // Autoguardado espurio (transversal): esta normalización vivía en línea dentro del
+  // `useMemo`, cerrada sobre `value`, mientras `useAutoSave` comparaba ese `config`
+  // normalizado contra `initialValue: initialConfig || EMPTY_CONFIG` SIN normalizar. El
+  // hallazgo #2 de la auditoría de setos (2026-09-11) ya corrigió el disparador de
+  // `specialist_enabled`, pero dejó este problema de fondo intacto — reproducido en vivo de
+  // nuevo (2026-09-14): `additional_config` sigue cambiando solo con abrir el configurador,
+  // por cualquier otro campo cuya normalización difiera del valor crudo (p. ej. `hourly_rate:
+  // undefined`, que aquí se inyecta siempre). Se extrae a función para normalizar los dos
+  // lados igual — mismo patrón que `LawnPricingConfigurator.tsx`, el único inmune de origen.
+  const normalizeConfig = (incoming?: HedgePricingConfig): HedgePricingConfig => {
+    if (!incoming) return EMPTY_CONFIG;
     // Si el flag no viene explícito, no basta con mirar `selected_categories` (legacy de antes
     // de la matriz por bandas): un jardinero que ya tiene la banda 4-6m tarifada en BD —
     // guardada por cualquier camino anterior a este interruptor — también cuenta como
     // "especialista", o el primer guardado (incluido el autoguardado, sin que el jardinero
     // toque nada) borra esa tarifa por inferir "Desactivado" (auditoría 2026-09-11, hallazgo #2).
     const legacySpecialist =
-      value.specialist_enabled !== undefined
-        ? value.specialist_enabled
-        : Boolean((value.selected_categories || []).includes('Setos Gran Altura (>3m)')) ||
-          Number(value.pricing_matrix?.['4-6m'] || 0) > 0;
-    const legacyMatrix = deriveMatrixFromLegacy(value);
-    const mergedMatrix = hasAnyMatrixValue(value.pricing_matrix)
+      incoming.specialist_enabled !== undefined
+        ? incoming.specialist_enabled
+        : Boolean((incoming.selected_categories || []).includes('Setos Gran Altura (>3m)')) ||
+          Number(incoming.pricing_matrix?.['4-6m'] || 0) > 0;
+    const legacyMatrix = deriveMatrixFromLegacy(incoming);
+    const mergedMatrix = hasAnyMatrixValue(incoming.pricing_matrix)
       ? {
           ...EMPTY_CONFIG.pricing_matrix,
-          ...(value.pricing_matrix || {})
+          ...(incoming.pricing_matrix || {})
         }
       : {
           ...EMPTY_CONFIG.pricing_matrix,
           ...legacyMatrix
         };
-    const conditionSurcharges = { ...EMPTY_CONFIG.condition_surcharges, ...(value.condition_surcharges || {}) };
-    if (value.condition_surcharges) {
-      if (value.condition_surcharges.descuidado !== undefined && conditionSurcharges.media === EMPTY_CONFIG.condition_surcharges.media) {
-        conditionSurcharges.media = value.condition_surcharges.descuidado;
+    const conditionSurcharges = { ...EMPTY_CONFIG.condition_surcharges, ...(incoming.condition_surcharges || {}) };
+    if (incoming.condition_surcharges) {
+      if (incoming.condition_surcharges.descuidado !== undefined && conditionSurcharges.media === EMPTY_CONFIG.condition_surcharges.media) {
+        conditionSurcharges.media = incoming.condition_surcharges.descuidado;
       }
-      if (value.condition_surcharges.muy_descuidado !== undefined && conditionSurcharges.alta === EMPTY_CONFIG.condition_surcharges.alta) {
-        conditionSurcharges.alta = value.condition_surcharges.muy_descuidado;
+      if (incoming.condition_surcharges.muy_descuidado !== undefined && conditionSurcharges.alta === EMPTY_CONFIG.condition_surcharges.alta) {
+        conditionSurcharges.alta = incoming.condition_surcharges.muy_descuidado;
       }
     }
 
     return {
       ...EMPTY_CONFIG,
-      ...value,
+      ...incoming,
       hourly_rate: undefined,
-      precioPorHora: getVal(value.precioPorHora ?? value.hourly_rate),
-      minimum_price: getVal(value.minimum_price),
+      precioPorHora: getVal(incoming.precioPorHora ?? incoming.hourly_rate),
+      minimum_price: getVal(incoming.minimum_price),
       specialist_enabled: legacySpecialist,
       pricing_matrix: {
         '0-2m': getVal(mergedMatrix['0-2m']),
@@ -170,9 +179,17 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
         media: getVal(conditionSurcharges.media),
         alta: getVal(conditionSurcharges.alta)
       },
-      waste_removal: { percentage: getVal(value.waste_removal?.percentage) },
+      waste_removal: { percentage: getVal(incoming.waste_removal?.percentage) },
     };
-  }, [value]);
+  };
+
+  const config = useMemo(() => normalizeConfig(value), [value]);
+
+  // T12 (transversal): se resuelve con `getPricingMethod`, la misma SSOT que usa el motor, en
+  // vez de comparar `config.pricing_method` en crudo — cuando esa clave no está, el motor
+  // factura igualmente por cantidad, pero la comparación literal daba `false` y esta pantalla
+  // escondía toda la sección de tarifas.
+  const pricingMethod = getPricingMethod(config);
 
   const activeHeightBands = useMemo(
     () => (config.specialist_enabled ? HEDGE_HEIGHT_BANDS : HEDGE_HEIGHT_BANDS.slice(0, 2)),
@@ -225,7 +242,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
   const validateConfig = useCallback((cfg: HedgePricingConfig): string[] => {
     const errors: string[] = [];
-    if (cfg.pricing_method === 'per_hour') {
+    if (getPricingMethod(cfg) === 'per_hour') {
       if (isInvalid(cfg.precioPorHora)) errors.push('precioPorHora');
     } else {
       activeHeightBands.forEach((band) => {
@@ -269,7 +286,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
   const { status } = useAutoSave({
     value: config,
-    initialValue: initialConfig || EMPTY_CONFIG, // Note: maybe need a processed base like in isDirty, let's use value since initialValue is only to skip first render
+    initialValue: normalizeConfig(initialConfig),
     onSave: async (val) => {
       if (onSave) {
         await onSave(processConfigForSave(val));
@@ -381,7 +398,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             type="button"
             onClick={() => onChange({ ...config, pricing_method: 'per_quantity' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_quantity'
+              pricingMethod === 'per_quantity'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -392,7 +409,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             type="button"
             onClick={() => onChange({ ...config, pricing_method: 'per_hour' })}
             className={`p-3 rounded-lg border-2 text-sm font-semibold transition-all ${
-              config.pricing_method === 'per_hour'
+              pricingMethod === 'per_hour'
                 ? 'border-blue-600 bg-blue-50 text-blue-700'
                 : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
             }`}
@@ -401,13 +418,13 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-3">
-          {config.pricing_method === 'per_hour' 
+          {pricingMethod === 'per_hour' 
             ? 'El precio se calculará multiplicando las horas estimadas por tu tarifa horaria.' 
             : 'El precio se calculará usando tu matriz de precios por metro lineal.'}
         </p>
       </div>
 
-      {config.pricing_method === 'per_hour' && (
+      {pricingMethod === 'per_hour' && (
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-3">
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Precio por hora</h4>
@@ -465,7 +482,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
             <p className="text-[10px] text-gray-500 mt-2">¿Cuántos metros lineales por cara puedes cortar en una hora para cada altura?</p>
           </div>
 
-          {config.pricing_method === 'per_hour' && getPrecioPorHora(config) > 0 && (
+          {pricingMethod === 'per_hour' && getPrecioPorHora(config) > 0 && (
             <div className="p-3 bg-blue-50 rounded-lg border border-dashed border-blue-200">
               <p className="text-xs font-semibold text-blue-800 mb-2 uppercase">Precios unitarios equivalentes (€/ml):</p>
               <div className="grid grid-cols-3 gap-2">
@@ -485,7 +502,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
 
       <hr className="border-gray-200 my-8" />
 
-      {config.pricing_method === 'per_quantity' && (
+      {pricingMethod === 'per_quantity' && (
         <>
           <div>
             <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-3">Tarifas por metro lineal (Precio Fijo)</h4>

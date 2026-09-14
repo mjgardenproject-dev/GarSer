@@ -23,41 +23,55 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
     cfg?.yield_units_per_hour?.estructural?.large !== undefined ||
     cfg?.yield_units_per_hour?.formacion?.large !== undefined;
 
-  const normalizedInitialConfig: TreePruningServiceConfig = useMemo(() => {
+  // Autoguardado espurio (transversal): `normalizedInitialConfig` ya normalizaba
+  // `initialConfig` para dárselo a `useAutoSave`, pero este efecto ponía `config` (el otro
+  // lado de la comparación de `useAutoSave`) directamente al `value` CRUDO en cuanto llegaba
+  // — nunca pasaba por esta misma normalización. `deepEqual` los veía distintos (p. ej.
+  // `large` presente-pero-`undefined` en uno y ausente en el otro) y autoguardaba al abrir el
+  // configurador sin que el jardinero tocase nada. Reproducido en vivo (2026-09-14):
+  // `additional_config` cambiaba solo con entrar — no estaba descartado, se había asumido
+  // seguro sin comprobarlo explícitamente. Se generaliza a función para normalizar los dos
+  // lados igual.
+  const normalizeConfig = (incoming?: TreePruningServiceConfig): TreePruningServiceConfig => {
     return {
-      minimumPrice: getVal(initialConfig?.minimumPrice),
+      minimumPrice: getVal(incoming?.minimumPrice),
       formacion: {
-        small: getVal(initialConfig?.formacion?.small),
-        medium: getVal(initialConfig?.formacion?.medium),
-        large: initialConfig?.formacion?.large !== undefined ? getVal(initialConfig?.formacion?.large) : undefined,
+        small: getVal(incoming?.formacion?.small),
+        medium: getVal(incoming?.formacion?.medium),
+        large: incoming?.formacion?.large !== undefined ? getVal(incoming?.formacion?.large) : undefined,
       },
       estructural: {
-        small: getVal(initialConfig?.estructural?.small),
-        medium: getVal(initialConfig?.estructural?.medium),
-        large: initialConfig?.estructural?.large !== undefined ? getVal(initialConfig?.estructural?.large) : undefined,
+        small: getVal(incoming?.estructural?.small),
+        medium: getVal(incoming?.estructural?.medium),
+        large: incoming?.estructural?.large !== undefined ? getVal(incoming?.estructural?.large) : undefined,
       },
-      difficultyIncrease: getVal(initialConfig?.difficultyIncrease),
-      wasteRemovalMultiplier: getVal(initialConfig?.wasteRemovalMultiplier),
+      difficultyIncrease: getVal(incoming?.difficultyIncrease),
+      wasteRemovalMultiplier: getVal(incoming?.wasteRemovalMultiplier),
       yield_units_per_hour: {
         formacion: {
-          small: getVal(initialConfig?.yield_units_per_hour?.formacion?.small),
-          medium: getVal(initialConfig?.yield_units_per_hour?.formacion?.medium),
-          large: initialConfig?.yield_units_per_hour?.formacion?.large !== undefined ? getVal(initialConfig?.yield_units_per_hour?.formacion?.large) : undefined,
+          small: getVal(incoming?.yield_units_per_hour?.formacion?.small),
+          medium: getVal(incoming?.yield_units_per_hour?.formacion?.medium),
+          large: incoming?.yield_units_per_hour?.formacion?.large !== undefined ? getVal(incoming?.yield_units_per_hour?.formacion?.large) : undefined,
         },
         estructural: {
-          small: getVal(initialConfig?.yield_units_per_hour?.estructural?.small),
-          medium: getVal(initialConfig?.yield_units_per_hour?.estructural?.medium),
-          large: initialConfig?.yield_units_per_hour?.estructural?.large !== undefined ? getVal(initialConfig?.yield_units_per_hour?.estructural?.large) : undefined,
+          small: getVal(incoming?.yield_units_per_hour?.estructural?.small),
+          medium: getVal(incoming?.yield_units_per_hour?.estructural?.medium),
+          large: incoming?.yield_units_per_hour?.estructural?.large !== undefined ? getVal(incoming?.yield_units_per_hour?.estructural?.large) : undefined,
         }
       }
     };
-  }, [initialConfig]);
+  };
+
+  const normalizedInitialConfig: TreePruningServiceConfig = useMemo(
+    () => normalizeConfig(initialConfig),
+    [initialConfig]
+  );
 
   const [config, setConfig] = useState<TreePruningServiceConfig>(normalizedInitialConfig);
   const [showLargeOption, setShowLargeOption] = useState<boolean>(hasLargeBandConfigured(initialConfig));
   useEffect(() => {
     if (value) {
-      setConfig(value);
+      setConfig(normalizeConfig(value));
       setShowLargeOption(hasLargeBandConfigured(value));
     }
   }, [value]);

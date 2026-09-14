@@ -68,7 +68,7 @@ al cliente en pantalla), T13 (falso positivo retirado, no reabrir).
 | 1.5 | Hallazgo lateral encontrado en la Fase 1: `generate_recurring_slots` liberaba reservas `pending` ya pagadas | ✅ Hecha (rama aparte) | `42c5519` en `claude/heuristic-roentgen-de7608` |
 | 2 | T5, T6, T9, T10 (bugs transversales de UI: botones muertos, cifras/nombres incorrectos) | ✅ Hecha | `39279bf`, `da18b42`, `2ef28f0`, `bb9f6e2` |
 | 3 | T12 (Lawn/Hedge/Shrub — Palm resultó no afectado) + autoguardado espurio (Setos/Palmeras/Árboles/Arbustos — más amplio de lo que decía §3.2) | ✅ Hecha | `a5c7500`, `16d8eb5` |
-| 4 | T2 (redondeo de horas, con recálculo a mano de los runners afectados) | ⏳ Pendiente | — |
+| 4 | T2 (redondeo de horas — ninguno de los runners necesitó recálculo esta vez) | ✅ Hecha (motor NO PROBADO por HTTP/navegador, pendiente de despliegue) | `ec9a7b7` |
 | 5 | T8 (rama que falta en el sondeo de pago agotado) + cierre formal de T4 (confirmar que el fix de la Fase 1 resuelve el hallazgo original) | ⏳ Pendiente | — |
 | 6 | T7 (D4-a: aviso de trabajo que no cabe en un día) + T11 (diagnóstico del email de confirmación no enviado) | ⏳ Pendiente | — |
 | 7 | **Verificación total**: los 7 servicios de principio a fin, no solo lo tocado en las fases 1–6 | ⏳ Pendiente | — |
@@ -288,29 +288,83 @@ Palmeras, Árboles y Arbustos, que de paso cierra T12 para Setos y Arbustos).
 
 ---
 
-## Fase 4 — T2: redondeo de horas ⏳ PENDIENTE
+## Fase 4 — T2: redondeo de horas ✅
 
-**Hallazgo:** `if (totalHours > 8) totalHours *= 0.9;` seguido de `Math.ceil(totalHours*2)/2`
-en `src/shared/bookingQuoteCore.ts:1349-1350`. El problema no es la fórmula en sí sino la
-imprecisión de coma flotante en la cadena de división/multiplicación real (`(5000/150)*0.9` da
-`30.000000000000004` en vez de `30` exacto), que el `Math.ceil` sube a medio bloque de más
-justo cuando el resultado cruza un umbral entero. Confirmado con inputs reales de césped y de
-desbroce, en dos servicios independientes — no es un caso aislado.
+**Cierra:** T2 completo.
 
-**Alcance:** cualquier servicio cuyas horas brutas superen 8h (setos, césped grande, desbroce,
-fitosanitarios con área grande).
+**Hallazgo (re-verificado antes de tocar código, sigue igual):** `if (totalHours > 8)
+totalHours *= 0.9;` seguido de `Math.ceil(totalHours*2)/2` — ahora en
+`src/shared/bookingQuoteCore.ts:1551-1552` (se movió de 1349-1350 por los cambios acumulados
+de fases anteriores). El problema no es la fórmula en sí sino la imprecisión de coma flotante
+en la cadena de división/multiplicación real (`(5000/150)*0.9` da `30.000000000000004` en vez
+de `30` exacto), que el `Math.ceil` sube a medio bloque de más justo cuando el resultado cruza
+un umbral entero o medio entero.
 
-**⚠️ Aviso del propio protocolo de esta auditoría, ya dado por el usuario al principio:**
-arreglar T2 **cambia legítimamente** las horas esperadas en los runners existentes. Cuando eso
-pase: **recalcular a mano la cifra correcta** usando las tarifas reales del jardinero sembrado
-y actualizar el runner con una explicación en el commit — nunca ajustar el número hasta que
-"pase el test".
+**Fix:** `totalHours = Math.round(totalHours * 1e6) / 1e6;` justo antes del `Math.ceil`,
+absorbiendo el ruido de coma flotante (muy por debajo de cualquier granularidad real de
+tarifa) sin tocar la lógica de negocio — sigue redondeando hacia arriba al medio bloque, solo
+que ahora sobre el valor real, no sobre su ruido binario.
 
 ### Registro del proceso
-*(se completa según avance la fase)*
+
+1. Verificado en Node, antes de tocar código, que el fix propuesto corrige exactamente los 3
+   casos documentados en §3.2 (césped 5000/150→30,5h✗/30,0h✓; desbroce 1000/120→8h✗/7,5h✓ y
+   2000/120→15,5h✗/15,0h✓).
+2. Aplicado el fix. `tsc` 171/171 (baseline), `vitest` 453/453 sin cambios — ninguno de los
+   tests unitarios existentes ejercitaba por casualidad este caso límite de coma flotante.
+3. **7/7 runners de readiness: 0 FALLA, sin ningún cambio en los números ya esperados.** Esto
+   no es sospechoso: el propio hallazgo original ya advertía que un barrido sistemático de
+   `totalHours` en decimal NO lo encuentra ("el residuo depende de la CADENA real de
+   división/multiplicación, no del valor decimal final") — ninguna de las cantidades que usan
+   los 7 runners hoy cae justo en uno de esos residuos binarios. La tolerancia de
+   `expectQuote` (`tolHours = 0.005`) es lo bastante ajustada como para que, si algún fixture
+   SÍ hubiera cruzado el umbral, se habría visto como una FALLA nueva de 0,5h — no la hubo, así
+   que **no hizo falta recalcular a mano ningún runner esta vez** (el aviso del protocolo
+   seguía en pie, pero esta vez no aplicó).
+4. **Verificación en el navegador, a petición explícita del usuario — con un hallazgo
+   importante.** Encontré el caso reproducible más pequeño y práctico para probar en un solo
+   día de agenda: **1250 m² de césped, estado normal, sin retirada de restos** →
+   `1250/150=8,333...>8`, con el `*0.9` da `7,500000000000001` en coma flotante → antes del
+   fix redondeaba a **8h**, después de fix a **7,5h**. Reservé exactamente ese escenario en el
+   navegador (cliente real, entrada manual) — y la pantalla de selección de jardinero siguió
+   mostrando **8h**, el valor con el bug.
+   
+   Diagnóstico: la duración que se ve en esa pantalla viene de una llamada HTTP a
+   `booking-authority` (confirmado por `read_network_requests`: `POST
+   .../functions/v1/booking-authority` devuelve `"estimatedHours":8`), y esa función edge está
+   **desplegada desde el checkout de referencia (`~/Downloads/GarSer-referencia`), no desde
+   este worktree** — exactamente la misma limitación ya documentada para T1 y T7 en este mismo
+   plan. Confirmé además que no existe ningún camino cliente-side que ejecute
+   `buildAuthoritativeBookingQuote` en el navegador sin pasar por esa función: `bookingQuote.ts`
+   la envuelve (`buildBookingQuote`) pero no se usa en ninguna pantalla real, y
+   `ProvidersPage.tsx`/`ConfirmationPage.tsx` solo importan *tipos* de `bookingQuoteCore.ts`,
+   no la función de cálculo.
+   
+   Para no quedarme solo con "no se pudo", repetí el **mismo escenario exacto** (mismo
+   `bookingInput`, mismo `providerId`, misma configuración real del jardinero en BD) contra el
+   motor en proceso (`READINESS_ENGINE=local`, que llama a la misma
+   `buildAuthoritativeBookingQuote` que usa `booking-authority`, solo que sin pasar por HTTP):
+   `estimatedHours: 7.5` — correcto. Es la prueba más rigurosa disponible en este entorno sin
+   desplegar: mismo código, mismo dato real, mismo resultado que vería el cliente una vez el
+   usuario despliegue.
 
 ### Comprobación real
-*(pendiente)*
+
+- Los 3 casos documentados en §3.2, verificados en Node contra la fórmula exacta: corregidos.
+- `tsc` 171/171, `vitest` 453/453, 7/7 runners en verde (0 FALLA), sin necesidad de recalcular
+  ningún runner a mano.
+- **Motor en proceso, mismo escenario que se reservó en el navegador** (1250 m² césped normal,
+  sin retirada de restos, configuración real del jardinero sembrado):
+  `estimatedHours: 7.5` (antes del fix: 8) — verificado con `READINESS_ENGINE=local`, la misma
+  función que usa `booking-authority`.
+- **NO PROBADO por HTTP/navegador**: la pantalla de selección de jardinero (y, en general,
+  cualquier flujo que pase por `booking-authority` o `booking-payment` desplegados) seguirá
+  mostrando el número con el bug hasta que el usuario despliegue esas dos funciones — no es un
+  fallo del fix, es que este entorno sirve una versión de esas funciones anterior a este
+  worktree. Reproducido y documentado explícitamente (captura de red incluida en el registro
+  de arriba) en vez de darlo por bueno sin comprobar.
+
+**Commit:** `ec9a7b7`.
 
 ---
 

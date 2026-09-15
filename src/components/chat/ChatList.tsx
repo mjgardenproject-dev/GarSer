@@ -53,6 +53,7 @@ const ChatList: React.FC = () => {
   const navigate = useNavigate();
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string>('');
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   /** Rol del usuario: decide a dónde lleva el acceso a reseñas desde el chat. */
   const [isGardener, setIsGardener] = useState(false);
@@ -72,6 +73,7 @@ const ChatList: React.FC = () => {
 
     try {
       if (!opts.silent) setInitialLoading(true);
+      setErrorMsg('');
 
       // 3 queries totales para toda la lista: reservas + perfiles + overview (RPC)
       const [{ data: bookings, error: bookingsError }, overview] = await Promise.all([
@@ -127,6 +129,8 @@ const ChatList: React.FC = () => {
       setChats(activeChats);
     } catch (error) {
       console.error('Error fetching chats:', error);
+      setErrorMsg(error instanceof Error ? error.message : 'No se pudieron cargar tus chats. Intenta de nuevo.');
+      setChats([]);
     } finally {
       setInitialLoading(false);
     }
@@ -200,7 +204,19 @@ const ChatList: React.FC = () => {
       />
 
       <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
-      {chats.length === 0 ? (
+      {errorMsg ? (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+          <MessageCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-red-900 mb-2">Error al cargar chats</h3>
+          <p className="text-red-700 mb-6">{errorMsg}</p>
+          <button
+            onClick={() => fetchChats()}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition-colors"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : chats.length === 0 ? (
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
           <MessageCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">No tienes chats activos</h3>

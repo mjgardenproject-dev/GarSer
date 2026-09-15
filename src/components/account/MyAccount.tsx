@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
-import { User as UserIcon, Camera, ArrowLeft, Lock, Trash2, Copy, AlertTriangle, CheckCircle2, UploadCloud, Link as LinkIcon, CheckCircle } from 'lucide-react';
+import { Camera, Lock, Trash2, Copy, AlertTriangle, CheckCircle2, UploadCloud, Link as LinkIcon, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import AppHeader from '../common/AppHeader';
+import InstallAppPrompt from '../common/InstallAppPrompt';
 
 function MyAccount() {
   const { user, signOut } = useAuth();
@@ -121,22 +123,13 @@ function MyAccount() {
   const effectiveRole = myProfile?.role || ((user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client');
 
   return (
-    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
-      <button
-        onClick={() => navigate('/dashboard')}
-        className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
-        aria-label="Volver al Panel"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Volver al Panel
-      </button>
+    <div>
+      <AppHeader title="Mi Cuenta" onBack={() => navigate('/dashboard')} backLabel="Salir" />
 
-      <div className="flex items-center mb-6">
-        <UserIcon className="w-6 h-6 text-green-600 mr-2" />
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Mi Cuenta</h1>
-      </div>
-
+      <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
       <div className="grid grid-cols-1 gap-4 sm:gap-6">
+        <InstallAppPrompt />
+
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
           <div className="flex items-center gap-4 justify-start sm:justify-between mb-3">
             <div className="min-w-0">
@@ -280,6 +273,7 @@ function MyAccount() {
         </div>,
         document.body
       )}
+      </div>
       </div>
     </div>
   );

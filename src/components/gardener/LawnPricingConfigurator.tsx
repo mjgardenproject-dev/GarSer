@@ -4,8 +4,7 @@ import { Info, AlertCircle, AlertTriangle } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
 import { LawnPricingConfig, LawnSpecies, LawnRange } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
-import { useAutoSave } from '../../hooks/useAutoSave';
-import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 import { getPrecioPorHora, getPricingMethod } from '../../utils/hourlyPricing';
 
 type LegacyLawnRange = '0-50' | '50-200' | '200+';
@@ -29,10 +28,12 @@ interface Props {
   value?: LawnPricingConfig;
   initialConfig?: LawnPricingConfig;
   onChange: (config: LawnPricingConfig) => void;
-  onSave?: (config: LawnPricingConfig) => Promise<void>;
+  onSave?: (config: LawnPricingConfig) => Promise<boolean> | boolean;
+  registerSave?: (fn: () => Promise<ManualSaveResult>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
+const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, registerSave, onDirtyChange }) => {
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
@@ -139,16 +140,25 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     setValidationErrors(validateConfig(config));
   }, [config, validateConfig]);
 
-  const { status } = useAutoSave({
+  const { isDirty, save } = useManualSave({
     value: config,
     initialValue: normalizeConfig(initialConfig),
     onSave: async (val) => {
       if (onSave) {
-        await onSave(val);
+        return await onSave(val);
       }
+      return true;
     },
     validate: validateConfig
   });
+
+  useEffect(() => {
+    registerSave?.(save);
+  }, [save, registerSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   return (
     <div className="space-y-8">
@@ -181,7 +191,6 @@ const LawnPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                     )}
                 </div>
             </div>
-            <SaveStatusIndicator status={status} />
         </div>
       </div>
 

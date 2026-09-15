@@ -4,8 +4,7 @@ import { Info, AlertCircle, AlertTriangle, Trash2 } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
 import { ShrubPricingConfig, ShrubSize } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
-import { useAutoSave } from '../../hooks/useAutoSave';
-import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 import { getPrecioPorHora, getPricingMethod } from '../../utils/hourlyPricing';
 
 const EMPTY_CONFIG: ShrubPricingConfig = {
@@ -25,10 +24,12 @@ interface Props {
   value?: ShrubPricingConfig;
   initialConfig?: ShrubPricingConfig;
   onChange: (config: ShrubPricingConfig) => void;
-  onSave?: (config: ShrubPricingConfig) => Promise<void>;
+  onSave?: (config: ShrubPricingConfig) => Promise<boolean> | boolean;
+  registerSave?: (fn: () => Promise<ManualSaveResult>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
+const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, registerSave, onDirtyChange }) => {
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
@@ -157,16 +158,25 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     setValidationErrors(validateConfig(config));
   }, [config, validateConfig]);
 
-  const { status } = useAutoSave({
+  const { isDirty, save } = useManualSave({
     value: config,
     initialValue: normalizeConfig(initialConfig),
     onSave: async (val) => {
       if (onSave) {
-        await onSave(val);
+        return await onSave(val);
       }
+      return true;
     },
     validate: validateConfig
   });
+
+  useEffect(() => {
+    registerSave?.(save);
+  }, [save, registerSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   const renderPriceInput = (size: ShrubSize) => {
      const val = config.prices_per_m2[size] || 0;
@@ -220,7 +230,6 @@ const ShrubPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                     )}
                 </div>
             </div>
-            <SaveStatusIndicator status={status} />
         </div>
       </div>
 

@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Info, Trash2 } from 'lucide-react';
 import { PalmPricingConfig, PalmSpecies, PalmCondition } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
-import { useAutoSave } from '../../hooks/useAutoSave';
-import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 import { getPricingMethod } from '../../utils/hourlyPricing';
 import { PALM_SPECIES_HEIGHT_BANDS } from '../../domain/speciesBusinessRules';
 
@@ -63,10 +62,14 @@ interface Props {
   value?: PalmPricingConfig;
   initialConfig?: PalmPricingConfig;
   onChange: (config: PalmPricingConfig) => void;
-  onSave?: (config: PalmPricingConfig) => Promise<void>;
+  onSave?: (config: PalmPricingConfig) => Promise<boolean> | boolean;
+  /** Guardado manual (fallo 10): el host (ServicesTab) registra esta función para
+   * disparar el guardado desde su propio botón "Guardar cambios". */
+  registerSave?: (fn: () => Promise<ManualSaveResult>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
+const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, registerSave, onDirtyChange }) => {
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
@@ -281,16 +284,25 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
     setValidationErrors(validateConfig(config));
   }, [config, validateConfig]);
 
-  const { status } = useAutoSave({
+  const { isDirty, save } = useManualSave({
     value: config,
     initialValue: normalizeConfig(initialConfig),
     onSave: async (val) => {
       if (onSave) {
-        await onSave(val);
+        return await onSave(val);
       }
+      return true;
     },
     validate: validateConfig
   });
+
+  useEffect(() => {
+    registerSave?.(save);
+  }, [save, registerSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   const renderCell = (species: PalmSpecies, height: PalmHeight) => {
      const speciesHeights = config.height_prices[species];
@@ -346,7 +358,6 @@ const PalmPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChan
                     )}
                 </div>
             </div>
-            <SaveStatusIndicator status={status} />
         </div>
       </div>
 

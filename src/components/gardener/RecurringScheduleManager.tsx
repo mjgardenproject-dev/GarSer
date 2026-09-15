@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyRecurringSchedule } from '../../utils/availabilityService';
-import { Save, Clock, Calendar, AlertTriangle, CheckCircle2, Info, History } from 'lucide-react';
+import { Clock, Calendar, AlertTriangle, CheckCircle2, Info, History, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Tipos
@@ -30,11 +30,29 @@ const BLOCK_START_HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // [7, 8,
 // Horas de FIN seleccionables (límite exclusivo): 8:00 .. 20:00.
 const END_HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // [8, 9, ..., 20]
 
-export default function RecurringScheduleManager({ onChangePending, registerSaveHandler }: { onChangePending?: (pending: boolean) => void; registerSaveHandler?: (fn: () => Promise<boolean>) => void; }) {
+interface RecurringScheduleManagerProps {
+  onChangePending?: (pending: boolean) => void;
+  registerSaveHandler?: (fn: () => Promise<boolean>) => void;
+  /** Notifica al padre cuando empieza/termina un guardado, para que el botón
+   * "Guardar" del header compartido (Fase 5, fallo 14) pueda mostrar "Guardando…". */
+  onSavingChange?: (saving: boolean) => void;
+  /** Registra la función que abre el modal "¿Confirmar nuevo horario fijo?" — la usa
+   * el botón "Guardar" del header compartido cuando el jardinero pulsa guardar de
+   * forma explícita (no al salir), para no saltarse el aviso de sobrescritura. */
+  registerExplicitSaveTrigger?: (fn: () => void) => void;
+}
+
+export default function RecurringScheduleManager({
+  onChangePending,
+  registerSaveHandler,
+  onSavingChange,
+  registerExplicitSaveTrigger,
+}: RecurringScheduleManagerProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   // Estado del Paso 1: Generador.
@@ -304,7 +322,15 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
   useEffect(() => {
     registerSaveHandler?.(commitSave);
   }, [commitSave]);
-  
+
+  useEffect(() => {
+    registerExplicitSaveTrigger?.(() => setShowConfirmation(true));
+  }, [registerExplicitSaveTrigger]);
+
+  useEffect(() => {
+    onSavingChange?.(saving);
+  }, [saving, onSavingChange]);
+
   const handleSave = async () => {
     setShowConfirmation(false);
     await commitSave();
@@ -321,14 +347,23 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
   return (
     <div className="space-y-8">
 
-      {/* PANEL DE AYUDA: cómo funciona el horario */}
-      <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-        <div className="flex items-start gap-3">
+      {/* PANEL DE AYUDA: cómo funciona el horario — plegado por defecto (fallo 13,
+          auditoría UX 2026-09-14: ocupaba mucho espacio al entrar en la pantalla). */}
+      <div className="rounded-xl border border-green-200 bg-green-50">
+        <button
+          type="button"
+          onClick={() => setShowHelp((prev) => !prev)}
+          aria-expanded={showHelp}
+          className="flex w-full items-center gap-3 p-4 text-left"
+        >
           <div className="shrink-0 w-9 h-9 rounded-full bg-green-100 flex items-center justify-center">
             <Info className="w-5 h-5 text-green-700" />
           </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-bold text-green-900 mb-2">Cómo funciona tu horario</h3>
+          <h3 className="flex-1 text-sm font-bold text-green-900">Cómo funciona tu horario</h3>
+          <ChevronDown className={`w-5 h-5 shrink-0 text-green-700 transition-transform ${showHelp ? 'rotate-180' : ''}`} />
+        </button>
+        {showHelp && (
+          <div className="px-4 pb-4 pl-[4.25rem]">
             <ol className="space-y-1.5 text-sm text-green-900/90 list-decimal list-inside marker:font-semibold">
               <li><span className="font-semibold">Elige días y franja base</span> arriba para rellenar el calendario de golpe.</li>
               <li><span className="font-semibold">Ajusta horas sueltas</span> tocando las casillas: lo que quede en verde es tu horario real.</li>
@@ -341,7 +376,7 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
               <p>• Tus clientes solo verán y podrán reservar exactamente las horas que dejes en verde.</p>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* SECCIÓN 1: CREA TU HORARIO FIJO */}
@@ -608,21 +643,9 @@ export default function RecurringScheduleManager({ onChangePending, registerSave
         )}
       </section>
 
-      {/* SECCIÓN 4: GUARDADO */}
-      <div className="pt-4 pb-8 sticky bottom-0 bg-white/90 backdrop-blur-sm pb-safe">
-        <button
-          onClick={() => setShowConfirmation(true)}
-          disabled={saving || !dirty}
-          className={`w-full py-4 px-6 text-lg rounded-xl font-bold shadow-lg transform transition-all duration-200 flex items-center justify-center gap-3 ${
-            dirty
-              ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-green-600/20 hover:scale-[1.01] active:scale-[0.99]'
-              : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-          }`}
-        >
-          <Save className="w-6 h-6" />
-          {dirty ? 'Guardar horario fijo' : 'Sin cambios pendientes'}
-        </button>
-      </div>
+      {/* El guardado se dispara ahora desde el header compartido (Fase 5, fallo 14):
+          este componente solo expone `registerExplicitSaveTrigger` para abrir el
+          modal de confirmación de abajo. */}
 
       {/* Modal de Confirmación */}
       {showConfirmation && createPortal(

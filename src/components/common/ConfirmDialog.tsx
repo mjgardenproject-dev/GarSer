@@ -24,11 +24,16 @@ export interface ConfirmConfig {
   cancelLabel?: string;
   tone?: ConfirmTone;
   onConfirm: () => void | Promise<void>;
+  /** Se ejecuta al pulsar la opción "cancelar"/segura. Por defecto solo cierra el
+   * diálogo; algunos flujos (p. ej. "salir sin guardar") necesitan que cancelar
+   * también dispare una acción (descartar cambios y continuar navegando). */
+  onCancel?: () => void | Promise<void>;
 }
 
-interface ConfirmState extends Required<Omit<ConfirmConfig, 'onConfirm'>> {
+interface ConfirmState extends Required<Omit<ConfirmConfig, 'onConfirm' | 'onCancel'>> {
   isOpen: boolean;
   onConfirm: (() => void | Promise<void>) | null;
+  onCancel: (() => void | Promise<void>) | null;
 }
 
 const CLOSED: ConfirmState = {
@@ -39,6 +44,7 @@ const CLOSED: ConfirmState = {
   cancelLabel: 'Cancelar',
   tone: 'warning',
   onConfirm: null,
+  onCancel: null,
 };
 
 /**
@@ -61,11 +67,12 @@ export function useConfirmDialog() {
       cancelLabel: config.cancelLabel || 'Cancelar',
       tone: config.tone || 'warning',
       onConfirm: config.onConfirm,
+      onCancel: config.onCancel || null,
     });
   }, []);
 
   const closeConfirm = useCallback(() => {
-    setState((prev) => ({ ...prev, isOpen: false, onConfirm: null }));
+    setState((prev) => ({ ...prev, isOpen: false, onConfirm: null, onCancel: null }));
   }, []);
 
   const handleConfirm = useCallback(async () => {
@@ -77,8 +84,14 @@ export function useConfirmDialog() {
       await state.onConfirm();
     } finally {
       setBusy(false);
-      setState((prev) => ({ ...prev, isOpen: false, onConfirm: null }));
+      setState((prev) => ({ ...prev, isOpen: false, onConfirm: null, onCancel: null }));
     }
+  }, [state]);
+
+  const handleCancel = useCallback(async () => {
+    const { onCancel } = state;
+    setState((prev) => ({ ...prev, isOpen: false, onConfirm: null, onCancel: null }));
+    await onCancel?.();
   }, [state]);
 
   useEffect(() => {
@@ -86,11 +99,11 @@ export function useConfirmDialog() {
     // El foco entra en la opción SEGURA, no en la destructiva.
     safeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) closeConfirm();
+      if (event.key === 'Escape' && !busy) void handleCancel();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [state.isOpen, busy, closeConfirm]);
+  }, [state.isOpen, busy, handleCancel]);
 
   const isRedTone = state.tone === 'danger' || state.tone === 'phytosanitary_warning';
 
@@ -125,7 +138,7 @@ export function useConfirmDialog() {
                     <button
                       ref={safeButtonRef}
                       type="button"
-                      onClick={closeConfirm}
+                      onClick={() => void handleCancel()}
                       disabled={busy}
                       className="w-full bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-600/20 py-3 px-4 rounded-xl font-bold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
                     >
@@ -157,7 +170,7 @@ export function useConfirmDialog() {
                     <button
                       ref={safeButtonRef}
                       type="button"
-                      onClick={closeConfirm}
+                      onClick={() => void handleCancel()}
                       disabled={busy}
                       className="w-full bg-white text-gray-700 border border-gray-200 py-3 px-4 rounded-xl font-bold hover:bg-gray-50 transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-2"
                     >

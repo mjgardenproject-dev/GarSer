@@ -2,8 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Trash2, Info } from 'lucide-react';
 import { TreePruningServiceConfig } from '../../types/treePruning';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
-import { useAutoSave } from '../../hooks/useAutoSave';
-import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 
 const getVal = (v: any) => (v === undefined || v === null || v === '') ? ('' as any) : Number(v);
 const isInvalid = (v: any) => v === undefined || v === null || v === '';
@@ -12,10 +11,12 @@ interface Props {
   value?: TreePruningServiceConfig;
   initialConfig?: TreePruningServiceConfig;
   onChange: (config: TreePruningServiceConfig) => void;
-  onSave?: (config: TreePruningServiceConfig) => Promise<void>;
+  onSave?: (config: TreePruningServiceConfig) => Promise<boolean> | boolean;
+  registerSave?: (fn: () => Promise<ManualSaveResult>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
+export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, registerSave, onDirtyChange }) => {
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const hasLargeBandConfigured = (cfg?: TreePruningServiceConfig) =>
     cfg?.estructural?.large !== undefined ||
@@ -70,10 +71,12 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
   const [config, setConfig] = useState<TreePruningServiceConfig>(normalizedInitialConfig);
   const [showLargeOption, setShowLargeOption] = useState<boolean>(hasLargeBandConfigured(initialConfig));
   useEffect(() => {
-    if (value) {
-      setConfig(normalizeConfig(value));
-      setShowLargeOption(hasLargeBandConfigured(value));
-    }
+    // Sin guard `if (value)`: "Restablecer completamente" (fallo 9, 2026-09-15) pone
+    // `value` a `undefined` a propósito para vaciar el formulario, y `normalizeConfig`
+    // ya sabe convertir `undefined` en la forma vacía correcta — igual que hace el resto
+    // de configuradores, que no tienen este guard.
+    setConfig(normalizeConfig(value));
+    setShowLargeOption(hasLargeBandConfigured(value));
   }, [value]);
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -112,16 +115,25 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
     setValidationErrors(validateConfig(config));
   }, [config, validateConfig]);
 
-  const { status } = useAutoSave({
+  const { isDirty, save } = useManualSave({
     value: config,
     initialValue: normalizedInitialConfig,
     onSave: async (val) => {
       if (onSave) {
-        await onSave(val);
+        return await onSave(val);
       }
+      return true;
     },
     validate: validateConfig
   });
+
+  useEffect(() => {
+    registerSave?.(save);
+  }, [save, registerSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   const updateConfig = (updates: Partial<TreePruningServiceConfig>) => {
     const newConfig = { ...config, ...updates };
@@ -253,7 +265,6 @@ export const TreePruningConfigurator: React.FC<Props> = ({ value, initialConfig,
                     )}
                 </div>
             </div>
-            <SaveStatusIndicator status={status} />
         </div>
       </div>
 

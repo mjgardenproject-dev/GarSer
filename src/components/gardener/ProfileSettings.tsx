@@ -87,7 +87,7 @@ interface ProfileSettingsProps {
 const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') || 'monolith';
+  const activeTab = searchParams.get('tab') || 'personal';
 
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
@@ -608,35 +608,41 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       }
   };
 
-  const handleWrapperSave = async (serviceName: string, config: any) => {
+  // Fase 10 (cambio lógico, 2026-09-15): devuelve si el guardado tuvo éxito, para que el
+  // botón "Guardar cambios" del nuevo header manual (ServicesTab) sepa si puede cerrar el
+  // panel o debe dejarlo abierto para reintentar. Antes no devolvía nada porque solo la
+  // llamaba el autosave, a quien no le hacía falta saberlo.
+  const handleWrapperSave = async (serviceName: string, config: any): Promise<boolean> => {
       const service = services.find(s => s.name === serviceName);
-      if (service) {
-           switch(serviceName) {
-                case 'Poda de palmeras': setPalmConfig(config); break;
-                case 'Corte de césped': setLawnConfig(config); break;
-                case 'Poda de setos': setHedgeConfig(config); break;
-                case 'Poda de árboles': setTreePruningConfig(config); break;
-                case 'Poda de plantas y arbustos': setShrubConfig(config); break;
-                case 'Desbroce de malas hierbas': setWeedingConfig(config); break;
-            case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(config)); break;
-           }
+      if (!service) return false;
 
-          if (!user) return;
-          const isActive = watchedServices.includes(service.id);
-          const payload = buildServicePricePayload(service, isActive, config);
-          
-          try {
-             const { error } = await (supabase.from('gardener_service_prices') as any).upsert(payload, {
-               onConflict: 'gardener_id,service_id',
-             });
-             if (error) throw error;
-             
-             setSavedConfigs(prev => ({ ...prev, [serviceName]: payload.additional_config }));
-             toast.success(isActive ? 'Configuración guardada y servicio sincronizado' : 'Configuración guardada');
-          } catch(e) {
-              console.error(e);
-              toast.error("Error al guardar");
-          }
+      switch(serviceName) {
+           case 'Poda de palmeras': setPalmConfig(config); break;
+           case 'Corte de césped': setLawnConfig(config); break;
+           case 'Poda de setos': setHedgeConfig(config); break;
+           case 'Poda de árboles': setTreePruningConfig(config); break;
+           case 'Poda de plantas y arbustos': setShrubConfig(config); break;
+           case 'Desbroce de malas hierbas': setWeedingConfig(config); break;
+           case 'Servicios fitosanitarios': setPhytosanitaryConfig(ensurePhytosanitaryPersistedConfig(config)); break;
+      }
+
+      if (!user) return false;
+      const isActive = watchedServices.includes(service.id);
+      const payload = buildServicePricePayload(service, isActive, config);
+
+      try {
+         const { error } = await (supabase.from('gardener_service_prices') as any).upsert(payload, {
+           onConflict: 'gardener_id,service_id',
+         });
+         if (error) throw error;
+
+         setSavedConfigs(prev => ({ ...prev, [serviceName]: payload.additional_config }));
+         toast.success(isActive ? 'Configuración guardada y servicio sincronizado' : 'Configuración guardada');
+         return true;
+      } catch(e) {
+          console.error(e);
+          toast.error("Error al guardar");
+          return false;
       }
   };
 
@@ -737,8 +743,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   }), [gardenerProfile?.address, gardenerProfile?.max_distance]);
 
   return (
-    <div 
-        className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6 transition-opacity duration-300"
+    <div
+        className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto py-4 sm:p-6 lg:px-6 transition-opacity duration-300"
         style={{ opacity: isRestoringScroll ? 0 : 1 }}
     >
       {onBack && (
@@ -765,38 +771,33 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         </div>
 
         {/* Tab Content Area */}
-        <div className="flex-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex-1 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
           <FormProvider {...methods}>
             <form onSubmit={handleSubmit(onSaveProfileInfo, onError)}>
-              {/* Monolith view or specific tabs */}
-              {(activeTab === 'monolith' || activeTab === 'personal') && (
-                <div className={activeTab === 'monolith' ? 'mb-12' : ''}>
-                  <PersonalTab 
-                    loading={loading} 
-                    setLicenseStatus={setLicenseStatus}
-                    initialData={personalInitialData}
-                    onSave={onSaveProfileInfo}
-                  />
-                </div>
+              {activeTab === 'personal' && (
+                <PersonalTab
+                  loading={loading}
+                  setLicenseStatus={setLicenseStatus}
+                  initialData={personalInitialData}
+                  onSave={onSaveProfileInfo}
+                />
               )}
 
-              {(activeTab === 'monolith' || activeTab === 'coverage') && (
-                <div className={activeTab === 'monolith' ? 'mb-12' : ''}>
-                  <CoverageTab 
-                    loading={loading} 
-                    initialData={coverageInitialData}
-                    hasOperationalCoordinates={
-                      Number.isFinite(Number(gardenerProfile?.operational_latitude))
-                      && Number.isFinite(Number(gardenerProfile?.operational_longitude))
-                    }
-                    onSave={onSaveProfileInfo}
-                  />
-                </div>
+              {activeTab === 'coverage' && (
+                <CoverageTab
+                  loading={loading}
+                  initialData={coverageInitialData}
+                  hasOperationalCoordinates={
+                    Number.isFinite(Number(gardenerProfile?.operational_latitude))
+                    && Number.isFinite(Number(gardenerProfile?.operational_longitude))
+                  }
+                  onSave={onSaveProfileInfo}
+                />
               )}
 
-              {(activeTab === 'monolith' || activeTab === 'services') && (
+              {activeTab === 'services' && (
                 <div>
-                  <ServicesTab 
+                  <ServicesTab
                     sortedServices={sortedServices}
                     watchedServices={watchedServices}
                     expandedServiceId={expandedServiceId}

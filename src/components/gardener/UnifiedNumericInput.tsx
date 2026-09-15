@@ -96,7 +96,7 @@ export const UnifiedNumericInput: React.FC<Props> = ({
           type="text"
           inputMode="decimal"
           disabled={disabled}
-          className={`w-full min-w-[6.5rem] h-11 pl-3 border rounded-lg text-right text-sm tabular-nums transition-all focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${
+          className={`w-full min-w-[6.5rem] h-11 pl-3 border rounded-lg text-right text-base tabular-nums transition-all focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed ${
             hasError 
               ? 'border-red-400 bg-red-50 focus:ring-red-500 focus:border-red-500' 
               : localValue !== '' 

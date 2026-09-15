@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
-import { useAutoSave } from '../../hooks/useAutoSave';
-import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 import { AlertTriangle, Info } from 'lucide-react';
 import { WeedingPricingConfig } from '../../types';
 
@@ -12,7 +11,9 @@ interface Props {
   value?: WeedingPricingConfig;
   initialConfig?: WeedingPricingConfig;
   onChange: (config: WeedingPricingConfig) => void;
-  onSave?: (config: WeedingPricingConfig) => Promise<void>;
+  onSave?: (config: WeedingPricingConfig) => Promise<boolean> | boolean;
+  registerSave?: (fn: () => Promise<ManualSaveResult>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   licenseStatus?: 'pending' | 'approved' | 'rejected' | 'expired' | null;
   /** D3: guía al jardinero a la pestaña de licencia. Opcional para no romper otros usos/tests. */
   onGoToLicense?: () => void;
@@ -35,6 +36,8 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
   initialConfig,
   onChange,
   onSave,
+  registerSave,
+  onDirtyChange,
   licenseStatus = null,
   onGoToLicense
 }) => {
@@ -115,7 +118,7 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
     setValidationErrors(validateConfig(config));
   }, [config, validateConfig]);
 
-  const { status } = useAutoSave({
+  const { isDirty, save } = useManualSave({
     value: config,
     initialValue: normalizedInitialConfig,
     onSave: async (val) => {
@@ -124,11 +127,20 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
         if (!isHerbicideEnabled) {
           configToSave.precio_herbicida_m2 = 0;
         }
-        await onSave(configToSave);
+        return await onSave(configToSave);
       }
+      return true;
     },
     validate: validateConfig
   });
+
+  useEffect(() => {
+    registerSave?.(save);
+  }, [save, registerSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   const renderEuroInput = (id: string, valueNum: number, onValueChange: (num: number) => void) => {
     return (
@@ -148,7 +160,7 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
 
   const renderPercentageInput = (id: string, valueNum: number, onValueChange: (num: number) => void) => {
     return (
-      <div className="w-[6.5rem] flex items-center gap-2 shrink-0">
+      <div className="w-full max-w-[7.5rem] flex items-center gap-2 shrink-0">
         <span className="text-gray-400 text-sm font-medium">+</span>
         <UnifiedNumericInput
           value={valueNum}
@@ -197,7 +209,6 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
                     )}
                 </div>
             </div>
-            <SaveStatusIndicator status={status} />
         </div>
       </div>
 

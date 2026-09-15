@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Save, ChevronLeft, ChevronRight, ArrowLeft, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Calendar, Save, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { format, parseISO, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks, isBefore, isToday, startOfToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -12,6 +11,8 @@ import {
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import RecurringScheduleManager from './RecurringScheduleManager';
+import AppHeader from '../common/AppHeader';
+import { useConfirmDialog } from '../common/ConfirmDialog';
 
 interface AvailabilityManagerProps {
   onBack?: () => void;
@@ -34,10 +35,14 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
   
   // Nuevo estado para controlar cambios sin guardar
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [pendingNav, setPendingNav] = useState<{ type: 'switch'; target: 'weekly' | 'recurring' } | { type: 'leave' } | { type: 'week'; direction: 'prev' | 'next' } | null>(null);
   const [recurringSaveHandler, setRecurringSaveHandler] = useState<(() => Promise<boolean>) | null>(null);
+  // Abre el modal "¿Confirmar nuevo horario fijo?" de RecurringScheduleManager — lo usa
+  // el botón "Guardar" del header cuando el jardinero guarda explícitamente (fallo 14).
+  const [recurringExplicitSaveTrigger, setRecurringExplicitSaveTrigger] = useState<(() => void) | null>(null);
+  const [recurringSaving, setRecurringSaving] = useState(false);
   const [recurringMountKey, setRecurringMountKey] = useState(0);
+
+  const { openConfirm, confirmDialog } = useConfirmDialog();
 
   // Bloques de 1 hora del día laboral (7:00–20:00, ver availabilityWindow.ts)
   const timeBlocks = generateDailyTimeBlocks();
@@ -78,17 +83,6 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
       checkRecurringSchedule();
     }
   }, [selectedWeek, user?.id, authLoading, activeTab, checkRecurringSchedule]);
-
-  useEffect(() => {
-    if (showConfirmModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [showConfirmModal]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -247,18 +241,93 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
     }
   };
 
+  // Guarda lo que corresponda según la subpágina activa (usado al salir/cambiar con
+  // cambios pendientes). No confundir con el guardado explícito del header (fallo 14),
+  // que en "horario fijo" pasa antes por su propio modal de confirmación.
+  const performActiveSave = async (): Promise<boolean> => {
+    if (activeTab === 'weekly') {
+      return saveWeeklyAvailability();
+    }
+    return (await recurringSaveHandler?.()) ?? false;
+  };
+
+  // Único punto de aviso "¿deseas guardar los cambios?" para salir, cambiar de semana
+  // o cambiar de subpágina con cambios sin guardar — antes vivía duplicado a mano
+  // (createPortal) en este mismo archivo; ahora usa el diálogo canónico compartido.
+  const confirmUnsavedChanges = (onSavedOk: () => void, onDiscard: () => void) => {
+    openConfirm({
+      title: '¿Deseas guardar los cambios?',
+      message: 'Tienes cambios pendientes en tu horario. Si sales sin guardar, perderás las modificaciones realizadas.',
+      confirmLabel: 'Guardar cambios',
+      cancelLabel: 'No guardar',
+      tone: 'warning',
+      onConfirm: async () => {
+        const success = await performActiveSave();
+        if (success) {
+          setHasUnsavedChanges(false);
+          onSavedOk();
+        }
+        // Si falla, ya se mostró un toast de error; el diálogo se cierra igualmente
+        // pero no navegamos, así que hasUnsavedChanges sigue true y un nuevo intento
+        // de salir vuelve a preguntar.
+      },
+      onCancel: () => {
+        setHasUnsavedChanges(false);
+        onDiscard();
+      },
+    });
+  };
+
   const navigateWeek = (direction: 'prev' | 'next') => {
     if (direction === 'prev') {
       const prevWeekStart = startOfWeek(subWeeks(selectedWeek, 1), { weekStartsOn: 1 });
       if (isBefore(prevWeekStart, startOfToday())) return; // no navegar a semanas pasadas
     }
+    const applyWeekChange = () => {
+      setSelectedWeek(prev => direction === 'prev' ? subWeeks(prev, 1) : addWeeks(prev, 1));
+    };
     if (hasUnsavedChanges) {
-      setPendingNav({ type: 'week', direction });
-      setShowConfirmModal(true);
+      confirmUnsavedChanges(applyWeekChange, applyWeekChange);
       return;
     }
-    setSelectedWeek(prev => direction === 'prev' ? subWeeks(prev, 1) : addWeeks(prev, 1));
+    applyWeekChange();
   };
+
+  const applyTabSwitch = (target: 'weekly' | 'recurring', { forceRemount }: { forceRemount: boolean }) => {
+    setActiveTab(target);
+    if (forceRemount) {
+      if (target === 'weekly') {
+        fetchWeeklyAvailability();
+      } else {
+        setRecurringMountKey((k) => k + 1);
+      }
+    }
+  };
+
+  const switchTab = (target: 'weekly' | 'recurring') => {
+    if (activeTab === target) return;
+    if (hasUnsavedChanges) {
+      confirmUnsavedChanges(
+        () => applyTabSwitch(target, { forceRemount: false }),
+        () => applyTabSwitch(target, { forceRemount: true }),
+      );
+      return;
+    }
+    setActiveTab(target);
+  };
+
+  // Botón "Guardar" del header compartido (fallo 14): en "horario fijo" abre primero
+  // el modal de confirmación de RecurringScheduleManager (avisa de que sobrescribe
+  // disponibilidad futura); en "ajustes puntuales" guarda directo, como ya hacía.
+  const handleHeaderSave = () => {
+    if (activeTab === 'weekly') {
+      void saveWeeklyAvailability();
+    } else {
+      recurringExplicitSaveTrigger?.();
+    }
+  };
+
+  const savingCombined = activeTab === 'weekly' ? saving : recurringSaving;
 
   const getWeekDays = () => {
     const weekStart = startOfWeek(selectedWeek, { weekStartsOn: 1 });
@@ -281,127 +350,65 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
     return !!set && set.has(hour);
   };
 
-  // Manejadores para la confirmación de salida
   const handleBack = () => {
     if (hasUnsavedChanges) {
-      setPendingNav({ type: 'leave' });
-      setShowConfirmModal(true);
-    } else {
-      onBack?.();
+      confirmUnsavedChanges(() => onBack?.(), () => onBack?.());
+      return;
     }
-  };
-
-  const handleConfirmDiscard = () => {
-    setShowConfirmModal(false);
-    if (!pendingNav) return;
-    if (pendingNav.type === 'switch') {
-      if (pendingNav.target === 'weekly') {
-        setActiveTab('weekly');
-        fetchWeeklyAvailability();
-      } else {
-        setActiveTab('recurring');
-        setRecurringMountKey(k => k + 1);
-      }
-      setHasUnsavedChanges(false);
-      setPendingNav(null);
-    } else if (pendingNav.type === 'week') {
-      const dir = pendingNav.direction;
-      setHasUnsavedChanges(false);
-      setPendingNav(null);
-      setSelectedWeek(prev => dir === 'prev' ? subWeeks(prev, 1) : addWeeks(prev, 1));
-    } else {
-      setHasUnsavedChanges(false);
-      setPendingNav(null);
-      onBack?.();
-    }
-  };
-
-  const handleConfirmSave = async () => {
-    let success = true;
-    if (activeTab === 'weekly') {
-      success = await saveWeeklyAvailability();
-    } else {
-      success = (await recurringSaveHandler?.()) ?? false;
-    }
-    if (!success) return;
-    setHasUnsavedChanges(false);
-    setShowConfirmModal(false);
-    if (!pendingNav) return;
-    if (pendingNav.type === 'switch') {
-      setActiveTab(pendingNav.target);
-      setPendingNav(null);
-    } else if (pendingNav.type === 'week') {
-      const dir = pendingNav.direction;
-      setPendingNav(null);
-      setSelectedWeek(prev => dir === 'prev' ? subWeeks(prev, 1) : addWeeks(prev, 1));
-    } else {
-      setPendingNav(null);
-      onBack?.();
-    }
+    onBack?.();
   };
 
   return (
-    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6 relative">
-        {/* 1. Botón Volver (Parte superior) */}
-        {onBack && (
-          <div className="mb-4">
-            <button
-              onClick={handleBack}
-              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
-              aria-label="Volver al Panel"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Volver
-            </button>
-          </div>
-        )}
-
-        {/* 2. Título de la página (Justo debajo de volver) */}
-        <div className="flex items-center mb-6">
-            <Calendar className="w-6 h-6 text-green-600 mr-3" />
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Gestión de Disponibilidad</h2>
-        </div>
-
-        {/* 3. Selector de subpáginas (Tabs) */}
-        <div className="flex space-x-1 bg-white border border-gray-200 p-1 rounded-lg mb-2 w-full max-w-md mx-auto md:mx-0 shadow-sm">
+    <div className="relative">
+      <AppHeader
+        title="Gestión de Disponibilidad"
+        onBack={onBack ? handleBack : undefined}
+        backLabel="Salir"
+      >
+        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
           <button
-            onClick={() => {
-              if (hasUnsavedChanges && activeTab !== 'weekly') {
-                setPendingNav({ type: 'switch', target: 'weekly' });
-                setShowConfirmModal(true);
-              } else {
-                setActiveTab('weekly');
-              }
-            }}
+            onClick={() => switchTab('weekly')}
             className={`flex-1 flex items-center justify-center py-2 text-sm font-medium rounded-md transition-colors ${
               activeTab === 'weekly'
-                ? 'bg-gray-100 text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900'
             }`}
           >
             <Calendar className="w-4 h-4 mr-2" />
             Ajustes puntuales
           </button>
           <button
-            onClick={() => {
-              if (hasUnsavedChanges && activeTab !== 'recurring') {
-                setPendingNav({ type: 'switch', target: 'recurring' });
-                setShowConfirmModal(true);
-              } else {
-                setActiveTab('recurring');
-              }
-            }}
+            onClick={() => switchTab('recurring')}
             className={`flex-1 flex items-center justify-center py-2 text-sm font-medium rounded-md transition-colors ${
               activeTab === 'recurring'
-                ? 'bg-gray-100 text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900'
             }`}
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Horario fijo
           </button>
         </div>
-        <p className="text-xs text-gray-500 mb-6 max-w-md mx-auto md:mx-0 px-1">
+
+        <button
+          onClick={handleHeaderSave}
+          disabled={savingCombined || !hasUnsavedChanges}
+          className={`
+            w-full py-2.5 px-4 text-sm rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-200
+            ${hasUnsavedChanges
+              ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg shadow-green-600/20 active:scale-[0.98]'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+            }
+            ${savingCombined ? 'opacity-70 cursor-wait' : ''}
+          `}
+        >
+          <Save className="w-4 h-4" />
+          {savingCombined ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+      </AppHeader>
+
+      <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
+        <p className="text-xs text-gray-500 mb-6 px-1">
           {activeTab === 'weekly'
             ? 'Modifica franjas concretas de esta semana — excepciones, bloqueos o horas extra sobre tu horario fijo.'
             : 'Define tu plantilla semanal recurrente. Se aplica automáticamente a las próximas semanas.'}
@@ -412,6 +419,8 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
             key={recurringMountKey}
             onChangePending={(p) => setHasUnsavedChanges(p)}
             registerSaveHandler={(fn) => setRecurringSaveHandler(() => fn)}
+            onSavingChange={setRecurringSaving}
+            registerExplicitSaveTrigger={(fn) => setRecurringExplicitSaveTrigger(() => fn)}
           />
         ) : (
           <>
@@ -444,26 +453,9 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
               </button>
             </div>
 
-            {/* 5. Título del calendario y Botón Guardar (alineados) */}
-            <div className="flex items-center justify-between mb-2 px-1">
+            {/* 5. Título del calendario (el guardado vive en el header, fallo 14) */}
+            <div className="mb-2 px-1">
               <h3 className="text-lg font-semibold text-gray-900">Calendario semanal</h3>
-              
-              {/* Botón Guardar movido aquí */}
-              <button
-                onClick={saveWeeklyAvailability}
-                disabled={saving || !hasUnsavedChanges}
-                className={`
-                  py-2 px-6 text-sm rounded-xl font-bold flex items-center gap-2 transition-all duration-200
-                  ${hasUnsavedChanges 
-                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg shadow-green-600/20 transform hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2' 
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-                  }
-                  ${saving ? 'opacity-70 cursor-wait' : ''}
-                `}
-              >
-                <Save className="w-4 h-4" />
-                {saving ? 'Guardando…' : 'Guardar'}
-              </button>
             </div>
 
             {/* Leyenda compacta ANTES del calendario (en móvil quedaba al final y no se veía) */}
@@ -607,65 +599,15 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
         </>
       )}
 
-      {/* Confirm modal */}
-      {showConfirmModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-4">
-                <AlertTriangle className="w-6 h-6 text-yellow-600" />
-              </div>
-              
-              <h3 className="text-lg font-bold text-gray-900 mb-2">
-                ¿Deseas guardar los cambios?
-              </h3>
-              
-              <p className="text-sm text-gray-600 mb-6">
-                Tienes cambios pendientes en tu horario. Si sales sin guardar, perderás las modificaciones realizadas.
-              </p>
-              
-              <div className="flex flex-col gap-3 w-full">
-                <button
-                  onClick={handleConfirmSave}
-                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-green-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center"
-                >
-                  Guardar cambios
-                </button>
-                
-                <button
-                  onClick={handleConfirmDiscard}
-                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-bold hover:bg-gray-200 transition-colors"
-                >
-                  No guardar
-                </button>
-              </div>
-            </div>
+        {/* Nota de uso */}
+        {activeTab === 'weekly' && (
+          <div className="mt-6 bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+            <p className="leading-snug">Toca cada bloque para cambiar tu disponibilidad. Horario: 7:00 – 20:00 (bloques de 1 hora).</p>
           </div>
-        </div>,
-        document.body
-      )}
+        )}
+      </div>
 
-      {/* Nota de uso */}
-      {activeTab === 'weekly' && (
-        <div className="mt-6 mb-20 md:mb-0 bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
-          <p className="leading-snug">Toca cada bloque para cambiar tu disponibilidad. Horario: 7:00 – 20:00 (bloques de 1 hora).</p>
-        </div>
-      )}
-
-      {/* Guardar sticky en móvil: en pantallas pequeñas el botón superior desaparece al
-          hacer scroll por las 13 filas del calendario */}
-      {activeTab === 'weekly' && hasUnsavedChanges && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-gray-200 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-          <button
-            onClick={saveWeeklyAvailability}
-            disabled={saving}
-            className="w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg shadow-green-600/20 active:scale-[0.98] transition-all disabled:opacity-70"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Guardando…' : 'Guardar cambios'}
-          </button>
-        </div>
-      )}
+      {confirmDialog}
     </div>
   );
 };

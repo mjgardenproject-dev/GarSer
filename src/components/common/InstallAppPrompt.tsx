@@ -7,7 +7,10 @@ import { Share2, PlusSquare, Download, Smartphone, MoreVertical } from 'lucide-r
  * como app instalada (standalone), y adapta las instrucciones a iOS/Android porque no
  * comparten mecanismo de instalación (iOS no dispara `beforeinstallprompt`).
  *
- * Se construye en la Fase 2 del plan; se monta dentro de "Mi Cuenta" en la Fase 6.
+ * Se construye en la Fase 2 del plan; se monta dentro de "Mi Cuenta" en la Fase 6, y
+ * también en el Panel de Jardinero (2026-09-15) porque en Mi Cuenta pasaba
+ * desapercibido — `className` permite que cada sitio use el estilo de tarjeta de su
+ * propia pantalla en vez de imponer uno solo.
  */
 
 type Platform = 'ios' | 'android' | 'other';
@@ -32,7 +35,14 @@ function isStandaloneDisplay(): boolean {
   return nav.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches === true;
 }
 
-const InstallAppPrompt: React.FC = () => {
+interface InstallAppPromptProps {
+  /** Estilo del contenedor exterior; por defecto, la tarjeta ya usada en Mi Cuenta. */
+  className?: string;
+}
+
+const DEFAULT_CARD_CLASSNAME = 'rounded-2xl border border-gray-100 bg-white p-6 shadow-sm';
+
+const InstallAppPrompt: React.FC<InstallAppPromptProps> = ({ className }) => {
   const [platform, setPlatform] = useState<Platform>('other');
   const [standalone, setStandalone] = useState(true);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
@@ -74,12 +84,12 @@ const InstallAppPrompt: React.FC = () => {
   };
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+    <div className={className ?? DEFAULT_CARD_CLASSNAME}>
       <div className="mb-3 flex items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-100 text-green-700">
           <Smartphone className="h-5 w-5" aria-hidden="true" />
         </div>
-        <h2 className="text-base font-bold text-gray-900">Instala GarSer en tu móvil</h2>
+        <h2 className="text-base font-bold text-gray-900">Úsalo más cómodamente desde la app</h2>
       </div>
 
       {platform === 'ios' && (

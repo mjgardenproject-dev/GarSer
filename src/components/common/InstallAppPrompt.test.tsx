@@ -50,7 +50,7 @@ describe('InstallAppPrompt', () => {
     setUserAgent(IOS_UA);
     setStandalone(false);
     render(<InstallAppPrompt />);
-    expect(screen.getByText('Instala GarSer en tu móvil')).toBeTruthy();
+    expect(screen.getByText('Úsalo más cómodamente desde la app')).toBeTruthy();
     expect(screen.getByText('Compartir')).toBeTruthy();
     expect(screen.getByText('Añadir a pantalla de inicio')).toBeTruthy();
   });

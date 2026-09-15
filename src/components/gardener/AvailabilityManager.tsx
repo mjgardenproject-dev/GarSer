@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Save, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { Calendar, Save, ChevronLeft, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
 import { format, parseISO, startOfWeek, endOfWeek, eachDayOfInterval, subWeeks, addWeeks, isBefore, isToday, startOfToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -402,7 +402,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
             ${savingCombined ? 'opacity-70 cursor-wait' : ''}
           `}
         >
-          <Save className="w-4 h-4" />
+          {savingCombined ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
           {savingCombined ? 'Guardando…' : 'Guardar cambios'}
         </button>
       </AppHeader>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Clock, MapPin, MessageCircle, Star, RotateCcw, ChevronDown, ImageIcon } from 'lucide-react';
+import { Calendar, Clock, MapPin, MessageCircle, Star, RotateCcw, ChevronDown, ImageIcon, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -236,17 +236,31 @@ const ClientBookingCard = ({
               type="button"
               onClick={() => onAcceptPriceChange?.(booking)}
               disabled={busy}
-              className="flex-1 bg-green-600 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+              className="flex-1 bg-green-600 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors inline-flex items-center justify-center gap-2"
             >
-              Aceptar nuevo precio
+              {busy ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Aceptando…
+                </>
+              ) : (
+                'Aceptar nuevo precio'
+              )}
             </button>
             <button
               type="button"
               onClick={() => onRejectPriceChange?.(booking)}
               disabled={busy}
-              className="flex-1 bg-white px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-700 border border-gray-300 hover:bg-gray-50 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+              className="flex-1 bg-white px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-700 border border-gray-300 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors inline-flex items-center justify-center gap-2"
             >
-              Rechazar
+              {busy ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Rechazando…
+                </>
+              ) : (
+                'Rechazar'
+              )}
             </button>
           </div>
         </div>

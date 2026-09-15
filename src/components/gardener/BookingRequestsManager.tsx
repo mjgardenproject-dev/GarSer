@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, Clock, MapPin, User, Check, X, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Calendar, Clock, MapPin, User, Check, X, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { BookingResponse } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
@@ -647,19 +647,37 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                       <button
                         onClick={() => respondToRequest(request.id, 'reject')}
                         disabled={responding === request.id}
-                        className="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center flex-1 sm:flex-none h-10"
+                        className="px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center flex-1 sm:flex-none h-10"
                       >
-                        <X className="w-4 h-4 mr-2" />
-                        Rechazar
+                        {responding === request.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Rechazando…
+                          </>
+                        ) : (
+                          <>
+                            <X className="w-4 h-4 mr-2" />
+                            Rechazar
+                          </>
+                        )}
                       </button>
                       {request.price_change_status !== 'pending_client_acceptance' && (
                         <button
                           onClick={() => respondToRequest(request.id, 'accept')}
                           disabled={responding === request.id}
-                          className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center flex-1 sm:flex-none h-10"
+                          className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center flex-1 sm:flex-none h-10"
                         >
-                          <Check className="w-4 h-4 mr-2" />
-                          Aceptar
+                          {responding === request.id ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Aceptando…
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4 mr-2" />
+                              Aceptar
+                            </>
+                          )}
                         </button>
                       )}
                     </div>

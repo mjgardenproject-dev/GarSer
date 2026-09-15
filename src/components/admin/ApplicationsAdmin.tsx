@@ -37,6 +37,7 @@ const ApplicationsAdmin: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [selected, setSelected] = useState<Application | null>(null);
   const [photoIndex, setPhotoIndex] = useState<number | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Rejection Modal State
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -92,7 +93,8 @@ const ApplicationsAdmin: React.FC = () => {
 
   const approve = async (app: Application) => {
     setErrorMsg('');
-    
+    setProcessingId(app.id);
+
     try {
       // @ts-expect-error - la inferencia de tipos de Supabase para los argumentos de RPC no es fiable
       const { error } = await supabase.rpc('admin_review_gardener_application', {
@@ -102,16 +104,19 @@ const ApplicationsAdmin: React.FC = () => {
 
       if (error) {
         setErrorMsg(error.message || 'Error aprobando solicitud');
+        setProcessingId(null);
         return;
       }
 
       await sendNotification(app, 'gardener_approved');
 
       if (selected?.id === app.id) setSelected(null);
-      fetchSubmitted();
+      await fetchSubmitted();
     } catch (e: any) {
       console.error(e);
       setErrorMsg(e.message || 'Error desconocido al aprobar');
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -128,6 +133,8 @@ const ApplicationsAdmin: React.FC = () => {
       return;
     }
 
+    setProcessingId(appToReject.id);
+
     try {
       // @ts-expect-error - la inferencia de tipos de Supabase para los argumentos de RPC no es fiable
       const { error } = await supabase.rpc('admin_review_gardener_application', {
@@ -138,6 +145,7 @@ const ApplicationsAdmin: React.FC = () => {
 
       if (error) {
         setErrorMsg(error.message || 'Error rechazando solicitud');
+        setProcessingId(null);
         return;
       }
 
@@ -146,10 +154,12 @@ const ApplicationsAdmin: React.FC = () => {
       setRejectModalOpen(false);
       setAppToReject(null);
       if (selected?.id === appToReject.id) setSelected(null);
-      fetchSubmitted();
+      await fetchSubmitted();
     } catch (e: any) {
       console.error(e);
       setErrorMsg(e.message || 'Error desconocido al rechazar');
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -237,21 +247,41 @@ const ApplicationsAdmin: React.FC = () => {
             </div>
             
             <div className="mt-5 flex flex-wrap items-center gap-2 pt-4 border-t border-gray-100">
-              <button 
+              <button
                 type="button"
-                onClick={() => approve(app)} 
-                className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg inline-flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors"
+                onClick={() => approve(app)}
+                disabled={processingId === app.id}
+                className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg inline-flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <CheckCircle className="w-4 h-4" aria-hidden="true" />
-                Aprobar
+                {processingId === app.id ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                    Aprobando…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" aria-hidden="true" />
+                    Aprobar
+                  </>
+                )}
               </button>
-              <button 
+              <button
                 type="button"
-                onClick={() => reject(app)} 
-                className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg inline-flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors"
+                onClick={() => reject(app)}
+                disabled={processingId === app.id}
+                className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg inline-flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <XCircle className="w-4 h-4" aria-hidden="true" />
-                Rechazar
+                {processingId === app.id ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                    Rechazando…
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="w-4 h-4" aria-hidden="true" />
+                    Rechazar
+                  </>
+                )}
               </button>
               <button 
                 type="button"

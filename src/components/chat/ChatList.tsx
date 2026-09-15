@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Calendar, ArrowLeft, User, Image as ImageIcon } from 'lucide-react';
+import { MessageCircle, Calendar, User, Image as ImageIcon } from 'lucide-react';
+import AppHeader from '../common/AppHeader';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -177,38 +178,28 @@ const ChatList: React.FC = () => {
   }
 
   return (
-    <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
-      <button
-        onClick={() => navigate('/dashboard')}
-        className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
-        aria-label="Volver al Panel"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Volver al Panel
-      </button>
+    <div>
+      <AppHeader
+        title="Mis Chats"
+        onBack={() => navigate('/dashboard')}
+        rightSlot={
+          // Fallo 18 (2026-09-15): el botón de reseñas es solo para el cliente, que es quien
+          // valora — el jardinero ya lee y responde las suyas desde el botón "Reseñas" del
+          // dashboard, así que aquí no le aporta nada.
+          !isGardener ? (
+            <button
+              type="button"
+              onClick={() => navigate('/valoraciones')}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            >
+              <Star className="w-4 h-4 text-yellow-500" aria-hidden="true" />
+              Reseñas
+            </button>
+          ) : undefined
+        }
+      />
 
-      <div className="flex items-center justify-between gap-3 mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Mis Chats</h1>
-        {/* Acceso a reseñas desde el chat, que es donde ambas partes siguen la conversación de
-            un servicio: el cliente va a valorar, el profesional a leer y responder. */}
-        <button
-          type="button"
-          onClick={() => {
-            if (isGardener) {
-              // El panel del jardinero recuerda la pestaña activa en localStorage.
-              try { localStorage.setItem('gardener_active_tab', 'reviews'); } catch { /* sin persistencia, se abre el panel igualmente */ }
-              navigate('/dashboard');
-            } else {
-              navigate('/valoraciones');
-            }
-          }}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-        >
-          <Star className="w-4 h-4 text-yellow-500" aria-hidden="true" />
-          Reseñas
-        </button>
-      </div>
-
+      <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
       {chats.length === 0 ? (
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
           <MessageCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -275,6 +266,7 @@ const ChatList: React.FC = () => {
           otherUserName={selectedChat.other_user_name}
         />
       )}
+      </div>
     </div>
   );
 };

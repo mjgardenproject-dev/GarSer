@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, MapPin, ArrowLeft, MessageCircle, Check, ChevronDown, Phone, Navigation, Loader2, MessageSquareQuote, AlertTriangle } from 'lucide-react';
+import { Calendar, Clock, MapPin, MessageCircle, Check, ChevronDown, Phone, Navigation, Loader2, MessageSquareQuote, AlertTriangle } from 'lucide-react';
+import AppHeader from '../common/AppHeader';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -193,37 +194,29 @@ const GardenerBookings: React.FC = () => {
 
   return (
     <>
-      <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-2.5 py-4 sm:p-6 lg:px-6">
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="mb-6 inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-lg shadow-sm transition-colors"
-          aria-label="Volver al Panel"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Volver al Panel
-        </button>
-
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">Mis Reservas</h1>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">Estado</label>
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="appearance-none border border-gray-300 rounded-md pl-3 pr-10 py-2.5 sm:py-2 text-base sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer"
-              >
-                <option value="all">Todos</option>
-                <option value="confirmed">Confirmada</option>
-                <option value="completed">Completada</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
-                <ChevronDown className="h-4 w-4" />
-              </div>
+      <AppHeader
+        title="Mis Reservas"
+        onBack={() => navigate('/dashboard')}
+        rightSlot={
+          <div className="relative">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              aria-label="Filtrar por estado"
+              className="appearance-none border border-gray-300 rounded-md pl-3 pr-8 py-2 text-base sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent cursor-pointer"
+            >
+              <option value="all">Todos</option>
+              <option value="confirmed">Confirmada</option>
+              <option value="completed">Completada</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+              <ChevronDown className="h-4 w-4" />
             </div>
           </div>
-        </div>
+        }
+      />
 
+      <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600"></div>

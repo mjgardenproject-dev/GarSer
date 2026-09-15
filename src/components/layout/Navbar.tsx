@@ -109,7 +109,10 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   ] : [];
 
   return (
-    <nav className="bg-white shadow-lg border-b border-gray-200 relative">
+    <nav
+      className="sticky top-0 z-40 bg-white shadow-lg border-b border-gray-200"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+    >
       <div className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">

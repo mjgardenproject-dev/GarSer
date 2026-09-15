@@ -1,10 +1,8 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
-import { useAutoSave } from '../../hooks/useAutoSave';
-import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 import { createPortal } from 'react-dom';
 import { AlertCircle, AlertTriangle, Bug, ChevronDown, Leaf, Palmtree, Save, Scissors, Sprout, TreePine, Info } from 'lucide-react';
-import { deepEqual } from '../../utils/deepEqual';
 import {
   PhytosanitaryDetailedCategoryKey as DetailedCategoryKey,
   PhytosanitaryDetailedPricing,
@@ -26,7 +24,9 @@ interface Props {
   value?: PhytosanitaryPricingConfig;
   initialConfig?: PhytosanitaryPricingConfig;
   onChange: (config: PhytosanitaryPricingConfig) => void;
-  onSave?: (config: PhytosanitaryPricingConfig) => Promise<void>;
+  onSave?: (config: PhytosanitaryPricingConfig) => Promise<boolean> | boolean;
+  registerSave?: (fn: () => Promise<ManualSaveResult>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   licenseStatus?: 'pending' | 'approved' | 'rejected' | 'expired' | null;
   /** D3: guía al jardinero a la pestaña de licencia. Opcional para no romper otros usos/tests. */
   onGoToLicense?: () => void;
@@ -34,7 +34,7 @@ interface Props {
 
 export type { PhytosanitaryPricingConfig } from '../../types';
 
-const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, licenseStatus = null, onGoToLicense }) => {
+const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, registerSave, onDirtyChange, licenseStatus = null, onGoToLicense }) => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [openSections, setOpenSections] = useState<Record<DetailedCategoryKey, boolean>>({
@@ -47,7 +47,6 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
 
   const config = useMemo(() => normalizePhytosanitaryPricingConfig(value), [value]);
   const normalizedInitialConfig = useMemo(() => normalizePhytosanitaryPricingConfig(initialConfig), [initialConfig]);
-  const isDirty = useMemo(() => !deepEqual(config, normalizedInitialConfig), [config, normalizedInitialConfig]);
   const detailed = useMemo(() => normalizeDetailedPhytosanitaryPricing(config.detailed_pricing), [config.detailed_pricing]);
 
   // El método de cobro se resuelve con `getPricingMethod`, la misma función que usa el motor,
@@ -210,16 +209,25 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
     setValidationErrors(validateConfig(config, detailed));
   }, [config, detailed, validateConfig]);
 
-  const { status } = useAutoSave({
+  const { isDirty, save } = useManualSave({
     value: { ...config, detailed_pricing: detailed },
     initialValue: { ...normalizedInitialConfig, detailed_pricing: normalizeDetailedPhytosanitaryPricing(normalizedInitialConfig.detailed_pricing) },
     onSave: async (val) => {
       if (onSave) {
-        await onSave(toPersistedPhytosanitaryConfig(val));
+        return await onSave(toPersistedPhytosanitaryConfig(val));
       }
+      return true;
     },
     validate: (val) => validateConfig(val, val.detailed_pricing)
   });
+
+  useEffect(() => {
+    registerSave?.(save);
+  }, [save, registerSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   return (
     <div className="space-y-3">
@@ -309,7 +317,6 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
                     )}
                 </div>
             </div>
-            <SaveStatusIndicator status={status} />
         </div>
       </div>
 

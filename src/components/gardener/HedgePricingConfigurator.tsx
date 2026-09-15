@@ -4,8 +4,7 @@ import { AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { deepEqual } from '../../utils/deepEqual';
 import { HedgePricingConfig, HedgeHeightBand } from '../../types';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
-import { useAutoSave } from '../../hooks/useAutoSave';
-import SaveStatusIndicator from '../common/SaveStatusIndicator';
+import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 import { getPrecioPorHora, getPricingMethod } from '../../utils/hourlyPricing';
 
 export const HEDGE_HEIGHT_BANDS: HedgeHeightBand[] = ['0-2m', '2-4m', '4-6m'];
@@ -114,10 +113,12 @@ interface Props {
   value?: HedgePricingConfig;
   initialConfig?: HedgePricingConfig;
   onChange: (config: HedgePricingConfig) => void;
-  onSave?: (config: HedgePricingConfig) => Promise<void>;
+  onSave?: (config: HedgePricingConfig) => Promise<boolean> | boolean;
+  registerSave?: (fn: () => Promise<ManualSaveResult>) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave }) => {
+const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onChange, onSave, registerSave, onDirtyChange }) => {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showGlobalInfo, setShowGlobalInfo] = useState(false);
   const [minimumPriceError, setMinimumPriceError] = useState(false);
@@ -284,16 +285,25 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
     };
   };
 
-  const { status } = useAutoSave({
+  const { isDirty, save } = useManualSave({
     value: config,
     initialValue: normalizeConfig(initialConfig),
     onSave: async (val) => {
       if (onSave) {
-        await onSave(processConfigForSave(val));
+        return await onSave(processConfigForSave(val));
       }
+      return true;
     },
     validate: validateConfig
   });
+
+  useEffect(() => {
+    registerSave?.(save);
+  }, [save, registerSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   const renderPriceInput = (
     height: HedgeHeightBand,
@@ -349,7 +359,6 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
                     )}
                 </div>
             </div>
-            <SaveStatusIndicator status={status} />
         </div>
       </div>
 

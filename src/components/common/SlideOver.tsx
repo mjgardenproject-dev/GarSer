@@ -5,10 +5,12 @@ interface SlideOverProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  /** Fila opcional bajo el título (p. ej. botones Restablecer/Guardar cambios del fallo 10). */
+  headerActions?: React.ReactNode;
   children: React.ReactNode;
 }
 
-const SlideOver: React.FC<SlideOverProps> = ({ isOpen, onClose, title, children }) => {
+const SlideOver: React.FC<SlideOverProps> = ({ isOpen, onClose, title, headerActions, children }) => {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -39,6 +41,11 @@ const SlideOver: React.FC<SlideOverProps> = ({ isOpen, onClose, title, children 
                 <X className="h-6 w-6" aria-hidden="true" />
               </button>
             </div>
+            {headerActions && (
+              <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex items-center gap-2">
+                {headerActions}
+              </div>
+            )}
             <div className="flex-1 min-h-0 relative overflow-y-auto overscroll-contain px-4 py-6 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-10">
               {children}
             </div>

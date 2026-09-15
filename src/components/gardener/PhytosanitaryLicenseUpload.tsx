@@ -271,7 +271,7 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
           type="text" 
           value={licenseNumber}
           onChange={(e) => setLicenseNumber(e.target.value)}
-          className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+          className="w-full p-2 border border-gray-300 rounded-lg text-base"
           placeholder="Ej: ES-XXXXX"
           disabled={uploading}
         />
@@ -292,12 +292,11 @@ const PhytosanitaryLicenseUpload: React.FC<PhytosanitaryLicenseUploadProps> = ({
           <div className="relative">
             {!draftFile ? (
               <>
-                <input 
-                  type="file" 
+                <input
+                  type="file"
                   id="license-upload"
-                  accept="image/jpeg,image/png,image/jpg,.pdf" 
-                  capture="environment"
-                  className="hidden" 
+                  accept="image/jpeg,image/png,image/jpg,.pdf"
+                  className="hidden"
                   onChange={handleFileSelect}
                   disabled={uploading}
                 />

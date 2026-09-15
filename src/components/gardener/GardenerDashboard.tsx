@@ -11,6 +11,7 @@ import AvailabilityManager from './AvailabilityManager';
 import ProfileSettings from './ProfileSettings';
 import ChatWindow from '../chat/ChatWindow';
 import { useConfirmDialog } from '../common/ConfirmDialog';
+import InstallAppPrompt from '../common/InstallAppPrompt';
 import BookingRequestsManager from './BookingRequestsManager';
 import GardenerReviews from './GardenerReviews';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
@@ -379,6 +380,13 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
               </button>
               {/* Botón de flyer eliminado */}
               </div>
+          </div>
+
+          {/* Aviso de instalación (fallo 1, 2026-09-15): solo en móvil, entre el panel y
+              las reservas — en Mi Cuenta pasaba desapercibido. Se oculta sola en cuanto
+              el jardinero ya la tiene instalada. */}
+          <div className="md:hidden mb-8">
+            <InstallAppPrompt className="bg-white rounded-2xl shadow-lg p-5 sm:p-8" />
           </div>
 
           {/* Reservas */}

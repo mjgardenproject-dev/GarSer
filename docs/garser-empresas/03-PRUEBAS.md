@@ -6,8 +6,8 @@
 > Regla: una prueba que no se ha ejecutado se marca `⬜ no ejecutada`. **No se marca ✅ por
 > haberla escrito.** Si falla y se decide seguir igualmente, se marca ❌ y se explica por qué.
 
-**Última actualización:** 2026-09-20
-**Línea base:** 462 tests en verde / 68 ficheros · `tsc` 172 errores (preexistentes)
+**Última actualización:** 2026-09-23
+**Línea base:** 462 tests en verde / 68 ficheros · `tsc` 130 errores (preexistentes)
 
 ---
 
@@ -19,7 +19,7 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 |---|---|---|---|
 | R-01 | `npm test` ≥ 462 en verde | Automático | ⬜ |
 | R-02 | `npm run build` pasa | Automático | ⬜ |
-| R-03 | `npm run typecheck` no sube de 172 | Automático, informativo | ⬜ |
+| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ⬜ |
 | R-04 | Funnel completo de autónomo: servicio → fotos → precio → profesional → fecha → comisión → confirmación | Manual, en local | ⬜ |
 | R-05 | Reserva de autónomo: las horas se bloquean y se liberan igual que antes | Manual + SQL | ⬜ |
 | R-06 | Cambio de precio **con cambio de duración** aceptado: la agenda se redimensiona | Manual | ⬜ |

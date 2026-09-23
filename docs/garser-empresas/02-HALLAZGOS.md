@@ -6,14 +6,15 @@
 > Regla de la casa: un hallazgo sin `fichero:línea` no es un hallazgo, es una sospecha.
 > Las sospechas van a §3.
 
-**Última actualización:** 2026-09-20
+**Última actualización:** 2026-09-23
 
 ---
 
 ## 1. Hallazgos verificados
 
-Todos comprobados contra `/Users/javier/Downloads/GarSer-main 4` el 2026-09-20, sobre `main`
-en el commit `ed9fd6b`.
+Comprobados contra `/Users/javier/Downloads/GarSer-main 4` el 2026-09-20, sobre `main` en el
+commit `ed9fd6b`. **Revalidados el 2026-09-23 sobre `origin/main` `6eef75c`** (tras el merge
+#34, que no toca SQL ni Edge Functions): mismos resultados y mismas líneas en todos.
 
 ---
 
@@ -185,13 +186,15 @@ Va en la sección de acciones manuales de toda entrega que toque el motor.
 
 ### H-10 · `npm run typecheck` no sirve como señal de regresión — 🟢 Informativo
 
-**172 errores preexistentes**, concentrados en `AuthForm.tsx` (34) y `ServicesTab.tsx` (20).
+**130 errores preexistentes** (2026-09-23), concentrados en `ServicesTab.tsx` (12),
+`DetailsPage.tsx` (7) y `detailsPageDevSeeds.ts` (7). Eran 172 antes del merge #34, que dejó
+`AuthForm.tsx` sin errores de tipos (tenía 34).
 El build de Vite pasa porque no ejecuta `tsc`.
 
 La señal de regresión de este proyecto es **`npm test`: 462 en verde / 68 ficheros**.
 
-`AuthForm.tsx` se toca en F0, así que ahí sí conviene limpiar lo que estorbe — sin abrir una
-refactorización de deuda vieja.
+`AuthForm.tsx` se toca en F0 y **hoy tiene 0 errores de tipos**: la F0 debe dejarlo igual. Si
+la F0 introduce uno solo en ese fichero, es regresión suya, no deuda heredada.
 
 ---
 
@@ -220,8 +223,8 @@ esta es la respuesta.
 Cosas que parecen problemas pero **no se han comprobado**. No se citan como hechos.
 
 - **¿Hay solapes en `booking_blocks` en producción?** Si los hay, el índice único de F1 fallará
-  al crearse. **Hay que consultarlo antes de migrar.** No se puede comprobar ahora: el MCP de
-  Supabase no conecta.
+  al crearse. **Hay que consultarlo antes de migrar.** El MCP de Supabase conecta, pero al **local**:
+  la consulta tiene que hacerse contra producción, desde su panel.
 - **¿Está `availability_blocks` realmente poblada y coherente con `availability`?** Si se elige
   la opción A de H-01, da igual. Si se elige la B, hay que auditarlo antes.
 - **¿Qué pasa con las reservas de difusión (`booking_requests`) cuando el que responde es una

@@ -51,7 +51,7 @@ mismo cuando el proveedor es una persona.
 
 ### Regla 3 — El alcance es la fase, y solo la fase
 
-Este repositorio arrastra **172 errores de `tsc`** anteriores a este proyecto, y código que
+Este repositorio arrastra **130 errores de `tsc`** anteriores a este proyecto, y código que
 se puede mejorar en muchos sitios. **No es tu trabajo.**
 
 - ¿Has encontrado algo mal fuera de tu fase? → a `02-HALLAZGOS.md`, y sigues.
@@ -67,7 +67,7 @@ Una fase está terminada cuando:
 
 - [ ] `npm test` en verde, con **el mismo número o más** que la línea base.
 - [ ] `npm run build` pasa.
-- [ ] `npm run typecheck` no ha subido de 172 errores (informativo, no bloqueante).
+- [ ] `npm run typecheck` no ha subido de 130 errores (informativo, no bloqueante).
 - [ ] Las pruebas de la fase están escritas en `03-PRUEBAS.md` y ejecutadas.
 - [ ] `01-PLAN-Y-PROGRESO.md` actualizado con lo que se hizo de verdad.
 - [ ] Los hallazgos nuevos, en `02-HALLAZGOS.md`.
@@ -127,7 +127,7 @@ Cosas que ya han causado daño en este proyecto, o que lo causarían:
 | Escribir en `booking_blocks` desde el frontend | Las escrituras de reserva están revocadas a propósito (migración `20260713000001`). Todo por RPC `SECURITY DEFINER`. |
 | Consultar otra tabla dentro de una policy RLS sin `SECURITY DEFINER` | Provoca recursión infinita de policies. Ya pasó en este proyecto. |
 | Aceptar `company_id` como parámetro del cliente | Es el vector de suplantación principal. Se deriva siempre de `auth.uid()` o del token. |
-| Dar por bueno el esquema sin verificarlo | El MCP de Supabase no conecta. El esquema se lee de `supabase/migrations/` y de `src/types/generated/database.types.ts`. |
+| Dar por bueno el esquema sin verificarlo | El esquema se lee de `supabase/migrations/` y se contrasta contra el Supabase **local** vía MCP. Ojo: el MCP apunta al local, **nunca** tomes sus datos como datos de producción. |
 
 ---
 
@@ -163,11 +163,20 @@ Por orden:
 
 ## 6. Estado del entorno
 
-Cosas ciertas sobre esta máquina y este repositorio, a 2026-09-20:
+Cosas ciertas sobre esta máquina y este repositorio, a 2026-09-23:
 
-- **Rama:** el trabajo de GarSer Empresas necesita rama propia. No se trabaja en `main`.
-- **Otra sesión puede estar editando esta carpeta.** Comprueba `git status` al arrancar.
-- **MCP de Supabase: no conecta.** Todo el conocimiento del esquema sale del repositorio.
-- **Línea base de tests: 462 en verde / 68 ficheros** (2026-09-20).
-- **`tsc`: 172 errores preexistentes.** No es señal de regresión.
+- **Rama:** `feat/garser-empresas`, creada desde `origin/main` (`6eef75c`, tras el merge #34).
+  No se trabaja en `main`.
+- **Este es el único chat del proyecto.** El usuario lo decidió el 2026-09-23. Aun así, si al
+  arrancar ves cambios sin commitear que no son tuyos, para y pregunta.
+- **MCP de Supabase: conecta al Supabase LOCAL** (`http://127.0.0.1:54321`), no a producción.
+  Tiene 112 de las 113 migraciones del repo; solo falta `20260914121653` (imágenes de setos),
+  que no afecta a este proyecto. Sirve para verificar el esquema y probar RLS en local.
+  **No sirve para consultar datos de producción.**
+- **Línea base de tests: 462 en verde / 68 ficheros** (revalidada 2026-09-23).
+- **`tsc`: 130 errores preexistentes** (eran 172 antes del #34). No es señal de regresión.
+  `AuthForm.tsx`, que toca la F0, está en 0.
 - **Docker está colgado** → `supabase functions deploy --use-api`.
+- **Tu `main` local está desviado de `origin/main`:** conserva dos commits de documentación
+  que no entraron en el #34 (`ed9fd6b`, auditoría `2026-09-19-publico-movil`, y `1486dde`,
+  el original de estos documentos). No hagas `reset` de `main` sin preguntar.

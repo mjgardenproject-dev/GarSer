@@ -6,7 +6,7 @@
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
 **Estado global:** Fase 0 no empezada · Diseño cerrado · Sin código escrito
-**Última actualización:** 2026-09-20
+**Última actualización:** 2026-09-23
 **Línea base de tests:** 462 en verde / 68 ficheros
 
 ---
@@ -225,7 +225,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 
 | Fecha | Fase | Qué se hizo | Tests | Commit |
 |---|---|---|---|---|
-| 2026-09-20 | — | Auditoría, arquitectura y plan. Sin código. | 462 ✅ | (este) |
+| 2026-09-20 | — | Auditoría, arquitectura y plan. Sin código. | 462 ✅ | `1486dde` |
+| 2026-09-23 | — | Documentos llevados a `feat/garser-empresas` sobre `origin/main` (#34). Hallazgos y línea base revalidados: tests igual, `tsc` 172→130. MCP de Supabase conecta al local. Sin código. | 462 ✅ | (este) |
 
 ---
 
@@ -235,7 +236,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 
 Pendientes para cuando arranque la Fase 0:
 
-1. **Crear la rama** de GarSer Empresas desde `main`. No se trabaja en `main`.
-2. **Arreglar el MCP de Supabase** (no conecta) o confirmar que se trabaja solo contra las
-   migraciones del repositorio.
+1. ~~Crear la rama~~ → hecho: `feat/garser-empresas` desde `origin/main` (2026-09-23).
+2. **Consultar solapes en `booking_blocks` de producción** antes de la F1 (ver prueba F1-00).
+   El MCP de Supabase conecta, pero solo al local: esta consulta hay que hacerla desde el
+   panel de Supabase de producción.
 3. **Responder D1 y D2**, que bloquean las fases 3 y 4.

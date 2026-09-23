@@ -124,7 +124,7 @@ const InstallAppPrompt: React.FC<InstallAppPromptProps> = ({ className }) => {
             <button
               type="button"
               onClick={() => void handleInstallClick()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3 font-bold text-white shadow-lg shadow-green-600/20 transition-colors hover:bg-green-700 active:scale-[0.98] sm:w-auto"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white shadow-lg shadow-emerald-700/20 transition-colors hover:bg-emerald-800 active:scale-[0.98] sm:w-auto"
             >
               <Download className="h-5 w-5" aria-hidden="true" />
               Instalar app

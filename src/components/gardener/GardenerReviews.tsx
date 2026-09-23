@@ -114,7 +114,7 @@ const GardenerReviews = () => {
                 type="button"
                 onClick={() => void publish(editing)}
                 disabled={saving || !draft.trim()}
-                className="px-4 py-1.5 text-sm rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 disabled:opacity-50"
+                className="px-4 py-1.5 text-sm rounded-lg bg-emerald-700 text-white font-medium hover:bg-emerald-800 disabled:opacity-50"
               >
                 {saving ? 'Publicando…' : 'Publicar'}
               </button>

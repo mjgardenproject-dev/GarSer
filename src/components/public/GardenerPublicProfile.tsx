@@ -116,7 +116,7 @@ const GardenerPublicProfile: React.FC = () => {
         <div className="mt-8">
           <button
             onClick={handleReserve}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-semibold"
           >
             <Calendar className="w-5 h-5" /> Reservar con este jardinero
           </button>

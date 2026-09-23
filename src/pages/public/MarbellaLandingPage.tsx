@@ -86,15 +86,13 @@ const MarbellaLandingPage: React.FC = () => {
         <CustomerExperienceSections
           pageVariant="marbella"
           canResumeBooking={canResume}
-          showAccessCta
           showBookingsCta={false}
           onPrimaryCta={handleNewBooking}
           onResumeCta={() => navigate('/reservar')}
-          onAccessCta={() => navigate('/auth')}
         />
       </main>
 
-      <PublicFooter />
+      <PublicFooter showCoverageZones />
     </div>
   );
 };

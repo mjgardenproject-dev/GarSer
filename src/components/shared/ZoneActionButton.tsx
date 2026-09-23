@@ -26,7 +26,7 @@ export const ZoneActionButton: React.FC<ZoneActionButtonProps> = ({
             className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 mb-3 transition-colors ${
                 disabled
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                : 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-emerald-700 text-white hover:bg-emerald-800'
             }`}
         >
             {isAnalyzing ? (

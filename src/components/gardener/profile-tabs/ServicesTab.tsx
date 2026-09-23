@@ -202,7 +202,7 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
               disabled={!isDirty || saving}
               className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold transition-all ${
                 isDirty
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-sm hover:from-green-700 hover:to-emerald-700 active:scale-[0.98]'
+                  ? 'bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 active:scale-[0.98]'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
             >

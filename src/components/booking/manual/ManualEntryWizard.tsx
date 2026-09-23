@@ -277,7 +277,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setPhase(asksWaste ? 'waste' : 'summary')}
-              className="py-3 px-4 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+              className="py-3 px-4 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
             >
               {W.finishItems}
             </button>
@@ -335,7 +335,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
             type="button"
             onClick={goNextFromItem}
             disabled={showErrors && currentStepErrors.length > 0}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
           >
             {W.next}
             <ArrowRight className="w-4 h-4" aria-hidden />
@@ -345,7 +345,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setPhase('summary')}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
           >
             {W.continueToSummary}
             <ArrowRight className="w-4 h-4" aria-hidden />
@@ -359,7 +359,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
             type="button"
             onClick={confirm}
             disabled={(requireConsent && !consentChecked) || submitting}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
           >
             {submitting ? 'Guardando…' : (submitLabel || MANUAL_ENTRY_STRINGS.consent.confirmCta)}
           </button>

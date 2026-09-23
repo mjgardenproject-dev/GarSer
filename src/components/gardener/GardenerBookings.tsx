@@ -367,7 +367,7 @@ const GardenerBookings: React.FC = () => {
                     ) : canMarkGardenerFinished(booking) ? (
                       <button
                         onClick={() => setConfirmCompleteId(booking.id)}
-                        className="flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                        className="flex items-center px-4 py-2.5 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors text-sm font-medium"
                       >
                         <Check className="w-4 h-4 mr-2" />
                         He terminado
@@ -405,7 +405,7 @@ const GardenerBookings: React.FC = () => {
               <button
                 onClick={() => finishBooking(confirmCompleteId)}
                 disabled={completing}
-                className="w-full bg-green-600 text-white py-3 px-4 rounded-xl font-bold hover:bg-green-700 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+                className="w-full bg-emerald-700 text-white py-3 px-4 rounded-xl font-bold hover:bg-emerald-800 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
               >
                 {completing && <Loader2 className="w-4 h-4 animate-spin" />}
                 {completing ? 'Avisando…' : 'Sí, he terminado'}

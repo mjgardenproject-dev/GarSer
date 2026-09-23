@@ -66,7 +66,6 @@ const ProvidersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState<string>(bookingData.providerId);
   const [selectedDate, setSelectedDate] = useState<string>(bookingData.preferredDate || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`);
-  const [, setHoursAvailable] = useState<number[]>([]);
   const [calendarMonthDate, setCalendarMonthDate] = useState<Date>(new Date(Number(selectedDate.split('-')[0]), Number(selectedDate.split('-')[1]) - 1, Number(selectedDate.split('-')[2])));
   const [monthDays, setMonthDays] = useState<ProviderMonthDay[]>([]);
   const [validHours, setValidHours] = useState<number[]>([]);
@@ -81,6 +80,10 @@ const ProvidersPage: React.FC = () => {
   const [providersReloadToken, setProvidersReloadToken] = useState(0);
   const [emptyStateHint, setEmptyStateHint] = useState('');
   const reqIdRef = useRef<number>(0);
+  /** Contador propio para las horas: `reqIdRef` es del calendario y ambos vuelos ocurren
+   * a la vez al elegir jardinero, así que compartir contador haría que uno invalidara la
+   * respuesta buena del otro. */
+  const hoursReqIdRef = useRef<number>(0);
   const monthFormatter = useMemo(() => new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }), []);
 
   const [isPartialModalOpen, setIsPartialModalOpen] = useState(false);
@@ -280,7 +283,10 @@ const ProvidersPage: React.FC = () => {
 
   const rebuildMonth = async (providerId: string, monthStart: Date) => {
     setMonthLoading(true);
-    setHoursLoading(false);
+    // Aquí había un `setHoursLoading(false)`: apagaba el indicador de las horas, que es de
+    // loadValidHours y que este método no enciende. Con la petición de horas aún en vuelo,
+    // `validHours` seguía vacío y se pintaba un "No hay horas válidas" falso que se
+    // corregía solo un instante después.
     const rid = ++reqIdRef.current;
     try {
       const { quote, days } = await fetchProviderMonthDays({
@@ -312,6 +318,9 @@ const ProvidersPage: React.FC = () => {
 
   const loadValidHours = async (providerId: string, date: string) => {
     setHoursLoading(true);
+    // Misma guarda que ya usa rebuildMonth: al tocar varios días seguidos, la respuesta de
+    // un día anterior podía llegar la última y pisar las horas del día que se está mirando.
+    const rid = ++hoursReqIdRef.current;
     try {
       const { quote, validHours: nextHours } = await fetchProviderValidHours({
         bookingData,
@@ -319,16 +328,20 @@ const ProvidersPage: React.FC = () => {
         providerId,
         date,
       });
+      if (hoursReqIdRef.current !== rid) return;
       setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
       setValidHours(quote.availability?.validStartHours || nextHours);
       setSelectedHour(null);
       setAvailabilityError('');
     } catch {
+      if (hoursReqIdRef.current !== rid) return;
       setValidHours([]);
       setSelectedHour(null);
       setAvailabilityError('No se pudieron calcular las horas válidas. Reintenta.');
     } finally {
-      setHoursLoading(false);
+      // Solo la petición vigente apaga el indicador: si lo apagara una obsoleta, el bloque
+      // mostraría "no hay horas" mientras la buena sigue en camino.
+      if (hoursReqIdRef.current === rid) setHoursLoading(false);
     }
   };
 
@@ -337,7 +350,6 @@ const ProvidersPage: React.FC = () => {
       if (!selectedProvider) {
         setMonthDays([]);
         setValidHours([]);
-        setHoursAvailable([]);
         setSelectedHour(null);
         return;
       }
@@ -561,11 +573,6 @@ const ProvidersPage: React.FC = () => {
     providersReloadToken,
   ]);
 
-  // Cargar disponibilidad del jardinero seleccionado para la fecha elegida
-  useEffect(() => {
-    setHoursAvailable(validHours);
-  }, [selectedProvider, selectedDate]);
-
 
 
   const computeReservationTotal = (gardenerId: string) => {
@@ -633,52 +640,18 @@ const ProvidersPage: React.FC = () => {
     void loadValidHours(selectedProvider, selectedDate);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white shadow-sm border-b border-gray-200">
-          <div className="mx-auto grid w-full grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center gap-3 px-4 py-4 sm:max-w-md">
-            <div className="h-9 w-9 rounded-lg bg-gray-100" />
-            <div className="h-5 w-40 max-w-full justify-self-center rounded bg-gray-200" />
-            <div className="h-9 w-9" />
-          </div>
-        </div>
-        <div className="bg-white">
-          <div className="mx-auto w-full px-4 py-3 sm:max-w-md">
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <span>Paso 4 de 5</span>
-              <div className="flex-1 bg-gray-200 rounded-full h-1 w-24">
-                <div className="bg-green-600 h-1 rounded-full" style={{ width: '80%' }} />
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md">
-          <div className="mb-4 grid gap-3" aria-live="polite" aria-busy="true">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm animate-pulse">
-                <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-full bg-gray-200" />
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-4 w-32 rounded bg-gray-200" />
-                    <div className="h-3 w-20 rounded bg-gray-100" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm animate-pulse">
-            <div className="mb-4 h-4 w-40 rounded bg-gray-200" />
-            <div className="grid grid-cols-7 gap-2">
-              {Array.from({ length: 14 }).map((_, index) => (
-                <div key={index} className="mx-auto h-10 w-10 rounded-full bg-gray-100" />
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  /**
+   * Antes, cualquier `loading` sustituía la página ENTERA por un esqueleto. Como el
+   * efecto que carga jardineros depende también de `selectedDate`, tocar un día del
+   * calendario desmontaba la cabecera, la lista y el propio calendario que el cliente
+   * acababa de tocar. Ahora se distingue:
+   *  - primera carga (aún no hay nada en pantalla): esqueleto de la lista;
+   *  - recarga (ya hay jardineros): la lista anterior se mantiene visible y atenuada
+   *    mientras llega la nueva, sin mover ni desmontar el resto de la pantalla.
+   * No cambia ninguna petición: sólo lo que se pinta mientras llega la respuesta.
+   */
+  const isFirstProvidersLoad = loading && providers.length === 0;
+  const isRefreshingProviders = loading && providers.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -744,8 +717,35 @@ const ProvidersPage: React.FC = () => {
             </div>
         )}
 
-        {/* No providers message */}
-        {!loading && providers.length === 0 ? (
+        {/* Primera carga: esqueleto sólo en el hueco de la lista, con la misma forma que
+            las tarjetas reales para que no salte el layout al llegar los datos. */}
+        {isFirstProvidersLoad ? (
+          <div
+            className="flex gap-3 overflow-hidden"
+            aria-live="polite"
+            aria-busy="true"
+            aria-label="Cargando profesionales disponibles"
+          >
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={index}
+                className="min-w-[240px] rounded-2xl border-2 border-gray-200 bg-white p-4 shadow-sm animate-pulse"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-full bg-gray-200" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-4 w-32 rounded bg-gray-200" />
+                    <div className="h-3 w-20 rounded bg-gray-100" />
+                  </div>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <div className="h-3 w-full rounded bg-gray-100" />
+                  <div className="h-3 w-2/3 rounded bg-gray-100" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !loading && providers.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center max-w-sm mx-auto mt-8">
             <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
               <Sprout className="w-10 h-10 text-green-600" />
@@ -784,7 +784,12 @@ const ProvidersPage: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex gap-3 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            aria-busy={isRefreshingProviders}
+            className={`flex gap-3 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden transition-opacity duration-200 motion-reduce:transition-none ${
+              isRefreshingProviders ? 'opacity-50 pointer-events-none' : 'opacity-100'
+            }`}
+          >
             {providers.map((p) => {
               const selected = selectedProvider === p.user_id;
               const coverage = getPalmCoverage(p.user_id);
@@ -963,7 +968,14 @@ const ProvidersPage: React.FC = () => {
             </div>
             <div className="grid grid-cols-7 gap-2">
               {monthLoading ? (
-                Array.from({ length: 42 }).map((_, i) => (
+                // Mismo número de celdas que pintará el mes real (huecos iniciales + días
+                // del mes). Con 42 fijas el bloque encogía al llegar los datos y el
+                // contenido de debajo daba un salto.
+                Array.from({
+                  length:
+                    ((new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth(), 1).getDay() || 7) - 1) +
+                    new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth() + 1, 0).getDate(),
+                }).map((_, i) => (
                   <div key={i} className="w-10 h-10 rounded-full bg-gray-200 animate-pulse mx-auto" />
                 ))
               ) : (
@@ -986,7 +998,7 @@ const ProvidersPage: React.FC = () => {
                             setSelectedDate(d.date);
                           }}
                           aria-label={`Seleccionar ${d.date}`}
-                          className={`w-10 h-10 rounded-full flex items-center justify-center border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${d.disabled ? 'cursor-not-allowed opacity-40 border-gray-200 bg-gray-50 text-gray-400' : selected ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-800 border-gray-300 hover:bg-green-50'}`}
+                          className={`w-10 h-10 rounded-full flex items-center justify-center border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${d.disabled ? 'cursor-not-allowed opacity-40 border-gray-200 bg-gray-50 text-gray-400' : selected ? 'bg-emerald-700 text-white border-green-600' : 'bg-white text-gray-800 border-gray-300 hover:bg-green-50'}`}
                         >
                           {d.day}
                         </button>
@@ -1001,7 +1013,9 @@ const ProvidersPage: React.FC = () => {
 
           {/* Horas disponibles: fila horizontal */}
           <div className="mb-2 text-sm font-medium text-gray-900">Horas disponibles:</div>
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          {/* Altura reservada: los chips miden 40px y el mensaje de "sin horas" ~20px, así
+              que al alternar entre ambos el bloque saltaba. */}
+          <div className="flex min-h-[40px] items-center gap-2 overflow-x-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {hoursLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="w-20 h-10 rounded-xl bg-gray-200 animate-pulse flex-shrink-0" />
@@ -1017,7 +1031,7 @@ const ProvidersPage: React.FC = () => {
                     type="button"
                     onClick={() => { setSelectedHour(h); handleSelectStartHour(h); }}
                     aria-pressed={isSelected}
-                  className={`px-4 py-2 rounded-xl text-sm border flex-shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${isSelected ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 border-gray-300 hover:border-green-400 hover:bg-green-50'}`}
+                  className={`px-4 py-2 rounded-xl text-sm border flex-shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${isSelected ? 'bg-emerald-700 text-white border-green-600' : 'bg-white text-gray-700 border-gray-300 hover:border-green-400 hover:bg-green-50'}`}
                   >
                     {`${String(h).padStart(2,'0')}:00`}
                   </button>
@@ -1049,7 +1063,7 @@ const ProvidersPage: React.FC = () => {
               bookingData.providerId !== selectedProvider ||
               bookingData.quoteAvailability?.selectedSlot?.date !== selectedDate
             }
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] motion-reduce:transform-none transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+            className="w-full bg-emerald-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] motion-reduce:transform-none transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
             {selectedProvider 
               ? 'Confirmar jardinero'

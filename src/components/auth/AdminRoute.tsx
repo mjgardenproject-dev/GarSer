@@ -91,7 +91,7 @@ const AdminRoute: React.FC<AdminRouteProps> = ({
           </p>
           <button
             onClick={() => window.history.back()}
-            className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors"
+            className="bg-emerald-700 text-white px-4 py-2 rounded-md hover:bg-emerald-800 transition-colors"
           >
             Volver
           </button>

@@ -665,7 +665,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         <button
                           onClick={() => respondToRequest(request.id, 'accept')}
                           disabled={responding === request.id}
-                          className="px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center flex-1 sm:flex-none h-10"
+                          className="px-3 py-2 text-sm bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center flex-1 sm:flex-none h-10"
                         >
                           {responding === request.id ? (
                             <>

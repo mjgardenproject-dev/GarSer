@@ -153,7 +153,8 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 - [ ] **3.1b — Paridad manual/fotos en palmeras.** *(Añadida el 2026-08-22: en la primera pasada
   esta prueba destapó dos fallos reales.)* Declara **la misma palmera** por los dos caminos:
-  primero con fotos y después con "Prefiero introducir los datos manualmente", eligiendo la misma
+  primero con fotos y después con la opción "Escribo los datos" del selector de la parte
+  superior del paso 3 *(hasta 2026-09-20 se llamaba "Prefiero introducir los datos manualmente")*, eligiendo la misma
   especie, banda de altura, estado y sin extras. Prueba también la **banda más alta** ("Más de X m").
   - ✅ **Éxito:** por los dos caminos aparecen **los mismos jardineros** y el precio es **idéntico**,
     y cuadra con la configuración del jardinero (base de la banda + retirada de restos si procede,

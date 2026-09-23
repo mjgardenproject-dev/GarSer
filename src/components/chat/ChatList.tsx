@@ -244,7 +244,7 @@ const ChatList: React.FC = () => {
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-xs text-gray-400">{lastMessageTimeLabel(chat.last_message_time)}</span>
                       {chat.unread_count > 0 && (
-                        <span className="min-w-[20px] h-5 px-1.5 bg-green-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                        <span className="min-w-[20px] h-5 px-1.5 bg-emerald-700 text-white text-xs font-bold rounded-full flex items-center justify-center">
                           {chat.unread_count > 99 ? '99+' : chat.unread_count}
                         </span>
                       )}

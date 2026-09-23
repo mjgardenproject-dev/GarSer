@@ -140,7 +140,7 @@ export function useConfirmDialog() {
                       type="button"
                       onClick={() => void handleCancel()}
                       disabled={busy}
-                      className="w-full bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-600/20 py-3 px-4 rounded-xl font-bold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+                      className="w-full bg-emerald-700 text-white hover:bg-emerald-800 shadow-lg shadow-emerald-700/20 py-3 px-4 rounded-xl font-bold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
                     >
                       {state.cancelLabel}
                     </button>

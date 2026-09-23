@@ -452,7 +452,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         <div className="space-x-2">
                           <button
                             onClick={() => updateBookingStatus(booking.id, 'confirmed')}
-                            className="px-4 py-3 sm:py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                            className="px-4 py-3 sm:py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors text-sm font-medium"
                           >
                             Confirmar
                           </button>
@@ -478,7 +478,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                         ) : canMarkGardenerFinished(booking) ? (
                           <button
                             onClick={() => updateBookingStatus(booking.id, 'finished')}
-                            className="px-4 py-3 sm:py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+                            className="px-4 py-3 sm:py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors text-sm font-medium"
                           >
                             He terminado
                           </button>

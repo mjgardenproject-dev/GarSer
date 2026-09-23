@@ -392,7 +392,7 @@ const HedgePricingConfigurator: React.FC<Props> = ({ value, initialConfig, onCha
           <button
             type="button"
             onClick={toggleSpecialist}
-            className={`h-11 min-h-[44px] px-4 rounded-lg text-xs font-semibold border ${config.specialist_enabled ? 'bg-green-600 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-200'}`}
+            className={`h-11 min-h-[44px] px-4 rounded-lg text-xs font-semibold border ${config.specialist_enabled ? 'bg-emerald-700 text-white border-green-600' : 'bg-gray-100 text-gray-700 border-gray-200'}`}
           >
             {config.specialist_enabled ? 'Activado' : 'Desactivado'}
           </button>

@@ -622,9 +622,9 @@ const GardenerApplicationWizard: React.FC = () => {
           <div className="flex items-center justify-between">
             <button onClick={prev} disabled={step===1} className="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200 inline-flex items-center gap-2 disabled:opacity-50"><ChevronLeft className="w-4 h-4" /><span>Anterior</span></button>
             {step < 6 ? (
-              <button onClick={next} disabled={!isStepValid(step)} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 inline-flex items-center gap-2"><span>Siguiente</span><ChevronRight className="w-4 h-4" /></button>
+              <button onClick={next} disabled={!isStepValid(step)} className="px-4 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-800 disabled:opacity-50 inline-flex items-center gap-2"><span>Siguiente</span><ChevronRight className="w-4 h-4" /></button>
             ) : (
-              <button onClick={submit} disabled={!declTruth || !acceptTerms || loading} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 inline-flex items-center gap-2"><Check className="w-4 h-4" /><span>{loading ? 'Enviando...' : 'Enviar solicitud'}</span></button>
+              <button onClick={submit} disabled={!declTruth || !acceptTerms || loading} className="px-4 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-800 disabled:opacity-50 inline-flex items-center gap-2"><Check className="w-4 h-4" /><span>{loading ? 'Enviando...' : 'Enviar solicitud'}</span></button>
             )}
           </div>
           {/* Explicar qué falta en vez de solo deshabilitar el botón */}

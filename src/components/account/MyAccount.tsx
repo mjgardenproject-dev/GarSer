@@ -153,7 +153,7 @@ function MyAccount() {
             <button
               onClick={saveAvatar}
               disabled={!avatarFile || savingAvatar}
-              className="px-3 py-3 sm:py-2 bg-green-600 text-white rounded-lg disabled:opacity-50 text-sm font-medium"
+              className="px-3 py-3 sm:py-2 bg-emerald-700 text-white rounded-lg disabled:opacity-50 text-sm font-medium"
             >
               Guardar
             </button>
@@ -186,7 +186,7 @@ function MyAccount() {
                       toast.error('No se pudo copiar');
                     }
                   }}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800"
                 >
                   <Copy className="w-4 h-4" />
                   Copiar
@@ -252,7 +252,7 @@ function MyAccount() {
                  <button
                    onClick={confirmPasswordReset}
                    disabled={sendingReset}
-                   className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                   className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                  >
                    {sendingReset ? (
                      <>Enviando...</>

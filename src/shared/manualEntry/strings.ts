@@ -8,16 +8,18 @@
 
 export const MANUAL_ENTRY_STRINGS = {
   choice: {
-    heading: '¿Cómo quieres calcular tu presupuesto?',
-    subheading: 'Elige la opción que mejor te venga. Podrás cambiar de opción en cualquier momento sin perder lo que ya hayas hecho.',
+    heading: '¿Cómo calculamos tu presupuesto?',
+    /** Va debajo de las tarjetas y en texto menor: tranquiliza, pero no debe ocupar
+     * el primer pliegue del móvil por delante de la tarea real. */
+    subheading: 'Puedes cambiar de opción cuando quieras sin perder lo que ya hayas hecho.',
     photo: {
-      title: 'Analizar mi jardín con fotos',
+      title: 'Con fotos',
       badge: 'Recomendado',
-      description: 'Sube fotos y nuestra IA mide tu jardín. Presupuesto más preciso y rápido.',
+      description: 'La IA mide tu jardín. Más rápido y preciso.',
     },
     manual: {
-      title: 'Prefiero introducir los datos manualmente',
-      description: 'Responde unas preguntas sencillas sobre tu jardín. Ideal si no estás en casa ahora mismo.',
+      title: 'Escribo los datos',
+      description: 'Respondes unas preguntas sencillas.',
     },
   },
   wizard: {

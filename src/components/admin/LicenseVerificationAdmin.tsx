@@ -270,7 +270,7 @@ const LicenseVerificationAdmin: React.FC = () => {
                 onClick={() => handleAction('approved')}
                 disabled={processing || (!signedUrl && !docError) || !expiresAt}
                 title={!expiresAt ? 'Indica antes la fecha de caducidad' : undefined}
-                className="px-6 py-2.5 bg-green-600 text-white hover:bg-green-700 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-green-600/20"
+                className="px-6 py-2.5 bg-emerald-700 text-white hover:bg-emerald-800 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-700/20"
               >
                 <CheckCircle className="w-5 h-5" />
                 Aprobar Licencia

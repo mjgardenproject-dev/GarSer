@@ -2506,43 +2506,79 @@ const DetailsPage: React.FC = () => {
     }
   };
 
-  const getServiceContent = () => {
+  /**
+   * `description` es la única frase que el cliente necesita leer para saber qué hacer;
+   * `tips` son las recomendaciones para que la foto salga mejor. Iban todas en un mismo
+   * párrafo de ~60 palabras que se comía medio móvil antes de poder tocar nada. No se
+   * pierde nada: los consejos siguen en la misma pantalla, plegados (mismo patrón que
+   * ManualEntrySummary.tsx).
+   */
+  const getServiceContent = (): { title: string; description: string; tips?: string[] } => {
     const defaultContent = {
         title: 'Fotos de tu jardín',
         description: 'Las fotos ayudan a los jardineros a entender mejor tu espacio.'
     };
-    
+
     if (!debugService) return defaultContent;
-    
+
     const lower = debugService.toLowerCase();
     if (lower.includes('palmera')) {
         return {
             title: 'Fotos de tus palmeras',
-            description: 'Sube 1-3 fotos por cada tipo de palmera: la palmera entera (desde la base del tronco hasta la corona) y, si puedes, un detalle de la corona. Hazlas de día, con el sol a tu espalda y sin recortar la copa. Truco: si alguien se pone al lado de la palmera calculamos la altura con más precisión. Si tienes varias iguales en especie, tamaño y estado, basta una foto: luego confirmas cuántas son.'
+            description: 'Sube 1-3 fotos por cada tipo de palmera: la palmera entera, desde la base del tronco hasta la corona.',
+            tips: [
+              'Si puedes, añade un detalle de la corona.',
+              'Hazlas de día, con el sol a tu espalda y sin recortar la copa.',
+              'Truco: si alguien se pone al lado de la palmera calculamos la altura con más precisión.',
+              'Si tienes varias iguales en especie, tamaño y estado, basta una foto: luego confirmas cuántas son.',
+            ],
         };
     }
     if (lower.includes('césped') || lower.includes('cesped')) {
         return {
             title: 'Fotos de tu césped',
-            description: 'Sube 1-3 fotos por zona: el césped completo desde una esquina (que se vean los bordes) y, si puedes, un detalle de la altura de la hierba. Hazlas de día y con el sol a tu espalda. Truco: si en la foto sale una puerta, valla o mesa de jardín calculamos los metros con más precisión. Después del análisis podrás confirmar la superficie y el estado.'
+            description: 'Sube 1-3 fotos por zona: el césped completo desde una esquina, que se vean los bordes.',
+            tips: [
+              'Si puedes, añade un detalle de la altura de la hierba.',
+              'Hazlas de día y con el sol a tu espalda.',
+              'Truco: si en la foto sale una puerta, valla o mesa de jardín calculamos los metros con más precisión.',
+              'Después del análisis podrás confirmar la superficie y el estado.',
+            ],
         };
     }
     if (lower.includes('seto')) {
         return {
             title: 'Fotos de tus setos',
-            description: 'Sube 1-3 fotos por cara: el seto completo desde 3-5 m (Cara A es la delantera y obligatoria; Cara B solo si también quieres recortar la trasera). Hazlas de día y con el sol a tu espalda. Truco: si alguien se pone al lado del seto calculamos la altura y la longitud con más precisión. Después del análisis podrás confirmar las medidas y cuántas caras recortar.'
+            description: 'Sube 1-3 fotos por cara: el seto completo desde 3-5 m.',
+            tips: [
+              'Cara A es la delantera y obligatoria; Cara B solo si también quieres recortar la trasera.',
+              'Hazlas de día y con el sol a tu espalda.',
+              'Truco: si alguien se pone al lado del seto calculamos la altura y la longitud con más precisión.',
+              'Después del análisis podrás confirmar las medidas y cuántas caras recortar.',
+            ],
         };
     }
     if (lower.includes('árbol') || lower.includes('arbol')) {
         return {
             title: 'Fotos de los árboles',
-            description: 'Sube 1-3 fotos por cada árbol o grupo de árboles iguales: el árbol entero (desde la base del tronco hasta la punta de la copa), de día y sin recortar la copa. Truco: si alguien se pone al lado del árbol calculamos su tamaño con más precisión. Si tienes varios árboles parecidos, basta una foto: luego confirmas cuántos son.'
+            description: 'Sube 1-3 fotos por cada árbol o grupo de árboles iguales: el árbol entero, desde la base del tronco hasta la punta de la copa.',
+            tips: [
+              'Hazlas de día y sin recortar la copa.',
+              'Truco: si alguien se pone al lado del árbol calculamos su tamaño con más precisión.',
+              'Si tienes varios árboles parecidos, basta una foto: luego confirmas cuántos son.',
+            ],
         };
     }
     if (lower.includes('planta') || lower.includes('arbusto')) {
         return {
             title: 'Fotos de tus plantas y arbustos',
-            description: 'Sube 1-3 fotos por cada macizo o grupo de plantas: el macizo completo desde 3-5 m y, si puedes, un detalle del follaje. Hazlas de día y con el sol a tu espalda. Truco: deja una silla o el cubo de basura junto al macizo — así calculamos la superficie con más precisión. Si tienes macizos separados, añade un grupo por cada uno.'
+            description: 'Sube 1-3 fotos por cada macizo o grupo de plantas: el macizo completo desde 3-5 m.',
+            tips: [
+              'Si puedes, añade un detalle del follaje.',
+              'Hazlas de día y con el sol a tu espalda.',
+              'Truco: deja una silla o el cubo de basura junto al macizo — así calculamos la superficie con más precisión.',
+              'Si tienes macizos separados, añade un grupo por cada uno.',
+            ],
         };
     }
     if (lower.includes('limpieza') || lower.includes('desbroce') || lower.includes('hierbas')) {
@@ -4631,17 +4667,31 @@ const analyzeTreeGroup = async (id: string) => {
 
         {/* Photo Upload */}
         <div className="mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900">
+          <div className="flex items-baseline justify-between gap-3 mb-1">
+            <h2 className="text-xl font-bold text-gray-900 leading-tight">
                 {serviceContent.title}
             </h2>
             {serviceFlags.showsPhotoCounter && (
-                <span className="text-sm text-gray-500">{photos.length}/5</span>
+                <span className="shrink-0 text-sm tabular-nums text-gray-500">{photos.length}/5</span>
             )}
           </div>
-          <p className="text-gray-600 text-sm mb-4">
+          <p className="text-gray-600 text-sm leading-snug">
             {serviceContent.description}
           </p>
+          {serviceContent.tips?.length ? (
+            <details className="mt-2 mb-4">
+              <summary className="cursor-pointer rounded text-xs font-medium text-green-700 hover:text-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]">
+                Consejos para que salga mejor
+              </summary>
+              <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-relaxed text-gray-500 list-disc marker:text-gray-300">
+                {serviceContent.tips.map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            </details>
+          ) : (
+            <div className="mb-4" />
+          )}
           {isDevAnalysisSeedEnabled ? (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -4686,7 +4736,7 @@ const analyzeTreeGroup = async (id: string) => {
                                      </p>
                                      <button 
                                          onClick={addLawnZone}
-                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                                         className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-medium"
                                      >
                                          + Añadir primera zona
                                      </button>
@@ -4717,7 +4767,7 @@ const analyzeTreeGroup = async (id: string) => {
                                          className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
                                             isAnyLawnZoneAnalyzing
                                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                             : 'bg-green-600 text-white hover:bg-green-700'
+                                             : 'bg-emerald-700 text-white hover:bg-emerald-800'
                                          }`}
                                      >
                                          {isAnyLawnZoneAnalyzing ? (
@@ -4755,7 +4805,7 @@ const analyzeTreeGroup = async (id: string) => {
                                      </p>
                                      <button 
                                          onClick={addHedgeZone}
-                                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4"
+                                         className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-medium mt-4"
                                      >
                                          + Añadir primera zona
                                      </button>
@@ -4992,7 +5042,7 @@ const analyzeTreeGroup = async (id: string) => {
                                          className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
                                             hedgeAnalyzingZoneIds.size > 0
                                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                             : 'bg-green-600 text-white hover:bg-green-700'
+                                             : 'bg-emerald-700 text-white hover:bg-emerald-800'
                                          }`}
                                      >
                                          {hedgeAnalyzingZoneIds.size > 0 ? (
@@ -5025,7 +5075,7 @@ const analyzeTreeGroup = async (id: string) => {
                                      <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
                                          Sube una foto por cada tipo de palmera diferente para estimar la poda.
                                      </p>
-                                     <button onClick={addPalmGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de palmeras</button>
+                                     <button onClick={addPalmGroup} className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-medium mt-4">+ Añadir grupo de palmeras</button>
                                  </div>
                              )}
                              {(bookingData.palmGroups || []).map((zone, idx) => {
@@ -5363,7 +5413,7 @@ const analyzeTreeGroup = async (id: string) => {
                                          className={`w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
                                              isBatchAnalyzing
                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                               : 'bg-green-600 text-white hover:bg-green-700'
+                                               : 'bg-emerald-700 text-white hover:bg-emerald-800'
                                          }`}
                                      >
                                          {isBatchAnalyzing ? (
@@ -5396,7 +5446,7 @@ const analyzeTreeGroup = async (id: string) => {
                                      <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
                                          Añade cada árbol o grupo de árboles para estimar el tiempo de poda.
                                      </p>
-                                     <button onClick={addTreeGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de árboles</button>
+                                     <button onClick={addTreeGroup} className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-medium mt-4">+ Añadir grupo de árboles</button>
                                  </div>
                              )}
                              {(bookingData.treeGroups || []).map((zone, idx) => {
@@ -5637,7 +5687,7 @@ const analyzeTreeGroup = async (id: string) => {
                                          className={`w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
                                              isBatchAnalyzing
                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                               : 'bg-green-600 text-white hover:bg-green-700'
+                                               : 'bg-emerald-700 text-white hover:bg-emerald-800'
                                          }`}
                                      >
                                          {isBatchAnalyzing ? (
@@ -5670,7 +5720,7 @@ const analyzeTreeGroup = async (id: string) => {
                                      <p className="text-gray-500 text-sm mb-4 max-w-xs mx-auto">
                                          Añade cada grupo o macizo de plantas de manera independiente.
                                      </p>
-                                     <button onClick={addShrubGroup} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir grupo de plantas</button>
+                                     <button onClick={addShrubGroup} className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-medium mt-4">+ Añadir grupo de plantas</button>
                                  </div>
                              )}
                              {(bookingData.shrubGroups || []).map((group, idx) => {
@@ -5850,7 +5900,7 @@ const analyzeTreeGroup = async (id: string) => {
                                          className={`w-full py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
                                             shrubAnalyzingZoneIds.size > 0
                                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                             : 'bg-green-600 text-white hover:bg-green-700'
+                                             : 'bg-emerald-700 text-white hover:bg-emerald-800'
                                          }`}
                                      >
                                          {shrubAnalyzingZoneIds.size > 0 ? (
@@ -5881,7 +5931,7 @@ const analyzeTreeGroup = async (id: string) => {
                           <div className="text-center py-8 bg-white rounded-xl border border-gray-200 shadow-sm">
                             <Bug className="w-12 h-12 text-green-500 mx-auto mb-3" />
                             <h3 className="text-lg font-medium text-gray-900 mb-1">Añade zona a tratar</h3>
-                            <button onClick={addPhytosanitaryZone} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium mt-4">+ Añadir zona</button>
+                            <button onClick={addPhytosanitaryZone} className="px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-medium mt-4">+ Añadir zona</button>
                           </div>
                         )}
                         {(bookingData.phytosanitaryZones || []).map((zone, idx) => {
@@ -6473,7 +6523,7 @@ const analyzeTreeGroup = async (id: string) => {
                     className={`w-full sm:w-auto px-6 py-2.5 rounded-lg shadow-sm font-medium transition-colors flex items-center justify-center gap-2 ${
                         analyzing || photosToAnalyze.size === 0
                         ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none border border-gray-200'
-                        : 'bg-green-600 hover:bg-green-700 text-white shadow-green-200'
+                        : 'bg-emerald-700 hover:bg-emerald-800 text-white shadow-green-200'
                     }`}
                   >
                     {analyzing ? (
@@ -6552,7 +6602,7 @@ const analyzeTreeGroup = async (id: string) => {
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => setShowWasteModal(false)}
-                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold shadow-sm transition-colors"
+                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold shadow-sm transition-colors"
               >
                 Mantener retirada
               </button>
@@ -6584,7 +6634,7 @@ const analyzeTreeGroup = async (id: string) => {
                   <>
                     <button
                       onClick={closeConfirm}
-                      className="w-full bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-600/20 py-3 px-4 rounded-xl font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+                      className="w-full bg-emerald-700 text-white hover:bg-emerald-800 shadow-lg shadow-emerald-700/20 py-3 px-4 rounded-xl font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
                     >
                       {confirmState.cancelLabel}
                     </button>
@@ -6643,7 +6693,7 @@ const analyzeTreeGroup = async (id: string) => {
               getPhytosanitaryValidation: (zone) => getPhytosanitaryValidation(zone as any),
               isPhytosanitaryZoneAnalyzed: (zone) => isPhytosanitaryZoneAnalyzed(zone as any),
             })}
-            className="w-full bg-green-600 hover:bg-green-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
             {getDetailsContinueLabel(bookingData, serviceFlags)}
           </button>

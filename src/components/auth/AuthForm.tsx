@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Eye, EyeOff, User, Briefcase, Check, Mail, Lock, UploadCloud, Plus, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, User, Briefcase, Check, Mail, Lock, AlertTriangle } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import EmailConfirmationModal from './EmailConfirmationModal';
+import GarserLogo from '../common/GarserLogo';
 import { supabase } from '../../lib/supabase';
 
 const schema = yup.object({
@@ -49,63 +50,6 @@ const AuthForm = () => {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
 
-  type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-  const [step, setStep] = useState<Step>(1);
-  const [progress, setProgress] = useState(0);
-  const [fullName, setFullName] = useState('');
-  const [phoneLocal, setPhoneLocal] = useState('');
-  const [cityZone, setCityZone] = useState('');
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string>('');
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
-  const [certFiles, setCertFiles] = useState<File[]>([]);
-  const [cropScale, setCropScale] = useState<number>(1.0);
-  const [offsetX, setOffsetX] = useState<number>(0);
-  const [offsetY, setOffsetY] = useState<number>(0);
-  const [dragging, setDragging] = useState<boolean>(false);
-  const dragStart = useRef<{x:number;y:number} | null>(null);
-
-  const handleCropMouseDown = (e: React.MouseEvent) => {
-    dragStart.current = { x: e.clientX, y: e.clientY };
-    setDragging(true);
-  };
-  const handleCropMouseMove = (e: React.MouseEvent) => {
-    if (!dragging || !dragStart.current) return;
-    const dx = e.clientX - dragStart.current.x;
-    const dy = e.clientY - dragStart.current.y;
-    setOffsetX(prev => prev + dx);
-    setOffsetY(prev => prev + dy);
-    dragStart.current = { x: e.clientX, y: e.clientY };
-  };
-  const handleCropMouseUp = () => {
-    setDragging(false);
-    dragStart.current = null;
-  };
-
-  const cropToCircleDataUrl = async (): Promise<string | null> => {
-    const src = photoPreviewUrl || (photoFile ? URL.createObjectURL(photoFile) : null);
-    if (!src) return null;
-    const img = new Image();
-    img.src = src;
-    await new Promise<void>((resolve) => { img.onload = () => resolve(); });
-    const size = 512;
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.clearRect(0,0,size,size);
-    ctx.beginPath();
-    ctx.arc(size/2, size/2, size/2, 0, Math.PI*2);
-    ctx.closePath();
-    ctx.clip();
-    ctx.save();
-    ctx.translate(size/2 + offsetX, size/2 + offsetY);
-    ctx.scale(cropScale, cropScale);
-    ctx.drawImage(img, -img.width/2, -img.height/2);
-    ctx.restore();
-    return canvas.toDataURL('image/png');
-  };
-  const [logoError, setLogoError] = useState(false);
   useEffect(() => {
     const flag = localStorage.getItem('passwordChanged');
     if (flag) {
@@ -113,62 +57,6 @@ const AuthForm = () => {
       localStorage.removeItem('passwordChanged');
     }
   }, []);
-
-  const SERVICES = [
-    'Corte de césped',
-    'Poda de setos',
-    'Poda de árboles pequeños',
-    'Limpieza y recogida de restos',
-    'Mantenimiento de plantas',
-    'Instalación de plantas / jardinería decorativa',
-    'Desbroce',
-    'Limpieza de palmeras altas',
-    'Poda de palmeras'
-  ];
-  const TOOLS = [
-    'Cortacésped',
-    'Desbrozadora',
-    'Tijeras de podar profesionales',
-    'Sopladora',
-    'Sierra eléctrica / motosierra',
-    'Vehículo para transportar restos',
-    'Ninguna (solo mano de obra)',
-    'Serrucho para palmeras',
-    'Pértiga o telescópica',
-    'Azoleta'
-  ];
-  const [servicesSel, setServicesSel] = useState<string[]>([]);
-  const [otherServices, setOtherServices] = useState('');
-  const [toolsSel, setToolsSel] = useState<string[]>([]);
-  const [expYears, setExpYears] = useState<number>(0);
-  const [expYearsInput, setExpYearsInput] = useState<string>('0');
-  const [expRange, setExpRange] = useState<string>('');
-  const [proofFiles, setProofFiles] = useState<File[]>([]);
-  const [experienceType, setExperienceType] = useState<'companies'|'clients'|'none'|''>('');
-  const [proofNotes, setProofNotes] = useState('');
-  
-  const [certText, setCertText] = useState('');
-  const [declTruth, setDeclTruth] = useState<boolean>(false);
-  const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
-
-  useEffect(() => {
-    const total = 6;
-    const effectiveStep = step >= 6 ? (step - 1) : step;
-    const p = Math.round(((effectiveStep - 1) / total) * 100);
-    setProgress(p);
-  }, [step]);
-
-  const toggleService = (s: string) => setServicesSel(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
-  const toggleTool = (t: string) => setToolsSel(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
-  const addProofFiles = (files: FileList | null) => {
-    if (!files) return;
-    setProofFiles(prev => [...prev, ...Array.from(files)]);
-  };
-  const addCertFiles = (files: FileList | null) => {
-    if (!files) return;
-    setCertFiles(prev => [...prev, ...Array.from(files)]);
-  };
-  const fileToDataUrl = (file: File) => new Promise<string>((resolve) => { const r = new FileReader(); r.onload = () => resolve(typeof r.result === 'string' ? r.result : ''); r.onerror = () => resolve(''); r.readAsDataURL(file); });
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
@@ -212,17 +100,6 @@ const AuthForm = () => {
       }
     }
   }, [forceClientOnly, requestedRole]);
-
-  const isStepValid = (s: Step) => {
-    if (s === 1) return fullName.trim().length > 0 && phoneLocal.trim().length > 0 && cityZone.trim().length > 0 && !!photoPreviewUrl;
-    if (s === 2) return servicesSel.length > 0; // "Otros" es opcional
-    if (s === 3) return toolsSel.length > 0;
-    if (s === 4) return (expYears >= 0) && (proofNotes.trim().length > 0); // Adjuntos opcionales
-    if (s === 5) return true;
-    if (s === 6) return true;
-    if (s === 7) return declTruth && acceptTerms;
-    return true;
-  };
 
   const handleForgotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,53 +146,13 @@ const AuthForm = () => {
           toast.error('Las contraseñas no coinciden');
           return;
         }
-        if (roleToUse === 'client') {
-          await signUp(data.email, data.password, roleToUse);
-          setRegisteredEmail(data.email);
-          setShowEmailModal(true);
-          reset();
-        } else {
-          const toDataUrl = async (file: File | null) => {
-            if (!file) return null;
-            const r = new FileReader();
-            const p = new Promise<string>((resolve) => { r.onload = () => resolve(typeof r.result === 'string' ? r.result : ''); r.onerror = () => resolve(''); });
-            r.readAsDataURL(file);
-            const d = await p;
-            return d || null;
-          };
-          const photoData = await cropToCircleDataUrl();
-          const proofData: string[] = [];
-          for (const f of proofFiles) { const d = await toDataUrl(f); if (d) proofData.push(d); }
-          const certData: string[] = [];
-          for (const f of certFiles) { const d = await toDataUrl(f); if (d) certData.push(d); }
-          const workedFor = false;
-          const canProveDerived = proofData.length > 0 || proofNotes.trim().length > 0;
-          const applicationPayload = {
-            full_name: fullName,
-            phone: phoneLocal,
-            email: data.email,
-            city_zone: cityZone,
-            professional_photo_url: photoData,
-            services: servicesSel,
-            other_services: otherServices,
-            tools_available: toolsSel,
-            experience_years: expYears || null,
-            experience_range: null,
-            worked_for_companies: workedFor,
-            can_prove: canProveDerived,
-            proof_photos: proofData,
-            test_grass_frequency: null,
-            test_hedge_season: null,
-            test_pest_action: null,
-            certification_text: certText || null,
-            declaration_truth: declTruth,
-            accept_terms: acceptTerms
-          };
-          await signUp(data.email, data.password, 'gardener', applicationPayload);
-          setRegisteredEmail(data.email);
-          setShowEmailModal(true);
-          reset();
-        }
+        // El alta real de jardinero (servicios, herramientas, experiencia, fotos) ocurre
+        // después de confirmar el email, en /apply (GardenerApplicationWizard). Aquí solo
+        // se crea la cuenta con email/contraseña/rol para las dos vías.
+        await signUp(data.email, data.password, roleToUse);
+        setRegisteredEmail(data.email);
+        setShowEmailModal(true);
+        reset();
       }
     } catch (error: any) {
       console.error('❌ Error en registro:', error);
@@ -335,31 +172,16 @@ const AuthForm = () => {
     }
   };
 
-  // Si ya hay usuario autenticado y estamos en /auth, redirigir automáticamente al dashboard
-  // Evita que la pantalla de login permanezca visible tras un inicio de sesión correcto
-  useEffect(() => {
-    // No tenemos acceso directo a `user` aquí, pero este componente solo se muestra
-    // cuando no hay usuario según AppContent; como refuerzo, redirigimos tras login via navigate arriba.
-  }, []);
-
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6">
       <div className="w-full max-w-md space-y-8">
         {/* Logo & Header */}
         <div className="text-center">
           <div className="flex justify-center mb-6">
-            {logoError ? (
-              <span className="text-3xl font-bold text-gray-900 tracking-tight">
-                GarSer<span className="text-green-600">.es</span>
-              </span>
-            ) : (
-              <img
-                src="/garser-logo.svg"
-                alt="GarSer.es — Garden Service"
-                className="h-16 w-auto mx-auto drop-shadow-sm"
-                onError={() => setLogoError(true)}
-              />
-            )}
+            <GarserLogo
+              className="h-16 w-auto mx-auto drop-shadow-sm"
+              textClassName="text-3xl font-bold text-gray-900 tracking-tight"
+            />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
             {showForgotPassword ? 'Recuperar contraseña' : (isLogin ? '¡Hola de nuevo!' : 'Crea tu cuenta')}
@@ -388,7 +210,7 @@ const AuthForm = () => {
             <button
               type="submit"
               disabled={sendingForgot}
-              className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-green-600/20 transition-all disabled:opacity-50"
+              className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-emerald-700/20 transition-all disabled:opacity-50"
             >
               Enviar email
             </button>
@@ -573,7 +395,7 @@ const AuthForm = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-green-600/20 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-emerald-700/20 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -654,7 +476,7 @@ const AuthForm = () => {
                  <button
                    onClick={confirmForgotReset}
                    disabled={sendingForgot}
-                   className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                   className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                  >
                    {sendingForgot ? (
                      <>Enviando...</>

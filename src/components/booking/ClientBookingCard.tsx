@@ -236,7 +236,7 @@ const ClientBookingCard = ({
               type="button"
               onClick={() => onAcceptPriceChange?.(booking)}
               disabled={busy}
-              className="flex-1 bg-green-600 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors inline-flex items-center justify-center gap-2"
+              className="flex-1 bg-emerald-700 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors inline-flex items-center justify-center gap-2"
             >
               {busy ? (
                 <>
@@ -284,7 +284,7 @@ const ClientBookingCard = ({
                 type="button"
                 onClick={() => onConfirmService(booking)}
                 disabled={busy}
-                className="flex-1 bg-green-600 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+                className="flex-1 bg-emerald-700 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
               >
                 {busy ? 'Confirmando…' : 'Sí, confirmar'}
               </button>
@@ -372,7 +372,7 @@ const ClientBookingCard = ({
           <button
             type="button"
             onClick={() => onOpenChat(booking)}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
           >
             <MessageCircle className="w-4 h-4" aria-hidden="true" />
             Hablar con {gardenerFirstName}

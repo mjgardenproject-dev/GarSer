@@ -4,6 +4,7 @@ import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings, Star } f
 import { useNavigate, useLocation } from 'react-router-dom';
 import { fetchCurrentUserProfileRole, isAdminRole, type AppProfileRole } from '../../lib/adminAccess';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
+import GarserLogo from '../common/GarserLogo';
 
 interface NavbarProps {
   applicationStatus?: 'pending' | 'active' | 'denied' | null;
@@ -11,7 +12,6 @@ interface NavbarProps {
 
 const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   const { user, signOut } = useAuth();
-  const [logoError, setLogoError] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userRole, setUserRole] = useState<AppProfileRole>(null);
   const unreadChats = useUnreadChats();
@@ -121,20 +121,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
               className={`flex-shrink-0 flex items-center focus:outline-none ${shouldHideNav ? 'cursor-default' : ''}`}
               aria-label="Ir al dashboard"
             >
-              {/* Logo GarSer.es con fallback a texto */}
-              {logoError ? (
-                <span className="ml-2 text-xl font-bold text-gray-900">
-                  GarSer
-                  <span className="text-green-600">.es</span>
-                </span>
-              ) : (
-                <img
-                  src="/garser-logo.svg"
-                  alt="GarSer.es — Garden Service"
-                  className="h-8 w-auto"
-                  onError={() => setLogoError(true)}
-                />
-              )}
+              <GarserLogo className="h-8 w-auto" textClassName="ml-2 text-xl font-bold text-gray-900" />
             </button>
           </div>
 
@@ -157,7 +144,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
                     <Icon className="w-4 h-4 mr-2" />
                     {item.label}
                     {!!(item as { badge?: number }).badge && (
-                      <span className="ml-1.5 min-w-[18px] h-[18px] px-1 bg-green-600 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
+                      <span className="ml-1.5 min-w-[18px] h-[18px] px-1 bg-emerald-700 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
                         {(item as { badge?: number }).badge! > 99 ? '99+' : (item as { badge?: number }).badge}
                       </span>
                     )}
@@ -188,7 +175,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
             ) : (
               <button
                 onClick={() => navigate('/auth')}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-2 px-4 text-sm rounded-xl font-bold shadow-lg shadow-green-600/20 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                className="bg-emerald-700 hover:bg-emerald-800 text-white py-2 px-4 text-sm rounded-xl font-bold shadow-lg shadow-emerald-700/20 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
                 aria-label="Iniciar sesión"
               >
                 Iniciar sesión
@@ -225,7 +212,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
                     <Icon className="w-4 h-4 mr-2" />
                     {item.label}
                     {!!(item as { badge?: number }).badge && (
-                      <span className="ml-auto min-w-[18px] h-[18px] px-1 bg-green-600 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
+                      <span className="ml-auto min-w-[18px] h-[18px] px-1 bg-emerald-700 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
                         {(item as { badge?: number }).badge! > 99 ? '99+' : (item as { badge?: number }).badge}
                       </span>
                     )}

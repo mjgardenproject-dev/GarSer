@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** Fase 0 en investigación (rediseñada por H-11/H-12) · Entorno local listo · Sin código escrito
+**Estado global:** 🟨 Fase 0 en curso — parte servidor ✅ hecha y verificada · parte frontend pendiente
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 462 en verde / 68 ficheros
 
@@ -100,7 +100,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 
 | # | Pregunta | Bloquea | Por qué |
 |---|---|---|---|
-| D8 | **¿Se arregla H-11 ya en producción, fuera de GarSer Empresas?** | — | Es una escalada a admin que casi seguro está abierta hoy en `garser.es`. La política §0 dice «nada a producción hasta el final»; esto es una excepción que decide el usuario. |
+| D8 | ~~¿Se arregla H-11 ya en producción?~~ | — | **Respondida (2026-09-23): no es urgente**, `garser.es` aún no tiene usuarios reales. Se arregla con F0 el día de la fusión (§6). **Si antes de la fusión entran usuarios reales, esta decisión debe revisarse.** |
 | D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. **Decisión del usuario (2026-09-23): se diseña el formulario al llegar a la F3**, adaptado a lo que GarSer necesita saber de una empresa. No bloquea nada antes. |
 
 ---|---|---|---|
@@ -120,7 +120,7 @@ Leyenda: ⬜ no empezada · 🟨 en curso · ✅ cerrada · ⛔ bloqueada
 ### BLOQUE 0 — Cimientos
 *No entrega funcionalidad visible. Es obligatorio y es donde está el riesgo de regresión.*
 
-#### ⬜ F0 — Una sola fuente de verdad para el rol
+#### 🟨 F0 — Una sola fuente de verdad para el rol
 
 **Problema.** Hoy el tipo de cuenta se deduce de cinco sitios a la vez: `user_metadata.role`,
 `user_metadata.requested_role`, `localStorage.signup_role`, `profiles.role`, la existencia de
@@ -133,12 +133,18 @@ más en `AuthForm.tsx`. Una de esas fuentes (`localStorage`) la controla el clie
 > escalada a admin. El orden dentro de la fase pasa a ser: primero perfil garantizado y
 > seguro en el servidor, después unificar la lectura en el frontend.
 
-**Trabajo — parte servidor (primero):**
-- [ ] Disparador en `auth.users` que crea el perfil al registrarse. Rol tomado de la
-      intención del registro, **restringido a `client` | `gardener`**; nunca `admin`.
-- [ ] Cerrar la creación de perfiles con rol privilegiado desde el cliente (H-11).
-- [ ] Relleno: perfil para toda cuenta que hoy no lo tenga.
-- [ ] Ampliar `profiles_role_check` (ya existe con 3 valores) a los 5: `+company`, `+employee`.
+**Trabajo — parte servidor (primero):** ✅ **hecho** (migración `20260923120000_empresas_f0_profile_on_signup.sql`)
+- [x] Disparador `trg_provision_profile` en `auth.users` que crea el perfil al registrarse.
+      Rol desde la intención del registro, **restringido a `client` | `gardener`**; nunca `admin`.
+- [x] Cerrada la creación de perfiles desde el cliente (H-11): `REVOKE INSERT` + fuera las
+      dos policies de INSERT + guarda `prevent_role_escalation_on_insert`.
+- [x] Relleno: perfil para toda cuenta sin él; aprobados con `gardener_profiles` → `gardener`.
+- [x] `profiles_role_check` ampliado a 5 valores.
+- [x] **Imprevisto (H-15):** `search_path` fijado en `prevent_duplicate_profiles` y
+      `auto_provision_corporate_admin`. Sin esto, el disparador nuevo rompía todos los registros.
+- [x] `supabase/seed.sql`: los perfiles de prueba ahora se **completan** (`UPDATE`) en vez de
+      crearse, porque ya los crea el disparador.
+- [x] Verificación repetible: `node scripts/garser-empresas/verify-f0-db.mjs` → 7/7.
 
 **Trabajo — parte frontend (después):**
 - [ ] Hook `useAccount()`: resuelve el tipo de cuenta desde `profiles.role` y nada más.
@@ -300,7 +306,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | — | Documentos llevados a `feat/garser-empresas` sobre `origin/main` (#34). Hallazgos y línea base revalidados: tests igual, `tsc` 172→130. MCP de Supabase conecta al local. Sin código. | 462 ✅ | `3e6d84b` |
 | 2026-09-23 | — | Respuestas del usuario a D1–D6 incorporadas al plan, hallazgos y pruebas. Nueva pendiente D7. Sin código. | 462 ✅ | `a1fa702` |
 | 2026-09-23 | — | D4 precisada, D7 aplazada a F3, política «todo en local hasta el final» (§0, §6). Sin código. | 462 ✅ | `2e94af9` |
-| 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | (este) |
+| 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
+| 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | (este) |
 
 ---
 
@@ -350,5 +357,6 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | Fase | Qué | Notas |
 |---|---|---|
+| F0 | **Aplicar `20260923120000_empresas_f0_profile_on_signup.sql` cierra H-11** (escalada a admin) y arregla el alta del correo corporativo (H-15). Antes, ejecutar la consulta 1 de §5b: si aparece algún admin que no sea el del usuario, retirarlo | Si `garser.es` recibe usuarios reales antes de la fusión, adelantar esto (D8) |
 | F1 | Consultar solapes en `booking_blocks` de producción **antes** de aplicar la migración | Si los hay, son dobles reservas reales: resolver a mano primero |
 | — | Traer a esta rama lo que haya entrado en `main` | Ver §0 |

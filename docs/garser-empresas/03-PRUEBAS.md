@@ -17,9 +17,9 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Cómo | Estado |
 |---|---|---|---|
-| R-01 | `npm test` ≥ 462 en verde | Automático | ⬜ |
-| R-02 | `npm run build` pasa | Automático | ⬜ |
-| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ⬜ |
+| R-01 | `npm test` ≥ 462 en verde | Automático | ✅ F0-servidor: 462 |
+| R-02 | `npm run build` pasa | Automático | ✅ F0-servidor |
+| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ✅ F0-servidor: 130 |
 | R-04 | Funnel completo de autónomo: servicio → fotos → precio → profesional → fecha → comisión → confirmación | Manual, en local | ⬜ |
 | R-05 | Reserva de autónomo: las horas se bloquean y se liberan igual que antes | Manual + SQL | ⬜ |
 | R-06 | Cambio de precio **con cambio de duración** aceptado: la agenda se redimensiona | Manual | ⬜ |
@@ -50,11 +50,16 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F0-07 | Borrar `localStorage` y recargar estando logueado | El rol se resuelve igual | ⬜ |
 | F0-08 | Poner `localStorage.signup_role = 'gardener'` en una cuenta de cliente | **Se ignora.** Sigue siendo cliente | ⬜ |
 | F0-09 | `UPDATE profiles SET role='admin'` desde el cliente vía PostgREST | Denegado | ✅ ya hoy (2026-09-23): lo bloquea `prevent_role_escalation` |
-| F0-10 | **Cuenta nueva registrada por API crea su perfil con `role='admin'`** (H-11) | Denegado | ❌ hoy **se permite** (HTTP 201). Debe pasar tras F0 |
-| F0-11 | Cuenta nueva registrada por la web **tiene perfil** nada más registrarse (H-12) | Perfil creado por el servidor | ⬜ |
-| F0-12 | Registro con intención «jardinero» → perfil `gardener`; resto → `client` | Correcto | ⬜ |
-| F0-13 | Registro por API con `data.role = 'admin'` | Perfil `client`, nunca `admin` | ⬜ |
-| F0-14 | Tu correo corporativo sigue siendo admin al registrarse | Admin | ⬜ |
+| F0-10 | **Cuenta nueva registrada por API crea su perfil con `role='admin'`** (H-11) | Denegado | ✅ 2026-09-23 — HTTP 403 con y sin perfil previo (antes de la migración: HTTP 201) |
+| F0-11 | Cuenta nueva registrada por la web **tiene perfil** nada más registrarse (H-12) | Perfil creado por el servidor | ✅ 2026-09-23 (registro por API; por la web, en la parte frontend) |
+| F0-12 | Registro con intención «jardinero» → perfil `gardener`; resto → `client` | Correcto | ✅ 2026-09-23 |
+| F0-13 | Registro por API con `data.role = 'admin'` | Perfil `client`, nunca `admin` | ✅ 2026-09-23 |
+| F0-14 | Tu correo corporativo sigue siendo admin al registrarse | Admin | ✅ 2026-09-23 (antes de F0 fallaba con HTTP 500: H-15) |
+| F0-15 | `supabase db reset` desde cero, con la semilla | Sin errores; 3 cuentas con su rol | ✅ 2026-09-23 |
+| F0-16 | Relleno: cuentas sin perfil reciben uno con el rol correcto | 0 cuentas sin perfil | ✅ 2026-09-23 (en transacción deshecha) |
+
+> Las pruebas F0-09 a F0-14 se repiten con `node scripts/garser-empresas/verify-f0-db.mjs`.
+> Se niega a correr contra nada que no sea `127.0.0.1`.
 
 > F0-08 y F0-09 son las que justifican la fase. Si pasan, el rol ha dejado de ser
 > manipulable desde el navegador.
@@ -202,7 +207,10 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 
 | # | Prueba en producción | Fase origen | Estado |
 |---|---|---|---|
-| — | — | — | — |
+| P-F0-1 | Tras aplicar la migración: registrarse con un correo nuevo y comprobar en el SQL Editor que tiene fila en `profiles` con rol `client` | F0 | ⬜ |
+| P-F0-2 | Registrarse como jardinero → fila en `profiles` con rol `gardener` | F0 | ⬜ |
+| P-F0-3 | Consulta 1 de `01-PLAN-Y-PROGRESO.md` §5b: solo aparece el admin legítimo | F0 | ⬜ |
+| P-F0-4 | `select count(*) from auth.users u where not exists (select 1 from profiles p where p.user_id=u.id)` → 0 | F0 | ⬜ |
 
 ---
 

@@ -201,7 +201,7 @@ la F0 introduce uno solo en ese fichero, es regresión suya, no deuda heredada.
 
 ---
 
-### H-11 · Cualquier usuario nuevo puede darse el rol de administrador — 🔴🔴 CRÍTICO · Afecta a producción
+### H-11 · Cualquier usuario nuevo puede darse el rol de administrador — 🔴🔴 CRÍTICO · Resuelto en local (F0), pendiente en producción hasta la fusión
 
 **Reproducido en local el 2026-09-23**, sobre una BD reconstruida con las mismas 113
 migraciones que producción:
@@ -236,7 +236,7 @@ por `PATCH` — el disparador lo rechaza con *«No tienes permisos para modifica
 
 ---
 
-### H-12 · Nada crea el perfil de un usuario nuevo — 🔴 Cambia el diseño de F0
+### H-12 · Nada crea el perfil de un usuario nuevo — 🟢 Resuelto en F0 (migración `20260923120000`)
 
 **Evidencia.** En la BD local reconstruida, el único disparador sobre `auth.users` es
 `trg_provision_admin` → `auto_provision_corporate_admin()`, que solo actúa si el correo es el
@@ -250,13 +250,37 @@ perfil, la web adivina el rol desde `user_metadata` y `localStorage`. Y signific
 plan original de F0 («leer el rol solo de `profiles.role`») rompería a todos los usuarios
 nuevos**, que no tienen fila.
 
-**Duda que solo resuelve producción.** Puede que en producción exista un disparador creado a
-mano desde el panel que no está en las migraciones (desincronización). Hay que comprobarlo
-con la consulta de solo lectura de `01-PLAN-Y-PROGRESO.md` §5 antes de cerrar el diseño de F0.
+**Confirmado en producción (2026-09-23)** por el usuario con la consulta 3 de
+`01-PLAN-Y-PROGRESO.md` §5b: el único disparador sobre `auth.users` es `trg_provision_admin`.
+No hay ninguno creado a mano. Producción y migraciones coinciden: nada crea el perfil.
 
 **Consecuencia para F0:** antes de unificar la lectura del rol, **todo usuario tiene que
 tener perfil, creado por el servidor** al registrarse, con un rol que solo puede ser
 `client` o `gardener` (nunca `admin`), más un relleno para las cuentas que hoy no tienen.
+
+---
+
+### H-15 · El alta con el correo corporativo falla hoy, y el arreglo de H-12 la habría roto para todos — 🟢 Resuelto en F0
+
+**Evidencia.** Registrar `mjgardenproject@gmail.com` en local devolvía HTTP 500 *«Database
+error saving new user»*. En el log de Postgres: `supabase_auth_admin … relation "profiles"
+does not exist`.
+
+**Causa.** `prevent_duplicate_profiles()` (disparador `BEFORE INSERT` en `profiles`) consulta
+`profiles` **sin esquema y sin `search_path` propio**. Durante el registro la sesión es la de
+`supabase_auth_admin`, cuyo `search_path` es `auth`, así que no encuentra la tabla y aborta el
+alta entera. `auto_provision_corporate_admin()` tampoco fijaba `search_path`.
+
+**Por qué importa.** Hoy solo afectaba al correo corporativo, el único alta que creaba perfil
+(en producción ya existe esa cuenta, por eso no se notó). Pero el disparador nuevo de F0 crea
+perfil en **todos** los registros: sin este arreglo, **nadie habría podido registrarse**. Lo
+detectó la verificación de F0 (prueba F0-14) antes de aplicar la migración.
+
+**Arreglo.** La migración de F0 fija `search_path = public` en ambas funciones (§1b). No
+cambia lo que hacen.
+
+**Lección para el resto del proyecto:** toda función que dispare durante el registro corre
+como `supabase_auth_admin`. Debe llevar `SET search_path = public` o nombres con esquema.
 
 ---
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAccount } from '../../contexts/AccountContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
 import { Camera, Lock, Trash2, Copy, AlertTriangle, CheckCircle2, UploadCloud, Link as LinkIcon, CheckCircle } from 'lucide-react';
@@ -10,6 +11,7 @@ import InstallAppPrompt from '../common/InstallAppPrompt';
 
 function MyAccount() {
   const { user, signOut } = useAuth();
+  const { role: accountRole } = useAccount();
   const navigate = useNavigate();
   const [myProfile, setMyProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -120,7 +122,8 @@ function MyAccount() {
     }
   };
 
-  const effectiveRole = myProfile?.role || ((user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client');
+  // Tipo de cuenta desde profiles.role (F0 de GarSer Empresas), no desde user_metadata.
+  const effectiveRole = myProfile?.role || accountRole || 'client';
 
   return (
     <div>

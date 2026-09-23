@@ -17,17 +17,20 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Cómo | Estado |
 |---|---|---|---|
-| R-01 | `npm test` ≥ 462 en verde | Automático | ✅ F0-servidor: 462 |
-| R-02 | `npm run build` pasa | Automático | ✅ F0-servidor |
-| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ✅ F0-servidor: 130 |
+| R-01 | `npm test` ≥ 462 en verde | Automático | ✅ F0 cerrada: 473 |
+| R-02 | `npm run build` pasa | Automático | ✅ F0 cerrada |
+| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ✅ F0 cerrada: 129 |
 | R-04 | Funnel completo de autónomo: servicio → fotos → precio → profesional → fecha → comisión → confirmación | Manual, en local | ⬜ |
 | R-05 | Reserva de autónomo: las horas se bloquean y se liberan igual que antes | Manual + SQL | ⬜ |
 | R-06 | Cambio de precio **con cambio de duración** aceptado: la agenda se redimensiona | Manual | ⬜ |
 | R-07 | Cancelación con política de 24 h | Manual | ⬜ |
 | R-08 | Incidencia y no-show | Manual | ⬜ |
-| R-09 | Cada tipo de cuenta entra a su panel: cliente, autónomo, admin | Manual, 3 cuentas | ⬜ |
-| R-10 | Un autónomo sin empresa no ve **nada** de empresas en ninguna pantalla | Manual | ⬜ |
+| R-09 | Cada tipo de cuenta entra a su panel: cliente, autónomo, admin | Manual, 3 cuentas | ✅ F0 (y además jardinero sin solicitud, pendiente y rechazado) |
+| R-10 | Un autónomo sin empresa no ve **nada** de empresas en ninguna pantalla | Manual | ✅ F0 (aún no existe nada de empresas) |
 
+> **R-04 a R-08 no se han ejecutado en F0** a propósito: F0 no toca ni reservas, ni agenda, ni
+> precios, ni pagos. Se ejecutan al cerrar **F1**, que sí toca la agenda.
+>
 > R-06 es nueva respecto a auditorías anteriores: `resize_booking_schedule()` es de
 > 2026-09-13 y toca la misma agenda que la Fase 1. Ver hallazgo H-03.
 
@@ -41,17 +44,21 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F0-01 | Cliente entra en `/dashboard` | Panel de cliente | ⬜ |
-| F0-02 | Autónomo activo entra en `/dashboard` | Panel de jardinero | ⬜ |
-| F0-03 | Autónomo con solicitud pendiente | Redirige a `/status` | ⬜ |
-| F0-04 | Autónomo con solicitud denegada | Redirige a `/status` con el motivo | ⬜ |
-| F0-05 | Usuario con intención de jardinero sin solicitud | Redirige a `/apply` | ⬜ |
-| F0-06 | Admin entra en `/dashboard` | Redirige a `/admin/dashboard` | ⬜ |
-| F0-07 | Borrar `localStorage` y recargar estando logueado | El rol se resuelve igual | ⬜ |
-| F0-08 | Poner `localStorage.signup_role = 'gardener'` en una cuenta de cliente | **Se ignora.** Sigue siendo cliente | ⬜ |
+| F0-01 | Cliente entra en `/dashboard` | Panel de cliente | ✅ 2026-09-23 (navegador, móvil: barra «Inicio») |
+| F0-02 | Autónomo activo entra en `/dashboard` | Panel de jardinero | ✅ 2026-09-23 (móvil: barra «Panel», antes «Inicio»: H-16) |
+| F0-03 | Autónomo con solicitud pendiente | Redirige a `/status` | ✅ 2026-09-23 («Solicitud en revisión») |
+| F0-04 | Autónomo con solicitud denegada | Redirige a `/status` con el motivo | ✅ 2026-09-23 (motivo visible) |
+| F0-05 | Usuario con intención de jardinero sin solicitud | Redirige a `/apply` | ✅ 2026-09-23 (registrado **desde la web**; `/dashboard` también lleva a `/apply`) |
+| F0-06 | Admin entra en `/dashboard` | Redirige a `/admin/dashboard` | ✅ 2026-09-23 |
+| F0-07 | Borrar `localStorage` y recargar estando logueado | El rol se resuelve igual | ✅ 2026-09-23 — reformulada: la sesión de Supabase vive en `localStorage`, así que borrarlo cierra sesión; al volver a entrar, el rol es el mismo. La prueba que importa es F0-08 |
+| F0-08 | Poner `localStorage.signup_role = 'gardener'` en una cuenta de cliente | **Se ignora.** Sigue siendo cliente | ✅ 2026-09-23 (sigue en su panel; `/bookings` muestra la lista de cliente) |
 | F0-09 | `UPDATE profiles SET role='admin'` desde el cliente vía PostgREST | Denegado | ✅ ya hoy (2026-09-23): lo bloquea `prevent_role_escalation` |
 | F0-10 | **Cuenta nueva registrada por API crea su perfil con `role='admin'`** (H-11) | Denegado | ✅ 2026-09-23 — HTTP 403 con y sin perfil previo (antes de la migración: HTTP 201) |
-| F0-11 | Cuenta nueva registrada por la web **tiene perfil** nada más registrarse (H-12) | Perfil creado por el servidor | ✅ 2026-09-23 (registro por API; por la web, en la parte frontend) |
+| F0-11 | Cuenta nueva registrada por la web **tiene perfil** nada más registrarse (H-12) | Perfil creado por el servidor | ✅ 2026-09-23 (por API y **por el formulario de la web**, jardinero y cliente) |
+| F0-17 | Monitor de roles con un jardinero **pendiente** (rol `gardener`, sin `gardener_profiles`) | No lo marca | ✅ 2026-09-23 (la regla antigua lo habría degradado) |
+| F0-18 | Monitor de roles con un jardinero **aprobado** puesto a `client` | Lo marca y «Corregir» lo deja en `gardener` | ✅ 2026-09-23 |
+| F0-19 | Registro desde la web sin errores de consola | Ninguno | ✅ 2026-09-23 (tras quitar un aviso falso de una consulta obsoleta) |
+| F0-20 | Pruebas unitarias nuevas: `accountRole` (2), `AccountContext` (6, incluida la carrera entre sesiones), `BottomNav` (3) | Verdes | ✅ 2026-09-23 |
 | F0-12 | Registro con intención «jardinero» → perfil `gardener`; resto → `client` | Correcto | ✅ 2026-09-23 |
 | F0-13 | Registro por API con `data.role = 'admin'` | Perfil `client`, nunca `admin` | ✅ 2026-09-23 |
 | F0-14 | Tu correo corporativo sigue siendo admin al registrarse | Admin | ✅ 2026-09-23 (antes de F0 fallaba con HTTP 500: H-15) |
@@ -211,6 +218,8 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F0-2 | Registrarse como jardinero → fila en `profiles` con rol `gardener` | F0 | ⬜ |
 | P-F0-3 | Consulta 1 de `01-PLAN-Y-PROGRESO.md` §5b: solo aparece el admin legítimo | F0 | ⬜ |
 | P-F0-4 | `select count(*) from auth.users u where not exists (select 1 from profiles p where p.user_id=u.id)` → 0 | F0 | ⬜ |
+| P-F0-5 | Entrar como jardinero aprobado en el móvil: la barra inferior dice «Panel» | F0 | ⬜ |
+| P-F0-6 | Panel de admin → Usuarios → Monitor de Roles: 0 inconsistencias, y ningún jardinero pendiente marcado | F0 | ⬜ |
 
 ---
 

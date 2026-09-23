@@ -137,10 +137,10 @@ const AuthForm = () => {
         toast.success('¡Bienvenido de vuelta!');
         navigate(redirectTo || '/dashboard');
       } else {
+        // El rol viaja en los metadatos del alta y el servidor crea el perfil con él
+        // (trg_provision_profile). Ya no se guarda en localStorage: era una segunda fuente
+        // de verdad que controlaba el propio usuario.
         const roleToUse = selectedRole;
-        try {
-          localStorage.setItem('signup_role', roleToUse);
-        } catch {}
         const confirm = watch('confirmPassword');
         if (!confirm || confirm !== data.password) {
           toast.error('Las contraseñas no coinciden');

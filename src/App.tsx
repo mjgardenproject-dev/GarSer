@@ -16,7 +16,7 @@ import LegacyCheckoutRedirect from './components/client/LegacyCheckoutRedirect';
 import NotFoundPage from './pages/public/NotFoundPage';
 import PublicHomePage from './pages/public/PublicHomePage';
 import { supabase } from './lib/supabase';
-import { fetchCurrentUserProfileRole, AppProfileRole } from './lib/adminAccess';
+import { useAccount } from './contexts/AccountContext';
 import { hasWizardResume } from './utils/bookingResumeStorage';
 
 import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
@@ -90,6 +90,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
   const AppContent = () => {
     const { user, loading: authLoading } = useAuth();
+    // Tipo de cuenta: fuente única `profiles.role` (F0 de GarSer Empresas). Sustituye a las
+    // deducciones desde user_metadata y localStorage.signup_role, que controla el usuario.
+    const { role: accountRole, loading: accountLoading } = useAccount();
+    const isGardenerAccount = accountRole === 'gardener';
     const location = useLocation();
     const navigate = useNavigate();
     const isAuthPage = location.pathname === '/auth' || location.pathname === '/confirmar-servicio';
@@ -105,16 +109,14 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
   const [statusLoaded, setStatusLoaded] = useState(false);
-  const [profileRole, setProfileRole] = useState<AppProfileRole>(null);
 
   useEffect(() => {
-    // Si está cargando auth, esperamos
-    if (authLoading) return;
+    // Si está cargando auth o el tipo de cuenta, esperamos
+    if (authLoading || accountLoading) return;
 
     // Si no hay usuario, reseteamos y marcamos como cargado
     if (!user?.id) {
         setApplicationStatus(null);
-        setProfileRole(null);
         setStatusLoaded(true);
         return;
     }
@@ -125,9 +127,6 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
     const fetchStatus = async () => {
       try {
-        const currentRole = await fetchCurrentUserProfileRole(user.id);
-        setProfileRole(currentRole);
-
         // Optimización: Hacemos una única llamada compuesta o paralela si es posible
         // Primero verificamos perfil activo (es lo más común para usuarios establecidos)
         
@@ -162,12 +161,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
         setDenialReason(latestApplication?.review_comment || '');
 
-        const metaIntent = (user as any)?.user_metadata?.requested_role === 'gardener' || (user as any)?.user_metadata?.role === 'gardener';
-        const lsRole = (()=>{ try { return localStorage.getItem('signup_role'); } catch { return null; } })();
-        const gardenerIntent = metaIntent || lsRole === 'gardener';
-        
-        // Si no hay solicitud pero hay intención -> Draft/Null
-        if (!latestApplication && gardenerIntent) {
+        // Si no hay solicitud pero la cuenta es de jardinero -> Draft/Null
+        if (!latestApplication && isGardenerAccount) {
             // Check LS for optimistic updates just in case
             const lsStatus = (()=>{ try { return localStorage.getItem('gardenerApplicationStatus') as any; } catch { return null; } })();
             const lsJust = (()=>{ try { return !!localStorage.getItem('gardenerApplicationJustSubmitted'); } catch { return false; } })();
@@ -199,20 +194,16 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     };
     
     fetchStatus();
-  }, [user?.id, authLoading]);
+  }, [user?.id, authLoading, accountLoading, isGardenerAccount]);
 
   // Strict Redirect Logic
   useEffect(() => {
-    if (authLoading || !statusLoaded || !user) return;
+    if (authLoading || accountLoading || !statusLoaded || !user) return;
 
     // Los administradores no deben ser forzados a seguir los flujos de jardinero (como /apply o /status)
-    if (profileRole === 'admin') return;
+    if (accountRole === 'admin') return;
 
-    const isGardenerIntent = (user?.user_metadata?.role === 'gardener' || 
-                             user?.user_metadata?.requested_role === 'gardener' ||
-                             localStorage.getItem('signup_role') === 'gardener');
-
-    if (!isGardenerIntent) return;
+    if (!isGardenerAccount) return;
 
     const currentPath = location.pathname;
     
@@ -240,9 +231,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         }
     }
 
-  }, [authLoading, statusLoaded, user, applicationStatus, location.pathname, navigate]);
+  }, [authLoading, accountLoading, accountRole, isGardenerAccount, statusLoaded, user, applicationStatus, location.pathname, navigate]);
 
-  if (authLoading || (!statusLoaded && user)) {
+  if (authLoading || (user && (accountLoading || !statusLoaded))) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
@@ -327,14 +318,11 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           element={
             <ProtectedRoute>
               {(() => {
-                if (profileRole === 'admin') {
+                if (accountRole === 'admin') {
                   return <Navigate to="/admin/dashboard" replace />;
                 }
 
-                const metaIntent = (user as any)?.user_metadata?.role === 'gardener' || (user as any)?.user_metadata?.requested_role === 'gardener';
-                const lsRole = (()=>{ try { return localStorage.getItem('signup_role'); } catch { return null; } })();
-                const baseIntent = metaIntent || lsRole === 'gardener' || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
-                const gardenerIntent = baseIntent;
+                const gardenerIntent = isGardenerAccount || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
                 
                 if (gardenerIntent) {
                     if (!statusLoaded) {
@@ -475,14 +463,12 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           path="/bookings" 
           element={
             <ProtectedRoute>
-              {/* Mostrar lista distinta según el rol sin depender del perfil */}
+              {/* Lista distinta según el tipo de cuenta (profiles.role) */}
               {(() => {
-                if (profileRole === 'admin') {
+                if (accountRole === 'admin') {
                   return <Navigate to="/admin/dashboard" replace />;
                 }
-                const fallbackRole = (user as any)?.user_metadata?.role === 'gardener' ? 'gardener' : 'client';
-                const effectiveRole = fallbackRole;
-                if (effectiveRole === 'gardener') {
+                if (isGardenerAccount) {
                   if (applicationStatus !== 'active') {
                     return (
                       <div className="max-w-2xl mx-auto p-8 text-center">

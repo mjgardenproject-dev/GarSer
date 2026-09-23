@@ -5,9 +5,9 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** 🟨 Fase 0 en curso — parte servidor ✅ hecha y verificada · parte frontend pendiente
+**Estado global:** ✅ Fase 0 cerrada (2026-09-23) · siguiente: F1 — registro de capacidad
 **Última actualización:** 2026-09-23
-**Línea base de tests:** 462 en verde / 68 ficheros
+**Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
 ---
 
@@ -120,7 +120,7 @@ Leyenda: ⬜ no empezada · 🟨 en curso · ✅ cerrada · ⛔ bloqueada
 ### BLOQUE 0 — Cimientos
 *No entrega funcionalidad visible. Es obligatorio y es donde está el riesgo de regresión.*
 
-#### 🟨 F0 — Una sola fuente de verdad para el rol
+#### ✅ F0 — Una sola fuente de verdad para el rol
 
 **Problema.** Hoy el tipo de cuenta se deduce de cinco sitios a la vez: `user_metadata.role`,
 `user_metadata.requested_role`, `localStorage.signup_role`, `profiles.role`, la existencia de
@@ -146,16 +146,26 @@ más en `AuthForm.tsx`. Una de esas fuentes (`localStorage`) la controla el clie
       crearse, porque ya los crea el disparador.
 - [x] Verificación repetible: `node scripts/garser-empresas/verify-f0-db.mjs` → 7/7.
 
-**Trabajo — parte frontend (después):**
-- [ ] Hook `useAccount()`: resuelve el tipo de cuenta desde `profiles.role` y nada más.
-- [ ] Sustituir las 8 resoluciones de `App.tsx` y las de `AuthForm.tsx`.
-- [ ] Eliminar `localStorage.signup_role` y las lecturas de `user_metadata` para rol.
-- [ ] Decidir qué se hace con `RoleMonitor.tsx` (H-14).
+**Trabajo — parte frontend (después):** ✅ **hecho**
+- [x] `src/lib/accountRole.ts` (5 roles + normalización) y `src/contexts/AccountContext.tsx`
+      (`useAccount()`): el rol se lee **una vez por sesión** de `profiles.role` y lo comparten
+      todas las pantallas. Descarta respuestas de una sesión anterior.
+- [x] Sustituidas todas las deducciones: `App.tsx` (5 sitios), `AuthContext` (inicio de
+      sesión), `AuthForm`, `MyAccount`, `Navbar` (tenía consulta propia), `BottomNav` (H-16).
+- [x] Fuera `localStorage.signup_role` y toda lectura de rol desde `user_metadata`. Queda
+      `user_metadata` solo como vehículo de la intención del alta, que lee el servidor.
+- [x] `RoleMonitor.tsx` reconvertido: solo corrige hacia arriba (H-14).
 - ~~`REVOKE UPDATE (role)`~~ → ya lo cubre el disparador `prevent_role_escalation` (probado).
 
 **Criterio de cierre.** Cero cambios visibles. 462 tests siguen en verde. Un cliente sigue
 yendo a su panel, un autónomo al suyo, un admin al suyo, y los estados de solicitud
 (pendiente/denegada/activa) siguen redirigiendo igual.
+
+**Cierre (2026-09-23).** Cumplido, con una salvedad honesta: **no ha sido del todo
+invisible**. Tres cosas que ya estaban programadas pero nunca funcionaban en producción
+(porque los usuarios no tenían perfil) empiezan a funcionar. Ver «Cambios que notarán los
+usuarios» en §6. Verificado: 473 tests, build, `tsc` 129, lint 0 errores, servidor 7/7, y
+recorrido en navegador con 5 tipos de cuenta (ver `03-PRUEBAS.md`).
 
 **Riesgo.** Alto: es la lógica que decide qué ve cada usuario al entrar. Se prueba con las
 cuatro cuentas sembradas antes de cerrar.
@@ -307,7 +317,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | — | Respuestas del usuario a D1–D6 incorporadas al plan, hallazgos y pruebas. Nueva pendiente D7. Sin código. | 462 ✅ | `a1fa702` |
 | 2026-09-23 | — | D4 precisada, D7 aplazada a F3, política «todo en local hasta el final» (§0, §6). Sin código. | 462 ✅ | `2e94af9` |
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
-| 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | (este) |
+| 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
+| 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | (este) |
 
 ---
 
@@ -360,3 +371,14 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 | F0 | **Aplicar `20260923120000_empresas_f0_profile_on_signup.sql` cierra H-11** (escalada a admin) y arregla el alta del correo corporativo (H-15). Antes, ejecutar la consulta 1 de §5b: si aparece algún admin que no sea el del usuario, retirarlo | Si `garser.es` recibe usuarios reales antes de la fusión, adelantar esto (D8) |
 | F1 | Consultar solapes en `booking_blocks` de producción **antes** de aplicar la migración | Si los hay, son dobles reservas reales: resolver a mano primero |
 | — | Traer a esta rama lo que haya entrado en `main` | Ver §0 |
+
+### Cambios que notarán los usuarios reales al fusionar (por F0)
+
+Estaban programados desde antes pero no funcionaban en producción porque los usuarios no
+tenían perfil (H-12). Con F0 empiezan a funcionar:
+
+1. **Móvil, barra inferior:** los jardineros verán «Panel» en vez de «Inicio» (H-16).
+2. **Menú superior oculto a jardineros pendientes de aprobación** (`Navbar.tsx`,
+   `shouldHideNav`). La regla existía, pero nunca se cumplía.
+3. **Al aprobar un jardinero, su perfil pasa a `gardener`** (`admin_review_gardener_application`):
+   antes el `UPDATE` no encontraba fila.

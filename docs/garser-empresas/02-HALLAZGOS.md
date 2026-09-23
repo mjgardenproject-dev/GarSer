@@ -296,12 +296,31 @@ No es de este proyecto: anotado aquí, no arreglado. Si F0 toca `MyAccount.tsx` 
 
 ---
 
-### H-14 · Hay una pantalla de admin que escribe el rol desde el navegador — 🟠 Afecta a F0
+### H-14 · Hay una pantalla de admin que escribe el rol desde el navegador — 🟢 Resuelto en F0
 
 `RoleMonitor.tsx:104-105` (ruta `/role-monitor`) compara el rol del perfil con el de
 `user_metadata` y lo «corrige» con `.update({ role })`. Hoy funciona porque el admin pasa el
 disparador de escalada. Pero **su razón de ser es el desorden de H-06**: cuando F0 deje una
 sola fuente de verdad, deja de tener sentido. Se decide en F0 si se retira o se reconvierte.
+
+**Corrección a lo de arriba, al leerlo entero:** no compara con `user_metadata` sino con la
+existencia de `gardener_profiles` (rol = `gardener` si y solo si está aprobado). Está en el
+panel de admin (`/admin/users`), no solo en `/role-monitor`.
+
+**Resolución (F0).** Con F0, esa regla se volvía **dañina**: todo jardinero *pendiente* tiene
+ya perfil `gardener` sin `gardener_profiles`, así que el monitor lo marcaba y «Corregir» lo
+degradaba a cliente, rompiendo su solicitud; y habría hecho lo mismo con empresas y
+empleados. **Se reconvierte, no se retira:** solo detecta el caso real (aprobado con perfil
+`client`) y solo corrige hacia arriba. Verificado en el navegador: jardinero pendiente no
+marcado; aprobado puesto a `client` a mano → detectado y corregido.
+
+---
+
+### H-16 · La barra inferior del móvil nunca reconocía a un jardinero — 🟢 Resuelto en F0
+
+`BottomNav.tsx` hacía `const { profile } = useAuth()`, pero `AuthContext` no expone `profile`:
+siempre `undefined`, así que el jardinero veía «Inicio» en vez de «Panel». Era uno de los 130
+errores de `tsc`. Con `useAccount()` queda resuelto (`tsc` 130 → 129) y probado en móvil.
 
 ---
 

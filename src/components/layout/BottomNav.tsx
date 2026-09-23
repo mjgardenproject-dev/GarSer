@@ -1,16 +1,17 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAccount } from '../../contexts/AccountContext';
 import { Home, Calendar, MessageCircle, User as UserIcon, Briefcase } from 'lucide-react';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
 
 const BottomNav: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile } = useAuth();
+  // Antes leía `useAuth().profile`, que no existe: el jardinero nunca veía «Panel».
+  const { role } = useAccount();
   const unreadChats = useUnreadChats();
 
-  const isGardener = profile?.role === 'gardener';
+  const isGardener = role === 'gardener';
   const items = [
     { path: '/dashboard', label: isGardener ? 'Panel' : 'Inicio', icon: isGardener ? Briefcase : Home },
     { path: '/bookings', label: 'Reservas', icon: Calendar },

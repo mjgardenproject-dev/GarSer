@@ -167,6 +167,8 @@ Cosas ciertas sobre esta máquina y este repositorio, a 2026-09-23:
 
 - **Rama:** `feat/garser-empresas`, creada desde `origin/main` (`6eef75c`, tras el merge #34).
   No se trabaja en `main`.
+- **Todo en local hasta el final** (decisión del usuario): **ni `git push` ni despliegues a
+  producción** hasta que el proyecto esté terminado y probado. Ver `01-PLAN-Y-PROGRESO.md` §0.
 - **Este es el único chat del proyecto.** El usuario lo decidió el 2026-09-23. Aun así, si al
   arrancar ves cambios sin commitear que no son tuyos, para y pregunta.
 - **MCP de Supabase: conecta al Supabase LOCAL** (`http://127.0.0.1:54321`), no a producción.

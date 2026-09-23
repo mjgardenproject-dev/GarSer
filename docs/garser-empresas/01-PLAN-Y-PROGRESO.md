@@ -11,6 +11,26 @@
 
 ---
 
+## 0. Cómo se entrega este proyecto
+
+**Decisión del usuario (2026-09-23):** GarSer Empresas se desarrolla y se prueba **entero en
+local**. No se sube a GitHub ni se despliega nada a producción hasta que esté terminado y
+probado. Al final se fusiona con el GarSer actual (`garser.es`) de una vez.
+
+Consecuencias que el chat tiene que respetar:
+
+- **Nada de `git push`** de `feat/garser-empresas` ni de despliegues de migraciones o funciones
+  a producción mientras dure el proyecto. Los commits son locales.
+- **Toda prueba se hace contra el Supabase local**, levantado desde esta carpeta.
+- **La sección de acciones manuales de cada fase registra lo que habrá que hacer en
+  producción al fusionar**, aunque no se haga todavía. Se va acumulando en §6.
+- **El piloto del hito de F4 cambia** — ver el hito más abajo.
+- **`main` avanza mientras tanto.** Antes de la fusión final habrá que traer a esta rama lo
+  que haya entrado en `main`. Cuanto más dure el proyecto, más conviene hacerlo por el camino,
+  al cerrar cada bloque, en vez de todo al final.
+
+---
+
 ## 1. El razonamiento de negocio detrás del orden
 
 GarSer cobra **una comisión del 12,5 % que paga el cliente por Stripe**; el importe del
@@ -71,17 +91,16 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D5 | ¿Los empleados tienen especialidades? | **Sí. Al crear un empleado, el empresario marca qué servicios hace.** Al asignar, solo aparecen los empleados con ese servicio activo. | La capacidad de la empresa se calcula **por servicio**, no en bloque. Ver A-12. **Adelanta trabajo de F6 a F3 y F4.** | F3, F4, F5 |
 | D6 | ¿El cliente ve quién va a ir? | **Aceptada la recomendación.** | Nombre y foto del trabajador asignado, **el día antes**. Ni antes ni más datos. | F5 |
 
-> **Interpretación aplicada a D4 — pendiente de confirmar.** Se entiende que el carnet se
-> exige al empleado que **hace servicios fitosanitarios**: sin su carnet adjuntado y aprobado
-> no se le puede activar ese servicio ni asignarle esos trabajos. A un empleado que solo corta
-> césped no se le pide. Si la intención era exigírselo a **todos** los empleados, hay que
-> decirlo antes de la F3.
+> **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
+> empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
+> les puede activar ese servicio ni asignarles esos trabajos. A quien no hace fitosanitarios
+> no se le pide.
 
 ### Pendiente
 
 | # | Pregunta | Bloquea | Por qué |
 |---|---|---|---|
-| D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. Las decide el usuario; el chat puede proponer un borrador cuando llegue la F3. |
+| D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. **Decisión del usuario (2026-09-23): se diseña el formulario al llegar a la F3**, adaptado a lo que GarSer necesita saber de una empresa. No bloquea nada antes. |
 
 ---|---|---|---|
 | D1 | **¿Una empresa paga la misma comisión del 12,5 %?** ¿O hay tramos por volumen? | F4 | Cambia el modelo económico. Por defecto: igual que el autónomo. |
@@ -202,9 +221,13 @@ asignados, existe y ambos entran a su panel. Probado el vector de suplantación 
 **Criterio de cierre.** **Primera reserva a una empresa, de punta a punta**, incluida la
 comisión por Stripe. Verificado en paralelo que el funnel del autónomo no ha cambiado.
 
-> ### ⏸ HITO — Piloto con una empresa real
-> No se sigue a la Fase 5 hasta que una empresa real haya completado una reserva real.
-> Lo que se aprenda ahí manda sobre el diseño del planificador.
+> ### ⏸ HITO — Recorrido completo en local, con el usuario haciendo de empresa
+> Como el proyecto no sale a producción hasta el final (§0), el piloto con una empresa real
+> no es posible aquí. En su lugar: **el usuario recorre en local el camino entero de una
+> empresa** — alta, aprobación, empleados, precios, recibir una reserva — antes de construir
+> el planificador. Lo que se aprenda ahí manda sobre el diseño de F5 y F6.
+>
+> El piloto con una empresa real pasa a ser el **primer paso después de la fusión**.
 
 ---
 
@@ -260,7 +283,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 |---|---|---|---|---|
 | 2026-09-20 | — | Auditoría, arquitectura y plan. Sin código. | 462 ✅ | `1486dde` |
 | 2026-09-23 | — | Documentos llevados a `feat/garser-empresas` sobre `origin/main` (#34). Hallazgos y línea base revalidados: tests igual, `tsc` 172→130. MCP de Supabase conecta al local. Sin código. | 462 ✅ | `3e6d84b` |
-| 2026-09-23 | — | Respuestas del usuario a D1–D6 incorporadas al plan, hallazgos y pruebas. Nueva pendiente D7. Sin código. | 462 ✅ | (este) |
+| 2026-09-23 | — | Respuestas del usuario a D1–D6 incorporadas al plan, hallazgos y pruebas. Nueva pendiente D7. Sin código. | 462 ✅ | `a1fa702` |
+| 2026-09-23 | — | D4 precisada, D7 aplazada a F3, política «todo en local hasta el final» (§0, §6). Sin código. | 462 ✅ | (este) |
 
 ---
 
@@ -271,8 +295,19 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 Pendientes para cuando arranque la Fase 0:
 
 1. ~~Crear la rama~~ → hecho: `feat/garser-empresas` desde `origin/main` (2026-09-23).
-2. **Consultar solapes en `booking_blocks` de producción** antes de la F1 (ver prueba F1-00).
-   El MCP de Supabase conecta, pero solo al local: esta consulta hay que hacerla desde el
-   panel de Supabase de producción.
+2. **Consultar solapes en `booking_blocks` de producción** — ya no antes de la F1, sino
+   **antes de la fusión final**, que es cuando la migración llegará a producción (ver prueba
+   F1-00). Se hace desde el panel de Supabase de producción.
 3. ~~Responder D1–D6~~ → respondidas el 2026-09-23.
-4. **Responder D7** (preguntas de la encuesta de empresas) antes de la F3. No bloquea F0–F2.
+4. **D7** (encuesta de empresas): se diseña juntos al llegar a la F3.
+
+---
+
+## 6. Pendiente para el día de la fusión con producción
+
+Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al fusionar.
+
+| Fase | Qué | Notas |
+|---|---|---|
+| F1 | Consultar solapes en `booking_blocks` de producción **antes** de aplicar la migración | Si los hay, son dobles reservas reales: resolver a mano primero |
+| — | Traer a esta rama lo que haya entrado en `main` | Ver §0 |

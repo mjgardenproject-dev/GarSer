@@ -192,7 +192,8 @@ no regresión es más amplia que la de las fases de empresa.*
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que
-comprobar en producción tras desplegar. **Aún vacía: no hay nada desplegado.**
+comprobar en producción. **Se ejecuta una sola vez, el día de la fusión final**: el proyecto
+no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 
 | # | Prueba en producción | Fase origen | Estado |
 |---|---|---|---|

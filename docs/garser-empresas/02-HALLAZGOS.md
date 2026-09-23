@@ -201,6 +201,86 @@ la F0 introduce uno solo en ese fichero, es regresión suya, no deuda heredada.
 
 ---
 
+### H-11 · Cualquier usuario nuevo puede darse el rol de administrador — 🔴🔴 CRÍTICO · Afecta a producción
+
+**Reproducido en local el 2026-09-23**, sobre una BD reconstruida con las mismas 113
+migraciones que producción:
+
+1. Registro de una cuenta nueva por la API (`/auth/v1/signup`), sin pasar por la web.
+2. `POST /rest/v1/profiles` con `{"user_id": <el suyo>, "role": "admin"}` → **HTTP 201**.
+3. En el acto, esa cuenta lee nombre, teléfono y rol de **todos** los perfiles.
+
+La cuenta de prueba se borró al terminar.
+
+**Por qué pasa:**
+
+- La policy `Allow users to insert their own profile` solo comprueba `auth.uid() = user_id`,
+  no el rol.
+- El disparador `prevent_role_escalation` (migración `20260609200000`) es **`BEFORE UPDATE`**:
+  protege el *cambio* de rol, no la *creación* del perfil.
+- `profiles_role_check` admite `'admin'`.
+- `is_admin()` es `EXISTS (… profiles WHERE user_id = auth.uid() AND role = 'admin')`, así
+  que con eso basta para abrir todas las policies `admin_*` (migración
+  `20260609184643_admin_full_access_rls.sql`).
+- Solo funciona para quien **aún no tiene perfil** (`prevent_duplicate_profiles` bloquea el
+  segundo). Y según H-12, un usuario nuevo **nunca** tiene perfil: es exactamente la ventana.
+
+**Lo que se probó y NO funciona:** un usuario que ya tiene perfil no puede cambiarse el rol
+por `PATCH` — el disparador lo rechaza con *«No tienes permisos para modificar el rol.»*
+
+**Qué hay que hacer:**
+
+- **En producción, fuera de GarSer Empresas** (decisión pendiente del usuario, D8): cerrar la
+  creación de perfiles con rol privilegiado y revisar que no exista ya ningún admin ilegítimo.
+- **En F0**, igualmente, como parte de «una sola fuente de verdad para el rol».
+
+---
+
+### H-12 · Nada crea el perfil de un usuario nuevo — 🔴 Cambia el diseño de F0
+
+**Evidencia.** En la BD local reconstruida, el único disparador sobre `auth.users` es
+`trg_provision_admin` → `auto_provision_corporate_admin()`, que solo actúa si el correo es el
+del administrador corporativo. Ninguna función de `public` inserta en `profiles` salvo esa;
+no hay `handle_new_user` en ninguna migración; y **ni `src/` ni `supabase/functions/` hacen
+`insert`/`upsert` sobre `profiles`**. Los perfiles de las cuentas de prueba salen de
+`supabase/seed.sql`, no de ningún flujo de la aplicación.
+
+**Por qué importa.** Explica los cinco «apaños» de H-06: como el usuario nuevo no tiene
+perfil, la web adivina el rol desde `user_metadata` y `localStorage`. Y significa que **el
+plan original de F0 («leer el rol solo de `profiles.role`») rompería a todos los usuarios
+nuevos**, que no tienen fila.
+
+**Duda que solo resuelve producción.** Puede que en producción exista un disparador creado a
+mano desde el panel que no está en las migraciones (desincronización). Hay que comprobarlo
+con la consulta de solo lectura de `01-PLAN-Y-PROGRESO.md` §5 antes de cerrar el diseño de F0.
+
+**Consecuencia para F0:** antes de unificar la lectura del rol, **todo usuario tiene que
+tener perfil, creado por el servidor** al registrarse, con un rol que solo puede ser
+`client` o `gardener` (nunca `admin`), más un relleno para las cuentas que hoy no tienen.
+
+---
+
+### H-13 · «Mi cuenta» actualiza el perfil por la columna equivocada — 🟠 Fuera de alcance
+
+`MyAccount.tsx:66` (foto) y `:111` (cerrar cuenta) hacen `.update(…).eq('id', user.id)`. Pero
+`profiles.id` **no** es el id del usuario: es otro uuid (la prueba de H-11 devolvió
+`id ≠ user_id`). La clave es `user_id`. Así que esas dos acciones, muy probablemente,
+**no actualizan ninguna fila y dicen «actualizado»**.
+
+No es de este proyecto: anotado aquí, no arreglado. Si F0 toca `MyAccount.tsx` por el rol
+(`:123`), se valora con el usuario.
+
+---
+
+### H-14 · Hay una pantalla de admin que escribe el rol desde el navegador — 🟠 Afecta a F0
+
+`RoleMonitor.tsx:104-105` (ruta `/role-monitor`) compara el rol del perfil con el de
+`user_metadata` y lo «corrige» con `.update({ role })`. Hoy funciona porque el admin pasa el
+disparador de escalada. Pero **su razón de ser es el desorden de H-06**: cuando F0 deje una
+sola fuente de verdad, deja de tener sentido. Se decide en F0 si se retira o se reconvierte.
+
+---
+
 ## 2. Decisiones de arquitectura cerradas
 
 No se vuelven a discutir salvo que aparezca evidencia nueva. Si alguien propone lo contrario,

@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** Fase 0 no empezada · Diseño cerrado · Decisiones D1–D6 respondidas · Sin código escrito
+**Estado global:** Fase 0 en investigación (rediseñada por H-11/H-12) · Entorno local listo · Sin código escrito
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 462 en verde / 68 ficheros
 
@@ -100,6 +100,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 
 | # | Pregunta | Bloquea | Por qué |
 |---|---|---|---|
+| D8 | **¿Se arregla H-11 ya en producción, fuera de GarSer Empresas?** | — | Es una escalada a admin que casi seguro está abierta hoy en `garser.es`. La política §0 dice «nada a producción hasta el final»; esto es una excepción que decide el usuario. |
 | D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. **Decisión del usuario (2026-09-23): se diseña el formulario al llegar a la F3**, adaptado a lo que GarSer necesita saber de una empresa. No bloquea nada antes. |
 
 ---|---|---|---|
@@ -126,11 +127,25 @@ Leyenda: ⬜ no empezada · 🟨 en curso · ✅ cerrada · ⛔ bloqueada
 `gardener_profiles` y el estado de `gardener_applications`. Hay 8 apariciones en `App.tsx` y
 más en `AuthForm.tsx`. Una de esas fuentes (`localStorage`) la controla el cliente.
 
-**Trabajo.**
+> **⚠ Rediseñada el 2026-09-23 tras investigar (H-11, H-12, H-14).** Parte de lo previsto ya
+> existía (`profiles_role_check`, el disparador `prevent_role_escalation`), y apareció algo
+> que no estaba en el diseño: **nada crea el perfil de un usuario nuevo**, y eso abre una
+> escalada a admin. El orden dentro de la fase pasa a ser: primero perfil garantizado y
+> seguro en el servidor, después unificar la lectura en el frontend.
+
+**Trabajo — parte servidor (primero):**
+- [ ] Disparador en `auth.users` que crea el perfil al registrarse. Rol tomado de la
+      intención del registro, **restringido a `client` | `gardener`**; nunca `admin`.
+- [ ] Cerrar la creación de perfiles con rol privilegiado desde el cliente (H-11).
+- [ ] Relleno: perfil para toda cuenta que hoy no lo tenga.
+- [ ] Ampliar `profiles_role_check` (ya existe con 3 valores) a los 5: `+company`, `+employee`.
+
+**Trabajo — parte frontend (después):**
 - [ ] Hook `useAccount()`: resuelve el tipo de cuenta desde `profiles.role` y nada más.
 - [ ] Sustituir las 8 resoluciones de `App.tsx` y las de `AuthForm.tsx`.
 - [ ] Eliminar `localStorage.signup_role` y las lecturas de `user_metadata` para rol.
-- [ ] `CHECK` en `profiles.role` con los 5 valores + `REVOKE UPDATE (role)` a `authenticated`.
+- [ ] Decidir qué se hace con `RoleMonitor.tsx` (H-14).
+- ~~`REVOKE UPDATE (role)`~~ → ya lo cubre el disparador `prevent_role_escalation` (probado).
 
 **Criterio de cierre.** Cero cambios visibles. 462 tests siguen en verde. Un cliente sigue
 yendo a su panel, un autónomo al suyo, un admin al suyo, y los estados de solicitud
@@ -284,7 +299,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-20 | — | Auditoría, arquitectura y plan. Sin código. | 462 ✅ | `1486dde` |
 | 2026-09-23 | — | Documentos llevados a `feat/garser-empresas` sobre `origin/main` (#34). Hallazgos y línea base revalidados: tests igual, `tsc` 172→130. MCP de Supabase conecta al local. Sin código. | 462 ✅ | `3e6d84b` |
 | 2026-09-23 | — | Respuestas del usuario a D1–D6 incorporadas al plan, hallazgos y pruebas. Nueva pendiente D7. Sin código. | 462 ✅ | `a1fa702` |
-| 2026-09-23 | — | D4 precisada, D7 aplazada a F3, política «todo en local hasta el final» (§0, §6). Sin código. | 462 ✅ | (este) |
+| 2026-09-23 | — | D4 precisada, D7 aplazada a F3, política «todo en local hasta el final» (§0, §6). Sin código. | 462 ✅ | `2e94af9` |
+| 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | (este) |
 
 ---
 
@@ -300,6 +316,31 @@ Pendientes para cuando arranque la Fase 0:
    F1-00). Se hace desde el panel de Supabase de producción.
 3. ~~Responder D1–D6~~ → respondidas el 2026-09-23.
 4. **D7** (encuesta de empresas): se diseña juntos al llegar a la F3.
+
+---
+
+## 5b. Consulta para el usuario en producción (solo lectura)
+
+Para cerrar el diseño de F0 y medir el alcance de H-11. Se ejecuta en el **SQL Editor del
+panel de Supabase de producción**. Son tres `SELECT`: no modifican nada.
+
+```sql
+-- 1) Administradores que existen. Solo debería salir el tuyo.
+select u.email, p.created_at
+from public.profiles p join auth.users u on u.id = p.user_id
+where p.role = 'admin'
+order by p.created_at;
+
+-- 2) Usuarios registrados que NO tienen perfil (H-12).
+select count(*) as usuarios_sin_perfil
+from auth.users u
+where not exists (select 1 from public.profiles p where p.user_id = u.id);
+
+-- 3) Disparadores sobre auth.users en producción (¿hay alguno creado a mano?).
+select tgname, tgfoid::regproc as funcion
+from pg_trigger
+where tgrelid = 'auth.users'::regclass and not tgisinternal;
+```
 
 ---
 

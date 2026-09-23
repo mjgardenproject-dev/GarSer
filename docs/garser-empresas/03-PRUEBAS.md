@@ -49,7 +49,12 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F0-06 | Admin entra en `/dashboard` | Redirige a `/admin/dashboard` | ⬜ |
 | F0-07 | Borrar `localStorage` y recargar estando logueado | El rol se resuelve igual | ⬜ |
 | F0-08 | Poner `localStorage.signup_role = 'gardener'` en una cuenta de cliente | **Se ignora.** Sigue siendo cliente | ⬜ |
-| F0-09 | `UPDATE profiles SET role='admin'` desde el cliente vía PostgREST | Denegado | ⬜ |
+| F0-09 | `UPDATE profiles SET role='admin'` desde el cliente vía PostgREST | Denegado | ✅ ya hoy (2026-09-23): lo bloquea `prevent_role_escalation` |
+| F0-10 | **Cuenta nueva registrada por API crea su perfil con `role='admin'`** (H-11) | Denegado | ❌ hoy **se permite** (HTTP 201). Debe pasar tras F0 |
+| F0-11 | Cuenta nueva registrada por la web **tiene perfil** nada más registrarse (H-12) | Perfil creado por el servidor | ⬜ |
+| F0-12 | Registro con intención «jardinero» → perfil `gardener`; resto → `client` | Correcto | ⬜ |
+| F0-13 | Registro por API con `data.role = 'admin'` | Perfil `client`, nunca `admin` | ⬜ |
+| F0-14 | Tu correo corporativo sigue siendo admin al registrarse | Admin | ⬜ |
 
 > F0-08 y F0-09 son las que justifican la fase. Si pasan, el rol ha dejado de ser
 > manipulable desde el navegador.

@@ -38,7 +38,7 @@ const BottomNav: React.FC = () => {
                 <span className="relative">
                   <Icon className="w-5 h-5 mb-1" />
                   {!!item.badge && (
-                    <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 bg-green-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 bg-emerald-700 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                       {item.badge > 99 ? '99+' : item.badge}
                     </span>
                   )}

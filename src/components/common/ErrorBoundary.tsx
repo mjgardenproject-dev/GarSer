@@ -43,7 +43,7 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
             </div>
             <div className="flex items-center justify-center gap-3">
               <button
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"
+                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-sm"
                 onClick={this.handleRetry}
               >
                 Reintentar

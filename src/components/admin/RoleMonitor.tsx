@@ -230,7 +230,7 @@ const RoleMonitor = () => {
                   <button
                     type="button"
                     onClick={() => fixInconsistency(inconsistency)}
-                    className="shrink-0 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors w-full sm:w-auto"
+                    className="shrink-0 px-4 py-2 bg-emerald-700 text-white text-sm font-medium rounded-lg hover:bg-emerald-800 focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:outline-none transition-colors w-full sm:w-auto"
                   >
                     Corregir
                   </button>

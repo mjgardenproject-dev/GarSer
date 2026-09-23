@@ -40,7 +40,7 @@ const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({
             {/* Primary Action: Save */}
             <button
               onClick={onSave}
-              className="w-full bg-green-600 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-green-600/20 hover:bg-green-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              className="w-full bg-emerald-700 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-emerald-700/20 hover:bg-emerald-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
             >
               <Save className="w-5 h-5" />
               Guardar y continuar

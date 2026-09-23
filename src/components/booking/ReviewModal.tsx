@@ -200,7 +200,7 @@ const ReviewModal = ({ bookingId, gardenerId, gardenerName, onClose, onSaved }: 
                 type="button"
                 onClick={() => void submit()}
                 disabled={saving}
-                className="w-full rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 transition-colors"
+                className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 transition-colors"
               >
                 {saving ? 'Guardando…' : existingId ? 'Guardar cambios' : 'Enviar valoración'}
               </button>

@@ -71,7 +71,7 @@ const AdminLayout: React.FC = () => {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                   isActive
-                    ? 'bg-green-600 text-white shadow-md'
+                    ? 'bg-emerald-700 text-white shadow-md'
                     : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                 }`
               }
@@ -96,7 +96,7 @@ const AdminLayout: React.FC = () => {
               className={({ isActive }) =>
                 `flex items-center gap-2 px-3 py-2 rounded-lg whitespace-nowrap transition-all ${
                   isActive
-                    ? 'bg-green-600 text-white shadow-md'
+                    ? 'bg-emerald-700 text-white shadow-md'
                     : 'bg-gray-800 text-gray-300'
                 }`
               }

@@ -68,7 +68,7 @@ const EmailConfirmationModal: React.FC<EmailConfirmationModalProps> = ({
         <div className="space-y-3">
           <button
             onClick={onClose}
-            className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+            className="w-full bg-emerald-700 text-white py-3 px-4 rounded-lg font-semibold hover:bg-emerald-800 transition-colors"
           >
             Entendido
           </button>

@@ -188,7 +188,7 @@ const ClientBookingLauncher = () => {
         <button
           type="button"
           onClick={startNewBooking}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3.5 text-sm font-semibold text-white hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 transition-colors"
+          className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3.5 text-sm font-semibold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 transition-colors"
         >
           <Plus className="w-4 h-4" aria-hidden="true" />
           Empezar una reserva

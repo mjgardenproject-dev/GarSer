@@ -205,7 +205,7 @@ const BookingIncidentPage = () => {
           type="button"
           onClick={() => void submit()}
           disabled={!canSubmit}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
         >
           <MessageCircle className="w-4 h-4" aria-hidden="true" />
           {submitting ? 'Enviando…' : 'Enviar incidencia'}

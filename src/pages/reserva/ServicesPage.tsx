@@ -241,7 +241,7 @@ const ServicesPage: React.FC = () => {
                     </h3>
                   </div>
                   {isSelected && (
-                    <div className="absolute top-2 right-2 rounded-full bg-green-600 p-1 text-white">
+                    <div className="absolute top-2 right-2 rounded-full bg-emerald-700 p-1 text-white">
                       <Check aria-hidden="true" className="w-4 h-4" />
                     </div>
                   )}
@@ -277,7 +277,7 @@ const ServicesPage: React.FC = () => {
             type="button"
             onClick={handleContinue}
             disabled={selectedServices.length === 0}
-            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.02] hover:shadow-xl motion-reduce:transform-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 rounded-2xl [touch-action:manipulation]"
+            className="w-full bg-emerald-700 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.02] hover:shadow-xl motion-reduce:transform-none disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 rounded-2xl [touch-action:manipulation]"
           >
             {selectedServices.length === 0
               ? 'Selecciona un servicio'

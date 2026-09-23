@@ -12,10 +12,12 @@ export type MarketingImageSlotKey =
   | 'home.marbella'
   | 'marbella.hero'
   | 'marbella.highlight'
+  | 'costaDelSol.hero'
   | 'gardeners.hero'
   | 'gardeners.process'
   | 'shared.og.home'
   | 'shared.og.marbella'
+  | 'shared.og.costaDelSol'
   | 'shared.og.gardeners';
 
 export type FaqItem = {
@@ -54,10 +56,12 @@ export const marketingImageSlots: Record<MarketingImageSlotKey, string> = {
   'home.marbella': 'home/marbella-highlight.webp',
   'marbella.hero': 'marbella/hero.webp',
   'marbella.highlight': 'marbella/highlight.webp',
+  'costaDelSol.hero': 'costa-del-sol/hero.webp',
   'gardeners.hero': 'gardeners/hero.webp',
   'gardeners.process': 'gardeners/process.webp',
   'shared.og.home': 'shared/og/home.webp',
   'shared.og.marbella': 'shared/og/marbella.webp',
+  'shared.og.costaDelSol': 'shared/og/costa-del-sol.webp',
   'shared.og.gardeners': 'shared/og/gardeners.webp',
 };
 
@@ -129,7 +133,7 @@ export const generalHomeFaqs: FaqItem[] = [
   },
   {
     question: '¿En qué zonas trabaja GarSer?',
-    answer: 'La web está orientada a clientes de Marbella, Estepona y otras zonas de la Costa del Sol.',
+    answer: 'GarSer no está limitado a una única zona: cualquier jardinero de España puede unirse a la plataforma. Hoy la mayor disponibilidad está en la Costa del Sol, que es donde estamos lanzando el servicio, y vamos ampliando a más ciudades.',
   },
   {
     question: '¿Qué tipo de servicios puedo reservar?',
@@ -152,7 +156,34 @@ export const marbellaFaqs: FaqItem[] = [
   },
 ];
 
+export const costaDelSolFaqs: FaqItem[] = [
+  {
+    question: '¿En qué municipios de la Costa del Sol trabaja GarSer?',
+    answer: 'GarSer opera en Marbella, Estepona, San Pedro de Alcántara, Guadalmina, Benahavís, Los Monteros, Nueva Andalucía, La Quinta y alrededores. Cada jardinero define su propio radio de trabajo, así que la disponibilidad real depende de tu dirección exacta.',
+  },
+  {
+    question: '¿Cuánto cuesta un jardinero en la Costa del Sol?',
+    answer: 'No hay una tarifa única: cada jardinero configura sus precios. Al describir tu jardín con fotos o medidas, GarSer te muestra el precio calculado con las tarifas reales de los profesionales disponibles en tu zona, antes de reservar y sin compromiso.',
+  },
+  {
+    question: '¿Qué diferencia hay entre esta página y la de Marbella?',
+    answer: 'Esta página cubre toda la Costa del Sol. Si tu vivienda está en Marbella, la página específica de Marbella tiene la información centrada en ese municipio.',
+  },
+  {
+    question: '¿Puedo reservar si no estoy en la vivienda?',
+    answer: 'Sí. La reserva, el seguimiento y el pago se gestionan online, así que puedes contratar el servicio sin estar presente el día del trabajo.',
+  },
+];
+
 export const gardenersFaqs: FaqItem[] = [
+  {
+    question: '¿Qué es GarSer para un jardinero?',
+    answer: 'Es un portal para jardineros donde el cliente describe su jardín con fotos y medidas, GarSer calcula el precio con las tarifas que tú configuras, y tú decides si aceptas el trabajo. No pagas por darte de alta: GarSer se queda una comisión de gestión del 12,5% sobre las reservas que completas.',
+  },
+  {
+    question: '¿Cómo consigo clientes de jardinería con GarSer?',
+    answer: 'No tienes que buscarlos. Los clientes entran a reservar un servicio concreto, y GarSer les muestra los jardineros disponibles en su zona según tu radio de trabajo y tu disponibilidad. Cuantas más reseñas acumulas, más peso tiene tu perfil.',
+  },
   {
     question: '¿Quién puede registrarse como jardinero?',
     answer: 'La página está pensada para autónomos y empresas de jardinería que quieran recibir nuevas reservas a través de GarSer.',
@@ -169,9 +200,9 @@ export const gardenersFaqs: FaqItem[] = [
 
 export const pageSeo = {
   general: {
-    title: 'Servicios de jardinería en Costa del Sol | GarSer',
+    title: 'Servicios de jardinería a domicilio | GarSer',
     description:
-      'Reserva servicios de jardinería para tu vivienda en Marbella, Estepona y Costa del Sol con un proceso claro y pensado para clientes reales.',
+      'Reserva servicios de jardinería para tu vivienda con precios claros y disponibilidad real de jardineros profesionales, con un proceso pensado para clientes reales.',
     path: '/',
     ogImageSlot: 'shared.og.home',
   } satisfies SeoPageData,
@@ -182,10 +213,17 @@ export const pageSeo = {
     path: '/marbella',
     ogImageSlot: 'shared.og.marbella',
   } satisfies SeoPageData,
-  gardeners: {
-    title: 'Trabaja como jardinero en Costa del Sol | GarSer',
+  costaDelSol: {
+    title: 'Jardinería en la Costa del Sol | Precios y disponibilidad | GarSer',
     description:
-      'Descubre lo que ofrece GarSer a jardineros y empresas de jardinería que quieren captar nuevas reservas en Costa del Sol.',
+      'Servicios de jardinería en la Costa del Sol: corte de césped, poda de setos, árboles y palmeras, desbroce y tratamientos. Consulta precio y disponibilidad de jardineros en Marbella, Estepona, Benahavís y alrededores.',
+    path: '/costa-del-sol',
+    ogImageSlot: 'shared.og.costaDelSol',
+  } satisfies SeoPageData,
+  gardeners: {
+    title: 'Portal para jardineros | Consigue clientes con GarSer',
+    description:
+      'GarSer es el portal para jardineros autónomos y empresas de jardinería: presupuesta sin desplazarte, cobra online con tus tarifas y llena tu agenda con clientes que ya quieren reservar.',
     path: '/para-jardineros',
     ogImageSlot: 'shared.og.gardeners',
   } satisfies SeoPageData,
@@ -193,12 +231,9 @@ export const pageSeo = {
 
 export const generalHomeContent = {
   eyebrow: 'Reserva jardinería a domicilio',
-  title: 'Servicios de jardinería en Marbella, Estepona y Costa del Sol',
-  description:
-    'GarSer te ayuda a reservar trabajos de jardinería para tu vivienda con un proceso claro, sin vueltas y pensado para quien solo quiere resolver bien su jardín.',
+  title: 'Descubre cuánto cuesta y cuándo hay disponibilidad para tu jardín',
   primaryCtaLabel: 'Empezar nueva reserva',
   resumeCtaLabel: 'Continuar reserva',
-  accessCtaLabel: 'Acceder',
   bookingsCtaLabel: 'Ver mis reservas',
   howItWorks: [
     {
@@ -214,13 +249,16 @@ export const generalHomeContent = {
       description: 'Terminas la reserva dentro del mismo proceso y mantienes el seguimiento desde tu cuenta si ya eres cliente.',
     },
   ],
-  coverageTitle: 'Cobertura orientada a la Costa del Sol',
+  coverageTitle: 'Encuentra jardineros en tu zona',
   coverageDescription:
-    'La propuesta está pensada para propietarios de viviendas con jardín en zonas residenciales y urbanizaciones de la Costa del Sol.',
+    'Indica tu dirección al reservar y te mostramos qué jardineros profesionales están disponibles cerca de ti.',
+  findGardenersCtaLabel: 'Buscar jardineros en mi zona',
   faqTitle: 'Preguntas frecuentes',
-  finalCtaTitle: 'Reserva cuando te venga bien, sin perder el hilo del proceso',
-  finalCtaDescription:
-    'La portada te lleva directamente al flujo de reserva y, si ya habías empezado, te permite retomar donde lo dejaste.',
+  gardenerCtaBadge: '¿Eres jardinero?',
+  gardenerCtaTitle: 'Descubre las ventajas de trabajar con GarSer',
+  gardenerCtaDescription:
+    'Recibe clientes reales en tu zona, gestiona tu agenda y cobra de forma segura, sin tener que buscar trabajo uno a uno.',
+  gardenerCtaButtonLabel: 'Ver ventajas para jardineros',
 };
 
 export const marbellaContent = {
@@ -231,28 +269,68 @@ export const marbellaContent = {
   highlightTitle: 'Una landing específica para quien busca jardinería en Marbella',
   highlightDescription:
     'El objetivo aquí no es vender humo. Es dejar claro que puedes empezar una reserva, describir tu caso y avanzar por un proceso sencillo desde el móvil.',
+  coverageTitle: 'Cobertura orientada a la Costa del Sol',
+  coverageDescription:
+    'La propuesta está pensada para propietarios de viviendas con jardín en zonas residenciales y urbanizaciones de la Costa del Sol.',
   finalCtaTitle: 'Si necesitas un trabajo de jardinería en Marbella, empieza por aquí',
   finalCtaDescription:
     'Desde esta página puedes ir directo al flujo de reserva o volver a la portada general si prefieres una vista más amplia de GarSer.',
 };
 
-export const gardenersContent = {
-  eyebrow: 'Para jardineros y empresas',
-  title: 'GarSer para jardineros que quieren captar nuevas reservas en Costa del Sol',
+export const costaDelSolContent = {
+  eyebrow: 'Jardinería en la Costa del Sol',
+  title: 'Jardineros en la Costa del Sol: mira el precio y la disponibilidad antes de reservar',
   description:
-    'Una página dirigida a autónomos y empresas de jardinería que buscan una vía digital para recibir nuevas oportunidades de trabajo.',
+    'De Estepona a Marbella, muchas viviendas y urbanizaciones necesitan mantenimiento puntual de jardín sin atarse a un contrato anual. Aquí describes tu jardín, ves el precio calculado con las tarifas reales de los jardineros de tu zona y eliges día.',
+  coverageTitle: 'Municipios y urbanizaciones donde ya trabajamos',
+  coverageDescription:
+    'Estas son las zonas de la Costa del Sol con jardineros dados de alta en GarSer. Cada profesional fija su propio radio de trabajo, así que al indicar tu dirección verás exactamente quién llega hasta tu jardín.',
+  finalCtaTitle: '¿Tienes un jardín en la Costa del Sol? Empieza por el precio',
+  finalCtaDescription:
+    'Sin visitas comerciales ni llamadas para pedir presupuesto: describes el jardín, ves el precio y la disponibilidad real, y reservas si te encaja.',
+};
+
+export const gardenersContent = {
+  eyebrow: 'Portal para jardineros y empresas',
+  title: 'El portal para jardineros que te ahorra tiempo y dinero en cada presupuesto',
+  description:
+    'Deja de perder mañanas enteras visitando jardines solo para dar un precio. En GarSer el cliente sube las fotos, el trabajo te llega ya valorado en euros y horas, y cobras por la plataforma sin perseguir a nadie.',
   benefits: [
     {
-      title: 'Clientes con intención de reservar',
-      description: 'La propuesta gira alrededor de reservas reales y no de un simple directorio sin contexto.',
+      icon: 'camera',
+      title: 'Presupuesta sin desplazarte',
+      description:
+        'El cliente sube fotos y medidas de su jardín y GarSer calcula el precio y las horas con tus propias tarifas. Tú ves el trabajo ya valorado antes de aceptarlo.',
     },
     {
-      title: 'Proceso claro de alta',
-      description: 'El registro está pensado para revisar bien la información del profesional antes de activar el perfil.',
+      icon: 'shield-check',
+      title: 'Cobra siempre, sin perseguir pagos',
+      description:
+        'El pago se gestiona online dentro de la plataforma. Se acabó el "ya te haré una transferencia", el efectivo y las facturas que nadie paga.',
     },
     {
-      title: 'Cobertura local',
-      description: 'El foco está puesto en Costa del Sol y en zonas donde el trabajo residencial de jardín tiene demanda real.',
+      icon: 'calendar-check',
+      title: 'Tu agenda se llena sola',
+      description:
+        'Configuras tus días, horarios y radio de trabajo una vez. GarSer solo te ofrece trabajos que encajan en tus huecos libres, sin llamadas para cuadrar horarios.',
+    },
+    {
+      icon: 'star',
+      title: 'Tu reputación, por escrito',
+      description:
+        'Cada trabajo terminado suma reseñas reales a tu perfil público. Lo que en el boca a boca se pierde, aquí queda y te trae al siguiente cliente.',
+    },
+    {
+      icon: 'message-circle',
+      title: 'Habla con el cliente sin dar tu número',
+      description:
+        'Chat integrado para resolver dudas antes y durante el trabajo. Tu teléfono personal sigue siendo tuyo.',
+    },
+    {
+      icon: 'percent',
+      title: 'Comisión clara desde el minuto uno',
+      description:
+        'GarSer se queda un 12,5% de gestión, ya contemplado en lo que ve el cliente. Sabes exactamente cuánto cobras antes de aceptar cada trabajo.',
     },
   ],
   process: [

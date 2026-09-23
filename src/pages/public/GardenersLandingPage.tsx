@@ -1,5 +1,15 @@
 import React, { useMemo } from 'react';
-import { ArrowRight, Briefcase, CheckCircle2 } from 'lucide-react';
+import {
+  ArrowRight,
+  Briefcase,
+  CalendarCheck,
+  Camera,
+  CheckCircle2,
+  MessageCircle,
+  Percent,
+  ShieldCheck,
+  Star,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import SeoHead from '../../components/common/SeoHead';
@@ -14,6 +24,17 @@ import {
 } from '../../config/publicSiteContent';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
+
+/** Icono por beneficio. La clave la trae el propio contenido en publicSiteContent.ts,
+ * para no mezclar componentes de React dentro del archivo de textos. */
+const benefitIcons = {
+  camera: Camera,
+  'shield-check': ShieldCheck,
+  'calendar-check': CalendarCheck,
+  star: Star,
+  'message-circle': MessageCircle,
+  percent: Percent,
+} as const;
 
 const GardenersLandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -101,7 +122,7 @@ const GardenersLandingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleGardenerSignup}
-                className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-600/20 transition-transform hover:scale-[1.01]"
+                className="inline-flex items-center gap-2 rounded-full bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-700/20 transition-transform hover:scale-[1.01]"
               >
                 Registrarse como jardinero
                 <ArrowRight className="h-4 w-4" />
@@ -127,16 +148,19 @@ const GardenersLandingPage: React.FC = () => {
           />
         </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          {gardenersContent.benefits.map((benefit) => (
-            <article key={benefit.title} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-                <Briefcase className="h-5 w-5" />
-              </div>
-              <h2 className="mt-5 text-xl font-semibold text-slate-950">{benefit.title}</h2>
-              <p className="mt-3 text-sm leading-6 text-slate-600">{benefit.description}</p>
-            </article>
-          ))}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {gardenersContent.benefits.map((benefit) => {
+            const Icon = benefitIcons[benefit.icon as keyof typeof benefitIcons] ?? Briefcase;
+            return (
+              <article key={benefit.title} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h2 className="mt-5 text-xl font-semibold text-slate-950">{benefit.title}</h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{benefit.description}</p>
+              </article>
+            );
+          })}
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[0.95fr,1.05fr]">

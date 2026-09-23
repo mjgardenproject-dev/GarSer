@@ -28,9 +28,9 @@ describe('PublicHomePage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('heading', { name: /servicios de jardinería en marbella, estepona y costa del sol/i })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /descubre cuánto cuesta y cuándo hay disponibilidad para tu jardín/i })).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Empezar nueva reserva' }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Acceder' })).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: /acceder/i }).length).toBeGreaterThan(0);
   });
 
   it('muestra continuar reserva cuando existe un borrador anonimo', () => {

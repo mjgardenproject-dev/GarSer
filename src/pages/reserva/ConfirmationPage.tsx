@@ -1754,7 +1754,7 @@ const ConfirmationPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleGoToBookings(true)}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 px-5 py-4 text-base font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.01] hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-5 py-4 text-base font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.01] hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
               >
                 Ir a mis reservas
                 <ArrowRight aria-hidden="true" className="h-5 w-5" />
@@ -1936,7 +1936,7 @@ const ConfirmationPage: React.FC = () => {
                   type="button"
                   onClick={handleLogin}
                   disabled={authLoading || !authEmail || !authPassword}
-                  className="flex-1 rounded-2xl bg-green-600 px-4 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+                  className="flex-1 rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
                 >
                   Iniciar sesión
                 </button>
@@ -2012,7 +2012,7 @@ const ConfirmationPage: React.FC = () => {
               disabled={ctaDisabled}
               aria-haspopup={showPaymentSheetPayAction ? undefined : 'dialog'}
               aria-expanded={isPaymentSheetOpen}
-              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] motion-reduce:transform-none transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+              className="w-full bg-emerald-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] motion-reduce:transform-none transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
             >
               {isPaymentSheetSuccess ? (
                 <div className="flex items-center justify-center gap-2" aria-live="polite" role="status">
@@ -2144,7 +2144,7 @@ const ConfirmationPage: React.FC = () => {
                   type="button"
                   onClick={ctaOnClick}
                   disabled={ctaDisabled}
-                  className="w-full rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.01] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+                  className="w-full rounded-2xl bg-emerald-700 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.01] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
                 >
                   {isPaymentSheetSuccess ? (
                     <div className="flex items-center justify-center gap-2" aria-live="polite" role="status">

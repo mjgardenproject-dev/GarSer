@@ -396,7 +396,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
           className={`
             w-full py-2.5 px-4 text-sm rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-200
             ${hasUnsavedChanges
-              ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg shadow-green-600/20 active:scale-[0.98]'
+              ? 'bg-emerald-700 hover:bg-emerald-800 text-white shadow-lg shadow-emerald-700/20 active:scale-[0.98]'
               : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
             }
             ${savingCombined ? 'opacity-70 cursor-wait' : ''}
@@ -516,7 +516,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
                           py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200
                           flex items-center justify-center font-medium text-xs sm:text-sm
                           ${isBooked
-                            ? 'bg-green-600 border-green-700 text-white cursor-default'
+                            ? 'bg-emerald-700 border-green-700 text-white cursor-default'
                             : isPending
                               ? 'bg-amber-100 border-amber-400 text-amber-800 cursor-default'
                               : isPast
@@ -579,7 +579,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
                             h-11 rounded-md border-2 transition-all duration-200
                             flex items-center justify-center font-bold text-xs
                             ${isBooked
-                              ? 'bg-green-600 border-green-700 text-white cursor-default'
+                              ? 'bg-emerald-700 border-green-700 text-white cursor-default'
                               : isPending
                                 ? 'bg-amber-100 border-amber-400 text-amber-900 cursor-default'
                                 : isPast

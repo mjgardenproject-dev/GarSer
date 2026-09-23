@@ -10,6 +10,7 @@ import AdminRoute from './components/auth/AdminRoute';
 import Navbar from './components/layout/Navbar';
 import BottomNav from './components/layout/BottomNav';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import ScrollToTop from './components/common/ScrollToTop';
 import LegacyBookingRedirect from './components/client/LegacyBookingRedirect';
 import LegacyCheckoutRedirect from './components/client/LegacyCheckoutRedirect';
 import NotFoundPage from './pages/public/NotFoundPage';
@@ -65,6 +66,7 @@ const ChatList = lazy(() => import('./components/chat/ChatList'));
 const MyAccount = lazy(() => import('./components/account/MyAccount'));
 const GardenerPublicProfile = lazy(() => import('./components/public/GardenerPublicProfile'));
 const MarbellaLandingPage = lazy(() => import('./pages/public/MarbellaLandingPage'));
+const CostaDelSolLandingPage = lazy(() => import('./pages/public/CostaDelSolLandingPage'));
 const GardenersLandingPage = lazy(() => import('./pages/public/GardenersLandingPage'));
 
 /** Placeholder mientras llega el trozo de código de la zona. */
@@ -97,6 +99,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const isMarketingPage =
       location.pathname === '/' ||
       location.pathname === '/marbella' ||
+      location.pathname === '/costa-del-sol' ||
       location.pathname === '/para-jardineros';
   
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
@@ -252,6 +255,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <ScrollToTop />
       {/* En el funnel de reserva la navbar de marketing sobra: duplica cabecera (el funnel
           ya tiene Volver/Salir) y roba ~130px de la primera pantalla en móvil */}
       {!isAuthPage && !isAdminPage && !isMarketingPage && !isBookingPage && <Navbar applicationStatus={applicationStatus} />}
@@ -275,7 +279,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
       ) : (
         <main
           className={
-            isBookingPage || isMarketingPage
+            isBookingPage || isMarketingPage || isAuthPage
               ? 'w-full pb-16 sm:pb-0'
               : 'mx-auto max-w-full px-3 pb-16 sm:max-w-7xl sm:px-6 sm:pb-0 lg:px-8'
           }
@@ -299,6 +303,14 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           element={
             <ErrorBoundary fallbackTitle="Error al cargar Marbella" fallbackMessage="Recarga la pagina para volver a intentarlo.">
               <MarbellaLandingPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/costa-del-sol"
+          element={
+            <ErrorBoundary fallbackTitle="Error al cargar Costa del Sol" fallbackMessage="Recarga la pagina para volver a intentarlo.">
+              <CostaDelSolLandingPage />
             </ErrorBoundary>
           }
         />

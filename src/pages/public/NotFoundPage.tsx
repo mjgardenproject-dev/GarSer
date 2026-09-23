@@ -27,7 +27,7 @@ const NotFoundPage = () => {
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
             to="/"
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:outline-none transition-colors"
+            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-700 text-white font-medium hover:bg-emerald-800 focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:outline-none transition-colors"
           >
             <Home className="w-4 h-4" aria-hidden="true" />
             Ir al inicio

@@ -410,7 +410,7 @@ export default function RecurringScheduleManager({
                     className={`
                       w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all
                       ${isSelected 
-                        ? 'bg-green-600 text-white shadow-md shadow-green-200 scale-105' 
+                        ? 'bg-emerald-700 text-white shadow-md shadow-green-200 scale-105' 
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
                     `}
                     title={day.full}
@@ -681,7 +681,7 @@ export default function RecurringScheduleManager({
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3.5 px-6 rounded-xl font-bold shadow-lg shadow-green-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                  className="w-full bg-emerald-700 text-white py-3.5 px-6 rounded-xl font-bold shadow-lg shadow-emerald-700/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                 >
                   {saving ? (
                     <>

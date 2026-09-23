@@ -50,7 +50,7 @@ const ServiceConfigFooter: React.FC<ServiceConfigFooterProps> = ({
           className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors ${
             !isDirty || isSaving
               ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              : 'bg-green-600 text-white hover:bg-green-700'
+              : 'bg-emerald-700 text-white hover:bg-emerald-800'
           }`}
         >
           <Save className="w-4 h-4" />

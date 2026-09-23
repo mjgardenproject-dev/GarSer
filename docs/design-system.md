@@ -40,11 +40,22 @@ No hay tokens custom en `tailwind.config.js`; se usa la paleta por defecto de Ta
 
 | Uso | Clases |
 |---|---|
-| Acción primaria / CTA | `bg-gradient-to-r from-green-600 to-emerald-600`, texto blanco |
+| Acción primaria / CTA | `bg-emerald-700 hover:bg-emerald-800`, texto blanco |
 | Acción secundaria / neutra | `bg-white border border-gray-200 text-gray-700` |
 | Acción destructiva | `text-red-600 border-red-200` (outline) o `bg-red-600` (sólido, solo para confirmar un "danger") |
 | Aviso / advertencia | `amber-600` (fondo `bg-yellow-100` / icono `text-yellow-600` en el icono circular de los diálogos) |
 | Texto principal | `text-gray-900` (títulos), `text-gray-600`/`text-gray-500` (cuerpo) |
+
+**Historial (hallazgo H-01, corregido 2026-09-23)**: hasta esta fecha el CTA primario
+usaba dos patrones distintos —`bg-gradient-to-r from-green-600 to-emerald-600` aquí, y
+`bg-green-600` plano en §6— y ninguno de los dos cumplía el contraste mínimo WCAG AA
+para texto blanco (`green-600` = 3,30:1, `emerald-600` = 3,77:1; el mínimo exigido es
+4,5:1). Se unificó a `emerald-700` (contraste 5,5:1) en los ~90 botones afectados de
+toda la app — auditoría completa en
+[`docs/audit/2026-09-19-web-publica-movil/HALLAZGOS-NUEVOS.md`](audit/2026-09-19-web-publica-movil/HALLAZGOS-NUEVOS.md#h-01).
+Las barras de progreso, interruptores (*toggles*) e insignias que también usaban
+`green-600` **no se tocaron**: el contraste de texto no les aplica (son elementos sin
+texto), y cambiarlos habría sido una limpieza no pedida.
 
 ### 3.2 Colores de marca (icono / PWA)
 
@@ -111,7 +122,7 @@ Patrón ya consistente en `UnsavedChangesModal.tsx`, `ConfirmDialog.tsx` y
 
 | Tipo | Clases base |
 |---|---|
-| Primario (guardar, confirmar) | `w-full bg-green-600 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-green-600/20 hover:bg-green-700 active:scale-[0.98] transition-all` |
+| Primario (guardar, confirmar) | `w-full bg-emerald-700 text-white py-3 px-4 rounded-xl font-bold shadow-lg shadow-emerald-700/20 hover:bg-emerald-800 active:scale-[0.98] transition-all` |
 | Primario deshabilitado (sin cambios que guardar) | añadir `disabled:opacity-50 disabled:cursor-not-allowed` — el botón de guardar de un formulario **siempre** nace deshabilitado y se activa solo cuando hay cambios reales, igual que ya hace `AvailabilityManager.tsx:454` |
 | Secundario / cancelar | `w-full bg-white text-gray-700 border border-gray-200 py-3 px-4 rounded-xl font-bold hover:bg-gray-50` |
 | Destructivo (descartar, eliminar) | `w-full bg-white text-red-600 border border-red-200 py-3 px-4 rounded-xl font-bold hover:bg-red-50` |

@@ -572,7 +572,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
                 <button
                   onClick={() => respondToPriceProposal(true)}
                   disabled={priceActionLoading}
-                  className="flex-1 py-2.5 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors"
+                  className="flex-1 py-2.5 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 disabled:opacity-60 transition-colors"
                 >
                   Aceptar
                 </button>
@@ -698,7 +698,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
                       <div
                         className={`max-w-[80%] px-3.5 py-2 rounded-2xl ${
                           isOwn
-                            ? `bg-green-600 text-white rounded-br-md ${message.pending ? 'opacity-70' : ''}`
+                            ? `bg-emerald-700 text-white rounded-br-md ${message.pending ? 'opacity-70' : ''}`
                             : 'bg-gray-100 text-gray-900 rounded-bl-md'
                         }`}
                       >
@@ -779,7 +779,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
             <button
               type="submit"
               disabled={sending || (!newMessage.trim() && !selectedImage)}
-              className="p-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              className="p-2.5 bg-emerald-700 text-white rounded-xl hover:bg-emerald-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
               aria-label="Enviar mensaje"
             >
               {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}

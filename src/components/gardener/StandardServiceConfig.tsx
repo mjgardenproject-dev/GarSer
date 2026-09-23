@@ -167,7 +167,7 @@ const StandardServiceConfig: React.FC<StandardServiceConfigProps> = ({ value, on
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm disabled:opacity-50 transition-colors font-medium text-sm"
+            className="flex items-center px-6 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg shadow-sm disabled:opacity-50 transition-colors font-medium text-sm"
         >
             {isSaving ? (
                 <>

@@ -6,7 +6,7 @@
 > Regla de la casa: un hallazgo sin `fichero:línea` no es un hallazgo, es una sospecha.
 > Las sospechas van a §3.
 
-**Última actualización:** 2026-09-23
+**Última actualización:** 2026-09-23 (decisiones D1–D6)
 
 ---
 
@@ -102,7 +102,7 @@ cuando el redimensionado afecte a varios empleados.
 
 ---
 
-### H-04 · Carnet fitosanitario: quién debe tenerlo, la empresa o quien aplica — 🔴 Legal · Bloquea F5
+### H-04 · Carnet fitosanitario: quién debe tenerlo, la empresa o quien aplica — 🟢 Resuelto por D4 (2026-09-23)
 
 **Qué hay.** `20260913120000_phytosanitary_license_active_gate.sql` pone
 `has_phytosanitary_license` en `gardener_profiles` cuando la licencia se aprueba
@@ -120,6 +120,9 @@ idealmente confirmándolo con alguien que conozca la normativa.
 fitosanitario con producto convencional debe poder comprobar la licencia **del empleado
 asignado**, no solo la del proveedor. Conviene que `gardener_licenses` pueda colgar también
 de un empleado — hoy su clave ajena apunta a `gardener_profiles.user_id`.
+
+**Resolución (D4, 2026-09-23).** El usuario decide que **cada empleado adjunta su propio
+carnet**. El de la empresa no cubre a sus empleados. Diseño resultante en **A-13**.
 
 ---
 
@@ -215,6 +218,10 @@ esta es la respuesta.
 | A-08 | **Roles internos: solo `owner` y `employee`** al principio. El `CHECK` admite `manager` sin exponerlo. | Añadir un valor después es una migración de una línea. Construir hoy una matriz de permisos que nadie ha pedido, no. |
 | A-09 | **El modelo económico no cambia.** Empresa cobra en mano, cliente paga la comisión por Stripe. | No hay Connect ni payouts. Salvo que D1 diga otra cosa. |
 | A-10 | **`duration_hours` sigue con tope de 12 h.** Multi-día se expresa con bloques y `end_date`. | Ver H-02. Evita tocar siete guardas de dinero y agenda. |
+| A-11 | **La solicitud de alta de empresa es una tabla propia** (`company_applications`), no una fila más de `gardener_applications`. Con su revisión en el panel de admin. | D2. La encuesta de empresa hace otras preguntas; `gardener_applications` está llena de columnas de jardinero individual (años de experiencia, preguntas de test de césped y setos) que en una empresa no tienen sentido. |
+| A-12 | **Cada empleado tiene una lista de servicios** (`company_member_services`: empleado ↔ servicio). La capacidad de la empresa se calcula **por servicio**. | D5. Una empresa tiene hueco para el servicio X solo si hay libre alguien que hace X; con `required_workers = N`, hacen falta N personas libres que hagan X. Los servicios de un empleado tienen que estar activos en la empresa. |
+| A-13 | **El carnet fitosanitario es por persona.** `gardener_licenses` pasa a poder colgar de un empleado. La bandera de la empresa se **deriva**: tiene capacidad fitosanitaria si al menos un empleado activo con ese servicio tiene carnet aprobado y en vigor. | D4. Evita que una empresa con licencia asigne a alguien sin carnet. Y el admin ya revisa carnets hoy: se reutiliza su pantalla, no se hace otra. |
+| A-14 | **El dueño es un miembro más con un interruptor** (`counts_as_labour`). Si trabaja, tiene disponibilidad y servicios propios. | D3. No hace falta ningún caso especial en el cálculo de capacidad. |
 
 ---
 

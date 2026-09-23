@@ -6,7 +6,7 @@
 > Regla: una prueba que no se ha ejecutado se marca `⬜ no ejecutada`. **No se marca ✅ por
 > haberla escrito.** Si falla y se decide seguir igualmente, se marca ❌ y se explica por qué.
 
-**Última actualización:** 2026-09-23
+**Última actualización:** 2026-09-23 (decisiones D1–D6)
 **Línea base:** 462 tests en verde / 68 ficheros · `tsc` 130 errores (preexistentes)
 
 ---
@@ -104,6 +104,12 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F3-06 | El token no aparece en claro en la base de datos | Solo el hash | ⬜ |
 | F3-07 | Empleado intenta crearse un `gardener_profiles` | Denegado | ⬜ |
 | F3-08 | Empleado no aparece en `public_gardener_directory` | Cero filas | ⬜ |
+| F3-09 | Empresa recién registrada, **sin aprobar** por el admin (D2) | No aparece en el funnel ni puede recibir reservas | ⬜ |
+| F3-10 | El admin ve la solicitud de empresa **en su propia sección**, con las respuestas de la encuesta de empresa (D2) | Separada de las de jardineros | ⬜ |
+| F3-11 | Marcar a un empleado un servicio que la empresa **no** tiene activo (D5) | No se permite | ⬜ |
+| F3-12 | Activar «Servicios fitosanitarios» a un empleado **sin carnet** adjuntado y aprobado (D4) | No se permite | ⬜ |
+| F3-13 | Empleado con carnet **caducado** | Se le desactiva el servicio fitosanitario | ⬜ |
+| F3-14 | Dueño activa y desactiva «Yo también trabajo» (D3) | Aparece y desaparece de la lista de su equipo como trabajador | ⬜ |
 
 > F3-04 es la prueba de seguridad principal de toda la fase de empresas.
 
@@ -121,6 +127,11 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F4-06 | **Reserva completa a una empresa, de punta a punta** | Confirmada y pagada | ⬜ |
 | F4-07 | En paralelo, el funnel del autónomo no ha cambiado | R-04 sigue pasando | ⬜ |
 | F4-08 | Empleado leyendo `gardener_service_prices` de su empresa | Denegado | ⬜ |
+| F4-09 | Empresa con 3 empleados libres, **ninguno** hace setos; cliente pide setos (D5) | La empresa **no** aparece | ⬜ |
+| F4-10 | Mismo caso, uno de ellos sí hace setos | Aparece, con capacidad para 1 persona | ⬜ |
+| F4-11 | Dueño que **no** trabaja y 0 empleados libres (D3) | No aparece | ⬜ |
+| F4-12 | Dueño que **sí** trabaja, libre, con el servicio marcado (D3) | Aparece | ⬜ |
+| F4-13 | Fitosanitario convencional: empresa cuyo único empleado fitosanitario no tiene carnet (D4) | No aparece para ese tratamiento | ⬜ |
 
 ---
 
@@ -133,9 +144,13 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F5-03 | Tras desasignarle, deja de ver esa PII | Inmediato, sin limpieza manual | ⬜ |
 | F5-04 | Empleado intenta cancelar una reserva | Denegado | ⬜ |
 | F5-05 | Empleado marca inicio y fin de su trabajo | Permitido | ⬜ |
-| F5-06 | Asignar trabajo fitosanitario convencional a empleado sin carnet | Según D4 — ver H-04 | ⬜ |
+| F5-06 | Asignar trabajo fitosanitario convencional a empleado sin carnet (D4) | No aparece en la lista; imposible asignarlo también por API | ⬜ |
 | F5-07 | Desactivar a un empleado con trabajos futuros | **Bloqueado** hasta reasignar | ⬜ |
 | F5-08 | Email al empleado al ser asignado | Llega | ⬜ |
+| F5-09 | Al asignar un trabajo de setos, la lista solo muestra empleados que hacen setos (D5) | Solo esos | ⬜ |
+| F5-10 | Asignar por API a un empleado que no hace ese servicio (D5) | Rechazado por el servidor, no solo oculto en pantalla | ⬜ |
+| F5-11 | El cliente ve nombre y foto del trabajador **el día antes** (D6) | Sí | ⬜ |
+| F5-12 | El cliente intenta ver quién va **dos días antes**, o ver su teléfono (D6) | No lo ve | ⬜ |
 
 ---
 

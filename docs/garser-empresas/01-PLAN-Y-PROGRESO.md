@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** Fase 0 no empezada · Diseño cerrado · Sin código escrito
+**Estado global:** Fase 0 no empezada · Diseño cerrado · Decisiones D1–D6 respondidas · Sin código escrito
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 462 en verde / 68 ficheros
 
@@ -58,12 +58,32 @@ planificar es la forma más cara de equivocarse en este proyecto.
 
 ---
 
-## 2. Decisiones pendientes del usuario
+## 2. Decisiones del usuario
 
-No las decida el chat. Están bloqueando lo que se indica en cada fila.
+Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las cambia.
 
-| # | Decisión | Bloquea | Por qué importa |
+| # | Pregunta | Respuesta del usuario | Qué cambia en el diseño | Fase |
+|---|---|---|---|---|
+| D1 | ¿La empresa paga la misma comisión? | **Sí, 12,5 %, igual que el autónomo.** | Nada. El modelo económico no se toca. | F4 |
+| D2 | ¿La empresa pasa por el mismo alta que un autónomo? | **No. Alta de aprobación propia, con una encuesta para empresas** con las preguntas que interesan a GarSer. | Solicitud de empresa **separada** de `gardener_applications`, con su revisión en el panel de admin. Ver A-11. Genera **D7**. | F3 |
+| D3 | ¿El dueño cuenta como mano de obra? | **El dueño elige si trabaja o no.** | Interruptor «Yo también trabajo». Si lo activa, tiene su disponibilidad y sus servicios como un empleado más y cuenta como capacidad. Si no, no cuenta. | F3, F4 |
+| D4 | ¿Vale el carnet fitosanitario de la empresa o hace falta el de cada empleado? | **Cada empleado tiene que tener adjuntado su carnet.** | El carnet es **por persona**. El de la empresa no cubre a sus empleados. Ver A-13 y la nota de interpretación de abajo. | F3, F5 |
+| D5 | ¿Los empleados tienen especialidades? | **Sí. Al crear un empleado, el empresario marca qué servicios hace.** Al asignar, solo aparecen los empleados con ese servicio activo. | La capacidad de la empresa se calcula **por servicio**, no en bloque. Ver A-12. **Adelanta trabajo de F6 a F3 y F4.** | F3, F4, F5 |
+| D6 | ¿El cliente ve quién va a ir? | **Aceptada la recomendación.** | Nombre y foto del trabajador asignado, **el día antes**. Ni antes ni más datos. | F5 |
+
+> **Interpretación aplicada a D4 — pendiente de confirmar.** Se entiende que el carnet se
+> exige al empleado que **hace servicios fitosanitarios**: sin su carnet adjuntado y aprobado
+> no se le puede activar ese servicio ni asignarle esos trabajos. A un empleado que solo corta
+> césped no se le pide. Si la intención era exigírselo a **todos** los empleados, hay que
+> decirlo antes de la F3.
+
+### Pendiente
+
+| # | Pregunta | Bloquea | Por qué |
 |---|---|---|---|
+| D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. Las decide el usuario; el chat puede proponer un borrador cuando llegue la F3. |
+
+---|---|---|---|
 | D1 | **¿Una empresa paga la misma comisión del 12,5 %?** ¿O hay tramos por volumen? | F4 | Cambia el modelo económico. Por defecto: igual que el autónomo. |
 | D2 | **¿Una empresa pasa por el mismo alta con aprobación que un autónomo** (`gardener_applications`)? | F3 | Es el control de calidad de la oferta. Por defecto: sí, mismo circuito. |
 | D3 | **¿El dueño de la empresa cuenta como mano de obra?** | F4 | En empresas pequeñas el dueño trabaja. Campo previsto: `company_members.counts_as_labour`. |
@@ -148,25 +168,36 @@ prueban con dos empresas sembradas, contra la API, no contra la interfaz.
 
 #### ⬜ F3 — Alta de empresa y de empleados
 
-- [ ] Registro «Tengo una empresa de jardinería» en `AuthForm`. *(Depende de D2.)*
+- [ ] Registro «Tengo una empresa de jardinería» en `AuthForm`.
+- [ ] **Solicitud de alta de empresa propia** (D2): encuesta de empresa (preguntas de D7),
+      tabla separada de `gardener_applications`, y su revisión en el panel de admin. Hasta que
+      el admin la aprueba, la empresa no aparece en el funnel.
+- [ ] Interruptor del dueño «Yo también trabajo» (D3).
+- [ ] Alta de empleado con **selección de servicios** (D5). Solo se pueden marcar servicios
+      que la empresa tiene activos.
+- [ ] **Carnet fitosanitario por empleado** (D4): subida del carnet en la ficha del empleado,
+      aprobación por el admin, y sin carnet aprobado no se le puede activar ese servicio.
 - [ ] Invitación por token: se guarda **el hash**, nunca el token.
 - [ ] Email de invitación — tipo nuevo en el despachador Brevo existente.
 - [ ] RPC `accept_company_invitation(token)`: deriva `company_id` **del token**, jamás de un
       parámetro. Rechaza si quien acepta ya tiene `gardener_profiles`.
 - [ ] Panel de empresa mínimo: perfil y equipo.
 
-**Criterio de cierre.** Una empresa con un empleado existe y ambos entran a su panel.
-Probado el vector de suplantación de `company_id`.
+**Criterio de cierre.** Una empresa aprobada por el admin, con un empleado con servicios
+asignados, existe y ambos entran a su panel. Probado el vector de suplantación de
+`company_id`.
 
 ---
 
 #### ⬜ F4 — La empresa vende
 
-- [ ] Vista `provider_free_hours` sobre la tabla de disponibilidad que quede tras H-01.
+- [ ] Vista `provider_free_hours` sobre la tabla de disponibilidad que quede tras H-01,
+      **calculada por servicio** (D5): una empresa solo tiene hueco para el servicio X si hay
+      libre un empleado que hace el servicio X. El dueño cuenta solo si trabaja (D3).
 - [ ] `booking-authority` lee capacidad (`free_count`) en vez de disponibilidad binaria.
       **Recordatorio: esta función importa `bookingQuoteCore.ts` → hay que redesplegarla.**
 - [ ] La empresa configura precios con los configuradores existentes, sin tocarlos.
-- [ ] La empresa aparece en `ProvidersPage` con distintivo discreto. *(Depende de D1, D3.)*
+- [ ] La empresa aparece en `ProvidersPage` con distintivo discreto. Comisión 12,5 % (D1).
 
 **Criterio de cierre.** **Primera reserva a una empresa, de punta a punta**, incluida la
 comisión por Stripe. Verificado en paralelo que el funnel del autónomo no ha cambiado.
@@ -182,12 +213,14 @@ comisión por Stripe. Verificado en paralelo que el funnel del autónomo no ha c
 
 #### ⬜ F5 — Asignar y ejecutar
 
-- [ ] Asignación mínima: el dueño elige empleado de una lista de quién está libre.
+- [ ] Asignación mínima: el dueño elige empleado de una lista de quién está libre **y hace
+      ese servicio** (D5). En trabajos fitosanitarios, solo quien tiene carnet aprobado (D4).
 - [ ] Extender `shares_booking_with()` con la vía «estoy asignado» — es lo que deja al
       empleado ver la dirección del trabajo. Mínimo privilegio: **asignado**, no *de la empresa*.
 - [ ] Panel de empleado: Hoy / Mi semana / Mi disponibilidad / Perfil.
 - [ ] Emails de asignación y de cambio.
-- [ ] Puerta de carnet fitosanitario en la asignación. *(Depende de D4 — ver H-04.)*
+- [ ] Puerta de carnet fitosanitario en la asignación, **por empleado** (D4, H-04).
+- [ ] El cliente ve nombre y foto de quién va, **el día antes** (D6).
 
 #### ⬜ F6 — Planificación y reasignación
 
@@ -226,7 +259,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | Fecha | Fase | Qué se hizo | Tests | Commit |
 |---|---|---|---|---|
 | 2026-09-20 | — | Auditoría, arquitectura y plan. Sin código. | 462 ✅ | `1486dde` |
-| 2026-09-23 | — | Documentos llevados a `feat/garser-empresas` sobre `origin/main` (#34). Hallazgos y línea base revalidados: tests igual, `tsc` 172→130. MCP de Supabase conecta al local. Sin código. | 462 ✅ | (este) |
+| 2026-09-23 | — | Documentos llevados a `feat/garser-empresas` sobre `origin/main` (#34). Hallazgos y línea base revalidados: tests igual, `tsc` 172→130. MCP de Supabase conecta al local. Sin código. | 462 ✅ | `3e6d84b` |
+| 2026-09-23 | — | Respuestas del usuario a D1–D6 incorporadas al plan, hallazgos y pruebas. Nueva pendiente D7. Sin código. | 462 ✅ | (este) |
 
 ---
 
@@ -240,4 +274,5 @@ Pendientes para cuando arranque la Fase 0:
 2. **Consultar solapes en `booking_blocks` de producción** antes de la F1 (ver prueba F1-00).
    El MCP de Supabase conecta, pero solo al local: esta consulta hay que hacerla desde el
    panel de Supabase de producción.
-3. **Responder D1 y D2**, que bloquean las fases 3 y 4.
+3. ~~Responder D1–D6~~ → respondidas el 2026-09-23.
+4. **Responder D7** (preguntas de la encuesta de empresas) antes de la F3. No bloquea F0–F2.

@@ -171,9 +171,19 @@ Cosas ciertas sobre esta máquina y este repositorio, a 2026-09-23:
   producción** hasta que el proyecto esté terminado y probado. Ver `01-PLAN-Y-PROGRESO.md` §0.
 - **Este es el único chat del proyecto.** El usuario lo decidió el 2026-09-23. Aun así, si al
   arrancar ves cambios sin commitear que no son tuyos, para y pregunta.
+- **Supabase local: se levanta desde ESTA carpeta** (proyecto `GarSer-main_4`, contenedores
+  `supabase_*_GarSer-main_4`). Montado el 2026-09-23: se paró el stack de
+  `~/Downloads/auditorias/transversal` (sus datos siguen en su volumen, `supabase start` desde
+  esa carpeta lo recupera) y se reconstruyó la BD con `supabase db reset` porque la anterior
+  (de agosto) tenía una migración ajena, `20260905120000`, que no existe en este código.
+  Verificado tras el reset: 113/113 migraciones, 3 cuentas de la semilla, Edge Functions
+  montadas desde `GarSer-main 4/supabase/functions`.
+- **Cuentas de prueba** (de `supabase/seed.sql`): `admin.local@test.local`,
+  `cliente.local@test.local`, `jardinero.local@test.local`.
+- **Consultas a la BD local:** `docker exec supabase_db_GarSer-main_4 psql -U postgres -d
+  postgres -tAc "<sql>"` (no hay `psql` instalado en la máquina). Tras añadir una migración:
+  `supabase migration up`; para empezar de cero: `supabase db reset`.
 - **MCP de Supabase: conecta al Supabase LOCAL** (`http://127.0.0.1:54321`), no a producción.
-  Tiene 112 de las 113 migraciones del repo; solo falta `20260914121653` (imágenes de setos),
-  que no afecta a este proyecto. Sirve para verificar el esquema y probar RLS en local.
   **No sirve para consultar datos de producción.**
 - **Línea base de tests: 462 en verde / 68 ficheros** (revalidada 2026-09-23).
 - **`tsc`: 130 errores preexistentes** (eran 172 antes del #34). No es señal de regresión.

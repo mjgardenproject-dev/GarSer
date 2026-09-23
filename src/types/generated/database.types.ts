@@ -270,6 +270,7 @@ export type Database = {
       }
       booking_blocks: {
         Row: {
+          assignee_id: string
           booking_id: string | null
           created_at: string | null
           date: string
@@ -277,6 +278,7 @@ export type Database = {
           id: string
         }
         Insert: {
+          assignee_id: string
           booking_id?: string | null
           created_at?: string | null
           date: string
@@ -284,6 +286,7 @@ export type Database = {
           id?: string
         }
         Update: {
+          assignee_id?: string
           booking_id?: string | null
           created_at?: string | null
           date?: string
@@ -2487,6 +2490,7 @@ export type Database = {
         Returns: Json
       }
       shares_booking_with: { Args: { target_user: string }; Returns: boolean }
+      signup_role_from_metadata: { Args: { p_meta: Json }; Returns: string }
       update_own_review: {
         Args: { p_comment: string; p_rating: number; p_review_id: string }
         Returns: Json

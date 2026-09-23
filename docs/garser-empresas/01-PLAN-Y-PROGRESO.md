@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ Fase 0 cerrada (2026-09-23) · siguiente: F1 — registro de capacidad
+**Estado global:** ✅ F0 y ✅ F1 cerradas (2026-09-23) · BLOQUE 0 (cimientos) terminado · siguiente: F2 — el proveedor como concepto
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -172,22 +172,28 @@ cuatro cuentas sembradas antes de cerrar.
 
 ---
 
-#### ⬜ F1 — El registro de capacidad
+#### ✅ F1 — El registro de capacidad
 
 **Problema.** `booking_blocks(booking_id, date, hour_block)` no sabe **quién** trabaja: se
 deduce de `bookings.gardener_id`. Mientras el trabajo lo haga una persona funciona; en cuanto
 lo ejecutan dos empleados, o se reparte en varios días, el modelo no puede representarlo.
 
-**Trabajo.**
-- [ ] `ALTER TABLE booking_blocks ADD COLUMN assignee_id uuid` + relleno desde
-      `bookings.gardener_id` + `SET NOT NULL`.
-- [ ] `CREATE UNIQUE INDEX (assignee_id, date, hour_block)` — la doble reserva pasa a ser
-      imposible por esquema, no por procedimiento.
-- [ ] Actualizar las **tres** funciones que escriben la agenda:
-      `reserve_booking_schedule()`, `release_booking_schedule()` y
-      **`resize_booking_schedule()`** (esta última es nueva, de la migración `20260913121000`).
-- [ ] Resolver el destino de `availability_blocks` — ver hallazgo **H-01**.
-- [ ] Actualizar `BookingRequestsManager.tsx`, único fichero de frontend que lee la tabla.
+**Trabajo.** ✅ **hecho** (migración `20260923130000_empresas_f1_capacity_ledger.sql`)
+- [x] `booking_blocks.assignee_id` + relleno desde `bookings.gardener_id` + `SET NOT NULL`.
+      La migración **se detiene sin tocar nada** si hay bloques sin atribuir o dobles ventas.
+- [x] `UNIQUE (assignee_id, date, hour_block)` — la doble venta es imposible por esquema.
+- [x] ~~Las tres funciones~~ → **eran cinco escritoras** (H-17). No se reescriben: un
+      disparador rellena `assignee_id` cuando no se indica (A-15).
+- [x] **Imprevisto (H-18):** `ON CONFLICT DO NOTHING` sin destino en tres funciones →
+      con destino `(booking_id, date, hour_block)`.
+- [x] `release_booking_schedule` libera las horas de **quien las trabajaba**.
+- [x] H-01 resuelto: `reserve` y `resize` deciden con `availability` (A-16). Arregla un fallo
+      que ya existía (el jardinero no podía aceptar o alargar horas que la web ofrecía).
+- [x] `BookingRequestsManager.tsx`: **sin cambios** — no lee la tabla, construye un array
+      sintético (H-05).
+- [x] Tipos regenerados (`database.types.ts`, +4 líneas).
+- [x] Verificación repetible: `node scripts/garser-empresas/verify-f1-schedule.mjs` → 13/13
+      (5/11 antes de la migración).
 
 **Criterio de cierre.** Una reserva de autónomo se crea, se redimensiona y se cancela
 exactamente igual que antes. 462 tests en verde. Comprobación explícita de que no quedan
@@ -196,6 +202,12 @@ exactamente igual que antes. 462 tests en verde. Comprobación explícita de que
 **Riesgo.** Crítico. Es el punto de no retorno del proyecto. **Antes de migrar** hay que
 consultar si existen solapes en producción: si el índice único falla al crearse, son dobles
 reservas reales que hay que resolver a mano.
+
+**Cierre (2026-09-23).** Cumplido. Probado además **sobre datos existentes**, que es lo que
+pasará en producción: con reservas normales la migración atribuye todas las horas al
+jardinero; con una doble venta ya existente, o con una hora sin reserva, se detiene y no
+toca nada. Tras `db reset` desde cero: 115/115 migraciones, F1 13/13, F0 7/7, 473 tests,
+build, `tsc` 129. Concurrencia real repetida tres veces: siempre una sola ganadora.
 
 ---
 
@@ -318,7 +330,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | — | D4 precisada, D7 aplazada a F3, política «todo en local hasta el final» (§0, §6). Sin código. | 462 ✅ | `2e94af9` |
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
-| 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | (este) |
+| 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
+| 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | (este) |
 
 ---
 
@@ -369,7 +382,23 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 | Fase | Qué | Notas |
 |---|---|---|
 | F0 | **Aplicar `20260923120000_empresas_f0_profile_on_signup.sql` cierra H-11** (escalada a admin) y arregla el alta del correo corporativo (H-15). Antes, ejecutar la consulta 1 de §5b: si aparece algún admin que no sea el del usuario, retirarlo | Si `garser.es` recibe usuarios reales antes de la fusión, adelantar esto (D8) |
-| F1 | Consultar solapes en `booking_blocks` de producción **antes** de aplicar la migración | Si los hay, son dobles reservas reales: resolver a mano primero |
+| F1 | Consultar solapes en `booking_blocks` de producción **antes** de aplicar la migración | Si los hay, son dobles reservas reales: resolver a mano primero. La migración ya se niega a correr si los hay, pero conviene saberlo antes. Consulta abajo |
+| F1 | Consultar bloques sin reserva o sin proveedor | Misma razón: la migración se detendría. Consulta abajo |
+| F1 | Aplicar `20260923130000_empresas_f1_capacity_ledger.sql` **después** de la de F0 | Cambia `confirm_booking_payment_attempt`: el camino de todos los pagos. Probar P-F1-1 justo después |
+
+**Consultas previas de F1 (solo lectura, SQL Editor de producción):**
+
+```sql
+-- Horas vendidas dos veces a la misma persona (debe dar 0 filas)
+select b.gardener_id, bb.date, bb.hour_block, count(*)
+from public.booking_blocks bb join public.bookings b on b.id = bb.booking_id
+group by 1, 2, 3 having count(*) > 1;
+
+-- Bloques sin reserva o sin proveedor (debe dar 0)
+select count(*) from public.booking_blocks bb
+left join public.bookings b on b.id = bb.booking_id
+where b.gardener_id is null;
+```
 | — | Traer a esta rama lo que haya entrado en `main` | Ver §0 |
 
 ### Cambios que notarán los usuarios reales al fusionar (por F0)
@@ -382,3 +411,11 @@ tenían perfil (H-12). Con F0 empiezan a funcionar:
    `shouldHideNav`). La regla existía, pero nunca se cumplía.
 3. **Al aprobar un jardinero, su perfil pasa a `gardener`** (`admin_review_gardener_application`):
    antes el `UPDATE` no encontraba fila.
+
+### Cambios que notarán los usuarios reales al fusionar (por F1)
+
+1. **Los jardineros podrán aceptar y alargar servicios en horas que la web ya ofrecía como
+   libres**, aunque esos días estén fuera de la ventana del generador nocturno (H-01). Hoy les
+   decía que no tenían horas libres.
+2. **Si alguna vez la disponibilidad se desincroniza, un segundo pago por la misma hora ya no
+   crea una doble reserva:** queda en `reconciliation_required` para conciliar (H-19).

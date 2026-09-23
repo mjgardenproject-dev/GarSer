@@ -17,14 +17,14 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Cómo | Estado |
 |---|---|---|---|
-| R-01 | `npm test` ≥ 462 en verde | Automático | ✅ F0 cerrada: 473 |
-| R-02 | `npm run build` pasa | Automático | ✅ F0 cerrada |
-| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ✅ F0 cerrada: 129 |
-| R-04 | Funnel completo de autónomo: servicio → fotos → precio → profesional → fecha → comisión → confirmación | Manual, en local | ⬜ |
-| R-05 | Reserva de autónomo: las horas se bloquean y se liberan igual que antes | Manual + SQL | ⬜ |
-| R-06 | Cambio de precio **con cambio de duración** aceptado: la agenda se redimensiona | Manual | ⬜ |
-| R-07 | Cancelación con política de 24 h | Manual | ⬜ |
-| R-08 | Incidencia y no-show | Manual | ⬜ |
+| R-01 | `npm test` ≥ 462 en verde | Automático | ✅ F1 cerrada: 473 |
+| R-02 | `npm run build` pasa | Automático | ✅ F1 cerrada |
+| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ✅ F1 cerrada: 129 |
+| R-04 | Funnel completo de autónomo: servicio → fotos → precio → profesional → fecha → comisión → confirmación | Manual, en local | 🟨 F1: por API real (`valid_hours`, `create_quote`, preparar y confirmar pago). Sin recorrer la interfaz: F1 no toca frontend ni `booking-authority` |
+| R-05 | Reserva de autónomo: las horas se bloquean y se liberan igual que antes | Manual + SQL | ✅ F1 (F1-03a, F1-04, por el camino real de pago) |
+| R-06 | Cambio de precio **con cambio de duración** aceptado: la agenda se redimensiona | Manual | ✅ F1 (F1-05, F1-06) |
+| R-07 | Cancelación con política de 24 h | Manual | 🟨 F1: cancelación a más de 24 h ✅ (F1-04). El tramo de menos de 24 h no se ha probado |
+| R-08 | Incidencia y no-show | Manual | 🟨 F1: no ejecutada. Usan la misma `release_booking_schedule` que la cancelación (probada); para un autónomo el cambio es neutro (`assignee_id` = proveedor) |
 | R-09 | Cada tipo de cuenta entra a su panel: cliente, autónomo, admin | Manual, 3 cuentas | ✅ F0 (y además jardinero sin solicitud, pendiente y rechazado) |
 | R-10 | Un autónomo sin empresa no ve **nada** de empresas en ninguna pantalla | Manual | ✅ F0 (aún no existe nada de empresas) |
 
@@ -79,18 +79,30 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F1-00 | **Antes de migrar:** consultar solapes existentes en `booking_blocks` | Cero. Si no, son dobles reservas reales que resolver a mano | ⬜ |
-| F1-01 | Tras el relleno, ningún `assignee_id` a `NULL` | `COUNT(*) WHERE assignee_id IS NULL` = 0 | ⬜ |
-| F1-02 | `COUNT(*)` de `booking_blocks` idéntico antes y después | Mismo número | ⬜ |
-| F1-03 | Crear una reserva de autónomo | Bloques con `assignee_id` = el autónomo | ⬜ |
-| F1-04 | Cancelar esa reserva | Las horas vuelven a estar libres | ⬜ |
-| F1-05 | Aceptar un cambio de duración que **alarga** con horas libres | La agenda se redimensiona | ⬜ |
-| F1-06 | Aceptar un cambio de duración que alarga **sin** horas libres | Falla entero, no deja nada a medias | ⬜ |
-| F1-07 | Dos reservas simultáneas sobre la misma hora, **en paralelo de verdad** | Una gana, la otra recibe error claro | ⬜ |
-| F1-08 | Insertar a mano un bloque duplicado `(assignee, date, hour)` | Rechazado por el índice único | ⬜ |
+| F1-00 | **Antes de migrar en producción:** consultar solapes y bloques sin atribuir | Cero. Consultas en `01-PLAN-Y-PROGRESO.md` §6 | ⬜ (día de la fusión) |
+| F1-01 | Ningún `assignee_id` a `NULL` y la columna es `NOT NULL` | Correcto | ✅ 2026-09-23 |
+| F1-02 | Migración sobre **reservas existentes**: todas las horas quedan atribuidas | 4/4 bloques con ejecutante = jardinero | ✅ 2026-09-23 |
+| F1-02b | Migración con una **doble venta ya existente** | Se detiene y no toca nada | ✅ 2026-09-23 (la columna ni se crea) |
+| F1-02c | Migración con un **bloque sin reserva** | Se detiene y no toca nada | ✅ 2026-09-23 |
+| F1-03a | Reserva pagada (camino de Stripe) bloquea sus horas | Bloques = duración | ✅ 2026-09-23 |
+| F1-03b | Cada hora pagada sabe quién la trabaja | `assignee_id` = el jardinero | ✅ 2026-09-23 (❌ antes: no existía) |
+| F1-03c | El jardinero acepta una reserva pendiente | Confirmada, bloques intactos | ✅ 2026-09-23 |
+| F1-04 | Cancelar libera las horas de quien las trabajaba | Horas libres, sin bloques | ✅ 2026-09-23 |
+| F1-05 | Negociar una hora más **con horas libres**, en un día sin filas en `availability_blocks` | La agenda se redimensiona y la reserva se confirma | ✅ 2026-09-23 (❌ antes: H-01) |
+| F1-05b | La hora añadida sabe quién la trabaja | `assignee_id` = el jardinero | ✅ 2026-09-23 |
+| F1-06 | Negociar más horas **sin sitio** (pisaría otra reserva) | Falla entero, nada a medias, la otra reserva intacta | ✅ 2026-09-23 |
+| F1-07a | Un bloque insertado sin ejecutante lo hereda del proveedor | Correcto | ✅ 2026-09-23 |
+| F1-07b | Un bloque sin reserva ni ejecutante | Rechazado | ✅ 2026-09-23 |
+| F1-08 | **Disponibilidad desincronizada + segundo cliente paga la misma hora** | No hay doble venta; el pago queda en `reconciliation_required` | ✅ 2026-09-23 (❌ antes: **se vendió dos veces**, H-19) |
+| F1-10 | Aceptar una reserva sin horas bloqueadas (ejercita `reserve_booking_schedule`), en un día sin filas en `availability_blocks` | Reserva la agenda | ✅ 2026-09-23 (❌ antes: H-01) |
+| F1-11 | **Concurrencia real:** dos aceptaciones simultáneas de la misma hora (`Promise.all`) | Gana una; la otra, error claro; un solo bloque | ✅ 2026-09-23, repetida 3 veces |
+| F1-12 | `db reset` desde cero con la migración y la semilla | 115/115, sin errores | ✅ 2026-09-23 |
 
-> F1-07 hay que ejecutarla en paralelo real, no en secuencia. En secuencia pasa siempre y no
-> prueba nada.
+> Se repiten con `node scripts/garser-empresas/verify-f1-schedule.mjs` (13 comprobaciones).
+> Crea reservas, clientes temporales e intentos de pago reales y los borra al terminar; retira
+> las filas de `availability_blocks` del día de prueba y las repone. Solo corre contra
+> `127.0.0.1`. Las pruebas F1-02 se hicieron a mano (base en estado previo a F1 + datos +
+> `migration up`): el procedimiento está en el commit de F1.
 
 ---
 
@@ -220,6 +232,10 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F0-4 | `select count(*) from auth.users u where not exists (select 1 from profiles p where p.user_id=u.id)` → 0 | F0 | ⬜ |
 | P-F0-5 | Entrar como jardinero aprobado en el móvil: la barra inferior dice «Panel» | F0 | ⬜ |
 | P-F0-6 | Panel de admin → Usuarios → Monitor de Roles: 0 inconsistencias, y ningún jardinero pendiente marcado | F0 | ⬜ |
+| P-F1-1 | **Justo tras migrar:** hacer una reserva real pagada con Stripe (modo prueba) y comprobar en el SQL Editor que sus filas de `booking_blocks` tienen `assignee_id` = el jardinero | F1 | ⬜ |
+| P-F1-2 | El jardinero propone una hora más en una reserva pendiente y el cliente acepta: la reserva se confirma y la agenda crece | F1 | ⬜ |
+| P-F1-3 | Cancelar esa reserva: las horas vuelven a estar libres en la web | F1 | ⬜ |
+| P-F1-4 | `select count(*) from booking_blocks where assignee_id is null` → 0 | F1 | ⬜ |
 
 ---
 

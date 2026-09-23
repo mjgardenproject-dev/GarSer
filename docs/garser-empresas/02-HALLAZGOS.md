@@ -18,7 +18,7 @@ commit `ed9fd6b`. **Revalidados el 2026-09-23 sobre `origin/main` `6eef75c`** (t
 
 ---
 
-### H-01 · Hay dos tablas de disponibilidad y el frontend solo usa una — 🔴 Bloquea F1
+### H-01 · Hay dos tablas de disponibilidad y el frontend solo usa una — 🟢 Resuelto en F1 (ver actualización al final)
 
 **Qué pasa.** Existen `availability` (rangos) y `availability_blocks` (una fila por hora).
 Las RPC mantienen **las dos** en paralelo. Pero:
@@ -49,6 +49,23 @@ dé, y es la que nadie lee.
 **Ojo:** `availability` **no tiene clave ajena** sobre `gardener_id`, así que un empleado
 (que no está en `gardener_profiles`) puede tener filas ahí sin cambiar el esquema. Esto es
 lo que hace viable el modelo de capacidad por empleado.
+
+**Actualización F1 (2026-09-23) — la premisa estaba incompleta y el fallo era real.**
+«Nadie lee `availability_blocks`» solo era cierto para el código TypeScript. En SQL la leían
+`reserve_booking_schedule`, `resize_booking_schedule` y `generate_recurring_slots`, y el
+comentario de `resize` la llamaba «la fuente canónica»: **dos partes del sistema no se ponían
+de acuerdo sobre qué tabla manda**. Consecuencia demostrada (pruebas F1-05 y F1-10 en rojo
+antes del arreglo): en un día sin filas en `availability_blocks` (fuera de la ventana del
+generador nocturno, o con disponibilidad puesta a mano) **la web ofrecía una hora que el
+jardinero luego no podía aceptar ni alargar** («no tiene libres las horas»). Tras
+`supabase db reset` la tabla queda vacía (la semilla no la rellena), y así apareció.
+
+**Resuelto (opción A, parcial y reversible):** `reserve` y `resize` deciden ahora con
+`availability` y con el mismo criterio que `confirm_booking_payment_attempt`
+(`count_distinct_available_legacy_hours` + bloqueo `FOR UPDATE`). **`availability_blocks` se
+sigue escribiendo** en todas partes como espejo, pero ya no decide nada en la agenda. Solo
+la lee `generate_recurring_slots`. Retirarla del todo queda para cuando se construya
+`provider_free_hours` (F4), que tiene que elegir una única fuente: A-16.
 
 ---
 
@@ -324,6 +341,58 @@ errores de `tsc`. Con `useAccount()` queda resuelto (`tsc` 130 → 129) y probad
 
 ---
 
+### H-17 · No eran tres funciones las que escriben la agenda: eran cinco — 🟢 Resuelto en F1
+
+El plan decía «actualizar `reserve_`, `release_` y `resize_booking_schedule`». La consulta a
+las definiciones **vivas** de la BD (no a las migraciones) dio cinco escritoras de
+`booking_blocks`: esas tres más **`create_atomic_booking`** (sin llamadas hoy: código muerto)
+y **`confirm_booking_payment_attempt`**, que es la que crea la reserva cuando llega el pago
+de Stripe (`booking-payment` y `booking-payment-webhook`): **el camino de todas las reservas
+reales**. Con `assignee_id NOT NULL` y solo tres funciones adaptadas, la primera reserva
+pagada tras la migración habría fallado.
+
+Lección: el inventario de quién escribe una tabla se saca de `pg_get_functiondef` en la BD,
+no de `grep` sobre migraciones.
+
+---
+
+### H-18 · `ON CONFLICT DO NOTHING` sin destino habría convertido el índice nuevo en una venta silenciosa — 🟢 Resuelto en F1
+
+`create_atomic_booking`, `confirm_booking_payment_attempt` y `resize_booking_schedule`
+insertaban los bloques con `ON CONFLICT DO NOTHING` **sin decir qué conflicto**. Postgres lo
+aplica a **cualquier** restricción única. Con el índice nuevo `(assignee_id, date,
+hour_block)`, un choque entre dos reservas no habría dado error: la segunda reserva se habría
+creado **sin sus horas bloqueadas**, en silencio — peor que no tener índice. Lo que esas
+funciones querían ignorar era el reintento de la misma reserva
+(`booking_blocks_booking_id_date_hour_block_key`). Ahora dicen exactamente eso:
+`ON CONFLICT (booking_id, date, hour_block) DO NOTHING`.
+
+---
+
+### H-19 · Hoy la agenda puede vender dos veces la misma hora si la disponibilidad se desincroniza — 🟢 Resuelto en F1
+
+**Demostrado antes de la migración** (prueba F1-08 en rojo): marcando como libres en
+`availability` las horas de una reserva confirmada (una desincronización), un **segundo
+cliente** compró esas mismas dos horas del mismo jardinero. La agenda (`booking_blocks`) no
+tenía ninguna defensa propia: dependía por completo de que la disponibilidad dijera la verdad.
+
+Tras F1, el índice único lo impide por esquema: el pago del segundo cliente no se convierte en
+reserva y queda en **`reconciliation_required`**, el estado que ya existía para pagos que no
+pueden convertirse en reserva (migración `20260909122000_payment_reconciliation_helpers`).
+El dinero no se pierde en silencio: queda marcado para conciliar.
+
+---
+
+### H-20 · Las solicitudes a varios jardineros están desactivadas para los clientes — 🟢 Informativo
+
+`create_broadcast_booking_requests` tiene el `EXECUTE` retirado a `authenticated` (endurecimiento
+de mayo) y ni la web ni las Edge Functions la llaman. Por eso hoy **nadie** alcanza la
+comprobación de `reserve_booking_schedule`: el pago ya inserta los bloques y `reserve` sale sin
+comprobar. La prueba F1-10 crea la reserva pendiente directamente en la BD para ejercitarla.
+Relevante para F5: la asignación de empleados probablemente reutilice `reserve`.
+
+---
+
 ## 2. Decisiones de arquitectura cerradas
 
 No se vuelven a discutir salvo que aparezca evidencia nueva. Si alguien propone lo contrario,
@@ -345,6 +414,8 @@ esta es la respuesta.
 | A-12 | **Cada empleado tiene una lista de servicios** (`company_member_services`: empleado ↔ servicio). La capacidad de la empresa se calcula **por servicio**. | D5. Una empresa tiene hueco para el servicio X solo si hay libre alguien que hace X; con `required_workers = N`, hacen falta N personas libres que hagan X. Los servicios de un empleado tienen que estar activos en la empresa. |
 | A-13 | **El carnet fitosanitario es por persona.** `gardener_licenses` pasa a poder colgar de un empleado. La bandera de la empresa se **deriva**: tiene capacidad fitosanitaria si al menos un empleado activo con ese servicio tiene carnet aprobado y en vigor. | D4. Evita que una empresa con licencia asigne a alguien sin carnet. Y el admin ya revisa carnets hoy: se reutiliza su pantalla, no se hace otra. |
 | A-14 | **El dueño es un miembro más con un interruptor** (`counts_as_labour`). Si trabaja, tiene disponibilidad y servicios propios. | D3. No hace falta ningún caso especial en el cálculo de capacidad. |
+| A-15 | **`assignee_id` lo rellena un disparador cuando nadie lo indica**, en vez de reescribir las cinco funciones que escriben la agenda. La asignación de empleados (F5) lo indicará explícitamente. **Desviación del plan, a sabiendas:** el plan decía que en F1 `reserve`/`resize` pasarían a «operar por ejecutante y aceptar varios días». Se ha dejado para cuando exista quien lo use (F5 asignación, F7 varios días): escribir hoy esa generalización sin ningún llamador que la ejercite sería código sin probar que luego habría que rehacer. | Mínimo radio de impacto sobre funciones de dinero. El índice único ya garantiza lo importante (no doble venta) para cualquier escritor, actual o futuro. |
+| A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 
 ---
 

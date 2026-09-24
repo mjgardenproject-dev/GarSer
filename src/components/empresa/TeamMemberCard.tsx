@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { BadgeCheck, Loader2, Phone, ShieldAlert, UserMinus, Wrench } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BadgeCheck, CalendarClock, Loader2, Phone, ShieldAlert, UserMinus, Wrench } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { PHYTO_SERVICE_NAME, type TeamMember, type TeamService } from '../../hooks/useCompanyTeam';
@@ -171,6 +172,11 @@ const TeamMemberCard: React.FC<Props> = ({ member, offeredServices, onChanged, o
             <button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
               <Wrench className="h-4 w-4" /> Servicios
             </button>
+          )}
+          {isOwner && member.counts_as_labour && (
+            <Link to="/empresa/horario" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <CalendarClock className="h-4 w-4" /> Mi horario
+            </Link>
           )}
           {!isOwner && (
             <button type="button" onClick={() => onAskDeactivate(member)} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">

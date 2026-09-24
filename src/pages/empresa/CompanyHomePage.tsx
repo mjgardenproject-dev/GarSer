@@ -6,6 +6,7 @@ import AppHeader from '../../components/common/AppHeader';
 import { useConfirmDialog } from '../../components/common/ConfirmDialog';
 import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
+import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import TeamMemberCard from '../../components/empresa/TeamMemberCard';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
@@ -226,6 +227,8 @@ const CompanyPanel: React.FC = () => {
             </Link>
 
             <AssignmentModeCard mode={c.assignment_mode} onChanged={() => void refresh()} />
+
+            <MinNoticeCard />
 
             {ownerWorks && offersPhyto && (
               <section>

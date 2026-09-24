@@ -16,9 +16,18 @@ import { useConfirmDialog } from '../common/ConfirmDialog';
 
 interface AvailabilityManagerProps {
   onBack?: () => void;
+  /**
+   * GarSer Empresas (F5): de dónde salen las horas ocupadas.
+   * 'provider' (autónomo, por defecto): reservas en las que él es el proveedor.
+   * 'me' (empleado, o dueño de empresa que trabaja): las horas de la agenda que le tocan a
+   * él (my_busy_hours). Las reservas de su empresa son de la empresa, no suyas.
+   */
+  busyFrom?: 'provider' | 'me';
+  /** GarSer Empresas (F5): en un empleado la antelación mínima la decide su empresa. */
+  hideMinNotice?: boolean;
 }
 
-const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => {
+const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyFrom = 'provider', hideMinNotice = false }) => {
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'weekly' | 'recurring'>('weekly');
   const [selectedWeek, setSelectedWeek] = useState(new Date());
@@ -125,7 +134,20 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
       setHasUnsavedChanges(false); // Reset changes flag on load
 
       // Reservas confirmadas y solicitudes pendientes de la semana → marcar bloques
-      try {
+      if (busyFrom === 'me') {
+        const { data: busy, error: busyError } = await supabase.rpc('my_busy_hours', { p_start: startStr, p_end: endStr });
+        const bookedMap: { [date: string]: Set<number> } = {};
+        const pendingMap: { [date: string]: Set<number> } = {};
+        if (busyError) console.warn('Error fetching busy hours:', busyError);
+        (busy || []).forEach((row) => {
+          if (!row.date) return;
+          const target = row.status === 'pending' ? pendingMap : bookedMap;
+          if (!target[row.date]) target[row.date] = new Set<number>();
+          target[row.date].add(Number(row.hour));
+        });
+        setBookedBlocks(bookedMap);
+        setPendingBlocks(pendingMap);
+      } else try {
         const { data: bookings, error: bookingsError } = await supabase
           .from('bookings')
           .select('date, start_time, duration_hours, status')
@@ -425,6 +447,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack }) => 
             registerSaveHandler={(fn) => setRecurringSaveHandler(() => fn)}
             onSavingChange={setRecurringSaving}
             registerExplicitSaveTrigger={(fn) => setRecurringExplicitSaveTrigger(() => fn)}
+            hideMinNotice={hideMinNotice}
           />
         ) : (
           <>

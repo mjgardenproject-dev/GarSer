@@ -2637,6 +2637,14 @@ export type Database = {
         Returns: undefined
       }
       mark_gardener_finished: { Args: { p_booking_id: string }; Returns: Json }
+      my_busy_hours: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          date: string
+          hour: number
+          status: string
+        }[]
+      }
       my_company_id: { Args: never; Returns: string }
       my_company_membership: { Args: never; Returns: Json }
       pick_provider_worker: {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { Building2, CalendarDays, ChevronRight, Loader2, UserRound } from 'lucide-react';
+import { Building2, CalendarClock, CalendarDays, ChevronRight, Loader2, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
@@ -101,6 +101,15 @@ const EmployeeHomePage: React.FC = () => {
               </div>
             </div>
           </section>
+
+          <Link to="/mi-trabajo/horario" className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+            <CalendarClock className="h-6 w-6 shrink-0 text-emerald-700" />
+            <span className="flex-1">
+              <span className="block font-semibold text-gray-900">Mi horario</span>
+              <span className="block text-sm text-gray-600">Los días y horas en que puedes trabajar. Tu empresa solo te asigna trabajos dentro de ellos.</span>
+            </span>
+            <ChevronRight className="h-5 w-5 text-gray-400" />
+          </Link>
 
           <section className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
             <CalendarDays className="mx-auto h-8 w-8 text-gray-400" />

@@ -296,6 +296,24 @@ mano: los horarios del equipo son de F5):
 | F5-11 | El cliente ve nombre y foto del trabajador **el día antes** (D6) | Sí | ⬜ |
 | F5-12 | El cliente intenta ver quién va **dos días antes**, o ver su teléfono (D6) | No lo ve | ⬜ |
 
+**Horarios del equipo (F5.1)** — `node scripts/garser-empresas/verify-f5-schedules.mjs` (9
+comprobaciones con el token de cada persona) y navegador:
+
+| # | Prueba | Resultado esperado | Estado |
+|---|---|---|---|
+| F5-20 | Un empleado pone su horario; intenta tocar el de un compañero | El suyo sí; el ajeno, denegado | ✅ F5.1 |
+| F5-21 | Un empleado guarda un horario fijo | Se generan sus horas | ✅ F5.1 |
+| F5-22 | Quien tiene horas vendidas las vuelve a marcar libres (guardando el día o a mano) | Siguen ocupadas (H-29) | ✅ F5.1 |
+| F5-23 | Regenerar su horario fijo | Tampoco las reabre | ✅ F5.1 |
+| F5-24 | Horas de esa persona para vender | Sin las vendidas | ✅ F5.1 |
+| F5-25 | El dueño que trabaja regenera su horario con trabajos de su equipo confirmados | No se le cierran sus horas (H-29) | ✅ F5.1 |
+| F5-26 | Horas ocupadas propias / de un compañero | Las suyas sí; las del compañero no | ✅ F5.1 |
+| F5-27 | Cancelar | Libera las horas de quien iba | ✅ F5.1 |
+| F5-28 | Antelación mínima de la empresa; un empleado intenta cambiarla | Se aplica a la venta; no la cambia | ✅ F5.1 |
+| F5-29 | Navegador (móvil): el empleado abre «Mi horario» desde «Mi trabajo» y ve su hora vendida como «Reservado» | Correcto | ✅ F5.1 |
+| F5-30 | Navegador: en «Horario fijo» el empleado no ve la antelación mínima | Correcto | ✅ F5.1 |
+| F5-31 | Navegador: la dueña que trabaja tiene «Mi horario» en su tarjeta, y cambia la antelación de la empresa en «Tu empresa» | Se guarda | ✅ F5.1 |
+
 ---
 
 ### F6 — Planificación y reasignación
@@ -368,6 +386,7 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F3-11 | El admin rechaza otra con motivo: le llega el correo con ese motivo y el botón «Corregir y enviar de nuevo» | F3 | ⬜ |
 | P-F4-1 | Con la empresa de prueba y un empleado con horario: reservar y pagar (Stripe en modo prueba) un trabajo de 2 h; comprobar en el SQL Editor que `booking_blocks.assignee_id` es el empleado y la reserva es de la empresa | F4 | ⬜ |
 | P-F4-2 | Un autónomo real sigue apareciendo en el listado con sus mismas horas y precio | F4 | ⬜ |
+| P-F5-1 | Un autónomo real guarda su horario de una semana en la que tiene una reserva: la hora reservada sigue «Reservado» y no se ofrece a otros clientes | F5 | ⬜ |
 
 ---
 

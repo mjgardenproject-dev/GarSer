@@ -526,6 +526,26 @@ Vistos al probar F4 en el navegador; ninguno impide vender:
   asignada (no su nombre: no puede leer su perfil). D6 decide qué ve el cliente y cuándo; en F5
   hay que cerrar esa lectura o convertirla en «nombre y foto el día antes».
 
+### H-29 · Los horarios podían reabrir horas vendidas, y al dueño que trabaja se le cerrarían las de todo su equipo — 🟢 Resuelto en F5.1
+
+Al preparar los horarios del equipo (2026-09-24), leyendo el código que ya usa el autónomo:
+- **La pantalla de horario guarda un día borrándolo y creando de nuevo las horas marcadas**
+  (`availabilityServiceCompat.setGardenerAvailability`). Solo evitaba reabrir horas vendidas
+  porque pinta como «Reservado» las reservas **en las que la persona es el proveedor**: un
+  empleado no tiene ninguna (son de la empresa), así que habría podido marcar libres sus horas
+  vendidas. La venta no se habría duplicado (lo impiden el índice de F1 y `provider_free_hours`),
+  pero la agenda habría mentido.
+- **El generador del horario fijo** (`generate_recurring_slots`, también el nocturno) vuelve a
+  proteger lo reservado buscando reservas con `gardener_id` = esa persona. Para el dueño que
+  trabaja, ese `gardener_id` es **su empresa** (A-19): se le habrían cerrado las horas de todos
+  los trabajos de su equipo.
+
+**Arreglo (migración `20260925130000`):** regla en la base de datos
+(`protect_sold_availability`): una hora con `booking_blocks` de esa persona no se puede marcar
+libre por ningún camino. El generador solo re-protege reservas antiguas sin agenda por persona.
+`release_booking_schedule` saca las horas de la agenda antes de liberarlas. La pantalla pinta lo
+ocupado con `my_busy_hours()` (la agenda de la persona) para empleados y dueños.
+
 ---
 
 ## 2. Decisiones de arquitectura cerradas
@@ -563,6 +583,8 @@ esta es la respuesta.
 | A-28 | **Correos de empresa aprobada / rechazada:** solo el admin; destinatario, nombre y motivo salen de `company_applications`, y solo se envían si la solicitud está en ese estado (si no, 409). | El correo no puede contradecir a la base de datos, ni llevar texto que no esté en ella. |
 | A-29 | **Al vender a una empresa se aparta a UNA persona** del equipo que hace el servicio (con carnet si el trabajo lo exige) y está libre **todas** las horas; bloqueo de pago, agenda, alargar y cancelar operan sobre esa persona. **El dueño elige en su configuración** (`companies.assignment_mode`) si esa persona es definitiva (`auto`) o una propuesta que él confirma o cambia (`manual`, `bookings.assignment_pending`; la pantalla para cambiarla es de F5). Para un autónomo la persona es él mismo. **Desviación del plan, decidida por el usuario (2026-09-24):** el plan decía `free_count` por hora (H-26). | Nunca se vende un hueco que nadie puede hacer entero, y el índice único de F1 (persona + día + hora) protege a cada persona de la doble venta. |
 | A-30 | **`provider_free_hours()` es la única fuente de «horas libres»** para la web (`booking-authority`) y el pago (`booking-payment`), que antes lo calculaban cada uno. Es función y no vista porque depende del servicio y del carnet (A-07 se mantiene: no se materializa). Solo la llama el servidor. | Una sola definición de «libre»; los horarios del equipo no se exponen a nadie. |
+| A-31 | **La antelación mínima es de la empresa**, no de cada empleado: se guarda donde la de un autónomo (`recurring_availability_settings` de la cuenta de la empresa) y es la que aplica `booking-authority`. El empleado no la ve en su horario; el dueño la cambia en «Tu empresa». | Es una regla de venta del proveedor. Si cada empleado tuviera la suya, el cliente vería huecos distintos según a quién le tocara. |
+| A-32 | **Una hora vendida a una persona no puede estar marcada libre** (`protect_sold_availability`, en la base de datos). | Una sola regla para todos los caminos que escriben horarios (pantalla, horario fijo, generador nocturno, futuros), en vez de confiar en que cada pantalla lo recuerde. |
 | A-24 | **La solicitud de empresa copia el patrón de la de jardinero:** el usuario crea su borrador y lo envía; aprobar o rechazar solo lo hace el admin por RPC, que es quien crea la ficha de proveedor, la empresa y el dueño. | Patrón existente y comprobado seguro (el usuario no puede pasar a `approved`). |
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 

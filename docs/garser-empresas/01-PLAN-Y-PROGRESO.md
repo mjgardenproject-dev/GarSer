@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · siguiente: ⏸ HITO (recorrido en local haciendo de empresa) y F5 (horarios del equipo, asignar y ejecutar) · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · 🟨 F5 en curso: ✅ F5.1 horarios del equipo · siguiente F5.2 (servidor: asignar, el empleado ve sus trabajos, inicio y fin) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -421,7 +421,22 @@ comisión por Stripe. Verificado en paralelo que el funnel del autónomo no ha c
 ### BLOQUE 2 — Una empresa puede operar
 *Retención de la oferta que se acaba de captar.*
 
-#### ⬜ F5 — Asignar y ejecutar
+#### 🟨 F5 — Asignar y ejecutar
+
+**Orden elegido (2026-09-24):** F5.1 horarios del equipo (sin horarios no hay qué asignar; la
+pantalla estaba en «Panel de empleado») → F5.2 servidor de asignación y ejecución → F5.3 web
+(panel del empleado y «cambiar quién va») → F5.4 correos y D6. El ⏸ HITO (recorrido haciendo de
+empresa) se hace tras F5, cuando ya hay horarios.
+
+**✅ F5.1 Horarios del equipo — hecho** (migración `20260925130000_empresas_f5_team_schedules.sql`,
+`verify-f5-schedules.mjs` → 9/9):
+- El empleado pone su horario en «Mi trabajo» → «Mi horario» (`/mi-trabajo/horario`) y el dueño
+  que trabaja en su tarjeta → «Mi horario» (`/empresa/horario`): la **misma pantalla** del
+  autónomo, con lo ocupado sacado de su propia agenda.
+- **Imprevisto H-29** cerrado: una hora vendida ya no se puede reabrir por ningún camino (A-32),
+  y al dueño que trabaja no se le cierran las horas de todo su equipo.
+- Antelación mínima = de la empresa (A-31), en «Tu empresa».
+
 
 - [ ] Asignación mínima: el dueño elige empleado de una lista de quién está libre **y hace
       ese servicio** (D5). En trabajos fitosanitarios, solo quien tiene carnet aprobado (D4).
@@ -508,7 +523,7 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 6. Aplicar las migraciones del proyecto, **en este orden**:
    `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
-   `20260925120000` (F4)
+   `20260925120000` (F4) → `20260925130000` (F5.1)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,
@@ -566,6 +581,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
 | F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
+| F5.1 | Aplicar `20260925130000` | Corrige de paso las horas que estén vendidas y marcadas libres (debería haber 0). Probar P-F5-1 |
 | F4 | Aplicar `20260925120000` **y en el mismo momento** desplegar `booking-authority` y `booking-payment` | Las funciones nuevas llaman a `provider_free_hours`, que crea la migración. Justo después: P-F1-1 (un pago real de autónomo) y P-F4-1 |
 | F3 | **Desplegar `send-email-notification`** (`supabase functions deploy send-email-notification --use-api`) | Sin esto, invitar funciona pero no sale el correo (la web lo dice y da el enlace). Probar P-F3-9 a P-F3-11 |
 

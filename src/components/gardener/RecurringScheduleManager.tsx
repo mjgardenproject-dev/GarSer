@@ -40,6 +40,8 @@ interface RecurringScheduleManagerProps {
    * el botón "Guardar" del header compartido cuando el jardinero pulsa guardar de
    * forma explícita (no al salir), para no saltarse el aviso de sobrescritura. */
   registerExplicitSaveTrigger?: (fn: () => void) => void;
+  /** GarSer Empresas (F5): en un empleado la antelación mínima la decide su empresa. */
+  hideMinNotice?: boolean;
 }
 
 export default function RecurringScheduleManager({
@@ -47,6 +49,7 @@ export default function RecurringScheduleManager({
   registerSaveHandler,
   onSavingChange,
   registerExplicitSaveTrigger,
+  hideMinNotice = false,
 }: RecurringScheduleManagerProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -610,7 +613,7 @@ export default function RecurringScheduleManager({
           </div>
 
           {/* Antelación mínima (Min notice hours) */}
-          <div className="space-y-3">
+          {!hideMinNotice && <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-900">
               Antelación mínima para recibir reservas
             </label>
@@ -631,7 +634,7 @@ export default function RecurringScheduleManager({
               <option value={72}>3 días antes</option>
               <option value={168}>1 semana antes</option>
             </select>
-          </div>
+          </div>}
         </div>
 
         {/* Último guardado */}

@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso (diseño hecho; D7 en borrador para validar)
+**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso: ✅ F3.1 servidor · siguiente F3.2 (web: alta) · D7 en borrador para validar
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -246,6 +246,17 @@ F2 18/18, F1 13/13, F0 7/7, 473 tests, build, `tsc` 129.
 
 #### 🟨 F3 — Alta de empresa y de empleados
 
+**✅ F3.1 Servidor — hecho** (migración `20260924130000_empresas_f3_onboarding_server.sql`,
+`node scripts/garser-empresas/verify-f3-db.mjs` → 31/31):
+`company_applications` + `submit_` y `admin_review_company_application`; invitaciones
+(`create_`, `revoke_`, `accept_company_invitation`); equipo (`set_company_member_services`,
+`set_company_owner_works`, `deactivate_company_member`); carnet por persona
+(`has_valid_phyto_license`, retirada automática del servicio si deja de ser válido); el dueño
+lee los perfiles de su equipo; cambio de rol de confianza (A-21). **Imprevisto: H-22.**
+Un fallo propio cazado a tiempo: el mensaje de «faltan campos» salía como error técnico de
+Postgres; la prueba ahora exige el texto correcto.
+
+**Pendiente de F3:**
 - [ ] Registro «Tengo una empresa de jardinería» en `AuthForm`.
 - [ ] **Solicitud de alta de empresa propia** (D2): encuesta de empresa (preguntas de D7),
       tabla separada de `gardener_applications`, y su revisión en el panel de admin. Hasta que
@@ -384,7 +395,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | `b0a6fbe` |
 | 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | `c506f1e` |
 
 ---
@@ -441,6 +453,17 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 | F1 | Aplicar `20260923130000_empresas_f1_capacity_ledger.sql` **después** de la de F0 | Cambia `confirm_booking_payment_attempt`: el camino de todos los pagos. Probar P-F1-1 justo después |
 
 | F2 | **Aplicar `20260924120000_empresas_f2_provider_model.sql` cierra H-21** (alta de jardineros sin aprobación y autoaprobación del carnet) | Antes, ejecutar las consultas de F2 de abajo: si hay fichas de proveedor sin solicitud aprobada, o carnets aprobados sin revisión, revisarlos a mano |
+
+| F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
+
+**Consulta previa de F3 (solo lectura):**
+
+```sql
+-- Licencias en estado aprobado que nadie revisó (posible H-22). Debe dar 0 filas.
+select id, gardener_id, license_number, expires_at
+from public.gardener_licenses
+where status = 'approved' and reviewed_by is null;
+```
 
 **Consultas previas de F2 (solo lectura):**
 

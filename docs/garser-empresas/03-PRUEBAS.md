@@ -140,20 +140,40 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F3-01 | Aceptar invitación con token válido | Se crea `company_members`, rol `employee` | ⬜ |
-| F3-02 | Aceptar con token caducado | Rechazado | ⬜ |
-| F3-03 | Aceptar dos veces el mismo token | La segunda, rechazada | ⬜ |
-| F3-04 | **Aceptar con `company_id` manipulado en la petición** | Se ignora; se usa el del token | ⬜ |
-| F3-05 | Un autónomo activo acepta una invitación de empleado | Bloqueado, con explicación | ⬜ |
-| F3-06 | El token no aparece en claro en la base de datos | Solo el hash | ⬜ |
-| F3-07 | Empleado intenta crearse un `gardener_profiles` | Denegado | ⬜ |
-| F3-08 | Empleado no aparece en `public_gardener_directory` | Cero filas | ⬜ |
-| F3-09 | Empresa recién registrada, **sin aprobar** por el admin (D2) | No aparece en el funnel ni puede recibir reservas | ⬜ |
-| F3-10 | El admin ve la solicitud de empresa **en su propia sección**, con las respuestas de la encuesta de empresa (D2) | Separada de las de jardineros | ⬜ |
-| F3-11 | Marcar a un empleado un servicio que la empresa **no** tiene activo (D5) | No se permite | ⬜ |
-| F3-12 | Activar «Servicios fitosanitarios» a un empleado **sin carnet** adjuntado y aprobado (D4) | No se permite | ⬜ |
-| F3-13 | Empleado con carnet **caducado** | Se le desactiva el servicio fitosanitario | ⬜ |
-| F3-14 | Dueño activa y desactiva «Yo también trabajo» (D3) | Aparece y desaparece de la lista de su equipo como trabajador | ⬜ |
+| F3-01 | Aceptar invitación con token válido y el mismo correo | Empleado de la empresa del token, rol `employee` | ✅ F3.1 |
+| F3-02 | Aceptar con token caducado | Rechazado | ✅ F3.1 |
+| F3-03 | Aceptar dos veces el mismo token | La segunda, rechazada | ✅ F3.1 |
+| F3-04 | **Aceptar con `company_id` manipulado en la petición** | No entra en otra empresa | ✅ F3.1 (la función ni siquiera admite ese parámetro: 404) |
+| F3-05 | Un autónomo activo acepta una invitación de empleado | Bloqueado, con explicación | ✅ F3.1 |
+| F3-06 | El token no aparece en claro en la base de datos | Solo el hash | ✅ F3.1 |
+| F3-07 | Empleado intenta crearse un `gardener_profiles` | Denegado | ✅ F3.1 |
+| F3-08 | Empleado no aparece en `public_gardener_directory` | Cero filas | ✅ F3.1 |
+| F3-09 | Empresa **sin aprobar** (D2) | Sin ficha de proveedor, fuera del directorio | ✅ F3.1 (servidor); en el funnel, F4 |
+| F3-10 | El admin ve la solicitud de empresa con las respuestas de la encuesta; nadie más | Correcto | ✅ F3.1 (datos); su sección en el panel, F3.2 |
+| F3-11 | Marcar a un empleado un servicio que la empresa **no** tiene activo (D5) | No se permite | ✅ F3.1 |
+| F3-12 | Activar fitosanitarios a un empleado **sin carnet** aprobado (D4) | No se permite | ✅ F3.1 |
+| F3-13 | Empleado con carnet **caducado** | Se le quita el servicio fitosanitario | ✅ F3.1 |
+| F3-14 | Dueño activa y desactiva «Yo también trabajo» (D3) | Cambia; un empleado no puede | ✅ F3.1 |
+| F3-20 | Un cliente abre una solicitud de empresa | Denegado | ✅ F3.1 |
+| F3-21 | Registrarse como empresa | Rol `company` (A-20) | ✅ F3.1 |
+| F3-22 | Enviar la solicitud incompleta / aprobarse uno mismo | Rechazados; el error dice qué falta | ✅ F3.1 |
+| F3-23 | Cambiar la solicitud después de enviarla | No cambia | ✅ F3.1 |
+| F3-24 | Solo el admin aprueba; se crean ficha `company`, empresa y dueño | Correcto | ✅ F3.1 |
+| F3-25 | El admin rechaza con motivo | Rechazada, no se crea nada | ✅ F3.1 |
+| F3-26 | Solo el dueño invita; el token se devuelve una vez | Correcto | ✅ F3.1 |
+| F3-27 | Token válido, pero sesión con **otro correo** | Rechazado | ✅ F3.1 |
+| F3-28 | Invitación anulada | No se puede aceptar | ✅ F3.1 |
+| F3-29 | Un empleado se asigna servicios | Denegado | ✅ F3.1 |
+| F3-30 | El dueño asigna un servicio activo | Correcto | ✅ F3.1 |
+| F3-31 | Empleado sube carnet → admin lo aprueba → se le puede activar fitosanitarios | Correcto | ✅ F3.1 |
+| F3-32 | Un cliente sin empresa ni ficha sube un carnet | Denegado | ✅ F3.1 |
+| F3-33 | El dueño ve los datos de su equipo; un compañero no ve los de otro | Correcto | ✅ F3.1 |
+| F3-34 | Dar de baja a un empleado con trabajos futuros | Bloqueado | ✅ F3.1 |
+| F3-35 | Dar de baja sin trabajos pendientes | Vuelve a cliente y pierde el acceso | ✅ F3.1 |
+| F3-36 | **Crear una licencia ya aprobada** (H-22) | Denegado | ✅ F3.1 (❌ antes: HTTP 201) |
+
+> Las pruebas de servidor se repiten con `node scripts/garser-empresas/verify-f3-db.mjs`
+> (31 comprobaciones). Las de pantallas se añaden en F3.2 y F3.3.
 
 > F3-04 es la prueba de seguridad principal de toda la fase de empresas.
 
@@ -255,6 +275,8 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F2-2 | Con una cuenta de jardinero, intentar cambiar `license_verification_status` por la API | F2 | ⬜ → debe dar 403 |
 | P-F2-3 | El admin aprueba una solicitud de jardinero real: aparece su ficha y puede configurar precios | F2 | ⬜ |
 | P-F2-4 | Un jardinero edita su perfil (descripción, zona) desde la web y se guarda | F2 | ⬜ |
+| P-F3-1 | Un jardinero sube un carnet nuevo desde su panel: queda **pendiente** y el admin lo ve para revisar | F3 | ⬜ |
+| P-F3-2 | Intentar crear por la API una licencia con `status: approved` | F3 | ⬜ → debe dar 403 |
 
 ---
 

@@ -1411,6 +1411,84 @@ export type Database = {
           },
         ]
       }
+      company_applications: {
+        Row: {
+          accept_terms: boolean
+          address: string | null
+          answers: Json
+          city_zone: string | null
+          commercial_name: string | null
+          contact_name: string | null
+          created_at: string
+          declaration_truth: boolean
+          id: string
+          legal_name: string | null
+          logo_url: string | null
+          owner_works: boolean
+          phone: string | null
+          proof_photos: string[]
+          review_comment: string | null
+          reviewed_at: string | null
+          reviewer_id: string | null
+          services: string[]
+          status: string
+          submitted_at: string | null
+          tax_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          accept_terms?: boolean
+          address?: string | null
+          answers?: Json
+          city_zone?: string | null
+          commercial_name?: string | null
+          contact_name?: string | null
+          created_at?: string
+          declaration_truth?: boolean
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          owner_works?: boolean
+          phone?: string | null
+          proof_photos?: string[]
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          services?: string[]
+          status?: string
+          submitted_at?: string | null
+          tax_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          accept_terms?: boolean
+          address?: string | null
+          answers?: Json
+          city_zone?: string | null
+          commercial_name?: string | null
+          contact_name?: string | null
+          created_at?: string
+          declaration_truth?: boolean
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          owner_works?: boolean
+          phone?: string | null
+          proof_photos?: string[]
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          services?: string[]
+          status?: string
+          submitted_at?: string | null
+          tax_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       company_invitations: {
         Row: {
           accepted_at: string | null
@@ -1674,22 +1752,7 @@ export type Database = {
           terms_accepted?: boolean | null
           terms_accepted_at?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "gardener_licenses_gardener_id_fkey_profiles"
-            columns: ["gardener_id"]
-            isOneToOne: false
-            referencedRelation: "gardener_profiles"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "gardener_licenses_gardener_id_fkey_profiles"
-            columns: ["gardener_id"]
-            isOneToOne: false
-            referencedRelation: "public_gardener_directory"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       gardener_profiles: {
         Row: {
@@ -2340,6 +2403,11 @@ export type Database = {
       }
     }
     Functions: {
+      accept_company_invitation: { Args: { p_token: string }; Returns: Json }
+      admin_review_company_application: {
+        Args: { p_application_id: string; p_comment?: string; p_status: string }
+        Returns: Json
+      }
       admin_review_gardener_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: undefined
@@ -2474,6 +2542,12 @@ export type Database = {
         }
         Returns: Json
       }
+      create_company_invitation: { Args: { p_email: string }; Returns: Json }
+      current_account_role: { Args: never; Returns: string }
+      deactivate_company_member: {
+        Args: { p_member_id: string }
+        Returns: Json
+      }
       expire_due_booking_requests: { Args: never; Returns: number }
       expire_due_phytosanitary_licenses: { Args: never; Returns: number }
       expire_pending_price_change: {
@@ -2498,9 +2572,11 @@ export type Database = {
         Returns: Json
       }
       get_rebook_payload: { Args: { p_booking_id: string }; Returns: Json }
+      has_valid_phyto_license: { Args: { p_user_id: string }; Returns: boolean }
       is_admin: { Args: never; Returns: boolean }
       is_company_member: { Args: { p_company_id: string }; Returns: boolean }
       is_company_owner: { Args: { p_company_id: string }; Returns: boolean }
+      is_my_team_member: { Args: { p_user_id: string }; Returns: boolean }
       issue_booking_confirmation_token: {
         Args: {
           p_booking_id: string
@@ -2661,8 +2737,17 @@ export type Database = {
         Args: { p_expires_at?: string; p_license_id: string; p_status: string }
         Returns: Json
       }
+      revoke_company_invitation: {
+        Args: { p_invitation_id: string }
+        Returns: Json
+      }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }
       safe_numeric: { Args: { p_value: string }; Returns: number }
+      set_company_member_services: {
+        Args: { p_member_id: string; p_service_ids: string[] }
+        Returns: Json
+      }
+      set_company_owner_works: { Args: { p_works: boolean }; Returns: Json }
       set_incident_in_review: { Args: { p_incident_id: string }; Returns: Json }
       set_review_hidden: {
         Args: { p_hidden: boolean; p_reason?: string; p_review_id: string }
@@ -2670,6 +2755,10 @@ export type Database = {
       }
       shares_booking_with: { Args: { target_user: string }; Returns: boolean }
       signup_role_from_metadata: { Args: { p_meta: Json }; Returns: string }
+      submit_company_application: {
+        Args: { p_application_id: string }
+        Returns: Json
+      }
       update_own_review: {
         Args: { p_comment: string; p_rating: number; p_review_id: string }
         Returns: Json

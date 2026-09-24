@@ -431,6 +431,26 @@ comprobar que nadie lo ha aprovechado (consulta en `01-PLAN-Y-PROGRESO.md` §6).
 
 ---
 
+### H-22 · Un jardinero podía crear su licencia fitosanitaria ya aprobada — 🔴 Resuelto en F3.1 (local), pendiente en producción hasta la fusión
+
+**Reproducido en local el 2026-09-24:** el jardinero de la semilla hizo `POST
+/rest/v1/gardener_licenses` con `status: 'approved'`, `expires_at: 2035-01-01` y `reviewed_at`
+→ **HTTP 201**. La policy `Gardeners can insert own licenses` solo comprobaba
+`auth.uid() = gardener_id`, no el estado.
+
+**Alcance hoy:** el disparador `handle_new_gardener_license` deja la ficha del jardinero en
+`pending`, así que el buscador (que mira la ficha) no se engañaba. Pero el panel de carnets del
+admin mostraba una licencia «aprobada» que nadie revisó.
+
+**Por qué importa para Empresas:** el carnet de un **empleado** (D4) no vive en una ficha de
+proveedor: se comprueba directamente en `gardener_licenses`. Con este agujero, cualquier
+empleado habría podido darse el carnet y hacer tratamientos químicos.
+
+**Arreglo (migración `20260924130000`):** la subida solo admite `status = 'pending'` sin
+revisión, y solo la pueden hacer proveedores o miembros activos de una empresa. Prueba F3-36.
+
+---
+
 ## 2. Decisiones de arquitectura cerradas
 
 No se vuelven a discutir salvo que aparezca evidencia nueva. Si alguien propone lo contrario,

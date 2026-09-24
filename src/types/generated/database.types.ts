@@ -607,11 +607,13 @@ export type Database = {
           currency: string
           duration_hours: number
           economic_snapshot: Json
+          end_date: string | null
           expired_at: string | null
           failed_at: string | null
           gardener_id: string
           gateway_response: Json
           id: string
+          labour_hours: number | null
           last_error_code: string | null
           last_error_message: string | null
           last_webhook_event_id: string | null
@@ -640,11 +642,13 @@ export type Database = {
           currency?: string
           duration_hours: number
           economic_snapshot?: Json
+          end_date?: string | null
           expired_at?: string | null
           failed_at?: string | null
           gardener_id: string
           gateway_response?: Json
           id?: string
+          labour_hours?: number | null
           last_error_code?: string | null
           last_error_message?: string | null
           last_webhook_event_id?: string | null
@@ -673,11 +677,13 @@ export type Database = {
           currency?: string
           duration_hours?: number
           economic_snapshot?: Json
+          end_date?: string | null
           expired_at?: string | null
           failed_at?: string | null
           gardener_id?: string
           gateway_response?: Json
           id?: string
+          labour_hours?: number | null
           last_error_code?: string | null
           last_error_message?: string | null
           last_webhook_event_id?: string | null
@@ -1147,11 +1153,13 @@ export type Database = {
           data_input_mode: string | null
           date: string
           duration_hours: number
+          end_date: string | null
           end_time: string | null
           gardener_finished_at: string | null
           gardener_id: string | null
           hourly_rate: number | null
           id: string
+          labour_hours: number | null
           management_fee: number
           management_fee_source: string
           manual_declaration_id: string | null
@@ -1208,11 +1216,13 @@ export type Database = {
           data_input_mode?: string | null
           date: string
           duration_hours: number
+          end_date?: string | null
           end_time?: string | null
           gardener_finished_at?: string | null
           gardener_id?: string | null
           hourly_rate?: number | null
           id?: string
+          labour_hours?: number | null
           management_fee: number
           management_fee_source: string
           manual_declaration_id?: string | null
@@ -1269,11 +1279,13 @@ export type Database = {
           data_input_mode?: string | null
           date?: string
           duration_hours?: number
+          end_date?: string | null
           end_time?: string | null
           gardener_finished_at?: string | null
           gardener_id?: string | null
           hourly_rate?: number | null
           id?: string
+          labour_hours?: number | null
           management_fee?: number
           management_fee_source?: string
           manual_declaration_id?: string | null
@@ -1401,6 +1413,7 @@ export type Database = {
           id: string
           legal_name: string | null
           logo_url: string | null
+          max_crew: number
           provider_user_id: string
           status: string
           tax_id: string | null
@@ -1413,6 +1426,7 @@ export type Database = {
           id?: string
           legal_name?: string | null
           logo_url?: string | null
+          max_crew?: number
           provider_user_id: string
           status?: string
           tax_id?: string | null
@@ -1425,6 +1439,7 @@ export type Database = {
           id?: string
           legal_name?: string | null
           logo_url?: string | null
+          max_crew?: number
           provider_user_id?: string
           status?: string
           tax_id?: string | null
@@ -2488,6 +2503,22 @@ export type Database = {
           user_id: string
         }[]
       }
+      booking_replace_candidates: {
+        Args: { p_booking_id: string; p_from: string }
+        Returns: {
+          full_name: string
+          is_free: boolean
+          user_id: string
+        }[]
+      }
+      booking_replan_cells: {
+        Args: { p_booking_id: string; p_date: string; p_start_hour: number }
+        Returns: {
+          date: string
+          hour_block: number
+          worker_id: string
+        }[]
+      }
       booking_requires_phyto_license: {
         Args: { p_booking_id: string }
         Returns: boolean
@@ -2647,6 +2678,7 @@ export type Database = {
         Returns: number
       }
       format_eur: { Args: { p_value: number }; Returns: string }
+      free_run: { Args: { p_from: number; p_hours: number[] }; Returns: number }
       generate_recurring_slots: {
         Args: { force_regenerate?: boolean; target_gardener_id: string }
         Returns: undefined
@@ -2724,13 +2756,17 @@ export type Database = {
           company_name: string
           date: string
           duration_hours: number
+          end_date: string
           finished_at: string
+          labour_hours: number
+          my_days: Json
           my_hours: number[]
           notes: string
           service_name: string
           service_start: string
           start_time: string
           status: string
+          team_size: number
         }[]
       }
       pick_provider_worker: {
@@ -2754,6 +2790,22 @@ export type Database = {
           p_start_hour: number
         }
         Returns: string[]
+      }
+      plan_booking_cells: {
+        Args: {
+          p_date: string
+          p_ignore_booking?: string
+          p_labour: number
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+          p_start_hour: number
+        }
+        Returns: {
+          date: string
+          hour_block: number
+          worker_id: string
+        }[]
       }
       post_booking_system_message: {
         Args: { p_booking_id: string; p_text: string }
@@ -2811,6 +2863,7 @@ export type Database = {
           worker_id: string
         }[]
       }
+      provider_max_crew: { Args: { p_provider: string }; Returns: number }
       provider_workers: {
         Args: {
           p_provider: string
@@ -2863,6 +2916,10 @@ export type Database = {
       release_booking_schedule: {
         Args: { p_booking_id: string }
         Returns: undefined
+      }
+      replace_booking_worker: {
+        Args: { p_booking_id: string; p_from: string; p_to: string }
+        Returns: Json
       }
       report_booking_incident: {
         Args: { p_booking_id: string; p_description: string; p_kind: string }
@@ -2938,6 +2995,7 @@ export type Database = {
         Returns: Json
       }
       set_company_assignment_mode: { Args: { p_mode: string }; Returns: Json }
+      set_company_max_crew: { Args: { p_max: number }; Returns: Json }
       set_company_member_services: {
         Args: { p_member_id: string; p_service_ids: string[] }
         Returns: Json

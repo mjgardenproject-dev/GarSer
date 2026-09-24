@@ -378,13 +378,24 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F7-01 | Trabajo de 8 h de mano de obra con 2 personas | 4 h de reloj, 8 filas de bloques | ⬜ |
-| F7-02 | Ese trabajo cuesta **lo mismo** que con una persona | Precio idéntico | ⬜ |
-| F7-03 | Se descuentan 4 h a cada empleado, no 8 | Correcto | ⬜ |
-| F7-04 | Trabajo de 40 h en 5 días con 2 personas distintas | Se crea | ⬜ |
-| F7-05 | Ninguna jornada supera las 12 h | Los 7 guardas siguen válidos | ⬜ |
+| F7-01 | Trabajo de 8 h de mano de obra con 2 personas | 4 h de reloj, 8 filas de bloques | ✅ F7.1 (4 h de reloj, 8 filas: Ana y Luis de 8 a 12) |
+| F7-02 | Ese trabajo cuesta **lo mismo** que con una persona | Precio idéntico | 🟨 F7.1: la reserva cuesta lo que el presupuesto; la comparación con el motor, en F7.2 |
+| F7-03 | Se descuentan 4 h a cada empleado, no 8 | Correcto | ✅ F7.1 |
+| F7-04 | Trabajo de 40 h en 5 días con 2 personas distintas | Se crea | ✅ F7.1 (del día 5 al 10, saltando el 7 sin nadie) |
+| F7-05 | Ninguna jornada supera las 12 h | Los 7 guardas siguen válidos | ✅ F7.1 |
 | F7-06 | El cliente ve «del 5 al 9 de mayo» | Correcto | ⬜ |
-| F7-07 | Trabajo de 2 personas con solo 1 libre | No reservable | ⬜ |
+| F7-07 | Trabajo de 2 personas con solo 1 libre | No reservable | ✅ F7.1 (el pago lo rechaza) |
+| F7-10 | Límite de personas a la vez | Solo lo cambia el dueño (1–10); lo ve en su panel | ✅ F7.1 |
+| F7-11 | Límite 1 frente a límite 2 | Con 1, un trabajo de 8 h sin nadie con 8 h libres no cabe; con 2, van dos a la vez | ✅ F7.1 |
+| F7-12 | Trabajo de equipo: repartir por horas, «todo a una persona», alargar | Rechazados | ✅ F7.1 |
+| F7-13 | Cambiar a una persona por otra en todo el trabajo | Solo el dueño y solo si la nueva está libre en todas sus horas; la vieja queda libre | ✅ F7.1 |
+| F7-14 | El cliente ve a las dos personas (el día antes) | Correcto | ⬜ F7.3 |
+| F7-15 | Mover de fecha un trabajo de equipo | Se vuelve a planificar; horas viejas libres | ✅ F7.1 |
+| F7-16 | Trabajo de 12 h o menos | Nunca en varios días | ✅ F7.1 |
+| F7-17 | Agendas de empleado y empresa con un trabajo que empezó antes | Se ve, con fin y horas por día | ✅ F7.1 |
+| F7-18 | Aviso de «¿se hizo el trabajo?» en varios días | Tras el último día | ✅ F7.1 |
+| F7-19 | Cancelar un trabajo de varios días | Libres todos los días | ✅ F7.1 |
+| F7-20 | Autónomo con un trabajo de 16 h (D12) | 2 días, él solo | ✅ F7.1 |
 
 ---
 

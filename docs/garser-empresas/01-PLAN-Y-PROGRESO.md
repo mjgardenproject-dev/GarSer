@@ -575,6 +575,17 @@ Partes: **F7.1** servidor (modelo, planificador, pago, agenda) → **F7.2** moto
 válidas con equipos y varios días, presupuesto con fecha de fin) → **F7.3** pantallas (reserva,
 cliente, empresa, empleado, ajuste de la empresa).
 
+**✅ F7.1 Servidor — hecho** (migración `20260925190000_empresas_f7_crew_multiday.sql`,
+`verify-f7-server.mjs` 16/16). `companies.max_crew` (1–10, solo el dueño), `bookings.end_date` y
+`bookings.labour_hours` (solo en trabajos de equipo o de varios días), agenda y bloqueo del pago
+con varias personas en la misma hora. `plan_booking_cells()` es el planificador (A-40); el pago
+aparta sus celdas y la confirmación las convierte en agenda. En trabajos de equipo o varios
+días: ni alargar/acortar, ni repartir por horas, ni «todo a una persona»; sí
+`replace_booking_worker` (A-41) y mover de fecha volviendo a planificar. Las agendas de empresa
+y empleado incluyen trabajos que empezaron antes del rango, con las horas de cada día. El aviso
+de «¿se hizo?» va tras el último día. Un autónomo también puede tener trabajos de varios días
+(D12). F4–F6 siguen en verde. Pendiente: que la web los ofrezca (F7.2) y las pantallas (F7.3).
+
 
 - [ ] `bookings.required_workers` (`DEFAULT 1`) y `bookings.end_date` (`DEFAULT NULL`).
 - [ ] Separar **duración** (span de la jornada, sigue con tope 12 h) de **mano de obra**
@@ -642,7 +653,7 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
    `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2) →
-   `20260925180000` (F6.3)
+   `20260925180000` (F6.3) → `20260925190000` (F7.1)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,
@@ -701,6 +712,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
 | F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
+| F7.1 | Aplicar `20260925190000` **junto con** el despliegue de `booking-authority` de F7.2 | El pago pasa a apartar lo que decide el planificador (equipos, varios días). Para trabajos normales no cambia nada; justo después, P-F1-1 (un pago real de autónomo) |
 | F6.1 | Aplicar `20260925160000` **y redesplegar a la vez** `booking-authority`, `booking-payment` y `send-email-notification` | El pago y la confirmación pasan a trabajar por horas. Justo después: P-F1-1 (un pago real de autónomo) |
 | F5.1 | Aplicar `20260925130000` | Corrige de paso las horas que estén vendidas y marcadas libres (debería haber 0). Probar P-F5-1 |
 | F4 | Aplicar `20260925120000` **y en el mismo momento** desplegar `booking-authority` y `booking-payment` | Las funciones nuevas llaman a `provider_free_hours`, que crea la migración. Justo después: P-F1-1 (un pago real de autónomo) y P-F4-1 |

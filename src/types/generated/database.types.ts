@@ -796,6 +796,7 @@ export type Database = {
           id: string
           input_payload: Json
           items: Json | null
+          maintenance_visit_id: string | null
           pricing_snapshot: Json
           pricing_version: string
           provider_config_version: string
@@ -823,6 +824,7 @@ export type Database = {
           id?: string
           input_payload?: Json
           items?: Json | null
+          maintenance_visit_id?: string | null
           pricing_snapshot?: Json
           pricing_version: string
           provider_config_version: string
@@ -850,6 +852,7 @@ export type Database = {
           id?: string
           input_payload?: Json
           items?: Json | null
+          maintenance_visit_id?: string | null
           pricing_snapshot?: Json
           pricing_version?: string
           provider_config_version?: string
@@ -868,6 +871,13 @@ export type Database = {
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_quotes_maintenance_visit_id_fkey"
+            columns: ["maintenance_visit_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_visits"
             referencedColumns: ["id"]
           },
           {
@@ -1217,6 +1227,7 @@ export type Database = {
           hourly_rate: number | null
           id: string
           labour_hours: number | null
+          maintenance_plan_id: string | null
           management_fee: number
           management_fee_source: string
           manual_declaration_id: string | null
@@ -1280,6 +1291,7 @@ export type Database = {
           hourly_rate?: number | null
           id?: string
           labour_hours?: number | null
+          maintenance_plan_id?: string | null
           management_fee: number
           management_fee_source: string
           manual_declaration_id?: string | null
@@ -1343,6 +1355,7 @@ export type Database = {
           hourly_rate?: number | null
           id?: string
           labour_hours?: number | null
+          maintenance_plan_id?: string | null
           management_fee?: number
           management_fee_source?: string
           manual_declaration_id?: string | null
@@ -1376,6 +1389,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "bookings_maintenance_plan_id_fkey"
+            columns: ["maintenance_plan_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_plans"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "bookings_request_id_fkey"
             columns: ["request_id"]
@@ -2061,6 +2081,176 @@ export type Database = {
           },
         ]
       }
+      maintenance_plans: {
+        Row: {
+          anchor_date: string
+          cancelled_at: string | null
+          cancelled_by: string | null
+          client_id: string
+          client_latitude: number | null
+          client_longitude: number | null
+          created_at: string
+          economic_snapshot: Json
+          estimated_hours: number
+          frequency: string
+          id: string
+          input_payload: Json
+          items: Json | null
+          next_visit_date: string
+          pricing_snapshot: Json
+          pricing_version: string
+          provider_config_version: string
+          provider_id: string
+          provider_latitude: number | null
+          provider_longitude: number | null
+          service_id: string
+          source_booking_id: string | null
+          source_quote_id: string | null
+          start_hour: number
+          status: string
+          total_price: number
+        }
+        Insert: {
+          anchor_date: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_id: string
+          client_latitude?: number | null
+          client_longitude?: number | null
+          created_at?: string
+          economic_snapshot?: Json
+          estimated_hours: number
+          frequency: string
+          id?: string
+          input_payload?: Json
+          items?: Json | null
+          next_visit_date: string
+          pricing_snapshot?: Json
+          pricing_version: string
+          provider_config_version: string
+          provider_id: string
+          provider_latitude?: number | null
+          provider_longitude?: number | null
+          service_id: string
+          source_booking_id?: string | null
+          source_quote_id?: string | null
+          start_hour: number
+          status?: string
+          total_price: number
+        }
+        Update: {
+          anchor_date?: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_id?: string
+          client_latitude?: number | null
+          client_longitude?: number | null
+          created_at?: string
+          economic_snapshot?: Json
+          estimated_hours?: number
+          frequency?: string
+          id?: string
+          input_payload?: Json
+          items?: Json | null
+          next_visit_date?: string
+          pricing_snapshot?: Json
+          pricing_version?: string
+          provider_config_version?: string
+          provider_id?: string
+          provider_latitude?: number | null
+          provider_longitude?: number | null
+          service_id?: string
+          source_booking_id?: string | null
+          source_quote_id?: string | null
+          start_hour?: number
+          status?: string
+          total_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_plans_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_plans_source_booking_id_fkey"
+            columns: ["source_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_plans_source_quote_id_fkey"
+            columns: ["source_quote_id"]
+            isOneToOne: false
+            referencedRelation: "booking_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_visits: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          date: string | null
+          id: string
+          notified_at: string | null
+          plan_id: string
+          planned_date: string
+          quote_id: string | null
+          start_hour: number | null
+          status: string
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          date?: string | null
+          id?: string
+          notified_at?: string | null
+          plan_id: string
+          planned_date: string
+          quote_id?: string | null
+          start_hour?: number | null
+          status: string
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          date?: string | null
+          id?: string
+          notified_at?: string | null
+          plan_id?: string
+          planned_date?: string
+          quote_id?: string | null
+          start_hour?: number | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_visits_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_visits_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_visits_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "booking_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           address: string | null
@@ -2606,10 +2796,15 @@ export type Database = {
         Args: { p_member_id: string }
         Returns: boolean
       }
+      can_read_maintenance_plan: {
+        Args: { p_plan_id: string }
+        Returns: boolean
+      }
       cancel_booking: {
         Args: { p_booking_id: string; p_reason?: string }
         Returns: Json
       }
+      cancel_maintenance_plan: { Args: { p_plan_id: string }; Returns: Json }
       chat_display_name: {
         Args: { p_fallback: string; p_user_id: string }
         Returns: string
@@ -2725,6 +2920,10 @@ export type Database = {
         Returns: Json
       }
       create_company_invitation: { Args: { p_email: string }; Returns: Json }
+      create_maintenance_plan: {
+        Args: { p_booking_id: string; p_frequency: string }
+        Returns: Json
+      }
       current_account_role: { Args: never; Returns: string }
       deactivate_company_member: {
         Args: { p_member_id: string }
@@ -2742,6 +2941,7 @@ export type Database = {
       }
       format_eur: { Args: { p_value: number }; Returns: string }
       free_run: { Args: { p_from: number; p_hours: number[] }; Returns: number }
+      generate_maintenance_proposals: { Args: never; Returns: Json }
       generate_recurring_slots: {
         Args: { force_regenerate?: boolean; target_gardener_id: string }
         Returns: undefined
@@ -2780,6 +2980,27 @@ export type Database = {
           desired_action: string
           payment_intent_id: string
         }[]
+      }
+      maintenance_find_slot: {
+        Args: { p_date: string; p_plan_id: string }
+        Returns: {
+          end_date: string
+          first_day_hours: number
+          slot_date: string
+          slot_hour: number
+        }[]
+      }
+      maintenance_next_date: {
+        Args: { p_date: string; p_frequency: string }
+        Returns: string
+      }
+      maintenance_quote_is_intact: {
+        Args: { p_quote_id: string }
+        Returns: boolean
+      }
+      maintenance_visit_checkout: {
+        Args: { p_visit_id: string }
+        Returns: Json
       }
       mark_booking_payment_settled: {
         Args: { p_attempt_id: string; p_result: string }
@@ -2832,6 +3053,7 @@ export type Database = {
           team_size: number
         }[]
       }
+      my_maintenance_plans: { Args: never; Returns: Json }
       pick_provider_worker: {
         Args: {
           p_date: string

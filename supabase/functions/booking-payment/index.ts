@@ -129,6 +129,8 @@ type QuoteRow = {
   economic_snapshot?: Record<string, unknown> | null;
   /** F8: los servicios del presupuesto (null = uno). */
   items?: Array<{ serviceId: string; serviceName?: string | null; inputPayload?: SerializableBookingData }> | null;
+  /** F9: el presupuesto es la propuesta de una visita de un plan de mantenimiento. */
+  maintenance_visit_id?: string | null;
 };
 
 type ActivePriceRow = {
@@ -374,7 +376,8 @@ async function getQuoteRow(
       input_payload,
       pricing_snapshot,
       economic_snapshot,
-      items
+      items,
+      maintenance_visit_id
     `)
     .eq('id', quoteId)
     .maybeSingle();
@@ -591,6 +594,21 @@ async function revalidateQuoteBeforePayment(
       code: 'quote_forbidden',
       message: 'El presupuesto no pertenece a la sesion autenticada.',
     });
+  }
+
+  // F9 (D19): la propuesta de una visita de un plan de mantenimiento tiene el precio del plan y NO
+  // se recalcula con la tarifa vigente. Se comprueba que es exactamente la que generó el plan y
+  // que plan y visita siguen vigentes; el hueco lo vuelve a comprobar el pago en SQL, como siempre.
+  if (quote.maintenance_visit_id) {
+    const { data: intact, error: intactError } = await admin.rpc('maintenance_quote_is_intact', { p_quote_id: quote.id });
+    if (intactError || intact !== true) {
+      throw new BookingPaymentHttpError({
+        status: 409,
+        code: 'maintenance_visit_unavailable',
+        message: 'Esta visita del plan ya no se puede confirmar.',
+      });
+    }
+    return { quote, evaluation: null };
   }
 
   const selectedDate = toIsoDate(quote.selected_date);

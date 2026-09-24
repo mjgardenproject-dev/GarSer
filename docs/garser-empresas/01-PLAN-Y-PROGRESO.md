@@ -735,6 +735,19 @@ Lo que hay y condiciona el diseño:
 Partes: **F9.1** servidor (planes, visitas, propuestas, pago) → **F9.2** avisos (correos desde el
 reloj) → **F9.3** pantallas del cliente → **F9.4** pantallas del profesional y la empresa.
 
+**✅ F9.1 Servidor — hecho** (migración `20260926140000_empresas_f9_maintenance_plans.sql`,
+`booking-payment`; `verify-f9-server.mjs` 11/11). `maintenance_plans` y `maintenance_visits` (solo
+lectura para cliente y profesional; se escriben por RPC). `create_maintenance_plan` (el cliente,
+de una reserva confirmada o terminada), `cancel_maintenance_plan` (cliente o profesional),
+`my_maintenance_plans`, `maintenance_visit_checkout`. `generate_maintenance_proposals`, llamada por
+el reloj de cada 15 minutos: 7 días antes busca hueco (la hora del plan, la más cercana ese día o
+los 2 siguientes; nunca para mañana), crea un presupuesto normal con el precio del plan (72 h para
+confirmar, como tarde un día antes) y avanza el plan; salta las que caducan y apunta las que no
+tienen hueco. El pago de una propuesta no recalcula el precio (D19): `maintenance_quote_is_intact`
+comprueba que es la del plan y que plan y visita siguen vigentes. Al pagarse, la visita queda
+«reservada» y la reserva enlazada al plan. Funciona con varios servicios (F8). F4–F8, en verde.
+
+
 - [ ] Se construye sobre `booking_items`. **Sin motor de precios nuevo.**
 
 ---
@@ -792,7 +805,7 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
    `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2) →
    `20260925180000` (F6.3) → `20260925190000` (F7.1) → `20260926120000` (F8.1) →
-   `20260926130000` (F8.4)
+   `20260926130000` (F8.4) → `20260926140000` (F9.1)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,

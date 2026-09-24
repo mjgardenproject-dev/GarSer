@@ -445,8 +445,19 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 
 ### F9 — Mantenimiento
 
-*Se detallan al llegar. Nota previa: F8 toca también a los autónomos, así que su batería de
-no regresión es más amplia que la de las fases de empresa.*
+| # | Prueba | Resultado esperado | Estado |
+|---|---|---|---|
+| F9-01 | Crear un plan | Solo el cliente, de una reserva confirmada, frecuencia válida, una vez | ✅ F9.1 |
+| F9-02 | Propuesta de la visita | 7 días antes, a su hora, precio del plan, 72 h para confirmar; una sola a la vez | ✅ F9.1 |
+| F9-03 | Datos para pagar la visita | Solo al cliente del plan | ✅ F9.1 |
+| F9-04 | Propuesta alterada | El pago la rechaza (el precio no se recalcula, D19) | ✅ F9.1 |
+| F9-05 | Pagar la visita (con la tarifa subida) | Reserva normal al precio del plan, enlazada; visita «reservada» | ✅ F9.1 |
+| F9-06 | Hora del plan ocupada | La más cercana ese día | ✅ F9.1 |
+| F9-07 | Caduca sin pagar / sin hueco | Se salta / «sin hueco»; el plan sigue | ✅ F9.1 |
+| F9-08 | Consultar planes | Cliente y empresa sí; otro no | ✅ F9.1 |
+| F9-09 | Cancelar | La propuesta abierta deja de valer; no se proponen más | ✅ F9.1 |
+| F9-10 | Plan de varios servicios | La visita lleva los dos | ✅ F9.1 |
+| F9-11 | Visita que tocaría mañana | Como pronto, pasado mañana | ✅ F9.1 |
 
 ---
 

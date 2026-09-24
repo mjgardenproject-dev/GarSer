@@ -4,8 +4,8 @@ import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 
 // Invitar a una persona al equipo (GarSer Empresas F3.3, A-22). El servidor genera el token y
-// solo guarda su huella; aquí se recibe UNA vez para poder copiar el enlace. El correo con la
-// invitación lo envía F3.4.
+// solo guarda su huella; aquí se recibe UNA vez: para pedir el correo de invitación (F3.4, que
+// comprueba el token contra esa huella) y para poder copiar el enlace si el correo no llega.
 
 interface Props {
   onInvited: () => void;
@@ -14,7 +14,7 @@ interface Props {
 const InviteMemberCard: React.FC<Props> = ({ onInvited }) => {
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
-  const [link, setLink] = useState<{ url: string; email: string } | null>(null);
+  const [link, setLink] = useState<{ url: string; email: string; emailed: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
 
   const invite = async (e: React.FormEvent) => {
@@ -23,8 +23,11 @@ const InviteMemberCard: React.FC<Props> = ({ onInvited }) => {
     try {
       const { data, error } = await supabase.rpc('create_company_invitation', { p_email: email });
       if (error) throw error;
-      const result = data as { token: string; email: string };
-      setLink({ url: `${window.location.origin}/invitacion?token=${result.token}`, email: result.email });
+      const result = data as { invitation_id: string; token: string; email: string };
+      const { error: mailError } = await supabase.functions.invoke('send-email-notification', {
+        body: { type: 'company_invitation', invitationId: result.invitation_id, token: result.token },
+      });
+      setLink({ url: `${window.location.origin}/invitacion?token=${result.token}`, email: result.email, emailed: !mailError });
       setCopied(false);
       setEmail('');
       onInvited();
@@ -80,8 +83,14 @@ const InviteMemberCard: React.FC<Props> = ({ onInvited }) => {
 
       {link && (
         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-          <p className="text-sm font-medium text-emerald-900">Invitación creada para {link.email}</p>
-          <p className="mt-0.5 text-xs text-emerald-800">Envíale este enlace. Caduca en 7 días y solo sirve con ese correo.</p>
+          <p className="text-sm font-medium text-emerald-900">
+            {link.emailed ? `Le hemos enviado la invitación a ${link.email}` : `Invitación creada para ${link.email}`}
+          </p>
+          <p className="mt-0.5 text-xs text-emerald-800">
+            {link.emailed
+              ? 'También puedes mandarle este enlace por WhatsApp. Caduca en 7 días y solo sirve con ese correo.'
+              : 'No hemos podido enviar el correo: mándale tú este enlace. Caduca en 7 días y solo sirve con ese correo.'}
+          </p>
           <div className="mt-2 flex items-center gap-2">
             <input readOnly value={link.url} onFocus={(e) => e.currentTarget.select()} className="min-w-0 flex-1 truncate rounded-lg border border-emerald-200 bg-white px-3 py-2 text-base text-gray-700" aria-label="Enlace de invitación" />
             <button type="button" onClick={copy} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">

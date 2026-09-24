@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso: ✅ F3.1 servidor · ✅ F3.2 web del alta · ✅ F3.3 panel de empresa, invitación y panel de empleado · siguiente F3.4 (emails) · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F3 cerrada (alta de empresas, equipo, invitaciones, carnet por persona, correos) · siguiente F4 (la empresa vende) · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -244,7 +244,7 @@ F2 18/18, F1 13/13, F0 7/7, 473 tests, build, `tsc` 129.
 
 ---
 
-#### 🟨 F3 — Alta de empresa y de empleados
+#### ✅ F3 — Alta de empresa y de empleados
 
 **✅ F3.1 Servidor — hecho** (migración `20260924130000_empresas_f3_onboarding_server.sql`,
 `node scripts/garser-empresas/verify-f3-db.mjs` → 31/31):
@@ -300,7 +300,7 @@ verificación F3 35/35):
 - [x] **Carnet fitosanitario por empleado** (D4): subida del carnet en la ficha del empleado,
       aprobación por el admin, y sin carnet aprobado no se le puede activar ese servicio.
 - [x] Invitación por token: se guarda **el hash**, nunca el token.
-- [ ] Email de invitación — tipo nuevo en el despachador Brevo existente.
+- [x] Email de invitación — tipo nuevo en el despachador Brevo existente (F3.4).
 - [x] RPC `accept_company_invitation(token)`: deriva `company_id` **del token**, jamás de un
       parámetro. Rechaza si quien acepta ya tiene `gardener_profiles`.
 - [x] Panel de empresa mínimo: perfil y equipo.
@@ -308,6 +308,20 @@ verificación F3 35/35):
 **Criterio de cierre.** Una empresa aprobada por el admin, con un empleado con servicios
 asignados, existe y ambos entran a su panel. Probado el vector de suplantación de
 `company_id`.
+
+**Cierre (2026-09-24).** Cumplido: «Jardines Demo Costa» aprobada, con Lucía Martín como
+empleada (césped + fitosanitarios, carnet aprobado por el admin), los dos entran a su panel en
+el móvil. F3-04 en verde. Batería: 486 tests, build, `tsc` 129, F0 7/7, F1 13/13, F2 18/18,
+F3 35/35, correos 10/10.
+
+**✅ F3.4 Correos — hecho** (migración `20260924160000_empresas_f3_invitation_email.sql`,
+`send-email-notification`, `node scripts/garser-empresas/verify-f3-emails.mjs` → 10/10):
+- **Invitación:** al invitar, la web pide el correo; el servidor solo lo envía si quien lo pide
+  es el dueño, el token coincide con la huella, la invitación sigue viva y **no se envió antes**
+  (una vez por invitación). Tope de **20 invitaciones al día por empresa** (A-27). Si el correo
+  falla, la tarjeta lo dice y deja el enlace para mandarlo a mano.
+- **Empresa aprobada / rechazada:** solo el admin; destinatario y motivo salen de la solicitud,
+  y solo se envía si la solicitud está de verdad en ese estado (A-28).
 
 **Diseño detallado (2026-09-24), tras estudiar las piezas existentes que se reutilizan:**
 
@@ -432,7 +446,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-24 | F3.3 | **Panel de empresa, invitación y panel de empleado.** Recorrido completo en navegador (móvil): invitar → abrir sin cuenta → registrarse → volver por la portada → aceptar → datos → carnet → admin lo aprueba → la empresa asigna servicios. Configuración de precios de la empresa adelantada de F4. **H-23, H-24, H-25** encontrados y cerrados. | 486 ✅ · build ✅ · tsc 129 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F3.4 | **Correos de empresas. F3 cerrada.** Invitación (una vez, con token verificado, tope diario), empresa aprobada y rechazada (solo admin, estado comprobado). Probado por la API (10/10) y desde la web en móvil. | 486 ✅ · build ✅ · tsc 129 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F3.3 | **Panel de empresa, invitación y panel de empleado.** Recorrido completo en navegador (móvil): invitar → abrir sin cuenta → registrarse → volver por la portada → aceptar → datos → carnet → admin lo aprueba → la empresa asigna servicios. Configuración de precios de la empresa adelantada de F4. **H-23, H-24, H-25** encontrados y cerrados. | 486 ✅ · build ✅ · tsc 129 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `0987904` |
 | 2026-09-24 | F3.2 | **Web del alta de empresas.** Registro, encuesta de 5 pasos, estado, revisión en el admin. Recorrido completo en navegador (móvil): alta → encuesta → envío → aprobación → panel; y rechazo → motivo → corregir → reenvío. Sin regresiones de jardinero ni cliente. | 481 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `bdc0c8b` |
 | 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `f7ec1d5` |
 | 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | `b0a6fbe` |
@@ -494,7 +509,8 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 | F2 | **Aplicar `20260924120000_empresas_f2_provider_model.sql` cierra H-21** (alta de jardineros sin aprobación y autoaprobación del carnet) | Antes, ejecutar las consultas de F2 de abajo: si hay fichas de proveedor sin solicitud aprobada, o carnets aprobados sin revisión, revisarlos a mano |
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
-| F3 | Aplicar `20260924140000` y `20260924150000` (en ese orden, tras la anterior) | Sin consulta previa: solo añaden funciones |
+| F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
+| F3 | **Desplegar `send-email-notification`** (`supabase functions deploy send-email-notification --use-api`) | Sin esto, invitar funciona pero no sale el correo (la web lo dice y da el enlace). Probar P-F3-9 a P-F3-11 |
 
 **Consulta previa de F3 (solo lectura):**
 

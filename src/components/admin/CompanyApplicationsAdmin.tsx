@@ -79,6 +79,12 @@ const CompanyApplicationsAdmin: React.FC = () => {
       });
       if (rpcError) throw rpcError;
       toast.success(status === 'approved' ? `${app.commercial_name} ya está dada de alta.` : 'Solicitud rechazada.');
+      // Aviso por correo (F3.4). El destinatario y el motivo los saca el servidor de la
+      // solicitud; si el correo falla, la revisión ya está guardada: solo se avisa al admin.
+      const { error: mailError } = await supabase.functions.invoke('send-email-notification', {
+        body: { type: status === 'approved' ? 'company_approved' : 'company_rejected', companyApplicationId: app.id },
+      });
+      if (mailError) toast.error('Guardado, pero no se ha podido enviar el correo a la empresa.');
       setRejectingId(null);
       setRejectReason('');
       setOpenId(null);

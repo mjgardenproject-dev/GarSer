@@ -9,6 +9,8 @@
 //   · booking_rejected                       → al cliente: la solicitud no fue aceptada
 //   · booking_cancelled                      → a cualquiera de las partes: reserva cancelada
 //   · booking_review_request                 → al cliente: servicio finalizado, pedimos valoracion
+//   · company_approved / company_rejected    → estado de la solicitud de empresa (GarSer Empresas)
+//   · company_invitation                     → a la persona invitada al equipo de una empresa
 //
 // Secretos (Supabase Secrets): SMTP_USER (remitente verificado en Brevo), SMTP_PASS (api-key),
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
@@ -42,7 +44,12 @@ type EmailType =
   // de lo que pasa con su incidencia.
   | 'booking_client_confirmation_request'
   | 'booking_incident_received'
-  | 'booking_incident_resolved';
+  | 'booking_incident_resolved'
+  // GarSer Empresas (F3.4). Todo se resuelve en el servidor: destinatario, nombre y motivo
+  // salen de la base de datos, nunca del navegador.
+  | 'company_approved'
+  | 'company_rejected'
+  | 'company_invitation';
 
 interface EmailPayload {
   /**
@@ -59,6 +66,14 @@ interface EmailPayload {
    * compuesto en un cliente no confiable, con un formato de euro distinto al del resto.
    */
   bookingId?: string;
+  /** company_approved / company_rejected: la solicitud revisada. */
+  companyApplicationId?: string;
+  /**
+   * company_invitation: la invitación y su token. El token viaja porque en la base de datos solo
+   * está su huella: sirve para demostrar que quien pide el correo acaba de crear la invitación.
+   */
+  invitationId?: string;
+  token?: string;
   data?: {
     name?: string;
     reason?: string;
@@ -168,6 +183,8 @@ Deno.serve(async (req) => {
     let bookingFeeNote = '';
     let confirmUrl: string | null = null;
     let deadlineAt: string | null = null;
+    let companyReason = '';
+    let invitation: { company_name: string | null; token: string; expires_at: string } | null = null;
 
     if (BOOKING_EMAIL_TYPES.has(type) && bookingId) {
       // ---- Contrato vigente: todo se resuelve aquí, con la clave de servicio ----
@@ -260,6 +277,59 @@ Deno.serve(async (req) => {
           console.error('Error fetching user email:', userError);
         }
       }
+    } else if (type === 'company_approved' || type === 'company_rejected') {
+      // Estado de la solicitud de empresa: solo administradores (o un servicio interno). El
+      // correo tiene que decir lo mismo que la base de datos: si la solicitud no está en ese
+      // estado, no se envía.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req) && !(await isAdminCaller(req, admin))) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: app } = await admin
+        .from('company_applications')
+        .select('user_id, status, commercial_name, contact_name, review_comment')
+        .eq('id', String(payload.companyApplicationId || ''))
+        .maybeSingle();
+      const expected = type === 'company_approved' ? 'approved' : 'rejected';
+      if (!app || app.status !== expected) {
+        return new Response(JSON.stringify({ error: 'application_state_mismatch' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: userData } = await admin.auth.admin.getUserById(app.user_id);
+      to = userData?.user?.email ?? undefined;
+      name = app.contact_name || app.commercial_name || 'empresa';
+      companyReason = app.review_comment || '';
+    } else if (type === 'company_invitation') {
+      // Invitación al equipo: solo el dueño que acaba de crearla, con su token, una vez. El
+      // destinatario es el correo guardado en la invitación. Todo lo comprueba y lo marca de una
+      // vez mark_company_invitation_emailed; si algo no cuadra devuelve null y no sale nada.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      const callerToken = presentedToken(req);
+      const { data: caller } = callerToken ? await admin.auth.getUser(callerToken) : { data: null };
+      const callerId = caller?.user?.id || '';
+      const token = String(payload.token || '');
+      const { data: marked, error: markError } = callerId
+        ? await admin.rpc('mark_company_invitation_emailed', {
+            p_invitation_id: String(payload.invitationId || ''),
+            p_token: token,
+            p_caller: callerId,
+          })
+        : { data: null, error: null };
+      if (markError) console.error('[send-email-notification] invitación:', markError.message);
+      if (!marked) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      to = marked.email;
+      invitation = { company_name: marked.company_name ?? null, token, expires_at: marked.expires_at };
     } else {
       // ---- Contrato LEGACY: RETIRADO (paso 9) ----
       // Aceptaba `user_id` + textos libres (`serviceName`, `dateText`, `priceText`) de
@@ -306,6 +376,40 @@ Deno.serve(async (req) => {
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Volver a solicitar', url: data?.applyUrl || `${BRAND.site}/apply` },
         footerNote: 'Este rechazo no es definitivo: puedes corregir la información y volver a enviar tu solicitud.',
+      };
+    } else if (type === 'company_approved') {
+      subject = 'Tu empresa ya está dada de alta en GarSer';
+      opts = {
+        title: subject,
+        heading: `¡Enhorabuena, ${escapeHtml(name)}!`,
+        intro: 'Hemos revisado tu solicitud y tu empresa ya forma parte de GarSer. Entra en tu panel para configurar tus servicios y precios e invitar a tu equipo.',
+        cta: { label: 'Ir a mi empresa', url: `${BRAND.site}/empresa` },
+        footerNote: 'Si tienes cualquier duda, responde a este correo y te ayudamos.',
+      };
+    } else if (type === 'company_rejected') {
+      subject = 'Actualización sobre la solicitud de tu empresa en GarSer';
+      detailPairs = companyReason ? [['Motivo', companyReason]] : [];
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: 'Gracias por tu interés en GarSer. Hemos revisado la solicitud de tu empresa y por ahora no podemos aceptarla por el siguiente motivo:',
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Corregir y enviar de nuevo', url: `${BRAND.site}/empresa/estado` },
+        footerNote: 'No es definitivo: puedes corregir la información y volver a enviar tu solicitud.',
+      };
+    } else if (type === 'company_invitation' && invitation) {
+      const company = invitation.company_name || 'Una empresa';
+      const expires = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' })
+        .format(new Date(invitation.expires_at));
+      subject = `${company} te invita a su equipo en GarSer`;
+      opts = {
+        title: subject,
+        heading: 'Hola',
+        intro: `${escapeHtml(company)} te invita a unirte a su equipo en GarSer. Tu empresa te asignará los trabajos y los verás desde tu móvil. Para aceptar, crea tu cuenta (o entra) con este mismo correo.`,
+        // La página es inerte para los escáneres de enlaces: aceptar exige pulsar un botón con
+        // la sesión abierta.
+        cta: { label: 'Ver la invitación', url: `${BRAND.site}/invitacion?token=${encodeURIComponent(invitation.token)}` },
+        footerNote: `La invitación caduca el ${expires}. Si no conoces a esta empresa, ignora este correo.`,
       };
     } else if (type === 'booking_accepted') {
       subject = '¡Tu reserva en GarSer ha sido aceptada!';

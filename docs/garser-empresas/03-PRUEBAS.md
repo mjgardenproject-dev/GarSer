@@ -202,6 +202,24 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F3-64 | El dueño abre su propio enlace: le explica que es para enviarlo y le devuelve a su empresa | Correcto | ✅ F3.3 |
 | F3-65 | No regresión: un cliente normal entra a su inicio; ningún error en consola | Correcto | ✅ F3.3 |
 
+**Correos (F3.4)** — `node scripts/garser-empresas/verify-f3-emails.mjs` (10 comprobaciones,
+contra la función local; tras cambiarla: `docker restart supabase_edge_runtime_GarSer-main_4`):
+
+| # | Prueba | Resultado esperado | Estado |
+|---|---|---|---|
+| F3E-01 | Avisar de «aprobada» con la solicitud aún sin aprobar | 409, no sale | ✅ F3.4 |
+| F3E-02 | Pedir el correo de aprobada como anónimo, cliente o la propia empresa | 403 | ✅ F3.4 |
+| F3E-03 | El admin lo pide con un `to` inyectado | Llega al correo de la empresa, no al inyectado | ✅ F3.4 |
+| F3E-04 | Solicitud rechazada: pedir «aprobada» / «rechazada» | 409 / sale al correo de la empresa | ✅ F3.4 |
+| F3E-05 | Correo de invitación pedido por anónimo, por un cliente o con token equivocado | 403 | ✅ F3.4 |
+| F3E-06 | El dueño lo pide (con un `to` inyectado) | Llega al invitado, con el nombre de la empresa; queda marcado | ✅ F3.4 |
+| F3E-07 | Pedirlo otra vez para la misma invitación | 403 | ✅ F3.4 |
+| F3E-08 | Invitación anulada | No se envía | ✅ F3.4 |
+| F3E-09 | Llamar desde el navegador a la función que marca el envío | 403 | ✅ F3.4 |
+| F3E-10 | Invitación número 21 del día | Rechazada con explicación | ✅ F3.4 |
+| F3-66 | Desde la web, la empresa invita: «Le hemos enviado la invitación a …» y el enlace por si acaso | Correcto (correo simulado en local) | ✅ F3.4 (móvil) |
+| F3-67 | Desde la web, el admin rechaza una empresa con motivo: sale el correo a esa empresa | Correcto | ✅ F3.4 (móvil) |
+
 > Las pruebas de servidor se repiten con `node scripts/garser-empresas/verify-f3-db.mjs`
 > (35 comprobaciones, incluidas F3-37 a F3-39 y F3-51). Las de pantallas (F3-40 a F3-50 y
 > F3-52 a F3-65) se hicieron en el navegador, en móvil (375 px).
@@ -314,6 +332,9 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F3-6 | La empresa aprobada invita a un correo real; desde otro móvil, abrir el enlace, crear la cuenta, **confirmar el correo** y comprobar que al entrar se retoma la invitación y se acepta | F3 | ⬜ |
 | P-F3-7 | El empleado sube su carnet; el admin lo ve con «· empleado de <empresa>» y lo aprueba; la empresa le asigna fitosanitarios | F3 | ⬜ |
 | P-F3-8 | Por la API, con una cuenta de cliente, llamar a `has_valid_phyto_license` con el id de otra persona | F3 | ⬜ → debe dar 403 |
+| P-F3-9 | La empresa invita a un correo real: el correo llega (revisar también la carpeta de spam), con el nombre de la empresa, y su botón abre la invitación | F3 | ⬜ |
+| P-F3-10 | El admin aprueba una empresa: le llega «Tu empresa ya está dada de alta en GarSer» y el botón lleva a su panel | F3 | ⬜ |
+| P-F3-11 | El admin rechaza otra con motivo: le llega el correo con ese motivo y el botón «Corregir y enviar de nuevo» | F3 | ⬜ |
 
 ---
 

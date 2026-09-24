@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · siguiente: F3 — alta de empresa y de empleados (necesita D7: la encuesta de empresa)
+**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso (diseño hecho; D7 en borrador para validar)
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -101,7 +101,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | # | Pregunta | Bloquea | Por qué |
 |---|---|---|---|
 | D8 | ~~¿Se arregla H-11 ya en producción?~~ | — | **Respondida (2026-09-23): no es urgente**, `garser.es` aún no tiene usuarios reales. Se arregla con F0 el día de la fusión (§6). **Si antes de la fusión entran usuarios reales, esta decisión debe revisarse.** |
-| D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. **Decisión del usuario (2026-09-23): se diseña el formulario al llegar a la F3**, adaptado a lo que GarSer necesita saber de una empresa. No bloquea nada antes. |
+| D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. **Borrador propuesto el 2026-09-24** en F3 («D7 — Borrador»), pendiente de que el usuario lo ajuste. Se implementa de forma que cambiar preguntas no exija migración. |
 
 ---|---|---|---|
 | D1 | **¿Una empresa paga la misma comisión del 12,5 %?** ¿O hay tramos por volumen? | F4 | Cambia el modelo económico. Por defecto: igual que el autónomo. |
@@ -244,7 +244,7 @@ F2 18/18, F1 13/13, F0 7/7, 473 tests, build, `tsc` 129.
 
 ---
 
-#### ⬜ F3 — Alta de empresa y de empleados
+#### 🟨 F3 — Alta de empresa y de empleados
 
 - [ ] Registro «Tengo una empresa de jardinería» en `AuthForm`.
 - [ ] **Solicitud de alta de empresa propia** (D2): encuesta de empresa (preguntas de D7),
@@ -264,6 +264,43 @@ F2 18/18, F1 13/13, F0 7/7, 473 tests, build, `tsc` 129.
 **Criterio de cierre.** Una empresa aprobada por el admin, con un empleado con servicios
 asignados, existe y ambos entran a su panel. Probado el vector de suplantación de
 `company_id`.
+
+**Diseño detallado (2026-09-24), tras estudiar las piezas existentes que se reutilizan:**
+
+La fase se entrega en cuatro partes, cada una probada y commiteada antes de la siguiente:
+
+| Parte | Qué | Reutiliza |
+|---|---|---|
+| **F3.1 Servidor** | `company_applications` + su revisión, invitaciones, gestión del equipo, carnet por persona | El patrón de `gardener_applications` (borrador → enviada por el usuario; aprobación solo por RPC de admin), que se ha comprobado seguro |
+| **F3.2 Web: alta** | Registro «Tengo una empresa», encuesta, página de estado, revisión en el admin | `AuthForm`, `GardenerStatusPage`, la estructura de `ApplicationsAdmin` |
+| **F3.3 Web: uso** | Panel de empresa (perfil, «Yo también trabajo», equipo e invitaciones, servicios por empleado), aceptar invitación, panel mínimo del empleado (perfil y carnet) | `PhytosanitaryLicenseUpload` para el carnet del empleado |
+| **F3.4 Emails** | Invitación, empresa aprobada, empresa rechazada | El despachador `send-email-notification`: el destinatario lo resuelve el servidor, nunca el navegador |
+
+Decisiones técnicas nuevas (detalle en `02-HALLAZGOS.md` §2, A-20 a A-24):
+- `company` se puede declarar al registrarse, igual que `gardener`: significa «se registró como
+  empresa», no «aprobada». Aprobada = existe su fila en `companies`. `employee` nunca se declara.
+- Cambiar el rol a `employee` al aceptar una invitación lo hace el servidor con una marca de
+  confianza de la transacción, que respeta el disparador de escalada de F0.
+- Aceptar una invitación exige que el correo de la sesión sea el invitado, y que la cuenta sea de
+  cliente: ni proveedor ni miembro de otra empresa.
+- Las licencias dejan de exigir ficha de proveedor: un empleado puede tener carnet (A-13).
+
+### D7 — Borrador de la encuesta de alta de empresas (para que el usuario lo ajuste)
+
+Implementado de forma que cambiar preguntas no exija tocar la base de datos: los datos que
+necesita la aprobación van en columnas; el resto, en un campo de respuestas flexible.
+
+| Bloque | Preguntas | Por qué la pregunta GarSer |
+|---|---|---|
+| **Empresa** | Nombre comercial\*, razón social\*, CIF\*, año de inicio de actividad, web o redes | Identificar a la empresa y verificarla; el nombre comercial es el que verá el cliente |
+| **Contacto y zona** | Persona de contacto\*, teléfono\*, dirección\*, zona donde trabajáis\* | Contactar, y saber si cubre la zona donde está la demanda |
+| **Equipo** | Nº de trabajadores\* (1 / 2–5 / 6–10 / 11–20 / más de 20), ¿el titular trabaja en los servicios?\* (D3), nº de vehículos | Dimensionar su capacidad, que es el valor de una empresa para GarSer |
+| **Servicios** | Qué servicios ofrecéis\* (los 7), ¿tenéis trabajadores con carnet fitosanitario? | Qué oferta aporta; el carnet real se verifica luego por persona (D4) |
+| **Garantías** | ¿Seguro de responsabilidad civil?\*, aseguradora, maquinaria propia | Riesgo: una empresa manda a varias personas a casas ajenas |
+| **Referencias** | Descripción del negocio, fotos de trabajos (opcional) | Calidad del trabajo |
+| **Compromisos** | Acepta las condiciones\*, declara que los datos son ciertos\* | Igual que el alta de jardinero |
+
+\* obligatoria.
 
 ---
 

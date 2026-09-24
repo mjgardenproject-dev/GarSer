@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, MapPin, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
 import { hourLabel, type ScheduleJob, type ScheduleMember } from '../../../hooks/useCompanySchedule';
+import RescheduleSection from './RescheduleSection';
 
 // Un trabajo en el planificador (GarSer Empresas F6.2): quién hace cada hora y cómo repartirlo
 // (D10). Para cada hora solo se ofrece a quien puede hacer el trabajo; quien está ocupado a esa
@@ -147,6 +148,7 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
             </button>
           </>
         )}
+        {editable && <RescheduleSection job={job} onProposed={onSaved} />}
       </div>
     </div>,
     document.body,

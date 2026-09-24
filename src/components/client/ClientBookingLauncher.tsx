@@ -19,6 +19,7 @@ import ReviewModal from '../booking/ReviewModal';
 import ChatWindow from '../chat/ChatWindow';
 import { useConfirmDialog } from '../common/ConfirmDialog';
 import { formatEuro } from '../../shared/bookingAmounts';
+import { RESCHEDULE_MESSAGES, respondBookingReschedule } from '../../utils/bookingRescheduleService';
 
 const ClientBookingLauncher = () => {
   const navigate = useNavigate();
@@ -145,6 +146,21 @@ const ClientBookingLauncher = () => {
    * precio"/"Rechazar" se renderizaban pero no hacían nada (`onClick` llamaba a `undefined?.()`).
    * Mismo patrón que `respondToPriceChange` en BookingsList.tsx, donde sí funcionan.
    */
+  // GarSer Empresas (F6.3, D9): respuesta a una propuesta de otra fecha.
+  const respondToReschedule = async (booking: OverviewBooking, accept: boolean) => {
+    setBusyId(booking.id);
+    try {
+      const outcome = await respondBookingReschedule(booking.id, accept);
+      if (outcome === 'accepted' || outcome === 'rejected') toast.success(RESCHEDULE_MESSAGES[outcome]);
+      else toast(RESCHEDULE_MESSAGES[outcome]);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo responder a la propuesta.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const respondToPriceChange = async (booking: OverviewBooking, accept: boolean) => {
     setBusyId(booking.id);
     try {
@@ -173,6 +189,8 @@ const ClientBookingLauncher = () => {
     onReportIncident: (booking: OverviewBooking) => navigate(`/incidencias/${booking.id}`),
     onAcceptPriceChange: (booking: OverviewBooking) => void respondToPriceChange(booking, true),
     onRejectPriceChange: (booking: OverviewBooking) => void respondToPriceChange(booking, false),
+    onAcceptReschedule: (booking: OverviewBooking) => void respondToReschedule(booking, true),
+    onRejectReschedule: (booking: OverviewBooking) => void respondToReschedule(booking, false),
   };
 
   return (

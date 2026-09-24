@@ -338,6 +338,7 @@ comprobaciones con el token de cada persona) y navegador:
 ### F6 — Planificación y reasignación
 
 **Servidor (F6.1)** — `node scripts/garser-empresas/verify-f6-planning.mjs` (12 comprobaciones).
+**Mover de fecha (F6.3)** — `node scripts/garser-empresas/verify-f6-reschedule.mjs` (9 comprobaciones).
 No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios iguales que antes.
 
 | # | Prueba | Resultado esperado | Estado |
@@ -345,8 +346,17 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F6-01 | Reasignar a alguien libre | Correcto; quienes iban quedan libres | ✅ F6.1 |
 | F6-02 | Reasignar a alguien ocupado | Rechazado, con mensaje entendible | ✅ F6.1 («no está libre a las 10:00») |
 | F6-03 | El conflicto se avisa **antes** de confirmar | Se ve antes | ✅ F6.2 («Lucía Martín (ocupado)» deshabilitada en la hoja del trabajo) |
-| F6-04 | Mover un trabajo de fecha | Libera las viejas y ocupa las nuevas, o ninguna de las dos | ⬜ |
+| F6-04 | Mover un trabajo de fecha | Libera las viejas y ocupa las nuevas, o ninguna de las dos | ✅ F6.3 (con propuesta al cliente, D9) |
 | F6-05 | Dividir un trabajo entre dos personas | El total de horas no varía | ✅ F6.1 (por tramos, D10) |
+| F6-30 | Horas a las que se podría mover | Las de quien puede hacerlo entero (o por turnos si se aceptan) | ✅ F6.3 |
+| F6-31 | Proponer | Solo el dueño; solo a una franja en la que alguien puede | ✅ F6.3 |
+| F6-32 | Aviso de la propuesta al cliente | Una sola vez; solo lo pide la empresa | ✅ F6.3 |
+| F6-33 | El cliente rechaza (y otro cliente intenta responder) | No cambia nada, no se cancela; el otro, denegado | ✅ F6.3 |
+| F6-34 | Aviso del rechazo | A la empresa | ✅ F6.3 |
+| F6-35 | Aviso de la aceptación | A la empresa y a quien va | ✅ F6.3 |
+| F6-36 | Aceptar cuando ya no hay nadie libre | No se mueve nada; la propuesta caduca | ✅ F6.3 |
+| F6-37 | Propuesta de más de 48 h | Caducada | ✅ F6.3 |
+| F6-38 | Navegador (móvil): Marta abre el trabajo → «Mover a otra fecha» → elige día, ve las horas posibles, motivo → «Proponer»; Laura ve el aviso en su inicio y pulsa «Aceptar nueva fecha» | La reserva pasa al miércoles 30 con Lucía; avisos a la empresa y a Lucía | ✅ F6.3 |
 | F6-19 | Navegador: el panel de la empresa abre en **Agenda** (Día / Semana / Lista) | Correcto | ✅ F6.2 |
 | F6-20 | Navegador: Semana → tocar el martes → Día; tocar el trabajo → hoja; «todo a Marta» → guardar | Reasignado; Lucía queda libre | ✅ F6.2 |
 | F6-21 | Navegador: barra inferior del empleado | «Mi trabajo · Horario · Cuenta» (antes llevaba a reservas de cliente) | ✅ F6.2 |
@@ -424,6 +434,8 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F5-2 | Un empleado real pone su horario en «Mi trabajo» → «Semana» → «Mi horario»; la empresa recibe una reserva en esas horas y le toca a él | F5 | ⬜ |
 | P-F5-3 | La empresa cambia quién va en un trabajo confirmado: a los dos les llega su correo | F5 | ⬜ |
 | P-F5-4 | El cliente de esa reserva ve «Irá …» con nombre y foto el día antes, y no antes | F5 | ⬜ |
+| P-F6-1 | La empresa reparte un trabajo de 3 h entre dos personas desde la agenda; a cada una le llega su aviso con «Tu parte» | F6 | ⬜ |
+| P-F6-2 | La empresa propone otra fecha; al cliente le llega el correo, la acepta desde «Mis reservas» y la reserva se mueve (y le llega el aviso a quien va) | F6 | ⬜ |
 
 ---
 

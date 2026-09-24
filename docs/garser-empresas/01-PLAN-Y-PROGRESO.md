@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada · ✅ HITO hecho · 🟨 F6 en curso: ✅ F6.1 servidor · ✅ F6.2 planificador web · siguiente F6.3 (mover de fecha, D9) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · siguiente F7 (varios trabajadores y varios días) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -499,7 +499,7 @@ F0 7/7, F1 13/13, F2 18/18, F3 35/35, correos 10/10, F4 21/21, F5 9/9 + 13/13 + 
 - [x] Puerta de carnet fitosanitario en la asignación, **por empleado** (D4, H-04).
 - [x] El cliente ve nombre y foto de quién va, **el día antes** (D6).
 
-#### 🟨 F6 — Planificación y reasignación
+#### ✅ F6 — Planificación y reasignación
 
 **Diseño (2026-09-24), tras el hito y D9/D10.** Tres partes:
 - **F6.1 Servidor:** agenda de la empresa en una llamada (`company_schedule`), repartir las
@@ -528,11 +528,20 @@ F0 7/7, F1 13/13, F2 18/18, F3 35/35, correos 10/10, F4 21/21, F5 9/9 + 13/13 + 
   tarjeta del empleado.
 - F6-06 (20 personas, 375 px) en verde tras dejar que los nombres largos partan línea.
 
+**✅ F6.3 Mover de fecha — hecho** (migración `20260925180000_empresas_f6_reschedule.sql`,
+`send-email-notification`; `verify-f6-reschedule.mjs` → 9/9): en la hoja del trabajo, «Mover a
+otra fecha» con las horas posibles de cada día; el cliente ve la propuesta en su tarjeta y la
+acepta o mantiene su fecha; correos a cada parte (A-39).
 
-- [ ] Planificación en tres densidades. **Se construye móvil primero**, no se adapta el
+**Cierre (2026-09-24).** F6-01 a F6-06 en verde (F6-07, «legible al sol en móvil real», es una
+prueba manual en un teléfono: queda para P- el día de la fusión). Batería: 496 tests, build,
+`tsc` 128, F0–F6 todos en verde, baterías de servicios iguales que antes.
+
+
+- [x] Planificación en tres densidades. **Se construye móvil primero**, no se adapta el
       escritorio después.
-- [ ] Reasignar, mover de fecha, dividir un trabajo.
-- [ ] Detección de conflictos **antes** de soltar, no después del error.
+- [x] Reasignar, mover de fecha (D9), dividir un trabajo (D10).
+- [x] Detección de conflictos **antes** de soltar, no después del error.
 
 ---
 
@@ -570,7 +579,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-24 | F5 | **Asignar y ejecutar. F5 cerrada.** Horarios del equipo (H-29: una hora vendida ya no se puede reabrir; el dueño que trabaja no pierde sus horas), asignación en el servidor con mínimo privilegio (A-33, A-34), panel del empleado Hoy/Semana/Perfil, «cambiar quién va», avisos por correo, D6 (A-35). Imprevistos H-30 (bucle de pintado, afecta a autónomos) y H-31 (nombre del dueño en lugar del de la empresa) cerrados. | 493 ✅ · build ✅ · tsc 129 · F5 9+13+7 · F4 21/21 · F3 35/35 · correos 10/10 · F2 18/18 · F1 13/13 · F0 7/7 | `fd4f9c7` `6fc3d62` `55db2fa` + (este) |
+| 2026-09-24 | F6 | **Planificación. F6 cerrada.** Hito hecho por el chat en el navegador; D9 y D10 del usuario. Una persona por hora en todo el camino del dinero (A-37), trabajos partidos opcionales (A-38), planificador móvil Día/Semana/Lista con conflictos antes de guardar, mover de fecha con propuesta al cliente (A-39). F6-06 con 20 personas a 375 px. | 496 ✅ · build ✅ · tsc 128 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 | `4267220` `ecb0436` + (este) |
+| 2026-09-24 | F5 | **Asignar y ejecutar. F5 cerrada.** Horarios del equipo (H-29: una hora vendida ya no se puede reabrir; el dueño que trabaja no pierde sus horas), asignación en el servidor con mínimo privilegio (A-33, A-34), panel del empleado Hoy/Semana/Perfil, «cambiar quién va», avisos por correo, D6 (A-35). Imprevistos H-30 (bucle de pintado, afecta a autónomos) y H-31 (nombre del dueño en lugar del de la empresa) cerrados. | 493 ✅ · build ✅ · tsc 129 · F5 9+13+7 · F4 21/21 · F3 35/35 · correos 10/10 · F2 18/18 · F1 13/13 · F0 7/7 | `fd4f9c7` `6fc3d62` `55db2fa` `b502fb4` |
 | 2026-09-24 | F4 | **La empresa vende. F4 cerrada.** H-26 → decisión del usuario: se aparta a una persona al vender; el dueño elige si es definitiva o propuesta. Fuente única de horas libres para web y pago. Web: distintivo, solicitudes y reservas de la empresa con «quién va», opción de asignación. Recorrido de punta a punta en el navegador (móvil). H-27 (fallos antiguos de las baterías, tarea aparte) y H-28 anotados. | 491 ✅ · build ✅ · tsc 129 · F4 21/21 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `9e42bc0` `74893e3` |
 | 2026-09-24 | F3.4 | **Correos de empresas. F3 cerrada.** Invitación (una vez, con token verificado, tope diario), empresa aprobada y rechazada (solo admin, estado comprobado). Probado por la API (10/10) y desde la web en móvil. | 486 ✅ · build ✅ · tsc 129 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `2a37528` |
 | 2026-09-24 | F3.3 | **Panel de empresa, invitación y panel de empleado.** Recorrido completo en navegador (móvil): invitar → abrir sin cuenta → registrarse → volver por la portada → aceptar → datos → carnet → admin lo aprueba → la empresa asigna servicios. Configuración de precios de la empresa adelantada de F4. **H-23, H-24, H-25** encontrados y cerrados. | 486 ✅ · build ✅ · tsc 129 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `0987904` |
@@ -605,7 +615,8 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
-   `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2)
+   `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2) →
+   `20260925180000` (F6.3)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,

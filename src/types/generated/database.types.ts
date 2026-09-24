@@ -1160,15 +1160,23 @@ export type Database = {
           notes: string | null
           price_change_status: string | null
           pricing_context: Json
+          proposed_date: string | null
           proposed_duration_hours: number | null
           proposed_price_at: string | null
           proposed_price_by: string | null
           proposed_price_expires_at: string | null
           proposed_price_reason: string | null
+          proposed_start_time: string | null
           proposed_total_price: number | null
           provider_latitude: number | null
           provider_longitude: number | null
           request_id: string | null
+          reschedule_answer_notified_at: string | null
+          reschedule_expires_at: string | null
+          reschedule_proposal_notified_at: string | null
+          reschedule_proposed_at: string | null
+          reschedule_reason: string | null
+          reschedule_status: string
           service_id: string | null
           start_time: string
           status: string | null
@@ -1213,15 +1221,23 @@ export type Database = {
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
+          proposed_date?: string | null
           proposed_duration_hours?: number | null
           proposed_price_at?: string | null
           proposed_price_by?: string | null
           proposed_price_expires_at?: string | null
           proposed_price_reason?: string | null
+          proposed_start_time?: string | null
           proposed_total_price?: number | null
           provider_latitude?: number | null
           provider_longitude?: number | null
           request_id?: string | null
+          reschedule_answer_notified_at?: string | null
+          reschedule_expires_at?: string | null
+          reschedule_proposal_notified_at?: string | null
+          reschedule_proposed_at?: string | null
+          reschedule_reason?: string | null
+          reschedule_status?: string
           service_id?: string | null
           start_time: string
           status?: string | null
@@ -1266,15 +1282,23 @@ export type Database = {
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
+          proposed_date?: string | null
           proposed_duration_hours?: number | null
           proposed_price_at?: string | null
           proposed_price_by?: string | null
           proposed_price_expires_at?: string | null
           proposed_price_reason?: string | null
+          proposed_start_time?: string | null
           proposed_total_price?: number | null
           provider_latitude?: number | null
           provider_longitude?: number | null
           request_id?: string | null
+          reschedule_answer_notified_at?: string | null
+          reschedule_expires_at?: string | null
+          reschedule_proposal_notified_at?: string | null
+          reschedule_proposed_at?: string | null
+          reschedule_reason?: string | null
+          reschedule_status?: string
           service_id?: string | null
           start_time?: string
           status?: string | null
@@ -2476,6 +2500,10 @@ export type Database = {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
       }
+      booking_slot_workers: {
+        Args: { p_booking_id: string; p_date: string; p_start_hour: number }
+        Returns: string[]
+      }
       booking_worker_for_client: {
         Args: { p_booking_id: string }
         Returns: Json
@@ -2754,6 +2782,15 @@ export type Database = {
         }
         Returns: Json
       }
+      propose_booking_reschedule: {
+        Args: {
+          p_booking_id: string
+          p_date: string
+          p_reason?: string
+          p_start_hour: number
+        }
+        Returns: Json
+      }
       provider_allows_split_jobs: {
         Args: { p_provider: string }
         Returns: boolean
@@ -2835,6 +2872,10 @@ export type Database = {
         Args: { p_booking_id: string; p_reason?: string }
         Returns: Json
       }
+      reschedule_options: {
+        Args: { p_booking_id: string; p_date: string }
+        Returns: number[]
+      }
       reserve_booking_schedule: {
         Args: { p_booking_id: string }
         Returns: undefined
@@ -2868,6 +2909,10 @@ export type Database = {
           p_operation_id?: string
           p_response: string
         }
+        Returns: Json
+      }
+      respond_booking_reschedule: {
+        Args: { p_accept: boolean; p_booking_id: string }
         Returns: Json
       }
       respond_to_incident: {

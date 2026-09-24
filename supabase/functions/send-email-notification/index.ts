@@ -12,6 +12,7 @@
 //   · company_approved / company_rejected    → estado de la solicitud de empresa (GarSer Empresas)
 //   · company_invitation                     → a la persona invitada al equipo de una empresa
 //   · job_assigned / job_unassigned          → al empleado: le asignan o le quitan un trabajo
+//   · booking_reschedule_proposed / _answered → propuesta de nueva fecha (D9) y su respuesta
 //
 // Secretos (Supabase Secrets): SMTP_USER (remitente verificado en Brevo), SMTP_PASS (api-key),
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
@@ -54,7 +55,11 @@ type EmailType =
   // GarSer Empresas (F5.4): al empleado, cuando un trabajo confirmado pasa a ser suyo o deja de
   // serlo. Solo los pide el dueño de esa reserva; el destinatario sale de la agenda.
   | 'job_assigned'
-  | 'job_unassigned';
+  | 'job_unassigned'
+  // GarSer Empresas (F6.3, D9): la empresa propone otra fecha (al cliente) y el cliente responde
+  // (a la empresa y, si acepta, a quien va). Cada uno, una sola vez por propuesta.
+  | 'booking_reschedule_proposed'
+  | 'booking_reschedule_answered';
 
 interface EmailPayload {
   /**
@@ -436,6 +441,113 @@ Deno.serve(async (req) => {
           console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: workerEmail, type, subject: jobSubject });
         } else {
           const sent = await sendViaBrevo({ to: workerEmail, subject: jobSubject, html: jobHtml, text: jobText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+          if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+        }
+        sentCount += 1;
+      }
+      return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'booking_reschedule_proposed' || type === 'booking_reschedule_answered') {
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      const { data: b } = await admin
+        .from('bookings')
+        .select('id, client_id, gardener_id, date, start_time, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, reschedule_proposal_notified_at, reschedule_answer_notified_at, services(name)')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (!b) {
+        return new Response(JSON.stringify({ error: 'booking_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const callerToken = presentedToken(req);
+      const { data: caller } = callerToken ? await admin.auth.getUser(callerToken) : { data: null };
+      const callerId = caller?.user?.id || '';
+      const proposing = type === 'booking_reschedule_proposed';
+      const allowedCaller = isInternalServiceCaller(req) || callerId === (proposing ? b.gardener_id : b.client_id);
+      const rightState = proposing
+        ? b.reschedule_status === 'pending_client' && !b.reschedule_proposal_notified_at
+        : ['accepted', 'rejected'].includes(b.reschedule_status) && !b.reschedule_answer_notified_at;
+      if (!allowedCaller) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!rightState) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      await admin.from('bookings')
+        .update(proposing ? { reschedule_proposal_notified_at: new Date().toISOString() } : { reschedule_answer_notified_at: new Date().toISOString() })
+        .eq('id', bookingId);
+
+      const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
+      const companyName = String(company?.full_name || 'Tu empresa');
+      // deno-lint-ignore no-explicit-any
+      const serviceName = String((b as any).services?.name || 'Servicio');
+      const proposedWhen = formatBookingDate(b.proposed_date, b.proposed_start_time);
+      const outbox: Array<{ userId: string; subject: string; intro: string; pairs: Array<[string, string]>; cta: { label: string; url: string } }> = [];
+      if (proposing) {
+        outbox.push({
+          userId: b.client_id,
+          subject: `${companyName} te propone otra fecha para tu ${serviceName.toLowerCase()}`,
+          intro: `${escapeHtml(companyName)} te propone cambiar la fecha de tu servicio. Puedes aceptarla o mantener la que tenías.`,
+          pairs: [
+            ['Servicio', serviceName],
+            ['Ahora', formatBookingDate(b.date, b.start_time)],
+            ['Propuesta', proposedWhen],
+            ...(b.reschedule_reason ? [['Motivo', String(b.reschedule_reason)] as [string, string]] : []),
+          ],
+          cta: { label: 'Ver la propuesta', url: `${BRAND.site}/bookings` },
+        });
+      } else {
+        const accepted = b.reschedule_status === 'accepted';
+        outbox.push({
+          userId: b.gardener_id,
+          subject: accepted ? `El cliente acepta la nueva fecha: ${proposedWhen}` : 'El cliente mantiene la fecha de su servicio',
+          intro: accepted
+            ? 'El cliente ha aceptado el cambio de fecha. Ya está movido en tu agenda.'
+            : 'El cliente prefiere mantener la fecha que tenía. No ha cambiado nada.',
+          pairs: [['Servicio', serviceName], ['Fecha', formatBookingDate(b.date, b.start_time)]],
+          cta: { label: 'Ver la agenda', url: `${BRAND.site}/empresa` },
+        });
+        if (accepted) {
+          const { data: blockRows } = await admin.from('booking_blocks').select('assignee_id').eq('booking_id', bookingId);
+          const workers = [...new Set(((blockRows || []) as { assignee_id: string }[]).map((r) => r.assignee_id))].filter((id) => id !== b.gardener_id);
+          workers.forEach((workerId) => outbox.push({
+            userId: workerId,
+            subject: `Tu trabajo cambia de fecha: ${serviceName}, ${proposedWhen}`,
+            intro: `${escapeHtml(companyName)}: el cliente ha aceptado mover este trabajo. Ahora es en esta fecha.`,
+            pairs: [['Servicio', serviceName], ['Cuándo', proposedWhen]],
+            cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
+          }));
+        }
+      }
+
+      let sentCount = 0;
+      for (const item of outbox) {
+        const { data: userData } = await admin.auth.admin.getUserById(item.userId);
+        const email = userData?.user?.email;
+        if (!email) continue;
+        const { data: person } = await admin.from('profiles').select('full_name').eq('user_id', item.userId).maybeSingle();
+        const first = String(person?.full_name || '').split(' ')[0] || 'hola';
+        const itemOpts: Parameters<typeof renderBrandedEmail>[0] = {
+          title: item.subject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: item.intro,
+          bodyHtml: detailRows(item.pairs),
+          cta: item.cta,
+        };
+        if (!SMTP_USER || !SMTP_PASS) {
+          console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: email, type, subject: item.subject });
+        } else {
+          const sent = await sendViaBrevo({
+            to: email, subject: item.subject, html: renderBrandedEmail(itemOpts), text: renderPlainText({ ...itemOpts, detailPairs: item.pairs }),
+            smtpUser: SMTP_USER, smtpPass: SMTP_PASS,
+          });
           if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
         }
         sentCount += 1;

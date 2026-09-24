@@ -16,6 +16,10 @@ export interface ScheduleJob {
   client_name: string | null;
   address: string | null;
   assignment_pending: boolean;
+  /** F6.3 (D9): propuesta de otra fecha pendiente del cliente. */
+  reschedule_status?: 'none' | 'pending_client' | 'accepted' | 'rejected' | 'expired';
+  proposed_date?: string | null;
+  proposed_start_hour?: number | null;
   hours: Array<{ hour: number; worker_id: string }>;
 }
 export interface CompanySchedule { members: ScheduleMember[]; free: ScheduleFree[]; jobs: ScheduleJob[] }

@@ -18,6 +18,7 @@ import ChatWindow from '../chat/ChatWindow';
 import ClientBookingCard from '../booking/ClientBookingCard';
 import ReviewModal from '../booking/ReviewModal';
 import { useConfirmDialog } from '../common/ConfirmDialog';
+import { RESCHEDULE_MESSAGES, respondBookingReschedule } from '../../utils/bookingRescheduleService';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: { name: string; icon?: string } | null;
@@ -112,6 +113,21 @@ const BookingsList = () => {
     next.delete('review');
     setSearchParams(next, { replace: true });
   }, [bookings, searchParams, setSearchParams]);
+
+  // GarSer Empresas (F6.3, D9): respuesta a una propuesta de otra fecha.
+  const respondToReschedule = async (booking: BookingWithDetails, accept: boolean) => {
+    setBusyId(booking.id);
+    try {
+      const outcome = await respondBookingReschedule(booking.id, accept);
+      if (outcome === 'accepted' || outcome === 'rejected') toast.success(RESCHEDULE_MESSAGES[outcome]);
+      else toast(RESCHEDULE_MESSAGES[outcome]);
+      await fetchBookings();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo responder a la propuesta.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const respondToPriceChange = async (booking: BookingWithDetails, accept: boolean) => {
     setBusyId(booking.id);
@@ -302,6 +318,8 @@ const BookingsList = () => {
               onRebook={() => void handleRebook(booking)}
               onAcceptPriceChange={() => void respondToPriceChange(booking, true)}
               onRejectPriceChange={() => void respondToPriceChange(booking, false)}
+              onAcceptReschedule={() => void respondToReschedule(booking, true)}
+              onRejectReschedule={() => void respondToReschedule(booking, false)}
               onConfirmService={() => void handleConfirmService(booking)}
               onReportIncident={() => navigate(`/incidencias/${booking.id}`)}
             />

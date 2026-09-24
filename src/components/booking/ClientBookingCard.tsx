@@ -59,6 +59,11 @@ export interface ClientBookingCardBooking {
   proposed_duration_hours?: number | null;
   /** Cuándo se da por completada sola si no se confirma nada. */
   confirmation_deadline_at?: string | null;
+  /** GarSer Empresas (F6.3, D9): la empresa propone otra fecha. */
+  reschedule_status?: string | null;
+  proposed_date?: string | null;
+  proposed_start_time?: string | null;
+  reschedule_reason?: string | null;
 }
 
 interface Props {
@@ -76,6 +81,8 @@ interface Props {
   onRebook?: (booking: ClientBookingCardBooking) => void;
   onAcceptPriceChange?: (booking: ClientBookingCardBooking) => void;
   onRejectPriceChange?: (booking: ClientBookingCardBooking) => void;
+  onAcceptReschedule?: (booking: ClientBookingCardBooking) => void;
+  onRejectReschedule?: (booking: ClientBookingCardBooking) => void;
   /** El cliente confirma que el trabajo se hizo. Cierra la reserva y desbloquea la valoración. */
   onConfirmService?: (booking: ClientBookingCardBooking) => void;
   /** Abre el parte de incidencia. El cliente no cierra nada por su cuenta: lo revisa un admin. */
@@ -146,6 +153,8 @@ const ClientBookingCard = ({
   onRebook,
   onAcceptPriceChange,
   onRejectPriceChange,
+  onAcceptReschedule,
+  onRejectReschedule,
   onConfirmService,
   onReportIncident,
 }: Props) => {
@@ -208,6 +217,33 @@ const ClientBookingCard = ({
           </div>
         )}
       </dl>
+
+      {/* F6.3 (D9): propuesta de otra fecha. Tampoco se pliega: espera respuesta. */}
+      {booking.reschedule_status === 'pending_client' && booking.proposed_date && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm text-amber-900">
+            {gardenerFirstName} te propone cambiar la fecha a{' '}
+            <strong>
+              {format(parseISO(booking.proposed_date), "EEEE d 'de' MMMM", { locale: es })}
+              {booking.proposed_start_time ? ` a las ${booking.proposed_start_time.slice(0, 5)}` : ''}
+            </strong>.
+          </p>
+          {booking.reschedule_reason && (
+            <p className="mt-1 text-sm text-amber-800"><span className="font-medium">Motivo:</span> {booking.reschedule_reason}</p>
+          )}
+          <p className="mt-1 text-xs text-amber-800">Si prefieres la fecha que tenías, no cambia nada.</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={() => onAcceptReschedule?.(booking)} disabled={busy}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Aceptar nueva fecha
+            </button>
+            <button type="button" onClick={() => onRejectReschedule?.(booking)} disabled={busy}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60">
+              Mantener mi fecha
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* El cambio de precio NUNCA se pliega: mueve dinero y espera respuesta. */}
       {hasPriceChange && (

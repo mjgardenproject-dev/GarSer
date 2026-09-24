@@ -95,6 +95,9 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D11 | ¿Quién decide cuántas personas van a la vez? (2026-09-24) | **La empresa, con un límite** en su configuración («hasta N personas a la vez»). GarSer arma el equipo solo para acabar cuanto antes con la gente libre. | Ajuste de la empresa; el precio no cambia con el número de personas (sale de las horas de trabajo). Autónomo: siempre 1. | F7 |
 | D12 | ¿Los trabajos de varios días son solo para empresas? (2026-09-24) | **También para autónomos.** | Cambia el funcionamiento actual del autónomo: hoy un trabajo de más de 12 h no se puede reservar (T7); pasará a ofrecerse repartido en varios días. | F7 |
 | D13 | En varios días, ¿cuántas horas al día trabaja cada persona? (2026-09-24) | **Las que tenga libres**, sin máximo propio (con el tope de 12 h por jornada). | Cada persona aporta cada día sus horas libres seguidas. | F7 |
+| D14 | Varios servicios en una reserva, ¿un solo profesional? (2026-09-24) | **Uno para todo.** | Una reserva = un proveedor, una visita, un pago. Quien quiera profesionales distintos hace reservas separadas. | F8 |
+| D15 | Con varios servicios, ¿qué profesionales ve el cliente? (2026-09-24) | **Solo los que hacen todos** (y con carnet si alguno lo exige). | Sin cobertura parcial entre servicios. | F8 |
+| D16 | En una empresa, con varios servicios, ¿quién puede ir? (2026-09-24) | **Quien hace todos los servicios del trabajo.** | Las personas del trabajo tienen asignados todos sus servicios (y carnet si hace falta): el planificador de F7 no cambia de fondo. | F8 |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -627,7 +630,7 @@ presupuesto (`booking_quotes.service_id`), el pago y la reserva (`bookings.servi
 27 funciones SQL y 18 ficheros de la web). Queda un andamiaje antiguo aprovechable: los datos de
 cada servicio del embudo ya se guardan por servicio (`servicesData`, `BookingContext.tsx:420`).
 
-**Diseño propuesto (pendiente de D14–D16):**
+**Diseño (D14–D16 respondidas el 2026-09-24):**
 - Una reserva puede llevar **varios servicios**: tabla `booking_items` (reserva, servicio, datos
   del cliente de ese servicio, precio, horas de trabajo, carnet). `bookings.service_id` se queda
   como el **primer** servicio (compatibilidad: autónomo con un servicio = exactamente lo de hoy,
@@ -642,8 +645,11 @@ cada servicio del embudo ya se guardan por servicio (`servicesData`, `BookingCon
 - **Después de reservar:** detalle por servicio para el profesional/empleado; el cambio de precio
   sigue siendo del total.
 
-Preguntas de producto: D14 (¿un profesional para todo?), D15 (¿qué profesionales se muestran?),
-D16 (en empresas, ¿quién puede ir?).
+Partes: **F8.1** servidor (`booking_items`, personas que hacen todos los servicios, pago y
+reserva con varios servicios) → **F8.2** motor de la web (presupuesto de varios servicios con
+el mismo motor, lista de profesionales que hacen todos, revalidación del pago) → **F8.3**
+embudo (elegir varios servicios y rellenar cada uno) → **F8.4** después de reservar (cliente,
+profesional, empresa, empleado y correos con cada servicio).
 
 - [ ] `booking_items`. Afecta también a los autónomos: es evolución de producto.
 

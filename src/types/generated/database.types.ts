@@ -495,6 +495,60 @@ export type Database = {
           },
         ]
       }
+      booking_items: {
+        Row: {
+          booking_id: string
+          breakdown: Json
+          created_at: string
+          id: string
+          input_payload: Json
+          labour_hours: number
+          position: number
+          requires_license: boolean
+          service_id: string
+          total_price: number
+        }
+        Insert: {
+          booking_id: string
+          breakdown?: Json
+          created_at?: string
+          id?: string
+          input_payload?: Json
+          labour_hours: number
+          position: number
+          requires_license?: boolean
+          service_id: string
+          total_price: number
+        }
+        Update: {
+          booking_id?: string
+          breakdown?: Json
+          created_at?: string
+          id?: string
+          input_payload?: Json
+          labour_hours?: number
+          position?: number
+          requires_license?: boolean
+          service_id?: string
+          total_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_items_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_items_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_manual_declarations: {
         Row: {
           accepted_at: string
@@ -741,6 +795,7 @@ export type Database = {
           generated_at: string
           id: string
           input_payload: Json
+          items: Json | null
           pricing_snapshot: Json
           pricing_version: string
           provider_config_version: string
@@ -767,6 +822,7 @@ export type Database = {
           generated_at?: string
           id?: string
           input_payload?: Json
+          items?: Json | null
           pricing_snapshot?: Json
           pricing_version: string
           provider_config_version: string
@@ -793,6 +849,7 @@ export type Database = {
           generated_at?: string
           id?: string
           input_payload?: Json
+          items?: Json | null
           pricing_snapshot?: Json
           pricing_version?: string
           provider_config_version?: string
@@ -2527,6 +2584,7 @@ export type Database = {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
       }
+      booking_service_ids: { Args: { p_booking_id: string }; Returns: string[] }
       booking_service_start: {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
@@ -2538,6 +2596,10 @@ export type Database = {
       booking_worker_for_client: {
         Args: { p_booking_id: string }
         Returns: Json
+      }
+      can_read_booking_items: {
+        Args: { p_booking_id: string }
+        Returns: boolean
       }
       can_read_company_member: {
         Args: { p_member_id: string }
@@ -2794,6 +2856,7 @@ export type Database = {
       plan_booking_cells: {
         Args: {
           p_date: string
+          p_extra_services?: string[]
           p_ignore_booking?: string
           p_labour: number
           p_provider: string
@@ -2851,6 +2914,7 @@ export type Database = {
         Args: {
           p_end: string
           p_exclude_hold_ids?: string[]
+          p_extra_service_ids?: string[]
           p_provider_ids: string[]
           p_requires_license?: boolean
           p_service_id: string
@@ -2869,6 +2933,14 @@ export type Database = {
           p_provider: string
           p_requires_license?: boolean
           p_service: string
+        }
+        Returns: string[]
+      }
+      provider_workers_all: {
+        Args: {
+          p_provider: string
+          p_requires_license?: boolean
+          p_services: string[]
         }
         Returns: string[]
       }

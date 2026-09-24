@@ -411,6 +411,22 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 
 ---
 
+### F8 — Multi-servicio
+
+| # | Prueba | Resultado esperado | Estado |
+|---|---|---|---|
+| F8-01 | Reserva de un servicio | Una fila en `booking_items` (lo de siempre) | ✅ F8.1 |
+| F8-02 | Césped + setos: quién cuenta | Solo quien hace los dos, también en las horas libres | ✅ F8.1 |
+| F8-03 | Pagar césped (2 h) + setos (3 h) | Una reserva, 134 €, 5 h, dos servicios, la hace quien hace los dos | ✅ F8.1 |
+| F8-04 | Agendas tras pagar | Ocupada la de quien va; libres los demás | ✅ F8.1 |
+| F8-05 | Presupuesto de varios servicios que no cuadra | El pago lo rechaza | ✅ F8.1 |
+| F8-06 | Nadie hace todos los servicios | No se puede pagar | ✅ F8.1 |
+| F8-07 | Cambiar a alguien que solo hace uno | Rechazado; no sale como candidato | ✅ F8.1 |
+| F8-08 | Quién lee los servicios de una reserva | Cliente, empresa y quien va; nadie los escribe desde la web | ✅ F8.1 |
+| F8-09 | Reservas anteriores sin filas | Siguen funcionando con su servicio | ✅ F8.1 |
+| F8-10 | Mover de fecha con varios servicios | Solo horas en que puede ir alguien que los haga todos | ✅ F8.1 |
+| F8-11 | Uno de los servicios exige carnet | Lo exige todo el trabajo | ✅ F8.1 |
+
 ### F8 y F9 — Multi-servicio y mantenimiento
 
 *Se detallan al llegar. Nota previa: F8 toca también a los autónomos, así que su batería de

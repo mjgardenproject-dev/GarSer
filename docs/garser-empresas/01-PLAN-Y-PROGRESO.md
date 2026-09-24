@@ -651,6 +651,15 @@ el mismo motor, lista de profesionales que hacen todos, revalidación del pago) 
 embudo (elegir varios servicios y rellenar cada uno) → **F8.4** después de reservar (cliente,
 profesional, empresa, empleado y correos con cada servicio).
 
+**✅ F8.1 Servidor — hecho** (migración `20260926120000_empresas_f8_booking_items.sql`,
+`verify-f8-server.mjs` 11/11). `booking_items` (lectura: cliente, proveedor, quien va y admin;
+escritura solo del pago), `booking_quotes.items`, `provider_workers_all()` (quien hace TODOS los
+servicios, D16), `provider_free_hours` y `plan_booking_cells` con servicios de más, y las
+funciones de trabajos ya vendidos (repartir, cambiar persona, mover de fecha) miran todos los
+servicios de la reserva (`booking_service_ids`). El pago rechaza presupuestos de varios
+servicios que no cuadran y escribe una fila por servicio (una, si es un servicio). Carnet: si
+un servicio lo exige, lo exige el trabajo. F4–F7 siguen en verde.
+
 - [ ] `booking_items`. Afecta también a los autónomos: es evolución de producto.
 
 #### ⬜ F9 — Mantenimiento de jardín
@@ -710,7 +719,7 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
    `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2) →
-   `20260925180000` (F6.3) → `20260925190000` (F7.1)
+   `20260925180000` (F6.3) → `20260925190000` (F7.1) → `20260926120000` (F8.1)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,

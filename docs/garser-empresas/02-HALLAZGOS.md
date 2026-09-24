@@ -477,7 +477,7 @@ qué hacer. **Arreglo:** la página de la invitación la recuerda 24 h en el nav
 (`src/lib/pendingInvitation.ts`) y, al entrar, un cliente con una invitación pendiente va a ella.
 Si se pierde (otro navegador), basta con volver a pulsar el enlace. Prueba F3-56.
 
-### H-26 · Contar «cuántos hay libres» a cada hora no basta para vender trabajos de varias horas — 🟠 Afecta a F4 (pendiente de decisión del usuario)
+### H-26 · Contar «cuántos hay libres» a cada hora no basta para vender trabajos de varias horas — 🟢 Resuelto en F4.1 (decisión del usuario, A-29)
 
 El plan de F4 dice que `booking-authority` leerá una **capacidad** (`free_count`: cuántas personas
 de la empresa están libres a cada hora) en vez de «libre / no libre». Al leer el código de venta
@@ -502,6 +502,19 @@ de «alguien del equipo puede hacerlo entero desde esa hora».
 **Además, para poder vender hace falta que el equipo tenga horario.** Hoy un empleado no tiene
 pantalla de disponibilidad (el plan la pone en F5). Sin ella, una empresa no tiene horas que
 vender y el criterio de cierre de F4 (primera reserva a una empresa) es imposible.
+
+### H-27 · Las pruebas de preparación de los servicios ya tenían 9 fallos antes de F4 — 🟠 Fuera de alcance
+
+Al tocar `booking-authority` en F4 se pasaron las 7 baterías de `scripts/readiness/`. Fallan 9
+pruebas, **las mismas y con los mismos números con el código anterior a F4** (se comprobó
+poniendo las versiones de `HEAD` y repitiendo): césped 2, arbustos 2, palmeras 2, desbroce 1,
+fitosanitarios 2. Son de tres tipos, ninguno de empresas:
+- **Avisos de plausibilidad** (césped, arbustos, palmeras): el aviso sale con el texto pero la
+  prueba espera un código (`lawn_area_implausible`…) o un umbral distinto.
+- **Carnet del jardinero de la semilla** (fitosanitarios): la semilla lo marca aprobado sin
+  licencia ni caducidad (ver consultas de F2), y la puerta de carnet lo excluye.
+- **Horario de la semilla** (arbustos «cobertura», desbroce «sábado»): no hay horas libres en
+  los días que la prueba elige.
 
 ---
 
@@ -538,6 +551,8 @@ esta es la respuesta.
 | A-26 | **La configuración de servicios, precios y zona de la empresa es la pantalla del autónomo** (`ProfileSettings`), en `/empresa/configuracion`; sin el carnet (es de personas, no de empresas). Adelantado de F4. | Un solo sistema de precios. Sin esto, el dueño no podía repartir servicios entre su equipo (D5 exige que la empresa los tenga activos). |
 | A-27 | **Correo de invitación a prueba de abuso:** lo envía el servidor solo al correo guardado en la invitación, solo si lo pide su dueño con el token (comprobado contra la huella), **una vez por invitación** (`email_sent_at`) y con un **tope de 20 invitaciones al día por empresa**. La marca la hace `mark_company_invitation_emailed`, solo ejecutable con la clave de servicio. | El correo lleva la marca GarSer y el destinatario lo escribe la empresa: sin estos límites, una cuenta de empresa serviría para mandar correos masivos. |
 | A-28 | **Correos de empresa aprobada / rechazada:** solo el admin; destinatario, nombre y motivo salen de `company_applications`, y solo se envían si la solicitud está en ese estado (si no, 409). | El correo no puede contradecir a la base de datos, ni llevar texto que no esté en ella. |
+| A-29 | **Al vender a una empresa se aparta a UNA persona** del equipo que hace el servicio (con carnet si el trabajo lo exige) y está libre **todas** las horas; bloqueo de pago, agenda, alargar y cancelar operan sobre esa persona. **El dueño elige en su configuración** (`companies.assignment_mode`) si esa persona es definitiva (`auto`) o una propuesta que él confirma o cambia (`manual`, `bookings.assignment_pending`; la pantalla para cambiarla es de F5). Para un autónomo la persona es él mismo. **Desviación del plan, decidida por el usuario (2026-09-24):** el plan decía `free_count` por hora (H-26). | Nunca se vende un hueco que nadie puede hacer entero, y el índice único de F1 (persona + día + hora) protege a cada persona de la doble venta. |
+| A-30 | **`provider_free_hours()` es la única fuente de «horas libres»** para la web (`booking-authority`) y el pago (`booking-payment`), que antes lo calculaban cada uno. Es función y no vista porque depende del servicio y del carnet (A-07 se mantiene: no se materializa). Solo la llama el servidor. | Una sola definición de «libre»; los horarios del equipo no se exponen a nadie. |
 | A-24 | **La solicitud de empresa copia el patrón de la de jardinero:** el usuario crea su borrador y lo envía; aprobar o rechazar solo lo hace el admin por RPC, que es quien crea la ficha de proveedor, la empresa y el dueño. | Patrón existente y comprobado seguro (el usuario no puede pasar a `approved`). |
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 

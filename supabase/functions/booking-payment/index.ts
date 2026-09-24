@@ -1,6 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  bookingRequiresPhytosanitaryLicense,
+  buildProviderWorkerIndex,
   evaluateOperationalEligibility,
+  mergeWorkerDates,
+  type ProviderFreeHourRow,
   type ProviderProfileLike,
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import {
@@ -128,20 +132,6 @@ type ActivePriceRow = {
   additional_config: Record<string, unknown> | null;
   updated_at?: string | null;
   created_at?: string | null;
-};
-
-type AvailabilityRow = {
-  gardener_id: string;
-  date: string;
-  start_time: string;
-  is_available: boolean;
-};
-
-type HoldBlockRow = {
-  hold_id: string;
-  gardener_id: string;
-  date: string;
-  hour_block: number;
 };
 
 type ActiveHoldRow = {
@@ -408,19 +398,19 @@ async function getActivePriceRow(
 async function getProviderProfile(
   admin: ReturnType<typeof createClient>,
   gardenerId: string,
-): Promise<(ProviderProfileLike & { address?: string | null }) | null> {
+): Promise<(ProviderProfileLike & { address?: string | null; provider_kind?: string | null }) | null> {
   const { data, error } = await admin
     .from('gardener_profiles')
     // T1 (transversal, 2026-09-13): campos de licencia — evaluateOperationalEligibility los
     // exige para volver a validar la elegibilidad justo antes de cobrar (ver
     // bookingEligibilityCore.ts). Sin ellos, esta revalidación trataría a CUALQUIER
     // jardinero como sin licencia y rechazaría el pago de trabajos químicos ya elegibles.
-    .select('address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at')
+    .select('address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at, provider_kind')
     .eq('user_id', gardenerId)
     .maybeSingle();
 
   if (error) throw error;
-  return (data as (ProviderProfileLike & { address?: string | null }) | null) || null;
+  return (data as (ProviderProfileLike & { address?: string | null; provider_kind?: string | null }) | null) || null;
 }
 
 async function ensureProviderOperationalCoordinates(
@@ -486,26 +476,20 @@ async function sha256(text: string) {
   return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, '0')).join('');
 }
 
-function buildAvailabilityIndex(rows: AvailabilityRow[]) {
-  const providerDates = new Map<string, number[]>();
-  rows.forEach((row) => {
-    const date = toIsoDate(row.date);
-    if (!date || !row.is_available) return;
-    const hours = providerDates.get(date) || [];
-    hours.push(extractHour(row.start_time));
-    providerDates.set(date, hours);
-  });
-  return providerDates;
-}
 
-async function fetchAvailabilityRowsForQuote(
+// GarSer Empresas (F4): las horas libres de cada persona que puede hacer el trabajo, con la
+// MISMA función SQL que usa la web (`provider_free_hours`). Los bloqueos del propio pago que se
+// revalida no cuentan como ocupados.
+async function fetchWorkerHoursForQuote(
   admin: ReturnType<typeof createClient>,
   params: {
     gardenerId: string;
+    serviceId: string;
     date: string;
+    requiresLicense: boolean;
     excludeHoldIds?: string[];
   },
-): Promise<AvailabilityRow[]> {
+) {
   try {
     await admin.rpc('cleanup_expired_booking_payment_state', {
       p_gardener_ids: [params.gardenerId],
@@ -516,33 +500,17 @@ async function fetchAvailabilityRowsForQuote(
     // No bloqueamos el pago por fallos de limpieza oportunista.
   }
 
-  const { data, error } = await admin
-    .from('availability')
-    .select('gardener_id, date, start_time, is_available')
-    .eq('gardener_id', params.gardenerId)
-    .eq('date', params.date)
-    .eq('is_available', true)
-    .order('start_time', { ascending: true });
-
-  if (error || !data) return [];
-
-  const { data: holdData } = await admin
-    .from('booking_schedule_hold_blocks')
-    .select('hold_id, gardener_id, date, hour_block')
-    .eq('gardener_id', params.gardenerId)
-    .eq('date', params.date);
-
-  const excludedHoldIds = new Set((params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean));
-  const heldSlots = new Set(
-    ((holdData || []) as HoldBlockRow[])
-      .filter((row) => !excludedHoldIds.has(String(row.hold_id)))
-      .map((row) => `${row.gardener_id}|${toIsoDate(row.date)}|${Number(row.hour_block)}`),
-  );
-
-  return (data as AvailabilityRow[]).filter((row) => {
-    const key = `${row.gardener_id}|${toIsoDate(row.date)}|${extractHour(row.start_time)}`;
-    return !heldSlots.has(key);
+  const { data, error } = await admin.rpc('provider_free_hours', {
+    p_provider_ids: [params.gardenerId],
+    p_service_id: params.serviceId,
+    p_start: params.date,
+    p_end: params.date,
+    p_requires_license: params.requiresLicense,
+    p_exclude_hold_ids: (params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean),
   });
+  if (error || !data) return new Map<string, Map<string, number[]>>();
+  return buildProviderWorkerIndex(data as ProviderFreeHourRow[]).get(params.gardenerId)
+    || new Map<string, Map<string, number[]>>();
 }
 
 async function getActiveHoldIdsForQuote(
@@ -627,19 +595,24 @@ async function revalidateQuoteBeforePayment(
     config: priceRow?.additional_config || null,
   }));
 
-  const availabilityRows = await fetchAvailabilityRowsForQuote(admin, {
+  const bookingInput = (quote.input_payload || {}) as SerializableBookingData;
+  const workerDates = await fetchWorkerHoursForQuote(admin, {
     gardenerId: quote.gardener_id,
+    serviceId: quote.service_id,
     date: selectedDate,
+    requiresLicense: bookingRequiresPhytosanitaryLicense(bookingInput),
     excludeHoldIds: excludedHoldIds,
   });
   const resolvedProfile = await ensureProviderOperationalCoordinates(admin, quote.gardener_id, profile);
 
   const evaluation = evaluateOperationalEligibility({
-    bookingInput: (quote.input_payload || {}) as SerializableBookingData,
+    bookingInput,
     providerConfig: priceRow?.additional_config || null,
     providerConfigVersion,
     profile: resolvedProfile,
-    providerDates: buildAvailabilityIndex(availabilityRows),
+    providerDates: mergeWorkerDates(workerDates),
+    workerDates,
+    licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
     requestedDate: selectedDate,
     windowEndDate: selectedDate,
     restrictToRequestedDate: true,

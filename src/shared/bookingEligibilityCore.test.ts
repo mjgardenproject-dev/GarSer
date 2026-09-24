@@ -6,6 +6,7 @@ import {
   getClientCoordinates,
   getProviderCoordinates,
   getValidStartHours,
+  getValidStartHoursForWorkers,
   isPhytosanitaryLicenseActive,
 } from './bookingEligibilityCore';
 import type { SerializableBookingData } from './bookingQuoteCore';
@@ -303,6 +304,80 @@ describe('getValidStartHours (bordes del rango 7:00–20:00)', () => {
   it('respeta la contigüidad: un hueco rompe la franja reservable', () => {
     // 7 y 8 son contiguos (válidos para 2h). 10 está aislado, no cabe 2h.
     expect(getValidStartHours([7, 8, 10], 2)).toEqual([7]);
+  });
+});
+
+describe('GarSer Empresas F4 — horas de un equipo (H-26)', () => {
+  const companyProfile = {
+    max_distance: 50,
+    operational_latitude: 40.417,
+    operational_longitude: -3.703,
+    license_verification_status: null,
+    license_expires_at: null,
+  };
+
+  it('una hora vale si ALGUNA persona puede hacer el trabajo entero desde ella', () => {
+    const team = new Map([
+      ['ana', new Map([['2026-06-15', [9, 10]]])],
+      ['luis', new Map([['2026-06-15', [12, 13]]])],
+    ]);
+    expect(getValidStartHoursForWorkers(team, '2026-06-15', 2)).toEqual([9, 12]);
+  });
+
+  it('NO suma horas de personas distintas: Ana 9-10 y Luis 10-11 no hacen 2 h a las 9', () => {
+    const team = new Map([
+      ['ana', new Map([['2026-06-15', [9]]])],
+      ['luis', new Map([['2026-06-15', [10]]])],
+    ]);
+    expect(getValidStartHoursForWorkers(team, '2026-06-15', 2)).toEqual([]);
+    expect(getValidStartHoursForWorkers(team, '2026-06-15', 1)).toEqual([9, 10]);
+  });
+
+  it('con una sola persona da lo mismo que las horas del autónomo', () => {
+    const solo = new Map([['yo', new Map([['2026-06-15', [7, 8, 10]]])]]);
+    expect(getValidStartHoursForWorkers(solo, '2026-06-15', 2)).toEqual(getValidStartHours([7, 8, 10], 2));
+  });
+
+  it('la empresa es elegible con las horas de su equipo y el primer hueco es el de cualquiera', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: twoHourBookingInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile: companyProfile,
+      providerDates: new Map(),
+      workerDates: new Map([
+        ['ana', new Map([['2026-06-16', [9, 10]]])],
+        ['luis', new Map([['2026-06-15', [9]], ['2026-06-17', [8, 9]]])],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-20',
+    });
+    expect(result.eligible).toBe(true);
+    if (!result.eligible) return;
+    expect(result.validHoursForRequestedDate).toEqual([]);
+    expect(result.earliestSlot?.date).toBe('2026-06-16');
+    expect(result.earliestSlot?.startHour).toBe(9);
+  });
+
+  it('trabajo con carnet: la empresa no se descarta por su ficha si el carnet se comprueba por persona', () => {
+    const phytoInput = { ...twoHourBookingInput, phytosanitaryZones: [{ area: 20, productPreference: 'chemical' as const }] };
+    const base = {
+      bookingInput: phytoInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile: companyProfile,
+      providerDates: new Map<string, number[]>(),
+      workerDates: new Map([['ana', new Map([['2026-06-15', [9, 10]]])]]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+    };
+    const withoutFlag = evaluateOperationalEligibility(base);
+    expect(withoutFlag.eligible).toBe(false);
+    if (!withoutFlag.eligible) expect(withoutFlag.exclusion.code).toBe('missing_phytosanitary_license');
+    // Con el carnet comprobado por persona, la puerta de la ficha no actúa (lo que decida
+    // después el presupuesto, con esta configuración de césped, no es lo que se prueba aquí).
+    const withFlag = evaluateOperationalEligibility({ ...base, licenseCheckedPerWorker: true });
+    if (!withFlag.eligible) expect(withFlag.exclusion.code).not.toBe('missing_phytosanitary_license');
   });
 });
 

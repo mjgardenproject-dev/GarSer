@@ -137,6 +137,65 @@ export const getValidStartHours = (hours: number[], duration: number) => {
 };
 
 /**
+ * GarSer Empresas (F4, H-26) — horas de inicio válidas cuando el proveedor tiene varias
+ * personas: una hora vale si ALGUNA persona puede hacer el trabajo entero desde ella. No se
+ * suman horas de personas distintas: Ana libre de 9 a 10 y Luis de 10 a 11 no hacen un trabajo
+ * de 2 horas a las 9.
+ */
+export const getValidStartHoursForWorkers = (
+  workerDates: Map<string, Map<string, number[]>>,
+  date: string,
+  duration: number,
+) => {
+  const valid = new Set<number>();
+  workerDates.forEach((dates) => {
+    getValidStartHours(dates.get(date) || [], duration).forEach((hour) => valid.add(hour));
+  });
+  return Array.from(valid).sort((a, b) => a - b);
+};
+
+/** Una fila de `provider_free_hours` (SQL): una hora libre de una persona de un proveedor. */
+export type ProviderFreeHourRow = {
+  provider_id: string;
+  worker_id: string;
+  date: string;
+  hour: number;
+};
+
+/** proveedor → persona → día → horas libres. */
+export type ProviderWorkerIndex = Map<string, Map<string, Map<string, number[]>>>;
+
+export const buildProviderWorkerIndex = (rows: ProviderFreeHourRow[]): ProviderWorkerIndex => {
+  const index: ProviderWorkerIndex = new Map();
+  rows.forEach((row) => {
+    const providerId = String(row.provider_id || '');
+    const workerId = String(row.worker_id || '');
+    const date = String(row.date || '').slice(0, 10);
+    const hour = Number(row.hour);
+    if (!providerId || !workerId || !date || !Number.isFinite(hour)) return;
+    const workers = index.get(providerId) || new Map<string, Map<string, number[]>>();
+    const dates = workers.get(workerId) || new Map<string, number[]>();
+    const hours = dates.get(date) || [];
+    hours.push(hour);
+    dates.set(date, hours);
+    workers.set(workerId, dates);
+    index.set(providerId, workers);
+  });
+  return index;
+};
+
+/** Todas las horas en que alguien del proveedor está libre (para calendarios y compatibilidad). */
+export const mergeWorkerDates = (workerDates: Map<string, Map<string, number[]>>) => {
+  const merged = new Map<string, number[]>();
+  workerDates.forEach((dates) => {
+    dates.forEach((hours, date) => {
+      merged.set(date, Array.from(new Set([...(merged.get(date) || []), ...hours])).sort((a, b) => a - b));
+    });
+  });
+  return merged;
+};
+
+/**
  * T1 (transversal) — ¿este trabajo necesita el carnet de manipulador de productos
  * fitosanitarios (RD 1311/2012)? Solo lo piden fitosanitarios con producto NO ecológico y
  * desbroce con herbicida — exactamente el mismo criterio que ya usaba `ProvidersPage.tsx`
@@ -189,6 +248,18 @@ export function evaluateOperationalEligibility(params: {
   providerConfigVersion: string;
   profile?: ProviderProfileLike | null;
   providerDates: Map<string, number[]>;
+  /**
+   * GarSer Empresas (F4): horas libres de cada persona que puede hacer el trabajo. Si llega,
+   * manda sobre `providerDates` (ver getValidStartHoursForWorkers). Un autónomo es una sola
+   * persona: el resultado es el mismo que con `providerDates`.
+   */
+  workerDates?: Map<string, Map<string, number[]>>;
+  /**
+   * GarSer Empresas (F4, A-13): en una empresa el carnet es de cada persona, y las personas
+   * sin carnet ya vienen excluidas de `workerDates` cuando el trabajo lo exige. Entonces no se
+   * mira el carnet de la ficha (una empresa no tiene).
+   */
+  licenseCheckedPerWorker?: boolean;
   requestedDate: string;
   windowEndDate: string;
   restrictToRequestedDate?: boolean;
@@ -243,7 +314,8 @@ export function evaluateOperationalEligibility(params: {
   // no es elegible, punto — hasta ahora nada en el backend comprobaba esto y el filtro solo
   // existía como texto en ProvidersPage (nunca filtraba la lista de verdad).
   if (
-    bookingRequiresPhytosanitaryLicense(params.bookingInput)
+    !params.licenseCheckedPerWorker
+    && bookingRequiresPhytosanitaryLicense(params.bookingInput)
     && !isPhytosanitaryLicenseActive(params.profile)
   ) {
     return {
@@ -286,15 +358,20 @@ export function evaluateOperationalEligibility(params: {
     };
   }
 
-  const requestedDateHours = params.providerDates.get(params.requestedDate) || [];
-  const validHoursForRequestedDate = getValidStartHours(requestedDateHours, durationHours);
-  const orderedDates = Array.from(params.providerDates.keys()).sort();
+  const workerDates = params.workerDates;
+  const validStartHoursOn = (date: string) => (workerDates
+    ? getValidStartHoursForWorkers(workerDates, date, durationHours)
+    : getValidStartHours(params.providerDates.get(date) || [], durationHours));
+  const validHoursForRequestedDate = validStartHoursOn(params.requestedDate);
+  const knownDates = new Set<string>(params.providerDates.keys());
+  workerDates?.forEach((dates) => dates.forEach((_hours, date) => knownDates.add(date)));
+  const orderedDates = Array.from(knownDates).sort();
   let earliestSlot: BookingQuoteSlotSelection | null = null;
 
   for (const date of orderedDates) {
     if (params.restrictToRequestedDate && date !== params.requestedDate) continue;
     if (date < params.requestedDate || date > params.windowEndDate) continue;
-    const validHours = getValidStartHours(params.providerDates.get(date) || [], durationHours);
+    const validHours = validStartHoursOn(date);
     if (validHours.length > 0) {
       earliestSlot = buildSlotSelection(date, validHours[0], quote.estimatedHours);
       break;

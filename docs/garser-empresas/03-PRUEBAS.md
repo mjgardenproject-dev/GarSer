@@ -230,21 +230,39 @@ contra la función local; tras cambiarla: `docker restart supabase_edge_runtime_
 
 ### F4 — La empresa vende
 
+**Servidor (F4.1)** — `node scripts/garser-empresas/verify-f4-sell.mjs` (21 comprobaciones por
+los caminos reales: `booking-authority`, prepare/confirm del pago, alargar, cancelar). Empresa de
+prueba: Ana (césped) libre 9, 13-15, 18-19 · Luis (césped) 10, 16-19 · Pepe (sin césped) 7-8 ·
+dueña sin trabajar 11-12. Trabajo de 2 horas.
+
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F4-01 | Empresa con 1 empleado disponible aparece en el funnel | Aparece | ⬜ |
-| F4-02 | Empresa con 0 empleados disponibles | No aparece | ⬜ |
-| F4-03 | Empresa con 5 empleados, 3 ocupados | Aparece para 1 persona | ⬜ |
-| F4-04 | Precio de una empresa = precio de un autónomo con la misma configuración | Idéntico | ⬜ |
-| F4-05 | Comisión del 12,5 % cobrada igual | Idéntica *(salvo D1)* | ⬜ |
-| F4-06 | **Reserva completa a una empresa, de punta a punta** | Confirmada y pagada | ⬜ |
-| F4-07 | En paralelo, el funnel del autónomo no ha cambiado | R-04 sigue pasando | ⬜ |
-| F4-08 | Empleado leyendo `gardener_service_prices` de su empresa | Denegado | ⬜ |
-| F4-09 | Empresa con 3 empleados libres, **ninguno** hace setos; cliente pide setos (D5) | La empresa **no** aparece | ⬜ |
-| F4-10 | Mismo caso, uno de ellos sí hace setos | Aparece, con capacidad para 1 persona | ⬜ |
-| F4-11 | Dueño que **no** trabaja y 0 empleados libres (D3) | No aparece | ⬜ |
-| F4-12 | Dueño que **sí** trabaja, libre, con el servicio marcado (D3) | Aparece | ⬜ |
-| F4-13 | Fitosanitario convencional: empresa cuyo único empleado fitosanitario no tiene carnet (D4) | No aparece para ese tratamiento | ⬜ |
+| F4-01 | Horas que ofrece la empresa | Las de quien puede hacer el trabajo **entero**: 13, 14, 16, 17, 18 | ✅ F4.1 |
+| F4-02 | Ana 9 + Luis 10; Pepe (sin el servicio); dueña que no trabaja | No cuentan | ✅ F4.1 |
+| F4-03 | Listado: empresa junto al autónomo | Elegible, con su primer hueco | ✅ F4.1 |
+| F4-04 | El directorio dice que es empresa | `provider_kind = company` | ✅ F4.1 |
+| F4-05 | **Pagar a las 13 (reserva de punta a punta, con el cobro simulado como el webhook de Stripe)** | Reserva de la empresa, horas de Ana | ✅ F4.1 |
+| F4-06 | Dónde se ocupan las horas | En la agenda de Ana, no en la de la empresa | ✅ F4.1 |
+| F4-07 | Horas después de esa venta | Ya no 13 ni 14 | ✅ F4.1 |
+| F4-08 | Tres clientes a la misma hora con dos personas libres | Luis, Ana, y el tercero no puede | ✅ F4.1 |
+| F4-09 | Misma persona, misma hora, dos ventas | Nunca | ✅ F4.1 |
+| F4-10 | Mientras alguien paga | Ese hueco no se ofrece | ✅ F4.1 |
+| F4-11 | El pago caduca | El hueco vuelve | ✅ F4.1 |
+| F4-12 | Alargar una hora | En la agenda de quien va | ✅ F4.1 |
+| F4-13 | Cancelar | Libera las horas de quien iba | ✅ F4.1 |
+| F4-14 | Trabajo con carnet (D4) | Solo cuenta quien lo tiene | ✅ F4.1 |
+| F4-15 | Modo «yo elijo quién va» | Solo lo cambia el dueño; la persona queda como propuesta | ✅ F4.1 |
+| F4-16 | Empresa no activa | Sin horas | ✅ F4.1 |
+| F4-17 | Consultar horarios del equipo o apartar a alguien desde fuera | Denegado | ✅ F4.1 |
+| F4-18 | Precio y gastos de gestión (12,5 %, D1) con la misma configuración que un autónomo | Idénticos | ✅ F4.1 |
+| F4-19 | Servicio activo que nadie del equipo hace (D5); luego se le asigna a uno | Sin horas; luego las suyas | ✅ F4.1 |
+| F4-20 | Dueño que trabaja y hace el servicio (D3) | Sus horas se venden | ✅ F4.1 |
+| F4-21 | Un empleado cambia los precios de su empresa | No cambia nada | ✅ F4.1 |
+| F4-22 | No regresión del autónomo: F1 13/13 y las 7 baterías de `scripts/readiness/` | Mismos resultados que antes de F4 | ✅ F4.1 (las 9 que fallan ya fallaban antes, H-27) |
+
+> Del plan original: «Empleado leyendo `gardener_service_prices` → denegado» se cambió por F4-21:
+> los precios activos son **públicos a propósito** (el listado los lee); lo que importa es que
+> nadie del equipo pueda cambiarlos.
 
 ---
 
@@ -335,6 +353,8 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F3-9 | La empresa invita a un correo real: el correo llega (revisar también la carpeta de spam), con el nombre de la empresa, y su botón abre la invitación | F3 | ⬜ |
 | P-F3-10 | El admin aprueba una empresa: le llega «Tu empresa ya está dada de alta en GarSer» y el botón lleva a su panel | F3 | ⬜ |
 | P-F3-11 | El admin rechaza otra con motivo: le llega el correo con ese motivo y el botón «Corregir y enviar de nuevo» | F3 | ⬜ |
+| P-F4-1 | Con la empresa de prueba y un empleado con horario: reservar y pagar (Stripe en modo prueba) un trabajo de 2 h; comprobar en el SQL Editor que `booking_blocks.assignee_id` es el empleado y la reserva es de la empresa | F4 | ⬜ |
+| P-F4-2 | Un autónomo real sigue apareciendo en el listado con sus mismas horas y precio | F4 | ⬜ |
 
 ---
 

@@ -8,12 +8,16 @@ import {
   type BookingQuoteSlotSelection,
 } from '../../../src/shared/bookingQuoteCore.ts';
 import {
+  bookingRequiresPhytosanitaryLicense,
+  buildProviderWorkerIndex,
   buildSlotSelection,
   evaluateOperationalEligibility,
   getClientCoordinates,
   getProviderCoordinates,
-  getValidStartHours,
+  getValidStartHoursForWorkers,
+  mergeWorkerDates,
   type ProviderExclusionCode,
+  type ProviderFreeHourRow,
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
 import { validateManualSerializableInput } from '../../../src/shared/manualEntry/manualEntryValidation.ts';
@@ -36,19 +40,6 @@ type QuotePreview = Omit<BookingQuoteResult, 'warnings'> & {
   providerConfigVersion?: string;
 };
 
-type AvailabilityRow = {
-  gardener_id: string;
-  date: string;
-  start_time: string;
-  is_available: boolean;
-};
-
-type HoldBlockRow = {
-  gardener_id: string;
-  date: string;
-  hour_block: number;
-};
-
 type PriceRow = {
   gardener_id: string;
   additional_config: Record<string, unknown> | null;
@@ -66,7 +57,11 @@ type ProviderProfileRow = {
   // fitosanitaria para preview_providers/valid_hours/create_quote.
   license_verification_status: string | null;
   license_expires_at: string | null;
+  // GarSer Empresas (F4): en una empresa el carnet se comprueba por persona.
+  provider_kind?: string | null;
 };
+
+type WorkerDates = Map<string, Map<string, number[]>>;
 
 type ProviderExclusion = {
   code: ProviderExclusionCode;
@@ -195,7 +190,7 @@ async function fetchProviderProfiles(
   if (providerIds.length === 0) return {};
   const { data, error } = await admin
     .from('gardener_profiles')
-    .select('user_id, address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at')
+    .select('user_id, address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at, provider_kind')
     .in('user_id', providerIds);
 
   if (error || !data) return {};
@@ -274,66 +269,47 @@ async function fetchPriceRows(
   );
 }
 
-async function fetchAvailabilityRows(
+// GarSer Empresas (F4): las horas libres salen de UNA función SQL, `provider_free_hours`, que
+// también usa el pago: por cada proveedor, las de cada persona que puede hacer el trabajo
+// (autónomo: él mismo; empresa: su equipo con ese servicio y, si hace falta, con carnet), sin
+// las horas que alguien está pagando ni las que ya tiene en su agenda.
+async function fetchProviderWorkerHours(
   admin: ReturnType<typeof createClient>,
-  providerIds: string[],
-  startDate: string,
-  endDate: string
-): Promise<AvailabilityRow[]> {
-  if (providerIds.length === 0) return [];
+  params: {
+    providerIds: string[];
+    serviceId: string;
+    startDate: string;
+    endDate: string;
+    requiresLicense: boolean;
+  },
+) {
+  if (params.providerIds.length === 0) return buildProviderWorkerIndex([]);
   try {
     await admin.rpc('cleanup_expired_booking_payment_state', {
-      p_gardener_ids: providerIds,
-      p_start_date: startDate,
-      p_end_date: endDate,
+      p_gardener_ids: params.providerIds,
+      p_start_date: params.startDate,
+      p_end_date: params.endDate,
     });
   } catch {
     // No bloqueamos el funnel si falla la limpieza oportunista.
   }
-  const { data, error } = await admin
-    .from('availability')
-    .select('gardener_id, date, start_time, is_available')
-    .in('gardener_id', providerIds)
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .eq('is_available', true)
-    .order('date', { ascending: true })
-    .order('start_time', { ascending: true });
-
-  if (error || !data) return [];
-
-  const { data: holdData } = await admin
-    .from('booking_schedule_hold_blocks')
-    .select('gardener_id, date, hour_block')
-    .in('gardener_id', providerIds)
-    .gte('date', startDate)
-    .lte('date', endDate);
-
-  const heldSlots = new Set(
-    ((holdData || []) as HoldBlockRow[]).map((row) =>
-      `${row.gardener_id}|${toIsoDate(row.date)}|${Number(row.hour_block)}`
-    )
-  );
-
-  return (data as AvailabilityRow[]).filter((row) => {
-    const key = `${row.gardener_id}|${toIsoDate(row.date)}|${extractHour(row.start_time)}`;
-    return !heldSlots.has(key);
+  const { data, error } = await admin.rpc('provider_free_hours', {
+    p_provider_ids: params.providerIds,
+    p_service_id: params.serviceId,
+    p_start: params.startDate,
+    p_end: params.endDate,
+    p_requires_license: params.requiresLicense,
   });
+  if (error || !data) return buildProviderWorkerIndex([]);
+  return buildProviderWorkerIndex(data as ProviderFreeHourRow[]);
 }
 
-function buildAvailabilityIndex(rows: AvailabilityRow[]) {
-  const byProvider = new Map<string, Map<string, number[]>>();
-  rows.forEach((row) => {
-    const providerId = String(row.gardener_id);
-    const date = toIsoDate(row.date);
-    if (!providerId || !date || !row.is_available) return;
-    const providerMap = byProvider.get(providerId) || new Map<string, number[]>();
-    const hours = providerMap.get(date) || [];
-    hours.push(extractHour(row.start_time));
-    providerMap.set(date, hours);
-    byProvider.set(providerId, providerMap);
+function applyMinNoticeToWorkers(workerDates: WorkerDates, minNoticeHours: number, nowMs: number): WorkerDates {
+  const filtered: WorkerDates = new Map();
+  workerDates.forEach((dates, workerId) => {
+    filtered.set(workerId, applyMinNoticeFilter(dates, minNoticeHours, nowMs));
   });
-  return byProvider;
+  return filtered;
 }
 
 // Fetches min_notice_hours per provider from recurring_availability_settings.
@@ -429,7 +405,7 @@ async function evaluateProviderEligibility(params: {
   providerId: string;
   priceRow?: PriceRow;
   profile?: ProviderProfileRow;
-  providerDates: Map<string, number[]>;
+  workerDates: WorkerDates;
   requestedDate: string;
   windowEndDate: string;
   restrictToRequestedDate?: boolean;
@@ -460,7 +436,9 @@ async function evaluateProviderEligibility(params: {
     providerConfig: params.priceRow?.additional_config || null,
     providerConfigVersion,
     profile: resolvedProfile,
-    providerDates: params.providerDates,
+    providerDates: mergeWorkerDates(params.workerDates),
+    workerDates: params.workerDates,
+    licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
     requestedDate: params.requestedDate,
     windowEndDate: params.windowEndDate,
     restrictToRequestedDate: params.restrictToRequestedDate,
@@ -528,6 +506,7 @@ Deno.serve(async (req: Request) => {
     if (!action || !serviceId) {
       return buildErrorResponse(400, 'missing_action_or_service', 'Faltan action o serviceId.');
     }
+    const requiresLicense = bookingRequiresPhytosanitaryLicense(bookingInput);
 
     // Authoritative server-side validation of manually-declared variables.
     // Runs before any pricing so out-of-range values are rejected (never truncated).
@@ -601,8 +580,9 @@ Deno.serve(async (req: Request) => {
       const endDate = addDays(selectedDate, windowDays - 1);
       const priceRows = await fetchPriceRows(admin, serviceId, providerIds);
       const providerProfiles = await fetchProviderProfiles(admin, providerIds);
-      const availabilityRows = await fetchAvailabilityRows(admin, providerIds, selectedDate, endDate);
-      const availabilityIndex = buildAvailabilityIndex(availabilityRows);
+      const workerIndex = await fetchProviderWorkerHours(admin, {
+        providerIds, serviceId, startDate: selectedDate, endDate, requiresLicense,
+      });
       const noticeSettings = await fetchMinNoticeSettings(admin, providerIds);
       const nowMs = Date.now();
 
@@ -612,15 +592,16 @@ Deno.serve(async (req: Request) => {
       const eligibleProviderIds: string[] = [];
 
       for (const providerId of providerIds) {
-        const rawDates = availabilityIndex.get(providerId) || new Map<string, number[]>();
-        const providerDates = applyMinNoticeFilter(rawDates, noticeSettings[providerId] ?? 0, nowMs);
+        const workerDates = applyMinNoticeToWorkers(
+          workerIndex.get(providerId) || new Map(), noticeSettings[providerId] ?? 0, nowMs,
+        );
         const evaluation = await evaluateProviderEligibility({
           admin,
           bookingInput,
           providerId,
           priceRow: priceRows[providerId],
           profile: providerProfiles[providerId],
-          providerDates,
+          workerDates,
           requestedDate: selectedDate,
           windowEndDate: endDate,
         });
@@ -653,17 +634,20 @@ Deno.serve(async (req: Request) => {
 
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
-      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
+      const workerIndex = await fetchProviderWorkerHours(admin, {
+        providerIds: [providerId], serviceId, startDate: date, endDate: date, requiresLicense,
+      });
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
-      const rawDates = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
-      const providerDates = applyMinNoticeFilter(rawDates, noticeSettings[providerId] ?? 0, Date.now());
+      const workerDates = applyMinNoticeToWorkers(
+        workerIndex.get(providerId) || new Map(), noticeSettings[providerId] ?? 0, Date.now(),
+      );
       const evaluation = await evaluateProviderEligibility({
         admin,
         bookingInput,
         providerId,
         priceRow: priceRows[providerId],
         profile: providerProfiles[providerId],
-        providerDates,
+        workerDates,
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,
@@ -693,19 +677,20 @@ Deno.serve(async (req: Request) => {
       const { start, end } = getMonthBounds(monthDate);
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
-      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], start, end);
+      const workerIndex = await fetchProviderWorkerHours(admin, {
+        providerIds: [providerId], serviceId, startDate: start, endDate: end, requiresLicense,
+      });
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
       const nowMs = Date.now();
       const minNotice = noticeSettings[providerId] ?? 0;
-      const rawIndex = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
-      const availabilityIndex = applyMinNoticeFilter(rawIndex, minNotice, nowMs);
+      const workerDates = applyMinNoticeToWorkers(workerIndex.get(providerId) || new Map(), minNotice, nowMs);
       const evaluation = await evaluateProviderEligibility({
         admin,
         bookingInput,
         providerId,
         priceRow: priceRows[providerId],
         profile: providerProfiles[providerId],
-        providerDates: availabilityIndex,
+        workerDates,
         requestedDate: start,
         windowEndDate: end,
       });
@@ -724,10 +709,9 @@ Deno.serve(async (req: Request) => {
 
       while (cursor <= endCursor) {
         const date = cursor.toISOString().slice(0, 10);
-        const hours = availabilityIndex.get(date) || [];
         const validHours = date < today
           ? []
-          : getValidStartHours(hours, Math.max(1, Math.ceil(evaluation.quote.estimatedHours)));
+          : getValidStartHoursForWorkers(workerDates, date, Math.max(1, Math.ceil(evaluation.quote.estimatedHours)));
         days.push({
           date,
           day: cursor.getUTCDate(),
@@ -772,17 +756,20 @@ Deno.serve(async (req: Request) => {
 
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
-      const availabilityRows = await fetchAvailabilityRows(admin, [providerId], date, date);
+      const workerIndex = await fetchProviderWorkerHours(admin, {
+        providerIds: [providerId], serviceId, startDate: date, endDate: date, requiresLicense,
+      });
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
-      const rawDatesForQuote = buildAvailabilityIndex(availabilityRows).get(providerId) || new Map<string, number[]>();
-      const providerDatesForQuote = applyMinNoticeFilter(rawDatesForQuote, noticeSettings[providerId] ?? 0, Date.now());
+      const workerDatesForQuote = applyMinNoticeToWorkers(
+        workerIndex.get(providerId) || new Map(), noticeSettings[providerId] ?? 0, Date.now(),
+      );
       const evaluation = await evaluateProviderEligibility({
         admin,
         bookingInput,
         providerId,
         priceRow: priceRows[providerId],
         profile: providerProfiles[providerId],
-        providerDates: providerDatesForQuote,
+        workerDates: workerDatesForQuote,
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,
@@ -843,6 +830,8 @@ Deno.serve(async (req: Request) => {
         availability,
         providerId,
         serviceId,
+        // GarSer Empresas (F4): el pago aparta a una persona CON carnet si el trabajo lo exige.
+        requiresPhytosanitaryLicense: requiresLicense,
       };
 
       const clientCoordinates = getClientCoordinates(bookingInput);

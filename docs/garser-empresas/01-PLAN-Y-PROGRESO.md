@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F3 cerrada (alta de empresas, equipo, invitaciones, carnet por persona, correos) · siguiente F4 (la empresa vende) · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F3 cerradas · 🟨 F4 en curso: ✅ F4.1 servidor (vender por persona) · siguiente F4.2 (web: distintivo, modo de asignación, reservas de la empresa) · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -362,12 +362,26 @@ necesita la aprobación van en columnas; el resto, en un campo de respuestas fle
 
 ---
 
-#### ⬜ F4 — La empresa vende
+#### 🟨 F4 — La empresa vende
 
-- [ ] Vista `provider_free_hours` sobre la tabla de disponibilidad que quede tras H-01,
+**✅ F4.1 Servidor — hecho** (migración `20260925120000_empresas_f4_sell_by_person.sql`,
+`booking-authority`, `booking-payment`, `bookingEligibilityCore.ts`;
+`node scripts/garser-empresas/verify-f4-sell.mjs` → 21/21):
+- **Decisión del usuario (H-26 → A-29):** al vender se aparta a una persona concreta; el dueño
+  elige en su configuración si es definitiva o una propuesta que confirma él. Sustituye al
+  `free_count` del plan.
+- `provider_free_hours()` = única fuente de horas libres para la web y el pago (A-30).
+- Pago, confirmación, aceptar, alargar y cancelar operan por persona. Autónomo: idéntico
+  (F1 13/13; baterías de servicios con los mismos resultados que antes, H-27).
+- Distintivo: `public_gardener_directory.provider_kind`.
+- **Horarios del equipo: F5** (decisión del usuario). Hasta entonces una empresa real no tiene
+  horas que vender; las pruebas cargan horarios a mano.
+
+
+- [x] ~~Vista~~ Función `provider_free_hours` sobre la tabla de disponibilidad que quede tras H-01,
       **calculada por servicio** (D5): una empresa solo tiene hueco para el servicio X si hay
       libre un empleado que hace el servicio X. El dueño cuenta solo si trabaja (D3).
-- [ ] `booking-authority` lee capacidad (`free_count`) en vez de disponibilidad binaria.
+- [x] `booking-authority` lee capacidad — **por persona**, no `free_count` (H-26, A-29).
       **Recordatorio: esta función importa `bookingQuoteCore.ts` → hay que redesplegarla.**
 - [x] La empresa configura precios con los configuradores existentes, sin tocarlos.
       *(Adelantado a F3.3, A-26: `/empresa/configuracion`.)*
@@ -477,11 +491,14 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 5. Traer a la rama lo que haya entrado en `main` mientras tanto.
 6. Aplicar las migraciones del proyecto, **en este orden**:
    `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
-   `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3)
+   `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
+   `20260925120000` (F4)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
-   `supabase functions deploy send-email-notification --use-api` *(F3)*.
-   *(F4 añadirá `booking-authority`.)*
+   `supabase functions deploy send-email-notification --use-api` *(F3)*,
+   `supabase functions deploy booking-authority --use-api` y
+   `supabase functions deploy booking-payment --use-api` *(F4: las dos, a la vez que la
+   migración de F4; con una sin la otra, el pago y la web no se entienden)*.
 8. Desplegar la web (Vercel) desde la rama fusionada.
 
 **Justo después — probar en garser.es:** la batería «P-» de `03-PRUEBAS.md` §3, de arriba
@@ -533,6 +550,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
 | F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
+| F4 | Aplicar `20260925120000` **y en el mismo momento** desplegar `booking-authority` y `booking-payment` | Las funciones nuevas llaman a `provider_free_hours`, que crea la migración. Justo después: P-F1-1 (un pago real de autónomo) y P-F4-1 |
 | F3 | **Desplegar `send-email-notification`** (`supabase functions deploy send-email-notification --use-api`) | Sin esto, invitar funciona pero no sale el correo (la web lo dice y da el enlace). Probar P-F3-9 a P-F3-11 |
 
 **Consulta previa de F3 (solo lectura):**

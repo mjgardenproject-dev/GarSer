@@ -10,6 +10,8 @@ export interface BookingWorker {
   name: string | null;
   isMe: boolean;
   pending: boolean;
+  /** F6 (D10): todas las personas del trabajo, con sus horas, si está repartido. */
+  people: Array<{ workerId: string; name: string | null; isMe: boolean; hours: number[] }>;
 }
 
 export function useBookingWorkers(
@@ -28,15 +30,18 @@ export function useBookingWorkers(
     void (async () => {
       const ids = bookings.map((b) => b.id);
       const [{ data: blocks }, { data: rows }] = await Promise.all([
-        supabase.from('booking_blocks').select('booking_id, assignee_id').in('booking_id', ids),
+        supabase.from('booking_blocks').select('booking_id, assignee_id, hour_block').in('booking_id', ids),
         supabase.from('bookings').select('id, assignment_pending').in('id', ids),
       ]);
       const pendingById = new Map((rows || []).map((r) => [r.id, Boolean(r.assignment_pending)]));
-      const byBooking = new Map<string, string>();
+      const byBooking = new Map<string, Map<string, number[]>>();
       (blocks || []).forEach((row) => {
-        if (row.booking_id && row.assignee_id && !byBooking.has(row.booking_id)) byBooking.set(row.booking_id, row.assignee_id);
+        if (!row.booking_id || !row.assignee_id) return;
+        const people = byBooking.get(row.booking_id) || new Map<string, number[]>();
+        people.set(row.assignee_id, [...(people.get(row.assignee_id) || []), Number(row.hour_block)]);
+        byBooking.set(row.booking_id, people);
       });
-      const workerIds = [...new Set(byBooking.values())];
+      const workerIds = [...new Set([...byBooking.values()].flatMap((people) => [...people.keys()]))];
       const { data: people } = workerIds.length
         ? await supabase.from('profiles').select('user_id, full_name').in('user_id', workerIds)
         : { data: [] };
@@ -45,13 +50,16 @@ export function useBookingWorkers(
       if (cancelled) return;
       const next: Record<string, BookingWorker> = {};
       bookings.forEach((b) => {
-        const workerId = byBooking.get(b.id);
-        if (!workerId) return;
+        const people = [...(byBooking.get(b.id) || new Map<string, number[]>()).entries()]
+          .map(([id, hours]) => ({ workerId: id, name: names.get(id)?.trim() || null, isMe: id === myId, hours: hours.sort((x, y) => x - y) }))
+          .sort((x, y) => x.hours[0] - y.hours[0]);
+        if (people.length === 0) return;
         next[b.id] = {
-          workerId,
-          name: names.get(workerId)?.trim() || null,
-          isMe: workerId === myId,
+          workerId: people[0].workerId,
+          name: people[0].name,
+          isMe: people[0].isMe,
           pending: pendingById.get(b.id) ?? Boolean(b.assignment_pending),
+          people,
         };
       });
       setWorkers(next);

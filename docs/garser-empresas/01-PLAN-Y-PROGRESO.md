@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada · ✅ HITO hecho · 🟨 F6 en curso: ✅ F6.1 servidor · siguiente F6.2 (planificador web) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada · ✅ HITO hecho · 🟨 F6 en curso: ✅ F6.1 servidor · ✅ F6.2 planificador web · siguiente F6.3 (mover de fecha, D9) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -515,6 +515,19 @@ F0 7/7, F1 13/13, F2 18/18, F3 35/35, correos 10/10, F4 21/21, F5 9/9 + 13/13 + 
 12/12): una persona por hora en todo el camino del dinero (A-37), venta por turnos opcional
 (A-38), `assign_booking_hours`, `company_schedule`, «Tu parte» en los correos y en «Mi trabajo».
 
+**✅ F6.2 Planificador web — hecho** (migración `20260925170000_empresas_f6_hour_options.sql`):
+- El panel de la empresa abre en **Agenda**: **Día** (una fila por persona con sus horas libres,
+  sus trabajos y los «por aceptar»), **Semana** (persona × día; tocar lleva al día) y **Lista**
+  (próximos 14 días, con quién va y su parte).
+- Tocar un trabajo abre su **hoja**: quién hace cada hora, atajos «todo a …», y los ocupados
+  marcados y sin poder elegirse **antes** de guardar (F6-03). Avisos por correo a quien entra y a
+  quien sale.
+- «Tu empresa» → **«Aceptar trabajos partidos»** (D10).
+- Del hito: barra inferior del empleado «Mi trabajo · Horario · Cuenta»; en «Reservas» y
+  «Solicitudes», «Van: Ana (9–10 h) y Luis (10–12 h)» si está repartido; «Tu parte» en la
+  tarjeta del empleado.
+- F6-06 (20 personas, 375 px) en verde tras dejar que los nombres largos partan línea.
+
 
 - [ ] Planificación en tres densidades. **Se construye móvil primero**, no se adapta el
       escritorio después.
@@ -592,7 +605,7 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
-   `20260925150000` (F5.4) → `20260925160000` (F6.1)
+   `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,

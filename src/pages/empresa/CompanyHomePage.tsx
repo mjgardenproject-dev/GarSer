@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { AlertTriangle, CalendarCheck, ChevronRight, Clock, Inbox, Loader2, Settings2, X } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import { useConfirmDialog } from '../../components/common/ConfirmDialog';
+import AllowSplitJobsCard from '../../components/empresa/AllowSplitJobsCard';
 import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
+import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
@@ -19,7 +21,7 @@ import { useAuth } from '../../contexts/AuthContext';
 // sus datos. Servicios, precios y zona se editan con la misma pantalla que un autónomo
 // (/empresa/configuracion): un solo sistema de precios.
 
-type Tab = 'team' | 'company';
+type Tab = 'agenda' | 'team' | 'company';
 
 const noop = () => {};
 
@@ -34,7 +36,8 @@ const Spinner = () => (
 const CompanyPanel: React.FC = () => {
   const { data, loading, error, refresh } = useCompanyTeam();
   const { openConfirm, confirmDialog } = useConfirmDialog();
-  const [tab, setTab] = useState<Tab>('team');
+  // El panel abre en la agenda (lo aprendido en el hito: «quién hace qué y cuándo» es lo diario).
+  const [tab, setTab] = useState<Tab>('agenda');
   const [showFormer, setShowFormer] = useState(false);
   const { user } = useAuth();
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
@@ -111,8 +114,8 @@ const CompanyPanel: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <AppHeader title={c.commercial_name || 'Tu empresa'}>
-        <div role="tablist" aria-label="Secciones del panel" className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
-          {([['team', 'Equipo'], ['company', 'Tu empresa']] as const).map(([key, label]) => (
+        <div role="tablist" aria-label="Secciones del panel" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+          {([['agenda', 'Agenda'], ['team', 'Equipo'], ['company', 'Tu empresa']] as const).map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -131,7 +134,9 @@ const CompanyPanel: React.FC = () => {
       </AppHeader>
 
       <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
-        {tab === 'team' ? (
+        {tab === 'agenda' ? (
+          <CompanyAgenda pendingRequests={pendingRequests} />
+        ) : tab === 'team' ? (
           <>
             {data.offered_services.length === 0 && (
               <Link to="/empresa/configuracion" className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -141,24 +146,6 @@ const CompanyPanel: React.FC = () => {
                 </span>
               </Link>
             )}
-
-            <section className="grid grid-cols-2 gap-2">
-              <Link to="/empresa/solicitudes" className="relative rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
-                <Inbox className="h-6 w-6 text-emerald-700" />
-                <span className="mt-2 block font-semibold text-gray-900">Solicitudes</span>
-                <span className="block text-xs text-gray-500">Reservas por aceptar</span>
-                {!!pendingRequests && (
-                  <span className="absolute right-3 top-3 min-w-[22px] rounded-full bg-emerald-700 px-1.5 py-0.5 text-center text-xs font-bold text-white">
-                    {pendingRequests}
-                  </span>
-                )}
-              </Link>
-              <Link to="/bookings" className="rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
-                <CalendarCheck className="h-6 w-6 text-emerald-700" />
-                <span className="mt-2 block font-semibold text-gray-900">Reservas</span>
-                <span className="block text-xs text-gray-500">Confirmadas y hechas</span>
-              </Link>
-            </section>
 
             <InviteMemberCard onInvited={() => void refresh()} />
 
@@ -227,6 +214,8 @@ const CompanyPanel: React.FC = () => {
             </Link>
 
             <AssignmentModeCard mode={c.assignment_mode} onChanged={() => void refresh()} />
+
+            <AllowSplitJobsCard value={c.allow_split_jobs} onChanged={() => void refresh()} />
 
             <MinNoticeCard />
 

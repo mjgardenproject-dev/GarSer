@@ -73,6 +73,11 @@ const JobCard: React.FC<{ job: MyJob; showDate?: boolean; onChanged: () => void 
             {hhmm(job.start_time)} – {endTime(job.start_time, job.duration_hours)}
           </p>
           <p className="mt-0.5 font-medium text-gray-800">{job.service_name}</p>
+          {job.my_hours && job.my_hours.length > 0 && job.my_hours.length < job.duration_hours && (
+            <p className="mt-1 inline-block rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+              Tu parte: {String(Math.min(...job.my_hours)).padStart(2, '0')}:00 – {String(Math.max(...job.my_hours) + 1).padStart(2, '0')}:00
+            </p>
+          )}
         </div>
         {job.finished_at ? (
           <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">Terminado</span>

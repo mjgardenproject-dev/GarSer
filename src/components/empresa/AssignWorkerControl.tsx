@@ -47,13 +47,12 @@ const AssignWorkerControl: React.FC<Props> = ({ bookingId, worker, onChanged, no
       return;
     }
     if (notify) {
-      const result = (data || {}) as { changed?: boolean; previousWorkerId?: string };
-      void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId } });
-      if (result.changed && result.previousWorkerId) {
-        void supabase.functions.invoke('send-email-notification', {
-          body: { type: 'job_unassigned', bookingId, workerId: result.previousWorkerId },
-        });
-      }
+      // Avisos: a quien pasa a ir, y a cada persona que se queda sin ninguna hora del trabajo.
+      const result = (data || {}) as { removedWorkerIds?: string[] };
+      void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId, workerId } });
+      (result.removedWorkerIds || []).forEach((removed) => {
+        void supabase.functions.invoke('send-email-notification', { body: { type: 'job_unassigned', bookingId, workerId: removed } });
+      });
     }
     toast.success(workerId === worker.workerId ? 'Confirmado' : 'Trabajo reasignado');
     setOpen(false);

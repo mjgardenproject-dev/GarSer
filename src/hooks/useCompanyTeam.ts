@@ -24,7 +24,7 @@ export interface TeamMember {
 export interface TeamInvitation { id: string; email: string; created_at: string; expires_at: string }
 
 export interface CompanyTeamOverview {
-  company: { id: string; legal_name: string | null; tax_id: string | null; status: string; assignment_mode: 'auto' | 'manual'; commercial_name: string; phone: string | null; address: string | null };
+  company: { id: string; legal_name: string | null; tax_id: string | null; status: string; assignment_mode: 'auto' | 'manual'; allow_split_jobs: boolean; commercial_name: string; phone: string | null; address: string | null };
   offered_services: TeamService[];
   members: TeamMember[];
   invitations: TeamInvitation[];

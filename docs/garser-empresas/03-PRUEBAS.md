@@ -344,9 +344,12 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 |---|---|---|---|
 | F6-01 | Reasignar a alguien libre | Correcto; quienes iban quedan libres | ✅ F6.1 |
 | F6-02 | Reasignar a alguien ocupado | Rechazado, con mensaje entendible | ✅ F6.1 («no está libre a las 10:00») |
-| F6-03 | El conflicto se avisa **antes** de confirmar | Se ve antes | ⬜ |
+| F6-03 | El conflicto se avisa **antes** de confirmar | Se ve antes | ✅ F6.2 («Lucía Martín (ocupado)» deshabilitada en la hoja del trabajo) |
 | F6-04 | Mover un trabajo de fecha | Libera las viejas y ocupa las nuevas, o ninguna de las dos | ⬜ |
 | F6-05 | Dividir un trabajo entre dos personas | El total de horas no varía | ✅ F6.1 (por tramos, D10) |
+| F6-19 | Navegador: el panel de la empresa abre en **Agenda** (Día / Semana / Lista) | Correcto | ✅ F6.2 |
+| F6-20 | Navegador: Semana → tocar el martes → Día; tocar el trabajo → hoja; «todo a Marta» → guardar | Reasignado; Lucía queda libre | ✅ F6.2 |
+| F6-21 | Navegador: barra inferior del empleado | «Mi trabajo · Horario · Cuenta» (antes llevaba a reservas de cliente) | ✅ F6.2 |
 | F6-10 | Sin «aceptar trabajos partidos» (por defecto) | Solo se vende si una persona hace el trabajo entero | ✅ F6.1 |
 | F6-11 | Con el ajuste encendido (solo lo cambia el dueño) | Se vende por turnos | ✅ F6.1 |
 | F6-12 | Venta por turnos | Cada hora a una persona; sus agendas, ocupadas | ✅ F6.1 |
@@ -356,7 +359,7 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F6-16 | Agenda de la empresa (`company_schedule`) | Equipo, horas libres y trabajos con quién hace cada hora; solo el dueño; máximo un mes | ✅ F6.1 |
 | F6-17 | Acortar un trabajo repartido | Libera la hora a quien la tenía | ✅ F6.1 |
 | F6-18 | Confirmarse un trabajo repartido | Cada persona recibe su aviso con «Tu parte» | ✅ F6.1 |
-| F6-06 | **Planificación con 20 empleados en móvil de 375 px** | Sin scroll horizontal ni texto cortado | ⬜ |
+| F6-06 | **Planificación con 20 empleados en móvil de 375 px** | Sin scroll horizontal ni texto cortado | ✅ F6.2 (empresa temporal de 20 con nombres largos, `seed-f6-big-team.mjs`; tras permitir que los nombres partan línea: 0 textos cortados, ancho 375) |
 | F6-07 | Panel de empleado legible al sol, sin ampliar | Manual, en móvil real | ⬜ |
 
 ---

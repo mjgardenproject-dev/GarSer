@@ -7,7 +7,26 @@ import type { BookingWorker } from '../../hooks/useBookingWorkers';
 
 const BookingWorkerLine: React.FC<{ worker?: BookingWorker }> = ({ worker }) => {
   if (!worker) return null;
-  const who = worker.isMe ? 'tú' : worker.name || 'alguien de tu equipo';
+  const label = (p: { isMe: boolean; name: string | null }) => (p.isMe ? 'tú' : p.name || 'alguien de tu equipo');
+  const range = (hours: number[]) => `${String(hours[0]).padStart(2, '0')}–${String(hours[hours.length - 1] + 1).padStart(2, '0')} h`;
+  // F6 (D10): trabajo repartido entre varias personas.
+  if (worker.people.length > 1) {
+    return (
+      <div className="mt-2 flex items-start gap-1.5 text-sm">
+        <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+        <span className="text-gray-700">
+          {worker.pending ? 'Propuesta para ir: ' : 'Van: '}
+          {worker.people.map((p, i) => (
+            <React.Fragment key={p.workerId}>
+              {i > 0 && (i === worker.people.length - 1 ? ' y ' : ', ')}
+              <span className="font-semibold text-gray-900">{label(p)}</span> ({range(p.hours)})
+            </React.Fragment>
+          ))}
+        </span>
+      </div>
+    );
+  }
+  const who = label(worker);
   return (
     <div className="mt-2 flex items-center gap-1.5 text-sm">
       <UserRound className="h-4 w-4 shrink-0 text-emerald-700" />

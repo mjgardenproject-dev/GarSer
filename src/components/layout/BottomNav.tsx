@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAccount } from '../../contexts/AccountContext';
-import { Home, Calendar, MessageCircle, User as UserIcon, Briefcase } from 'lucide-react';
+import { Home, Calendar, MessageCircle, User as UserIcon, Briefcase, CalendarClock } from 'lucide-react';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
 
 const BottomNav: React.FC = () => {
@@ -12,11 +12,19 @@ const BottomNav: React.FC = () => {
   const unreadChats = useUnreadChats();
 
   const isGardener = role === 'gardener';
-  const items = [
-    { path: '/dashboard', label: isGardener ? 'Panel' : 'Inicio', icon: isGardener ? Briefcase : Home },
-    { path: '/bookings', label: 'Reservas', icon: Calendar },
-    { path: '/chat', label: 'Chat', icon: MessageCircle, badge: unreadChats },
-  ];
+  // GarSer Empresas (F6.2, lo aprendido en el hito): el empleado no tiene reservas de cliente ni
+  // chats con clientes; su barra lleva a su trabajo, su horario y su cuenta.
+  const items = role === 'employee'
+    ? [
+        { path: '/mi-trabajo', label: 'Mi trabajo', icon: Briefcase },
+        { path: '/mi-trabajo/horario', label: 'Horario', icon: CalendarClock },
+        { path: '/account', label: 'Cuenta', icon: UserIcon },
+      ]
+    : [
+        { path: '/dashboard', label: isGardener ? 'Panel' : 'Inicio', icon: isGardener ? Briefcase : Home },
+        { path: '/bookings', label: 'Reservas', icon: Calendar },
+        { path: '/chat', label: 'Chat', icon: MessageCircle, badge: unreadChats },
+      ];
 
   return (
     <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>

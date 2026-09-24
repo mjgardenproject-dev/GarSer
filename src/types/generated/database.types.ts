@@ -2455,6 +2455,15 @@ export type Database = {
           user_id: string
         }[]
       }
+      booking_hour_options: {
+        Args: { p_booking_id: string }
+        Returns: {
+          current_hours: number[]
+          free_hours: number[]
+          full_name: string
+          user_id: string
+        }[]
+      }
       booking_requires_phyto_license: {
         Args: { p_booking_id: string }
         Returns: boolean

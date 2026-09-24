@@ -19,6 +19,8 @@ export interface MyJob {
   assignment_pending: boolean;
   finished_at: string | null;
   service_start: string | null;
+  /** F6 (D10): las horas del trabajo que son de esta persona (si está repartido, no todas). */
+  my_hours: number[] | null;
 }
 
 export function useMyJobs(from: string, to: string) {

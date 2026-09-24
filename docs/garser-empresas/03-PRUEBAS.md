@@ -337,13 +337,25 @@ comprobaciones con el token de cada persona) y navegador:
 
 ### F6 — Planificación y reasignación
 
+**Servidor (F6.1)** — `node scripts/garser-empresas/verify-f6-planning.mjs` (12 comprobaciones).
+No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios iguales que antes.
+
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F6-01 | Reasignar a alguien libre | Correcto | ⬜ |
-| F6-02 | Reasignar a alguien ocupado | Rechazado, con mensaje entendible | ⬜ |
+| F6-01 | Reasignar a alguien libre | Correcto; quienes iban quedan libres | ✅ F6.1 |
+| F6-02 | Reasignar a alguien ocupado | Rechazado, con mensaje entendible | ✅ F6.1 («no está libre a las 10:00») |
 | F6-03 | El conflicto se avisa **antes** de confirmar | Se ve antes | ⬜ |
 | F6-04 | Mover un trabajo de fecha | Libera las viejas y ocupa las nuevas, o ninguna de las dos | ⬜ |
-| F6-05 | Dividir un trabajo entre dos personas | El total de horas no varía | ⬜ |
+| F6-05 | Dividir un trabajo entre dos personas | El total de horas no varía | ✅ F6.1 (por tramos, D10) |
+| F6-10 | Sin «aceptar trabajos partidos» (por defecto) | Solo se vende si una persona hace el trabajo entero | ✅ F6.1 |
+| F6-11 | Con el ajuste encendido (solo lo cambia el dueño) | Se vende por turnos | ✅ F6.1 |
+| F6-12 | Venta por turnos | Cada hora a una persona; sus agendas, ocupadas | ✅ F6.1 |
+| F6-13 | Cada persona de un trabajo repartido | Ve el trabajo con **sus** horas | ✅ F6.1 |
+| F6-14 | Alargar un trabajo repartido | Lo alarga quien hace la última hora | ✅ F6.1 |
+| F6-15 | Repartir sin decir quién hace cada hora / que lo intente un empleado | Rechazado | ✅ F6.1 |
+| F6-16 | Agenda de la empresa (`company_schedule`) | Equipo, horas libres y trabajos con quién hace cada hora; solo el dueño; máximo un mes | ✅ F6.1 |
+| F6-17 | Acortar un trabajo repartido | Libera la hora a quien la tenía | ✅ F6.1 |
+| F6-18 | Confirmarse un trabajo repartido | Cada persona recibe su aviso con «Tu parte» | ✅ F6.1 |
 | F6-06 | **Planificación con 20 empleados en móvil de 375 px** | Sin scroll horizontal ni texto cortado | ⬜ |
 | F6-07 | Panel de empleado legible al sol, sin ampliar | Manual, en móvil real | ⬜ |
 

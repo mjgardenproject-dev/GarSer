@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada · ✅ HITO hecho (2026-09-24, recorrido en el navegador) · siguiente F6 (planificación) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada · ✅ HITO hecho · 🟨 F6 en curso: ✅ F6.1 servidor · siguiente F6.2 (planificador web) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -510,6 +510,11 @@ F0 7/7, F1 13/13, F2 18/18, F3 35/35, correos 10/10, F4 21/21, F5 9/9 + 13/13 + 
   la agenda, y la barra inferior del empleado lleva a «Mi trabajo» (lo aprendido en el hito).
 - **F6.3 Mover de fecha** con propuesta al cliente (D9), con sus correos.
 
+**✅ F6.1 Servidor — hecho** (migración `20260925160000_empresas_f6_planning_server.sql`,
+`booking-authority`, `booking-payment`, `send-email-notification`; `verify-f6-planning.mjs` →
+12/12): una persona por hora en todo el camino del dinero (A-37), venta por turnos opcional
+(A-38), `assign_booking_hours`, `company_schedule`, «Tu parte» en los correos y en «Mi trabajo».
+
 
 - [ ] Planificación en tres densidades. **Se construye móvil primero**, no se adapta el
       escritorio después.
@@ -587,7 +592,7 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
-   `20260925150000` (F5.4)
+   `20260925150000` (F5.4) → `20260925160000` (F6.1)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,
@@ -646,6 +651,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
 | F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
+| F6.1 | Aplicar `20260925160000` **y redesplegar a la vez** `booking-authority`, `booking-payment` y `send-email-notification` | El pago y la confirmación pasan a trabajar por horas. Justo después: P-F1-1 (un pago real de autónomo) |
 | F5.1 | Aplicar `20260925130000` | Corrige de paso las horas que estén vendidas y marcadas libres (debería haber 0). Probar P-F5-1 |
 | F4 | Aplicar `20260925120000` **y en el mismo momento** desplegar `booking-authority` y `booking-payment` | Las funciones nuevas llaman a `provider_free_hours`, que crea la migración. Justo después: P-F1-1 (un pago real de autónomo) y P-F4-1 |
 | F3 | **Desplegar `send-email-notification`** (`supabase functions deploy send-email-notification --use-api`) | Sin esto, invitar funciona pero no sale el correo (la web lo dice y da el enlace). Probar P-F3-9 a P-F3-11 |

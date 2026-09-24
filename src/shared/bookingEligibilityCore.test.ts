@@ -359,6 +359,27 @@ describe('GarSer Empresas F4 — horas de un equipo (H-26)', () => {
     expect(result.earliestSlot?.startHour).toBe(9);
   });
 
+  it('F6 (D10): con trabajos partidos, Ana 9 + Luis 10 sí cubren 2 h a las 9 (por turnos); sin ellos, no', () => {
+    const base = {
+      bookingInput: twoHourBookingInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile: companyProfile,
+      providerDates: new Map<string, number[]>(),
+      workerDates: new Map([
+        ['ana', new Map([['2026-06-15', [9]]])],
+        ['luis', new Map([['2026-06-15', [10]]])],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+    };
+    const whole = evaluateOperationalEligibility(base);
+    expect(whole.eligible).toBe(false);
+    const byTurns = evaluateOperationalEligibility({ ...base, allowSplitAcrossWorkers: true });
+    expect(byTurns.eligible).toBe(true);
+    if (byTurns.eligible) expect(byTurns.validHoursForRequestedDate).toEqual([9]);
+  });
+
   it('trabajo con carnet: la empresa no se descarta por su ficha si el carnet se comprueba por persona', () => {
     const phytoInput = { ...twoHourBookingInput, phytosanitaryZones: [{ area: 20, productPreference: 'chemical' as const }] };
     const base = {

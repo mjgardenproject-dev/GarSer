@@ -14,6 +14,7 @@ import {
   evaluateOperationalEligibility,
   getClientCoordinates,
   getProviderCoordinates,
+  getValidStartHours,
   getValidStartHoursForWorkers,
   mergeWorkerDates,
   type ProviderExclusionCode,
@@ -273,6 +274,18 @@ async function fetchPriceRows(
 // también usa el pago: por cada proveedor, las de cada persona que puede hacer el trabajo
 // (autónomo: él mismo; empresa: su equipo con ese servicio y, si hace falta, con carnet), sin
 // las horas que alguien está pagando ni las que ya tiene en su agenda.
+// GarSer Empresas (F6, D10): empresas que aceptan vender trabajos partidos (por turnos).
+async function fetchSplitProviders(admin: ReturnType<typeof createClient>, providerIds: string[]): Promise<Set<string>> {
+  if (providerIds.length === 0) return new Set();
+  const { data } = await admin
+    .from('companies')
+    .select('provider_user_id')
+    .in('provider_user_id', providerIds)
+    .eq('status', 'active')
+    .eq('allow_split_jobs', true);
+  return new Set(((data || []) as { provider_user_id: string }[]).map((row) => String(row.provider_user_id)));
+}
+
 async function fetchProviderWorkerHours(
   admin: ReturnType<typeof createClient>,
   params: {
@@ -406,6 +419,7 @@ async function evaluateProviderEligibility(params: {
   priceRow?: PriceRow;
   profile?: ProviderProfileRow;
   workerDates: WorkerDates;
+  allowSplit?: boolean;
   requestedDate: string;
   windowEndDate: string;
   restrictToRequestedDate?: boolean;
@@ -439,6 +453,7 @@ async function evaluateProviderEligibility(params: {
     providerDates: mergeWorkerDates(params.workerDates),
     workerDates: params.workerDates,
     licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
+    allowSplitAcrossWorkers: Boolean(params.allowSplit),
     requestedDate: params.requestedDate,
     windowEndDate: params.windowEndDate,
     restrictToRequestedDate: params.restrictToRequestedDate,
@@ -583,6 +598,7 @@ Deno.serve(async (req: Request) => {
       const workerIndex = await fetchProviderWorkerHours(admin, {
         providerIds, serviceId, startDate: selectedDate, endDate, requiresLicense,
       });
+      const splitProviders = await fetchSplitProviders(admin, providerIds);
       const noticeSettings = await fetchMinNoticeSettings(admin, providerIds);
       const nowMs = Date.now();
 
@@ -602,6 +618,7 @@ Deno.serve(async (req: Request) => {
           priceRow: priceRows[providerId],
           profile: providerProfiles[providerId],
           workerDates,
+          allowSplit: splitProviders.has(providerId),
           requestedDate: selectedDate,
           windowEndDate: endDate,
         });
@@ -637,6 +654,7 @@ Deno.serve(async (req: Request) => {
       const workerIndex = await fetchProviderWorkerHours(admin, {
         providerIds: [providerId], serviceId, startDate: date, endDate: date, requiresLicense,
       });
+      const allowSplit = (await fetchSplitProviders(admin, [providerId])).has(providerId);
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
       const workerDates = applyMinNoticeToWorkers(
         workerIndex.get(providerId) || new Map(), noticeSettings[providerId] ?? 0, Date.now(),
@@ -648,6 +666,7 @@ Deno.serve(async (req: Request) => {
         priceRow: priceRows[providerId],
         profile: providerProfiles[providerId],
         workerDates,
+        allowSplit,
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,
@@ -680,6 +699,7 @@ Deno.serve(async (req: Request) => {
       const workerIndex = await fetchProviderWorkerHours(admin, {
         providerIds: [providerId], serviceId, startDate: start, endDate: end, requiresLicense,
       });
+      const allowSplit = (await fetchSplitProviders(admin, [providerId])).has(providerId);
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
       const nowMs = Date.now();
       const minNotice = noticeSettings[providerId] ?? 0;
@@ -691,6 +711,7 @@ Deno.serve(async (req: Request) => {
         priceRow: priceRows[providerId],
         profile: providerProfiles[providerId],
         workerDates,
+        allowSplit,
         requestedDate: start,
         windowEndDate: end,
       });
@@ -711,7 +732,9 @@ Deno.serve(async (req: Request) => {
         const date = cursor.toISOString().slice(0, 10);
         const validHours = date < today
           ? []
-          : getValidStartHoursForWorkers(workerDates, date, Math.max(1, Math.ceil(evaluation.quote.estimatedHours)));
+          : allowSplit
+            ? getValidStartHours(mergeWorkerDates(workerDates).get(date) || [], Math.max(1, Math.ceil(evaluation.quote.estimatedHours)))
+            : getValidStartHoursForWorkers(workerDates, date, Math.max(1, Math.ceil(evaluation.quote.estimatedHours)));
         days.push({
           date,
           day: cursor.getUTCDate(),
@@ -759,6 +782,7 @@ Deno.serve(async (req: Request) => {
       const workerIndex = await fetchProviderWorkerHours(admin, {
         providerIds: [providerId], serviceId, startDate: date, endDate: date, requiresLicense,
       });
+      const allowSplit = (await fetchSplitProviders(admin, [providerId])).has(providerId);
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
       const workerDatesForQuote = applyMinNoticeToWorkers(
         workerIndex.get(providerId) || new Map(), noticeSettings[providerId] ?? 0, Date.now(),
@@ -770,6 +794,7 @@ Deno.serve(async (req: Request) => {
         priceRow: priceRows[providerId],
         profile: providerProfiles[providerId],
         workerDates: workerDatesForQuote,
+        allowSplit,
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,

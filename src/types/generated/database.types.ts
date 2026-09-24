@@ -1371,6 +1371,7 @@ export type Database = {
       }
       companies: {
         Row: {
+          allow_split_jobs: boolean
           assignment_mode: string
           created_at: string
           id: string
@@ -1382,6 +1383,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allow_split_jobs?: boolean
           assignment_mode?: string
           created_at?: string
           id?: string
@@ -1393,6 +1395,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          allow_split_jobs?: boolean
           assignment_mode?: string
           created_at?: string
           id?: string
@@ -2430,6 +2433,10 @@ export type Database = {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: undefined
       }
+      assign_booking_hours: {
+        Args: { p_booking_id: string; p_workers: string[] }
+        Returns: Json
+      }
       assign_booking_worker: {
         Args: { p_booking_id: string; p_worker_id: string }
         Returns: Json
@@ -2500,6 +2507,10 @@ export type Database = {
         Returns: Json
       }
       cleanup_expired_requests: { Args: never; Returns: undefined }
+      company_schedule: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
       company_team_overview: { Args: never; Returns: Json }
       complete_booking_batch_operation: {
         Args: {
@@ -2677,6 +2688,7 @@ export type Database = {
           date: string
           duration_hours: number
           finished_at: string
+          my_hours: number[]
           notes: string
           service_name: string
           service_start: string
@@ -2694,6 +2706,17 @@ export type Database = {
           p_start_hour: number
         }
         Returns: string
+      }
+      pick_provider_workers_by_hour: {
+        Args: {
+          p_date: string
+          p_end_hour: number
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+          p_start_hour: number
+        }
+        Returns: string[]
       }
       post_booking_system_message: {
         Args: { p_booking_id: string; p_text: string }
@@ -2721,6 +2744,10 @@ export type Database = {
           p_reason?: string
         }
         Returns: Json
+      }
+      provider_allows_split_jobs: {
+        Args: { p_provider: string }
+        Returns: boolean
       }
       provider_free_hours: {
         Args: {
@@ -2852,6 +2879,10 @@ export type Database = {
       }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }
       safe_numeric: { Args: { p_value: string }; Returns: number }
+      set_company_allow_split_jobs: {
+        Args: { p_allow: boolean }
+        Returns: Json
+      }
       set_company_assignment_mode: { Args: { p_mode: string }; Returns: Json }
       set_company_member_services: {
         Args: { p_member_id: string; p_service_ids: string[] }
@@ -2872,6 +2903,10 @@ export type Database = {
       update_own_review: {
         Args: { p_comment: string; p_rating: number; p_review_id: string }
         Returns: Json
+      }
+      worker_free_at: {
+        Args: { p_date: string; p_hour: number; p_worker: string }
+        Returns: boolean
       }
     }
     Enums: {

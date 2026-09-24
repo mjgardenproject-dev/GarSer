@@ -260,6 +260,11 @@ export function evaluateOperationalEligibility(params: {
    * mira el carnet de la ficha (una empresa no tiene).
    */
   licenseCheckedPerWorker?: boolean;
+  /**
+   * GarSer Empresas (F6, D10): la empresa acepta trabajos partidos → una hora vale si cada hora
+   * del trabajo la puede hacer ALGUIEN del equipo (por turnos), aunque no sea la misma persona.
+   */
+  allowSplitAcrossWorkers?: boolean;
   requestedDate: string;
   windowEndDate: string;
   restrictToRequestedDate?: boolean;
@@ -359,9 +364,12 @@ export function evaluateOperationalEligibility(params: {
   }
 
   const workerDates = params.workerDates;
-  const validStartHoursOn = (date: string) => (workerDates
-    ? getValidStartHoursForWorkers(workerDates, date, durationHours)
-    : getValidStartHours(params.providerDates.get(date) || [], durationHours));
+  const mergedByTurns = workerDates && params.allowSplitAcrossWorkers ? mergeWorkerDates(workerDates) : null;
+  const validStartHoursOn = (date: string) => (mergedByTurns
+    ? getValidStartHours(mergedByTurns.get(date) || [], durationHours)
+    : workerDates
+      ? getValidStartHoursForWorkers(workerDates, date, durationHours)
+      : getValidStartHours(params.providerDates.get(date) || [], durationHours));
   const validHoursForRequestedDate = validStartHoursOn(params.requestedDate);
   const knownDates = new Set<string>(params.providerDates.keys());
   workerDates?.forEach((dates) => dates.forEach((_hours, date) => knownDates.add(date)));

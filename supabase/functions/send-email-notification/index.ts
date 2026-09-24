@@ -192,7 +192,6 @@ Deno.serve(async (req) => {
     let deadlineAt: string | null = null;
     let companyReason = '';
     let invitation: { company_name: string | null; token: string; expires_at: string } | null = null;
-    let job: { service: string; when: string; address: string; company: string } | null = null;
 
     if (BOOKING_EMAIL_TYPES.has(type) && bookingId) {
       // ---- Contrato vigente: todo se resuelve aquí, con la clave de servicio ----
@@ -366,11 +365,19 @@ Deno.serve(async (req) => {
           status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      const { data: block } = await admin.from('booking_blocks').select('assignee_id').eq('booking_id', bookingId).limit(1).maybeSingle();
-      const current = block?.assignee_id ?? null;
-      let recipient: string | null = null;
+      // F6 (D10): un trabajo puede estar repartido por horas entre varias personas.
+      const { data: blockRows } = await admin.from('booking_blocks').select('assignee_id, hour_block').eq('booking_id', bookingId);
+      const hoursByWorker = new Map<string, number[]>();
+      ((blockRows || []) as { assignee_id: string; hour_block: number }[]).forEach((row) => {
+        const list = hoursByWorker.get(row.assignee_id) || [];
+        list.push(Number(row.hour_block));
+        hoursByWorker.set(row.assignee_id, list);
+      });
+      const totalHours = (blockRows || []).length;
+      let recipients: string[] = [];
       if (type === 'job_assigned') {
-        recipient = current;
+        const only = String(payload.workerId || '');
+        recipients = [...hoursByWorker.keys()].filter((id) => !only || id === only);
       } else {
         const candidate = String(payload.workerId || '');
         const { data: member } = await admin
@@ -380,29 +387,62 @@ Deno.serve(async (req) => {
           .eq('status', 'active')
           .eq('companies.provider_user_id', b.gardener_id)
           .maybeSingle();
-        recipient = member && candidate !== current ? candidate : null;
+        recipients = member && !hoursByWorker.has(candidate) ? [candidate] : [];
       }
       // A uno mismo no se le avisa (el dueño que trabaja y se asigna el trabajo).
-      if (!recipient || recipient === b.gardener_id) {
+      recipients = recipients.filter((id) => id !== b.gardener_id);
+      if (recipients.length === 0) {
         return new Response(JSON.stringify({ success: true, skipped: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      const { data: userData } = await admin.auth.admin.getUserById(recipient);
-      to = userData?.user?.email ?? undefined;
-      const [{ data: person }, { data: company }] = await Promise.all([
-        admin.from('profiles').select('full_name').eq('user_id', recipient).maybeSingle(),
-        admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle(),
-      ]);
-      name = String(person?.full_name || '').split(' ')[0] || 'hola';
+
+      const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
       // deno-lint-ignore no-explicit-any
       const serviceName = String((b as any).services?.name || 'Trabajo');
-      job = {
-        service: serviceName,
-        when: formatBookingDate(b.date, b.start_time),
-        address: String(b.client_address || ''),
-        company: String(company?.full_name || 'Tu empresa'),
+      const when = formatBookingDate(b.date, b.start_time);
+      const companyName = String(company?.full_name || 'Tu empresa');
+      const range = (hours: number[]) => {
+        const sorted = [...hours].sort((x, y) => x - y);
+        return `${String(sorted[0]).padStart(2, '0')}:00 a ${String(sorted[sorted.length - 1] + 1).padStart(2, '0')}:00`;
       };
+      let sentCount = 0;
+      for (const workerId of recipients) {
+        const { data: userData } = await admin.auth.admin.getUserById(workerId);
+        const workerEmail = userData?.user?.email;
+        if (!workerEmail) continue;
+        const { data: person } = await admin.from('profiles').select('full_name').eq('user_id', workerId).maybeSingle();
+        const first = String(person?.full_name || '').split(' ')[0] || 'hola';
+        const mine = hoursByWorker.get(workerId) || [];
+        const pairs: Array<[string, string]> = type === 'job_assigned'
+          ? [['Servicio', serviceName], ['Cuándo', when], ...(mine.length && mine.length < totalHours ? [['Tu parte', `de ${range(mine)}`] as [string, string]] : []), ['Dónde', String(b.client_address || '')]]
+          : [['Servicio', serviceName], ['Cuándo', when]];
+        const jobSubject = type === 'job_assigned'
+          ? `Nuevo trabajo: ${serviceName}, ${when}`
+          : `Ya no vas a este trabajo: ${serviceName}, ${when}`;
+        const jobOpts: Parameters<typeof renderBrandedEmail>[0] = {
+          title: jobSubject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: type === 'job_assigned'
+            ? `${escapeHtml(companyName)} te ha asignado un trabajo.`
+            : `${escapeHtml(companyName)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
+          bodyHtml: detailRows(pairs),
+          cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
+          footerNote: type === 'job_assigned' ? 'Si no puedes ir, avisa a tu empresa cuanto antes.' : 'Tus horas de ese día vuelven a estar libres.',
+        };
+        const jobHtml = renderBrandedEmail(jobOpts);
+        const jobText = renderPlainText({ ...jobOpts, detailPairs: pairs });
+        if (!SMTP_USER || !SMTP_PASS) {
+          console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: workerEmail, type, subject: jobSubject });
+        } else {
+          const sent = await sendViaBrevo({ to: workerEmail, subject: jobSubject, html: jobHtml, text: jobText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+          if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+        }
+        sentCount += 1;
+      }
+      return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     } else {
       // ---- Contrato LEGACY: RETIRADO (paso 9) ----
       // Aceptaba `user_id` + textos libres (`serviceName`, `dateText`, `priceText`) de
@@ -483,28 +523,6 @@ Deno.serve(async (req) => {
         // la sesión abierta.
         cta: { label: 'Ver la invitación', url: `${BRAND.site}/invitacion?token=${encodeURIComponent(invitation.token)}` },
         footerNote: `La invitación caduca el ${expires}. Si no conoces a esta empresa, ignora este correo.`,
-      };
-    } else if (type === 'job_assigned' && job) {
-      subject = `Nuevo trabajo: ${job.service}, ${job.when}`;
-      detailPairs = [['Servicio', job.service], ['Cuándo', job.when], ['Dónde', job.address]];
-      opts = {
-        title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(job.company)} te ha asignado un trabajo.`,
-        bodyHtml: detailRows(detailPairs),
-        cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
-        footerNote: 'Si no puedes ir, avisa a tu empresa cuanto antes.',
-      };
-    } else if (type === 'job_unassigned' && job) {
-      subject = `Ya no vas a este trabajo: ${job.service}, ${job.when}`;
-      detailPairs = [['Servicio', job.service], ['Cuándo', job.when]];
-      opts = {
-        title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(job.company)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
-        bodyHtml: detailRows(detailPairs),
-        cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
-        footerNote: 'Tus horas de ese día vuelven a estar libres.',
       };
     } else if (type === 'booking_accepted') {
       subject = '¡Tu reserva en GarSer ha sido aceptada!';

@@ -596,6 +596,14 @@ async function revalidateQuoteBeforePayment(
   }));
 
   const bookingInput = (quote.input_payload || {}) as SerializableBookingData;
+  // F6 (D10): empresa que acepta trabajos partidos → se revalida por turnos, como en la web.
+  const { data: splitRow } = await admin
+    .from('companies')
+    .select('provider_user_id')
+    .eq('provider_user_id', quote.gardener_id)
+    .eq('status', 'active')
+    .eq('allow_split_jobs', true)
+    .maybeSingle();
   const workerDates = await fetchWorkerHoursForQuote(admin, {
     gardenerId: quote.gardener_id,
     serviceId: quote.service_id,
@@ -613,6 +621,7 @@ async function revalidateQuoteBeforePayment(
     providerDates: mergeWorkerDates(workerDates),
     workerDates,
     licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
+    allowSplitAcrossWorkers: Boolean(splitRow),
     requestedDate: selectedDate,
     windowEndDate: selectedDate,
     restrictToRequestedDate: true,

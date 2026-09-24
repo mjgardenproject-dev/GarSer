@@ -60,7 +60,11 @@ async function main() {
   {
     const r = await rpc('booking_worker_for_client', { p_booking_id: soon.bookingId }, client.token);
     record('F5-11', 'El día antes, el cliente ve nombre (sin apellido completo) y foto de quien va, y nada más',
-      r.ok && r.body?.name === 'Ana G.' && r.body?.avatar_url === 'https://example.com/ana.jpg' && Object.keys(r.body || {}).sort().join(',') === 'avatar_url,name',
+      // F6: también «workers» (todas las personas si el trabajo está repartido), con los mismos dos datos.
+      r.ok && r.body?.name === 'Ana G.' && r.body?.avatar_url === 'https://example.com/ana.jpg' &&
+      Object.keys(r.body || {}).every((k) => ['name', 'avatar_url', 'workers'].includes(k)) &&
+      (r.body?.workers || []).every((w) => Object.keys(w).every((k) => ['name', 'avatar_url'].includes(k))) &&
+      !/600111222|@/.test(JSON.stringify(r.body)),
       JSON.stringify(r.body));
   }
   {

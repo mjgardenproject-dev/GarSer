@@ -2824,6 +2824,13 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: string[]
       }
+      claim_maintenance_notifications: {
+        Args: { p_limit?: number }
+        Returns: {
+          email_type: string
+          visit_id: string
+        }[]
+      }
       cleanup_expired_booking_payment_state: {
         Args: {
           p_end_date?: string
@@ -3210,6 +3217,10 @@ export type Database = {
       }
       release_booking_schedule: {
         Args: { p_booking_id: string }
+        Returns: undefined
+      }
+      release_maintenance_notification: {
+        Args: { p_visit_id: string }
         Returns: undefined
       }
       replace_booking_worker: {

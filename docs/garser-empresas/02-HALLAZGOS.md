@@ -566,6 +566,17 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-33 · «Solicitudes» no recibía los datos de F7 y F8 — 🟢 Resuelto en F9.4
+
+Visto al probar F9 en el navegador. `BookingRequestsManager` no pasa a la tarjeta la reserva tal
+cual: copia a mano una lista de campos. Los que añadieron F7 (`end_date`, `labour_hours`) y F8
+(`booking_items`) no estaban en esa lista, así que en la pantalla de **solicitudes** no se veía el
+rango de días ni las horas de trabajo de un trabajo de equipo, el nombre «A + B» de una reserva de
+varios servicios salía como el primer servicio, y «Recalcular con las medidas reales» se ofrecía
+también en reservas de varios servicios. En «Mis reservas» (otra pantalla) sí funcionaba, y ahí es
+donde lo comprobé en su día. **Arreglo:** se copian esos campos (y `maintenance_plan_id`, F9).
+Lección: en esta pantalla, un campo nuevo de la reserva hay que añadirlo también al mapeo.
+
 ### H-32 · La web recibía como mucho 1000 horas libres y cortaba el resto en silencio — 🟢 Resuelto en F7.2
 
 PostgREST devuelve como mucho 1000 filas por petición (`max_rows`), **también** cuando se llama a

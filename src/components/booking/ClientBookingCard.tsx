@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Clock, MapPin, MessageCircle, Star, RotateCcw, ChevronDown, ImageIcon, Loader2 } from 'lucide-react';
+import { Calendar, Clock, MapPin, MessageCircle, Star, RotateCcw, ChevronDown, ImageIcon, Loader2, Repeat } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -84,6 +84,10 @@ interface Props {
   onCancel?: (booking: ClientBookingCardBooking) => void;
   onReview?: (booking: ClientBookingCardBooking) => void;
   onRebook?: (booking: ClientBookingCardBooking) => void;
+  /** GarSer Empresas (F9): convertir esta reserva en un plan de mantenimiento. */
+  onMakePlan?: (booking: ClientBookingCardBooking) => void;
+  /** F9: ya hay un plan activo que sale de esta reserva. */
+  hasPlan?: boolean;
   onAcceptPriceChange?: (booking: ClientBookingCardBooking) => void;
   onRejectPriceChange?: (booking: ClientBookingCardBooking) => void;
   onAcceptReschedule?: (booking: ClientBookingCardBooking) => void;
@@ -156,6 +160,8 @@ const ClientBookingCard = ({
   onCancel,
   onReview,
   onRebook,
+  onMakePlan,
+  hasPlan = false,
   onAcceptPriceChange,
   onRejectPriceChange,
   onAcceptReschedule,
@@ -456,6 +462,23 @@ const ClientBookingCard = ({
             <RotateCcw className="w-4 h-4" aria-hidden="true" />
             {busy ? 'Preparando…' : 'Volver a reservar'}
           </button>
+        )}
+
+        {/* F9 (D17): de una reserva confirmada o terminada sale un plan de mantenimiento. */}
+        {onMakePlan && (isCompleted || booking.status === 'confirmed') && (
+          hasPlan ? (
+            <p className="text-center text-xs font-medium text-emerald-700">Tienes un plan de mantenimiento con esta reserva.</p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onMakePlan(booking)}
+              disabled={busy}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+            >
+              <Repeat className="w-4 h-4" aria-hidden="true" />
+              Repetir cada…
+            </button>
+          )
         )}
 
         {canCancel && (

@@ -24,6 +24,8 @@ import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import BookingWorkerLine from '../empresa/BookingWorkerLine';
 import { formatDateRange } from '../../utils/jobShape';
+import MaintenancePlansSection from '../maintenance/MaintenancePlansSection';
+import { fetchMyMaintenancePlans, FREQUENCY_LABEL, type MaintenancePlan } from '../../utils/maintenancePlans';
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 
 // GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
@@ -79,9 +81,18 @@ const GardenerBookings: React.FC = () => {
   const [workersVersion, setWorkersVersion] = useState(0);
   const workers = useBookingWorkers(bookings, { enabled: role === 'company', myId: user?.id, version: workersVersion });
 
+  // F9: planes de mantenimiento de los que salen visitas para este profesional.
+  const [plans, setPlans] = useState<MaintenancePlan[]>([]);
+  const loadPlans = () => {
+    void fetchMyMaintenancePlans()
+      .then((rows) => setPlans(rows.filter((plan) => plan.role === 'provider')))
+      .catch(() => setPlans([]));
+  };
+
   useEffect(() => {
     if (user) {
       fetchBookings();
+      loadPlans();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -233,6 +244,11 @@ const GardenerBookings: React.FC = () => {
       />
 
       <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
+        {plans.some((plan) => plan.status === 'active') && (
+          <div className="mb-6">
+            <MaintenancePlansSection plans={plans} onChanged={loadPlans} />
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600"></div>
@@ -251,6 +267,15 @@ const GardenerBookings: React.FC = () => {
                 <div className="flex items-center justify-between gap-2 mb-4">
                   <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-gray-900 line-clamp-2 break-words">{bookingServiceLabel(booking as never) || booking.services?.name}</h3>
+                    {/* F9: visita de un plan de mantenimiento. */}
+                    {(booking as { maintenance_plan_id?: string | null }).maintenance_plan_id && (() => {
+                      const plan = plans.find((p) => p.id === (booking as { maintenance_plan_id?: string | null }).maintenance_plan_id);
+                      return (
+                        <span className="mt-0.5 inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                          Plan de mantenimiento{plan ? ` · ${FREQUENCY_LABEL[plan.frequency].toLowerCase()}` : ''}
+                        </span>
+                      );
+                    })()}
                     <p className="text-gray-600 truncate">Cliente: {booking.client_profile?.full_name}</p>
                   </div>
                   <span className={`shrink-0 px-3 py-1 rounded-full text-sm font-medium ${getBookingStatusTone(booking.status)}`}>

@@ -42,6 +42,11 @@ export interface BookingData {
    */
   serviceInputs?: Record<string, Record<string, unknown>>;
   restrictedGardenerId?: string;
+  /**
+   * GarSer Empresas (F9): se está pagando la visita propuesta de un plan de mantenimiento. Su
+   * presupuesto tiene el precio fijo del plan (D19): no se rehace ni se cambia de hora aquí.
+   */
+  maintenanceVisitId?: string;
   photos: File[];
   bookingPhotoContract?: BookingPhotoContract;
   description: string;

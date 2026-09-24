@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · siguiente F9 (mantenimiento) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **todas las fases hechas: siguiente, la fusión (§5)** · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -702,7 +702,7 @@ profesional con los dos servicios.
 - [x] `booking_items`. Afecta también a los autónomos: es evolución de producto (con un servicio,
       todo exactamente igual que antes).
 
-#### 🟨 F9 — Mantenimiento de jardín
+#### ✅ F9 — Mantenimiento de jardín
 
 **Punto de partida (verificado 2026-09-24).** No hay nada de «plan» ni de visitas periódicas.
 Lo que hay y condiciona el diseño:
@@ -754,8 +754,22 @@ tiene un trabajo nuevo: coge las visitas propuestas o sin hueco aún no avisadas
 «Esta vez no hay hueco para tu visita de mantenimiento»; si el correo falla, vuelve a la cola. Los
 dos correos solo los puede pedir el servidor.
 
+**✅ F9.3 y F9.4 Pantallas — hecho. F9 cerrada.** Cliente: en la tarjeta de una reserva
+confirmada o terminada, «Repetir cada…» (semana / 2 semanas / mes, con el precio fijo y cómo
+funciona); en su inicio, «Planes de mantenimiento» con la próxima visita propuesta y «Confirmar y
+pagar la visita», que abre la pantalla de pago de siempre con el presupuesto del plan (sin
+«Cambiar horario» y sin rehacer el presupuesto, D19: si caducó, se espera a la siguiente); y
+«Cancelar el plan». Profesional/empresa: en «Mis reservas», sus planes (para quién, cada cuánto,
+próxima visita, cancelar); las visitas llegan como solicitudes normales con la marca «Visita de un
+plan de mantenimiento». Recorrido en el navegador (móvil, `seed-f9-demo.mjs`): clienta → plan,
+confirmar visita (hasta el resumen de pago: 30 sept 09:00, 54 € + 6,75 € de gestión; sin pagar,
+crearía un cobro en Stripe) → crear un plan mensual desde otra reserva; empresa → solicitud con la
+marca y lista de planes. **H-33** encontrado y cerrado (ver hallazgos).
 
-- [ ] Se construye sobre `booking_items`. **Sin motor de precios nuevo.**
+- [x] Se construye sobre `booking_items` (una visita de un plan de varios servicios los lleva
+      todos). **Sin motor de precios nuevo** (precio fijo del presupuesto de origen, D19).
+
+
 
 ---
 
@@ -772,6 +786,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
+| 2026-09-24 | F9 | **Planes de mantenimiento. F9 cerrada. Todas las fases hechas.** D17–D20 del usuario. Planes que salen de una reserva; el reloj propone cada visita 7 días antes con el planificador y un presupuesto normal al precio fijo del plan; se confirma y paga con el pago de siempre (sin tarjetas guardadas); avisos por correo; pantallas de cliente y profesional. **H-33** (solicitudes sin los datos de F7/F8) cerrado. Recorrido en el navegador. | 524 ✅ · build ✅ · tsc 128 · F9 13 · F8 11+10 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 · servicios = H-27 | `3f463f3` `da41d54` + (este) |
 | 2026-09-24 | F8 | **Varios servicios en una reserva. F8 cerrada.** D14–D16 del usuario (un profesional para todo; solo los que hacen todos; en empresa, quien los hace todos). `booking_items` escritos solo por el pago; presupuesto que suma cada servicio calculado con el motor de siempre; embudo que rellena un servicio tras otro; nombre «A + B» en agendas, listas, chat y correos. Recorrido en el navegador. | 522 ✅ · build ✅ · tsc 128 · F8 11+10 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 | `7de198d` `7d74b9a` `1aa473c` + (este) |
 | 2026-09-24 | F7 | **Equipos y varios días. F7 cerrada.** D11–D13 del usuario. Un solo planificador en SQL (pago) y en TypeScript (web) con prueba de coherencia (A-40); equipos a la vez con límite de la empresa; trabajos de varios días también para autónomos (T7 deja de rechazarlos); cambiar una persona por otra (A-41); pantallas de reserva, cliente, empresa y empleado, y correos. **H-32** (la web perdía horas pasadas 1000 filas) cerrado. Recorrido en el navegador. | 513 ✅ · build ✅ · tsc 128 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 · servicios = H-27 | `d1b8a52` `78f1c01` + (este) |
 | 2026-09-24 | F6 | **Planificación. F6 cerrada.** Hito hecho por el chat en el navegador; D9 y D10 del usuario. Una persona por hora en todo el camino del dinero (A-37), trabajos partidos opcionales (A-38), planificador móvil Día/Semana/Lista con conflictos antes de guardar, mover de fecha con propuesta al cliente (A-39). F6-06 con 20 personas a 375 px. | 496 ✅ · build ✅ · tsc 128 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 | `4267220` `ecb0436` + (este) |
@@ -875,6 +890,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
 | F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
+| F9 | Aplicar `20260926140000` y `20260926150000`; desplegar `booking-payment`, `send-email-notification` y `booking-lifecycle-tick` | Planes de mantenimiento: el reloj (cron `booking-lifecycle-maintenance`, ya existente) empieza a proponer visitas; el tick manda los avisos. Justo después: P-F9-1 |
 | F8 | Aplicar `20260926120000` y `20260926130000` **junto con** el despliegue de `booking-authority` y `booking-payment` | La web manda presupuestos de varios servicios y el pago los comprueba. Con un servicio no cambia nada. Justo después: P-F1-1 y P-F8-1 |
 | F7.1 | Aplicar `20260925190000` **junto con** el despliegue de `booking-authority` y `booking-payment` (F7.2) | El pago pasa a apartar lo que decide el planificador (equipos, varios días). Para trabajos normales no cambia nada; justo después, P-F1-1 (un pago real de autónomo) |
 | F6.1 | Aplicar `20260925160000` **y redesplegar a la vez** `booking-authority`, `booking-payment` y `send-email-notification` | El pago y la confirmación pasan a trabajar por horas. Justo después: P-F1-1 (un pago real de autónomo) |

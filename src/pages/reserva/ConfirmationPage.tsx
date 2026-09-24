@@ -570,6 +570,11 @@ const ConfirmationPage: React.FC = () => {
   };
 
   const syncAuthoritativeQuote = async () => {
+    // F9 (D19): la visita de un plan tiene el precio del plan. Rehacer el presupuesto aquí daría
+    // uno normal con la tarifa del momento: si ha caducado, se espera a la siguiente propuesta.
+    if (bookingData.maintenanceVisitId) {
+      throw new Error('El plazo para confirmar esta visita del plan ha terminado. Te propondremos la siguiente.');
+    }
     const { serviceId, selectedSlot } = assertAuthoritativeSnapshot();
     const authoritativeQuote = await createAuthoritativeQuote({
       bookingData,
@@ -1657,7 +1662,7 @@ const ConfirmationPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="mx-auto w-full px-4 py-4 pb-32 sm:max-w-lg sm:pb-36" id="confirmation-main">
-        {!showSuccessView ? (
+        {!showSuccessView && !bookingData.maintenanceVisitId ? (
           <div className="mb-3 flex justify-start">
             <button
               type="button"

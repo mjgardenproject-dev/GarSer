@@ -460,6 +460,11 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F9-11 | Visita que tocaría mañana | Como pronto, pasado mañana | ✅ F9.1 |
 | F9-12 | Aviso «esta vez no hay hueco» | Una vez; solo lo pide el servidor | ✅ F9.2 |
 | F9-13 | Aviso de la propuesta | «Tu próxima visita: …» al cliente | ✅ F9.2 |
+| F9-20 | Navegador (móvil): «Planes de mantenimiento» en el inicio de la clienta | Servicio, frecuencia, precio, próxima visita y «Confirmar y pagar la visita» | ✅ F9.3 |
+| F9-21 | Navegador: «Confirmar y pagar la visita» | Pantalla de pago con la visita del plan (30 sept 09:00, 54 € + 6,75 €), sin «Cambiar horario» | ✅ F9.3 (sin pagar) |
+| F9-22 | Navegador: «Repetir cada…» en otra reserva → mensual | Plan creado; la reserva con plan lo indica | ✅ F9.3 |
+| F9-23 | Navegador: la empresa ve la solicitud marcada «Visita de un plan» y sus planes en «Mis reservas» | Correcto | ✅ F9.4 |
+| F9-24 | Preparar el pago de una visita | Con el presupuesto del plan (no se rehace) | ✅ F9.3 (prueba unitaria) |
 
 ---
 
@@ -507,6 +512,7 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F7-1 | Una empresa con «hasta 2 personas a la vez» y dos empleados libres 4 h: un cliente reserva un trabajo de 8 h; sale «2 personas, 4 h», se paga y a los dos les aparece | F7 | ⬜ |
 | P-F7-2 | Un trabajo grande (más de 12 h) de un autónomo: la web lo ofrece en varios días, se paga y queda «del X al Y» | F7 | ⬜ |
 | P-F8-1 | Un cliente reserva césped + setos con un profesional que hace los dos: un solo pago de gestión sobre el total; la reserva enseña los dos servicios | F8 | ⬜ |
+| P-F9-1 | Un cliente crea un plan quincenal desde una reserva; 7 días antes de la visita le llega «Tu próxima visita», la confirma y paga desde su inicio, y a la empresa le llega la solicitud marcada como visita de un plan | F9 | ⬜ |
 
 ---
 

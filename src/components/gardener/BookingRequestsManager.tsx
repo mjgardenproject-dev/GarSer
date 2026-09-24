@@ -239,6 +239,12 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         price_change_status: booking.price_change_status,
         assignment_pending: booking.assignment_pending,
         pricing_context: booking.pricing_context,
+        // GarSer Empresas: F7 (último día y horas de trabajo), F8 (servicios de la reserva) y F9
+        // (visita de un plan). Sin copiarlos aquí, las marcas de esas fases no llegaban a la tarjeta.
+        end_date: booking.end_date ?? null,
+        labour_hours: booking.labour_hours ?? null,
+        booking_items: booking.booking_items ?? null,
+        maintenance_plan_id: booking.maintenance_plan_id ?? null,
         created_at: booking.created_at,
         expires_at: booking.created_at, // Usar created_at como referencia
         client_profile: clientsMap.get(booking.client_id) || { full_name: 'Cliente desconocido', phone: '' },
@@ -505,6 +511,10 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                       <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
                         {bookingServiceLabel(request as never) || request.services?.name}
                       </h3>
+                      {/* F9: la solicitud es una visita de un plan de mantenimiento del cliente. */}
+                      {(request as { maintenance_plan_id?: string | null }).maintenance_plan_id && (
+                        <span className="inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">Visita de un plan de mantenimiento</span>
+                      )}
                       <p className="text-gray-600 flex items-center">
                         <User className="w-4 h-4 mr-1" />
                         {request.client_profile?.full_name}

@@ -98,6 +98,10 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D14 | Varios servicios en una reserva, ¿un solo profesional? (2026-09-24) | **Uno para todo.** | Una reserva = un proveedor, una visita, un pago. Quien quiera profesionales distintos hace reservas separadas. | F8 |
 | D15 | Con varios servicios, ¿qué profesionales ve el cliente? (2026-09-24) | **Solo los que hacen todos** (y con carnet si alguno lo exige). | Sin cobertura parcial entre servicios. | F8 |
 | D16 | En una empresa, con varios servicios, ¿quién puede ir? (2026-09-24) | **Quien hace todos los servicios del trabajo.** | Las personas del trabajo tienen asignados todos sus servicios (y carnet si hace falta): el planificador de F7 no cambia de fondo. | F8 |
+| D17 | ¿Qué es un plan de mantenimiento y cómo se paga? (2026-09-24) | **Plan con confirmación de cada visita.** | El cliente contrata servicios + frecuencia con un profesional. Unos días antes de cada visita GarSer le propone fecha y hora y la confirma y paga la comisión con un toque (el pago de siempre). Sin tarjetas guardadas; si no confirma, esa visita se salta y el plan sigue. | F9 |
+| D18 | ¿Cada cuánto? (2026-09-24) | **Semanal, quincenal o mensual**, a elección del cliente. | | F9 |
+| D19 | ¿Precio de cada visita? (2026-09-24) | **El del primer presupuesto**, fijo mientras dure el plan (mismo motor, sin descuentos). | Un cambio de tarifas del profesional vale para planes nuevos. | F9 |
+| D20 | ¿Quién ofrece planes? (2026-09-24) | **Todos** (autónomos y empresas). | | F9 |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -713,8 +717,23 @@ Lo que hay y condiciona el diseño:
 - F8 permite que una visita lleve varios servicios (césped + setos…), que es lo típico de un
   mantenimiento.
 
-Preguntas de producto pendientes: D17 (qué es un plan y cómo se paga), D18 (cada cuánto), D19
-(precio de cada visita), D20 (quién ofrece planes).
+**Diseño (D17–D20 respondidas el 2026-09-24):**
+- **El plan sale de una reserva hecha** (confirmada o terminada): en su tarjeta, «Repetir cada…»
+  (semana / 2 semanas / mes). Guarda el profesional, los servicios con sus datos (F8), el precio
+  fijo (el de esa reserva, D19), las horas, el día de la semana y la hora de inicio.
+- **Cada visita es una reserva normal** que nace de una **propuesta**: 7 días antes de la fecha
+  que toca, el reloj de cada 15 minutos (`run_booking_lifecycle_maintenance`) busca hueco con el
+  planificador de F7 (esa hora; si no, otra hora ese día; si no, los 2 días siguientes), crea un
+  presupuesto con el precio del plan y lo apunta en `maintenance_visits`. El cliente recibe un
+  correo y en su inicio «Confirmar y pagar», que abre el pago de siempre con ese presupuesto.
+  Sin hueco, se le avisa y se pasa a la siguiente. Si no paga antes de que caduque, se salta.
+- **El pago no recalcula el precio** de un presupuesto de plan (D19): comprueba que el plan
+  sigue activo y es suyo; el hueco lo vuelve a comprobar el pago como siempre.
+- El profesional acepta cada visita como cualquier solicitud y ve de qué plan es; cliente o
+  profesional pueden cancelar el plan.
+
+Partes: **F9.1** servidor (planes, visitas, propuestas, pago) → **F9.2** avisos (correos desde el
+reloj) → **F9.3** pantallas del cliente → **F9.4** pantallas del profesional y la empresa.
 
 - [ ] Se construye sobre `booking_items`. **Sin motor de precios nuevo.**
 

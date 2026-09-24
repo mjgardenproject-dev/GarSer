@@ -106,9 +106,11 @@ const ServicesPage: React.FC = () => {
     void fetchServices();
   };
 
+  // GarSer Empresas (F8, D14): se pueden pedir varios servicios en la misma visita; los hace un
+  // mismo profesional. Se rellenan uno detrás de otro, en el orden en que se marcaron.
   const toggleService = (serviceId: string) => {
     setSelectedServices(prev =>
-      prev.includes(serviceId) ? [] : [serviceId]
+      prev.includes(serviceId) ? prev.filter((id) => id !== serviceId) : [...prev, serviceId]
     );
   };
 
@@ -116,7 +118,13 @@ const ServicesPage: React.FC = () => {
     if (selectedServices.length === 0) {
       return;
     }
-    setBookingData({ serviceIds: selectedServices });
+    const sameSelection = selectedServices.length === bookingData.serviceIds.length
+      && selectedServices.every((id, index) => bookingData.serviceIds[index] === id);
+    // Si cambia la selección, se empieza por el primero y se olvidan los datos ya guardados
+    // de servicios que ya no están (los de los que siguen se conservan en servicesData).
+    setBookingData(sameSelection
+      ? { serviceIds: selectedServices, activeServiceIndex: 0 }
+      : { serviceIds: selectedServices, activeServiceIndex: 0, serviceInputs: {} });
     saveProgress();
     setCurrentStep(2);
   };
@@ -154,7 +162,10 @@ const ServicesPage: React.FC = () => {
       <main className="mx-auto w-full px-3 py-3 pb-24 sm:max-w-md" id="services-main">
         <div className="mb-3">
           <p className="text-sm font-medium text-gray-900">
-            Selecciona el servicio que quieres reservar
+            Selecciona lo que quieres reservar
+          </p>
+          <p className="mt-0.5 text-xs text-gray-600">
+            Puedes elegir varios: los hará el mismo profesional en la misma visita.
           </p>
         </div>
 
@@ -281,7 +292,9 @@ const ServicesPage: React.FC = () => {
           >
             {selectedServices.length === 0
               ? 'Selecciona un servicio'
-              : 'Continuar a los detalles del servicio'}
+              : selectedServices.length === 1
+                ? 'Continuar a los detalles del servicio'
+                : `Continuar con ${selectedServices.length} servicios`}
           </button>
         </div>
       </div>

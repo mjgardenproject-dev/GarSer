@@ -79,7 +79,8 @@ const BookingFlow: React.FC = () => {
         return (bookingData as { rebookReviewPending?: boolean }).rebookReviewPending &&
           hasRebookBreakdown(bookingData as unknown as Record<string, unknown>)
           ? <RebookSummaryPage />
-          : <DetailsPage />;
+          // F8: una pantalla por servicio (con varios, se monta de nuevo al pasar al siguiente).
+          : <DetailsPage key={bookingData.serviceIds?.[bookingData.activeServiceIndex ?? 0] || 'details'} />;
       case 3:
         return <ProvidersPage />;
       case 4:

@@ -108,6 +108,7 @@ import { recordManualDeclaration, ManualDeclarationError } from '../../utils/boo
 import { isManualBookingInputEnabled } from '../../utils/manualEntryFeatureFlag';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import { useAuth } from '../../contexts/AuthContext';
+import { snapshotServiceInput } from '../../utils/bookingAuthorityService';
 // import { TreeBookingGroup } from '../../domain/treePruning';
 
 type PhytosanitaryAffectedType = 'Césped' | 'Árboles' | 'Setos' | 'Plantas bajas' | 'Palmeras';
@@ -705,11 +706,60 @@ const DetailsPage: React.FC = () => {
   const [analyzedPhotoIndices, setAnalyzedPhotoIndices] = useState<Set<number>>(new Set());
   const [photosToAnalyze, setPhotosToAnalyze] = useState<Set<number>>(new Set());
   // -------------------------------------
+  // GarSer Empresas (F8): con varios servicios, esta pantalla rellena uno cada vez (el activo).
+  // Con uno, el activo es el primero: lo de siempre.
+  const serviceCount = bookingData.serviceIds?.length || 0;
+  const activeServiceIndex = Math.min(Math.max(bookingData.activeServiceIndex ?? 0, 0), Math.max(serviceCount - 1, 0));
+  const activeServiceId = bookingData.serviceIds?.[activeServiceIndex] || '';
   useEffect(() => {
-    if (bookingData.serviceIds?.[0]) {
-        switchToService(bookingData.serviceIds[0]);
+    if (activeServiceId) {
+        switchToService(activeServiceId);
     }
-  }, [bookingData.serviceIds?.[0]]); // Trigger only when primary service ID changes
+  }, [activeServiceId]); // Trigger only when the active service ID changes
+
+  // F8: al terminar un servicio se guardan sus datos (los que usa el presupuesto) y se pasa al
+  // siguiente; tras el último, a elegir profesional. Con un servicio, lo de siempre.
+  const finishActiveService = () => {
+    if (serviceCount <= 1 || !activeServiceId) {
+      setCurrentStep(3);
+      return;
+    }
+    const isLast = activeServiceIndex >= serviceCount - 1;
+    const serviceId = activeServiceId;
+    setBookingData((prev) => {
+      const snapshot = snapshotServiceInput(prev, serviceId);
+      // Para volver a este servicio: sus datos, sin la lista de servicios (esa es de la reserva).
+      const { serviceIds: _ids, ...restorable } = snapshot;
+      void _ids;
+      return {
+        serviceInputs: { ...(prev.serviceInputs || {}), [serviceId]: snapshot },
+        servicesData: {
+          ...(prev.servicesData || {}),
+          [serviceId]: { ...(prev.servicesData?.[serviceId] || {}), ...restorable },
+        } as BookingData['servicesData'],
+        ...(isLast ? {} : {
+          activeServiceIndex: activeServiceIndex + 1,
+          dataInputMode: undefined,
+          manualDeclarationId: undefined,
+          manualConsent: undefined,
+        }),
+      };
+    });
+    if (isLast) {
+      setCurrentStep(3);
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  };
+
+  const goBackFromDetails = () => {
+    if (serviceCount > 1 && activeServiceIndex > 0) {
+      setBookingData({ activeServiceIndex: activeServiceIndex - 1 });
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    setCurrentStep(1);
+  };
 
   // Initialize photos from uploadedPhotoUrls if available, otherwise from bookingData.photos
   // We need to keep this in sync with bookingData changes triggered by switchToService
@@ -936,7 +986,6 @@ const DetailsPage: React.FC = () => {
   }, [bookingData]);
 
   const [, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
-  const activeServiceId = bookingData.serviceIds?.[0] || '';
   const persistedManualDraft = (bookingData.servicesData?.[activeServiceId] as { manualDraft?: ManualWizardSubmitPayload } | undefined)?.manualDraft;
   /**
    * El asistente arranca en su resumen: hay respuestas que revisar, no que rellenar.
@@ -960,7 +1009,7 @@ const DetailsPage: React.FC = () => {
     prev: BookingData,
     patch: Partial<NonNullable<BookingData['servicesData']>[string]>
   ) => {
-    const currentActiveServiceId = prev.serviceIds?.[0];
+    const currentActiveServiceId = prev.serviceIds?.[Math.min(prev.activeServiceIndex ?? 0, Math.max((prev.serviceIds?.length || 1) - 1, 0))];
     if (!currentActiveServiceId) return prev.servicesData;
 
     return {
@@ -1172,8 +1221,8 @@ const DetailsPage: React.FC = () => {
 
   useEffect(() => {
     const fetchServiceName = async () => {
-      if (bookingData.serviceIds?.[0]) {
-        const { data } = await supabase.from('services').select('name').eq('id', bookingData.serviceIds[0]).single();
+      if (activeServiceId) {
+        const { data } = await supabase.from('services').select('name').eq('id', activeServiceId).single();
         const serviceRecord = data as { name?: unknown } | null;
         const serviceName = typeof serviceRecord?.name === 'string'
           ? serviceRecord.name
@@ -1188,7 +1237,7 @@ const DetailsPage: React.FC = () => {
       }
     };
     fetchServiceName();
-  }, [bookingData.serviceIds]);
+  }, [activeServiceId]);
 
   // El editor ad-hoc de desbroce (que necesitaba estos 3 efectos para mantener siempre una
   // única `weedingZones[0]` viva y su persistencia de herbicida en localStorage) se retiró
@@ -1306,7 +1355,7 @@ const DetailsPage: React.FC = () => {
       maxTotalPhotos,
       telemetryContext: {
         scope,
-        serviceId: bookingData.serviceIds?.[0] || 'unknown',
+        serviceId: activeServiceId || 'unknown',
       },
     });
 
@@ -1446,7 +1495,7 @@ const DetailsPage: React.FC = () => {
             event: 'booking.details_pricing_failed',
             service: 'Poda de palmeras',
             error: e,
-            serviceId: bookingData.serviceIds?.[0],
+            serviceId: activeServiceId,
             scope: 'details_palm_pricing',
             photoCount: flatPalms.length,
           });
@@ -1454,8 +1503,8 @@ const DetailsPage: React.FC = () => {
       
       const payload = { palmGroups: normalizedGroups, estimatedHours: totalHours, isAnalyzing: false };
       setBookingData(prev => withReconciledBookingPhotoContract(prev, payload));
-      if (bookingData.serviceIds?.[0]) {
-          updateServiceData(bookingData.serviceIds[0], payload);
+      if (activeServiceId) {
+          updateServiceData(activeServiceId, payload);
       }
   };
 
@@ -1762,7 +1811,7 @@ const DetailsPage: React.FC = () => {
         context: { serviceKey: manualServiceKey, itemCount: payload.items.length },
       });
       saveProgress();
-      setCurrentStep(3);
+      finishActiveService();
     } catch (error) {
       toast.error('No hemos podido guardar tus datos. Inténtalo de nuevo.');
       reportBookingEvent('error', {
@@ -1851,8 +1900,8 @@ const DetailsPage: React.FC = () => {
     });
     
     // Explicit persist before leaving
-    if (bookingData.serviceIds?.[0]) {
-        updateServiceData(bookingData.serviceIds[0], {
+    if (activeServiceId) {
+        updateServiceData(activeServiceId, {
             photos: filePhotos,
             description: descriptionRef.current,
             // Ensure all current context is saved
@@ -1869,7 +1918,7 @@ const DetailsPage: React.FC = () => {
     }
     
     saveProgress();
-    setCurrentStep(3);
+    finishActiveService();
   };
 
   const runAIAnalysis = async () => {
@@ -2128,8 +2177,8 @@ const DetailsPage: React.FC = () => {
             ...treePayload
         }));
 
-        if (bookingData.serviceIds?.[0]) {
-            updateServiceData(bookingData.serviceIds[0], treePayload);
+        if (activeServiceId) {
+            updateServiceData(activeServiceId, treePayload);
         }
         
         currentDebugInfo.finalAnalysisData = treePayload;
@@ -2432,8 +2481,8 @@ const DetailsPage: React.FC = () => {
         
         setBookingData(updatePayload);
         
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], updatePayload);
+        if (activeServiceId) {
+             updateServiceData(activeServiceId, updatePayload);
         }
 
         // DEBUG: Update Final Data
@@ -2450,8 +2499,8 @@ const DetailsPage: React.FC = () => {
             aiTasks: [] 
         };
         setBookingData(noTasksPayload);
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], noTasksPayload);
+        if (activeServiceId) {
+             updateServiceData(activeServiceId, noTasksPayload);
         }
         
         // DEBUG: Update Final Data for empty result
@@ -2479,8 +2528,8 @@ const DetailsPage: React.FC = () => {
     } catch (e) {
         setBookingData({ isAnalyzing: false });
         
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], {
+        if (activeServiceId) {
+             updateServiceData(activeServiceId, {
                  isAnalyzing: false
              });
         }
@@ -2695,8 +2744,8 @@ const DetailsPage: React.FC = () => {
         wasteRemoval: true 
     });
     
-    if (bookingData.serviceIds?.[0]) {
-         updateServiceData(bookingData.serviceIds[0], {
+    if (activeServiceId) {
+         updateServiceData(activeServiceId, {
              lawnZones: newZones,
              wasteRemoval: true
          });
@@ -2752,8 +2801,8 @@ const DetailsPage: React.FC = () => {
       onConfirm: () => {
         const newZones = zones.filter(z => z.id !== zoneId);
         setBookingData(withReconciledBookingPhotoContract(bookingData, { lawnZones: newZones }));
-        if (bookingData.serviceIds?.[0]) {
-             updateServiceData(bookingData.serviceIds[0], { lawnZones: newZones });
+        if (activeServiceId) {
+             updateServiceData(activeServiceId, { lawnZones: newZones });
         }
         saveProgress();
       }
@@ -2809,8 +2858,8 @@ const DetailsPage: React.FC = () => {
       zones[idx] = updatedZone;
       setBookingData(withReconciledBookingPhotoContract(bookingData, { lawnZones: zones }));
       
-      if (bookingData.serviceIds?.[0]) {
-           updateServiceData(bookingData.serviceIds[0], {
+      if (activeServiceId) {
+           updateServiceData(activeServiceId, {
                lawnZones: zones
            });
       }
@@ -2924,7 +2973,7 @@ const DetailsPage: React.FC = () => {
             event: 'booking.details_analysis_failed',
             service: 'Corte de césped',
             error: e,
-            serviceId: bookingData.serviceIds?.[0],
+            serviceId: activeServiceId,
             zoneId,
             scope: 'details_lawn_analysis',
             photoCount: finalUrls.length,
@@ -3388,7 +3437,7 @@ const DetailsPage: React.FC = () => {
             event: 'booking.details_analysis_failed',
             service: 'Poda de setos',
             error: e,
-            serviceId: bookingData.serviceIds?.[0],
+            serviceId: activeServiceId,
             zoneId: id,
             scope: 'details_hedge_analysis',
             photoCount: zone.faceA.photoUrls.length + zone.faceB.photoUrls.length,
@@ -3716,7 +3765,7 @@ const DetailsPage: React.FC = () => {
             event: 'booking.details_analysis_failed',
             service: 'Poda de palmeras',
             error: e,
-            serviceId: bookingData.serviceIds?.[0],
+            serviceId: activeServiceId,
             zoneId: id,
             scope: 'details_palm_analysis',
             photoCount: ((group as any).photoUrls || []).length,
@@ -3846,7 +3895,7 @@ const analyzeTreeGroup = async (id: string) => {
             event: 'booking.details_analysis_failed',
             service: 'Poda de árboles',
             error: e,
-            serviceId: bookingData.serviceIds?.[0],
+            serviceId: activeServiceId,
             zoneId: id,
             scope: 'details_tree_analysis',
             photoCount: group.photoUrls?.length || 0,
@@ -4103,7 +4152,7 @@ const analyzeTreeGroup = async (id: string) => {
             event: 'booking.details_analysis_failed',
             service: 'Poda de plantas y arbustos',
             error: e,
-            serviceId: bookingData.serviceIds?.[0],
+            serviceId: activeServiceId,
             zoneId: id,
             scope: 'details_shrub_analysis',
             photoCount: allUrls.length,
@@ -4468,7 +4517,7 @@ const analyzeTreeGroup = async (id: string) => {
             event: 'booking.details_analysis_failed',
             service: 'Servicios fitosanitarios',
             error: e,
-            serviceId: bookingData.serviceIds?.[0],
+            serviceId: activeServiceId,
             zoneId: id,
             scope: 'details_phytosanitary_analysis',
             photoCount: allUrls.length,
@@ -4561,8 +4610,8 @@ const analyzeTreeGroup = async (id: string) => {
         <div className="mx-auto w-full px-4 py-4 sm:max-w-md flex items-center justify-between">
           <button
             type="button"
-            onClick={() => setCurrentStep(1)}
-            aria-label="Volver al paso de servicios"
+            onClick={goBackFromDetails}
+            aria-label={serviceCount > 1 && activeServiceIndex > 0 ? 'Volver al servicio anterior' : 'Volver al paso de servicios'}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
             <ChevronLeft aria-hidden="true" className="w-5 h-5 text-gray-600" />
@@ -4581,6 +4630,12 @@ const analyzeTreeGroup = async (id: string) => {
               <div className="bg-green-600 h-1 rounded-full" style={{ width: '60%' }} />
             </div>
           </div>
+          {/* F8: con varios servicios, cuál se está rellenando. */}
+          {serviceCount > 1 && (
+            <p className="text-sm font-semibold text-emerald-800">
+              Servicio {activeServiceIndex + 1} de {serviceCount}{debugService ? `: ${debugService}` : ''}
+            </p>
+          )}
         </div>
       </div>
 

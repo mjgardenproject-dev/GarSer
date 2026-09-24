@@ -90,6 +90,33 @@ function pickSerializableBookingInput(bookingData: BookingData) {
   });
 }
 
+/**
+ * GarSer Empresas (F8): los datos de UN servicio tal y como los usa el motor (los mismos campos
+ * que el presupuesto de siempre, sin los datos guardados de los demás servicios).
+ */
+export function snapshotServiceInput(bookingData: BookingData, serviceId: string): Record<string, unknown> {
+  const { servicesData: _omit, ...input } = pickSerializableBookingInput(bookingData) as Record<string, unknown>;
+  void _omit;
+  return { ...input, serviceIds: [serviceId] };
+}
+
+/**
+ * GarSer Empresas (F8, D14): lo que se manda al servidor. Un servicio: lo de siempre. Varios: los
+ * datos de cada uno (`items`, el primero el principal). El servicio que se esté rellenando en
+ * ese momento, con lo que hay en pantalla si aún no se guardó.
+ */
+export function buildServicesPayload(bookingData: BookingData): { bookingInput: Record<string, unknown>; items?: Array<{ serviceId: string; bookingInput: Record<string, unknown> }> } {
+  const ids = bookingData.serviceIds || [];
+  if (ids.length <= 1) return { bookingInput: pickSerializableBookingInput(bookingData) as Record<string, unknown> };
+  const activeId = ids[Math.min(bookingData.activeServiceIndex ?? ids.length - 1, ids.length - 1)];
+  const inputs = ids.map((id) => bookingData.serviceInputs?.[id] || (id === activeId ? snapshotServiceInput(bookingData, id) : null));
+  if (inputs.some((input) => !input)) {
+    throw new Error('Faltan los datos de alguno de los servicios. Vuelve a rellenarlos.');
+  }
+  const items = ids.map((serviceId, index) => ({ serviceId, bookingInput: inputs[index] as Record<string, unknown> }));
+  return { bookingInput: items[0].bookingInput, items };
+}
+
 async function readFunctionErrorBody(context?: Response) {
   if (!context) return null;
 
@@ -208,7 +235,7 @@ export async function previewProviderQuotes(params: {
       providerIds: params.providerIds,
       selectedDate: params.selectedDate,
       windowDays: params.windowDays ?? 14,
-      bookingInput: pickSerializableBookingInput(params.bookingData),
+      ...buildServicesPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.quote_preview_loaded',
@@ -248,7 +275,7 @@ export async function fetchProviderValidHours(params: {
       serviceId: params.serviceId,
       providerId: params.providerId,
       date: params.date,
-      bookingInput: pickSerializableBookingInput(params.bookingData),
+      ...buildServicesPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.availability_hours_loaded',
@@ -286,7 +313,7 @@ export async function fetchProviderMonthDays(params: {
       serviceId: params.serviceId,
       providerId: params.providerId,
       monthDate: params.monthDate,
-      bookingInput: pickSerializableBookingInput(params.bookingData),
+      ...buildServicesPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.availability_calendar_loaded',
@@ -354,7 +381,7 @@ export async function createAuthoritativeQuote(params: {
       date: params.selectedDate,
       startTime: params.startTime,
       ttlMinutes: params.ttlMinutes ?? 120,
-      bookingInput: pickSerializableBookingInput(params.bookingData),
+      ...buildServicesPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.quote_created',

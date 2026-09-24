@@ -434,6 +434,11 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F8-25 | Detalle para el profesional | Ve los datos de cada servicio | ✅ F8.2 |
 | F8-26 | Web y pago con varios servicios | Mismas horas | ✅ F8.2 |
 | F8-27 | Un solo servicio | Presupuesto como siempre | ✅ F8.2 |
+| F8-30 | Navegador (móvil): marcar césped + setos | «Continuar con 2 servicios» | ✅ F8.3 |
+| F8-31 | Navegador: detalles de cada servicio, uno detrás de otro | «Servicio 1 de 2: Corte de césped» → «Servicio 2 de 2: Poda de setos», empezando en limpio | ✅ F8.3 |
+| F8-32 | Navegador: profesionales, hora y resumen | Total de los dos (252 €, gestión 28 €), 08:00–13:00, «Corte de césped, Poda de setos» | ✅ F8.3 |
+| F8-33 | Navegador: volver atrás | Cada servicio conserva sus datos | ✅ F8.3 |
+| F8-34 | Envío a la web | Un servicio: como siempre; varios: `items`; si falta uno, error claro | ✅ F8.3 (pruebas unitarias) |
 
 ### F8 y F9 — Multi-servicio y mantenimiento
 

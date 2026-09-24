@@ -672,6 +672,16 @@ función (`providerConfigVersionPayload`). Un servicio: todo exactamente igual (
 Coherencia web ↔ pago también con varios servicios. Baterías de servicios: iguales o mejor
 (fitosanitarios 77/1, antes 76/2: lo arregló la tarea aparte de H-27, no esta fase).
 
+**✅ F8.3 Embudo — hecho.** En «Servicios» se pueden marcar varios («Continuar con 2
+servicios»). La pantalla de detalles rellena uno cada vez («Servicio 1 de 2: Corte de césped»),
+con el andamiaje que ya existía (`servicesData`, `switchToService`) y montándose de nuevo por
+servicio; al terminar uno se guardan sus datos (`serviceInputs`) y se pasa al siguiente; «atrás»
+vuelve al anterior con sus datos. A la web se manda `items` (`buildServicesPayload`); con un
+servicio, exactamente lo de antes. Recorrido en el navegador (móvil, `seed-f8-demo.mjs`): césped
+300 m² + setos 40 m → «Jardines Rosa» 252 € (gestión 28 €) → 08:00–13:00 → resumen «Corte de
+césped, Poda de setos»; volver atrás conserva los datos de cada servicio. Sin pulsar «Continuar
+al pago» (crearía un cobro en Stripe; el pago de varios servicios lo cubre `verify-f8-web`).
+
 - [ ] `booking_items`. Afecta también a los autónomos: es evolución de producto.
 
 #### ⬜ F9 — Mantenimiento de jardín

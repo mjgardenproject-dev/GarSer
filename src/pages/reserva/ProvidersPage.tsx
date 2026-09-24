@@ -952,7 +952,7 @@ const ProvidersPage: React.FC = () => {
             <div className="text-sm font-semibold text-gray-900">
               Seleccionar fecha y hora 
               <span className="font-normal text-gray-500 ml-1">
-                (son {getEstimatedHours(selectedProvider)} h de trabajo)
+                (son {Math.ceil(getEstimatedHours(selectedProvider))} h de trabajo)
               </span>
             </div>
             <div className="flex items-center justify-between mt-2">

@@ -92,6 +92,9 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D6 | ¿El cliente ve quién va a ir? | **Aceptada la recomendación.** | Nombre y foto del trabajador asignado, **el día antes**. Ni antes ni más datos. | F5 |
 | D9 | ¿Cómo se mueve un trabajo de fecha, si la eligió el cliente? (2026-09-24) | **Proponiéndoselo al cliente**, que acepta o rechaza, como un cambio de precio. | Propuesta de nueva fecha/hora; al aceptar se mueve la agenda sola; al rechazar no cambia nada. | F6 |
 | D10 | ¿Cómo se divide un trabajo entre varias personas? (2026-09-24) | **La empresa lo reparte como vea conveniente**, pero **tiene que poder no aceptar trabajos partidos**: entonces no se muestra al cliente si una sola persona no puede cubrirlo. **Es distinto de los trabajos de varios días.** | La empresa reparte las horas de un trabajo entre su gente (por tramos). Ajuste de la empresa «Aceptar trabajos partidos»: apagado (por defecto) = solo se vende si una persona hace el trabajo entero (lo de F4); encendido = también si entre varias, por turnos, cubren todas las horas. Varios días = F7. | F6 |
+| D11 | ¿Quién decide cuántas personas van a la vez? (2026-09-24) | **La empresa, con un límite** en su configuración («hasta N personas a la vez»). GarSer arma el equipo solo para acabar cuanto antes con la gente libre. | Ajuste de la empresa; el precio no cambia con el número de personas (sale de las horas de trabajo). Autónomo: siempre 1. | F7 |
+| D12 | ¿Los trabajos de varios días son solo para empresas? (2026-09-24) | **También para autónomos.** | Cambia el funcionamiento actual del autónomo: hoy un trabajo de más de 12 h no se puede reservar (T7); pasará a ofrecerse repartido en varios días. | F7 |
+| D13 | En varios días, ¿cuántas horas al día trabaja cada persona? (2026-09-24) | **Las que tenga libres**, sin máximo propio (con el tope de 12 h por jornada). | Cada persona aporta cada día sus horas libres seguidas. | F7 |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -548,7 +551,30 @@ prueba manual en un teléfono: queda para P- el día de la fusión). Batería: 4
 ### BLOQUE 3 — Tickets más grandes
 *La palanca de ingresos. Requiere los tres bloques anteriores.*
 
-#### ⬜ F7 — Varios trabajadores y varios días
+#### 🟨 F7 — Varios trabajadores y varios días
+
+**Diseño (2026-09-24), tras D11–D13.** Horas de trabajo del presupuesto = L (entero).
+- **Si cabe en un día (L ≤ 12, o con varias personas):** se busca el equipo más pequeño (1 … el
+  límite de la empresa) en el que cada persona trabaja a la vez desde la hora elegida;
+  L = 6 con 2 personas = 3 h de reloj. Si no hay equipo y la empresa acepta trabajos partidos, por
+  turnos (F6). **Un trabajo de 12 h o menos nunca se parte en varios días.**
+- **Si no cabe en un día (L > 12):** varios días seguidos desde la fecha elegida (se saltan los
+  días sin nadie libre), hasta 21 días. El primer día empieza a la hora elegida; los demás, cada
+  persona desde su primera hora libre. Cada día trabajan hasta N personas, cada una sus horas
+  libres seguidas (máx. 12, D13).
+- **Modelo:** `bookings.end_date` (último día; nulo = un día), `bookings.labour_hours` (L) y
+  `duration_hours` = lo que dura el primer día (sigue ≤ 12: los siete guardas de H-02 no se
+  tocan). La agenda (`booking_blocks`) ya guarda día, hora y persona; pasa a admitir **varias
+  personas en la misma hora** del mismo trabajo. El bloqueo del pago, igual.
+- **Una sola regla para vender:** el mismo planificador decide las horas que ve el cliente (en la
+  web) y las que se apartan al pagar (en la base de datos), y una prueba comprueba que coinciden.
+- En trabajos de varias personas o días: alargar/acortar y «repartir por horas» no aplican; sí
+  **cambiar una persona por otra** en todo el trabajo y mover de fecha (se vuelve a planificar).
+
+Partes: **F7.1** servidor (modelo, planificador, pago, agenda) → **F7.2** motor de la web (horas
+válidas con equipos y varios días, presupuesto con fecha de fin) → **F7.3** pantallas (reserva,
+cliente, empresa, empleado, ajuste de la empresa).
+
 
 - [ ] `bookings.required_workers` (`DEFAULT 1`) y `bookings.end_date` (`DEFAULT NULL`).
 - [ ] Separar **duración** (span de la jornada, sigue con tope 12 h) de **mano de obra**

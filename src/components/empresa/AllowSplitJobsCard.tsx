@@ -29,7 +29,7 @@ const AllowSplitJobsCard: React.FC<{ value: boolean; onChanged: () => void }> = 
           <p className="mt-1 text-sm text-gray-600">
             {value
               ? 'Te ofrecemos a los clientes también cuando el trabajo lo tengan que hacer varias personas por turnos (por ejemplo, Ana de 9 a 11 y Luis de 11 a 13).'
-              : 'Solo te ofrecemos a los clientes si una misma persona de tu equipo puede hacer el trabajo entero.'}
+              : 'Solo te ofrecemos a los clientes si el trabajo lo puede hacer una misma persona entera (o varias a la vez, según «Personas a la vez»).'}
           </p>
           <p className="mt-1 text-xs text-gray-500">Repartir un trabajo ya reservado lo puedes hacer siempre, desde la agenda.</p>
         </div>

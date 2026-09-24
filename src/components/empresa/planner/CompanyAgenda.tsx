@@ -4,9 +4,10 @@ import { addDays, format, parseISO, startOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Inbox, Loader2 } from 'lucide-react';
 import {
-  hourLabel, rangeLabel, useCompanySchedule, workersOfJob,
+  cellDate, hourLabel, isTeamJob, rangeLabel, useCompanySchedule, workersOfJob,
   type CompanySchedule, type ScheduleJob, type ScheduleMember,
 } from '../../../hooks/useCompanySchedule';
+import { describeJobShape } from '../../../utils/jobShape';
 import JobSheet from './JobSheet';
 
 // Planificador de la empresa (GarSer Empresas F6.2), móvil primero, en tres densidades:
@@ -36,8 +37,10 @@ function useIndexes(data: CompanySchedule | null) {
     const free = new Map<string, Set<number>>();
     (data?.free || []).forEach((f) => free.set(`${f.user_id}|${f.date}`, new Set(f.hours)));
     const busy = new Map<string, Map<number, ScheduleJob>>();
-    (data?.jobs || []).forEach((job) => job.hours.forEach(({ hour, worker_id }) => {
-      const key = `${worker_id}|${job.date}`;
+    // F7: cada hora trae su día (trabajos de varios días).
+    (data?.jobs || []).forEach((job) => job.hours.forEach((cell) => {
+      const { hour, worker_id } = cell;
+      const key = `${worker_id}|${cellDate(job, cell)}`;
       const map = busy.get(key) || new Map<number, ScheduleJob>();
       map.set(hour, job);
       busy.set(key, map);
@@ -77,7 +80,7 @@ const DayView: React.FC<{ date: string; data: CompanySchedule; members: Schedule
             {myJobs.length > 0 && (
               <ul className="mt-2 space-y-1">
                 {myJobs.map((job) => {
-                  const mine = job.hours.filter((x) => x.worker_id === m.user_id).map((x) => x.hour);
+                  const mine = job.hours.filter((x) => x.worker_id === m.user_id && cellDate(job, x) === date).map((x) => x.hour);
                   return (
                     <li key={job.booking_id}>
                       <button type="button" onClick={() => onOpen(job)} className="flex w-full items-center justify-between gap-2 rounded-lg bg-gray-50 px-2.5 py-2 text-left text-sm hover:bg-gray-100">
@@ -144,11 +147,18 @@ const ListView: React.FC<{ data: CompanySchedule; members: ScheduleMember[]; onO
             <li>
               <button type="button" onClick={() => onOpen(job)} className="w-full rounded-2xl border border-gray-200 bg-white p-3 text-left hover:bg-gray-50">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-gray-900">{hourLabel(job.start_hour)}–{hourLabel(job.start_hour + job.duration)} · {job.service}</span>
+                  <span className="font-semibold text-gray-900">
+                    {isTeamJob(job) && job.end_date
+                      ? describeJobShape({ date: job.date, startHour: job.start_hour, durationHours: job.duration, endDate: job.end_date }).when
+                      : `${hourLabel(job.start_hour)}–${hourLabel(job.start_hour + job.duration)}`} · {job.service}
+                  </span>
                   {(job.status === 'pending' || job.assignment_pending) && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">{job.status === 'pending' ? 'Por aceptar' : 'Propuesta'}</span>}
                 </div>
                 <p className="mt-0.5 text-sm text-gray-600">
-                  {workersOfJob(job).map((w) => `${nameOf(w.worker_id)}${job.duration > w.hours.length ? ` (${rangeLabel(w.hours)})` : ''}`).join(' · ')}
+                  {isTeamJob(job)
+                    // F7: en equipo o en varios días, quién va (el detalle, en la hoja del trabajo).
+                    ? `${workersOfJob(job).map((w) => nameOf(w.worker_id)).join(' y ')}${job.end_date ? '' : ' a la vez'}${job.labour_hours ? ` · ${job.labour_hours} h de trabajo` : ''}`
+                    : workersOfJob(job).map((w) => `${nameOf(w.worker_id)}${job.duration > w.hours.length ? ` (${rangeLabel(w.hours)})` : ''}`).join(' · ')}
                   {job.client_name ? ` — ${job.client_name}` : ''}
                 </p>
               </button>

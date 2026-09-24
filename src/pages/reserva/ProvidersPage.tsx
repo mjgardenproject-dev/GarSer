@@ -9,6 +9,7 @@ import {
 } from '../../shared/bookingAuthoritativeSnapshot';
 import type {
   BookingQuoteAvailability,
+  BookingQuoteSlotSelection,
   BookingQuoteMetadata,
   BookingQuotePalmCoverage,
   BookingQuotePalmGroupContext,
@@ -22,6 +23,7 @@ import {
   type ProviderMonthDay,
   type ProviderQuotePreview,
 } from '../../utils/bookingAuthorityService';
+import { describeJobShape } from '../../utils/jobShape';
 import toast from 'react-hot-toast';
 
 // provider_kind (GarSer Empresas F4): 'company' pinta el distintivo «Empresa».
@@ -70,6 +72,8 @@ const ProvidersPage: React.FC = () => {
   const [calendarMonthDate, setCalendarMonthDate] = useState<Date>(new Date(Number(selectedDate.split('-')[0]), Number(selectedDate.split('-')[1]) - 1, Number(selectedDate.split('-')[2])));
   const [monthDays, setMonthDays] = useState<ProviderMonthDay[]>([]);
   const [validHours, setValidHours] = useState<number[]>([]);
+  // GarSer Empresas (F7): por hora, la forma del trabajo que da el servidor (personas, días, fin).
+  const [slotPlans, setSlotPlans] = useState<Record<number, BookingQuoteSlotSelection>>({});
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const [monthLoading, setMonthLoading] = useState(false);
   const [hoursLoading, setHoursLoading] = useState(false);
@@ -191,6 +195,17 @@ const ProvidersPage: React.FC = () => {
   ): BookingQuoteAvailability => {
     const durationHours = Math.max(1, Math.ceil(Number(quote.estimatedHours || 1)));
     const earliestSlot = quote.availability?.earliestSlot || null;
+    // F7: con equipo o varios días, lo que dura cada día no es «las horas del trabajo».
+    const planned = startHour == null ? null : slotPlans[startHour];
+    if (planned && planned.date === date) {
+      return {
+        requestedDate: date,
+        validStartHours: quote.availability?.validStartHours || [],
+        calendarDays: quote.availability?.calendarDays,
+        earliestSlot,
+        selectedSlot: planned,
+      };
+    }
 
     return {
       requestedDate: date,
@@ -239,9 +254,9 @@ const ProvidersPage: React.FC = () => {
       return false;
     }
 
-    const durationHours = Math.max(1, Math.ceil(Number(quote.estimatedHours || 1)));
     const effectiveGroupsToKeep = groupsToKeep ?? (bookingData.palmGroups || []);
     const availability = buildSelectedQuoteAvailability(quote, date, startHour);
+    const durationHours = availability.selectedSlot?.durationHours ?? Math.max(1, Math.ceil(Number(quote.estimatedHours || 1)));
     const authoritativeQuoteSnapshot = buildAuthoritativeQuoteSnapshot({
       totalPrice: quote.totalPrice,
       estimatedHours: quote.estimatedHours,
@@ -323,7 +338,7 @@ const ProvidersPage: React.FC = () => {
     // un día anterior podía llegar la última y pisar las horas del día que se está mirando.
     const rid = ++hoursReqIdRef.current;
     try {
-      const { quote, validHours: nextHours } = await fetchProviderValidHours({
+      const { quote, validHours: nextHours, slotPlans: nextPlans } = await fetchProviderValidHours({
         bookingData,
         serviceId: bookingData.serviceIds[0],
         providerId,
@@ -332,11 +347,13 @@ const ProvidersPage: React.FC = () => {
       if (hoursReqIdRef.current !== rid) return;
       setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
       setValidHours(quote.availability?.validStartHours || nextHours);
+      setSlotPlans(nextPlans || {});
       setSelectedHour(null);
       setAvailabilityError('');
     } catch {
       if (hoursReqIdRef.current !== rid) return;
       setValidHours([]);
+      setSlotPlans({});
       setSelectedHour(null);
       setAvailabilityError('No se pudieron calcular las horas válidas. Reintenta.');
     } finally {
@@ -935,7 +952,7 @@ const ProvidersPage: React.FC = () => {
             <div className="text-sm font-semibold text-gray-900">
               Seleccionar fecha y hora 
               <span className="font-normal text-gray-500 ml-1">
-                (la duración del servicio es de {getEstimatedHours(selectedProvider)} h)
+                (son {getEstimatedHours(selectedProvider)} h de trabajo)
               </span>
             </div>
             <div className="flex items-center justify-between mt-2">
@@ -1045,11 +1062,32 @@ const ProvidersPage: React.FC = () => {
           </div>
 
           {/* Rango horario seleccionado */}
-          {selectedHour != null && (
-            <div className="mt-3 text-sm text-green-700 tabular-nums" aria-live="polite">
-              Horario del trabajo: {String(selectedHour).padStart(2,'0')}:00 – {addHoursToTime(selectedHour, getEstimatedHours(selectedProvider))}
-            </div>
-          )}
+          {selectedHour != null && (() => {
+            // F7: la forma del trabajo la da el servidor (equipo, varios días); sin ella, la de
+            // siempre: una persona, inicio + horas.
+            const planned = slotPlans[selectedHour];
+            if (!planned) {
+              return (
+                <div className="mt-3 text-sm text-green-700 tabular-nums" aria-live="polite">
+                  Horario del trabajo: {String(selectedHour).padStart(2,'0')}:00 – {addHoursToTime(selectedHour, getEstimatedHours(selectedProvider))}
+                </div>
+              );
+            }
+            const shape = describeJobShape(planned);
+            return (
+              <div className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 tabular-nums" aria-live="polite">
+                <p className="font-medium">{shape.multiDay ? shape.when : `Horario del trabajo: ${shape.when}`}</p>
+                {(shape.team || shape.labour) && (
+                  <p className="mt-0.5 text-green-700">{[shape.team, shape.labour].filter(Boolean).join(' · ')}</p>
+                )}
+                {shape.multiDay && (planned.planDays || []).length > 0 && (
+                  <p className="mt-0.5 text-green-700">
+                    {(planned.planDays || []).length} días de trabajo; cada día, en su horario.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
         )}
 

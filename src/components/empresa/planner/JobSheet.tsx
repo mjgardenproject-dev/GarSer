@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2, MapPin, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../../lib/supabase';
-import { hourLabel, type ScheduleJob, type ScheduleMember } from '../../../hooks/useCompanySchedule';
+import { hourLabel, isTeamJob, type ScheduleJob, type ScheduleMember } from '../../../hooks/useCompanySchedule';
+import { describeJobShape } from '../../../utils/jobShape';
 import RescheduleSection from './RescheduleSection';
+import TeamJobSection from './TeamJobSection';
 
 // Un trabajo en el planificador (GarSer Empresas F6.2): quién hace cada hora y cómo repartirlo
 // (D10). Para cada hora solo se ofrece a quien puede hacer el trabajo; quien está ocupado a esa
@@ -26,16 +28,19 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
   const [plan, setPlan] = useState<string[]>(initial);
   const [options, setOptions] = useState<HourOption[] | null>(null);
   const [saving, setSaving] = useState(false);
-  const editable = (job.status === 'pending' || job.status === 'confirmed') && job.date >= new Date().toISOString().slice(0, 10);
+  // F7: un trabajo de varios días se puede tocar mientras le quede algún día.
+  const editable = (job.status === 'pending' || job.status === 'confirmed') && (job.end_date || job.date) >= new Date().toISOString().slice(0, 10);
+  const team = isTeamJob(job);
+  const shape = describeJobShape({ date: job.date, startHour: job.start_hour, durationHours: job.duration, endDate: job.end_date, labourHours: job.labour_hours });
   const nameOf = (id: string) => members.find((m) => m.user_id === id)?.name || options?.find((o) => o.user_id === id)?.full_name || 'Sin asignar';
 
   useEffect(() => {
-    if (!editable) return;
+    if (!editable || team) return;
     void supabase.rpc('booking_hour_options', { p_booking_id: job.booking_id }).then(({ data, error }) => {
       if (error) toast.error(error.message || 'No hemos podido cargar quién puede ir.');
       setOptions((data || []) as HourOption[]);
     });
-  }, [job.booking_id, editable]);
+  }, [job.booking_id, editable, team]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose(); };
@@ -77,7 +82,8 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 id="job-sheet-title" className="text-lg font-bold text-gray-900">{job.service}</h2>
-            <p className="text-sm text-gray-600">{hourLabel(job.start_hour)}–{hourLabel(job.start_hour + job.duration)}{job.client_name ? ` · ${job.client_name}` : ''}</p>
+            <p className="text-sm text-gray-600">{shape.multiDay ? shape.when : `${hourLabel(job.start_hour)}–${hourLabel(job.start_hour + job.duration)}`}{job.client_name ? ` · ${job.client_name}` : ''}</p>
+            {shape.labour && <p className="text-sm text-gray-600">{shape.labour}</p>}
             {job.address && <p className="mt-1 flex items-start gap-1 text-xs text-gray-500"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{job.address}</p>}
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button>
@@ -85,6 +91,9 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
 
         {job.status === 'pending' && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">Aún tienes que aceptar este trabajo (en «Solicitudes»).</p>}
 
+        {team ? (
+          <TeamJobSection job={job} members={members} editable={editable} onChanged={onSaved} />
+        ) : (<>
         <h3 className="mt-4 text-sm font-bold text-gray-900">Quién hace cada hora</h3>
         {!editable ? (
           <ul className="mt-2 space-y-1.5">
@@ -148,6 +157,7 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
             </button>
           </>
         )}
+        </>)}
         {editable && <RescheduleSection job={job} onProposed={onSaved} />}
       </div>
     </div>,

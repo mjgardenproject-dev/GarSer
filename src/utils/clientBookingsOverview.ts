@@ -45,6 +45,9 @@ export interface OverviewBooking {
   proposed_date?: string | null;
   proposed_start_time?: string | null;
   reschedule_reason?: string | null;
+  /** GarSer Empresas (F7): último día (varios días) y horas de trabajo (equipo o varios días). */
+  end_date?: string | null;
+  labour_hours?: number | null;
 }
 
 export interface ClientBookingsOverview {
@@ -85,7 +88,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_duration_hours, confirmation_deadline_at, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, services(name, icon)')
+    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_duration_hours, confirmation_deadline_at, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, end_date, labour_hours, services(name, icon)')
     .eq('client_id', clientId)
     .order('date', { ascending: false });
 
@@ -144,6 +147,8 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
     proposed_date: (row.proposed_date as string) ?? null,
     proposed_start_time: (row.proposed_start_time as string) ?? null,
     reschedule_reason: (row.reschedule_reason as string) ?? null,
+    end_date: (row.end_date as string) ?? null,
+    labour_hours: (row.labour_hours as number) ?? null,
   }));
 
   return groupClientBookings(mapped, Date.now());

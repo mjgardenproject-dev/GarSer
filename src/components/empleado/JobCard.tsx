@@ -7,7 +7,8 @@ import ServiceDetailCard from '../gardener/ServiceDetailCard';
 import { useConfirmDialog } from '../common/ConfirmDialog';
 import { fetchBookingServiceDetails, type BookingServiceInput } from '../../utils/bookingServiceDetails';
 import { markGardenerFinished } from '../../utils/bookingIncidentService';
-import type { MyJob } from '../../hooks/useMyJobs';
+import type { MyJob, MyJobDay } from '../../hooks/useMyJobs';
+import { formatDateRange } from '../../utils/jobShape';
 
 // Un trabajo en el panel del empleado (GarSer Empresas F5.3): cuándo, dónde, qué hay que hacer y
 // a quién llamar; y «He terminado» cuando ya ha empezado.
@@ -19,14 +20,23 @@ const endTime = (t: string, hours: number) => {
   return `${String(h + hours).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
 };
 
-const JobCard: React.FC<{ job: MyJob; showDate?: boolean; onChanged: () => void }> = ({ job, showDate, onChanged }) => {
+const hourText = (h: number) => `${String(h).padStart(2, '0')}:00`;
+
+const JobCard: React.FC<{ job: MyJob; day?: MyJobDay; showDate?: boolean; onChanged: () => void }> = ({ job, day, showDate, onChanged }) => {
+  // F7: en un trabajo de varios días la tarjeta es de UN día: sus horas de ese día.
+  const date = day?.date || job.date;
+  const lastDay = (job.end_date || job.date).slice(0, 10);
+  const multiDay = lastDay > job.date.slice(0, 10);
+  const dayHours = day && day.hours.length > 0 ? day.hours : null;
+  const teamSize = Number(job.team_size || 1);
   const [open, setOpen] = useState(false);
   const [details, setDetails] = useState<BookingServiceInput | null | undefined>(undefined);
   const [finishing, setFinishing] = useState(false);
   const { openConfirm, confirmDialog } = useConfirmDialog();
 
   const started = job.service_start ? Date.now() >= new Date(job.service_start).getTime() : false;
-  const canFinish = job.status === 'confirmed' && !job.finished_at && started;
+  // En varios días, «He terminado» es el último día (es el trabajo entero lo que se termina).
+  const canFinish = job.status === 'confirmed' && !job.finished_at && started && (!multiDay || date === lastDay);
   const mapsUrl = job.client_address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(job.client_address)}` : null;
 
   const toggle = async () => {
@@ -66,14 +76,23 @@ const JobCard: React.FC<{ job: MyJob; showDate?: boolean; onChanged: () => void 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {showDate && (
-            <p className="text-sm font-semibold text-emerald-800">{capitalize(format(parseISO(job.date), "EEEE d 'de' MMMM", { locale: es }))}</p>
+            <p className="text-sm font-semibold text-emerald-800">{capitalize(format(parseISO(date), "EEEE d 'de' MMMM", { locale: es }))}</p>
           )}
           <p className="flex items-center gap-1.5 text-lg font-bold text-gray-900">
             <Clock className="h-5 w-5 shrink-0 text-emerald-700" />
-            {hhmm(job.start_time)} – {endTime(job.start_time, job.duration_hours)}
+            {multiDay && dayHours
+              ? `${hourText(dayHours[0])} – ${hourText(dayHours[dayHours.length - 1] + 1)}`
+              : `${hhmm(job.start_time)} – ${endTime(job.start_time, job.duration_hours)}`}
           </p>
           <p className="mt-0.5 font-medium text-gray-800">{job.service_name}</p>
-          {job.my_hours && job.my_hours.length > 0 && job.my_hours.length < job.duration_hours && (
+          {(multiDay || teamSize > 1) && (
+            <p className="mt-1 text-xs text-gray-600">
+              {multiDay ? `Trabajo ${formatDateRange(job.date, lastDay)}` : ''}
+              {multiDay && teamSize > 1 ? ' · ' : ''}
+              {teamSize > 1 ? `Vais ${teamSize} personas` : ''}
+            </p>
+          )}
+          {!multiDay && job.my_hours && job.my_hours.length > 0 && job.my_hours.length < job.duration_hours && (
             <p className="mt-1 inline-block rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
               Tu parte: {String(Math.min(...job.my_hours)).padStart(2, '0')}:00 – {String(Math.max(...job.my_hours) + 1).padStart(2, '0')}:00
             </p>

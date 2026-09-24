@@ -383,7 +383,7 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F7-03 | Se descuentan 4 h a cada empleado, no 8 | Correcto | ✅ F7.1 |
 | F7-04 | Trabajo de 40 h en 5 días con 2 personas distintas | Se crea | ✅ F7.1 (del día 5 al 10, saltando el 7 sin nadie) |
 | F7-05 | Ninguna jornada supera las 12 h | Los 7 guardas siguen válidos | ✅ F7.1 |
-| F7-06 | El cliente ve «del 5 al 9 de mayo» | Correcto | ⬜ |
+| F7-06 | El cliente ve «del 5 al 9 de mayo» | Correcto | ✅ F7.3 (tarjeta: «Del 29 de septiembre al 3 de octubre»; reserva y resumen de pago: «…, desde las 08:00») |
 | F7-07 | Trabajo de 2 personas con solo 1 libre | No reservable | ✅ F7.1 (el pago lo rechaza) |
 | F7-08 | La web y el pago dicen lo mismo | Con horarios al azar, las horas que ofrece la web = las que el pago puede apartar | ✅ F7.2 (72 combinaciones) |
 | F7-21 | La web ofrece un trabajo de 8 h con dos personas a la vez | Con límite 1, ninguna hora; con 2, sí | ✅ F7.2 |
@@ -392,11 +392,16 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F7-24 | Pagar ese trabajo | Reserva de varios días | ✅ F7.2 |
 | F7-25 | Sin días suficientes en 3 semanas | No se ofrece | ✅ F7.2 |
 | F7-26 | Autónomo, trabajo de 18 h (antes imposible, T7) | Se ofrece y se reserva en 2 días | ✅ F7.2 |
+| F7-27 | Aceptar un trabajo de varios días | Aviso a cada persona que va, con «Tu parte» por días; y al cliente | ✅ F7.3 |
+| F7-28 | Navegador (móvil): la dueña ve el trabajo de varios días en Lista y Semana; en su hoja, quién va cada día; «Cambiar» a Luis → todos «ocupado»; «Cambiar» a Ana → Eva | Cambio hecho; la semana cuadra | ✅ F7.3 |
+| F7-29 | Navegador: el empleado ve cada día del trabajo con sus horas (el miércoles, 15–19) | Correcto | ✅ F7.3 |
+| F7-30 | Navegador: la clienta pide 3000 m² de césped; la web lo ofrece en varios días a un autónomo y en equipo a la empresa, y el resumen de pago lo repite | Correcto (sin pagar) | ✅ F7.3 |
+| F7-31 | Navegador: ajuste «Personas a la vez» en «Tu empresa» | Se ve y se explica | ✅ F7.3 |
 | F7-10 | Límite de personas a la vez | Solo lo cambia el dueño (1–10); lo ve en su panel | ✅ F7.1 |
 | F7-11 | Límite 1 frente a límite 2 | Con 1, un trabajo de 8 h sin nadie con 8 h libres no cabe; con 2, van dos a la vez | ✅ F7.1 |
 | F7-12 | Trabajo de equipo: repartir por horas, «todo a una persona», alargar | Rechazados | ✅ F7.1 |
 | F7-13 | Cambiar a una persona por otra en todo el trabajo | Solo el dueño y solo si la nueva está libre en todas sus horas; la vieja queda libre | ✅ F7.1 |
-| F7-14 | El cliente ve a las dos personas (el día antes) | Correcto | ⬜ F7.3 |
+| F7-14 | El cliente ve a las dos personas (el día antes) | Correcto | ✅ F7.3 |
 | F7-15 | Mover de fecha un trabajo de equipo | Se vuelve a planificar; horas viejas libres | ✅ F7.1 |
 | F7-16 | Trabajo de 12 h o menos | Nunca en varios días | ✅ F7.1 |
 | F7-17 | Agendas de empleado y empresa con un trabajo que empezó antes | Se ve, con fin y horas por día | ✅ F7.1 |

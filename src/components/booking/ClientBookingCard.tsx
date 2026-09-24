@@ -6,6 +6,7 @@ import { es } from 'date-fns/locale';
 import { ClientBookingAmounts } from './BookingAmounts';
 import { formatEuro } from '../../shared/bookingAmounts';
 import WhoIsComing from './WhoIsComing';
+import { formatDateRange, isMultiDay } from '../../utils/jobShape';
 import {
   canReportIncident,
   getBookingStatusLabel,
@@ -64,6 +65,9 @@ export interface ClientBookingCardBooking {
   proposed_date?: string | null;
   proposed_start_time?: string | null;
   reschedule_reason?: string | null;
+  /** GarSer Empresas (F7): último día si dura varios, y horas de trabajo si es de equipo o de varios días. */
+  end_date?: string | null;
+  labour_hours?: number | null;
 }
 
 interface Props {
@@ -161,6 +165,7 @@ const ClientBookingCard = ({
   const [showDetails, setShowDetails] = useState(!compact);
 
   const serviceName = booking.services?.name || booking.service_name || 'Servicio';
+  const multiDay = isMultiDay({ date: booking.date, endDate: booking.end_date });
   const gardenerName = booking.gardener_profile?.full_name || booking.gardener_name || 'Tu profesional';
   const isCompany = Boolean(booking.gardener_profile?.is_company || booking.gardener_is_company);
   const gardenerFirstName = isCompany ? gardenerName : gardenerName.split(' ')[0];
@@ -199,14 +204,20 @@ const ClientBookingCard = ({
       <dl className="mt-3 space-y-1.5 text-sm text-gray-600">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
-          <dd className="first-letter:uppercase">{format(parseISO(booking.date), "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}</dd>
+          <dd className="first-letter:uppercase">
+            {multiDay
+              ? formatDateRange(booking.date, String(booking.end_date))
+              : format(parseISO(booking.date), "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
+          </dd>
         </div>
         {formatTime(booking.start_time) && (
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
             <dd>
-              {formatTime(booking.start_time)}
-              {booking.duration_hours ? ` · ${booking.duration_hours} h` : ''}
+              {multiDay ? `Empieza a las ${formatTime(booking.start_time)}` : formatTime(booking.start_time)}
+              {!multiDay && booking.duration_hours ? ` · ${booking.duration_hours} h` : ''}
+              {/* F7: en equipo o en varios días, el reloj no dice cuánto trabajo es. */}
+              {booking.labour_hours ? ` · ${booking.labour_hours} h de trabajo${multiDay ? '' : ' en equipo'}` : ''}
             </dd>
           </div>
         )}

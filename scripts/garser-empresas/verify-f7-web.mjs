@@ -7,9 +7,10 @@
 // Uso: node scripts/garser-empresas/verify-f7-web.mjs
 // Requisito: el contenedor de funciones sirve el código actual.
 
+import { randomUUID } from 'node:crypto';
 import {
-  accounts, createCompany, joinTeam, makeRecorder, sql, why, authority, pay,
-  setAvailability, runVerification, LAWN, LAWN_INPUT, PROVIDER_ID,
+  accounts, createCompany, joinTeam, makeRecorder, sql, why, authority, pay, rpc,
+  setAvailability, runVerification, LAWN, LAWN_INPUT, PROVIDER_ID, apiUrl, anonKey,
 } from './_company-harness.mjs';
 
 const acc = accounts('f7-web.local');
@@ -26,6 +27,14 @@ const quoteAt = (provider, client, date, hour, m2) => authority(
 );
 const sqlValidHours = (provider, date, labour) => sql(`select coalesce(string_agg(h::text, ',' order by h), '') from generate_series(0, 19) h
   where exists (select 1 from public.plan_booking_cells('${provider}', '${LAWN}', '${date}', h, ${labour}, false, null))`);
+
+const mail = async (token, body) => {
+  const res = await fetch(`${apiUrl}/functions/v1/send-email-notification`, {
+    method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  let data; try { data = await res.json(); } catch { data = null; }
+  return { status: res.status, ok: res.ok, body: data };
+};
 
 // Generador pseudoaleatorio con semilla (la prueba se puede repetir igual).
 function rng(seed) {
@@ -84,6 +93,24 @@ async function main() {
     const sale = await pay(owner.id, client, M[0], 8, { input: lawn(6000) });
     const row = sale.bookingId ? sql(`select coalesce(end_date::text, '-') || '|' || labour_hours from public.bookings where id='${sale.bookingId}'`) : '';
     record('F7-24', 'Se paga y la reserva queda del día 30 al 35 con 36 h de trabajo', row === `${M[4]}|36`, row || sale.error || why(sale.confirm));
+    if (sale.bookingId) {
+      await rpc('respond_booking_request', { p_booking_id: sale.bookingId, p_response: 'accept', p_operation_id: randomUUID() }, owner.token);
+      const sent = await mail(owner.token, { type: 'job_assigned', bookingId: sale.bookingId });
+      const accepted = await mail(owner.token, { type: 'booking_accepted', bookingId: sale.bookingId });
+      record('F7-27', 'Al aceptar un trabajo de varios días se avisa a cada persona que va (2) y al cliente', sent.ok && sent.body?.sent === 2 && accepted.ok,
+        `empleados ${JSON.stringify(sent.body)}, cliente ${accepted.status}`);
+    }
+  }
+  {
+    // F7-14: el cliente ve quién va el día antes, también cuando van dos.
+    const T = day(1);
+    setAvailability(ana.id, T, [15, 16, 17, 18]);
+    setAvailability(luis.id, T, [15, 16, 17, 18]);
+    const sale = await pay(owner.id, client, T, 15, { input: lawn(1200) });
+    if (sale.bookingId) await rpc('respond_booking_request', { p_booking_id: sale.bookingId, p_response: 'accept', p_operation_id: randomUUID() }, owner.token);
+    const people = sale.bookingId ? await rpc('booking_worker_for_client', { p_booking_id: sale.bookingId }, client.token) : null;
+    record('F7-14', 'El día antes, el cliente ve a las dos personas que van', (people?.body?.workers || []).length === 2,
+      people ? JSON.stringify(people.body?.workers?.map((w) => w.name)) : (sale.error || why(sale.confirm)));
   }
   {
     const mailDay = day(40);

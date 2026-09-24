@@ -17,14 +17,27 @@ interface Props {
   onChanged: () => void;
   /** Trabajo ya confirmado: avisar por correo a quien pasa a ir y a quien deja de ir. */
   notify?: boolean;
+  /**
+   * F7 (A-41): trabajo de equipo o de varios días. No se da «todo a una persona»: se cambia a una
+   * persona por otra desde la agenda, donde se ve quién va cada día.
+   */
+  team?: boolean;
 }
 
-const AssignWorkerControl: React.FC<Props> = ({ bookingId, worker, onChanged, notify = false }) => {
+const AssignWorkerControl: React.FC<Props> = ({ bookingId, worker, onChanged, notify = false, team = false }) => {
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
 
   if (!worker) return null;
+  if (team) {
+    return (
+      <div className="mb-3">
+        <BookingWorkerLine worker={worker} />
+        <p className="mt-1 text-xs text-gray-500">Trabajo en equipo o de varios días: para cambiar a alguien, ábrelo en tu agenda.</p>
+      </div>
+    );
+  }
 
   const load = async () => {
     setOpen(true);

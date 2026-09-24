@@ -21,6 +21,34 @@ export interface MyJob {
   service_start: string | null;
   /** F6 (D10): las horas del trabajo que son de esta persona (si está repartido, no todas). */
   my_hours: number[] | null;
+  /** F7: último día (varios días), horas de trabajo (equipo o varios días) y cuántos van. */
+  end_date?: string | null;
+  labour_hours?: number | null;
+  team_size?: number | null;
+  /** F7: las horas de esta persona en cada día del trabajo. */
+  my_days?: Array<{ date: string; hours: number[] }> | null;
+}
+
+/** Un día de trabajo de esta persona: un trabajo de varios días sale una vez por día. */
+export interface MyJobDay { job: MyJob; date: string; hours: number[] }
+
+/**
+ * F7: los trabajos de la persona, día a día (solo los días en que va), entre dos fechas. Sin el
+ * detalle por días (versión anterior), el trabajo sale en su fecha con sus horas.
+ */
+export function expandMyJobDays(jobs: MyJob[], from?: string, to?: string): MyJobDay[] {
+  const out: MyJobDay[] = [];
+  jobs.forEach((job) => {
+    const days = job.my_days && job.my_days.length > 0
+      ? job.my_days
+      : [{ date: job.date, hours: job.my_hours || [] }];
+    days.forEach((d) => {
+      const date = String(d.date).slice(0, 10);
+      if ((from && date < from) || (to && date > to)) return;
+      out.push({ job, date, hours: [...(d.hours || [])].sort((a, b) => a - b) });
+    });
+  });
+  return out.sort((a, b) => a.date.localeCompare(b.date) || (a.hours[0] ?? 0) - (b.hours[0] ?? 0));
 }
 
 export function useMyJobs(from: string, to: string) {

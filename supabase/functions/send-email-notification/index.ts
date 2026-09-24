@@ -18,7 +18,7 @@
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml, formatBookingDate } from '../_shared/emailBrand.ts';
+import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml, formatBookingDate, formatBookingWhen } from '../_shared/emailBrand.ts';
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
@@ -348,7 +348,7 @@ Deno.serve(async (req) => {
       }
       const { data: b } = await admin
         .from('bookings')
-        .select('id, gardener_id, status, date, start_time, client_address, services(name)')
+        .select('id, gardener_id, status, date, start_time, end_date, client_address, services(name)')
         .eq('id', bookingId)
         .maybeSingle();
       if (!b) {
@@ -371,14 +371,19 @@ Deno.serve(async (req) => {
         });
       }
       // F6 (D10): un trabajo puede estar repartido por horas entre varias personas.
-      const { data: blockRows } = await admin.from('booking_blocks').select('assignee_id, hour_block').eq('booking_id', bookingId);
-      const hoursByWorker = new Map<string, number[]>();
-      ((blockRows || []) as { assignee_id: string; hour_block: number }[]).forEach((row) => {
-        const list = hoursByWorker.get(row.assignee_id) || [];
-        list.push(Number(row.hour_block));
-        hoursByWorker.set(row.assignee_id, list);
+      // F7: y durar varios días, con varias personas a la vez: las horas van por día.
+      const { data: blockRows } = await admin.from('booking_blocks').select('assignee_id, date, hour_block').eq('booking_id', bookingId);
+      const hoursByWorker = new Map<string, Map<string, number[]>>();
+      ((blockRows || []) as { assignee_id: string; date: string; hour_block: number }[]).forEach((row) => {
+        const days = hoursByWorker.get(row.assignee_id) || new Map<string, number[]>();
+        const day = String(row.date).slice(0, 10);
+        days.set(day, [...(days.get(day) || []), Number(row.hour_block)]);
+        hoursByWorker.set(row.assignee_id, days);
       });
-      const totalHours = (blockRows || []).length;
+      const hoursOn = (workerId: string) => [...(hoursByWorker.get(workerId)?.values() || [])].flat();
+      const firstDayHours = new Set(((blockRows || []) as { date: string; hour_block: number }[])
+        .filter((row) => String(row.date).slice(0, 10) === String(b.date).slice(0, 10)).map((row) => Number(row.hour_block))).size;
+      const multiDay = Boolean(b.end_date && String(b.end_date).slice(0, 10) > String(b.date).slice(0, 10));
       let recipients: string[] = [];
       if (type === 'job_assigned') {
         const only = String(payload.workerId || '');
@@ -405,7 +410,7 @@ Deno.serve(async (req) => {
       const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
       // deno-lint-ignore no-explicit-any
       const serviceName = String((b as any).services?.name || 'Trabajo');
-      const when = formatBookingDate(b.date, b.start_time);
+      const when = formatBookingWhen(b.date, b.start_time, b.end_date);
       const companyName = String(company?.full_name || 'Tu empresa');
       const range = (hours: number[]) => {
         const sorted = [...hours].sort((x, y) => x - y);
@@ -418,9 +423,14 @@ Deno.serve(async (req) => {
         if (!workerEmail) continue;
         const { data: person } = await admin.from('profiles').select('full_name').eq('user_id', workerId).maybeSingle();
         const first = String(person?.full_name || '').split(' ')[0] || 'hola';
-        const mine = hoursByWorker.get(workerId) || [];
+        const mine = hoursOn(workerId);
+        // «Tu parte»: en varios días, sus días y horas; en un día, si no hace todas las horas.
+        const myDays = [...(hoursByWorker.get(workerId)?.entries() || [])].sort(([x], [y]) => x.localeCompare(y));
+        const part = multiDay
+          ? myDays.map(([day, hours]) => `${new Date(`${day}T12:00:00Z`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', timeZone: 'UTC' })} de ${range(hours)}`).join('; ')
+          : mine.length && mine.length < firstDayHours ? `de ${range(mine)}` : '';
         const pairs: Array<[string, string]> = type === 'job_assigned'
-          ? [['Servicio', serviceName], ['Cuándo', when], ...(mine.length && mine.length < totalHours ? [['Tu parte', `de ${range(mine)}`] as [string, string]] : []), ['Dónde', String(b.client_address || '')]]
+          ? [['Servicio', serviceName], ['Cuándo', when], ...(part ? [['Tu parte', part] as [string, string]] : []), ['Dónde', String(b.client_address || '')]]
           : [['Servicio', serviceName], ['Cuándo', when]];
         const jobSubject = type === 'job_assigned'
           ? `Nuevo trabajo: ${serviceName}, ${when}`

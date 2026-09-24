@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import JobCard from '../../components/empleado/JobCard';
-import { useMyJobs } from '../../hooks/useMyJobs';
+import { expandMyJobDays, useMyJobs } from '../../hooks/useMyJobs';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
@@ -45,7 +45,9 @@ const EmployeeHomePage: React.FC = () => {
   const today = format(new Date(), 'yyyy-MM-dd');
   const weekEnd = format(addDays(new Date(), 6), 'yyyy-MM-dd');
   const { jobs, loading: jobsLoading, refresh: refreshJobs } = useMyJobs(today, weekEnd);
-  const todayJobs = jobs.filter((j) => j.date === today);
+  // F7: un trabajo de varios días sale en cada día en que la persona va.
+  const jobDays = expandMyJobDays(jobs, today, weekEnd);
+  const todayJobs = jobDays.filter((d) => d.date === today);
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -117,12 +119,12 @@ const EmployeeHomePage: React.FC = () => {
               <CalendarDays className="mx-auto h-8 w-8 text-gray-400" />
               <p className="mt-2 font-semibold text-gray-900">Hoy no tienes trabajos</p>
               <p className="mt-1 text-sm text-gray-600">
-                {jobs.length > 0 ? `Tienes ${jobs.length} esta semana: míralos en «Semana».` : 'Cuando tu empresa te asigne trabajos, aparecerán aquí con la dirección y la hora.'}
+                {jobDays.length > 0 ? `Tienes ${jobDays.length} esta semana: míralos en «Semana».` : 'Cuando tu empresa te asigne trabajos, aparecerán aquí con la dirección y la hora.'}
               </p>
             </section>
           ) : (
             <ul className="space-y-3">
-              {todayJobs.map((j) => <JobCard key={j.booking_id} job={j} onChanged={() => void refreshJobs()} />)}
+              {todayJobs.map((d) => <JobCard key={`${d.job.booking_id}|${d.date}`} job={d.job} day={d} onChanged={() => void refreshJobs()} />)}
             </ul>
           )}
         </main>
@@ -138,11 +140,11 @@ const EmployeeHomePage: React.FC = () => {
           </Link>
           {jobsLoading && jobs.length === 0 ? (
             <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-700" />
-          ) : jobs.length === 0 ? (
+          ) : jobDays.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-600">No tienes trabajos en los próximos 7 días.</p>
           ) : (
             <ul className="space-y-3">
-              {jobs.map((j) => <JobCard key={j.booking_id} job={j} showDate onChanged={() => void refreshJobs()} />)}
+              {jobDays.map((d) => <JobCard key={`${d.job.booking_id}|${d.date}`} job={d.job} day={d} showDate onChanged={() => void refreshJobs()} />)}
             </ul>
           )}
         </main>

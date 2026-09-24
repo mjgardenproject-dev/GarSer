@@ -706,9 +706,19 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      // F7: para cada hora, la forma del trabajo (cuántas personas, cuántos días, hasta cuándo),
+      // para que la pantalla no la tenga que adivinar con «inicio + horas».
+      const labourHours = Math.max(1, Math.ceil(evaluation.quote.estimatedHours));
+      const slotPlans: Record<number, ReturnType<typeof buildPlannedSlot>> = {};
+      evaluation.validHoursForRequestedDate.forEach((hour) => {
+        const plan = planBookingShape({ workerDates, date, startHour: hour, labourHours, maxCrew, allowSplit });
+        if (plan) slotPlans[hour] = buildPlannedSlot(date, hour, plan);
+      });
+
       return new Response(JSON.stringify({
         quote: evaluation.quote,
         validHours: evaluation.validHoursForRequestedDate,
+        slotPlans,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

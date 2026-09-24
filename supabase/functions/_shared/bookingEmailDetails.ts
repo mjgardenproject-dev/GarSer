@@ -15,7 +15,7 @@ import {
   formatEuro,
   getBookingAmounts,
 } from '../../../src/shared/bookingAmounts.ts';
-import { formatBookingDate } from './emailBrand.ts';
+import { formatBookingWhen } from './emailBrand.ts';
 
 export type DetailPair = [string, string];
 
@@ -32,6 +32,8 @@ export interface BookingEmailDetails {
     status: string;
     date: string | null;
     start_time: string | null;
+    /** F7: último día de un trabajo de varios días. */
+    end_date?: string | null;
     total_price: number | null;
     management_fee: number | null;
     management_fee_source: string | null;
@@ -58,7 +60,7 @@ export interface BookingEmailDetails {
 }
 
 const BOOKING_COLUMNS =
-  'id, client_id, gardener_id, service_id, status, date, start_time, total_price, management_fee, management_fee_source, client_address, proposed_total_price, proposed_price_reason, cancellation_actor';
+  'id, client_id, gardener_id, service_id, status, date, start_time, end_date, total_price, management_fee, management_fee_source, client_address, proposed_total_price, proposed_price_reason, cancellation_actor';
 
 // deno-lint-ignore no-explicit-any
 type AdminClient = any;
@@ -96,7 +98,7 @@ export async function buildBookingEmailDetails(
     if (service?.name) serviceName = service.name;
   }
 
-  const whenText = formatBookingDate(booking.date, booking.start_time);
+  const whenText = formatBookingWhen(booking.date, booking.start_time, booking.end_date);
   const address = booking.client_address || 'Dirección indicada en la reserva';
   const amounts = getBookingAmounts(booking);
   const [client, gardener] = await Promise.all([

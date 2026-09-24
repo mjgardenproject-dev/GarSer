@@ -3,6 +3,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
 import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
+import { formatDateRange } from '../../utils/jobShape';
+
+// GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
+const teamShape = (row: object) => {
+  const r = row as { end_date?: string | null; labour_hours?: number | null };
+  return { endDate: r.end_date || null, labour: r.labour_hours ?? null };
+};
 import { Calendar, Clock, MapPin, User, Check, X, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { BookingResponse } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -526,7 +533,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
-                    {format(parseISO(request.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                    {teamShape(request).endDate
+                      ? formatDateRange(request.date, String(teamShape(request).endDate))
+                      : format(parseISO(request.date), 'EEEE, d MMMM yyyy', { locale: es })}
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2" />
@@ -534,14 +543,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         elemento creado solo para formatear el rango de texto — no son filas reales de
                         `booking_blocks`, así que su `.length` siempre daba "(1h)" aunque el servicio
                         durase más. La duración real ya vive en `request.duration_hours`. */}
-                    {formatTimeBlocks(request.booking_blocks || [])} ({request.duration_hours}h)
+                    {formatTimeBlocks(request.booking_blocks || [])} ({request.duration_hours}h{teamShape(request).labour ? ` · ${teamShape(request).labour} h de trabajo` : ''})
                   </div>
                   <div className="flex items-center text-gray-600">
                     <MapPin className="w-4 h-4 mr-2" />
                     {request.client_address}
                   </div>
                 </div>
-                <AssignWorkerControl bookingId={request.id} worker={workers[request.id]} onChanged={() => setWorkersVersion((v) => v + 1)} />
+                <AssignWorkerControl bookingId={request.id} worker={workers[request.id]} team={teamShape(request).labour != null} onChanged={() => setWorkersVersion((v) => v + 1)} />
 
                 {/* Detalle del servicio: qué trabajo es exactamente (para decidir si aceptar) */}
                 <ServiceDetailCard
@@ -619,7 +628,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         Proponer
                       </button>
                     </div>
-                    {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia. */}
+                    {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia.
+                        F7: no en trabajos de equipo o de varios días (el servidor no lo acepta). */}
+                    {teamShape(request).labour == null && (
                     <div className="flex items-center gap-2 mt-2">
                       <input
                         type="number"
@@ -640,6 +651,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         horas totales (opcional — solo cambia la hora de fin)
                       </span>
                     </div>
+                    )}
                   </div>
                 )}
 

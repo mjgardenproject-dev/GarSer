@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import { useConfirmDialog } from '../../components/common/ConfirmDialog';
 import AllowSplitJobsCard from '../../components/empresa/AllowSplitJobsCard';
+import MaxCrewCard from '../../components/empresa/MaxCrewCard';
 import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
@@ -214,6 +215,8 @@ const CompanyPanel: React.FC = () => {
             </Link>
 
             <AssignmentModeCard mode={c.assignment_mode} onChanged={() => void refresh()} />
+
+            <MaxCrewCard value={c.max_crew ?? 1} onChanged={() => void refresh()} />
 
             <AllowSplitJobsCard value={c.allow_split_jobs} onChanged={() => void refresh()} />
 

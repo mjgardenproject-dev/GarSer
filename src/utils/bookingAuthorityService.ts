@@ -2,6 +2,7 @@ import type { BookingData } from '../contexts/BookingContext';
 import type {
   BookingAuthoritativeQuoteSnapshot,
 } from '../shared/bookingAuthoritativeSnapshot';
+import type { BookingQuoteSlotSelection } from '../shared/bookingQuoteCore';
 import { sanitizeBookingPayload } from './bookingResumeStorage';
 import { supabase } from '../lib/supabase';
 import { reportBookingEvent } from './bookingTelemetry';
@@ -238,9 +239,11 @@ export async function fetchProviderValidHours(params: {
   serviceId: string;
   providerId: string;
   date: string;
-}): Promise<{ quote: ProviderQuotePreview; validHours: number[] }> {
+}): Promise<{ quote: ProviderQuotePreview; validHours: number[]; slotPlans: Record<number, BookingQuoteSlotSelection> }> {
   try {
-    const response = await invokeAuthority<{ quote: ProviderQuotePreview; validHours: number[] }>({
+    // GarSer Empresas (F7): `slotPlans` trae, por hora, la forma del trabajo (personas, días,
+    // fin). Una versión antigua del servidor no lo manda: se trata como vacío.
+    const response = await invokeAuthority<{ quote: ProviderQuotePreview; validHours: number[]; slotPlans?: Record<number, BookingQuoteSlotSelection> }>({
       action: 'valid_hours',
       serviceId: params.serviceId,
       providerId: params.providerId,
@@ -256,7 +259,7 @@ export async function fetchProviderValidHours(params: {
         validHourCount: response.validHours.length,
       },
     });
-    return response;
+    return { ...response, slotPlans: response.slotPlans || {} };
   } catch (error) {
     reportBookingEvent('error', {
       event: 'booking.availability_hours_failed',

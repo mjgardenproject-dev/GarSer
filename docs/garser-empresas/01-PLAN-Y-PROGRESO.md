@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · siguiente F7 (varios trabajadores y varios días) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · siguiente F8 (multi-servicio) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -551,7 +551,7 @@ prueba manual en un teléfono: queda para P- el día de la fusión). Batería: 4
 ### BLOQUE 3 — Tickets más grandes
 *La palanca de ingresos. Requiere los tres bloques anteriores.*
 
-#### 🟨 F7 — Varios trabajadores y varios días
+#### ✅ F7 — Varios trabajadores y varios días
 
 **Diseño (2026-09-24), tras D11–D13.** Horas de trabajo del presupuesto = L (entero).
 - **Si cabe en un día (L ≤ 12, o con varias personas):** se busca el equipo más pequeño (1 … el
@@ -596,12 +596,27 @@ combinaciones (límite 1–3, con y sin partidos, 2/8/18/36 h) la web ofrece exa
 en las que el pago encuentra plan. **H-32** encontrado y cerrado (la web perdía horas pasadas las
 1000 filas). Baterías de servicios, iguales (H-27).
 
+**✅ F7.3 Pantallas — hecho. F7 cerrada.** Reserva: al elegir hora, la web enseña la forma del
+trabajo que manda el servidor por hora (`slotPlans`): «Del 29 de septiembre al 2 de octubre, desde
+las 08:00 · Hasta 2 personas a la vez · 21 h de trabajo»; lo mismo en el resumen de pago. Cliente:
+su tarjeta dice «del 29 de septiembre al 3 de octubre» o «8 h de trabajo en equipo», y el día antes
+ve a todos los que van (F7-14). Empresa: ajuste «Personas a la vez» (1–10); la agenda pone cada
+hora en su día, la lista dice «Luis y Ana a la vez» o las fechas, y la hoja de un trabajo de equipo
+o de varios días enseña quién va cada día y «Cambiar» por persona (con «ocupado» antes de elegir).
+Las listas de reservas y solicitudes no ofrecen «todo a una persona» ni cambiar la duración en
+estos trabajos. Empleado: un trabajo de varios días sale en cada día que va, con sus horas de ese
+día («Trabajo del 29 de septiembre al 3 de octubre · Vais 2 personas»); «He terminado», el último
+día. Correos: «del … al …, desde las 08:00» y «Tu parte» por días. Recorrido completo en el
+navegador (móvil, 375 px) con `seed-f7-demo.mjs`: dueña, empleado y clienta hasta el resumen de
+pago (sin pagar: crearía un cobro en Stripe; el pago se prueba por el camino real en
+`verify-f7-web`).
 
-- [ ] `bookings.required_workers` (`DEFAULT 1`) y `bookings.end_date` (`DEFAULT NULL`).
-- [ ] Separar **duración** (span de la jornada, sigue con tope 12 h) de **mano de obra**
-      (total, sin tope). Ver hallazgo **H-02**: así los 7 guardas de 12 h siguen siendo
-      válidos y no hay que levantarlos.
-- [ ] Exponerlo en el funnel y en el presupuesto.
+- [x] Personas a la vez (`companies.max_crew`, D11) y `bookings.end_date` (en lugar del
+      `required_workers` del plan original: el número de personas lo decide el planificador,
+      no se fija al vender).
+- [x] **Duración** (lo que dura el primer día, sigue con tope 12 h: H-02 intacto) separada de
+      **mano de obra** (`bookings.labour_hours`).
+- [x] En la reserva y en el presupuesto.
 
 #### ⬜ F8 — Multi-servicio
 
@@ -626,6 +641,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
+| 2026-09-24 | F7 | **Equipos y varios días. F7 cerrada.** D11–D13 del usuario. Un solo planificador en SQL (pago) y en TypeScript (web) con prueba de coherencia (A-40); equipos a la vez con límite de la empresa; trabajos de varios días también para autónomos (T7 deja de rechazarlos); cambiar una persona por otra (A-41); pantallas de reserva, cliente, empresa y empleado, y correos. **H-32** (la web perdía horas pasadas 1000 filas) cerrado. Recorrido en el navegador. | 513 ✅ · build ✅ · tsc 128 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 · servicios = H-27 | `d1b8a52` `78f1c01` + (este) |
 | 2026-09-24 | F6 | **Planificación. F6 cerrada.** Hito hecho por el chat en el navegador; D9 y D10 del usuario. Una persona por hora en todo el camino del dinero (A-37), trabajos partidos opcionales (A-38), planificador móvil Día/Semana/Lista con conflictos antes de guardar, mover de fecha con propuesta al cliente (A-39). F6-06 con 20 personas a 375 px. | 496 ✅ · build ✅ · tsc 128 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 | `4267220` `ecb0436` + (este) |
 | 2026-09-24 | F5 | **Asignar y ejecutar. F5 cerrada.** Horarios del equipo (H-29: una hora vendida ya no se puede reabrir; el dueño que trabaja no pierde sus horas), asignación en el servidor con mínimo privilegio (A-33, A-34), panel del empleado Hoy/Semana/Perfil, «cambiar quién va», avisos por correo, D6 (A-35). Imprevistos H-30 (bucle de pintado, afecta a autónomos) y H-31 (nombre del dueño en lugar del de la empresa) cerrados. | 493 ✅ · build ✅ · tsc 129 · F5 9+13+7 · F4 21/21 · F3 35/35 · correos 10/10 · F2 18/18 · F1 13/13 · F0 7/7 | `fd4f9c7` `6fc3d62` `55db2fa` `b502fb4` |
 | 2026-09-24 | F4 | **La empresa vende. F4 cerrada.** H-26 → decisión del usuario: se aparta a una persona al vender; el dueño elige si es definitiva o propuesta. Fuente única de horas libres para web y pago. Web: distintivo, solicitudes y reservas de la empresa con «quién va», opción de asignación. Recorrido de punta a punta en el navegador (móvil). H-27 (fallos antiguos de las baterías, tarea aparte) y H-28 anotados. | 491 ✅ · build ✅ · tsc 129 · F4 21/21 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `9e42bc0` `74893e3` |
@@ -670,7 +686,9 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `supabase functions deploy booking-authority --use-api` y
    `supabase functions deploy booking-payment --use-api` *(F4: las dos, a la vez que la
    migración de F4; con una sin la otra, el pago y la web no se entienden)*.
-   `send-email-notification` se despliega una sola vez con todo lo de F3 y F5.4.
+   `send-email-notification` se despliega una sola vez con todo lo de F3, F5.4 y F7.
+   `supabase functions deploy booking-confirmation-email --use-api` *(F7: usa el texto nuevo
+   de fechas de los trabajos de varios días; sin redesplegar, diría solo el primer día)*.
 8. Desplegar la web (Vercel) desde la rama fusionada.
 
 **Justo después — probar en garser.es:** la batería «P-» de `03-PRUEBAS.md` §3, de arriba

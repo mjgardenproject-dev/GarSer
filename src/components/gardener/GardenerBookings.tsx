@@ -23,6 +23,13 @@ import { useAccount } from '../../contexts/AccountContext';
 import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import BookingWorkerLine from '../empresa/BookingWorkerLine';
+import { formatDateRange } from '../../utils/jobShape';
+
+// GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
+const teamShape = (row: object) => {
+  const r = row as { end_date?: string | null; labour_hours?: number | null };
+  return { endDate: r.end_date || null, labour: r.labour_hours ?? null };
+};
 
 interface GardenerBookingIncident {
   id: string;
@@ -253,11 +260,13 @@ const GardenerBookings: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 mb-4 text-sm">
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2 shrink-0" />
-                    {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                    {teamShape(booking).endDate
+                      ? formatDateRange(booking.date, String(teamShape(booking).endDate))
+                      : format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2 shrink-0" />
-                    {booking.start_time} ({booking.duration_hours}h)
+                    {booking.start_time} ({booking.duration_hours}h{teamShape(booking).labour ? ` · ${teamShape(booking).labour} h de trabajo` : ''})
                     <GardenerBookingAmount booking={booking} className="ml-auto" />
                   </div>
                   <div className="flex items-start text-gray-600 sm:col-span-2">
@@ -266,7 +275,7 @@ const GardenerBookings: React.FC = () => {
                   </div>
                 </div>
                 {booking.status === 'confirmed' ? (
-                  <AssignWorkerControl bookingId={booking.id} worker={workers[booking.id]} notify onChanged={() => setWorkersVersion((v) => v + 1)} />
+                  <AssignWorkerControl bookingId={booking.id} worker={workers[booking.id]} notify team={teamShape(booking).labour != null} onChanged={() => setWorkersVersion((v) => v + 1)} />
                 ) : (
                   <BookingWorkerLine worker={workers[booking.id]} />
                 )}

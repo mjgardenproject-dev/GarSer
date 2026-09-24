@@ -1363,6 +1363,175 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          created_at: string
+          id: string
+          legal_name: string | null
+          logo_url: string | null
+          provider_user_id: string
+          status: string
+          tax_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          provider_user_id: string
+          status?: string
+          tax_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          provider_user_id?: string
+          status?: string
+          tax_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "companies_provider_user_id_fkey"
+            columns: ["provider_user_id"]
+            isOneToOne: true
+            referencedRelation: "gardener_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "companies_provider_user_id_fkey"
+            columns: ["provider_user_id"]
+            isOneToOne: true
+            referencedRelation: "public_gardener_directory"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      company_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          email: string
+          expires_at: string
+          id: string
+          revoked_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          email: string
+          expires_at: string
+          id?: string
+          revoked_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          revoked_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_invitations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_member_services: {
+        Row: {
+          created_at: string
+          member_id: string
+          service_id: string
+        }
+        Insert: {
+          created_at?: string
+          member_id: string
+          service_id: string
+        }
+        Update: {
+          created_at?: string
+          member_id?: string
+          service_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_member_services_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "company_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_member_services_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_members: {
+        Row: {
+          company_id: string
+          counts_as_labour: boolean
+          id: string
+          joined_at: string
+          left_at: string | null
+          role: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          counts_as_labour?: boolean
+          id?: string
+          joined_at?: string
+          left_at?: string | null
+          role?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          counts_as_labour?: boolean
+          id?: string
+          joined_at?: string
+          left_at?: string | null
+          role?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gardener_applications: {
         Row: {
           accept_terms: boolean | null
@@ -1553,6 +1722,7 @@ export type Database = {
           professional_photo_url: string | null
           promotional_flyer_url: string | null
           proof_photos: string[] | null
+          provider_kind: string
           rating: number | null
           rating_average: number | null
           rating_count: number | null
@@ -1596,6 +1766,7 @@ export type Database = {
           professional_photo_url?: string | null
           promotional_flyer_url?: string | null
           proof_photos?: string[] | null
+          provider_kind?: string
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -1639,6 +1810,7 @@ export type Database = {
           professional_photo_url?: string | null
           promotional_flyer_url?: string | null
           proof_photos?: string[] | null
+          provider_kind?: string
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -2185,6 +2357,10 @@ export type Database = {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
       }
+      can_read_company_member: {
+        Args: { p_member_id: string }
+        Returns: boolean
+      }
       cancel_booking: {
         Args: { p_booking_id: string; p_reason?: string }
         Returns: Json
@@ -2323,6 +2499,8 @@ export type Database = {
       }
       get_rebook_payload: { Args: { p_booking_id: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
+      is_company_member: { Args: { p_company_id: string }; Returns: boolean }
+      is_company_owner: { Args: { p_company_id: string }; Returns: boolean }
       issue_booking_confirmation_token: {
         Args: {
           p_booking_id: string
@@ -2355,6 +2533,7 @@ export type Database = {
         Returns: undefined
       }
       mark_gardener_finished: { Args: { p_booking_id: string }; Returns: Json }
+      my_company_id: { Args: never; Returns: string }
       post_booking_system_message: {
         Args: { p_booking_id: string; p_text: string }
         Returns: undefined

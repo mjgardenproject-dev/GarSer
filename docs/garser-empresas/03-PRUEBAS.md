@@ -17,9 +17,9 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Cómo | Estado |
 |---|---|---|---|
-| R-01 | `npm test` ≥ 462 en verde | Automático | ✅ F1 cerrada: 473 |
-| R-02 | `npm run build` pasa | Automático | ✅ F1 cerrada |
-| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ✅ F1 cerrada: 129 |
+| R-01 | `npm test` ≥ 462 en verde | Automático | ✅ F2 cerrada: 473 |
+| R-02 | `npm run build` pasa | Automático | ✅ F2 cerrada |
+| R-03 | `npm run typecheck` no sube de 130 | Automático, informativo | ✅ F2 cerrada: 129 |
 | R-04 | Funnel completo de autónomo: servicio → fotos → precio → profesional → fecha → comisión → confirmación | Manual, en local | 🟨 F1: por API real (`valid_hours`, `create_quote`, preparar y confirmar pago). Sin recorrer la interfaz: F1 no toca frontend ni `booking-authority` |
 | R-05 | Reserva de autónomo: las horas se bloquean y se liberan igual que antes | Manual + SQL | ✅ F1 (F1-03a, F1-04, por el camino real de pago) |
 | R-06 | Cambio de precio **con cambio de duración** aceptado: la agenda se redimensiona | Manual | ✅ F1 (F1-05, F1-06) |
@@ -112,12 +112,27 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F2-01 | Todos los `gardener_profiles` existentes quedan con `provider_kind='solo'` | Sin excepciones | ⬜ |
-| F2-02 | Empleado de la empresa A consulta `company_members` de la B | Cero filas | ⬜ |
-| F2-03 | Empleado consulta `companies` de otra empresa | Cero filas | ⬜ |
-| F2-04 | Empleado intenta escribir en `companies` de la suya | Denegado | ⬜ |
-| F2-05 | Cliente consulta `company_members` | Cero filas | ⬜ |
-| F2-06 | Las policies nuevas no provocan recursión | Las consultas responden, no dan error de profundidad | ⬜ |
+| F2-01 | Todos los `gardener_profiles` existentes quedan con `provider_kind='solo'` | Sin excepciones | ✅ 2026-09-24 |
+| F2-02 | Empleado de la empresa A consulta `company_members` | Solo su propia fila (nada de B, ni la plantilla de A) | ✅ 2026-09-24 |
+| F2-03 | Empleado consulta `companies` | Solo la suya | ✅ 2026-09-24 |
+| F2-04 | Empleado intenta escribir en `companies` de la suya | Denegado (403) | ✅ 2026-09-24 |
+| F2-05 | Cliente consulta las cuatro tablas de empresas | Cero filas | ✅ 2026-09-24 |
+| F2-06 | Las policies nuevas no provocan recursión | Responden 200 | ✅ 2026-09-24 |
+| F2-07 | **Un cliente se crea una ficha de proveedor** (H-21a) | Denegado | ✅ 2026-09-24 (❌ antes: HTTP 201, salía reservable) |
+| F2-08 | **Un jardinero con carnet rechazado se lo aprueba** (H-21b) | Denegado, sigue rechazado | ✅ 2026-09-24 (❌ antes: HTTP 204, quedaba aprobado) |
+| F2-09 | El jardinero sigue editando su ficha (descripción) | Permitido | ✅ 2026-09-24 (no regresión) |
+| F2-10 | Empleado con ficha de proveedor / autónomo metido como empleado | Ambos rechazados por la BD (A-03) | ✅ 2026-09-24 |
+| F2-11 | Una persona en dos empresas / dos dueños en una empresa | Rechazados | ✅ 2026-09-24 |
+| F2-12 | El dueño ve su equipo, sus servicios, sus invitaciones y su empresa; nada de otra | Correcto | ✅ 2026-09-24 |
+| F2-13 | El empleado ve solo sus servicios y ninguna invitación | Correcto | ✅ 2026-09-24 |
+| F2-14 | El dueño tampoco escribe directamente (empresa, miembros, invitaciones); un empleado no se hace dueño | 403 en todo | ✅ 2026-09-24 |
+| F2-15 | Visitante sin sesión | 401 en las cuatro tablas | ✅ 2026-09-24 |
+| F2-16 | El admin ve todas las empresas y miembros | Correcto | ✅ 2026-09-24 |
+| F2-17 | Un jardinero se cambia a sí mismo a empresa (`provider_kind`) | Denegado | ✅ 2026-09-24 |
+| F2-18 | **El admin aprueba a un jardinero:** se crea su ficha (tipo `solo`) y su rol | Correcto | ✅ 2026-09-24 (no regresión tras H-21) |
+
+> Se repiten con `node scripts/garser-empresas/verify-f2-db.mjs` (18 comprobaciones). Monta dos
+> empresas desechables y lo borra todo al terminar. Solo corre contra `127.0.0.1`.
 
 ---
 
@@ -236,6 +251,10 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F1-2 | El jardinero propone una hora más en una reserva pendiente y el cliente acepta: la reserva se confirma y la agenda crece | F1 | ⬜ |
 | P-F1-3 | Cancelar esa reserva: las horas vuelven a estar libres en la web | F1 | ⬜ |
 | P-F1-4 | `select count(*) from booking_blocks where assignee_id is null` → 0 | F1 | ⬜ |
+| P-F2-1 | Con una cuenta de cliente, intentar crear una ficha de proveedor por la API (`POST /rest/v1/gardener_profiles`) | F2 | ⬜ → debe dar 403 |
+| P-F2-2 | Con una cuenta de jardinero, intentar cambiar `license_verification_status` por la API | F2 | ⬜ → debe dar 403 |
+| P-F2-3 | El admin aprueba una solicitud de jardinero real: aparece su ficha y puede configurar precios | F2 | ⬜ |
+| P-F2-4 | Un jardinero edita su perfil (descripción, zona) desde la web y se guarda | F2 | ⬜ |
 
 ---
 

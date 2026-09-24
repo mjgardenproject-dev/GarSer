@@ -393,6 +393,44 @@ Relevante para F5: la asignación de empleados probablemente reutilice `reserve`
 
 ---
 
+### H-21 · Cualquiera podía darse de alta como jardinero sin aprobación, y un jardinero podía aprobarse el carnet — 🔴🔴 CRÍTICO · Resuelto en F2 (local), pendiente en producción hasta la fusión
+
+**Reproducido en local el 2026-09-24**, con las mismas migraciones que producción:
+
+- **(a)** La cuenta de **cliente** de prueba hizo `POST /rest/v1/gardener_profiles` con su propio
+  `user_id` → **HTTP 201**. Salió en `public_gardener_directory` con **carnet fitosanitario
+  «aprobado», 5,0 estrellas y 250 valoraciones inventadas**. Se puso precios y disponibilidad
+  (HTTP 201) y `booking-authority` (`preview_providers`) **la ofreció como profesional
+  reservable** junto al jardinero real. Es decir: anunciarse con un carnet que no se tiene y
+  recibir reservas de tratamientos químicos, sin pasar por el admin.
+- **(b)** El jardinero de la semilla, con el carnet puesto a **rechazado**, hizo `PATCH` de
+  `has_phytosanitary_license` / `license_verification_status` / `license_expires_at` →
+  **HTTP 204** y quedó `true / approved`. `bookingEligibilityCore.ts:173` da por válido ese carnet.
+
+**Causa.** `authenticated` tenía `INSERT` y `DELETE` sobre `gardener_profiles` a nivel de tabla,
+y la policy `Gardeners can manage own profile` (`FOR ALL`, `auth.uid() = user_id`) no mira
+nada más. Las columnas de valoración sí estaban protegidas (migración
+`20260823160000_rating_columns_readonly`), pero un `INSERT` rellena cualquier columna. Las de
+carnet tenían privilegio de `UPDATE` por columna. `ProfileSettings.tsx:363` hacía un «insert si
+no existe» desde el navegador (inalcanzable para un jardinero aprobado, pero abría la puerta).
+
+**Por qué importa para Empresas.** Toda la premisa A-03 («un empleado no puede actuar como
+proveedor porque no tiene ficha») era falsa mientras cualquiera pudiera crearse la ficha. Y D4
+(carnet obligatorio y personal) no vale nada si uno se lo puede aprobar solo.
+
+**Arreglo (migración `20260924120000`):** `REVOKE INSERT, DELETE` sobre `gardener_profiles` y
+`REVOKE UPDATE` de las cuatro columnas de carnet a `anon`/`authenticated`. Las únicas escritoras
+legítimas son funciones `SECURITY DEFINER` (aprobación de solicitudes y revisión de licencias),
+que no se ven afectadas: comprobado que **aprobar a un jardinero sigue creando su ficha** (F2-18)
+y que **el jardinero sigue pudiendo editar su ficha** (F2-09). `ProfileSettings.tsx` muestra un
+error claro en vez de intentar crear la ficha. Pruebas F2-07 y F2-08: rojo antes, verde después.
+
+**Producción.** Igual que H-11 (D8): `garser.es` no tiene usuarios reales, así que se arregla al
+fusionar. **Si entran usuarios reales antes, hay que adelantarlo.** Y antes de fusionar conviene
+comprobar que nadie lo ha aprovechado (consulta en `01-PLAN-Y-PROGRESO.md` §6).
+
+---
+
 ## 2. Decisiones de arquitectura cerradas
 
 No se vuelven a discutir salvo que aparezca evidencia nueva. Si alguien propone lo contrario,
@@ -415,6 +453,9 @@ esta es la respuesta.
 | A-13 | **El carnet fitosanitario es por persona.** `gardener_licenses` pasa a poder colgar de un empleado. La bandera de la empresa se **deriva**: tiene capacidad fitosanitaria si al menos un empleado activo con ese servicio tiene carnet aprobado y en vigor. | D4. Evita que una empresa con licencia asigne a alguien sin carnet. Y el admin ya revisa carnets hoy: se reutiliza su pantalla, no se hace otra. |
 | A-14 | **El dueño es un miembro más con un interruptor** (`counts_as_labour`). Si trabaja, tiene disponibilidad y servicios propios. | D3. No hace falta ningún caso especial en el cálculo de capacidad. |
 | A-15 | **`assignee_id` lo rellena un disparador cuando nadie lo indica**, en vez de reescribir las cinco funciones que escriben la agenda. La asignación de empleados (F5) lo indicará explícitamente. **Desviación del plan, a sabiendas:** el plan decía que en F1 `reserve`/`resize` pasarían a «operar por ejecutante y aceptar varios días». Se ha dejado para cuando exista quien lo use (F5 asignación, F7 varios días): escribir hoy esa generalización sin ningún llamador que la ejercite sería código sin probar que luego habría que rehacer. | Mínimo radio de impacto sobre funciones de dinero. El índice único ya garantiza lo importante (no doble venta) para cualquier escritor, actual o futuro. |
+| A-17 | **Nadie escribe directamente en las tablas de empresas, ni siquiera el admin.** Solo `SELECT` para `authenticated`; todas las escrituras irán por RPC `SECURITY DEFINER` (F3). | Si se concediera la escritura y solo la impidieran las policies, un `UPDATE` indebido no daría error: afectaría a 0 filas y respondería 200. Sin privilegio, la base de datos lo rechaza con 403 claro. |
+| A-18 | **Visibilidad mínima dentro de la empresa:** cada miembro se ve a sí mismo y a sus servicios; el dueño ve a todo su equipo y sus invitaciones. Un empleado **no** lista la plantilla. | Matriz de permisos de la arquitectura. Los compañeros de un mismo trabajo se verán por una vía específica en F5. |
+| A-19 | **La cuenta de la empresa es la del dueño.** `companies.provider_user_id` = su ficha `company`; el dueño es el miembro `owner` de esa misma cuenta. La base de datos lo impone. | Un solo inicio de sesión para el empresario. Si trabaja (D3), sus horas cuentan igual que las de un empleado. |
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 
 ---

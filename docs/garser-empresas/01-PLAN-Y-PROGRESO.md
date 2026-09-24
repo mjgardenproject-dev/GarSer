@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0 y ✅ F1 cerradas (2026-09-23) · BLOQUE 0 (cimientos) terminado · siguiente: F2 — el proveedor como concepto
+**Estado global:** ✅ F0, F1 y F2 cerradas · siguiente: F3 — alta de empresa y de empleados (necesita D7: la encuesta de empresa)
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -214,17 +214,33 @@ build, `tsc` 129. Concurrencia real repetida tres veces: siempre una sola ganado
 ### BLOQUE 1 — Una empresa puede vender
 *Desde aquí hasta el primer euro.*
 
-#### ⬜ F2 — El proveedor como concepto
+#### ✅ F2 — El proveedor como concepto
 
-- [ ] `gardener_profiles.provider_kind` (`'solo'` | `'company'`), `DEFAULT 'solo'`.
-- [ ] `COMMENT ON COLUMN bookings.gardener_id`: pasa a significar *proveedor responsable*.
-- [ ] Tablas `companies`, `company_members`, `company_invitations`.
-- [ ] Funciones `my_company_id()`, `is_company_owner()` — **`SECURITY DEFINER`**, para no
-      provocar recursión de policies.
-- [ ] Policies RLS de las tres tablas.
+✅ **hecho** (migración `20260924120000_empresas_f2_provider_model.sql`)
+- [x] `gardener_profiles.provider_kind` (`'solo'` | `'company'`), `DEFAULT 'solo'`; nadie
+      puede cambiárselo a sí mismo.
+- [x] `COMMENT ON COLUMN bookings.gardener_id`: *proveedor responsable*.
+- [x] Tablas `companies`, `company_members`, `company_invitations` **y
+      `company_member_services`** (D5, A-12: adelantada desde F3 porque es modelo, no pantalla).
+      `counts_as_labour` en `company_members` (D3).
+- [x] `my_company_id()`, `is_company_member()`, `is_company_owner()`,
+      `can_read_company_member()` — `SECURITY DEFINER`.
+- [x] RLS: solo lectura (A-17, A-18). Admin lee todo.
+- [x] Integridad en la BD: empleado ≠ proveedor (A-03), una empresa activa por persona, un
+      dueño por empresa, el dueño es la cuenta de la empresa (A-19).
+- [x] **Imprevisto (H-21, crítico):** cerrado el alta de proveedores desde el navegador y la
+      autoaprobación del carnet. `ProfileSettings.tsx` ya no intenta crear la ficha.
+- [x] Tipos regenerados. Verificación repetible:
+      `node scripts/garser-empresas/verify-f2-db.mjs` → 18/18 (1/17 antes de la migración).
+- **No incluido, a propósito:** la solicitud de alta de empresa (A-11) depende de D7 y va en F3;
+  el carnet por empleado (A-13) toca `gardener_licenses` y va en F3 con su subida.
 
 **Criterio de cierre.** Todo lo existente queda como `'solo'` y se comporta igual. Las RLS se
 prueban con dos empresas sembradas, contra la API, no contra la interfaz.
+
+**Cierre (2026-09-24).** Cumplido. Dos empresas desechables (dueño + 2 empleados; dueño + 1),
+un cliente, un visitante y el admin, todos contra la API. Tras `db reset` desde cero: 116/116,
+F2 18/18, F1 13/13, F0 7/7, 473 tests, build, `tsc` 129.
 
 ---
 
@@ -331,7 +347,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | `c506f1e` |
 
 ---
 
@@ -385,6 +402,27 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 | F1 | Consultar solapes en `booking_blocks` de producción **antes** de aplicar la migración | Si los hay, son dobles reservas reales: resolver a mano primero. La migración ya se niega a correr si los hay, pero conviene saberlo antes. Consulta abajo |
 | F1 | Consultar bloques sin reserva o sin proveedor | Misma razón: la migración se detendría. Consulta abajo |
 | F1 | Aplicar `20260923130000_empresas_f1_capacity_ledger.sql` **después** de la de F0 | Cambia `confirm_booking_payment_attempt`: el camino de todos los pagos. Probar P-F1-1 justo después |
+
+| F2 | **Aplicar `20260924120000_empresas_f2_provider_model.sql` cierra H-21** (alta de jardineros sin aprobación y autoaprobación del carnet) | Antes, ejecutar las consultas de F2 de abajo: si hay fichas de proveedor sin solicitud aprobada, o carnets aprobados sin revisión, revisarlos a mano |
+
+**Consultas previas de F2 (solo lectura):**
+
+```sql
+-- Fichas de proveedor sin solicitud aprobada detrás (posibles altas por H-21a)
+select gp.user_id, gp.full_name, gp.created_at
+from public.gardener_profiles gp
+where not exists (select 1 from public.gardener_applications a
+                  where a.user_id = gp.user_id and a.status = 'approved');
+
+-- Carnets marcados como aprobados sin licencia revisada detrás (posible H-21b).
+-- review_gardener_license deja la licencia en 'approved': un carnet legítimo no sale aquí.
+-- En LOCAL sale el jardinero de la semilla (seed.sql marca el carnet sin crear licencia): esperado.
+select gp.user_id, gp.full_name
+from public.gardener_profiles gp
+where gp.license_verification_status = 'approved'
+  and not exists (select 1 from public.gardener_licenses l
+                  where l.gardener_id = gp.user_id and l.status = 'approved');
+```
 
 **Consultas previas de F1 (solo lectura, SQL Editor de producción):**
 

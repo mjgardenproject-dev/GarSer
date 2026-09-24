@@ -1421,6 +1421,7 @@ export type Database = {
           contact_name: string | null
           created_at: string
           declaration_truth: boolean
+          email: string | null
           id: string
           legal_name: string | null
           logo_url: string | null
@@ -1446,6 +1447,7 @@ export type Database = {
           contact_name?: string | null
           created_at?: string
           declaration_truth?: boolean
+          email?: string | null
           id?: string
           legal_name?: string | null
           logo_url?: string | null
@@ -1471,6 +1473,7 @@ export type Database = {
           contact_name?: string | null
           created_at?: string
           declaration_truth?: boolean
+          email?: string | null
           id?: string
           legal_name?: string | null
           logo_url?: string | null

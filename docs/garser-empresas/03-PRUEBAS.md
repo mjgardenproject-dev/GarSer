@@ -172,8 +172,20 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F3-35 | Dar de baja sin trabajos pendientes | Vuelve a cliente y pierde el acceso | ✅ F3.1 |
 | F3-36 | **Crear una licencia ya aprobada** (H-22) | Denegado | ✅ F3.1 (❌ antes: HTTP 201) |
 
+| F3-40 | Registro con `/auth?mode=signup&role=company`: 3 opciones legibles en móvil, «Empresa» preseleccionada | Cuenta con rol `company` | ✅ F3.2 (navegador, 375 px) |
+| F3-41 | La empresa entra y va sola a la encuesta | `/empresa/solicitud` | ✅ F3.2 |
+| F3-42 | «Siguiente» con el paso vacío | Dice qué falta; no avanza | ✅ F3.2 («Te falta: el nombre comercial, la razón social, el CIF.») |
+| F3-43 | Recargar a mitad de la encuesta | Recupera el borrador y retoma en el primer paso pendiente; un «No» explícito se conserva | ✅ F3.2 |
+| F3-44 | Elegir fitosanitarios muestra la pregunta del carnet | Sí | ✅ F3.2 |
+| F3-45 | Enviar sin las casillas / con todo | Avisa / «Solicitud en revisión» | ✅ F3.2 |
+| F3-46 | El admin ve la solicitud en su sección, con todas las respuestas y el correo, y la aprueba con confirmación | Se crean ficha `company`, empresa y dueño (sin trabajar, como contestó) | ✅ F3.2 (móvil) |
+| F3-47 | La empresa aprobada entra | `/empresa` (panel) | ✅ F3.2 |
+| F3-48 | El admin rechaza: sin motivo el botón está desactivado; con motivo, rechaza | Correcto | ✅ F3.2 |
+| F3-49 | La empresa rechazada ve el motivo; «Corregir y enviar de nuevo» abre la encuesta rellena; reenvía | Nueva solicitud enviada; la rechazada queda de histórico | ✅ F3.2 |
+| F3-50 | No regresión: jardinero → «Panel de Jardinero»; cliente → su panel; cliente en `/empresa` → vuelve a su panel | Correcto | ✅ F3.2 |
+
 > Las pruebas de servidor se repiten con `node scripts/garser-empresas/verify-f3-db.mjs`
-> (31 comprobaciones). Las de pantallas se añaden en F3.2 y F3.3.
+> (31 comprobaciones). Las de pantallas (F3-40 a F3-50) se hicieron en el navegador.
 
 > F3-04 es la prueba de seguridad principal de toda la fase de empresas.
 
@@ -277,6 +289,9 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F2-4 | Un jardinero edita su perfil (descripción, zona) desde la web y se guarda | F2 | ⬜ |
 | P-F3-1 | Un jardinero sube un carnet nuevo desde su panel: queda **pendiente** y el admin lo ve para revisar | F3 | ⬜ |
 | P-F3-2 | Intentar crear por la API una licencia con `status: approved` | F3 | ⬜ → debe dar 403 |
+| P-F3-3 | Registrarse en `garser.es` como empresa, rellenar la encuesta en el móvil y enviarla | F3 | ⬜ |
+| P-F3-4 | Como admin, aprobar esa empresa desde Usuarios → Solicitudes de Empresas; la empresa entra en su panel | F3 | ⬜ |
+| P-F3-5 | Rechazar otra con motivo; la empresa lo ve y puede corregir y reenviar | F3 | ⬜ |
 
 ---
 

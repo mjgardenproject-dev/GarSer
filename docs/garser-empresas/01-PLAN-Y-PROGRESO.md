@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso: ✅ F3.1 servidor · siguiente F3.2 (web: alta) · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso: ✅ F3.1 servidor · ✅ F3.2 web del alta · siguiente F3.3 (panel de empresa, invitaciones, panel de empleado) · D7 en borrador para validar
 **Última actualización:** 2026-09-23
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -256,8 +256,23 @@ lee los perfiles de su equipo; cambio de rol de confianza (A-21). **Imprevisto: 
 Un fallo propio cazado a tiempo: el mensaje de «faltan campos» salía como error técnico de
 Postgres; la prueba ahora exige el texto correcto.
 
+**✅ F3.2 Web del alta — hecho:**
+- Registro: tercera opción **«Empresa — Tengo un equipo de jardinería»** en `AuthForm`
+  (`/auth?mode=signup&role=company` la preselecciona). El subtítulo de «Jardinero» pasa de
+  «Ofrezco servicios» a «Trabajo por mi cuenta», para distinguirlo de la empresa.
+- Encuesta de 5 pasos (`/empresa/solicitud`), generada desde `src/config/companyApplication.ts`
+  (D7 en un solo fichero). Guarda el borrador en cada paso, dice qué falta en vez de solo
+  bloquear, y al volver retoma en el primer paso pendiente.
+- Página de estado (`/empresa/estado`): en revisión / no aceptada con el motivo y «Corregir y
+  enviar de nuevo» (abre un borrador nuevo con los datos; la rechazada queda de histórico).
+- Admin: sección **«Solicitudes de Empresas»** en Usuarios, separada de las de jardineros,
+  con todas las respuestas en lenguaje humano, aprobar (con confirmación) y rechazar (con
+  motivo obligatorio).
+- `/empresa` decide adónde va cada cuenta según su alta; el contenido del panel llega en F3.3.
+- Migración `20260924140000`: el correo de la solicitud lo copia el servidor al enviar.
+
 **Pendiente de F3:**
-- [ ] Registro «Tengo una empresa de jardinería» en `AuthForm`.
+- [x] Registro «Tengo una empresa de jardinería» en `AuthForm`.
 - [ ] **Solicitud de alta de empresa propia** (D2): encuesta de empresa (preguntas de D7),
       tabla separada de `gardener_applications`, y su revisión en el panel de admin. Hasta que
       el admin la aprueba, la empresa no aparece en el funnel.
@@ -395,7 +410,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F3.2 | **Web del alta de empresas.** Registro, encuesta de 5 pasos, estado, revisión en el admin. Recorrido completo en navegador (móvil): alta → encuesta → envío → aprobación → panel; y rechazo → motivo → corregir → reenvío. Sin regresiones de jardinero ni cliente. | 481 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `f7ec1d5` |
 | 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | `b0a6fbe` |
 | 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | `c506f1e` |
 

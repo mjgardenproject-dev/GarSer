@@ -500,6 +500,16 @@ Cosas que parecen problemas pero **no se han comprobado**. No se citan como hech
 
 ---
 
+- **¿Funciona «volver a intentarlo» de un jardinero rechazado?** `GardenerStatusPage.tsx`
+  hace `update(status: 'draft')` sobre su solicitud **rechazada** y luego `delete`. Pero la
+  policy `applications_own_update` solo deja actualizar filas en `draft`, y no hay policy de
+  `DELETE`: ambas operaciones afectarían a 0 filas sin error. **No verificado** (fuera de
+  este proyecto). La empresa no copia ese patrón: al corregir abre un borrador nuevo.
+- **Una prueba escrita como «foto» y no como regla (F2-01)** falló al existir la primera
+  empresa: decía «todas las fichas son `solo`». Se reescribió como la regla permanente
+  («toda ficha sin empresa es `solo` y toda `company` tiene su empresa»). Lección para las
+  próximas pruebas: comprobar invariantes, no el estado del momento.
+
 ## 4. Cómo añadir un hallazgo
 
 ```

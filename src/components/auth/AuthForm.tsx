@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Eye, EyeOff, User, Briefcase, Check, Mail, Lock, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, User, Briefcase, Building2, Check, Mail, Lock, AlertTriangle } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -15,14 +15,14 @@ import { supabase } from '../../lib/supabase';
 const schema = yup.object({
   email: yup.string().email('Email inválido').required('Email requerido'),
   password: yup.string().min(6, 'Mínimo 6 caracteres').required('Contraseña requerida'),
-  role: yup.string().oneOf(['client', 'gardener']).required('Rol requerido'),
+  role: yup.string().oneOf(['client', 'gardener', 'company']).required('Rol requerido'),
   confirmPassword: yup.string().default('').defined()
 });
 
 type FormData = {
   email: string;
   password: string;
-  role: 'client' | 'gardener';
+  role: 'client' | 'gardener' | 'company';
   confirmPassword: string;
 };
 
@@ -33,7 +33,7 @@ const AuthForm = () => {
   const [sendingForgot, setSendingForgot] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<'client' | 'gardener'>('client');
+  const [selectedRole, setSelectedRole] = useState<'client' | 'gardener' | 'company'>('client');
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const forceClientOnly: boolean = !!((location.state as any)?.forceClientOnly);
@@ -42,8 +42,8 @@ const AuthForm = () => {
     ((location.state as any)?.initialMode as 'login' | 'signup' | undefined) ||
     ((searchParams.get('mode') as 'login' | 'signup' | null) ?? undefined);
   const requestedRole =
-    ((location.state as any)?.preselectedRole as 'client' | 'gardener' | undefined) ||
-    ((searchParams.get('role') as 'client' | 'gardener' | null) ?? undefined);
+    ((location.state as any)?.preselectedRole as 'client' | 'gardener' | 'company' | undefined) ||
+    ((searchParams.get('role') as 'client' | 'gardener' | 'company' | null) ?? undefined);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -93,9 +93,9 @@ const AuthForm = () => {
       return;
     }
 
-    if (requestedRole === 'client' || requestedRole === 'gardener') {
+    if (requestedRole === 'client' || requestedRole === 'gardener' || requestedRole === 'company') {
       setSelectedRole(requestedRole);
-      if (requestedRole === 'gardener') {
+      if (requestedRole !== 'client') {
         setIsLogin(false);
       }
     }
@@ -232,7 +232,7 @@ const AuthForm = () => {
               <label className="block text-sm font-medium text-gray-700 mb-3">
                 ¿Qué tipo de cuenta necesitas?
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className={`grid grid-cols-1 gap-4 ${forceClientOnly ? '' : 'sm:grid-cols-3'}`}>
                 {/* Botón Cliente */}
                 <button
                   type="button"
@@ -294,11 +294,49 @@ const AuthForm = () => {
                           Jardinero
                         </h3>
                         <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                          Ofrezco servicios
+                          Trabajo por mi cuenta
                         </p>
                       </div>
                     </div>
                     {selectedRole === 'gardener' && (
+                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md animate-bounce-small">
+                        <Check className="w-4 h-4 text-white" />
+                      </div>
+                    )}
+                  </button>
+                )}
+
+                {/* GarSer Empresas (F3.2): alta de empresa de jardinería. Se revisa antes de aparecer. */}
+                {!forceClientOnly && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRole('company')}
+                    className={`relative p-3 sm:p-4 border-2 rounded-xl transition-all duration-200 ${
+                      selectedRole === 'company'
+                        ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
+                        : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex flex-col items-center space-y-2">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
+                        selectedRole === 'company' ? 'bg-green-500' : 'bg-gray-200'
+                      }`}>
+                        <Building2 className={`w-6 h-6 transition-colors ${
+                          selectedRole === 'company' ? 'text-white' : 'text-gray-600'
+                        }`} />
+                      </div>
+                      <div className="text-center">
+                        <h3 className={`text-sm sm:text-base font-semibold transition-colors ${
+                          selectedRole === 'company' ? 'text-green-700' : 'text-gray-700'
+                        }`}>
+                          Empresa
+                        </h3>
+                        <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                          Tengo un equipo de jardinería
+                        </p>
+                      </div>
+                    </div>
+                    {selectedRole === 'company' && (
                       <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md animate-bounce-small">
                         <Check className="w-4 h-4 text-white" />
                       </div>
@@ -310,7 +348,7 @@ const AuthForm = () => {
               {/* Indicador visual del rol seleccionado */}
               <div className="mt-4 p-3 bg-green-50/50 border border-green-200 rounded-xl">
                 <p className="text-sm text-green-800 text-center font-medium">
-                  Rol seleccionado: <span className="font-bold">{selectedRole === 'client' ? 'Cliente' : 'Jardinero'}</span>
+                  Rol seleccionado: <span className="font-bold">{selectedRole === 'client' ? 'Cliente' : selectedRole === 'company' ? 'Empresa' : 'Jardinero'}</span>
                   <span className="block text-xs font-normal text-green-600 mt-1">
                     Este rol será permanente tras el registro
                   </span>

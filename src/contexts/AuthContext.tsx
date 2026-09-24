@@ -8,7 +8,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, role: 'client' | 'gardener', _applicationPayload?: any) => Promise<void>;
+  signUp: (email: string, password: string, role: 'client' | 'gardener' | 'company', _applicationPayload?: any) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -202,7 +202,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string, role: 'client' | 'gardener', _applicationPayload?: any) => {
+  const signUp = async (email: string, password: string, role: 'client' | 'gardener' | 'company', _applicationPayload?: any) => {
     // Eliminamos setLoading(true) para no desmontar AuthForm durante el proceso
     try {
       const { error } = await supabase.auth.signUp({

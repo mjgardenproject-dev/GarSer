@@ -31,6 +31,7 @@ const results = [];
 const createdUsers = [];
 
 const hasTable = (t) => sql(`select to_regclass('public.${t}') is not null`) === 't';
+const exists = (t) => sql(`select to_regclass('public.${t}') is not null`) === 't';
 const hasColumn = (t, c) => sql(`select count(*) from information_schema.columns where table_schema='public' and table_name='${t}' and column_name='${c}'`) === '1';
 
 function record(id, description, ok, detail) {
@@ -102,9 +103,18 @@ function seedCompany(owner, name, employees) {
 
 async function main() {
   // ── F2-01 · lo existente queda como autónomo ───────────────────────────────
-  record('F2-01', 'Todos los gardener_profiles existentes quedan con provider_kind = solo',
-    hasColumn('gardener_profiles', 'provider_kind') && sql("select count(*) from public.gardener_profiles where provider_kind is distinct from 'solo'") === '0',
-    hasColumn('gardener_profiles', 'provider_kind') ? `solo: ${sql("select count(*) from public.gardener_profiles where provider_kind='solo'")}` : 'no existe la columna provider_kind');
+  // La regla permanente no es «todas son solo» (eso solo es cierto justo tras migrar, antes de
+  // que exista ninguna empresa): es que el tipo casa con la realidad. Toda ficha sin empresa es
+  // 'solo' (los jardineros de siempre) y toda ficha 'company' tiene su fila en companies.
+  const mismatched = hasColumn('gardener_profiles', 'provider_kind') && exists('companies')
+    ? sql(`select count(*) from public.gardener_profiles gp
+           left join public.companies c on c.provider_user_id = gp.user_id
+           where (c.id is null and gp.provider_kind <> 'solo') or (c.id is not null and gp.provider_kind <> 'company')`)
+    : null;
+  record('F2-01', 'Toda ficha sin empresa es de autónomo (solo) y toda ficha de empresa tiene su empresa',
+    mismatched === '0',
+    mismatched === null ? 'no existe la columna provider_kind o la tabla companies'
+      : `solo: ${sql("select count(*) from public.gardener_profiles where provider_kind='solo'")}, company: ${sql("select count(*) from public.gardener_profiles where provider_kind='company'")}, incoherentes: ${mismatched}`);
 
   // ── H-21 · nadie se crea una ficha de proveedor ni se aprueba el carnet ─────
   {

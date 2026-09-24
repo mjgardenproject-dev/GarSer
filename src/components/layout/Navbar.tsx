@@ -37,9 +37,12 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
 
   const isAdmin = isAdminRole(userRole);
   
-  const showRoleBadge = isAdmin || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
+  const isCompany = userRole === 'company';
+  const showRoleBadge = isAdmin || isCompany || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
   const roleBadgeLabel = isAdmin
     ? 'Admin'
+    : isCompany
+      ? 'Empresa'
     : applicationStatus === 'pending'
       ? 'Jardinero (pendiente)'
       : applicationStatus === 'active'
@@ -48,8 +51,9 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
           ? 'Jardinero (no aceptado)'
           : '';
           
-  const isApplyPage = location.pathname === '/apply';
-  const isStatusPage = location.pathname === '/status';
+  // Alta en curso (jardinero o empresa, F3.2): sin menú, igual que hasta ahora /apply y /status.
+  const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud';
+  const isStatusPage = location.pathname === '/status' || location.pathname === '/empresa/estado';
   
   // Logic to hide nav:
   // 1. If user is gardener and NOT active -> Hide

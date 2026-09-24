@@ -51,6 +51,10 @@ const GardenerDashboard = lazy(() => import('./components/gardener/GardenerDashb
 const GardenerBookings = lazy(() => import('./components/gardener/GardenerBookings'));
 const GardenerApplicationWizard = lazy(() => import('./components/gardener/GardenerApplicationWizard'));
 const GardenerStatusPage = lazy(() => import('./components/gardener/GardenerStatusPage'));
+// GarSer Empresas (F3.2): alta y panel de empresa.
+const CompanyApplicationPage = lazy(() => import('./pages/empresa/CompanyApplicationPage'));
+const CompanyStatusPage = lazy(() => import('./pages/empresa/CompanyStatusPage'));
+const CompanyHomePage = lazy(() => import('./pages/empresa/CompanyHomePage'));
 
 // Funnel de reserva (el más pesado: análisis con IA, wizards manuales y checkout)
 const BookingFlow = lazy(() => import('./pages/reserva/BookingFlow'));
@@ -98,7 +102,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const navigate = useNavigate();
     const isAuthPage = location.pathname === '/auth' || location.pathname === '/confirmar-servicio';
     const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
-    const isApplyPage = location.pathname === '/apply';
+    // Páginas de alta (jardinero o empresa): sin menú inferior, como /apply.
+    const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud' || location.pathname === '/empresa/estado';
     const isAdminPage = location.pathname.startsWith('/admin');
     const isMarketingPage =
       location.pathname === '/' ||
@@ -322,6 +327,11 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                   return <Navigate to="/admin/dashboard" replace />;
                 }
 
+                // Cuenta de empresa: su alta y su panel viven en /empresa (F3.2).
+                if (accountRole === 'company') {
+                  return <Navigate to="/empresa" replace />;
+                }
+
                 const gardenerIntent = isGardenerAccount || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
                 
                 if (gardenerIntent) {
@@ -506,6 +516,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             </AdminRoute>
           } 
         />
+        <Route path="/empresa" element={<ProtectedRoute><CompanyHomePage /></ProtectedRoute>} />
+        <Route path="/empresa/solicitud" element={<ProtectedRoute><CompanyApplicationPage /></ProtectedRoute>} />
+        <Route path="/empresa/estado" element={<ProtectedRoute><CompanyStatusPage /></ProtectedRoute>} />
         <Route 
           path="/apply" 
           element={

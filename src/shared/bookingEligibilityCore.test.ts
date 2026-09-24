@@ -11,6 +11,7 @@ import {
   getValidStartHoursForWorkers,
   isPhytosanitaryLicenseActive,
   planBookingShape,
+  providerConfigVersionPayload,
 } from './bookingEligibilityCore';
 import type { SerializableBookingData } from './bookingQuoteCore';
 
@@ -795,5 +796,68 @@ describe('F7 — planBookingShape (la misma regla que plan_booking_cells en SQL)
     const workerDates = team({ ana: days });
     expect(planBookingShape({ workerDates, date: '2026-07-01', startHour: 8, labourHours: 21 })?.endDate).toBe('2026-07-21');
     expect(planBookingShape({ workerDates, date: '2026-07-01', startHour: 8, labourHours: 22 })).toBeNull();
+  });
+});
+
+describe('F8 — varios servicios en una visita (mismo motor, se suman)', () => {
+  const profile = {
+    max_distance: 50,
+    operational_latitude: 40.417,
+    operational_longitude: -3.703,
+    license_verification_status: 'approved',
+    license_expires_at: '2099-01-01T00:00:00Z',
+  };
+  const secondConfig = { ...providerConfig, precioPorHora: 50 };
+  const base = {
+    bookingInput: twoHourBookingInput,
+    providerConfig,
+    providerConfigVersion: 'cfg-1',
+    profile,
+    providerDates: new Map([['2026-06-15', [8, 9, 10, 11, 12]]]),
+    requestedDate: '2026-06-15',
+    windowEndDate: '2026-06-15',
+    restrictToRequestedDate: true,
+    mainService: { serviceId: 'svc-a', serviceName: 'Césped' },
+  };
+
+  it('suma precio y horas de cada servicio con su tarifa; los gastos de gestión, sobre el total', () => {
+    const result = evaluateOperationalEligibility({
+      ...base,
+      extraServices: [{ serviceId: 'svc-b', serviceName: 'Otro', bookingInput, providerConfig: secondConfig }],
+    });
+    expect(result.eligible).toBe(true);
+    if (!result.eligible) return;
+    // 2 h a 30 € + 1 h a 50 € = 110 €, 3 h. Gestión 12,5 % de 110.
+    expect(result.quote.totalPrice).toBe(110);
+    expect(result.quote.estimatedHours).toBe(3);
+    expect(result.quote.economics.managementFee).toBe(13.75);
+    expect(result.validHoursForRequestedDate).toEqual([8, 9, 10]);
+    expect((result.quote as { items?: Array<{ serviceId: string; totalPrice: number }> }).items?.map((i) => `${i.serviceId}:${i.totalPrice}`))
+      .toEqual(['svc-a:60', 'svc-b:50']);
+    expect(result.quote.breakdown.every((line) => /^(Césped|Otro): /.test(line.desc))).toBe(true);
+  });
+
+  it('si el profesional no ofrece alguno de los servicios, no sale (D15)', () => {
+    const result = evaluateOperationalEligibility({
+      ...base,
+      extraServices: [{ serviceId: 'svc-b', bookingInput, providerConfig: null }],
+    });
+    expect(result).toMatchObject({ eligible: false, exclusion: { code: 'inactive_service' } });
+  });
+
+  it('un solo servicio: exactamente lo de siempre', () => {
+    const single = evaluateOperationalEligibility({ ...base });
+    const legacy = evaluateOperationalEligibility({ ...base, mainService: undefined });
+    expect(single).toEqual(legacy);
+  });
+});
+
+describe('F8 — versión de la configuración firmada', () => {
+  it('con un servicio es la de siempre; con varios, todas en orden', () => {
+    const a = { updated_at: '2026-01-01', additional_config: { x: 1 } };
+    const b = { created_at: '2026-02-02', additional_config: { y: 2 } };
+    expect(providerConfigVersionPayload([a])).toBe(JSON.stringify({ updated_at: '2026-01-01', config: { x: 1 } }));
+    expect(providerConfigVersionPayload([a, b])).toBe(JSON.stringify([{ updated_at: '2026-01-01', config: { x: 1 } }, { updated_at: '2026-02-02', config: { y: 2 } }]));
+    expect(providerConfigVersionPayload([null])).toBe(JSON.stringify({ updated_at: '', config: null }));
   });
 });

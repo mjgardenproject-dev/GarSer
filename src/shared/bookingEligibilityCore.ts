@@ -1,5 +1,6 @@
 import {
   buildAuthoritativeBookingQuote,
+  buildAuthoritativeMultiServiceQuote,
   type BookingEligibilityFailureCode,
   type BookingQuoteResult,
   type BookingQuoteSlotSelection,
@@ -437,11 +438,23 @@ export function evaluateOperationalEligibility(params: {
    * días (L > 12), `workerDates` tiene que traer también los 20 días siguientes a cada fecha.
    */
   maxCrew?: number;
+  /**
+   * GarSer Empresas (F8, D14–D15): los DEMÁS servicios de la visita, cada uno con sus datos y la
+   * tarifa del profesional para él. El profesional tiene que ofrecerlos todos. `workerDates`
+   * ya tiene que venir filtrado a las personas que los hacen todos (D16).
+   */
+  mainService?: { serviceId: string; serviceName?: string };
+  extraServices?: Array<{
+    serviceId: string;
+    serviceName?: string;
+    bookingInput: SerializableBookingData;
+    providerConfig: Record<string, unknown> | null;
+  }>;
   requestedDate: string;
   windowEndDate: string;
   restrictToRequestedDate?: boolean;
 }): OperationalEligibilityResult {
-  if (!params.providerConfig) {
+  if (!params.providerConfig || (params.extraServices || []).some((extra) => !extra.providerConfig)) {
     return {
       eligible: false,
       exclusion: buildProviderExclusion(
@@ -492,7 +505,7 @@ export function evaluateOperationalEligibility(params: {
   // existía como texto en ProvidersPage (nunca filtraba la lista de verdad).
   if (
     !params.licenseCheckedPerWorker
-    && bookingRequiresPhytosanitaryLicense(params.bookingInput)
+    && [params.bookingInput, ...(params.extraServices || []).map((extra) => extra.bookingInput)].some(bookingRequiresPhytosanitaryLicense)
     && !isPhytosanitaryLicenseActive(params.profile)
   ) {
     return {
@@ -504,10 +517,28 @@ export function evaluateOperationalEligibility(params: {
     };
   }
 
-  const quote = buildAuthoritativeBookingQuote({
-    bookingData: params.bookingInput,
-    providerConfig: params.providerConfig,
-  });
+  // F8: varios servicios → cada uno con el motor de siempre y su tarifa, y se suman.
+  const quote = params.extraServices && params.extraServices.length > 0
+    ? buildAuthoritativeMultiServiceQuote([
+      {
+        serviceId: params.mainService?.serviceId || '',
+        serviceName: params.mainService?.serviceName,
+        bookingData: params.bookingInput,
+        providerConfig: params.providerConfig,
+        requiresLicense: bookingRequiresPhytosanitaryLicense(params.bookingInput),
+      },
+      ...params.extraServices.map((extra) => ({
+        serviceId: extra.serviceId,
+        serviceName: extra.serviceName,
+        bookingData: extra.bookingInput,
+        providerConfig: extra.providerConfig,
+        requiresLicense: bookingRequiresPhytosanitaryLicense(extra.bookingInput),
+      })),
+    ])
+    : buildAuthoritativeBookingQuote({
+      bookingData: params.bookingInput,
+      providerConfig: params.providerConfig,
+    });
 
   if (!quote.eligibility.isEligible || quote.totalPrice <= 0 || quote.estimatedHours <= 0) {
     return {
@@ -576,4 +607,20 @@ export function evaluateOperationalEligibility(params: {
     validHoursForRequestedDate,
     earliestSlot,
   };
+}
+
+/**
+ * GarSer Empresas (F8) — lo que se firma como «versión de la configuración» del profesional: con
+ * un servicio, su tarifa (lo de siempre); con varios, las de todos en orden. La web
+ * (booking-authority) y el pago (booking-payment) la calculan con ESTA función, así que coinciden
+ * por construcción.
+ */
+export function providerConfigVersionPayload(
+  rows: Array<{ updated_at?: string | null; created_at?: string | null; additional_config?: unknown } | null | undefined>,
+): string {
+  const one = (row?: { updated_at?: string | null; created_at?: string | null; additional_config?: unknown } | null) => ({
+    updated_at: row?.updated_at || row?.created_at || '',
+    config: row?.additional_config || null,
+  });
+  return JSON.stringify(rows.length > 1 ? rows.map(one) : one(rows[0]));
 }

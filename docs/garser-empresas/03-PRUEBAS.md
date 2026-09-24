@@ -426,6 +426,14 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F8-09 | Reservas anteriores sin filas | Siguen funcionando con su servicio | ✅ F8.1 |
 | F8-10 | Mover de fecha con varios servicios | Solo horas en que puede ir alguien que los haga todos | ✅ F8.1 |
 | F8-11 | Uno de los servicios exige carnet | Lo exige todo el trabajo | ✅ F8.1 |
+| F8-20 | Presupuesto de césped + setos en la web | Suma de cada servicio con su tarifa; gestión sobre el total; horas en que alguien puede hacerlo todo | ✅ F8.2 |
+| F8-21 | Lista de profesionales con varios servicios | Solo los que hacen todos (D15) | ✅ F8.2 |
+| F8-22 | Lista de servicios mal formada | Rechazada | ✅ F8.2 |
+| F8-23 | Presupuesto guardado | Servicios, total, horas y datos de todos | ✅ F8.2 |
+| F8-24 | Del presupuesto al pago | Un solo pago; la reserva lleva los dos servicios | ✅ F8.2 |
+| F8-25 | Detalle para el profesional | Ve los datos de cada servicio | ✅ F8.2 |
+| F8-26 | Web y pago con varios servicios | Mismas horas | ✅ F8.2 |
+| F8-27 | Un solo servicio | Presupuesto como siempre | ✅ F8.2 |
 
 ### F8 y F9 — Multi-servicio y mantenimiento
 
@@ -477,6 +485,7 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F6-2 | La empresa propone otra fecha; al cliente le llega el correo, la acepta desde «Mis reservas» y la reserva se mueve (y le llega el aviso a quien va) | F6 | ⬜ |
 | P-F7-1 | Una empresa con «hasta 2 personas a la vez» y dos empleados libres 4 h: un cliente reserva un trabajo de 8 h; sale «2 personas, 4 h», se paga y a los dos les aparece | F7 | ⬜ |
 | P-F7-2 | Un trabajo grande (más de 12 h) de un autónomo: la web lo ofrece en varios días, se paga y queda «del X al Y» | F7 | ⬜ |
+| P-F8-1 | Un cliente reserva césped + setos con un profesional que hace los dos: un solo pago de gestión sobre el total; la reserva enseña los dos servicios | F8 | ⬜ |
 
 ---
 

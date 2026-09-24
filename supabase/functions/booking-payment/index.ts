@@ -5,6 +5,7 @@ import {
   evaluateOperationalEligibility,
   MAX_JOB_DAYS,
   mergeWorkerDates,
+  providerConfigVersionPayload,
   type ProviderFreeHourRow,
   type ProviderProfileLike,
 } from '../../../src/shared/bookingEligibilityCore.ts';
@@ -126,6 +127,8 @@ type QuoteRow = {
   input_payload: SerializableBookingData | null;
   pricing_snapshot?: Record<string, unknown> | null;
   economic_snapshot?: Record<string, unknown> | null;
+  /** F8: los servicios del presupuesto (null = uno). */
+  items?: Array<{ serviceId: string; serviceName?: string | null; inputPayload?: SerializableBookingData }> | null;
 };
 
 type ActivePriceRow = {
@@ -370,7 +373,8 @@ async function getQuoteRow(
       provider_config_version,
       input_payload,
       pricing_snapshot,
-      economic_snapshot
+      economic_snapshot,
+      items
     `)
     .eq('id', quoteId)
     .maybeSingle();
@@ -489,6 +493,8 @@ async function fetchWorkerHoursForQuote(
     date: string;
     requiresLicense: boolean;
     excludeHoldIds?: string[];
+    /** F8 (D16): los demás servicios del presupuesto: solo personas que los hagan todos. */
+    extraServiceIds?: string[];
   },
 ) {
   // F7: un trabajo de varios días necesita también los días siguientes.
@@ -515,6 +521,7 @@ async function fetchWorkerHoursForQuote(
       p_end: endDate,
       p_requires_license: params.requiresLicense,
       p_exclude_hold_ids: (params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean),
+      p_extra_service_ids: params.extraServiceIds || [],
     }).range(from, from + 999);
     if (error || !data) return new Map<string, Map<string, number[]>>();
     rows.push(...(data as ProviderFreeHourRow[]));
@@ -601,12 +608,18 @@ async function revalidateQuoteBeforePayment(
     getActiveHoldIdsForQuote(admin, quote.id),
   ]);
 
-  const providerConfigVersion = await sha256(JSON.stringify({
-    updated_at: priceRow?.updated_at || priceRow?.created_at || '',
-    config: priceRow?.additional_config || null,
-  }));
+  // F8: presupuesto de varios servicios → cada uno con sus datos y su tarifa, y la «versión de
+  // la configuración» de todos en orden (la misma cuenta que booking-authority).
+  const quoteItems = Array.isArray(quote.items) && quote.items.length > 1 ? quote.items : [];
+  const extras = await Promise.all(quoteItems.slice(1).map(async (item) => ({
+    serviceId: String(item.serviceId),
+    serviceName: item.serviceName || undefined,
+    bookingInput: (item.inputPayload || {}) as SerializableBookingData,
+    priceRow: await getActivePriceRow(admin, quote.gardener_id, String(item.serviceId)),
+  })));
+  const providerConfigVersion = await sha256(providerConfigVersionPayload([priceRow, ...extras.map((extra) => extra.priceRow)]));
 
-  const bookingInput = (quote.input_payload || {}) as SerializableBookingData;
+  const bookingInput = (quoteItems[0]?.inputPayload || quote.input_payload || {}) as SerializableBookingData;
   // F6 (D10) y F7 (D11): se revalida con las mismas reglas de venta de la empresa que la web
   // (trabajos partidos y cuántas personas a la vez). Autónomo: sin fila, una persona.
   const { data: companyRow } = await admin
@@ -620,8 +633,9 @@ async function revalidateQuoteBeforePayment(
     gardenerId: quote.gardener_id,
     serviceId: quote.service_id,
     date: selectedDate,
-    requiresLicense: bookingRequiresPhytosanitaryLicense(bookingInput),
+    requiresLicense: [bookingInput, ...extras.map((extra) => extra.bookingInput)].some(bookingRequiresPhytosanitaryLicense),
     excludeHoldIds: excludedHoldIds,
+    extraServiceIds: extras.map((extra) => extra.serviceId),
   });
   const resolvedProfile = await ensureProviderOperationalCoordinates(admin, quote.gardener_id, profile);
 
@@ -635,6 +649,15 @@ async function revalidateQuoteBeforePayment(
     licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
     allowSplitAcrossWorkers: Boolean(company?.allow_split_jobs),
     maxCrew: Math.max(1, Number(company?.max_crew || 1)),
+    ...(extras.length > 0 ? {
+      mainService: { serviceId: quote.service_id, serviceName: quoteItems[0]?.serviceName || undefined },
+      extraServices: extras.map((extra) => ({
+        serviceId: extra.serviceId,
+        serviceName: extra.serviceName,
+        bookingInput: extra.bookingInput,
+        providerConfig: extra.priceRow?.additional_config || null,
+      })),
+    } : {}),
     requestedDate: selectedDate,
     windowEndDate: selectedDate,
     restrictToRequestedDate: true,

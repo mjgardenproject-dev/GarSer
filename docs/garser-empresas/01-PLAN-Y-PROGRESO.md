@@ -660,6 +660,18 @@ servicios de la reserva (`booking_service_ids`). El pago rechaza presupuestos de
 servicios que no cuadran y escribe una fila por servicio (una, si es un servicio). Carnet: si
 un servicio lo exige, lo exige el trabajo. F4–F7 siguen en verde.
 
+**✅ F8.2 Motor de la web — hecho** (`bookingQuoteCore.ts`, `bookingEligibilityCore.ts`,
+`booking-authority`, `booking-payment`; `verify-f8-web.mjs` 8/8). La web acepta `items` (varios
+servicios, el primero el principal). `buildAuthoritativeMultiServiceQuote` **no es un motor
+nuevo**: calcula cada servicio con `buildAuthoritativeBookingQuote` y su tarifa, suma precio y
+horas y pone los gastos de gestión sobre el total (césped 54 € + setos 220 € = 274 €, gestión
+34,25 €). Solo salen los profesionales con tarifa para todos (D15) y con personas que los hagan
+todos (D16). El presupuesto guarda `items` y los datos de todos juntos (el profesional ve las
+zonas de cada servicio). La «versión de tarifas» firmada la calculan web y pago con la misma
+función (`providerConfigVersionPayload`). Un servicio: todo exactamente igual (sin `items`).
+Coherencia web ↔ pago también con varios servicios. Baterías de servicios: iguales o mejor
+(fitosanitarios 77/1, antes 76/2: lo arregló la tarea aparte de H-27, no esta fase).
+
 - [ ] `booking_items`. Afecta también a los autónomos: es evolución de producto.
 
 #### ⬜ F9 — Mantenimiento de jardín

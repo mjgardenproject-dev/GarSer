@@ -6,6 +6,7 @@ import {
   type BookingQuoteResult,
   type SerializableBookingData,
   type BookingQuoteSlotSelection,
+  type BookingQuoteServiceItem,
 } from '../../../src/shared/bookingQuoteCore.ts';
 import {
   bookingRequiresPhytosanitaryLicense,
@@ -18,6 +19,7 @@ import {
   MAX_JOB_DAYS,
   mergeWorkerDates,
   planBookingShape,
+  providerConfigVersionPayload,
   type ProviderExclusionCode,
   type ProviderFreeHourRow,
 } from '../../../src/shared/bookingEligibilityCore.ts';
@@ -34,6 +36,8 @@ const PRICING_VERSION = 'booking_quote_v1';
 
 type QuotePreview = Omit<BookingQuoteResult, 'warnings'> & {
   warnings: string[];
+  /** F8: el detalle de cada servicio cuando el presupuesto es de varios. */
+  items?: BookingQuoteServiceItem[];
   providerId: string;
   quoteId?: string;
   signature?: string;
@@ -84,6 +88,35 @@ interface AuthorityPayload {
   ttlMinutes?: number;
   startTime?: string;
   bookingInput?: SerializableBookingData;
+  /**
+   * GarSer Empresas (F8, D14): varios servicios en la misma visita, cada uno con sus datos. El
+   * primero tiene que ser `serviceId` / `bookingInput`. Sin esto (o con uno), lo de siempre.
+   */
+  items?: Array<{ serviceId?: string; bookingInput?: SerializableBookingData }>;
+}
+
+// F8: un servicio más de la visita, con la tarifa de un profesional para él.
+type ExtraService = { serviceId: string; serviceName?: string; bookingInput: SerializableBookingData; priceRow?: PriceRow };
+
+// F8: la «versión de la configuración» del profesional. Con un servicio, la de siempre; con
+// varios, la de todos en orden. booking-payment la calcula igual para revalidar.
+async function providerConfigVersionFor(main?: PriceRow, extras: Array<PriceRow | undefined> = []) {
+  return await sha256(providerConfigVersionPayload([main, ...extras]));
+}
+
+// F8: los datos de todos los servicios en uno (lo que se guarda como datos del presupuesto y ve
+// el profesional). Cada servicio aporta sus campos; un campo vacío no pisa uno con datos.
+const isEmptyValue = (value: unknown) => value == null
+  || (Array.isArray(value) && value.length === 0)
+  || (typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length === 0);
+function mergeServiceInputs(main: SerializableBookingData, extras: SerializableBookingData[]): SerializableBookingData {
+  const merged: Record<string, unknown> = { ...(main as Record<string, unknown>) };
+  extras.forEach((extra) => {
+    Object.entries(extra as Record<string, unknown>).forEach(([key, value]) => {
+      if (isEmptyValue(merged[key]) && !isEmptyValue(value)) merged[key] = value;
+    });
+  });
+  return merged as SerializableBookingData;
 }
 
 const toIsoDate = (value?: string | null) => {
@@ -311,6 +344,8 @@ async function fetchProviderWorkerHours(
     startDate: string;
     endDate: string;
     requiresLicense: boolean;
+    /** F8 (D16): los demás servicios de la visita: solo personas que los hagan todos. */
+    extraServiceIds?: string[];
   },
 ) {
   if (params.providerIds.length === 0) return buildProviderWorkerIndex([]);
@@ -331,6 +366,7 @@ async function fetchProviderWorkerHours(
       p_start: params.startDate,
       p_end: params.endDate,
       p_requires_license: params.requiresLicense,
+      p_extra_service_ids: params.extraServiceIds || [],
     }).range(from, from + FREE_HOURS_PAGE - 1);
     if (error || !data) return buildProviderWorkerIndex([]);
     rows.push(...(data as ProviderFreeHourRow[]));
@@ -409,16 +445,13 @@ function applyMinNoticeFilter(
 }
 
 async function buildQuotePreview(params: {
-  bookingInput: SerializableBookingData;
+  quote: BookingQuoteResult & { items?: BookingQuoteServiceItem[] };
   providerId: string;
-  providerConfig: Record<string, unknown> | null;
   providerConfigVersion: string;
   availability?: BookingQuoteAvailability;
 }): Promise<QuotePreview> {
-  const quote = buildAuthoritativeBookingQuote({
-    bookingData: params.bookingInput,
-    providerConfig: params.providerConfig,
-  });
+  // El presupuesto ya calculado al evaluar (F8: puede ser de varios servicios): no se recalcula.
+  const quote = params.quote;
   return {
     providerId: params.providerId,
     totalPrice: quote.totalPrice,
@@ -428,6 +461,7 @@ async function buildQuotePreview(params: {
     metadata: quote.metadata,
     economics: quote.economics,
     eligibility: quote.eligibility,
+    ...(quote.items ? { items: quote.items } : {}),
     availability: params.availability,
     pricingVersion: PRICING_VERSION,
     providerConfigVersion: params.providerConfigVersion,
@@ -443,6 +477,9 @@ async function evaluateProviderEligibility(params: {
   workerDates: WorkerDates;
   allowSplit?: boolean;
   maxCrew?: number;
+  mainServiceId?: string;
+  mainServiceName?: string;
+  extras?: ExtraService[];
   requestedDate: string;
   windowEndDate: string;
   restrictToRequestedDate?: boolean;
@@ -459,10 +496,8 @@ async function evaluateProviderEligibility(params: {
       exclusion: ProviderExclusion;
     }
 > {
-  const providerConfigVersion = await sha256(JSON.stringify({
-    updated_at: params.priceRow?.updated_at || params.priceRow?.created_at || '',
-    config: params.priceRow?.additional_config || null,
-  }));
+  const extras = params.extras || [];
+  const providerConfigVersion = await providerConfigVersionFor(params.priceRow, extras.map((extra) => extra.priceRow));
   const resolvedProfile = await ensureProviderOperationalCoordinates(
     params.admin,
     params.providerId,
@@ -478,6 +513,15 @@ async function evaluateProviderEligibility(params: {
     licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
     allowSplitAcrossWorkers: Boolean(params.allowSplit),
     maxCrew: params.maxCrew,
+    ...(extras.length > 0 ? {
+      mainService: { serviceId: params.mainServiceId || '', serviceName: params.mainServiceName },
+      extraServices: extras.map((extra) => ({
+        serviceId: extra.serviceId,
+        serviceName: extra.serviceName,
+        bookingInput: extra.bookingInput,
+        providerConfig: extra.priceRow?.additional_config || null,
+      })),
+    } : {}),
     requestedDate: params.requestedDate,
     windowEndDate: params.windowEndDate,
     restrictToRequestedDate: params.restrictToRequestedDate,
@@ -491,9 +535,8 @@ async function evaluateProviderEligibility(params: {
   }
 
   const quote = await buildQuotePreview({
-    bookingInput: params.bookingInput,
+    quote: evaluation.quote,
     providerId: params.providerId,
-    providerConfig: params.priceRow?.additional_config || null,
     providerConfigVersion,
   });
 
@@ -545,22 +588,40 @@ Deno.serve(async (req: Request) => {
     if (!action || !serviceId) {
       return buildErrorResponse(400, 'missing_action_or_service', 'Faltan action o serviceId.');
     }
-    const requiresLicense = bookingRequiresPhytosanitaryLicense(bookingInput);
+
+    // F8 (D14): los demás servicios de la visita. El primero de `items` es el principal.
+    const requestedItems = Array.isArray(payload.items) ? payload.items : [];
+    const extraItems: Array<{ serviceId: string; bookingInput: SerializableBookingData }> = requestedItems.length > 1
+      ? requestedItems.slice(1).map((item) => ({ serviceId: String(item?.serviceId || '').trim(), bookingInput: (item?.bookingInput || {}) as SerializableBookingData }))
+      : [];
+    if (requestedItems.length > 1) {
+      const ids = [serviceId, ...extraItems.map((item) => item.serviceId)];
+      if (String(requestedItems[0]?.serviceId || '').trim() !== serviceId || ids.some((id) => !id) || new Set(ids).size !== ids.length || ids.length > 7) {
+        return buildErrorResponse(400, 'invalid_service_items', 'La lista de servicios no es válida.');
+      }
+    }
+    const extraServiceIds = extraItems.map((item) => item.serviceId);
+    const requiresLicense = [bookingInput, ...extraItems.map((item) => item.bookingInput)].some(bookingRequiresPhytosanitaryLicense);
+    const serviceNames: Record<string, string> = {};
+    {
+      const { data: serviceRows } = await admin.from('services').select('id, name').in('id', [serviceId, ...extraServiceIds]);
+      ((serviceRows || []) as { id: string; name: string }[]).forEach((row) => { serviceNames[String(row.id)] = String(row.name || ''); });
+    }
+    // F8: las tarifas de cada profesional para los demás servicios (alineadas con extraItems).
+    const extrasFor = (providerId: string, extraPriceRows: Array<Record<string, PriceRow>>): ExtraService[] =>
+      extraItems.map((item, index) => ({ ...item, serviceName: serviceNames[item.serviceId], priceRow: extraPriceRows[index]?.[providerId] }));
+    const fetchExtraPriceRows = (providerIds: string[]) => Promise.all(extraServiceIds.map((id) => fetchPriceRows(admin, id, providerIds)));
 
     // Authoritative server-side validation of manually-declared variables.
     // Runs before any pricing so out-of-range values are rejected (never truncated).
-    // Inert for the photo flow (dataInputMode !== 'manual').
-    if ((bookingInput as { dataInputMode?: string }).dataInputMode === 'manual') {
-      const { data: serviceRow } = await admin
-        .from('services')
-        .select('name')
-        .eq('id', serviceId)
-        .maybeSingle();
-      const serviceName = (serviceRow as { name?: string } | null)?.name || '';
+    // Inert for the photo flow (dataInputMode !== 'manual'). F8: la de cada servicio.
+    for (const item of [{ serviceId, bookingInput }, ...extraItems]) {
+      if ((item.bookingInput as { dataInputMode?: string }).dataInputMode !== 'manual') continue;
+      const serviceName = serviceNames[item.serviceId] || '';
       const manualValidation = validateManualSerializableInput({
         serviceName,
         dataInputMode: 'manual',
-        bookingInput: bookingInput as Record<string, unknown>,
+        bookingInput: item.bookingInput as Record<string, unknown>,
       });
       if (!manualValidation.ok) {
         return new Response(
@@ -618,9 +679,10 @@ Deno.serve(async (req: Request) => {
       const windowDays = Math.max(1, Math.min(31, Number(payload.windowDays || 14)));
       const endDate = addDays(selectedDate, windowDays - 1);
       const priceRows = await fetchPriceRows(admin, serviceId, providerIds);
+      const extraPriceRows = await fetchExtraPriceRows(providerIds);
       const providerProfiles = await fetchProviderProfiles(admin, providerIds);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds, serviceId, startDate: selectedDate, endDate: extendForMultiDay(endDate), requiresLicense,
+        providerIds, serviceId, startDate: selectedDate, endDate: extendForMultiDay(endDate), requiresLicense, extraServiceIds,
       });
       const planning = await fetchProviderPlanning(admin, providerIds);
       const noticeSettings = await fetchMinNoticeSettings(admin, providerIds);
@@ -644,6 +706,9 @@ Deno.serve(async (req: Request) => {
           workerDates,
           allowSplit: planning.split.has(providerId),
           maxCrew: planning.maxCrew.get(providerId),
+          mainServiceId: serviceId,
+          mainServiceName: serviceNames[serviceId],
+          extras: extrasFor(providerId, extraPriceRows),
           requestedDate: selectedDate,
           windowEndDate: endDate,
         });
@@ -675,9 +740,10 @@ Deno.serve(async (req: Request) => {
       }
 
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
+      const extraPriceRows = await fetchExtraPriceRows([providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds: [providerId], serviceId, startDate: date, endDate: extendForMultiDay(date), requiresLicense,
+        providerIds: [providerId], serviceId, startDate: date, endDate: extendForMultiDay(date), requiresLicense, extraServiceIds,
       });
       const planning = await fetchProviderPlanning(admin, [providerId]);
       const allowSplit = planning.split.has(providerId);
@@ -695,6 +761,9 @@ Deno.serve(async (req: Request) => {
         workerDates,
         allowSplit,
         maxCrew,
+        mainServiceId: serviceId,
+        mainServiceName: serviceNames[serviceId],
+        extras: extrasFor(providerId, extraPriceRows),
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,
@@ -733,9 +802,10 @@ Deno.serve(async (req: Request) => {
 
       const { start, end } = getMonthBounds(monthDate);
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
+      const extraPriceRows = await fetchExtraPriceRows([providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds: [providerId], serviceId, startDate: start, endDate: extendForMultiDay(end), requiresLicense,
+        providerIds: [providerId], serviceId, startDate: start, endDate: extendForMultiDay(end), requiresLicense, extraServiceIds,
       });
       const planning = await fetchProviderPlanning(admin, [providerId]);
       const allowSplit = planning.split.has(providerId);
@@ -753,6 +823,9 @@ Deno.serve(async (req: Request) => {
         workerDates,
         allowSplit,
         maxCrew,
+        mainServiceId: serviceId,
+        mainServiceName: serviceNames[serviceId],
+        extras: extrasFor(providerId, extraPriceRows),
         requestedDate: start,
         windowEndDate: end,
       });
@@ -820,9 +893,10 @@ Deno.serve(async (req: Request) => {
       }
 
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
+      const extraPriceRows = await fetchExtraPriceRows([providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds: [providerId], serviceId, startDate: date, endDate: extendForMultiDay(date), requiresLicense,
+        providerIds: [providerId], serviceId, startDate: date, endDate: extendForMultiDay(date), requiresLicense, extraServiceIds,
       });
       const planning = await fetchProviderPlanning(admin, [providerId]);
       const allowSplit = planning.split.has(providerId);
@@ -840,6 +914,9 @@ Deno.serve(async (req: Request) => {
         workerDates: workerDatesForQuote,
         allowSplit,
         maxCrew,
+        mainServiceId: serviceId,
+        mainServiceName: serviceNames[serviceId],
+        extras: extrasFor(providerId, extraPriceRows),
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,
@@ -884,6 +961,7 @@ Deno.serve(async (req: Request) => {
         date,
         start_time: startTime,
         booking_input: bookingInput,
+        items: extraItems.length > 0 ? extraItems : undefined,
         quote: {
           totalPrice: evaluation.quote.totalPrice,
           estimatedHours: evaluation.quote.estimatedHours,
@@ -892,6 +970,23 @@ Deno.serve(async (req: Request) => {
           economics: evaluation.quote.economics,
         },
       }));
+
+      // F8: los servicios del presupuesto (null = uno, lo de siempre). El primero es serviceId.
+      const quoteItems = extraItems.length > 0
+        ? (evaluation.quote.items || []).map((item, index) => ({
+          serviceId: item.serviceId,
+          serviceName: serviceNames[item.serviceId] || null,
+          inputPayload: index === 0 ? bookingInput : extraItems[index - 1].bookingInput,
+          totalPrice: item.totalPrice,
+          estimatedHours: item.estimatedHours,
+          breakdown: item.breakdown,
+          requiresLicense: item.requiresLicense,
+        }))
+        : null;
+      if (extraItems.length > 0 && quoteItems?.length !== extraItems.length + 1) {
+        return buildErrorResponse(422, 'invalid_service_items', 'No se ha podido presupuestar cada servicio por separado.');
+      }
+      const storedInput = extraItems.length > 0 ? mergeServiceInputs(bookingInput, extraItems.map((item) => item.bookingInput)) : bookingInput;
 
       const snapshot = {
         totalPrice: evaluation.quote.totalPrice,
@@ -906,6 +1001,7 @@ Deno.serve(async (req: Request) => {
         serviceId,
         // GarSer Empresas (F4): el pago aparta a una persona CON carnet si el trabajo lo exige.
         requiresPhytosanitaryLicense: requiresLicense,
+        ...(quoteItems ? { items: quoteItems } : {}),
       };
 
       const clientCoordinates = getClientCoordinates(bookingInput);
@@ -920,8 +1016,9 @@ Deno.serve(async (req: Request) => {
           signature,
           pricing_version: PRICING_VERSION,
           provider_config_version: evaluation.providerConfigVersion,
-          input_payload: bookingInput,
+          input_payload: storedInput,
           pricing_snapshot: snapshot,
+          items: quoteItems,
           availability_snapshot: availability,
           economic_snapshot: evaluation.quote.economics,
           total_price: evaluation.quote.totalPrice,

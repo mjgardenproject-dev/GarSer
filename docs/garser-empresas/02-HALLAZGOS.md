@@ -477,6 +477,32 @@ qué hacer. **Arreglo:** la página de la invitación la recuerda 24 h en el nav
 (`src/lib/pendingInvitation.ts`) y, al entrar, un cliente con una invitación pendiente va a ella.
 Si se pierde (otro navegador), basta con volver a pulsar el enlace. Prueba F3-56.
 
+### H-26 · Contar «cuántos hay libres» a cada hora no basta para vender trabajos de varias horas — 🟠 Afecta a F4 (pendiente de decisión del usuario)
+
+El plan de F4 dice que `booking-authority` leerá una **capacidad** (`free_count`: cuántas personas
+de la empresa están libres a cada hora) en vez de «libre / no libre». Al leer el código de venta
+(2026-09-24) se ve que eso **vende huecos imposibles** en cuanto el trabajo dura más de una hora:
+
+- Ana está libre de 9 a 10 y Luis de 10 a 11. Contando por horas hay 1 libre a las 9 y 1 a las 10,
+  así que un trabajo de 2 horas a las 9 «cabe»… pero **nadie** puede hacerlo entero.
+- Y al pagar no queda constancia de **quién** ocupa esas horas, así que dos clientes pueden llevarse
+  a la misma persona si la cuenta se desincroniza (lo que H-19 cerró para autónomos).
+
+Todo el camino del dinero (bloqueo mientras se paga, `prepare_booking_payment_attempt_for_client`;
+confirmación, `confirm_booking_payment_attempt`; aceptar, `reserve_booking_schedule`; alargar,
+`resize_booking_schedule`) funciona hoy con «una persona por proveedor», y el índice único de F1
+(`booking_blocks`: persona + día + hora) ya está pensado para que la persona sea la unidad.
+
+**Propuesta:** al vender, el servidor **elige a una persona concreta** del equipo que hace ese
+servicio (y tiene carnet si hace falta) y está libre **todas** las horas del trabajo; el bloqueo
+y la agenda se apuntan a esa persona. Para un autónomo, esa persona es él mismo: su camino no
+cambia. El dueño podrá cambiar la persona en F5 (asignación). Las horas que ve el cliente son las
+de «alguien del equipo puede hacerlo entero desde esa hora».
+
+**Además, para poder vender hace falta que el equipo tenga horario.** Hoy un empleado no tiene
+pantalla de disponibilidad (el plan la pone en F5). Sin ella, una empresa no tiene horas que
+vender y el criterio de cierre de F4 (primera reserva a una empresa) es imposible.
+
 ---
 
 ## 2. Decisiones de arquitectura cerradas

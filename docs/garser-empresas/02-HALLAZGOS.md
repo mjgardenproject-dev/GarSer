@@ -566,6 +566,16 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-32 · La web recibía como mucho 1000 horas libres y cortaba el resto en silencio — 🟢 Resuelto en F7.2
+
+PostgREST devuelve como mucho 1000 filas por petición (`max_rows`), **también** cuando se llama a
+una función, y no avisa: comprobado en local con una función de 1500 filas (llegan 1000). Desde F4
+la web (`booking-authority`) y el pago (`booking-payment`) leen las horas libres con
+`provider_free_hours`, una fila por persona y hora: con varios proveedores en el listado, equipos
+grandes o varios días (F7 pide 20 días más), se habrían perdido horas y el cliente vería menos
+huecos o ninguno, sin error. Aún no estaba en producción (F4 va con la fusión). **Arreglo:** se
+piden por páginas de 1000 (la función las devuelve ordenadas).
+
 ---
 
 ## 2. Decisiones de arquitectura cerradas

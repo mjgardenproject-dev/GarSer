@@ -586,6 +586,16 @@ y empleado incluyen trabajos que empezaron antes del rango, con las horas de cad
 de «¿se hizo?» va tras el último día. Un autónomo también puede tener trabajos de varios días
 (D12). F4–F6 siguen en verde. Pendiente: que la web los ofrezca (F7.2) y las pantallas (F7.3).
 
+**✅ F7.2 Motor de la web — hecho** (`bookingEligibilityCore.ts`, `bookingQuoteCore.ts`,
+`booking-authority`, `booking-payment`; `verify-f7-web.mjs` 8/8). `planBookingShape()` repite en
+TypeScript la regla de `plan_booking_cells` (sin decidir quién va) y decide las horas que ve el
+cliente; la franja del presupuesto lleva la forma del trabajo (`crew`, `endDate`, `labourHours`,
+`planDays`). Se lee la agenda de los 20 días siguientes. **T7 deja de rechazar los trabajos de más de
+12 h** (solo queda un tope de 250 h). Prueba de coherencia: con horarios al azar, en 72
+combinaciones (límite 1–3, con y sin partidos, 2/8/18/36 h) la web ofrece exactamente las horas
+en las que el pago encuentra plan. **H-32** encontrado y cerrado (la web perdía horas pasadas las
+1000 filas). Baterías de servicios, iguales (H-27).
+
 
 - [ ] `bookings.required_workers` (`DEFAULT 1`) y `bookings.end_date` (`DEFAULT NULL`).
 - [ ] Separar **duración** (span de la jornada, sigue con tope 12 h) de **mano de obra**
@@ -712,7 +722,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
 | F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
-| F7.1 | Aplicar `20260925190000` **junto con** el despliegue de `booking-authority` de F7.2 | El pago pasa a apartar lo que decide el planificador (equipos, varios días). Para trabajos normales no cambia nada; justo después, P-F1-1 (un pago real de autónomo) |
+| F7.1 | Aplicar `20260925190000` **junto con** el despliegue de `booking-authority` y `booking-payment` (F7.2) | El pago pasa a apartar lo que decide el planificador (equipos, varios días). Para trabajos normales no cambia nada; justo después, P-F1-1 (un pago real de autónomo) |
 | F6.1 | Aplicar `20260925160000` **y redesplegar a la vez** `booking-authority`, `booking-payment` y `send-email-notification` | El pago y la confirmación pasan a trabajar por horas. Justo después: P-F1-1 (un pago real de autónomo) |
 | F5.1 | Aplicar `20260925130000` | Corrige de paso las horas que estén vendidas y marcadas libres (debería haber 0). Probar P-F5-1 |
 | F4 | Aplicar `20260925120000` **y en el mismo momento** desplegar `booking-authority` y `booking-payment` | Las funciones nuevas llaman a `provider_free_hours`, que crea la migración. Justo después: P-F1-1 (un pago real de autónomo) y P-F4-1 |

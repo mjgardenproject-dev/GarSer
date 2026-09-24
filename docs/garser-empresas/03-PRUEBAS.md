@@ -379,12 +379,19 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
 | F7-01 | Trabajo de 8 h de mano de obra con 2 personas | 4 h de reloj, 8 filas de bloques | ✅ F7.1 (4 h de reloj, 8 filas: Ana y Luis de 8 a 12) |
-| F7-02 | Ese trabajo cuesta **lo mismo** que con una persona | Precio idéntico | 🟨 F7.1: la reserva cuesta lo que el presupuesto; la comparación con el motor, en F7.2 |
+| F7-02 | Ese trabajo cuesta **lo mismo** que con una persona | Precio idéntico | ✅ F7.2 (216 € con 2 personas en 4 h y con 1 en 8 h) |
 | F7-03 | Se descuentan 4 h a cada empleado, no 8 | Correcto | ✅ F7.1 |
 | F7-04 | Trabajo de 40 h en 5 días con 2 personas distintas | Se crea | ✅ F7.1 (del día 5 al 10, saltando el 7 sin nadie) |
 | F7-05 | Ninguna jornada supera las 12 h | Los 7 guardas siguen válidos | ✅ F7.1 |
 | F7-06 | El cliente ve «del 5 al 9 de mayo» | Correcto | ⬜ |
 | F7-07 | Trabajo de 2 personas con solo 1 libre | No reservable | ✅ F7.1 (el pago lo rechaza) |
+| F7-08 | La web y el pago dicen lo mismo | Con horarios al azar, las horas que ofrece la web = las que el pago puede apartar | ✅ F7.2 (72 combinaciones) |
+| F7-21 | La web ofrece un trabajo de 8 h con dos personas a la vez | Con límite 1, ninguna hora; con 2, sí | ✅ F7.2 |
+| F7-22 | Presupuesto de la web → pago → reserva de equipo | 4 h de reloj, 8 de trabajo | ✅ F7.2 |
+| F7-23 | Trabajo de 36 h en la web | Presupuesto «del día 30 al 35», saltando el día sin nadie | ✅ F7.2 |
+| F7-24 | Pagar ese trabajo | Reserva de varios días | ✅ F7.2 |
+| F7-25 | Sin días suficientes en 3 semanas | No se ofrece | ✅ F7.2 |
+| F7-26 | Autónomo, trabajo de 18 h (antes imposible, T7) | Se ofrece y se reserva en 2 días | ✅ F7.2 |
 | F7-10 | Límite de personas a la vez | Solo lo cambia el dueño (1–10); lo ve en su panel | ✅ F7.1 |
 | F7-11 | Límite 1 frente a límite 2 | Con 1, un trabajo de 8 h sin nadie con 8 h libres no cabe; con 2, van dos a la vez | ✅ F7.1 |
 | F7-12 | Trabajo de equipo: repartir por horas, «todo a una persona», alargar | Rechazados | ✅ F7.1 |
@@ -447,6 +454,8 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F5-4 | El cliente de esa reserva ve «Irá …» con nombre y foto el día antes, y no antes | F5 | ⬜ |
 | P-F6-1 | La empresa reparte un trabajo de 3 h entre dos personas desde la agenda; a cada una le llega su aviso con «Tu parte» | F6 | ⬜ |
 | P-F6-2 | La empresa propone otra fecha; al cliente le llega el correo, la acepta desde «Mis reservas» y la reserva se mueve (y le llega el aviso a quien va) | F6 | ⬜ |
+| P-F7-1 | Una empresa con «hasta 2 personas a la vez» y dos empleados libres 4 h: un cliente reserva un trabajo de 8 h; sale «2 personas, 4 h», se paga y a los dos les aparece | F7 | ⬜ |
+| P-F7-2 | Un trabajo grande (más de 12 h) de un autónomo: la web lo ofrece en varios días, se paga y queda «del X al Y» | F7 | ⬜ |
 
 ---
 

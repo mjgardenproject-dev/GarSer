@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   bookingRequiresPhytosanitaryLicense,
   evaluateOperationalEligibility,
+  freeRun,
   getClientCoordinates,
   getProviderCoordinates,
   getValidStartHours,
+  getValidStartHoursForPlan,
   getValidStartHoursForWorkers,
   isPhytosanitaryLicenseActive,
+  planBookingShape,
 } from './bookingEligibilityCore';
 import type { SerializableBookingData } from './bookingQuoteCore';
 
@@ -277,12 +280,16 @@ describe('bookingEligibilityCore', () => {
 
     expect(result.quote.totalPrice).toBe(60);
     expect(result.validHoursForRequestedDate).toEqual([9]);
-    expect(result.earliestSlot).toEqual({
+    expect(result.earliestSlot).toMatchObject({
       date: '2026-06-15',
       startHour: 9,
       startTime: '09:00:00',
       endTime: '11:00:00',
       durationHours: 2,
+      // F7: la forma del trabajo viaja con la franja (una persona, un día).
+      endDate: null,
+      crew: 1,
+      labourHours: 2,
     });
   });
 });
@@ -624,10 +631,10 @@ describe('T1 (transversal) — puerta de licencia fitosanitaria', () => {
   });
 });
 
-describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
+describe('T7 → F7 (D12) — trabajos de más de 12 h', () => {
   // 1500 m² / 100 m²/h = 15 h → >8h, así que el motor aplica el descuento ×0.9 (T2) = 13.5h →
-  // 14h redondeadas al bloque — por encima de MAX_SINGLE_DAY_DURATION_HOURS (12, el mismo
-  // tope que ya exige el CHECK de `duration_hours` en BD).
+  // 14h redondeadas al bloque. Antes (T7) se rechazaba siempre por no caber en un día; desde F7
+  // se reparte en varios días (también para un autónomo).
   const bigJobInput: SerializableBookingData = {
     ...bookingInput,
     lawnZones: [{ quantity: 1500, state: 'normal' }],
@@ -641,27 +648,45 @@ describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
     license_expires_at: '2099-01-01T00:00:00Z',
   };
 
-  it('avisa de que el trabajo no cabe en un día cuando estimatedHours supera el tope de 12h — sin ni mirar la agenda del profesional', () => {
+  it('con un solo día libre no hay hueco (ni con el día entero): 12 h por jornada como mucho', () => {
     const result = evaluateOperationalEligibility({
       bookingInput: bigJobInput,
       providerConfig,
       providerConfigVersion: 'cfg-1',
       profile,
-      // Agenda deliberadamente amplísima (un día entero libre) para demostrar que el aviso no
-      // depende de lo ocupado que esté el profesional: ni con el día entero libre cabría.
       providerDates: new Map([
-        ['2026-06-15', Array.from({ length: 16 }, (_, i) => 6 + i)], // 6h-22h, 16h seguidas
+        ['2026-06-15', Array.from({ length: 14 }, (_, i) => 6 + i)], // 6h-20h
       ]),
       requestedDate: '2026-06-15',
       windowEndDate: '2026-06-15',
     });
 
-    expect(result).toEqual({
-      eligible: false,
-      exclusion: {
-        code: 'service_exceeds_single_day',
-        message: 'Este trabajo necesita 14 horas seguidas y ningún servicio se puede reservar por más de 12 horas en un solo día. Prueba a reducir el alcance del trabajo — de momento no ofrecemos reservas repartidas en varios días.',
-      },
+    expect(result).toMatchObject({ eligible: false, exclusion: { code: 'no_reservable_availability' } });
+  });
+
+  it('con el día siguiente libre se ofrece en dos días: 12 h el primero y 2 h el segundo', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: bigJobInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile,
+      providerDates: new Map([
+        ['2026-06-15', Array.from({ length: 14 }, (_, i) => 6 + i)],
+        ['2026-06-16', [9, 10, 11]],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+      restrictToRequestedDate: true,
+    });
+
+    expect(result.eligible).toBe(true);
+    if (!result.eligible) return;
+    // De 6 a 8: 12 h el primer día. A las 9: 11 h + las 3 del día siguiente = 14. A las 10 ya
+    // no llega (10 + 3).
+    expect(result.validHoursForRequestedDate).toEqual([6, 7, 8, 9]);
+    expect(result.earliestSlot).toMatchObject({
+      startHour: 6, durationHours: 12, endDate: '2026-06-16', crew: 1, labourHours: 14,
+      planDays: [{ date: '2026-06-15', people: 1, hours: 12 }, { date: '2026-06-16', people: 1, hours: 2 }],
     });
   });
 
@@ -686,5 +711,89 @@ describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
         message: 'El profesional no tiene un hueco reservable válido para la duración estimada.',
       },
     });
+  });
+});
+
+describe('F7 — planBookingShape (la misma regla que plan_booking_cells en SQL)', () => {
+  const D1 = '2026-06-15';
+  const D2 = '2026-06-16';
+  const D3 = '2026-06-17';
+  const range = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => from + i);
+  const team = (people: Record<string, Record<string, number[]>>) =>
+    new Map(Object.entries(people).map(([id, days]) => [id, new Map(Object.entries(days))]));
+
+  it('freeRun: horas seguidas, como mucho 12 y hasta las 20:00', () => {
+    expect(freeRun([8, 9, 10, 12], 8)).toBe(3);
+    expect(freeRun(range(0, 24), 5)).toBe(12);
+    expect(freeRun(range(0, 24), 15)).toBe(5);
+    expect(freeRun([8], 20)).toBe(0);
+    expect(freeRun([8], Number.NaN)).toBe(0);
+  });
+
+  it('8 h de trabajo: con una persona de 4 h libres no cabe; con un equipo de 2, 4 h de reloj', () => {
+    const workerDates = team({ ana: { [D1]: range(8, 12) }, luis: { [D1]: range(8, 12) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 8, maxCrew: 1 })).toBeNull();
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 8, maxCrew: 2 })).toMatchObject({
+      mode: 'crew', crew: 2, firstDayHours: 4, endDate: null, days: [{ date: D1, people: 2, hours: 8 }],
+    });
+  });
+
+  it('elige el equipo más pequeño y reparte a partes iguales (7 h con 2: 4 + 3)', () => {
+    const workerDates = team({ ana: { [D1]: range(8, 11) }, luis: { [D1]: range(8, 12) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 7, maxCrew: 3 })).toMatchObject({ crew: 2, firstDayHours: 4 });
+    // Si nadie tiene 4 seguidas, no se puede con 2 aunque sumen 7.
+    const short = team({ ana: { [D1]: range(8, 11) }, luis: { [D1]: range(8, 11) } });
+    expect(planBookingShape({ workerDates: short, date: D1, startHour: 8, labourHours: 7, maxCrew: 2 })).toBeNull();
+  });
+
+  it('por turnos solo si la empresa lo acepta y son 12 h o menos', () => {
+    const workerDates = team({ ana: { [D1]: [9] }, luis: { [D1]: [10] } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 9, labourHours: 2, maxCrew: 2 })).toBeNull();
+    expect(planBookingShape({ workerDates, date: D1, startHour: 9, labourHours: 2, maxCrew: 2, allowSplit: true })).toMatchObject({ mode: 'turns' });
+  });
+
+  it('12 h o menos nunca en varios días', () => {
+    const workerDates = team({ ana: { [D1]: range(8, 12), [D2]: range(8, 20) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 10 })).toBeNull();
+  });
+
+  it('varios días: se salta el día sin nadie; los días siguientes cada persona desde su primera hora libre', () => {
+    const workerDates = team({
+      ana: { [D1]: range(8, 12), [D3]: range(15, 20) },
+      luis: { [D1]: range(8, 12), [D3]: range(8, 12) },
+    });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 15, maxCrew: 2 })).toMatchObject({
+      mode: 'multi_day', crew: 2, firstDayHours: 4, endDate: D3,
+      days: [{ date: D1, people: 2, hours: 8 }, { date: D3, people: 2, hours: 7 }],
+    });
+  });
+
+  it('varios días: el primer día alguien tiene que poder empezar a la hora elegida', () => {
+    const workerDates = team({ ana: { [D1]: range(10, 12), [D2]: range(8, 20) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 14 })).toBeNull();
+    // A las 10: 2 h + 12 h el día siguiente = 14. A las 11 ya no llega (1 + 12).
+    expect(getValidStartHoursForPlan({ workerDates, date: D1, labourHours: 14 })).toEqual([10]);
+  });
+
+  it('varios días con límite: cada día van como mucho N personas', () => {
+    const workerDates = team({
+      a: { [D1]: range(8, 12), [D2]: range(8, 12) },
+      b: { [D1]: range(8, 12), [D2]: range(8, 12) },
+      c: { [D1]: range(8, 12), [D2]: range(8, 12) },
+    });
+    // 16 h: con 3 a la vez no llega en un día (4 h cada una = 12); con 2 al día hace falta el 2.º.
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 16, maxCrew: 2 })).toMatchObject({
+      endDate: D2, days: [{ people: 2, hours: 8 }, { people: 2, hours: 8 }],
+    });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 16, maxCrew: 3 })).toMatchObject({
+      endDate: D2, days: [{ people: 3, hours: 12 }, { people: 1, hours: 4 }],
+    });
+  });
+
+  it('no pasa de 21 días', () => {
+    const days = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`2026-07-${String(i + 1).padStart(2, '0')}`, [8]]));
+    const workerDates = team({ ana: days });
+    expect(planBookingShape({ workerDates, date: '2026-07-01', startHour: 8, labourHours: 21 })?.endDate).toBe('2026-07-21');
+    expect(planBookingShape({ workerDates, date: '2026-07-01', startHour: 8, labourHours: 22 })).toBeNull();
   });
 });

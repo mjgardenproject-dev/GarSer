@@ -3,6 +3,7 @@ import {
   bookingRequiresPhytosanitaryLicense,
   buildProviderWorkerIndex,
   evaluateOperationalEligibility,
+  MAX_JOB_DAYS,
   mergeWorkerDates,
   type ProviderFreeHourRow,
   type ProviderProfileLike,
@@ -490,26 +491,36 @@ async function fetchWorkerHoursForQuote(
     excludeHoldIds?: string[];
   },
 ) {
+  // F7: un trabajo de varios días necesita también los días siguientes.
+  const lastDay = new Date(`${params.date}T12:00:00Z`);
+  lastDay.setUTCDate(lastDay.getUTCDate() + MAX_JOB_DAYS - 1);
+  const endDate = lastDay.toISOString().slice(0, 10);
   try {
     await admin.rpc('cleanup_expired_booking_payment_state', {
       p_gardener_ids: [params.gardenerId],
       p_start_date: params.date,
-      p_end_date: params.date,
+      p_end_date: endDate,
     });
   } catch {
     // No bloqueamos el pago por fallos de limpieza oportunista.
   }
 
-  const { data, error } = await admin.rpc('provider_free_hours', {
-    p_provider_ids: [params.gardenerId],
-    p_service_id: params.serviceId,
-    p_start: params.date,
-    p_end: params.date,
-    p_requires_license: params.requiresLicense,
-    p_exclude_hold_ids: (params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean),
-  });
-  if (error || !data) return new Map<string, Map<string, number[]>>();
-  return buildProviderWorkerIndex(data as ProviderFreeHourRow[]).get(params.gardenerId)
+  // H-32: PostgREST corta en 1000 filas; se piden por páginas (filas ordenadas).
+  const rows: ProviderFreeHourRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin.rpc('provider_free_hours', {
+      p_provider_ids: [params.gardenerId],
+      p_service_id: params.serviceId,
+      p_start: params.date,
+      p_end: endDate,
+      p_requires_license: params.requiresLicense,
+      p_exclude_hold_ids: (params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean),
+    }).range(from, from + 999);
+    if (error || !data) return new Map<string, Map<string, number[]>>();
+    rows.push(...(data as ProviderFreeHourRow[]));
+    if ((data as unknown[]).length < 1000) break;
+  }
+  return buildProviderWorkerIndex(rows).get(params.gardenerId)
     || new Map<string, Map<string, number[]>>();
 }
 
@@ -596,14 +607,15 @@ async function revalidateQuoteBeforePayment(
   }));
 
   const bookingInput = (quote.input_payload || {}) as SerializableBookingData;
-  // F6 (D10): empresa que acepta trabajos partidos → se revalida por turnos, como en la web.
-  const { data: splitRow } = await admin
+  // F6 (D10) y F7 (D11): se revalida con las mismas reglas de venta de la empresa que la web
+  // (trabajos partidos y cuántas personas a la vez). Autónomo: sin fila, una persona.
+  const { data: companyRow } = await admin
     .from('companies')
-    .select('provider_user_id')
+    .select('allow_split_jobs, max_crew')
     .eq('provider_user_id', quote.gardener_id)
     .eq('status', 'active')
-    .eq('allow_split_jobs', true)
     .maybeSingle();
+  const company = companyRow as { allow_split_jobs: boolean; max_crew: number | null } | null;
   const workerDates = await fetchWorkerHoursForQuote(admin, {
     gardenerId: quote.gardener_id,
     serviceId: quote.service_id,
@@ -621,7 +633,8 @@ async function revalidateQuoteBeforePayment(
     providerDates: mergeWorkerDates(workerDates),
     workerDates,
     licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
-    allowSplitAcrossWorkers: Boolean(splitRow),
+    allowSplitAcrossWorkers: Boolean(company?.allow_split_jobs),
+    maxCrew: Math.max(1, Number(company?.max_crew || 1)),
     requestedDate: selectedDate,
     windowEndDate: selectedDate,
     restrictToRequestedDate: true,

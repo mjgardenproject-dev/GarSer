@@ -10,13 +10,14 @@ import {
 import {
   bookingRequiresPhytosanitaryLicense,
   buildProviderWorkerIndex,
-  buildSlotSelection,
+  buildPlannedSlot,
   evaluateOperationalEligibility,
   getClientCoordinates,
   getProviderCoordinates,
-  getValidStartHours,
-  getValidStartHoursForWorkers,
+  getValidStartHoursForPlan,
+  MAX_JOB_DAYS,
   mergeWorkerDates,
+  planBookingShape,
   type ProviderExclusionCode,
   type ProviderFreeHourRow,
 } from '../../../src/shared/bookingEligibilityCore.ts';
@@ -274,17 +275,33 @@ async function fetchPriceRows(
 // también usa el pago: por cada proveedor, las de cada persona que puede hacer el trabajo
 // (autónomo: él mismo; empresa: su equipo con ese servicio y, si hace falta, con carnet), sin
 // las horas que alguien está pagando ni las que ya tiene en su agenda.
-// GarSer Empresas (F6, D10): empresas que aceptan vender trabajos partidos (por turnos).
-async function fetchSplitProviders(admin: ReturnType<typeof createClient>, providerIds: string[]): Promise<Set<string>> {
-  if (providerIds.length === 0) return new Set();
+// GarSer Empresas: cómo vende cada empresa. F6 (D10): si acepta trabajos partidos (por
+// turnos). F7 (D11): cuántas personas pueden ir a la vez. Un autónomo no sale aquí: 1 persona.
+type ProviderPlanning = { split: Set<string>; maxCrew: Map<string, number> };
+
+async function fetchProviderPlanning(admin: ReturnType<typeof createClient>, providerIds: string[]): Promise<ProviderPlanning> {
+  const planning: ProviderPlanning = { split: new Set(), maxCrew: new Map() };
+  if (providerIds.length === 0) return planning;
   const { data } = await admin
     .from('companies')
-    .select('provider_user_id')
+    .select('provider_user_id, allow_split_jobs, max_crew')
     .in('provider_user_id', providerIds)
-    .eq('status', 'active')
-    .eq('allow_split_jobs', true);
-  return new Set(((data || []) as { provider_user_id: string }[]).map((row) => String(row.provider_user_id)));
+    .eq('status', 'active');
+  ((data || []) as { provider_user_id: string; allow_split_jobs: boolean; max_crew: number | null }[]).forEach((row) => {
+    const id = String(row.provider_user_id);
+    if (row.allow_split_jobs) planning.split.add(id);
+    planning.maxCrew.set(id, Math.max(1, Number(row.max_crew || 1)));
+  });
+  return planning;
 }
+
+// F7: un trabajo de varios días necesita las horas libres de los días siguientes a cada fecha.
+const extendForMultiDay = (endDate: string) => addDays(endDate, MAX_JOB_DAYS - 1);
+
+// H-32: PostgREST corta cualquier respuesta en 1000 filas (también las de una función), sin
+// avisar. Con varios proveedores o muchos días, `provider_free_hours` las pasa de largo: se pide
+// por páginas (la función devuelve las filas ordenadas, así que las páginas no se solapan).
+const FREE_HOURS_PAGE = 1000;
 
 async function fetchProviderWorkerHours(
   admin: ReturnType<typeof createClient>,
@@ -306,15 +323,20 @@ async function fetchProviderWorkerHours(
   } catch {
     // No bloqueamos el funnel si falla la limpieza oportunista.
   }
-  const { data, error } = await admin.rpc('provider_free_hours', {
-    p_provider_ids: params.providerIds,
-    p_service_id: params.serviceId,
-    p_start: params.startDate,
-    p_end: params.endDate,
-    p_requires_license: params.requiresLicense,
-  });
-  if (error || !data) return buildProviderWorkerIndex([]);
-  return buildProviderWorkerIndex(data as ProviderFreeHourRow[]);
+  const rows: ProviderFreeHourRow[] = [];
+  for (let from = 0; ; from += FREE_HOURS_PAGE) {
+    const { data, error } = await admin.rpc('provider_free_hours', {
+      p_provider_ids: params.providerIds,
+      p_service_id: params.serviceId,
+      p_start: params.startDate,
+      p_end: params.endDate,
+      p_requires_license: params.requiresLicense,
+    }).range(from, from + FREE_HOURS_PAGE - 1);
+    if (error || !data) return buildProviderWorkerIndex([]);
+    rows.push(...(data as ProviderFreeHourRow[]));
+    if ((data as unknown[]).length < FREE_HOURS_PAGE) break;
+  }
+  return buildProviderWorkerIndex(rows);
 }
 
 function applyMinNoticeToWorkers(workerDates: WorkerDates, minNoticeHours: number, nowMs: number): WorkerDates {
@@ -420,6 +442,7 @@ async function evaluateProviderEligibility(params: {
   profile?: ProviderProfileRow;
   workerDates: WorkerDates;
   allowSplit?: boolean;
+  maxCrew?: number;
   requestedDate: string;
   windowEndDate: string;
   restrictToRequestedDate?: boolean;
@@ -454,6 +477,7 @@ async function evaluateProviderEligibility(params: {
     workerDates: params.workerDates,
     licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
     allowSplitAcrossWorkers: Boolean(params.allowSplit),
+    maxCrew: params.maxCrew,
     requestedDate: params.requestedDate,
     windowEndDate: params.windowEndDate,
     restrictToRequestedDate: params.restrictToRequestedDate,
@@ -596,9 +620,9 @@ Deno.serve(async (req: Request) => {
       const priceRows = await fetchPriceRows(admin, serviceId, providerIds);
       const providerProfiles = await fetchProviderProfiles(admin, providerIds);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds, serviceId, startDate: selectedDate, endDate, requiresLicense,
+        providerIds, serviceId, startDate: selectedDate, endDate: extendForMultiDay(endDate), requiresLicense,
       });
-      const splitProviders = await fetchSplitProviders(admin, providerIds);
+      const planning = await fetchProviderPlanning(admin, providerIds);
       const noticeSettings = await fetchMinNoticeSettings(admin, providerIds);
       const nowMs = Date.now();
 
@@ -618,7 +642,8 @@ Deno.serve(async (req: Request) => {
           priceRow: priceRows[providerId],
           profile: providerProfiles[providerId],
           workerDates,
-          allowSplit: splitProviders.has(providerId),
+          allowSplit: planning.split.has(providerId),
+          maxCrew: planning.maxCrew.get(providerId),
           requestedDate: selectedDate,
           windowEndDate: endDate,
         });
@@ -652,9 +677,11 @@ Deno.serve(async (req: Request) => {
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds: [providerId], serviceId, startDate: date, endDate: date, requiresLicense,
+        providerIds: [providerId], serviceId, startDate: date, endDate: extendForMultiDay(date), requiresLicense,
       });
-      const allowSplit = (await fetchSplitProviders(admin, [providerId])).has(providerId);
+      const planning = await fetchProviderPlanning(admin, [providerId]);
+      const allowSplit = planning.split.has(providerId);
+      const maxCrew = planning.maxCrew.get(providerId);
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
       const workerDates = applyMinNoticeToWorkers(
         workerIndex.get(providerId) || new Map(), noticeSettings[providerId] ?? 0, Date.now(),
@@ -667,6 +694,7 @@ Deno.serve(async (req: Request) => {
         profile: providerProfiles[providerId],
         workerDates,
         allowSplit,
+        maxCrew,
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,
@@ -697,9 +725,11 @@ Deno.serve(async (req: Request) => {
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds: [providerId], serviceId, startDate: start, endDate: end, requiresLicense,
+        providerIds: [providerId], serviceId, startDate: start, endDate: extendForMultiDay(end), requiresLicense,
       });
-      const allowSplit = (await fetchSplitProviders(admin, [providerId])).has(providerId);
+      const planning = await fetchProviderPlanning(admin, [providerId]);
+      const allowSplit = planning.split.has(providerId);
+      const maxCrew = planning.maxCrew.get(providerId);
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
       const nowMs = Date.now();
       const minNotice = noticeSettings[providerId] ?? 0;
@@ -712,6 +742,7 @@ Deno.serve(async (req: Request) => {
         profile: providerProfiles[providerId],
         workerDates,
         allowSplit,
+        maxCrew,
         requestedDate: start,
         windowEndDate: end,
       });
@@ -728,13 +759,13 @@ Deno.serve(async (req: Request) => {
       const endCursor = new Date(`${end}T12:00:00Z`);
       let earliestSlot: BookingQuoteSlotSelection | null = null;
 
+      const labourHours = Math.max(1, Math.ceil(evaluation.quote.estimatedHours));
       while (cursor <= endCursor) {
         const date = cursor.toISOString().slice(0, 10);
+        // F7: la misma regla que el pago (planificador): una persona, equipo, turnos o días.
         const validHours = date < today
           ? []
-          : allowSplit
-            ? getValidStartHours(mergeWorkerDates(workerDates).get(date) || [], Math.max(1, Math.ceil(evaluation.quote.estimatedHours)))
-            : getValidStartHoursForWorkers(workerDates, date, Math.max(1, Math.ceil(evaluation.quote.estimatedHours)));
+          : getValidStartHoursForPlan({ workerDates, date, labourHours, maxCrew, allowSplit });
         days.push({
           date,
           day: cursor.getUTCDate(),
@@ -743,7 +774,8 @@ Deno.serve(async (req: Request) => {
           availableStartHours: validHours,
         });
         if (!earliestSlot && validHours.length > 0) {
-          earliestSlot = buildSlotSelection(date, validHours[0], evaluation.quote.estimatedHours);
+          const plan = planBookingShape({ workerDates, date, startHour: validHours[0], labourHours, maxCrew, allowSplit });
+          earliestSlot = plan ? buildPlannedSlot(date, validHours[0], plan) : null;
         }
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
@@ -780,9 +812,11 @@ Deno.serve(async (req: Request) => {
       const priceRows = await fetchPriceRows(admin, serviceId, [providerId]);
       const providerProfiles = await fetchProviderProfiles(admin, [providerId]);
       const workerIndex = await fetchProviderWorkerHours(admin, {
-        providerIds: [providerId], serviceId, startDate: date, endDate: date, requiresLicense,
+        providerIds: [providerId], serviceId, startDate: date, endDate: extendForMultiDay(date), requiresLicense,
       });
-      const allowSplit = (await fetchSplitProviders(admin, [providerId])).has(providerId);
+      const planning = await fetchProviderPlanning(admin, [providerId]);
+      const allowSplit = planning.split.has(providerId);
+      const maxCrew = planning.maxCrew.get(providerId);
       const noticeSettings = await fetchMinNoticeSettings(admin, [providerId]);
       const workerDatesForQuote = applyMinNoticeToWorkers(
         workerIndex.get(providerId) || new Map(), noticeSettings[providerId] ?? 0, Date.now(),
@@ -795,6 +829,7 @@ Deno.serve(async (req: Request) => {
         profile: providerProfiles[providerId],
         workerDates: workerDatesForQuote,
         allowSplit,
+        maxCrew,
         requestedDate: date,
         windowEndDate: date,
         restrictToRequestedDate: true,
@@ -815,13 +850,17 @@ Deno.serve(async (req: Request) => {
         );
       }
 
+      // F7: la franja lleva la forma del trabajo (personas, días, fin) para enseñarla al cliente.
+      const labourHours = Math.max(1, Math.ceil(evaluation.quote.estimatedHours));
+      const plannedSlot = (hour: number) => {
+        const plan = planBookingShape({ workerDates: workerDatesForQuote, date, startHour: hour, labourHours, maxCrew, allowSplit });
+        return plan ? buildPlannedSlot(date, hour, plan) : null;
+      };
       const availability = buildAvailabilityContract({
         requestedDate: date,
         validStartHours: validHours,
-        selectedSlot: buildSlotSelection(date, selectedHour, evaluation.quote.estimatedHours),
-        earliestSlot: validHours.length > 0
-          ? buildSlotSelection(date, validHours[0], evaluation.quote.estimatedHours)
-          : null,
+        selectedSlot: plannedSlot(selectedHour),
+        earliestSlot: validHours.length > 0 ? plannedSlot(validHours[0]) : null,
       });
 
       const ttlMinutes = Math.max(15, Math.min(24 * 60, Number(payload.ttlMinutes || 120)));

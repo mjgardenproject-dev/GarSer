@@ -516,11 +516,9 @@ const ProvidersPage: React.FC = () => {
               : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'outside_coverage')
                 ? 'No hay profesionales cuyo radio operativo cubra la dirección indicada.'
                 : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'service_exceeds_single_day')
-                  /* T7 (D4-a): antes esto caía en el mismo mensaje genérico de
-                     `no_reservable_availability` de abajo, indistinguible de "prueba otro día" —
-                     cuando el problema real es que el trabajo, tal y como está declarado, no
-                     cabe en ninguna jornada de ningún profesional. */
-                  ? 'Este trabajo necesita más horas seguidas de las que caben en una sola jornada. De momento no ofrecemos reservas repartidas en varios días — prueba a reducir el alcance del trabajo.'
+                  /* T7 → F7 (D12): los trabajos grandes ya se reparten en varios días o entre
+                     varias personas; este aviso queda solo para lo que pasa del tope de horas. */
+                  ? 'Este trabajo es demasiado grande para reservarlo de una vez. Prueba a dividirlo en varios trabajos más pequeños.'
                   : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'no_reservable_availability')
                     ? 'No hay huecos reservables válidos para la duración estimada en la fecha consultada.'
                     : exclusionCodes.length > 0 && exclusionCodes.every((code) => code === 'missing_phytosanitary_license')

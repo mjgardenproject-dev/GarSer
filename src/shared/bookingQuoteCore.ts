@@ -79,8 +79,18 @@ export interface BookingQuoteSlotSelection {
   date: string;
   startHour: number;
   startTime: string;
+  /** Fin del PRIMER día (en varios días, ver endDate). */
   endTime: string;
+  /** Lo que dura el primer día. */
   durationHours: number;
+  /** GarSer Empresas (F7): último día si el trabajo dura varios; null/ausente = un día. */
+  endDate?: string | null;
+  /** GarSer Empresas (F7): cuántas personas van a la vez como mucho (ausente = 1). */
+  crew?: number;
+  /** GarSer Empresas (F7): horas de trabajo totales (el precio sale de aquí). */
+  labourHours?: number;
+  /** GarSer Empresas (F7): cuántas personas y horas cada día. */
+  planDays?: { date: string; people: number; hours: number }[];
 }
 
 export interface BookingAvailabilityCalendarDay {

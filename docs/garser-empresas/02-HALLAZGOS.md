@@ -640,6 +640,9 @@ Cosas que parecen problemas pero **no se han comprobado**. No se citan como hech
 - **El registro desde una invitación dice «Rol seleccionado: Cliente · Este rol será permanente
   tras el registro»**, y en realidad pasará a empleado al aceptar. No es un fallo (se registra
   como cliente a propósito, A-22), pero confunde. Pulir al tocar `AuthForm`.
+- **«Hace 1 hora» en una solicitud recién creada** (pantalla de solicitudes del profesional,
+  visto en el hito). Parece un desfase de zona horaria en el cálculo relativo; afectaría también
+  a autónomos. No verificado.
 - **Una prueba escrita como «foto» y no como regla (F2-01)** falló al existir la primera
   empresa: decía «todas las fichas son `solo`». Se reescribió como la regla permanente
   («toda ficha sin empresa es `solo` y toda `company` tiene su empresa»). Lección para las

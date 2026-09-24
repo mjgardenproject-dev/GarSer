@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada (horarios del equipo, asignar y ejecutar, avisos, D6) · siguiente: ⏸ HITO (recorrido en local haciendo de empresa) y después F6 · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada · ✅ HITO hecho (2026-09-24, recorrido en el navegador) · siguiente F6 (planificación) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -415,6 +415,27 @@ comisión por Stripe. Verificado en paralelo que el funnel del autónomo no ha c
 > el planificador. Lo que se aprenda ahí manda sobre el diseño de F5 y F6.
 >
 > El piloto con una empresa real pasa a ser el **primer paso después de la fusión**.
+>
+> **✅ Hecho el 2026-09-24** (tras F5, por petición del usuario lo hizo el chat en el navegador,
+> en móvil). Recorrido: Lucía pone su horario fijo (L-V 9-17) → Laura reserva césped con la
+> empresa (distintivo, mismo precio, horas de Lucía) → el pago aparta a Lucía (Stripe simulado)
+> → Marta ve la solicitud con «Va: Lucía Martín» y la acepta → a Lucía le llega «Nuevo trabajo»
+> y lo ve en «Semana» con dirección, cliente y qué hacer. **Todo funciona de punta a punta.**
+>
+> **Lo aprendido, que manda sobre F6:**
+> 1. **La dueña no tiene una vista de «quién hace qué y cuándo».** «Reservas» es una lista de
+>    tarjetas una detrás de otra; con 2 trabajos va bien, con 20 en una semana y 5 personas no.
+>    Falta el planificador por persona y día → es F6.
+> 2. **La dueña no ve el horario de su equipo** (quién está libre cuándo); solo lo descubre al
+>    abrir «Cambiar quién va» en un trabajo concreto. El planificador tiene que mostrarlo.
+> 3. **El panel de la empresa mezcla cosas:** la pestaña «Equipo» abre con «Solicitudes» y
+>    «Reservas». Con el planificador, el panel pasa a abrir en la agenda.
+> 4. **El empleado ve «Reservas» en su barra inferior** y le lleva a la lista de reservas de
+>    **cliente** (las suyas propias como cliente, vacía): confunde. Su barra debe llevar a «Mi
+>    trabajo».
+> 5. En el listado del cliente, con dos o más profesionales la tarjeta de la empresa queda fuera
+>    de la pantalla (carrusel horizontal): es el comportamiento de siempre con varios
+>    autónomos, no de empresas. Anotado, fuera de alcance.
 
 ---
 

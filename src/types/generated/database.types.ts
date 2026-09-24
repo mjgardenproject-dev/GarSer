@@ -2430,11 +2430,24 @@ export type Database = {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: undefined
       }
+      assign_booking_worker: {
+        Args: { p_booking_id: string; p_worker_id: string }
+        Returns: Json
+      }
       attach_manual_declaration_to_booking: {
         Args: { p_booking_id: string; p_declaration_id: string }
         Returns: undefined
       }
       auto_complete_due_bookings: { Args: never; Returns: number }
+      booking_assignment_candidates: {
+        Args: { p_booking_id: string }
+        Returns: {
+          full_name: string
+          is_current: boolean
+          is_free: boolean
+          user_id: string
+        }[]
+      }
       booking_requires_phyto_license: {
         Args: { p_booking_id: string }
         Returns: boolean
@@ -2598,6 +2611,7 @@ export type Database = {
       has_valid_phyto_license: { Args: { p_user_id: string }; Returns: boolean }
       invitation_preview: { Args: { p_token: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
+      is_booking_assignee: { Args: { p_booking_id: string }; Returns: boolean }
       is_company_member: { Args: { p_company_id: string }; Returns: boolean }
       is_company_owner: { Args: { p_company_id: string }; Returns: boolean }
       is_my_team_member: { Args: { p_user_id: string }; Returns: boolean }
@@ -2647,6 +2661,25 @@ export type Database = {
       }
       my_company_id: { Args: never; Returns: string }
       my_company_membership: { Args: never; Returns: Json }
+      my_jobs: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          assignment_pending: boolean
+          booking_id: string
+          client_address: string
+          client_name: string
+          client_phone: string
+          company_name: string
+          date: string
+          duration_hours: number
+          finished_at: string
+          notes: string
+          service_name: string
+          service_start: string
+          start_time: string
+          status: string
+        }[]
+      }
       pick_provider_worker: {
         Args: {
           p_date: string

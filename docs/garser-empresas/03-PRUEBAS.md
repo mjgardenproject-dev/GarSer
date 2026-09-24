@@ -283,18 +283,21 @@ mano: los horarios del equipo son de F5):
 
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F5-01 | Empleado asignado ve la dirección del cliente | La ve | ⬜ |
-| F5-02 | **Empleado ve la PII de un trabajo de su empresa pero no suyo** | Denegado | ⬜ |
-| F5-03 | Tras desasignarle, deja de ver esa PII | Inmediato, sin limpieza manual | ⬜ |
-| F5-04 | Empleado intenta cancelar una reserva | Denegado | ⬜ |
-| F5-05 | Empleado marca inicio y fin de su trabajo | Permitido | ⬜ |
-| F5-06 | Asignar trabajo fitosanitario convencional a empleado sin carnet (D4) | No aparece en la lista; imposible asignarlo también por API | ⬜ |
-| F5-07 | Desactivar a un empleado con trabajos futuros | **Bloqueado** hasta reasignar | ⬜ |
+| F5-01 | Empleado asignado ve la dirección del cliente | La ve | ✅ F5.2 |
+| F5-02 | **Empleado ve la PII de un trabajo de su empresa pero no suyo** | Denegado | ✅ F5.2 (y ni el asignado lee la reserva completa en la tabla) |
+| F5-03 | Tras desasignarle, deja de ver esa PII | Inmediato, sin limpieza manual | ✅ F5.2 |
+| F5-04 | Empleado intenta cancelar una reserva | Denegado | ✅ F5.2 |
+| F5-05 | Empleado marca ~~inicio y~~ fin de su trabajo | Permitido; un compañero no | ✅ F5.2 (en GarSer no existe «marcar inicio», tampoco para autónomos: el servicio empieza a su hora) |
+| F5-06 | Asignar trabajo fitosanitario convencional a empleado sin carnet (D4) | No aparece en la lista; imposible asignarlo también por API | ✅ F5.2 |
+| F5-07 | Desactivar a un empleado con trabajos futuros | **Bloqueado** hasta reasignar | ✅ F5.2 |
 | F5-08 | Email al empleado al ser asignado | Llega | ⬜ |
-| F5-09 | Al asignar un trabajo de setos, la lista solo muestra empleados que hacen setos (D5) | Solo esos | ⬜ |
-| F5-10 | Asignar por API a un empleado que no hace ese servicio (D5) | Rechazado por el servidor, no solo oculto en pantalla | ⬜ |
+| F5-09 | Al asignar un trabajo de setos, la lista solo muestra empleados que hacen setos (D5) | Solo esos | ✅ F5.2 (con césped) |
+| F5-10 | Asignar por API a un empleado que no hace ese servicio (D5) | Rechazado por el servidor, no solo oculto en pantalla | ✅ F5.2 |
 | F5-11 | El cliente ve nombre y foto del trabajador **el día antes** (D6) | Sí | ⬜ |
 | F5-12 | El cliente intenta ver quién va **dos días antes**, o ver su teléfono (D6) | No lo ve | ⬜ |
+
+**Servidor de asignación (F5.2)** — `node scripts/garser-empresas/verify-f5-assign.mjs` (13
+comprobaciones, con el token de cada persona): F5-01 a F5-07, F5-09, F5-10 y F5-32 a F5-35.
 
 **Horarios del equipo (F5.1)** — `node scripts/garser-empresas/verify-f5-schedules.mjs` (9
 comprobaciones con el token de cada persona) y navegador:
@@ -310,6 +313,10 @@ comprobaciones con el token de cada persona) y navegador:
 | F5-26 | Horas ocupadas propias / de un compañero | Las suyas sí; las del compañero no | ✅ F5.1 |
 | F5-27 | Cancelar | Libera las horas de quien iba | ✅ F5.1 |
 | F5-28 | Antelación mínima de la empresa; un empleado intenta cambiarla | Se aplica a la venta; no la cambia | ✅ F5.1 |
+| F5-32 | Cambiar quién va | Quien iba queda libre; quien va, ocupado; todo o nada | ✅ F5.2 |
+| F5-33 | Confirmar la propuesta (misma persona) | Deja de ser propuesta | ✅ F5.2 |
+| F5-34 | Detalle del trabajo (qué hay que hacer) | Lo ve quien va; un compañero no | ✅ F5.2 |
+| F5-35 | Asignar a alguien ocupado alguna de las horas | Rechazado con explicación; nada cambia | ✅ F5.2 |
 | F5-29 | Navegador (móvil): el empleado abre «Mi horario» desde «Mi trabajo» y ve su hora vendida como «Reservado» | Correcto | ✅ F5.1 |
 | F5-30 | Navegador: en «Horario fijo» el empleado no ve la antelación mínima | Correcto | ✅ F5.1 |
 | F5-31 | Navegador: la dueña que trabaja tiene «Mi horario» en su tarjeta, y cambia la antelación de la empresa en «Tu empresa» | Se guarda | ✅ F5.1 |

@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · 🟨 F5 en curso: ✅ F5.1 horarios del equipo · siguiente F5.2 (servidor: asignar, el empleado ve sus trabajos, inicio y fin) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · 🟨 F5 en curso: ✅ F5.1 horarios · ✅ F5.2 servidor de asignación · siguiente F5.3 (web: panel del empleado y «cambiar quién va») · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -437,14 +437,24 @@ empresa) se hace tras F5, cuando ya hay horarios.
   y al dueño que trabaja no se le cierran las horas de todo su equipo.
 - Antelación mínima = de la empresa (A-31), en «Tu empresa».
 
+**✅ F5.2 Servidor de asignación y ejecución — hecho** (migración
+`20260925140000_empresas_f5_assign_and_work.sql`, `verify-f5-assign.mjs` → 13/13):
+- `my_jobs()`: el empleado ve **sus** trabajos con lo justo para hacerlos (A-33, en lugar de
+  ampliar `shares_booking_with`).
+- `booking_assignment_candidates()` / `assign_booking_worker()`: el dueño ve quién puede ir y
+  elige; servidor comprueba servicio, carnet y horas (A-34).
+- Detalle del trabajo y «he terminado» también para quien va. «Marcar inicio» no existe en
+  GarSer (tampoco para autónomos): no se añade.
 
-- [ ] Asignación mínima: el dueño elige empleado de una lista de quién está libre **y hace
+
+- [x] Asignación mínima: el dueño elige empleado de una lista de quién está libre **y hace
       ese servicio** (D5). En trabajos fitosanitarios, solo quien tiene carnet aprobado (D4).
-- [ ] Extender `shares_booking_with()` con la vía «estoy asignado» — es lo que deja al
-      empleado ver la dirección del trabajo. Mínimo privilegio: **asignado**, no *de la empresa*.
+      *(Servidor F5.2; pantalla F5.3.)*
+- [x] ~~Extender `shares_booking_with()`~~ → `my_jobs()` (A-33). Mínimo privilegio: **asignado**,
+      no *de la empresa*.
 - [ ] Panel de empleado: Hoy / Mi semana / Mi disponibilidad / Perfil.
 - [ ] Emails de asignación y de cambio.
-- [ ] Puerta de carnet fitosanitario en la asignación, **por empleado** (D4, H-04).
+- [x] Puerta de carnet fitosanitario en la asignación, **por empleado** (D4, H-04).
 - [ ] El cliente ve nombre y foto de quién va, **el día antes** (D6).
 
 #### ⬜ F6 — Planificación y reasignación
@@ -523,7 +533,7 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 6. Aplicar las migraciones del proyecto, **en este orden**:
    `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
-   `20260925120000` (F4) → `20260925130000` (F5.1)
+   `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,

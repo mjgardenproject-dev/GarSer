@@ -90,6 +90,11 @@ Cada entrega termina con una sección **"Acciones manuales del usuario"**: migra
 aplicar, funciones que desplegar, ajustes de panel. Si no hay nada, se escribe literalmente
 `(nada que desplegar)`. Nunca se omite la sección.
 
+**En este proyecto el usuario no hace ninguna acción manual fase a fase** (decisión del
+2026-09-24): todo se acumula en `01-PLAN-Y-PROGRESO.md` §5 («Notas para el usuario»), que se
+ejecuta una sola vez el día de la fusión. Cada fase **añade sus puntos a esa lista** y en la
+respuesta se dice «apuntado en §5 para el día de la fusión», no «haz esto ahora».
+
 Datos operativos que necesitas para esa sección:
 
 - `supabase functions deploy` **se cuelga** en esta máquina (Docker). Usa `--use-api`.

@@ -455,18 +455,41 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 
 ---
 
-## 5. Acciones manuales del usuario
+## 5. Notas para el usuario: lo que tendrás que hacer al terminar
 
-*(nada que desplegar — esta entrega es solo documentación)*
+> **Hasta ahora no has hecho ninguna acción manual, y no hace falta.** El proyecto vive en tu
+> ordenador hasta el final (§0): todo lo que cada fase dice como «acción manual» se apunta
+> **aquí** y se hace **una sola vez, el día de la fusión con garser.es**. Cada fase nueva añade
+> sus puntos a esta lista. El detalle técnico de cada punto está en §6.
 
-Pendientes para cuando arranque la Fase 0:
+**Antes de fusionar — comprobar producción (solo lectura, SQL Editor de Supabase):**
 
-1. ~~Crear la rama~~ → hecho: `feat/garser-empresas` desde `origin/main` (2026-09-23).
-2. **Consultar solapes en `booking_blocks` de producción** — ya no antes de la F1, sino
-   **antes de la fusión final**, que es cuando la migración llegará a producción (ver prueba
-   F1-00). Se hace desde el panel de Supabase de producción.
-3. ~~Responder D1–D6~~ → respondidas el 2026-09-23.
-4. **D7** (encuesta de empresas): se diseña juntos al llegar a la F3.
+1. ¿Hay algún administrador que no seas tú? → consulta 1 de §5b. *(F0)*
+2. ¿Hay horas vendidas dos veces o bloques sin reserva? → consultas de F1 en §6. *(F1)*
+3. ¿Hay fichas de jardinero sin solicitud aprobada, o carnets aprobados sin revisión? →
+   consultas de F2 en §6. *(F2)*
+4. ¿Hay licencias aprobadas que nadie revisó? → consulta de F3 en §6. *(F3)*
+
+Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
+
+**El día de la fusión — en este orden:**
+
+5. Traer a la rama lo que haya entrado en `main` mientras tanto.
+6. Aplicar las migraciones del proyecto, **en este orden**:
+   `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
+   `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3)
+   *(las fases siguientes añadirán las suyas al final)*.
+7. Desplegar las funciones que han cambiado:
+   `supabase functions deploy send-email-notification --use-api` *(F3)*.
+   *(F4 añadirá `booking-authority`.)*
+8. Desplegar la web (Vercel) desde la rama fusionada.
+
+**Justo después — probar en garser.es:** la batería «P-» de `03-PRUEBAS.md` §3, de arriba
+abajo. Las más importantes: **P-F1-1** (un pago real crea bien la agenda), **P-F3-6** (una
+invitación real llega y se acepta) y **P-F3-9 a P-F3-11** (llegan los correos).
+
+**Si antes de terminar garser.es recibe usuarios reales**, los puntos 1 y la migración de F0
+(escalada a administrador, H-11) se adelantan (D8).
 
 ---
 

@@ -90,6 +90,8 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D4 | ¿Vale el carnet fitosanitario de la empresa o hace falta el de cada empleado? | **Cada empleado tiene que tener adjuntado su carnet.** | El carnet es **por persona**. El de la empresa no cubre a sus empleados. Ver A-13 y la nota de interpretación de abajo. | F3, F5 |
 | D5 | ¿Los empleados tienen especialidades? | **Sí. Al crear un empleado, el empresario marca qué servicios hace.** Al asignar, solo aparecen los empleados con ese servicio activo. | La capacidad de la empresa se calcula **por servicio**, no en bloque. Ver A-12. **Adelanta trabajo de F6 a F3 y F4.** | F3, F4, F5 |
 | D6 | ¿El cliente ve quién va a ir? | **Aceptada la recomendación.** | Nombre y foto del trabajador asignado, **el día antes**. Ni antes ni más datos. | F5 |
+| D9 | ¿Cómo se mueve un trabajo de fecha, si la eligió el cliente? (2026-09-24) | **Proponiéndoselo al cliente**, que acepta o rechaza, como un cambio de precio. | Propuesta de nueva fecha/hora; al aceptar se mueve la agenda sola; al rechazar no cambia nada. | F6 |
+| D10 | ¿Cómo se divide un trabajo entre varias personas? (2026-09-24) | **La empresa lo reparte como vea conveniente**, pero **tiene que poder no aceptar trabajos partidos**: entonces no se muestra al cliente si una sola persona no puede cubrirlo. **Es distinto de los trabajos de varios días.** | La empresa reparte las horas de un trabajo entre su gente (por tramos). Ajuste de la empresa «Aceptar trabajos partidos»: apagado (por defecto) = solo se vende si una persona hace el trabajo entero (lo de F4); encendido = también si entre varias, por turnos, cubren todas las horas. Varios días = F7. | F6 |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -497,7 +499,17 @@ F0 7/7, F1 13/13, F2 18/18, F3 35/35, correos 10/10, F4 21/21, F5 9/9 + 13/13 + 
 - [x] Puerta de carnet fitosanitario en la asignación, **por empleado** (D4, H-04).
 - [x] El cliente ve nombre y foto de quién va, **el día antes** (D6).
 
-#### ⬜ F6 — Planificación y reasignación
+#### 🟨 F6 — Planificación y reasignación
+
+**Diseño (2026-09-24), tras el hito y D9/D10.** Tres partes:
+- **F6.1 Servidor:** agenda de la empresa en una llamada (`company_schedule`), repartir las
+  horas de un trabajo (`assign_booking_hours`, D10), ajuste «Aceptar trabajos partidos» y venta
+  por turnos cuando está encendido.
+- **F6.2 Web:** planificador móvil primero en tres densidades (Día por persona, Semana persona ×
+  día, Lista), «Repartir» con los conflictos a la vista **antes** de confirmar, el panel abre en
+  la agenda, y la barra inferior del empleado lleva a «Mi trabajo» (lo aprendido en el hito).
+- **F6.3 Mover de fecha** con propuesta al cliente (D9), con sus correos.
+
 
 - [ ] Planificación en tres densidades. **Se construye móvil primero**, no se adapta el
       escritorio después.

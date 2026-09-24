@@ -14,7 +14,7 @@ export interface BookingWorker {
 
 export function useBookingWorkers(
   bookings: Array<{ id: string; assignment_pending?: boolean | null }>,
-  { enabled, myId }: { enabled: boolean; myId?: string | null },
+  { enabled, myId, version = 0 }: { enabled: boolean; myId?: string | null; version?: number },
 ) {
   const [workers, setWorkers] = useState<Record<string, BookingWorker>>({});
   const key = bookings.map((b) => `${b.id}:${b.assignment_pending ? 1 : 0}`).join(',');
@@ -27,7 +27,11 @@ export function useBookingWorkers(
     let cancelled = false;
     void (async () => {
       const ids = bookings.map((b) => b.id);
-      const { data: blocks } = await supabase.from('booking_blocks').select('booking_id, assignee_id').in('booking_id', ids);
+      const [{ data: blocks }, { data: rows }] = await Promise.all([
+        supabase.from('booking_blocks').select('booking_id, assignee_id').in('booking_id', ids),
+        supabase.from('bookings').select('id, assignment_pending').in('id', ids),
+      ]);
+      const pendingById = new Map((rows || []).map((r) => [r.id, Boolean(r.assignment_pending)]));
       const byBooking = new Map<string, string>();
       (blocks || []).forEach((row) => {
         if (row.booking_id && row.assignee_id && !byBooking.has(row.booking_id)) byBooking.set(row.booking_id, row.assignee_id);
@@ -47,14 +51,14 @@ export function useBookingWorkers(
           workerId,
           name: names.get(workerId)?.trim() || null,
           isMe: workerId === myId,
-          pending: Boolean(b.assignment_pending),
+          pending: pendingById.get(b.id) ?? Boolean(b.assignment_pending),
         };
       });
       setWorkers(next);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, key, myId]);
+  }, [enabled, key, myId, version]);
 
   return workers;
 }

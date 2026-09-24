@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · 🟨 F5 en curso: ✅ F5.1 horarios · ✅ F5.2 servidor de asignación · siguiente F5.3 (web: panel del empleado y «cambiar quién va») · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · 🟨 F5 en curso: ✅ F5.1 horarios · ✅ F5.2 servidor de asignación · ✅ F5.3 web · siguiente F5.4 (correos de asignación y D6) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -446,13 +446,21 @@ empresa) se hace tras F5, cuando ya hay horarios.
 - Detalle del trabajo y «he terminado» también para quien va. «Marcar inicio» no existe en
   GarSer (tampoco para autónomos): no se añade.
 
+**✅ F5.3 Web — hecho:**
+- «Mi trabajo» del empleado en pestañas **Hoy / Semana / Perfil** (su horario, en «Semana»).
+  Cada trabajo: hora, servicio, dirección con «Cómo llegar», cliente con «Llamar», «Qué hay que
+  hacer» y «He terminado» cuando ya ha empezado.
+- El dueño, en sus solicitudes y reservas: **«Cambiar quién va»** (lista de quién puede ir, libre
+  u ocupado) y, en modo «yo elijo», **«Confirmar»** la propuesta.
+- **H-30** (bucle de pintado en «Horario fijo», anterior al proyecto) arreglado.
+
 
 - [x] Asignación mínima: el dueño elige empleado de una lista de quién está libre **y hace
       ese servicio** (D5). En trabajos fitosanitarios, solo quien tiene carnet aprobado (D4).
       *(Servidor F5.2; pantalla F5.3.)*
 - [x] ~~Extender `shares_booking_with()`~~ → `my_jobs()` (A-33). Mínimo privilegio: **asignado**,
       no *de la empresa*.
-- [ ] Panel de empleado: Hoy / Mi semana / Mi disponibilidad / Perfil.
+- [x] Panel de empleado: Hoy / Mi semana / Mi disponibilidad / Perfil.
 - [ ] Emails de asignación y de cambio.
 - [x] Puerta de carnet fitosanitario en la asignación, **por empleado** (D4, H-04).
 - [ ] El cliente ve nombre y foto de quién va, **el día antes** (D6).

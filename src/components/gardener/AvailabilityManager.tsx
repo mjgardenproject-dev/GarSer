@@ -53,6 +53,13 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
 
   const { openConfirm, confirmDialog } = useConfirmDialog();
 
+  // Funciones estables para RecurringScheduleManager: las registra en un useEffect que depende
+  // de ellas. Pasadas en línea eran nuevas en cada pintado → se volvía a registrar → nuevo
+  // estado aquí → nuevo pintado: bucle («Maximum update depth exceeded», visto en F5.1).
+  const handleRecurringPending = useCallback((pending: boolean) => setHasUnsavedChanges(pending), []);
+  const registerRecurringSave = useCallback((fn: () => Promise<boolean>) => setRecurringSaveHandler(() => fn), []);
+  const registerRecurringExplicitSave = useCallback((fn: () => void) => setRecurringExplicitSaveTrigger(() => fn), []);
+
   // Bloques de 1 hora del día laboral (7:00–20:00, ver availabilityWindow.ts)
   const timeBlocks = generateDailyTimeBlocks();
 
@@ -443,10 +450,10 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
         {activeTab === 'recurring' ? (
           <RecurringScheduleManager
             key={recurringMountKey}
-            onChangePending={(p) => setHasUnsavedChanges(p)}
-            registerSaveHandler={(fn) => setRecurringSaveHandler(() => fn)}
+            onChangePending={handleRecurringPending}
+            registerSaveHandler={registerRecurringSave}
             onSavingChange={setRecurringSaving}
-            registerExplicitSaveTrigger={(fn) => setRecurringExplicitSaveTrigger(() => fn)}
+            registerExplicitSaveTrigger={registerRecurringExplicitSave}
             hideMinNotice={hideMinNotice}
           />
         ) : (

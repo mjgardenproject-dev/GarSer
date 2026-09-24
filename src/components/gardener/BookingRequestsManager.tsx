@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
 import { useBookingWorkers } from '../../hooks/useBookingWorkers';
-import BookingWorkerLine from '../empresa/BookingWorkerLine';
+import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import { Calendar, Clock, MapPin, User, Check, X, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { BookingResponse } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -85,7 +85,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [correctionVars, setCorrectionVars] = useState<Record<string, Record<string, unknown>>>({});
   // GarSer Empresas (F4): una cuenta de empresa ve también quién de su equipo va a cada trabajo.
   const { role } = useAccount();
-  const workers = useBookingWorkers(requests, { enabled: role === 'company', myId: user?.id });
+  const [workersVersion, setWorkersVersion] = useState(0);
+  const workers = useBookingWorkers(requests, { enabled: role === 'company', myId: user?.id, version: workersVersion });
 
   const handleCorrectionSubmit = async (request: BookingRequestWithDetails, payload: ManualWizardSubmitPayload) => {
     const serviceKey = resolveManualServiceKey(request.services?.name);
@@ -533,7 +534,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     {request.client_address}
                   </div>
                 </div>
-                <BookingWorkerLine worker={workers[request.id]} />
+                <AssignWorkerControl bookingId={request.id} worker={workers[request.id]} onChanged={() => setWorkersVersion((v) => v + 1)} />
 
                 {/* Detalle del servicio: qué trabajo es exactamente (para decidir si aceptar) */}
                 <ServiceDetailCard

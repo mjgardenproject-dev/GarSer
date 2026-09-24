@@ -317,6 +317,10 @@ comprobaciones con el token de cada persona) y navegador:
 | F5-33 | Confirmar la propuesta (misma persona) | Deja de ser propuesta | ✅ F5.2 |
 | F5-34 | Detalle del trabajo (qué hay que hacer) | Lo ve quien va; un compañero no | ✅ F5.2 |
 | F5-35 | Asignar a alguien ocupado alguna de las horas | Rechazado con explicación; nada cambia | ✅ F5.2 |
+| F5-36 | Navegador (móvil): «Mi trabajo» del empleado en pestañas Hoy / Semana / Perfil; «Hoy» sin trabajos avisa de los de la semana | Correcto | ✅ F5.3 |
+| F5-37 | Navegador: en «Semana», el trabajo con fecha, hora, dirección, cliente, «Cómo llegar», «Llamar» y «Qué hay que hacer» (detalle del servicio) | Correcto | ✅ F5.3 |
+| F5-38 | Navegador: la dueña, en «Reservas», pulsa «Cambiar quién va»: salen Lucía («Va ahora») y ella («Libre»); elige y la tarjeta pasa a «Va: tú» | Correcto, y en la base de datos | ✅ F5.3 |
+| F5-39 | Navegador: «Horario fijo» sin el bucle de pintado previo (H-30) | Sin errores en consola | ✅ F5.3 |
 | F5-29 | Navegador (móvil): el empleado abre «Mi horario» desde «Mi trabajo» y ve su hora vendida como «Reservado» | Correcto | ✅ F5.1 |
 | F5-30 | Navegador: en «Horario fijo» el empleado no ve la antelación mínima | Correcto | ✅ F5.1 |
 | F5-31 | Navegador: la dueña que trabaja tiene «Mi horario» en su tarjeta, y cambia la antelación de la empresa en «Tu empresa» | Se guarda | ✅ F5.1 |

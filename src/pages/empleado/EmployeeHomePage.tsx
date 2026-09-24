@@ -1,16 +1,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { addDays, format } from 'date-fns';
 import { Building2, CalendarClock, CalendarDays, ChevronRight, Loader2, UserRound } from 'lucide-react';
+import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
+import JobCard from '../../components/empleado/JobCard';
+import { useMyJobs } from '../../hooks/useMyJobs';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
 import { supabase } from '../../lib/supabase';
 
-// Panel del empleado (/mi-trabajo, GarSer Empresas F3.3). De momento: a qué empresa pertenece,
-// qué servicios le ha dado, sus datos de contacto (los ve su empresa) y, si la empresa hace
-// fitosanitarios, su carnet (D4). Los trabajos asignados llegan con F6.
+// Panel del empleado (/mi-trabajo, GarSer Empresas F3.3 y F5.3), en tres pestañas: Hoy (sus
+// trabajos de hoy), Semana (los de los próximos 7 días y su horario) y Perfil (empresa,
+// servicios, datos de contacto y, si la empresa hace fitosanitarios, su carnet — D4).
 
 interface Membership {
   member_id: string;
@@ -22,6 +26,10 @@ interface Membership {
 }
 
 const noop = () => {};
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+type Tab = 'today' | 'week' | 'profile';
+const TABS: Array<[Tab, string]> = [['today', 'Hoy'], ['week', 'Semana'], ['profile', 'Perfil']];
 
 const EmployeeHomePage: React.FC = () => {
   const { user } = useAuth();
@@ -32,6 +40,12 @@ const EmployeeHomePage: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [savedContact, setSavedContact] = useState({ fullName: '', phone: '' });
   const [saving, setSaving] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = (['today', 'week', 'profile'] as const).includes(params.get('tab') as Tab) ? (params.get('tab') as Tab) : 'today';
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const weekEnd = format(addDays(new Date(), 6), 'yyyy-MM-dd');
+  const { jobs, loading: jobsLoading, refresh: refreshJobs } = useMyJobs(today, weekEnd);
+  const todayJobs = jobs.filter((j) => j.date === today);
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -71,12 +85,66 @@ const EmployeeHomePage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AppHeader title="Mi trabajo" />
+      <AppHeader title="Mi trabajo">
+        <div role="tablist" aria-label="Secciones" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+          {TABS.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setParams(key === 'today' ? {} : { tab: key }, { replace: true })}
+              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${tab === key ? 'bg-white text-emerald-800 shadow-sm' : 'text-gray-600'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </AppHeader>
       {loading ? (
         <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-emerald-700" aria-label="Cargando" /></div>
       ) : !membership ? (
         <main className="mx-auto w-full px-4 py-6 sm:max-w-xl">
           <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Ya no formas parte de ninguna empresa en GarSer.</p>
+        </main>
+      ) : tab === 'today' ? (
+        <main className="mx-auto w-full space-y-3 px-4 py-4 sm:max-w-xl">
+          <p className="px-1 text-sm font-semibold text-gray-600">{capitalize(format(new Date(), "EEEE d 'de' MMMM", { locale: es }))}</p>
+          {jobsLoading && jobs.length === 0 ? (
+            <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-700" />
+          ) : todayJobs.length === 0 ? (
+            <section className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
+              <CalendarDays className="mx-auto h-8 w-8 text-gray-400" />
+              <p className="mt-2 font-semibold text-gray-900">Hoy no tienes trabajos</p>
+              <p className="mt-1 text-sm text-gray-600">
+                {jobs.length > 0 ? `Tienes ${jobs.length} esta semana: míralos en «Semana».` : 'Cuando tu empresa te asigne trabajos, aparecerán aquí con la dirección y la hora.'}
+              </p>
+            </section>
+          ) : (
+            <ul className="space-y-3">
+              {todayJobs.map((j) => <JobCard key={j.booking_id} job={j} onChanged={() => void refreshJobs()} />)}
+            </ul>
+          )}
+        </main>
+      ) : tab === 'week' ? (
+        <main className="mx-auto w-full space-y-3 px-4 py-4 sm:max-w-xl">
+          <Link to="/mi-trabajo/horario" className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+            <CalendarClock className="h-6 w-6 shrink-0 text-emerald-700" />
+            <span className="flex-1">
+              <span className="block font-semibold text-gray-900">Mi horario</span>
+              <span className="block text-sm text-gray-600">Los días y horas en que puedes trabajar. Tu empresa solo te asigna trabajos dentro de ellos.</span>
+            </span>
+            <ChevronRight className="h-5 w-5 text-gray-400" />
+          </Link>
+          {jobsLoading && jobs.length === 0 ? (
+            <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-700" />
+          ) : jobs.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-600">No tienes trabajos en los próximos 7 días.</p>
+          ) : (
+            <ul className="space-y-3">
+              {jobs.map((j) => <JobCard key={j.booking_id} job={j} showDate onChanged={() => void refreshJobs()} />)}
+            </ul>
+          )}
         </main>
       ) : (
         <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
@@ -100,21 +168,6 @@ const EmployeeHomePage: React.FC = () => {
                 )}
               </div>
             </div>
-          </section>
-
-          <Link to="/mi-trabajo/horario" className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
-            <CalendarClock className="h-6 w-6 shrink-0 text-emerald-700" />
-            <span className="flex-1">
-              <span className="block font-semibold text-gray-900">Mi horario</span>
-              <span className="block text-sm text-gray-600">Los días y horas en que puedes trabajar. Tu empresa solo te asigna trabajos dentro de ellos.</span>
-            </span>
-            <ChevronRight className="h-5 w-5 text-gray-400" />
-          </Link>
-
-          <section className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
-            <CalendarDays className="mx-auto h-8 w-8 text-gray-400" />
-            <p className="mt-2 font-semibold text-gray-900">Todavía no tienes trabajos</p>
-            <p className="mt-1 text-sm text-gray-600">Cuando tu empresa te asigne trabajos, aparecerán aquí con la dirección y la hora.</p>
           </section>
 
           <form onSubmit={saveContact} className="rounded-2xl border border-gray-200 bg-white p-4">

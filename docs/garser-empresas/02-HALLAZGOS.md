@@ -546,6 +546,15 @@ libre por ningún camino. El generador solo re-protege reservas antiguas sin age
 `release_booking_schedule` saca las horas de la agenda antes de liberarlas. La pantalla pinta lo
 ocupado con `my_busy_hours()` (la agenda de la persona) para empleados y dueños.
 
+### H-30 · «Horario fijo» entraba en un bucle de pintado — 🟢 Resuelto en F5.3 (afecta también a autónomos)
+
+Al abrir la pestaña «Horario fijo» la consola llenaba «Maximum update depth exceeded»
+(`RecurringScheduleManager`). Causa, anterior a este proyecto: `AvailabilityManager` le pasaba
+funciones creadas en cada pintado y el hijo las registraba en un `useEffect` que dependía de
+ellas → nuevo estado en el padre → nuevo pintado. React lo corta, pero la pantalla trabaja de
+más y puede ir a trompicones en móviles lentos. **Arreglo:** funciones estables (`useCallback`).
+Al fusionar lo notarán también los autónomos (para bien).
+
 ---
 
 ## 2. Decisiones de arquitectura cerradas

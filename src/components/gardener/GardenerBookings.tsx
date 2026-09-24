@@ -24,6 +24,7 @@ import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import BookingWorkerLine from '../empresa/BookingWorkerLine';
 import { formatDateRange } from '../../utils/jobShape';
+import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 
 // GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
 const teamShape = (row: object) => {
@@ -89,7 +90,7 @@ const GardenerBookings: React.FC = () => {
     try {
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
-        .select(`*, services(name)`)
+        .select(`*, services(name), ${BOOKING_ITEMS_SELECT}`)
         .eq('gardener_id', user?.id)
         // 'disputed' incluido: es donde vive la incidencia que el jardinero tiene que poder
         // ver y responder. Sin esto la reserva desaparecía de esta pantalla en cuanto el
@@ -249,7 +250,7 @@ const GardenerBookings: React.FC = () => {
               <div key={booking.id} className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between gap-2 mb-4">
                   <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900 truncate">{booking.services?.name}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 line-clamp-2 break-words">{bookingServiceLabel(booking as never) || booking.services?.name}</h3>
                     <p className="text-gray-600 truncate">Cliente: {booking.client_profile?.full_name}</p>
                   </div>
                   <span className={`shrink-0 px-3 py-1 rounded-full text-sm font-medium ${getBookingStatusTone(booking.status)}`}>

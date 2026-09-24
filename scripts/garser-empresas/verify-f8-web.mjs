@@ -8,9 +8,10 @@
 // Uso: node scripts/garser-empresas/verify-f8-web.mjs   (el contenedor de funciones, al día)
 
 import { randomUUID } from 'node:crypto';
+import { execSync } from 'node:child_process';
 import {
-  accounts, createCompany, joinTeam, makeRecorder, rpc, sql, why, authority,
-  setAvailability, runVerification, LAWN, HEDGE, LAWN_INPUT,
+  accounts, createCompany, joinTeam, makeRecorder, rpc, rest, sql, why, authority,
+  setAvailability, runVerification, LAWN, HEDGE, LAWN_INPUT, apiUrl, anonKey,
 } from './_company-harness.mjs';
 
 const acc = accounts('f8-web.local');
@@ -80,6 +81,37 @@ async function main() {
     const details = B ? await rpc('get_booking_service_details', { p_booking_id: B }, a.token) : null;
     record('F8-25', 'El profesional ve los datos de los dos servicios (zonas de césped y de setos)',
       Boolean(details?.body?.lawnZones?.length && details?.body?.hedgeZones?.length), JSON.stringify(Object.keys(details?.body || {})));
+  }
+  if (B) {
+    // F8.4: después de reservar, todos ven los dos servicios.
+    const LABEL = 'Corte de césped + Poda de setos';
+    const chat = sql(`select coalesce(string_agg(message, ' | '), '') from public.chat_messages where booking_id = '${B}'`);
+    await rpc('respond_booking_request', { p_booking_id: B, p_response: 'accept', p_operation_id: randomUUID() }, a.token);
+    const sched = await rpc('company_schedule', { p_from: D1, p_to: D1 }, a.token);
+    const job = (sched.body?.jobs || []).find((j) => j.booking_id === B);
+    const mine = await rpc('my_jobs', { p_from: D1, p_to: D1 }, ana.token);
+    const mineJob = (mine.body || []).find((j) => j.booking_id === B);
+    const items = await rest('GET', `/rest/v1/bookings?id=eq.${B}&select=id,services(name),booking_items(position,services(name))`, client.token);
+    const clientSees = (items.rows?.[0]?.booking_items || []).length;
+    record('F8-40', 'Agenda de la empresa, del empleado y chat dicen «Corte de césped + Poda de setos»; el cliente lee los dos servicios',
+      job?.service === LABEL && mineJob?.service_name === LABEL && chat.includes(LABEL) && clientSees === 2,
+      `empresa «${job?.service}», Ana «${mineJob?.service_name}», chat ${chat.includes(LABEL) ? 'sí' : `no («${chat.slice(0, 80)}»)`}, cliente ${clientSees}`);
+    const mailBody = async (body) => {
+      const res = await fetch(`${apiUrl}/functions/v1/send-email-notification`, {
+        method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      return res.json().catch(() => null);
+    };
+    const since = new Date().toISOString();
+    const job1 = await mailBody({ type: 'job_assigned', bookingId: B });
+    const acc1 = await mailBody({ type: 'booking_accepted', bookingId: B });
+    const logs = execSync(`docker logs --since ${since} supabase_edge_runtime_GarSer-main_4 2>&1`).toString();
+    // En local los correos se simulan y solo se registra el asunto: el del aviso al empleado
+    // nombra el trabajo; el de «reserva aceptada» no lleva el servicio (va en el cuerpo, que sale
+    // de bookingEmailDetails con la misma regla).
+    record('F8-41', 'El aviso a quien va nombra los dos servicios; el correo al cliente sale',
+      job1?.sent >= 1 && acc1?.success === true && logs.includes(`Nuevo trabajo: ${LABEL}`),
+      `aviso ${JSON.stringify(job1)}, aceptada ${JSON.stringify(acc1).slice(0, 60)}`);
   }
   {
     // Coherencia web ↔ pago con varios servicios (la regla de F7, con las personas que hacen todos).

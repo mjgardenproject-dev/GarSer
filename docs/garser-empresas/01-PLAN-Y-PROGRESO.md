@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · siguiente F8 (multi-servicio) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · siguiente F9 (mantenimiento) · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -621,7 +621,7 @@ pago (sin pagar: crearía un cobro en Stripe; el pago se prueba por el camino re
       **mano de obra** (`bookings.labour_hours`).
 - [x] En la reserva y en el presupuesto.
 
-#### 🟨 F8 — Multi-servicio
+#### ✅ F8 — Multi-servicio
 
 **Estado de partida (verificado 2026-09-24).** Hoy una reserva es de UN servicio en todo el
 camino: la pantalla de servicios solo deja marcar uno (`ServicesPage.tsx:109`), el motor calcula
@@ -682,7 +682,21 @@ servicio, exactamente lo de antes. Recorrido en el navegador (móvil, `seed-f8-d
 césped, Poda de setos»; volver atrás conserva los datos de cada servicio. Sin pulsar «Continuar
 al pago» (crearía un cobro en Stripe; el pago de varios servicios lo cubre `verify-f8-web`).
 
-- [ ] `booking_items`. Afecta también a los autónomos: es evolución de producto.
+**✅ F8.4 Después de reservar — hecho. F8 cerrada** (migración `20260926130000_empresas_f8_service_label.sql`).
+Una sola regla para nombrar lo reservado: «Corte de césped + Poda de setos» si lleva varios
+servicios, el de siempre si lleva uno (`booking_service_label` en SQL, `bookingServiceLabel` en la
+web). La usan la agenda de la empresa, la del empleado, el mensaje automático del chat (al crear la
+reserva lo lee del presupuesto, porque aún no hay filas), las listas del cliente y del profesional,
+el chat y los correos (aviso al empleado y correos de la reserva). El detalle para el profesional
+y el empleado enseña los datos de cada servicio. «Recalcular con las medidas reales» usa el motor
+de un servicio: no se ofrece en reservas de varios (el precio sí se puede cambiar a mano).
+Recorrido en el navegador (móvil): la clienta, la agenda de la empresa y «Mis reservas» del
+profesional con los dos servicios.
+
+- [x] `booking_items` (F8.1), presupuesto con el mismo motor (F8.2), embudo (F8.3) y pantallas y
+      correos (F8.4).
+- [x] `booking_items`. Afecta también a los autónomos: es evolución de producto (con un servicio,
+      todo exactamente igual que antes).
 
 #### ⬜ F9 — Mantenimiento de jardín
 
@@ -703,6 +717,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
+| 2026-09-24 | F8 | **Varios servicios en una reserva. F8 cerrada.** D14–D16 del usuario (un profesional para todo; solo los que hacen todos; en empresa, quien los hace todos). `booking_items` escritos solo por el pago; presupuesto que suma cada servicio calculado con el motor de siempre; embudo que rellena un servicio tras otro; nombre «A + B» en agendas, listas, chat y correos. Recorrido en el navegador. | 522 ✅ · build ✅ · tsc 128 · F8 11+10 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 | `7de198d` `7d74b9a` `1aa473c` + (este) |
 | 2026-09-24 | F7 | **Equipos y varios días. F7 cerrada.** D11–D13 del usuario. Un solo planificador en SQL (pago) y en TypeScript (web) con prueba de coherencia (A-40); equipos a la vez con límite de la empresa; trabajos de varios días también para autónomos (T7 deja de rechazarlos); cambiar una persona por otra (A-41); pantallas de reserva, cliente, empresa y empleado, y correos. **H-32** (la web perdía horas pasadas 1000 filas) cerrado. Recorrido en el navegador. | 513 ✅ · build ✅ · tsc 128 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 · servicios = H-27 | `d1b8a52` `78f1c01` + (este) |
 | 2026-09-24 | F6 | **Planificación. F6 cerrada.** Hito hecho por el chat en el navegador; D9 y D10 del usuario. Una persona por hora en todo el camino del dinero (A-37), trabajos partidos opcionales (A-38), planificador móvil Día/Semana/Lista con conflictos antes de guardar, mover de fecha con propuesta al cliente (A-39). F6-06 con 20 personas a 375 px. | 496 ✅ · build ✅ · tsc 128 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 | `4267220` `ecb0436` + (este) |
 | 2026-09-24 | F5 | **Asignar y ejecutar. F5 cerrada.** Horarios del equipo (H-29: una hora vendida ya no se puede reabrir; el dueño que trabaja no pierde sus horas), asignación en el servidor con mínimo privilegio (A-33, A-34), panel del empleado Hoy/Semana/Perfil, «cambiar quién va», avisos por correo, D6 (A-35). Imprevistos H-30 (bucle de pintado, afecta a autónomos) y H-31 (nombre del dueño en lugar del de la empresa) cerrados. | 493 ✅ · build ✅ · tsc 129 · F5 9+13+7 · F4 21/21 · F3 35/35 · correos 10/10 · F2 18/18 · F1 13/13 · F0 7/7 | `fd4f9c7` `6fc3d62` `55db2fa` `b502fb4` |
@@ -741,16 +756,17 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
    `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2) →
-   `20260925180000` (F6.3) → `20260925190000` (F7.1) → `20260926120000` (F8.1)
+   `20260925180000` (F6.3) → `20260925190000` (F7.1) → `20260926120000` (F8.1) →
+   `20260926130000` (F8.4)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,
    `supabase functions deploy booking-authority --use-api` y
    `supabase functions deploy booking-payment --use-api` *(F4: las dos, a la vez que la
    migración de F4; con una sin la otra, el pago y la web no se entienden)*.
-   `send-email-notification` se despliega una sola vez con todo lo de F3, F5.4 y F7.
+   `send-email-notification` se despliega una sola vez con todo lo de F3, F5.4, F7 y F8.
    `supabase functions deploy booking-confirmation-email --use-api` *(F7: usa el texto nuevo
-   de fechas de los trabajos de varios días; sin redesplegar, diría solo el primer día)*.
+   de fechas de los trabajos de varios días y, desde F8, el nombre de varios servicios)*.
 8. Desplegar la web (Vercel) desde la rama fusionada.
 
 **Justo después — probar en garser.es:** la batería «P-» de `03-PRUEBAS.md` §3, de arriba
@@ -802,6 +818,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
 | F3 | Aplicar `20260924140000`, `20260924150000` y `20260924160000` (en ese orden, tras la anterior) | Sin consulta previa: añaden funciones y una columna |
+| F8 | Aplicar `20260926120000` y `20260926130000` **junto con** el despliegue de `booking-authority` y `booking-payment` | La web manda presupuestos de varios servicios y el pago los comprueba. Con un servicio no cambia nada. Justo después: P-F1-1 y P-F8-1 |
 | F7.1 | Aplicar `20260925190000` **junto con** el despliegue de `booking-authority` y `booking-payment` (F7.2) | El pago pasa a apartar lo que decide el planificador (equipos, varios días). Para trabajos normales no cambia nada; justo después, P-F1-1 (un pago real de autónomo) |
 | F6.1 | Aplicar `20260925160000` **y redesplegar a la vez** `booking-authority`, `booking-payment` y `send-email-notification` | El pago y la confirmación pasan a trabajar por horas. Justo después: P-F1-1 (un pago real de autónomo) |
 | F5.1 | Aplicar `20260925130000` | Corrige de paso las horas que estén vendidas y marcadas libres (debería haber 0). Probar P-F5-1 |

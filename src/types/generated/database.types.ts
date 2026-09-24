@@ -2585,6 +2585,7 @@ export type Database = {
         Returns: string
       }
       booking_service_ids: { Args: { p_booking_id: string }; Returns: string[] }
+      booking_service_label: { Args: { p_booking_id: string }; Returns: string }
       booking_service_start: {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string

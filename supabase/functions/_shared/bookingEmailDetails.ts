@@ -93,7 +93,17 @@ export async function buildBookingEmailDetails(
   if (error || !booking) return null;
 
   let serviceName = 'Servicio de jardinería';
-  if (booking.service_id) {
+  // GarSer Empresas (F8): con varios servicios, todos («Corte de césped + Poda de setos»).
+  const { data: itemRows } = await admin
+    .from('booking_items')
+    .select('position, services(name)')
+    .eq('booking_id', bookingId)
+    .order('position', { ascending: true });
+  const itemNames = ((itemRows || []) as Array<{ services?: { name?: string } | null }>)
+    .map((row) => String(row.services?.name || '').trim()).filter(Boolean);
+  if (itemNames.length > 1) {
+    serviceName = itemNames.join(' + ');
+  } else if (booking.service_id) {
     const { data: service } = await admin.from('services').select('name').eq('id', booking.service_id).single();
     if (service?.name) serviceName = service.name;
   }

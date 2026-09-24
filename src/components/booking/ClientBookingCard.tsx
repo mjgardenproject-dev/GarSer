@@ -14,6 +14,7 @@ import {
   isCancellableStatus,
   needsClientConfirmation,
 } from '../../shared/bookingStatus';
+import { bookingServiceLabel } from '../../utils/bookingServiceLabel';
 
 /**
  * Tarjeta de reserva del cliente. Única para "Mis reservas" y para el inicio.
@@ -164,7 +165,8 @@ const ClientBookingCard = ({
 }: Props) => {
   const [showDetails, setShowDetails] = useState(!compact);
 
-  const serviceName = booking.services?.name || booking.service_name || 'Servicio';
+  // F8: la etiqueta de varios servicios viene ya hecha (service_name) o de booking_items.
+  const serviceName = bookingServiceLabel(booking as never) || booking.service_name || 'Servicio';
   const multiDay = isMultiDay({ date: booking.date, endDate: booking.end_date });
   const gardenerName = booking.gardener_profile?.full_name || booking.gardener_name || 'Tu profesional';
   const isCompany = Boolean(booking.gardener_profile?.is_company || booking.gardener_is_company);
@@ -191,7 +193,8 @@ const ClientBookingCard = ({
               {eyebrow}
             </span>
           )}
-          <h3 className="font-semibold text-gray-900 truncate">{serviceName}</h3>
+          {/* F8: con varios servicios el título es más largo: hasta dos líneas. */}
+          <h3 className="font-semibold text-gray-900 line-clamp-2 break-words">{serviceName}</h3>
           <p className="text-sm text-gray-600 truncate">con {gardenerName}</p>
           <WhoIsComing bookingId={booking.id} status={booking.status} date={booking.date} />
         </div>

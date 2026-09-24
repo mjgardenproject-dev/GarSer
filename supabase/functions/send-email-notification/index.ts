@@ -19,6 +19,18 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml, formatBookingDate, formatBookingWhen } from '../_shared/emailBrand.ts';
+
+// GarSer Empresas (F8): «Corte de césped + Poda de setos» si la reserva lleva varios servicios;
+// si no, el nombre del servicio de siempre.
+// deno-lint-ignore no-explicit-any
+function serviceLabelOf(row: any): string {
+  const items = Array.isArray(row?.booking_items) ? [...row.booking_items] : [];
+  if (items.length > 1) {
+    return items.sort((a, b) => Number(a.position || 0) - Number(b.position || 0))
+      .map((item) => String(item?.services?.name || '').trim()).filter(Boolean).join(' + ');
+  }
+  return String(row?.services?.name || '').trim();
+}
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
@@ -348,7 +360,7 @@ Deno.serve(async (req) => {
       }
       const { data: b } = await admin
         .from('bookings')
-        .select('id, gardener_id, status, date, start_time, end_date, client_address, services(name)')
+        .select('id, gardener_id, status, date, start_time, end_date, client_address, services(name), booking_items(position, services(name))')
         .eq('id', bookingId)
         .maybeSingle();
       if (!b) {
@@ -409,7 +421,7 @@ Deno.serve(async (req) => {
 
       const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
       // deno-lint-ignore no-explicit-any
-      const serviceName = String((b as any).services?.name || 'Trabajo');
+      const serviceName = serviceLabelOf(b) || 'Trabajo';
       const when = formatBookingWhen(b.date, b.start_time, b.end_date);
       const companyName = String(company?.full_name || 'Tu empresa');
       const range = (hours: number[]) => {
@@ -464,7 +476,7 @@ Deno.serve(async (req) => {
       }
       const { data: b } = await admin
         .from('bookings')
-        .select('id, client_id, gardener_id, date, start_time, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, reschedule_proposal_notified_at, reschedule_answer_notified_at, services(name)')
+        .select('id, client_id, gardener_id, date, start_time, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, reschedule_proposal_notified_at, reschedule_answer_notified_at, services(name), booking_items(position, services(name))')
         .eq('id', bookingId)
         .maybeSingle();
       if (!b) {
@@ -497,7 +509,7 @@ Deno.serve(async (req) => {
       const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
       const companyName = String(company?.full_name || 'Tu empresa');
       // deno-lint-ignore no-explicit-any
-      const serviceName = String((b as any).services?.name || 'Servicio');
+      const serviceName = serviceLabelOf(b) || 'Servicio';
       const proposedWhen = formatBookingDate(b.proposed_date, b.proposed_start_time);
       const outbox: Array<{ userId: string; subject: string; intro: string; pairs: Array<[string, string]>; cta: { label: string; url: string } }> = [];
       if (proposing) {

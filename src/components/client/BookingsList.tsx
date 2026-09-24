@@ -19,6 +19,7 @@ import ClientBookingCard from '../booking/ClientBookingCard';
 import ReviewModal from '../booking/ReviewModal';
 import { useConfirmDialog } from '../common/ConfirmDialog';
 import { RESCHEDULE_MESSAGES, respondBookingReschedule } from '../../utils/bookingRescheduleService';
+import { BOOKING_ITEMS_SELECT } from '../../utils/bookingServiceLabel';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: { name: string; icon?: string } | null;
@@ -48,7 +49,7 @@ const BookingsList = () => {
     try {
       const { data: bookingsData, error } = await supabase
         .from('bookings')
-        .select('*, services(name, icon)')
+        .select(`*, services(name, icon), ${BOOKING_ITEMS_SELECT}`)
         .eq('client_id', user.id)
         .order('date', { ascending: false });
       if (error) throw error;

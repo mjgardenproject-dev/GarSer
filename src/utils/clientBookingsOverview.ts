@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { fetchProviderNames } from './profileNames';
 import { fetchBookingMediaMap } from './bookingMediaService';
 import { needsClientConfirmation } from '../shared/bookingStatus';
+import { bookingServiceLabel } from './bookingServiceLabel';
 
 /**
  * Reservas del cliente agrupadas para la pantalla de inicio.
@@ -88,7 +89,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_duration_hours, confirmation_deadline_at, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, end_date, labour_hours, services(name, icon)')
+    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_duration_hours, confirmation_deadline_at, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, end_date, labour_hours, services(name, icon), booking_items(position, services(name))')
     .eq('client_id', clientId)
     .order('date', { ascending: false });
 
@@ -128,7 +129,8 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
     client_address: (row.client_address as string) ?? null,
     gardener_id: String(row.gardener_id || ''),
     service_id: (row.service_id as string) ?? null,
-    service_name: ((row.services as { name?: string } | null)?.name) || 'Servicio',
+    // F8: «Corte de césped + Poda de setos» si la reserva lleva varios servicios.
+    service_name: bookingServiceLabel(row as never) || 'Servicio',
     gardener_name: names[String(row.gardener_id)]?.full_name?.trim() || 'Tu profesional',
     gardener_is_company: Boolean(names[String(row.gardener_id)]?.is_company),
     total_price: (row.total_price as number) ?? null,

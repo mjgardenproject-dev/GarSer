@@ -21,6 +21,7 @@ import { cancelBooking, canMarkGardenerFinished, getBookingServiceStart } from '
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
+import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -118,7 +119,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         .from('bookings')
         .select(`
           *,
-          services(name)
+          services(name),
+          ${BOOKING_ITEMS_SELECT}
         `)
         .eq('gardener_id', user?.id)
         .order('date', { ascending: true })
@@ -411,7 +413,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                       <div className="flex items-center space-x-4">
                         <div>
                           <h3 className="text-lg font-semibold text-gray-900">
-                            {(booking as any).services?.name || 'Servicio'}
+                            {bookingServiceLabel(booking as never) || 'Servicio'}
                           </h3>
                           <p className="text-gray-600">
                             Cliente: {booking.client_profile?.full_name}

@@ -439,8 +439,11 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F8-32 | Navegador: profesionales, hora y resumen | Total de los dos (252 €, gestión 28 €), 08:00–13:00, «Corte de césped, Poda de setos» | ✅ F8.3 |
 | F8-33 | Navegador: volver atrás | Cada servicio conserva sus datos | ✅ F8.3 |
 | F8-34 | Envío a la web | Un servicio: como siempre; varios: `items`; si falta uno, error claro | ✅ F8.3 (pruebas unitarias) |
+| F8-40 | Agendas (empresa, empleado), chat y lectura del cliente | «Corte de césped + Poda de setos» | ✅ F8.4 |
+| F8-41 | Correos | El aviso a quien va nombra los dos servicios; el correo al cliente sale | ✅ F8.4 (en local solo se ve el asunto) |
+| F8-42 | Navegador: tarjeta de la clienta, agenda de la empresa y «Mis reservas» del profesional | Los dos servicios; el profesional ve el detalle de cada uno | ✅ F8.4 |
 
-### F8 y F9 — Multi-servicio y mantenimiento
+### F9 — Mantenimiento
 
 *Se detallan al llegar. Nota previa: F8 toca también a los autónomos, así que su batería de
 no regresión es más amplia que la de las fases de empresa.*

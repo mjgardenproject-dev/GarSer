@@ -31,6 +31,7 @@ import ServiceDetailCard from './ServiceDetailCard';
 import PhotoGallery from '../common/PhotoGallery';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { formatEuro } from '../../shared/bookingAmounts';
+import { BOOKING_ITEMS_SELECT, bookingServiceLabel, isMultiServiceBooking } from '../../utils/bookingServiceLabel';
 
 interface BookingRequestWithDetails {
   id: string;
@@ -144,7 +145,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       // Obtener reservas pendientes para este jardinero desde la tabla bookings
       const { data: bookings, error: bookingsError } = await supabase
         .from('bookings')
-        .select('*')
+        // F8: con sus servicios, para nombrar las reservas de varios servicios.
+        .select(`*, ${BOOKING_ITEMS_SELECT}`)
         .eq('gardener_id', user?.id)
         .eq('status', 'pending');
 
@@ -501,7 +503,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     </div>
                     <div>
                       <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
-                        {request.services?.name}
+                        {bookingServiceLabel(request as never) || request.services?.name}
                       </h3>
                       <p className="text-gray-600 flex items-center">
                         <User className="w-4 h-4 mr-1" />
@@ -578,7 +580,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                 {request.status === 'pending' && request.price_change_status !== 'pending_client_acceptance' && (
                   <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50">
                     <p className="text-sm font-medium text-blue-900 mb-2">Modificar precio y enviar propuesta al cliente</p>
-                    {request.data_input_mode === 'manual' && resolveManualServiceKey(request.services?.name) && (
+                    {/* F8: recalcular usa el motor de UN servicio: no en reservas de varios. */}
+                    {request.data_input_mode === 'manual' && resolveManualServiceKey(request.services?.name) && !isMultiServiceBooking(request as never) && (
                       <button
                         type="button"
                         onClick={() => setCorrectionFor(request)}

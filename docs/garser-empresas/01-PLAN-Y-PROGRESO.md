@@ -747,6 +747,13 @@ tienen hueco. El pago de una propuesta no recalcula el precio (D19): `maintenanc
 comprueba que es la del plan y que plan y visita siguen vigentes. Al pagarse, la visita queda
 «reservada» y la reserva enlazada al plan. Funciona con varios servicios (F8). F4–F8, en verde.
 
+**✅ F9.2 Avisos — hecho** (migración `20260926150000_empresas_f9_notifications.sql`,
+`booking-lifecycle-tick`, `send-email-notification`; `verify-f9-server.mjs` 13/13). El reloj
+tiene un trabajo nuevo: coge las visitas propuestas o sin hueco aún no avisadas
+(`claim_maintenance_notifications`) y manda «Tu próxima visita: … — confírmala antes del …» o
+«Esta vez no hay hueco para tu visita de mantenimiento»; si el correo falla, vuelve a la cola. Los
+dos correos solo los puede pedir el servidor.
+
 
 - [ ] Se construye sobre `booking_items`. **Sin motor de precios nuevo.**
 
@@ -805,14 +812,16 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
    `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
    `20260925150000` (F5.4) → `20260925160000` (F6.1) → `20260925170000` (F6.2) →
    `20260925180000` (F6.3) → `20260925190000` (F7.1) → `20260926120000` (F8.1) →
-   `20260926130000` (F8.4) → `20260926140000` (F9.1)
+   `20260926130000` (F8.4) → `20260926140000` (F9.1) → `20260926150000` (F9.2)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,
    `supabase functions deploy booking-authority --use-api` y
    `supabase functions deploy booking-payment --use-api` *(F4: las dos, a la vez que la
    migración de F4; con una sin la otra, el pago y la web no se entienden)*.
-   `send-email-notification` se despliega una sola vez con todo lo de F3, F5.4, F7 y F8.
+   `send-email-notification` se despliega una sola vez con todo lo de F3, F5.4, F7, F8 y F9.
+   `supabase functions deploy booking-lifecycle-tick --use-api` *(F9: avisos de los planes de
+   mantenimiento; sin él, las propuestas se crean pero el cliente no recibe el correo)*.
    `supabase functions deploy booking-confirmation-email --use-api` *(F7: usa el texto nuevo
    de fechas de los trabajos de varios días y, desde F8, el nombre de varios servicios)*.
 8. Desplegar la web (Vercel) desde la rama fusionada.

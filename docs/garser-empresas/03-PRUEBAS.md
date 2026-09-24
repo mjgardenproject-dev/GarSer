@@ -458,6 +458,8 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F9-09 | Cancelar | La propuesta abierta deja de valer; no se proponen más | ✅ F9.1 |
 | F9-10 | Plan de varios servicios | La visita lleva los dos | ✅ F9.1 |
 | F9-11 | Visita que tocaría mañana | Como pronto, pasado mañana | ✅ F9.1 |
+| F9-12 | Aviso «esta vez no hay hueco» | Una vez; solo lo pide el servidor | ✅ F9.2 |
+| F9-13 | Aviso de la propuesta | «Tu próxima visita: …» al cliente | ✅ F9.2 |
 
 ---
 

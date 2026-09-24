@@ -11,6 +11,8 @@ import {
   accounts, createCompany, joinTeam, makeRecorder, rpc, sql, why, authority, pay,
   setAvailability, runVerification, LAWN, HEDGE, LAWN_INPUT,
 } from './_company-harness.mjs';
+import { execSync } from 'node:child_process';
+import { env } from '../readiness/_harness.mjs';
 
 const acc = accounts('f9-server.local');
 const { results, record } = makeRecorder();
@@ -122,6 +124,33 @@ async function main() {
       `${JSON.stringify(g)} · día 5 ${skipped}, día 6 ${none}`);
   }
   {
+    // F9.2: avisos. Lo mismo que hace el reloj (claim + correo), sin el resto de sus trabajos
+    // (uno de ellos habla con Stripe).
+    const { apiUrl, serviceRoleKey, anonKey } = env();
+    const since = new Date().toISOString();
+    const claimed = sql(`select coalesce(string_agg(visit_id || ':' || email_type, ','), '') from public.claim_maintenance_notifications(50) c
+      where visit_id in (select id from public.maintenance_visits where plan_id='${plan}')`);
+    const mail = async (key, body) => {
+      const res = await fetch(`${apiUrl}/functions/v1/send-email-notification`, {
+        method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      return { status: res.status, body: await res.json().catch(() => null) };
+    };
+    const results2 = [];
+    for (const item of claimed.split(',').filter(Boolean)) {
+      const [visitId, type] = item.split(':');
+      results2.push({ type, r: await mail(serviceRoleKey, { type, visitId }) });
+    }
+    const byClient = await mail(client.token, { type: 'maintenance_visit_proposed', visitId: claimed.split(':')[0] });
+    const again = sql(`select count(*) from public.claim_maintenance_notifications(50) c where visit_id in (select id from public.maintenance_visits where plan_id='${plan}')`);
+    const logs = execSync(`docker logs --since ${since} supabase_edge_runtime_GarSer-main_4 2>&1`).toString();
+    const types = results2.map((x) => x.type).sort().join(',');
+    record('F9-12', 'Avisos: la propuesta («Tu próxima visita: …») y «esta vez no hay hueco» salen una vez, solo a petición del servidor',
+      types.includes('maintenance_visit_unavailable') && results2.every((x) => x.r.status === 200) && byClient.status === 403 && again === '0' &&
+      logs.includes('Esta vez no hay hueco para tu visita de mantenimiento'),
+      `${results2.map((x) => `${x.type}:${x.r.status}`).join(', ')}, cliente ${byClient.status}, segunda pasada ${again}`);
+  }
+  {
     const cp = await rpc('my_maintenance_plans', {}, client.token);
     const pp = await rpc('my_maintenance_plans', {}, owner.token);
     const op = await rpc('my_maintenance_plans', {}, stranger.token);
@@ -154,6 +183,19 @@ async function main() {
     const row = sql(`select coalesce(string_agg(status || '@' || coalesce(date::text, '-'), ','), '') from public.maintenance_visits where plan_id='${plan}' and planned_date='${day(1)}'`);
     record('F9-11', 'Una visita que tocaría mañana se propone como pronto pasado mañana (hay un día para confirmar)',
       row === '' || !row.includes(`@${day(1)}`), row || 'no se propone para mañana');
+    // Y su aviso: «Tu próxima visita: Corte de césped, …».
+    const { apiUrl, serviceRoleKey, anonKey } = env();
+    const since = new Date().toISOString();
+    const claimed = sql(`select coalesce(string_agg(visit_id || ':' || email_type, ','), '') from public.claim_maintenance_notifications(50) c
+      where visit_id in (select id from public.maintenance_visits where plan_id='${plan}')`);
+    const [visitId, type] = claimed.split(',')[0].split(':');
+    const res = await fetch(`${apiUrl}/functions/v1/send-email-notification`, {
+      method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${serviceRoleKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, visitId }),
+    });
+    const logs = execSync(`docker logs --since ${since} supabase_edge_runtime_GarSer-main_4 2>&1`).toString();
+    record('F9-13', 'El aviso de la propuesta llega al cliente: «Tu próxima visita: Corte de césped, …»',
+      type === 'maintenance_visit_proposed' && res.status === 200 && logs.includes('Tu próxima visita: Corte de césped'), `${type} ${res.status}`);
     sql(`update public.maintenance_plans set status = 'cancelled' where id='${plan}'`);
   }
   {

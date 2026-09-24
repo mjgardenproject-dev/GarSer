@@ -68,6 +68,10 @@ type EmailType =
   // serlo. Solo los pide el dueño de esa reserva; el destinatario sale de la agenda.
   | 'job_assigned'
   | 'job_unassigned'
+  // GarSer Empresas (F9): planes de mantenimiento — la propuesta de la próxima visita y el aviso
+  // de que esta vez no había hueco. Solo los pide el reloj (servidor).
+  | 'maintenance_visit_proposed'
+  | 'maintenance_visit_unavailable'
   // GarSer Empresas (F6.3, D9): la empresa propone otra fecha (al cliente) y el cliente responde
   // (a la empresa y, si acepta, a quien va). Cada uno, una sola vez por propuesta.
   | 'booking_reschedule_proposed'
@@ -88,6 +92,8 @@ interface EmailPayload {
    * compuesto en un cliente no confiable, con un formato de euro distinto al del resto.
    */
   bookingId?: string;
+  /** F9: la visita de un plan de mantenimiento. */
+  visitId?: string;
   /** company_approved / company_rejected: la solicitud revisada. */
   companyApplicationId?: string;
   /**
@@ -354,6 +360,100 @@ Deno.serve(async (req) => {
       }
       to = marked.email;
       invitation = { company_name: marked.company_name ?? null, token, expires_at: marked.expires_at };
+    } else if (type === 'maintenance_visit_proposed' || type === 'maintenance_visit_unavailable') {
+      // F9 (D17): el cliente confirma y paga cada visita de su plan. Este aviso lo pide el reloj
+      // (booking-lifecycle-tick) con la clave de servicio; nadie más.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: v } = await admin
+        .from('maintenance_visits')
+        .select('id, status, date, start_hour, planned_date, quote_id, maintenance_plans(client_id, provider_id, frequency, total_price, economic_snapshot, items, service_id)')
+        .eq('id', String(payload.visitId || ''))
+        .maybeSingle();
+      if (!v) {
+        return new Response(JSON.stringify({ error: 'visit_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const expected = type === 'maintenance_visit_proposed' ? 'proposed' : 'no_availability';
+      if (v.status !== expected) {
+        return new Response(JSON.stringify({ error: 'visit_state_changed', status: v.status }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      // deno-lint-ignore no-explicit-any
+      const plan = (v as any).maintenance_plans as {
+        client_id: string; provider_id: string; frequency: string; total_price: number;
+        economic_snapshot: { payableNow?: number } | null; items: Array<{ serviceId: string }> | null; service_id: string;
+      };
+      const serviceIds = Array.isArray(plan.items) && plan.items.length > 1 ? plan.items.map((i) => String(i.serviceId)) : [plan.service_id];
+      const { data: serviceRows } = await admin.from('services').select('id, name').in('id', serviceIds);
+      const serviceName = serviceIds
+        .map((id) => ((serviceRows || []) as { id: string; name: string }[]).find((r) => String(r.id) === id)?.name || '')
+        .filter(Boolean).join(' + ') || 'Mantenimiento del jardín';
+      const { data: providerRow } = await admin.from('gardener_profiles').select('full_name').eq('user_id', plan.provider_id).maybeSingle();
+      const providerName = String(providerRow?.full_name || 'Tu profesional');
+      const { data: clientUser } = await admin.auth.admin.getUserById(plan.client_id);
+      const clientEmail = clientUser?.user?.email;
+      if (!clientEmail) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: clientProfile } = await admin.from('profiles').select('full_name').eq('user_id', plan.client_id).maybeSingle();
+      const first = String(clientProfile?.full_name || '').split(' ')[0] || 'hola';
+      const euros = (value: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
+
+      let subject: string;
+      let opts: Parameters<typeof renderBrandedEmail>[0];
+      let pairs: Array<[string, string]>;
+      if (type === 'maintenance_visit_proposed') {
+        const when = formatBookingDate(v.date, `${String(v.start_hour).padStart(2, '0')}:00:00`);
+        const { data: quoteRow } = await admin.from('booking_quotes').select('expires_at').eq('id', v.quote_id).maybeSingle();
+        const until = quoteRow?.expires_at
+          ? new Date(quoteRow.expires_at).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })
+          : 'un día antes';
+        const fee = Number(plan.economic_snapshot?.payableNow || 0);
+        subject = `Tu próxima visita: ${serviceName}, ${when}`;
+        pairs = [['Servicio', serviceName], ['Cuándo', when], ['Con', providerName], ['Precio', euros(plan.total_price)], ['Pagas ahora (gestión)', euros(fee)]];
+        opts = {
+          title: subject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: `Toca la siguiente visita de tu plan de mantenimiento. Confírmala antes del ${escapeHtml(until)}: si no, esta visita se salta y el plan sigue.`,
+          bodyHtml: detailRows(pairs),
+          cta: { label: 'Confirmar la visita', url: `${BRAND.site}/dashboard` },
+          footerNote: 'El resto del precio se lo pagas al profesional al terminar, como siempre.',
+        };
+      } else {
+        const planned = formatBookingDate(v.planned_date, null);
+        subject = 'Esta vez no hay hueco para tu visita de mantenimiento';
+        pairs = [['Servicio', serviceName], ['Tocaba', planned], ['Con', providerName]];
+        opts = {
+          title: subject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: `${escapeHtml(providerName)} no tiene hueco cerca de esa fecha, así que esta visita se salta. Tu plan sigue activo: lo intentaremos de nuevo para la siguiente.`,
+          bodyHtml: detailRows(pairs),
+          cta: { label: 'Ver mi plan', url: `${BRAND.site}/dashboard` },
+          footerNote: 'Si lo necesitas antes, puedes reservar una visita suelta cuando quieras.',
+        };
+      }
+      const html = renderBrandedEmail(opts);
+      const text = renderPlainText({ ...opts, detailPairs: pairs });
+      if (!SMTP_USER || !SMTP_PASS) {
+        console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: clientEmail, type, subject });
+      } else {
+        const sent = await sendViaBrevo({ to: clientEmail, subject, html, text, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+        if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+      }
+      return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     } else if (type === 'job_assigned' || type === 'job_unassigned') {
       if (!admin) {
         throw new Error('Faltan secretos de Supabase para autorizar la llamada.');

@@ -698,7 +698,23 @@ profesional con los dos servicios.
 - [x] `booking_items`. Afecta también a los autónomos: es evolución de producto (con un servicio,
       todo exactamente igual que antes).
 
-#### ⬜ F9 — Mantenimiento de jardín
+#### 🟨 F9 — Mantenimiento de jardín
+
+**Punto de partida (verificado 2026-09-24).** No hay nada de «plan» ni de visitas periódicas.
+Lo que hay y condiciona el diseño:
+- **Los horarios solo existen unas semanas por delante:** cada profesional mantiene
+  `weeks_to_maintain` semanas (4 por defecto, `RecurringScheduleManager.tsx:75`), que rellena cada
+  noche el trabajo `roll-recurring-availability`. Una visita de dentro de 3 meses **no se puede
+  reservar hoy**: no hay horas a las que apartarla.
+- **Cada reserva se paga con su propio cobro de Stripe** (la comisión, en el momento). No se
+  guardan tarjetas.
+- **Ya existe «Repetir»** (`rebookService.ts`, `get_rebook_payload`): precarga una reserva anterior
+  (servicios, zonas, medidas) sin arrastrar el precio.
+- F8 permite que una visita lleve varios servicios (césped + setos…), que es lo típico de un
+  mantenimiento.
+
+Preguntas de producto pendientes: D17 (qué es un plan y cómo se paga), D18 (cada cuánto), D19
+(precio de cada visita), D20 (quién ofrece planes).
 
 - [ ] Se construye sobre `booking_items`. **Sin motor de precios nuevo.**
 

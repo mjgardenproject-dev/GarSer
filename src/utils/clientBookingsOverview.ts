@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { fetchProfileNames } from './profileNames';
+import { fetchProviderNames } from './profileNames';
 import { fetchBookingMediaMap } from './bookingMediaService';
 import { needsClientConfirmation } from '../shared/bookingStatus';
 
@@ -95,7 +95,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
   // Las reseñas propias se leen de `reviews` (el cliente ve las suyas por RLS) y no de la vista
   // pública: aquí hace falta saber si ESTE cliente ya valoró, no lo que se publica.
   const [names, reviewsResult, mediaMap] = await Promise.all([
-    fetchProfileNames(rows.map((row: { gardener_id: string }) => row.gardener_id)),
+    fetchProviderNames(rows.map((row: { gardener_id: string }) => row.gardener_id)),
     supabase.from('reviews').select('booking_id, rating').eq('client_id', clientId),
     // `statusByBooking` importa: sin él se muestran fotos legacy en reservas ya completadas,
     // cuyos archivos se borran de Storage al cerrarlas.
@@ -122,6 +122,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
     service_id: (row.service_id as string) ?? null,
     service_name: ((row.services as { name?: string } | null)?.name) || 'Servicio',
     gardener_name: names[String(row.gardener_id)]?.full_name?.trim() || 'Tu profesional',
+    gardener_is_company: Boolean(names[String(row.gardener_id)]?.is_company),
     total_price: (row.total_price as number) ?? null,
     management_fee: (row.management_fee as number) ?? null,
     client_total_price: (row.client_total_price as number) ?? null,

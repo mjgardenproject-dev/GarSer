@@ -11,7 +11,15 @@ import BookingWorkerLine from './BookingWorkerLine';
 
 interface Candidate { user_id: string; full_name: string | null; is_current: boolean; is_free: boolean }
 
-const AssignWorkerControl: React.FC<{ bookingId: string; worker?: BookingWorker; onChanged: () => void }> = ({ bookingId, worker, onChanged }) => {
+interface Props {
+  bookingId: string;
+  worker?: BookingWorker;
+  onChanged: () => void;
+  /** Trabajo ya confirmado: avisar por correo a quien pasa a ir y a quien deja de ir. */
+  notify?: boolean;
+}
+
+const AssignWorkerControl: React.FC<Props> = ({ bookingId, worker, onChanged, notify = false }) => {
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -32,11 +40,20 @@ const AssignWorkerControl: React.FC<{ bookingId: string; worker?: BookingWorker;
 
   const assign = async (workerId: string) => {
     setSaving(workerId);
-    const { error } = await supabase.rpc('assign_booking_worker', { p_booking_id: bookingId, p_worker_id: workerId });
+    const { data, error } = await supabase.rpc('assign_booking_worker', { p_booking_id: bookingId, p_worker_id: workerId });
     setSaving(null);
     if (error) {
       toast.error(error.message || 'No se ha podido asignar.');
       return;
+    }
+    if (notify) {
+      const result = (data || {}) as { changed?: boolean; previousWorkerId?: string };
+      void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId } });
+      if (result.changed && result.previousWorkerId) {
+        void supabase.functions.invoke('send-email-notification', {
+          body: { type: 'job_unassigned', bookingId, workerId: result.previousWorkerId },
+        });
+      }
     }
     toast.success(workerId === worker.workerId ? 'Confirmado' : 'Trabajo reasignado');
     setOpen(false);

@@ -290,11 +290,14 @@ mano: los horarios del equipo son de F5):
 | F5-05 | Empleado marca ~~inicio y~~ fin de su trabajo | Permitido; un compañero no | ✅ F5.2 (en GarSer no existe «marcar inicio», tampoco para autónomos: el servicio empieza a su hora) |
 | F5-06 | Asignar trabajo fitosanitario convencional a empleado sin carnet (D4) | No aparece en la lista; imposible asignarlo también por API | ✅ F5.2 |
 | F5-07 | Desactivar a un empleado con trabajos futuros | **Bloqueado** hasta reasignar | ✅ F5.2 |
-| F5-08 | Email al empleado al ser asignado | Llega | ⬜ |
+| F5-08 | Email al empleado al ser asignado | Llega (simulado en local; real en P-F5-3) | ✅ F5.4 |
 | F5-09 | Al asignar un trabajo de setos, la lista solo muestra empleados que hacen setos (D5) | Solo esos | ✅ F5.2 (con césped) |
 | F5-10 | Asignar por API a un empleado que no hace ese servicio (D5) | Rechazado por el servidor, no solo oculto en pantalla | ✅ F5.2 |
-| F5-11 | El cliente ve nombre y foto del trabajador **el día antes** (D6) | Sí | ⬜ |
-| F5-12 | El cliente intenta ver quién va **dos días antes**, o ver su teléfono (D6) | No lo ve | ⬜ |
+| F5-11 | El cliente ve nombre y foto del trabajador **el día antes** (D6) | Sí («Ana G.» y foto) | ✅ F5.4 (API y navegador) |
+| F5-12 | El cliente intenta ver quién va **dos días antes**, o ver su teléfono (D6) | No lo ve; tampoco el id en la agenda (H-28) | ✅ F5.4 |
+
+**Cliente y correos (F5.4)** — `node scripts/garser-empresas/verify-f5-client.mjs` (7
+comprobaciones): F5-08, F5-11, F5-12 y F5-40 a F5-43.
 
 **Servidor de asignación (F5.2)** — `node scripts/garser-empresas/verify-f5-assign.mjs` (13
 comprobaciones, con el token de cada persona): F5-01 a F5-07, F5-09, F5-10 y F5-32 a F5-35.
@@ -321,6 +324,11 @@ comprobaciones con el token de cada persona) y navegador:
 | F5-37 | Navegador: en «Semana», el trabajo con fecha, hora, dirección, cliente, «Cómo llegar», «Llamar» y «Qué hay que hacer» (detalle del servicio) | Correcto | ✅ F5.3 |
 | F5-38 | Navegador: la dueña, en «Reservas», pulsa «Cambiar quién va»: salen Lucía («Va ahora») y ella («Libre»); elige y la tarjeta pasa a «Va: tú» | Correcto, y en la base de datos | ✅ F5.3 |
 | F5-39 | Navegador: «Horario fijo» sin el bucle de pintado previo (H-30) | Sin errores en consola | ✅ F5.3 |
+| F5-40 | Reserva aún sin aceptar por la empresa | El cliente no ve quién va | ✅ F5.4 |
+| F5-41 | Reserva con un autónomo | No aplica | ✅ F5.4 |
+| F5-42 | Cambiar quién va en un trabajo confirmado | Aviso a quien deja de ir y a quien va; no se puede «desavisar» a quien va ni a alguien de fuera | ✅ F5.4 |
+| F5-43 | Trabajo aún sin aceptar | No genera aviso | ✅ F5.4 |
+| F5-44 | Navegador (móvil), cliente: la tarjeta dice «con Jardines Demo Costa», «Irá Marta D.» el día antes y «Hablar con Jardines Demo Costa» (H-31) | Correcto | ✅ F5.4 |
 | F5-29 | Navegador (móvil): el empleado abre «Mi horario» desde «Mi trabajo» y ve su hora vendida como «Reservado» | Correcto | ✅ F5.1 |
 | F5-30 | Navegador: en «Horario fijo» el empleado no ve la antelación mínima | Correcto | ✅ F5.1 |
 | F5-31 | Navegador: la dueña que trabaja tiene «Mi horario» en su tarjeta, y cambia la antelación de la empresa en «Tu empresa» | Se guarda | ✅ F5.1 |
@@ -398,6 +406,9 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F4-1 | Con la empresa de prueba y un empleado con horario: reservar y pagar (Stripe en modo prueba) un trabajo de 2 h; comprobar en el SQL Editor que `booking_blocks.assignee_id` es el empleado y la reserva es de la empresa | F4 | ⬜ |
 | P-F4-2 | Un autónomo real sigue apareciendo en el listado con sus mismas horas y precio | F4 | ⬜ |
 | P-F5-1 | Un autónomo real guarda su horario de una semana en la que tiene una reserva: la hora reservada sigue «Reservado» y no se ofrece a otros clientes | F5 | ⬜ |
+| P-F5-2 | Un empleado real pone su horario en «Mi trabajo» → «Semana» → «Mi horario»; la empresa recibe una reserva en esas horas y le toca a él | F5 | ⬜ |
+| P-F5-3 | La empresa cambia quién va en un trabajo confirmado: a los dos les llega su correo | F5 | ⬜ |
+| P-F5-4 | El cliente de esa reserva ve «Irá …» con nombre y foto el día antes, y no antes | F5 | ⬜ |
 
 ---
 

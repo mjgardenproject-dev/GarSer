@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · 🟨 F5 en curso: ✅ F5.1 horarios · ✅ F5.2 servidor de asignación · ✅ F5.3 web · siguiente F5.4 (correos de asignación y D6) · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F5 cerradas · ✅ F5 cerrada (horarios del equipo, asignar y ejecutar, avisos, D6) · siguiente: ⏸ HITO (recorrido en local haciendo de empresa) y después F6 · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -421,7 +421,7 @@ comisión por Stripe. Verificado en paralelo que el funnel del autónomo no ha c
 ### BLOQUE 2 — Una empresa puede operar
 *Retención de la oferta que se acaba de captar.*
 
-#### 🟨 F5 — Asignar y ejecutar
+#### ✅ F5 — Asignar y ejecutar
 
 **Orden elegido (2026-09-24):** F5.1 horarios del equipo (sin horarios no hay qué asignar; la
 pantalla estaba en «Panel de empleado») → F5.2 servidor de asignación y ejecución → F5.3 web
@@ -454,6 +454,17 @@ empresa) se hace tras F5, cuando ya hay horarios.
   u ocupado) y, en modo «yo elijo», **«Confirmar»** la propuesta.
 - **H-30** (bucle de pintado en «Horario fijo», anterior al proyecto) arreglado.
 
+**✅ F5.4 Avisos y D6 — hecho** (migración `20260925150000_empresas_f5_client_sees_worker.sql`,
+`send-email-notification`, `verify-f5-client.mjs` → 7/7):
+- Correos al empleado «Nuevo trabajo» y «Ya no vas a este trabajo» (A-36).
+- D6: el cliente ve **«Irá Ana G.»** con foto el día antes (A-35); la agenda por horas deja de
+  ser legible para el cliente (H-28).
+- **Imprevisto H-31** cerrado: el cliente veía a la empresa con el nombre personal del dueño.
+
+**Cierre (2026-09-24).** Cumplido lo que pedía el plan de F5, con las pruebas F5-01 a F5-12 en
+verde salvo el matiz de F5-05 (no existe «marcar inicio»). Batería: 493 tests, build, `tsc` 129,
+F0 7/7, F1 13/13, F2 18/18, F3 35/35, correos 10/10, F4 21/21, F5 9/9 + 13/13 + 7/7.
+
 
 - [x] Asignación mínima: el dueño elige empleado de una lista de quién está libre **y hace
       ese servicio** (D5). En trabajos fitosanitarios, solo quien tiene carnet aprobado (D4).
@@ -461,9 +472,9 @@ empresa) se hace tras F5, cuando ya hay horarios.
 - [x] ~~Extender `shares_booking_with()`~~ → `my_jobs()` (A-33). Mínimo privilegio: **asignado**,
       no *de la empresa*.
 - [x] Panel de empleado: Hoy / Mi semana / Mi disponibilidad / Perfil.
-- [ ] Emails de asignación y de cambio.
+- [x] Emails de asignación y de cambio.
 - [x] Puerta de carnet fitosanitario en la asignación, **por empleado** (D4, H-04).
-- [ ] El cliente ve nombre y foto de quién va, **el día antes** (D6).
+- [x] El cliente ve nombre y foto de quién va, **el día antes** (D6).
 
 #### ⬜ F6 — Planificación y reasignación
 
@@ -508,7 +519,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-24 | F4 | **La empresa vende. F4 cerrada.** H-26 → decisión del usuario: se aparta a una persona al vender; el dueño elige si es definitiva o propuesta. Fuente única de horas libres para web y pago. Web: distintivo, solicitudes y reservas de la empresa con «quién va», opción de asignación. Recorrido de punta a punta en el navegador (móvil). H-27 (fallos antiguos de las baterías, tarea aparte) y H-28 anotados. | 491 ✅ · build ✅ · tsc 129 · F4 21/21 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `9e42bc0` + (este) |
+| 2026-09-24 | F5 | **Asignar y ejecutar. F5 cerrada.** Horarios del equipo (H-29: una hora vendida ya no se puede reabrir; el dueño que trabaja no pierde sus horas), asignación en el servidor con mínimo privilegio (A-33, A-34), panel del empleado Hoy/Semana/Perfil, «cambiar quién va», avisos por correo, D6 (A-35). Imprevistos H-30 (bucle de pintado, afecta a autónomos) y H-31 (nombre del dueño en lugar del de la empresa) cerrados. | 493 ✅ · build ✅ · tsc 129 · F5 9+13+7 · F4 21/21 · F3 35/35 · correos 10/10 · F2 18/18 · F1 13/13 · F0 7/7 | `fd4f9c7` `6fc3d62` `55db2fa` + (este) |
+| 2026-09-24 | F4 | **La empresa vende. F4 cerrada.** H-26 → decisión del usuario: se aparta a una persona al vender; el dueño elige si es definitiva o propuesta. Fuente única de horas libres para web y pago. Web: distintivo, solicitudes y reservas de la empresa con «quién va», opción de asignación. Recorrido de punta a punta en el navegador (móvil). H-27 (fallos antiguos de las baterías, tarea aparte) y H-28 anotados. | 491 ✅ · build ✅ · tsc 129 · F4 21/21 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `9e42bc0` `74893e3` |
 | 2026-09-24 | F3.4 | **Correos de empresas. F3 cerrada.** Invitación (una vez, con token verificado, tope diario), empresa aprobada y rechazada (solo admin, estado comprobado). Probado por la API (10/10) y desde la web en móvil. | 486 ✅ · build ✅ · tsc 129 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `2a37528` |
 | 2026-09-24 | F3.3 | **Panel de empresa, invitación y panel de empleado.** Recorrido completo en navegador (móvil): invitar → abrir sin cuenta → registrarse → volver por la portada → aceptar → datos → carnet → admin lo aprueba → la empresa asigna servicios. Configuración de precios de la empresa adelantada de F4. **H-23, H-24, H-25** encontrados y cerrados. | 486 ✅ · build ✅ · tsc 129 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `0987904` |
 | 2026-09-24 | F3.2 | **Web del alta de empresas.** Registro, encuesta de 5 pasos, estado, revisión en el admin. Recorrido completo en navegador (móvil): alta → encuesta → envío → aprobación → panel; y rechazo → motivo → corregir → reenvío. Sin regresiones de jardinero ni cliente. | 481 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `bdc0c8b` |
@@ -541,13 +553,15 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 6. Aplicar las migraciones del proyecto, **en este orden**:
    `20260923120000` (F0) → `20260923130000` (F1) → `20260924120000` (F2) →
    `20260924130000` → `20260924140000` → `20260924150000` → `20260924160000` (F3) →
-   `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2)
+   `20260925120000` (F4) → `20260925130000` (F5.1) → `20260925140000` (F5.2) →
+   `20260925150000` (F5.4)
    *(las fases siguientes añadirán las suyas al final)*.
 7. Desplegar las funciones que han cambiado:
    `supabase functions deploy send-email-notification --use-api` *(F3)*,
    `supabase functions deploy booking-authority --use-api` y
    `supabase functions deploy booking-payment --use-api` *(F4: las dos, a la vez que la
    migración de F4; con una sin la otra, el pago y la web no se entienden)*.
+   `send-email-notification` se despliega una sola vez con todo lo de F3 y F5.4.
 8. Desplegar la web (Vercel) desde la rama fusionada.
 
 **Justo después — probar en garser.es:** la batería «P-» de `03-PRUEBAS.md` §3, de arriba

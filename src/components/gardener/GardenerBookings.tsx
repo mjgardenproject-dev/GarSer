@@ -266,7 +266,7 @@ const GardenerBookings: React.FC = () => {
                   </div>
                 </div>
                 {booking.status === 'confirmed' ? (
-                  <AssignWorkerControl bookingId={booking.id} worker={workers[booking.id]} onChanged={() => setWorkersVersion((v) => v + 1)} />
+                  <AssignWorkerControl bookingId={booking.id} worker={workers[booking.id]} notify onChanged={() => setWorkersVersion((v) => v + 1)} />
                 ) : (
                   <BookingWorkerLine worker={workers[booking.id]} />
                 )}

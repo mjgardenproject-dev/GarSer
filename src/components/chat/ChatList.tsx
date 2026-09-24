@@ -8,7 +8,7 @@ import { format, parseISO, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from './ChatWindow';
 import { fetchChatOverview } from '../../utils/chatService';
-import { fetchProfileNames } from '../../utils/profileNames';
+import { fetchProviderNames } from '../../utils/profileNames';
 import { fetchCurrentUserProfileRole } from '../../lib/adminAccess';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { Star } from 'lucide-react';
@@ -95,7 +95,8 @@ const ChatList: React.FC = () => {
       if (uniqueUserIds.length > 0) {
         // Ver la nota de fetchProfileNames: por `id` no resolvia ninguno, asi que el chat
         // mostraba siempre el generico en vez del nombre de la otra parte.
-        const profilesMap = await fetchProfileNames(uniqueUserIds as string[]);
+        // F5.4 (GarSer Empresas): el proveedor, con el nombre de su ficha (el comercial si es empresa).
+        const profilesMap = await fetchProviderNames(uniqueUserIds as string[]);
         namesMap = Object.fromEntries(
           Object.entries(profilesMap).map(([id, profile]) => [id, profile.full_name || ''])
         );

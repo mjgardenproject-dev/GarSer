@@ -5,6 +5,7 @@ import { es } from 'date-fns/locale';
 
 import { ClientBookingAmounts } from './BookingAmounts';
 import { formatEuro } from '../../shared/bookingAmounts';
+import WhoIsComing from './WhoIsComing';
 import {
   canReportIncident,
   getBookingStatusLabel,
@@ -41,8 +42,10 @@ export interface ClientBookingCardBooking {
   // Nombre del servicio y del profesional: cada superficie los trae con una forma distinta.
   services?: { name?: string | null; icon?: string | null } | null;
   service_name?: string | null;
-  gardener_profile?: { full_name?: string | null } | null;
+  gardener_profile?: { full_name?: string | null; is_company?: boolean } | null;
   gardener_name?: string | null;
+  /** GarSer Empresas (F5.4): el proveedor es una empresa → se la nombra entera, no por su «nombre de pila». */
+  gardener_is_company?: boolean;
   // Importes
   total_price?: number | null;
   management_fee?: number | null;
@@ -150,7 +153,8 @@ const ClientBookingCard = ({
 
   const serviceName = booking.services?.name || booking.service_name || 'Servicio';
   const gardenerName = booking.gardener_profile?.full_name || booking.gardener_name || 'Tu profesional';
-  const gardenerFirstName = gardenerName.split(' ')[0];
+  const isCompany = Boolean(booking.gardener_profile?.is_company || booking.gardener_is_company);
+  const gardenerFirstName = isCompany ? gardenerName : gardenerName.split(' ')[0];
   const notes = cleanNotes(booking.notes);
   const photos = booking.media_urls || [];
   const hasPriceChange = booking.price_change_status === 'pending_client_acceptance';
@@ -175,6 +179,7 @@ const ClientBookingCard = ({
           )}
           <h3 className="font-semibold text-gray-900 truncate">{serviceName}</h3>
           <p className="text-sm text-gray-600 truncate">con {gardenerName}</p>
+          <WhoIsComing bookingId={booking.id} status={booking.status} date={booking.date} />
         </div>
         <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${getBookingStatusTone(booking.status)}`}>
           {getBookingStatusLabel(booking.status, 'client')}

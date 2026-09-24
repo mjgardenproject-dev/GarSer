@@ -516,7 +516,7 @@ fitosanitarios 2. Son de tres tipos, ninguno de empresas:
 - **Horario de la semilla** (arbustos «cobertura», desbroce «sábado»): no hay horas libres en
   los días que la prueba elige.
 
-### H-28 · Detalles de textos y datos para F5 — 🟢 Anotado
+### H-28 · Detalles de textos y datos para F5 — 🟢 El segundo punto resuelto en F5.4; el primero sigue anotado
 
 Vistos al probar F4 en el navegador; ninguno impide vender:
 - El resumen de la reserva dice **«Jardinero: Jardines Demo Costa»** y el botón del listado
@@ -554,6 +554,17 @@ funciones creadas en cada pintado y el hijo las registraba en un `useEffect` que
 ellas → nuevo estado en el padre → nuevo pintado. React lo corta, pero la pantalla trabaja de
 más y puede ir a trompicones en móviles lentos. **Arreglo:** funciones estables (`useCallback`).
 Al fusionar lo notarán también los autónomos (para bien).
+
+### H-31 · El cliente veía a una empresa con el nombre personal de su dueño — 🟢 Resuelto en F5.4
+
+Las pantallas del cliente (sus reservas, el inicio, el chat, las reseñas, las incidencias) sacaban
+el nombre del profesional de su **perfil personal** (`fetchProfileNames`). En una empresa ese
+perfil es el de la persona del dueño (A-19): el cliente leía «con Marta Dueña» en lugar de «con
+Jardines Demo Costa» (o «Tu profesional» si el dueño no había puesto su nombre). Visto al probar
+D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha de profesional
+(el mismo que ve el cliente en el listado al reservar) y, si no hay ficha, el del perfil; y la
+tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
+nombre de su ficha (el del listado): normalmente es el mismo.
 
 ---
 
@@ -596,6 +607,8 @@ esta es la respuesta.
 | A-32 | **Una hora vendida a una persona no puede estar marcada libre** (`protect_sold_availability`, en la base de datos). | Una sola regla para todos los caminos que escriben horarios (pantalla, horario fijo, generador nocturno, futuros), en vez de confiar en que cada pantalla lo recuerde. |
 | A-33 | **El empleado ve sus trabajos con una función (`my_jobs`), no leyendo la tabla `bookings`**; y el detalle de lo que hay que hacer y «he terminado» se abren a quien va (`is_booking_assignee`). **Desviación del plan, a sabiendas:** el plan decía extender `shares_booking_with()` con «estoy asignado». Eso habría abierto también perfiles y, vía las policies de `bookings`, precios, pagos y datos del presupuesto. | Mínimo privilegio: solo lo necesario para hacer el trabajo (dirección, hora, servicio, nombre y teléfono del cliente), solo de sus trabajos y solo mientras lo sean. |
 | A-34 | **Cambiar quién va** (`assign_booking_worker`) lo decide solo el dueño y el servidor comprueba de nuevo servicio, carnet y que la persona esté libre **todas** las horas; mueve las horas de una agenda a otra en una sola operación. Elegir a la misma persona confirma la propuesta (modo «yo elijo»). | La lista de la pantalla es ayuda, no permiso (F5-10). |
+| A-35 | **D6 lo sirve el servidor** (`booking_worker_for_client`): nombre y la inicial del apellido, y la foto; solo al cliente de esa reserva, confirmada, con una empresa, desde el día antes (hora de Madrid). La agenda por horas (`booking_blocks`) solo la lee el proveedor. | El cliente contrata a la empresa (A-05); saber quién llama a su puerta es útil el día antes, no para contactar al empleado por fuera. |
+| A-36 | **Avisos al empleado** (`job_assigned`, `job_unassigned`): solo cuando el trabajo está **confirmado** (al aceptar la reserva, al confirmar la propuesta o al cambiar quién va), solo los pide el proveedor de esa reserva, el destinatario sale de la agenda (o, para «ya no vas», se comprueba que es del equipo y que ya no va) y a la propia cuenta no se le avisa. | Sin avisos por propuestas que aún pueden cambiar, y sin poder usarlo para escribir a quien sea. |
 | A-24 | **La solicitud de empresa copia el patrón de la de jardinero:** el usuario crea su borrador y lo envía; aprobar o rechazar solo lo hace el admin por RPC, que es quien crea la ficha de proveedor, la empresa y el dueño. | Patrón existente y comprobado seguro (el usuario no puede pasar a `approved`). |
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 

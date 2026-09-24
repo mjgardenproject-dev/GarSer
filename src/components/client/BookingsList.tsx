@@ -8,7 +8,7 @@ import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
-import { fetchProfileNames } from '../../utils/profileNames';
+import { fetchProviderNames } from '../../utils/profileNames';
 import { fetchRebookPayload } from '../../utils/rebookService';
 import { cancelBooking, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { confirmBookingService } from '../../utils/bookingIncidentService';
@@ -21,7 +21,7 @@ import { useConfirmDialog } from '../common/ConfirmDialog';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: { name: string; icon?: string } | null;
-  gardener_profile?: { user_id?: string; full_name: string; phone?: string } | null;
+  gardener_profile?: { user_id?: string; full_name: string; phone?: string; is_company?: boolean } | null;
   media_urls?: string[];
   review_rating?: number | null;
 }
@@ -59,7 +59,7 @@ const BookingsList = () => {
       }
 
       const [names, mediaMap, reviewsResult] = await Promise.all([
-        fetchProfileNames(rows.map((row) => row.gardener_id)),
+        fetchProviderNames(rows.map((row) => row.gardener_id)),
         // `statusByBooking` evita mostrar fotos legacy en reservas ya completadas, cuyos
         // archivos se borran de Storage al cerrarlas.
         fetchBookingMediaMap(
@@ -79,7 +79,7 @@ const BookingsList = () => {
         rows.map((row) => ({
           ...row,
           gardener_profile: names[row.gardener_id]
-            ? { full_name: names[row.gardener_id].full_name || '', phone: names[row.gardener_id].phone || undefined }
+            ? { full_name: names[row.gardener_id].full_name || '', phone: names[row.gardener_id].phone || undefined, is_company: names[row.gardener_id].is_company }
             : null,
           media_urls: mediaMap[row.id] || [],
           review_rating: ratingByBooking.get(row.id) ?? null,

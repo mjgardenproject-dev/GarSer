@@ -8,7 +8,7 @@ import { es } from 'date-fns/locale';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { formatEuro } from '../shared/bookingAmounts';
-import { fetchProfileNames } from '../utils/profileNames';
+import { fetchProviderNames } from '../utils/profileNames';
 import {
   BLOCKING_INCIDENT_KINDS,
   INCIDENT_KIND_OPTIONS,
@@ -70,7 +70,7 @@ const BookingIncidentPage = () => {
         return;
       }
 
-      const names = data.gardener_id ? await fetchProfileNames([data.gardener_id]) : {};
+      const names = data.gardener_id ? await fetchProviderNames([data.gardener_id]) : {};
       const gardenerName = data.gardener_id ? names[data.gardener_id]?.full_name || null : null;
 
       setBooking({

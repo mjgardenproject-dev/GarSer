@@ -11,6 +11,7 @@
 //   · booking_review_request                 → al cliente: servicio finalizado, pedimos valoracion
 //   · company_approved / company_rejected    → estado de la solicitud de empresa (GarSer Empresas)
 //   · company_invitation                     → a la persona invitada al equipo de una empresa
+//   · job_assigned / job_unassigned          → al empleado: le asignan o le quitan un trabajo
 //
 // Secretos (Supabase Secrets): SMTP_USER (remitente verificado en Brevo), SMTP_PASS (api-key),
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
@@ -49,7 +50,11 @@ type EmailType =
   // salen de la base de datos, nunca del navegador.
   | 'company_approved'
   | 'company_rejected'
-  | 'company_invitation';
+  | 'company_invitation'
+  // GarSer Empresas (F5.4): al empleado, cuando un trabajo confirmado pasa a ser suyo o deja de
+  // serlo. Solo los pide el dueño de esa reserva; el destinatario sale de la agenda.
+  | 'job_assigned'
+  | 'job_unassigned';
 
 interface EmailPayload {
   /**
@@ -74,6 +79,8 @@ interface EmailPayload {
    */
   invitationId?: string;
   token?: string;
+  /** job_unassigned: la persona que deja de ir (se comprueba que es del equipo y ya no va). */
+  workerId?: string;
   data?: {
     name?: string;
     reason?: string;
@@ -185,6 +192,7 @@ Deno.serve(async (req) => {
     let deadlineAt: string | null = null;
     let companyReason = '';
     let invitation: { company_name: string | null; token: string; expires_at: string } | null = null;
+    let job: { service: string; when: string; address: string; company: string } | null = null;
 
     if (BOOKING_EMAIL_TYPES.has(type) && bookingId) {
       // ---- Contrato vigente: todo se resuelve aquí, con la clave de servicio ----
@@ -330,6 +338,71 @@ Deno.serve(async (req) => {
       }
       to = marked.email;
       invitation = { company_name: marked.company_name ?? null, token, expires_at: marked.expires_at };
+    } else if (type === 'job_assigned' || type === 'job_unassigned') {
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      const { data: b } = await admin
+        .from('bookings')
+        .select('id, gardener_id, status, date, start_time, client_address, services(name)')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (!b) {
+        return new Response(JSON.stringify({ error: 'booking_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!isInternalServiceCaller(req)) {
+        const callerToken = presentedToken(req);
+        const { data: caller } = callerToken ? await admin.auth.getUser(callerToken) : { data: null };
+        if ((caller?.user?.id || '') !== b.gardener_id) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      if (b.status !== 'confirmed') {
+        return new Response(JSON.stringify({ error: 'booking_not_confirmed' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: block } = await admin.from('booking_blocks').select('assignee_id').eq('booking_id', bookingId).limit(1).maybeSingle();
+      const current = block?.assignee_id ?? null;
+      let recipient: string | null = null;
+      if (type === 'job_assigned') {
+        recipient = current;
+      } else {
+        const candidate = String(payload.workerId || '');
+        const { data: member } = await admin
+          .from('company_members')
+          .select('user_id, companies!inner(provider_user_id)')
+          .eq('user_id', candidate)
+          .eq('status', 'active')
+          .eq('companies.provider_user_id', b.gardener_id)
+          .maybeSingle();
+        recipient = member && candidate !== current ? candidate : null;
+      }
+      // A uno mismo no se le avisa (el dueño que trabaja y se asigna el trabajo).
+      if (!recipient || recipient === b.gardener_id) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: userData } = await admin.auth.admin.getUserById(recipient);
+      to = userData?.user?.email ?? undefined;
+      const [{ data: person }, { data: company }] = await Promise.all([
+        admin.from('profiles').select('full_name').eq('user_id', recipient).maybeSingle(),
+        admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle(),
+      ]);
+      name = String(person?.full_name || '').split(' ')[0] || 'hola';
+      // deno-lint-ignore no-explicit-any
+      const serviceName = String((b as any).services?.name || 'Trabajo');
+      job = {
+        service: serviceName,
+        when: formatBookingDate(b.date, b.start_time),
+        address: String(b.client_address || ''),
+        company: String(company?.full_name || 'Tu empresa'),
+      };
     } else {
       // ---- Contrato LEGACY: RETIRADO (paso 9) ----
       // Aceptaba `user_id` + textos libres (`serviceName`, `dateText`, `priceText`) de
@@ -410,6 +483,28 @@ Deno.serve(async (req) => {
         // la sesión abierta.
         cta: { label: 'Ver la invitación', url: `${BRAND.site}/invitacion?token=${encodeURIComponent(invitation.token)}` },
         footerNote: `La invitación caduca el ${expires}. Si no conoces a esta empresa, ignora este correo.`,
+      };
+    } else if (type === 'job_assigned' && job) {
+      subject = `Nuevo trabajo: ${job.service}, ${job.when}`;
+      detailPairs = [['Servicio', job.service], ['Cuándo', job.when], ['Dónde', job.address]];
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `${escapeHtml(job.company)} te ha asignado un trabajo.`,
+        bodyHtml: detailRows(detailPairs),
+        cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
+        footerNote: 'Si no puedes ir, avisa a tu empresa cuanto antes.',
+      };
+    } else if (type === 'job_unassigned' && job) {
+      subject = `Ya no vas a este trabajo: ${job.service}, ${job.when}`;
+      detailPairs = [['Servicio', job.service], ['Cuándo', job.when]];
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: `${escapeHtml(job.company)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
+        bodyHtml: detailRows(detailPairs),
+        cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
+        footerNote: 'Tus horas de ese día vuelven a estar libres.',
       };
     } else if (type === 'booking_accepted') {
       subject = '¡Tu reserva en GarSer ha sido aceptada!';

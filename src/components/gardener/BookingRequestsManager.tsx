@@ -318,6 +318,13 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
           response: 'accept',
         });
 
+        // GarSer Empresas (F5.4): quien va se entera al confirmarse el trabajo, salvo que aún
+        // sea una propuesta sin decidir (modo «yo elijo quién va»). El servidor resuelve el
+        // destinatario y no avisa a la propia cuenta.
+        if (role === 'company' && !workers[requestId]?.pending) {
+          void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId: requestId } });
+        }
+
         toast.success('¡Solicitud aceptada! La reserva ha sido confirmada y tu agenda actualizada.');
       } else {
         await respondBookingRequest({

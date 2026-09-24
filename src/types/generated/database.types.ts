@@ -2460,6 +2460,10 @@ export type Database = {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
       }
+      booking_worker_for_client: {
+        Args: { p_booking_id: string }
+        Returns: Json
+      }
       can_read_company_member: {
         Args: { p_member_id: string }
         Returns: boolean

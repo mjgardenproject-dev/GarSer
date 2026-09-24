@@ -618,7 +618,32 @@ pago (sin pagar: crearía un cobro en Stripe; el pago se prueba por el camino re
       **mano de obra** (`bookings.labour_hours`).
 - [x] En la reserva y en el presupuesto.
 
-#### ⬜ F8 — Multi-servicio
+#### 🟨 F8 — Multi-servicio
+
+**Estado de partida (verificado 2026-09-24).** Hoy una reserva es de UN servicio en todo el
+camino: la pantalla de servicios solo deja marcar uno (`ServicesPage.tsx:109`), el motor calcula
+con la tarifa de un servicio (`bookingQuoteCore.ts:1149`, `buildAuthoritativeBookingQuote`), el
+presupuesto (`booking_quotes.service_id`), el pago y la reserva (`bookings.service_id`, leída por
+27 funciones SQL y 18 ficheros de la web). Queda un andamiaje antiguo aprovechable: los datos de
+cada servicio del embudo ya se guardan por servicio (`servicesData`, `BookingContext.tsx:420`).
+
+**Diseño propuesto (pendiente de D14–D16):**
+- Una reserva puede llevar **varios servicios**: tabla `booking_items` (reserva, servicio, datos
+  del cliente de ese servicio, precio, horas de trabajo, carnet). `bookings.service_id` se queda
+  como el **primer** servicio (compatibilidad: autónomo con un servicio = exactamente lo de hoy,
+  una fila en `booking_items`).
+- **Precio:** cada servicio con **su** tarifa y **el mismo motor** (sin motor nuevo); el total es
+  la suma y la comisión se calcula sobre el total, con un solo pago.
+- **Tiempo:** los servicios se hacen en la misma visita, uno detrás de otro: las horas de trabajo
+  se suman y el planificador de F7 decide equipo y días. Carnet: si algún servicio lo exige, lo
+  exige el trabajo.
+- **Embudo:** elegir varios servicios → rellenar los datos de cada uno (la pantalla de detalles
+  que ya existe, una vez por servicio) → profesionales → hora → pago.
+- **Después de reservar:** detalle por servicio para el profesional/empleado; el cambio de precio
+  sigue siendo del total.
+
+Preguntas de producto: D14 (¿un profesional para todo?), D15 (¿qué profesionales se muestran?),
+D16 (en empresas, ¿quién puede ir?).
 
 - [ ] `booking_items`. Afecta también a los autónomos: es evolución de producto.
 

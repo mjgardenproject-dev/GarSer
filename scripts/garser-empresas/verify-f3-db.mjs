@@ -277,6 +277,39 @@ async function main() {
       sql(`select count(*) from public.company_member_services where member_id='${empMember}' and service_id='${LAWN}'`) === '1');
   }
 
+  // ── Resúmenes para las pantallas (F3.3) ─────────────────────────────────────
+  {
+    const team = await rpc('company_team_overview', ownerToken, {});
+    const me = team.data?.members?.find((m) => m.user_id === emp.id);
+    const byEmp = await rpc('company_team_overview', emp.token, {});
+    const byClient = await rpc('company_team_overview', client.token, {});
+    record('F3-37', 'El dueño ve su equipo (servicios y estado del carnet de cada uno); un empleado o un cliente no',
+      team.ok && team.data?.company?.commercial_name === 'Jardines Prueba F3' && me?.services?.length === 1 && me?.has_valid_phyto_license === false &&
+      team.data?.offered_services?.length === 2 && !byEmp.ok && !byClient.ok,
+      `dueño ${team.status}${msg(team)} (miembros ${team.data?.members?.length}, ofrecidos ${team.data?.offered_services?.length}), empleado ${byEmp.status}, cliente ${byClient.status}`);
+    const mine = await rpc('my_company_membership', emp.token, {});
+    record('F3-38', 'El empleado ve a qué empresa pertenece y sus servicios',
+      mine.ok && mine.data?.company_name === 'Jardines Prueba F3' && Array.isArray(mine.data?.services) && mine.data.services.includes('Corte de césped') &&
+      mine.data?.company_offers_phyto === true,
+      `HTTP ${mine.status}${msg(mine)}`);
+    const probe = await rpc('has_valid_phyto_license', client.token, { p_user_id: emp.id });
+    record('F3-39', 'Nadie puede preguntar si otra persona tiene carnet (has_valid_phyto_license no es pública)', !probe.ok, `HTTP ${probe.status}`);
+  }
+
+  {
+    const guest = `f3-preview-${RUN}@test.local`;
+    const inv = await rpc('create_company_invitation', ownerToken, { p_email: guest });
+    const valid = await rpc('invitation_preview', null, { p_token: inv.data?.token });
+    await rpc('revoke_company_invitation', ownerToken, { p_invitation_id: inv.data?.invitation_id });
+    const revoked = await rpc('invitation_preview', null, { p_token: inv.data?.token });
+    const used = await rpc('invitation_preview', null, { p_token: token });
+    const junk = await rpc('invitation_preview', null, { p_token: 'no-es-un-token' });
+    record('F3-51', 'El enlace de invitación dice, sin sesión, quién invita y si sigue valiendo (válida, anulada, usada, inventada)',
+      valid.ok && valid.data?.state === 'valid' && valid.data?.company_name === 'Jardines Prueba F3' && valid.data?.email === guest &&
+      revoked.data?.state === 'revoked' && used.data?.state === 'accepted' && junk.data?.state === 'invalid' && junk.data?.company_name === undefined,
+      `válida ${valid.status}${msg(valid)} ${valid.data?.state}, anulada ${revoked.data?.state}, usada ${used.data?.state}, inventada ${junk.data?.state}`);
+  }
+
   // ── «Yo también trabajo» (D3) ────────────────────────────────────────────────
   {
     const on = await rpc('set_company_owner_works', ownerToken, { p_works: true });

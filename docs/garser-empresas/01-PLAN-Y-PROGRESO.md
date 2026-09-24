@@ -5,8 +5,8 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso: ✅ F3.1 servidor · ✅ F3.2 web del alta · siguiente F3.3 (panel de empresa, invitaciones, panel de empleado) · D7 en borrador para validar
-**Última actualización:** 2026-09-23
+**Estado global:** ✅ F0, F1 y F2 cerradas · 🟨 F3 en curso: ✅ F3.1 servidor · ✅ F3.2 web del alta · ✅ F3.3 panel de empresa, invitación y panel de empleado · siguiente F3.4 (emails) · D7 en borrador para validar
+**Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
 ---
@@ -271,21 +271,39 @@ Postgres; la prueba ahora exige el texto correcto.
 - `/empresa` decide adónde va cada cuenta según su alta; el contenido del panel llega en F3.3.
 - Migración `20260924140000`: el correo de la solicitud lo copia el servidor al enviar.
 
+**✅ F3.3 Web de uso — hecho** (migración `20260924150000_empresas_f3_team_overview.sql`,
+verificación F3 35/35):
+- **Panel de empresa** (`/empresa`), pestañas **Equipo** y **Tu empresa**. Equipo: invitar por
+  correo (enlace para copiar), invitaciones pendientes con «Anular», una tarjeta por persona con
+  teléfono, estado del carnet, servicios (editor que solo ofrece los que la empresa tiene activos
+  y bloquea fitosanitarios sin carnet) y «Dar de baja» con confirmación; el titular con «Yo
+  también trabajo». Tu empresa: datos fiscales y enlace a servicios/precios/zona.
+- **`/empresa/configuracion`**: la misma pantalla de configuración que un autónomo (A-26).
+  **Desviación del plan:** adelantado de F4, porque sin servicios activos no hay nada que
+  repartir entre el equipo. Lo que queda en F4 (vender) no cambia.
+- **Invitación** (`/invitacion?token=…`, pública): dice quién invita (A-25), lleva a crear la
+  cuenta o entrar con ese correo, explica cada caso que no puede aceptar, y se retoma sola tras
+  confirmar el correo (H-25).
+- **Panel del empleado** (`/mi-trabajo`): empresa, sus servicios, «todavía no tienes trabajos»,
+  nombre y teléfono, y su carnet si la empresa hace fitosanitarios.
+- El admin ve el carnet de un empleado como «Nombre · empleado de Empresa».
+- Etiqueta «Empleado» en el menú y en Mi cuenta. **Imprevistos:** H-23, H-24, H-25.
+
 **Pendiente de F3:**
 - [x] Registro «Tengo una empresa de jardinería» en `AuthForm`.
-- [ ] **Solicitud de alta de empresa propia** (D2): encuesta de empresa (preguntas de D7),
+- [x] **Solicitud de alta de empresa propia** (D2): encuesta de empresa (preguntas de D7),
       tabla separada de `gardener_applications`, y su revisión en el panel de admin. Hasta que
       el admin la aprueba, la empresa no aparece en el funnel.
-- [ ] Interruptor del dueño «Yo también trabajo» (D3).
-- [ ] Alta de empleado con **selección de servicios** (D5). Solo se pueden marcar servicios
+- [x] Interruptor del dueño «Yo también trabajo» (D3).
+- [x] Alta de empleado con **selección de servicios** (D5). Solo se pueden marcar servicios
       que la empresa tiene activos.
-- [ ] **Carnet fitosanitario por empleado** (D4): subida del carnet en la ficha del empleado,
+- [x] **Carnet fitosanitario por empleado** (D4): subida del carnet en la ficha del empleado,
       aprobación por el admin, y sin carnet aprobado no se le puede activar ese servicio.
-- [ ] Invitación por token: se guarda **el hash**, nunca el token.
+- [x] Invitación por token: se guarda **el hash**, nunca el token.
 - [ ] Email de invitación — tipo nuevo en el despachador Brevo existente.
-- [ ] RPC `accept_company_invitation(token)`: deriva `company_id` **del token**, jamás de un
+- [x] RPC `accept_company_invitation(token)`: deriva `company_id` **del token**, jamás de un
       parámetro. Rechaza si quien acepta ya tiene `gardener_profiles`.
-- [ ] Panel de empresa mínimo: perfil y equipo.
+- [x] Panel de empresa mínimo: perfil y equipo.
 
 **Criterio de cierre.** Una empresa aprobada por el admin, con un empleado con servicios
 asignados, existe y ambos entran a su panel. Probado el vector de suplantación de
@@ -337,7 +355,11 @@ necesita la aprobación van en columnas; el resto, en un campo de respuestas fle
       libre un empleado que hace el servicio X. El dueño cuenta solo si trabaja (D3).
 - [ ] `booking-authority` lee capacidad (`free_count`) en vez de disponibilidad binaria.
       **Recordatorio: esta función importa `bookingQuoteCore.ts` → hay que redesplegarla.**
-- [ ] La empresa configura precios con los configuradores existentes, sin tocarlos.
+- [x] La empresa configura precios con los configuradores existentes, sin tocarlos.
+      *(Adelantado a F3.3, A-26: `/empresa/configuracion`.)*
+- [ ] **Fitosanitarios a nivel de empresa:** hoy una empresa puede activarlo en sus servicios
+      sin nadie con carnet. Para vender, exigir al menos una persona del equipo con carnet
+      aprobado que lo tenga asignado (D4), y retirarlo del funnel si deja de haberla.
 - [ ] La empresa aparece en `ProvidersPage` con distintivo discreto. Comisión 12,5 % (D1).
 
 **Criterio de cierre.** **Primera reserva a una empresa, de punta a punta**, incluida la
@@ -410,7 +432,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-24 | F3.2 | **Web del alta de empresas.** Registro, encuesta de 5 pasos, estado, revisión en el admin. Recorrido completo en navegador (móvil): alta → encuesta → envío → aprobación → panel; y rechazo → motivo → corregir → reenvío. Sin regresiones de jardinero ni cliente. | 481 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F3.3 | **Panel de empresa, invitación y panel de empleado.** Recorrido completo en navegador (móvil): invitar → abrir sin cuenta → registrarse → volver por la portada → aceptar → datos → carnet → admin lo aprueba → la empresa asigna servicios. Configuración de precios de la empresa adelantada de F4. **H-23, H-24, H-25** encontrados y cerrados. | 486 ✅ · build ✅ · tsc 129 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F3.2 | **Web del alta de empresas.** Registro, encuesta de 5 pasos, estado, revisión en el admin. Recorrido completo en navegador (móvil): alta → encuesta → envío → aprobación → panel; y rechazo → motivo → corregir → reenvío. Sin regresiones de jardinero ni cliente. | 481 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `bdc0c8b` |
 | 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `f7ec1d5` |
 | 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | `b0a6fbe` |
 | 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | `c506f1e` |
@@ -471,6 +494,7 @@ Se acumula fase a fase. Es la lista de lo que habrá que hacer en `garser.es` al
 | F2 | **Aplicar `20260924120000_empresas_f2_provider_model.sql` cierra H-21** (alta de jardineros sin aprobación y autoaprobación del carnet) | Antes, ejecutar las consultas de F2 de abajo: si hay fichas de proveedor sin solicitud aprobada, o carnets aprobados sin revisión, revisarlos a mano |
 
 | F3 | **Aplicar `20260924130000_empresas_f3_onboarding_server.sql` cierra H-22** | Antes, la consulta de F3 de abajo: licencias aprobadas sin revisor |
+| F3 | Aplicar `20260924140000` y `20260924150000` (en ese orden, tras la anterior) | Sin consulta previa: solo añaden funciones |
 
 **Consulta previa de F3 (solo lectura):**
 

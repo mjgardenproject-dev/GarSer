@@ -38,11 +38,14 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   const isAdmin = isAdminRole(userRole);
   
   const isCompany = userRole === 'company';
-  const showRoleBadge = isAdmin || isCompany || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
+  const isEmployee = userRole === 'employee';
+  const showRoleBadge = isAdmin || isCompany || isEmployee || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
   const roleBadgeLabel = isAdmin
     ? 'Admin'
     : isCompany
       ? 'Empresa'
+    : isEmployee
+      ? 'Empleado'
     : applicationStatus === 'pending'
       ? 'Jardinero (pendiente)'
       : applicationStatus === 'active'

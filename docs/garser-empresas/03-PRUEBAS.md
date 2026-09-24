@@ -171,6 +171,10 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F3-34 | Dar de baja a un empleado con trabajos futuros | Bloqueado | ✅ F3.1 |
 | F3-35 | Dar de baja sin trabajos pendientes | Vuelve a cliente y pierde el acceso | ✅ F3.1 |
 | F3-36 | **Crear una licencia ya aprobada** (H-22) | Denegado | ✅ F3.1 (❌ antes: HTTP 201) |
+| F3-37 | El dueño ve su equipo en una llamada (servicios y estado del carnet de cada uno); un empleado o un cliente no | Correcto | ✅ F3.3 |
+| F3-38 | El empleado ve a qué empresa pertenece, sus servicios y si la empresa hace fitosanitarios | Correcto | ✅ F3.3 |
+| F3-39 | Preguntar por la API si **otra persona** tiene carnet (`has_valid_phyto_license`) | Denegado (H-23) | ✅ F3.3 (❌ antes: cualquiera podía) |
+| F3-51 | El enlace de invitación, **sin sesión**, dice quién invita y si vale (válida / anulada / usada / inventada) | Correcto; un token inventado no revela nada | ✅ F3.3 |
 
 | F3-40 | Registro con `/auth?mode=signup&role=company`: 3 opciones legibles en móvil, «Empresa» preseleccionada | Cuenta con rol `company` | ✅ F3.2 (navegador, 375 px) |
 | F3-41 | La empresa entra y va sola a la encuesta | `/empresa/solicitud` | ✅ F3.2 |
@@ -183,9 +187,24 @@ El criterio que manda sobre cualquier otro: **el autónomo no se rompe.**
 | F3-48 | El admin rechaza: sin motivo el botón está desactivado; con motivo, rechaza | Correcto | ✅ F3.2 |
 | F3-49 | La empresa rechazada ve el motivo; «Corregir y enviar de nuevo» abre la encuesta rellena; reenvía | Nueva solicitud enviada; la rechazada queda de histórico | ✅ F3.2 |
 | F3-50 | No regresión: jardinero → «Panel de Jardinero»; cliente → su panel; cliente en `/empresa` → vuelve a su panel | Correcto | ✅ F3.2 |
+| F3-52 | Panel de empresa sin servicios: aviso «Aún no ofreces ningún servicio» que lleva a configurarlos | Correcto | ✅ F3.3 (móvil) |
+| F3-53 | «Servicios, precios y zona» abre la misma configuración que un autónomo, con la ficha de la empresa | Correcto | ✅ F3.3 |
+| F3-54 | La empresa invita por correo: sale el enlace para copiar y la invitación pendiente con su caducidad | Correcto | ✅ F3.3 |
+| F3-55 | El invitado abre el enlace **sin cuenta**: «Jardines Demo Costa te invita a su equipo», con el correo que debe usar | Correcto | ✅ F3.3 |
+| F3-56 | Crea la cuenta desde el enlace y vuelve a entrar **por la portada** (como tras confirmar el correo): la invitación se retoma sola | Correcto (H-25) | ✅ F3.3 |
+| F3-57 | Acepta: pasa a empleado y cae en «Mi trabajo»; `/dashboard` le lleva siempre ahí | Correcto | ✅ F3.3 |
+| F3-58 | El empleado guarda nombre y teléfono; su empresa los ve en su tarjeta | Correcto | ✅ F3.3 |
+| F3-59 | Empresa con fitosanitarios: el empleado sube su carnet (queda «En revisión») | Correcto | ✅ F3.3 |
+| F3-60 | El admin ve el carnet como «Lucía Martín · empleado de Jardines Demo Costa» y lo aprueba | Correcto | ✅ F3.3 |
+| F3-61 | La empresa ve «Carnet aprobado» y le asigna césped + fitosanitarios; el empleado los ve en su panel | Correcto | ✅ F3.3 |
+| F3-62 | El dueño activa «Yo también trabajo»: puede asignarse servicios; fitosanitarios bloqueado hasta subir **su** carnet en «Tu empresa» | Correcto (H-24) | ✅ F3.3 |
+| F3-63 | «Dar de baja» pide confirmación con el nombre; cancelar no cambia nada | Correcto | ✅ F3.3 |
+| F3-64 | El dueño abre su propio enlace: le explica que es para enviarlo y le devuelve a su empresa | Correcto | ✅ F3.3 |
+| F3-65 | No regresión: un cliente normal entra a su inicio; ningún error en consola | Correcto | ✅ F3.3 |
 
 > Las pruebas de servidor se repiten con `node scripts/garser-empresas/verify-f3-db.mjs`
-> (31 comprobaciones). Las de pantallas (F3-40 a F3-50) se hicieron en el navegador.
+> (35 comprobaciones, incluidas F3-37 a F3-39 y F3-51). Las de pantallas (F3-40 a F3-50 y
+> F3-52 a F3-65) se hicieron en el navegador, en móvil (375 px).
 
 > F3-04 es la prueba de seguridad principal de toda la fase de empresas.
 
@@ -292,6 +311,9 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F3-3 | Registrarse en `garser.es` como empresa, rellenar la encuesta en el móvil y enviarla | F3 | ⬜ |
 | P-F3-4 | Como admin, aprobar esa empresa desde Usuarios → Solicitudes de Empresas; la empresa entra en su panel | F3 | ⬜ |
 | P-F3-5 | Rechazar otra con motivo; la empresa lo ve y puede corregir y reenviar | F3 | ⬜ |
+| P-F3-6 | La empresa aprobada invita a un correo real; desde otro móvil, abrir el enlace, crear la cuenta, **confirmar el correo** y comprobar que al entrar se retoma la invitación y se acepta | F3 | ⬜ |
+| P-F3-7 | El empleado sube su carnet; el admin lo ve con «· empleado de <empresa>» y lo aprueba; la empresa le asigna fitosanitarios | F3 | ⬜ |
+| P-F3-8 | Por la API, con una cuenta de cliente, llamar a `has_valid_phyto_license` con el id de otra persona | F3 | ⬜ → debe dar 403 |
 
 ---
 

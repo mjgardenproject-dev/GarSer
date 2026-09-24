@@ -58,14 +58,46 @@ const LicenseVerificationAdmin: React.FC = () => {
         console.warn('Error fetching gardener profiles for licenses:', profilesError);
       }
 
+      // 2b. GarSer Empresas (D4): el carnet también lo sube cada EMPLEADO de una empresa, que no
+      // tiene ficha de proveedor. Sin esto aparecía como «Usuario Desconocido» y el admin no
+      // sabía de quién ni de qué empresa era. Se completa con su perfil y su empresa.
+      const missingIds = gardenerIds.filter((id: string) => !profilesData?.some((p: any) => p.user_id === id));
+      const employeeLabels = new Map<string, { full_name: string; phone: string }>();
+      if (missingIds.length > 0) {
+        const [{ data: people }, { data: memberships }] = await Promise.all([
+          supabase.from('profiles').select('user_id, full_name, phone').in('user_id', missingIds),
+          supabase.from('company_members').select('user_id, company_id').in('user_id', missingIds).eq('status', 'active'),
+        ]);
+        const companyIds = [...new Set((memberships ?? []).map((m: any) => m.company_id))];
+        const { data: companies } = companyIds.length
+          ? await supabase.from('companies').select('id, provider_user_id').in('id', companyIds)
+          : { data: [] as any[] };
+        const providerIds = (companies ?? []).map((c: any) => c.provider_user_id);
+        const { data: providers } = providerIds.length
+          ? await supabase.from('gardener_profiles').select('user_id, full_name').in('user_id', providerIds)
+          : { data: [] as any[] };
+        for (const id of missingIds) {
+          const person = (people ?? []).find((p: any) => p.user_id === id);
+          const membership = (memberships ?? []).find((m: any) => m.user_id === id);
+          const company = (companies ?? []).find((c: any) => c.id === membership?.company_id);
+          const companyName = (providers ?? []).find((p: any) => p.user_id === company?.provider_user_id)?.full_name;
+          const name = person?.full_name?.trim() || 'Sin nombre';
+          employeeLabels.set(id, {
+            full_name: companyName ? `${name} · empleado de ${companyName}` : name,
+            phone: person?.phone?.trim() || '—',
+          });
+        }
+      }
+
       // 3. Combinar datos
       const mergedLicenses = licensesData.map((license: any) => {
         const profile = profilesData?.find((p: any) => p.user_id === license.gardener_id);
+        const employee = employeeLabels.get(license.gardener_id);
         return {
           ...license,
           gardener_profiles: {
-            full_name: profile?.full_name || 'Usuario Desconocido',
-            phone: profile?.phone || '—'
+            full_name: profile?.full_name || employee?.full_name || 'Usuario Desconocido',
+            phone: profile?.phone || employee?.phone || '—'
           }
         };
       });

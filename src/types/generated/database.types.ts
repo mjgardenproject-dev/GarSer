@@ -2464,6 +2464,7 @@ export type Database = {
         Returns: Json
       }
       cleanup_expired_requests: { Args: never; Returns: undefined }
+      company_team_overview: { Args: never; Returns: Json }
       complete_booking_batch_operation: {
         Args: {
           p_action: string
@@ -2576,6 +2577,7 @@ export type Database = {
       }
       get_rebook_payload: { Args: { p_booking_id: string }; Returns: Json }
       has_valid_phyto_license: { Args: { p_user_id: string }; Returns: boolean }
+      invitation_preview: { Args: { p_token: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
       is_company_member: { Args: { p_company_id: string }; Returns: boolean }
       is_company_owner: { Args: { p_company_id: string }; Returns: boolean }
@@ -2613,6 +2615,7 @@ export type Database = {
       }
       mark_gardener_finished: { Args: { p_booking_id: string }; Returns: Json }
       my_company_id: { Args: never; Returns: string }
+      my_company_membership: { Args: never; Returns: Json }
       post_booking_system_message: {
         Args: { p_booking_id: string; p_text: string }
         Returns: undefined

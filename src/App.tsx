@@ -18,6 +18,7 @@ import PublicHomePage from './pages/public/PublicHomePage';
 import { supabase } from './lib/supabase';
 import { useAccount } from './contexts/AccountContext';
 import { hasWizardResume } from './utils/bookingResumeStorage';
+import { invitationPath, readPendingInvitation } from './lib/pendingInvitation';
 
 import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
 
@@ -55,6 +56,10 @@ const GardenerStatusPage = lazy(() => import('./components/gardener/GardenerStat
 const CompanyApplicationPage = lazy(() => import('./pages/empresa/CompanyApplicationPage'));
 const CompanyStatusPage = lazy(() => import('./pages/empresa/CompanyStatusPage'));
 const CompanyHomePage = lazy(() => import('./pages/empresa/CompanyHomePage'));
+// GarSer Empresas (F3.3): configuración de la empresa, invitación y panel del empleado.
+const CompanyConfigPage = lazy(() => import('./pages/empresa/CompanyConfigPage'));
+const InvitationAcceptPage = lazy(() => import('./pages/empleado/InvitationAcceptPage'));
+const EmployeeHomePage = lazy(() => import('./pages/empleado/EmployeeHomePage'));
 
 // Funnel de reserva (el más pesado: análisis con IA, wizards manuales y checkout)
 const BookingFlow = lazy(() => import('./pages/reserva/BookingFlow'));
@@ -100,7 +105,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const isGardenerAccount = accountRole === 'gardener';
     const location = useLocation();
     const navigate = useNavigate();
-    const isAuthPage = location.pathname === '/auth' || location.pathname === '/confirmar-servicio';
+    const isAuthPage = location.pathname === '/auth' || location.pathname === '/confirmar-servicio' || location.pathname === '/invitacion';
     const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
     // Páginas de alta (jardinero o empresa): sin menú inferior, como /apply.
     const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud' || location.pathname === '/empresa/estado';
@@ -332,6 +337,11 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                   return <Navigate to="/empresa" replace />;
                 }
 
+                // Empleado de una empresa: su panel es /mi-trabajo (F3.3).
+                if (accountRole === 'employee') {
+                  return <Navigate to="/mi-trabajo" replace />;
+                }
+
                 const gardenerIntent = isGardenerAccount || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
                 
                 if (gardenerIntent) {
@@ -368,6 +378,12 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                 }
                 
                 // Rol de Cliente
+                // Invitación de empresa a medias (se registró desde el enlace y acaba de
+                // confirmar el correo): se retoma antes que nada.
+                const pendingInvitation = accountRole === 'client' ? readPendingInvitation() : null;
+                if (pendingInvitation) {
+                  return <Navigate to={invitationPath(pendingInvitation)} replace />;
+                }
                 const skipBookingResumeRedirect =
                   Boolean((location.state as { skipBookingResumeRedirect?: boolean } | null)?.skipBookingResumeRedirect);
                 if (!skipBookingResumeRedirect && hasWizardResume({ userId: user?.id, allowAnonFallback: true })) {
@@ -519,6 +535,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/empresa" element={<ProtectedRoute><CompanyHomePage /></ProtectedRoute>} />
         <Route path="/empresa/solicitud" element={<ProtectedRoute><CompanyApplicationPage /></ProtectedRoute>} />
         <Route path="/empresa/estado" element={<ProtectedRoute><CompanyStatusPage /></ProtectedRoute>} />
+        <Route path="/empresa/configuracion" element={<ProtectedRoute><CompanyConfigPage /></ProtectedRoute>} />
+        {/* Pública a propósito: quien recibe la invitación puede no tener cuenta todavía. */}
+        <Route path="/invitacion" element={<InvitationAcceptPage />} />
+        <Route path="/mi-trabajo" element={<ProtectedRoute><EmployeeHomePage /></ProtectedRoute>} />
         <Route 
           path="/apply" 
           element={

@@ -449,6 +449,34 @@ empleado habría podido darse el carnet y hacer tratamientos químicos.
 **Arreglo (migración `20260924130000`):** la subida solo admite `status = 'pending'` sin
 revisión, y solo la pueden hacer proveedores o miembros activos de una empresa. Prueba F3-36.
 
+### H-23 · Cualquiera podía preguntar si una persona concreta tiene carnet fitosanitario — 🟠 Resuelto en F3.3 (local)
+
+En F3.1 se dio permiso de ejecución de `has_valid_phyto_license(user_id)` a todo usuario con
+sesión. Con el id de cualquier persona devolvía si tiene carnet válido: un dato personal que
+nadie fuera de su empresa y del admin necesita. Solo lo usan otras funciones del servidor.
+
+**Arreglo (migración `20260924150000`):** se retira ese permiso; el dueño recibe el estado del
+carnet de su equipo dentro de `company_team_overview()`. Prueba F3-39 (antes: 200; ahora: 403).
+No afecta a producción: la función nació en esta rama.
+
+### H-24 · Si el dueño trabaja, no tenía dónde subir su carnet — 🟢 Resuelto en F3.3
+
+D4 dice que el carnet es de cada persona. El empleado lo sube en «Mi trabajo», pero la ficha
+de la empresa (`/empresa/configuracion`) **no** lo pide (el carnet de una empresa no existe), así
+que un dueño con «Yo también trabajo» veía fitosanitarios bloqueado y un texto que le mandaba
+a «su panel», que no existe. Encontrado al probar en el navegador (F3-62).
+
+**Arreglo:** si el dueño trabaja y la empresa ofrece fitosanitarios, «Tu empresa» muestra la
+subida de su carnet, y el editor de servicios le dice dónde está.
+
+### H-25 · El enlace de confirmación del correo perdía la invitación — 🟢 Resuelto en F3.3
+
+Quien abre la invitación sin cuenta se registra, y el correo de confirmación le devuelve a la
+**portada**, no a la invitación: el token se perdía y la persona quedaba como cliente sin saber
+qué hacer. **Arreglo:** la página de la invitación la recuerda 24 h en el navegador
+(`src/lib/pendingInvitation.ts`) y, al entrar, un cliente con una invitación pendiente va a ella.
+Si se pierde (otro navegador), basta con volver a pulsar el enlace. Prueba F3-56.
+
 ---
 
 ## 2. Decisiones de arquitectura cerradas
@@ -480,6 +508,8 @@ esta es la respuesta.
 | A-21 | **Cambio de rol de confianza:** las RPC del servidor que deben cambiar un rol (aceptar invitación, dar de baja a un empleado) activan una marca de la transacción (`garser.trusted_role_change`) que el disparador de escalada de F0 respeta. | El disparador bloquea cambios de rol hechos «por» el propio usuario, y dentro de una RPC `auth.uid()` sigue siendo el usuario. La marca solo se puede poner desde SQL: PostgREST no expone `set_config`. |
 | A-22 | **Invitaciones:** token aleatorio de 32 bytes; en la BD solo su SHA-256; caduca en 7 días. Se devuelve **una vez** al dueño (para copiar el enlace) y va por email. Aceptar exige: sesión con el **mismo correo** invitado, cuenta de **cliente** (ni proveedor ni miembro de otra empresa). La empresa sale **del token**, nunca de un parámetro. | El token es un secreto enviado a un correo concreto; atarlo al correo impide usarlo si se filtra. |
 | A-23 | **Las licencias dejan de exigir ficha de proveedor** (se quita la clave ajena a `gardener_profiles`; queda la de `auth.users`). Subir licencia: solo proveedores y miembros activos de una empresa. | D4 / A-13: el carnet es de la persona. Sin esto, un empleado no puede tener carnet. |
+| A-25 | **`invitation_preview(token)` es pública** (también sin sesión): devuelve el nombre de la empresa, el correo invitado y el estado. | Quien abre el enlace aún no tiene cuenta y necesita saber quién le invita. Solo responde a quien tiene el token de 32 bytes; no revela nada que el enlace no dé ya. Un token inventado solo recibe «no válida». |
+| A-26 | **La configuración de servicios, precios y zona de la empresa es la pantalla del autónomo** (`ProfileSettings`), en `/empresa/configuracion`; sin el carnet (es de personas, no de empresas). Adelantado de F4. | Un solo sistema de precios. Sin esto, el dueño no podía repartir servicios entre su equipo (D5 exige que la empresa los tenga activos). |
 | A-24 | **La solicitud de empresa copia el patrón de la de jardinero:** el usuario crea su borrador y lo envía; aprobar o rechazar solo lo hace el admin por RPC, que es quien crea la ficha de proveedor, la empresa y el dueño. | Patrón existente y comprobado seguro (el usuario no puede pasar a `approved`). |
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 
@@ -505,6 +535,12 @@ Cosas que parecen problemas pero **no se han comprobado**. No se citan como hech
   policy `applications_own_update` solo deja actualizar filas en `draft`, y no hay policy de
   `DELETE`: ambas operaciones afectarían a 0 filas sin error. **No verificado** (fuera de
   este proyecto). La empresa no copia ese patrón: al corregir abre un borrador nuevo.
+- **¿Sale el aviso «confirma tu correo» tras registrarse?** En local (donde el correo se confirma
+  solo) el formulario se vació sin mostrar el aviso. No se ha comprobado en producción. Es
+  código anterior a este proyecto (`AuthForm`); se mira en P-F3-6.
+- **El registro desde una invitación dice «Rol seleccionado: Cliente · Este rol será permanente
+  tras el registro»**, y en realidad pasará a empleado al aceptar. No es un fallo (se registra
+  como cliente a propósito, A-22), pero confunde. Pulir al tocar `AuthForm`.
 - **Una prueba escrita como «foto» y no como regla (F2-01)** falló al existir la primera
   empresa: decía «todas las fichas son `solo`». Se reescribió como la regla permanente
   («toda ficha sin empresa es `solo` y toda `company` tiene su empresa»). Lección para las

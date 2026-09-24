@@ -123,6 +123,7 @@ function MyAccount() {
   };
 
   // Tipo de cuenta desde profiles.role (F0 de GarSer Empresas), no desde user_metadata.
+  const ROLE_LABEL: Record<string, string> = { gardener: 'Jardinero', company: 'Empresa', employee: 'Empleado', admin: 'Admin', client: 'Cliente' };
   const effectiveRole = myProfile?.role || accountRole || 'client';
 
   return (
@@ -137,7 +138,7 @@ function MyAccount() {
           <div className="flex items-center gap-4 justify-start sm:justify-between mb-3">
             <div className="min-w-0">
               <div className="text-lg font-semibold text-gray-900">Perfil</div>
-              <div className="text-sm text-gray-600 truncate">{(myProfile?.full_name || user?.email) || ''} · {effectiveRole === 'gardener' ? 'Jardinero' : 'Cliente'}</div>
+              <div className="text-sm text-gray-600 truncate">{(myProfile?.full_name || user?.email) || ''} · {ROLE_LABEL[effectiveRole] ?? 'Cliente'}</div>
             </div>
             <div className="shrink-0">
               {avatarPreview ? (

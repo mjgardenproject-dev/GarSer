@@ -14,13 +14,17 @@ interface PersonalTabProps {
     description: string;
   };
   onSave: (data: any) => void;
+  /** GarSer Empresas (D4): el carnet es de cada persona. Una cuenta de empresa no sube carnet
+   * propio; lo sube cada empleado desde su panel. */
+  showLicense?: boolean;
 }
 
 const PersonalTab: React.FC<PersonalTabProps> = ({ 
   loading, 
   setLicenseStatus,
   initialData,
-  onSave
+  onSave,
+  showLicense = true,
 }) => {
   const { register, watch, getValues, formState: { errors } } = useFormContext();
 
@@ -92,7 +96,7 @@ const PersonalTab: React.FC<PersonalTabProps> = ({
         </div>
       </div>
 
-      <PhytosanitaryLicenseUpload onStatusChange={setLicenseStatus} />
+      {showLicense && <PhytosanitaryLicenseUpload onStatusChange={setLicenseStatus} />}
     </div>
   );
 };

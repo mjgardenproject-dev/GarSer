@@ -774,6 +774,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                   setLicenseStatus={setLicenseStatus}
                   initialData={personalInitialData}
                   onSave={onSaveProfileInfo}
+                  showLicense={gardenerProfile?.provider_kind !== 'company'}
                 />
               )}
 

@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F3 cerradas · 🟨 F4 en curso: ✅ F4.1 servidor (vender por persona) · siguiente F4.2 (web: distintivo, modo de asignación, reservas de la empresa) · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F4 cerradas · siguiente: ⏸ HITO (recorrido en local haciendo de empresa) y F5 (horarios del equipo, asignar y ejecutar) · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -362,7 +362,7 @@ necesita la aprobación van en columnas; el resto, en un campo de respuestas fle
 
 ---
 
-#### 🟨 F4 — La empresa vende
+#### ✅ F4 — La empresa vende
 
 **✅ F4.1 Servidor — hecho** (migración `20260925120000_empresas_f4_sell_by_person.sql`,
 `booking-authority`, `booking-payment`, `bookingEligibilityCore.ts`;
@@ -377,6 +377,21 @@ necesita la aprobación van en columnas; el resto, en un campo de respuestas fle
 - **Horarios del equipo: F5** (decisión del usuario). Hasta entonces una empresa real no tiene
   horas que vender; las pruebas cargan horarios a mano.
 
+**✅ F4.2 Web — hecho:**
+- Listado del cliente: distintivo **«Empresa»**.
+- La empresa ve sus **solicitudes** (`/empresa/solicitudes`, la misma pantalla del autónomo para
+  aceptar, rechazar o proponer otro precio) y sus **reservas** (`/bookings`, la del autónomo), con
+  **«Va: …» / «Propuesta para ir: …»** en cada una. Accesos en el panel, con el número de
+  solicitudes por aceptar.
+- «Tu empresa» → **«¿Quién va a cada trabajo?»**: «GarSer elige automáticamente» o «Yo elijo
+  quién va» (A-29).
+
+**Cierre (2026-09-24).** Cumplido: el cliente encontró a la empresa en el listado, reservó con
+el mismo precio y la misma comisión (12,5 %) que un autónomo, el pago apartó a Lucía, el aviso
+de Stripe (simulado, sin tarjetas) creó la reserva y la empresa la aceptó y la ve con «Va:
+Lucía Martín». Autónomo sin cambios (F1 13/13, baterías de servicios iguales que antes). El
+cobro real con Stripe queda para P-F4-1 el día de la fusión.
+
 
 - [x] ~~Vista~~ Función `provider_free_hours` sobre la tabla de disponibilidad que quede tras H-01,
       **calculada por servicio** (D5): una empresa solo tiene hueco para el servicio X si hay
@@ -385,10 +400,10 @@ necesita la aprobación van en columnas; el resto, en un campo de respuestas fle
       **Recordatorio: esta función importa `bookingQuoteCore.ts` → hay que redesplegarla.**
 - [x] La empresa configura precios con los configuradores existentes, sin tocarlos.
       *(Adelantado a F3.3, A-26: `/empresa/configuracion`.)*
-- [ ] **Fitosanitarios a nivel de empresa:** hoy una empresa puede activarlo en sus servicios
-      sin nadie con carnet. Para vender, exigir al menos una persona del equipo con carnet
-      aprobado que lo tenga asignado (D4), y retirarlo del funnel si deja de haberla.
-- [ ] La empresa aparece en `ProvidersPage` con distintivo discreto. Comisión 12,5 % (D1).
+- [x] **Fitosanitarios a nivel de empresa:** una empresa sin nadie con carnet que haga el
+      servicio no tiene horas que vender para un trabajo que lo exige (F4-14): la puerta es por
+      persona, no por la ficha.
+- [x] La empresa aparece en `ProvidersPage` con distintivo discreto. Comisión 12,5 % (D1).
 
 **Criterio de cierre.** **Primera reserva a una empresa, de punta a punta**, incluida la
 comisión por Stripe. Verificado en paralelo que el funnel del autónomo no ha cambiado.
@@ -460,7 +475,8 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
-| 2026-09-24 | F3.4 | **Correos de empresas. F3 cerrada.** Invitación (una vez, con token verificado, tope diario), empresa aprobada y rechazada (solo admin, estado comprobado). Probado por la API (10/10) y desde la web en móvil. | 486 ✅ · build ✅ · tsc 129 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | (este) |
+| 2026-09-24 | F4 | **La empresa vende. F4 cerrada.** H-26 → decisión del usuario: se aparta a una persona al vender; el dueño elige si es definitiva o propuesta. Fuente única de horas libres para web y pago. Web: distintivo, solicitudes y reservas de la empresa con «quién va», opción de asignación. Recorrido de punta a punta en el navegador (móvil). H-27 (fallos antiguos de las baterías, tarea aparte) y H-28 anotados. | 491 ✅ · build ✅ · tsc 129 · F4 21/21 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `9e42bc0` + (este) |
+| 2026-09-24 | F3.4 | **Correos de empresas. F3 cerrada.** Invitación (una vez, con token verificado, tope diario), empresa aprobada y rechazada (solo admin, estado comprobado). Probado por la API (10/10) y desde la web en móvil. | 486 ✅ · build ✅ · tsc 129 · correos 10/10 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `2a37528` |
 | 2026-09-24 | F3.3 | **Panel de empresa, invitación y panel de empleado.** Recorrido completo en navegador (móvil): invitar → abrir sin cuenta → registrarse → volver por la portada → aceptar → datos → carnet → admin lo aprueba → la empresa asigna servicios. Configuración de precios de la empresa adelantada de F4. **H-23, H-24, H-25** encontrados y cerrados. | 486 ✅ · build ✅ · tsc 129 · F3 35/35 · F2 18/18 · F1 13/13 · F0 7/7 | `0987904` |
 | 2026-09-24 | F3.2 | **Web del alta de empresas.** Registro, encuesta de 5 pasos, estado, revisión en el admin. Recorrido completo en navegador (móvil): alta → encuesta → envío → aprobación → panel; y rechazo → motivo → corregir → reenvío. Sin regresiones de jardinero ni cliente. | 481 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `bdc0c8b` |
 | 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `f7ec1d5` |

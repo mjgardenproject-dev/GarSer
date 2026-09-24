@@ -58,6 +58,7 @@ const CompanyStatusPage = lazy(() => import('./pages/empresa/CompanyStatusPage')
 const CompanyHomePage = lazy(() => import('./pages/empresa/CompanyHomePage'));
 // GarSer Empresas (F3.3): configuración de la empresa, invitación y panel del empleado.
 const CompanyConfigPage = lazy(() => import('./pages/empresa/CompanyConfigPage'));
+const CompanyRequestsPage = lazy(() => import('./pages/empresa/CompanyRequestsPage'));
 const InvitationAcceptPage = lazy(() => import('./pages/empleado/InvitationAcceptPage'));
 const EmployeeHomePage = lazy(() => import('./pages/empleado/EmployeeHomePage'));
 
@@ -494,6 +495,11 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                 if (accountRole === 'admin') {
                   return <Navigate to="/admin/dashboard" replace />;
                 }
+                // Empresa (F4): sus reservas son las de proveedor. Sin alta aprobada (sin ficha)
+                // no tiene reservas: vuelve a su panel, que la lleva a su alta.
+                if (accountRole === 'company') {
+                  return applicationStatus === 'active' ? <GardenerBookings /> : <Navigate to="/empresa" replace />;
+                }
                 if (isGardenerAccount) {
                   if (applicationStatus !== 'active') {
                     return (
@@ -536,6 +542,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/empresa/solicitud" element={<ProtectedRoute><CompanyApplicationPage /></ProtectedRoute>} />
         <Route path="/empresa/estado" element={<ProtectedRoute><CompanyStatusPage /></ProtectedRoute>} />
         <Route path="/empresa/configuracion" element={<ProtectedRoute><CompanyConfigPage /></ProtectedRoute>} />
+        <Route path="/empresa/solicitudes" element={<ProtectedRoute><CompanyRequestsPage /></ProtectedRoute>} />
         {/* Pública a propósito: quien recibe la invitación puede no tener cuenta todavía. */}
         <Route path="/invitacion" element={<InvitationAcceptPage />} />
         <Route path="/mi-trabajo" element={<ProtectedRoute><EmployeeHomePage /></ProtectedRoute>} />

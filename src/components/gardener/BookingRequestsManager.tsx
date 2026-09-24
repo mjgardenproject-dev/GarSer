@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAccount } from '../../contexts/AccountContext';
+import { useBookingWorkers } from '../../hooks/useBookingWorkers';
+import BookingWorkerLine from '../empresa/BookingWorkerLine';
 import { Calendar, Clock, MapPin, User, Check, X, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { BookingResponse } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -36,6 +39,8 @@ interface BookingRequestWithDetails {
   data_input_mode?: 'photos' | 'manual' | null;
   manual_declaration_id?: string | null;
   price_change_status?: 'none' | 'pending_client_acceptance' | 'accepted' | 'rejected' | 'expired';
+  /** GarSer Empresas (F4): la persona apartada es una propuesta (modo «yo elijo quién va»). */
+  assignment_pending?: boolean | null;
   pricing_context?: {
     service_type?: string;
     allows_price_change?: boolean;
@@ -78,6 +83,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [correctionFor, setCorrectionFor] = useState<BookingRequestWithDetails | null>(null);
   const [correctionLoading, setCorrectionLoading] = useState(false);
   const [correctionVars, setCorrectionVars] = useState<Record<string, Record<string, unknown>>>({});
+  // GarSer Empresas (F4): una cuenta de empresa ve también quién de su equipo va a cada trabajo.
+  const { role } = useAccount();
+  const workers = useBookingWorkers(requests, { enabled: role === 'company', myId: user?.id });
 
   const handleCorrectionSubmit = async (request: BookingRequestWithDetails, payload: ManualWizardSubmitPayload) => {
     const serviceKey = resolveManualServiceKey(request.services?.name);
@@ -219,6 +227,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         data_input_mode: booking.data_input_mode,
         manual_declaration_id: booking.manual_declaration_id,
         price_change_status: booking.price_change_status,
+        assignment_pending: booking.assignment_pending,
         pricing_context: booking.pricing_context,
         created_at: booking.created_at,
         expires_at: booking.created_at, // Usar created_at como referencia
@@ -524,6 +533,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     {request.client_address}
                   </div>
                 </div>
+                <BookingWorkerLine worker={workers[request.id]} />
 
                 {/* Detalle del servicio: qué trabajo es exactamente (para decidir si aceptar) */}
                 <ServiceDetailCard

@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
+import { AlertTriangle, CalendarCheck, ChevronRight, Clock, Inbox, Loader2, Settings2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import { useConfirmDialog } from '../../components/common/ConfirmDialog';
+import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import TeamMemberCard from '../../components/empresa/TeamMemberCard';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
 import { PHYTO_SERVICE_NAME, useCompanyTeam, type TeamInvitation, type TeamMember } from '../../hooks/useCompanyTeam';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Panel de la empresa (/empresa, GarSer Empresas F3.3). Decide adónde va cada cuenta según su
 // alta y, con la empresa activa, muestra su equipo (invitar, servicios por persona, bajas) y
@@ -33,6 +35,19 @@ const CompanyPanel: React.FC = () => {
   const { openConfirm, confirmDialog } = useConfirmDialog();
   const [tab, setTab] = useState<Tab>('team');
   const [showFormer, setShowFormer] = useState(false);
+  const { user } = useAuth();
+  const [pendingRequests, setPendingRequests] = useState<number | null>(null);
+
+  // Solicitudes de reserva por responder (F4): la empresa es el proveedor de sus reservas.
+  useEffect(() => {
+    if (!user?.id) return;
+    void supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+      .eq('gardener_id', user.id)
+      .eq('status', 'pending')
+      .then(({ count }) => setPendingRequests(count ?? 0));
+  }, [user?.id]);
 
   if (loading && !data) return <Spinner />;
   if (!data) {
@@ -126,6 +141,24 @@ const CompanyPanel: React.FC = () => {
               </Link>
             )}
 
+            <section className="grid grid-cols-2 gap-2">
+              <Link to="/empresa/solicitudes" className="relative rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+                <Inbox className="h-6 w-6 text-emerald-700" />
+                <span className="mt-2 block font-semibold text-gray-900">Solicitudes</span>
+                <span className="block text-xs text-gray-500">Reservas por aceptar</span>
+                {!!pendingRequests && (
+                  <span className="absolute right-3 top-3 min-w-[22px] rounded-full bg-emerald-700 px-1.5 py-0.5 text-center text-xs font-bold text-white">
+                    {pendingRequests}
+                  </span>
+                )}
+              </Link>
+              <Link to="/bookings" className="rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+                <CalendarCheck className="h-6 w-6 text-emerald-700" />
+                <span className="mt-2 block font-semibold text-gray-900">Reservas</span>
+                <span className="block text-xs text-gray-500">Confirmadas y hechas</span>
+              </Link>
+            </section>
+
             <InviteMemberCard onInvited={() => void refresh()} />
 
             {data.invitations.length > 0 && (
@@ -191,6 +224,8 @@ const CompanyPanel: React.FC = () => {
               </span>
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </Link>
+
+            <AssignmentModeCard mode={c.assignment_mode} onChanged={() => void refresh()} />
 
             {ownerWorks && offersPhyto && (
               <section>

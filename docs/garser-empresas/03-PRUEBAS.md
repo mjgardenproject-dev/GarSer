@@ -260,6 +260,19 @@ dueña sin trabajar 11-12. Trabajo de 2 horas.
 | F4-21 | Un empleado cambia los precios de su empresa | No cambia nada | ✅ F4.1 |
 | F4-22 | No regresión del autónomo: F1 13/13 y las 7 baterías de `scripts/readiness/` | Mismos resultados que antes de F4 | ✅ F4.1 (las 9 que fallan ya fallaban antes, H-27) |
 
+**Web (F4.2)** — en el navegador, móvil (375 px), con la empresa demo (Lucía con horario cargado a
+mano: los horarios del equipo son de F5):
+
+| # | Prueba | Resultado esperado | Estado |
+|---|---|---|---|
+| F4-23 | El cliente reserva césped en Marbella: en el listado salen el autónomo y la empresa, **con el distintivo «Empresa»** y el mismo precio | Correcto | ✅ F4.2 |
+| F4-24 | El calendario de la empresa muestra los días y horas de su equipo | Días de Lucía, 09:00… | ✅ F4.2 |
+| F4-25 | Resumen y paso al pago | La empresa, 50,63 €, 5,63 € de gestión hoy | ✅ F4.2 |
+| F4-26 | Al abrir el pago, el servidor aparta a Lucía; el aviso de Stripe (simulado: no se introducen tarjetas) crea la reserva | Reserva de la empresa, 10:00 con Lucía | ✅ F4.2 |
+| F4-27 | La empresa ve «Solicitudes (1)» en su panel, la abre (misma pantalla que un autónomo) con «Va: Lucía Martín» y la acepta | Confirmada | ✅ F4.2 |
+| F4-28 | «Reservas» de la empresa: la reserva confirmada con «Va: Lucía Martín», «Cobrarás 45 €», llamar y chat | Correcto | ✅ F4.2 |
+| F4-29 | «Tu empresa» → «¿Quién va a cada trabajo?»: cambiar entre «GarSer elige» y «Yo elijo quién va» | Se guarda | ✅ F4.2 |
+
 > Del plan original: «Empleado leyendo `gardener_service_prices` → denegado» se cambió por F4-21:
 > los precios activos son **públicos a propósito** (el listado los lee); lo que importa es que
 > nadie del equipo pueda cambiarlos.

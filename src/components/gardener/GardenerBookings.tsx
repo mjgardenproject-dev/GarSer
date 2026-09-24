@@ -19,6 +19,9 @@ import PhotoGallery from '../common/PhotoGallery';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
+import { useAccount } from '../../contexts/AccountContext';
+import { useBookingWorkers } from '../../hooks/useBookingWorkers';
+import BookingWorkerLine from '../empresa/BookingWorkerLine';
 
 interface GardenerBookingIncident {
   id: string;
@@ -62,6 +65,9 @@ const GardenerBookings: React.FC = () => {
   // penalización y un reembolso en su contra sin saber por qué.
   const [incidentDrafts, setIncidentDrafts] = useState<Record<string, string>>({});
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  // GarSer Empresas (F4): una cuenta de empresa ve también quién de su equipo va a cada trabajo.
+  const { role } = useAccount();
+  const workers = useBookingWorkers(bookings, { enabled: role === 'company', myId: user?.id });
 
   useEffect(() => {
     if (user) {
@@ -257,6 +263,7 @@ const GardenerBookings: React.FC = () => {
                     <span className="break-words">{booking.client_address}</span>
                   </div>
                 </div>
+                <BookingWorkerLine worker={workers[booking.id]} />
 
                 {/* Acciones de contacto y navegación: lo primero que necesita el jardinero en el móvil.
                     También en disputa: el chat sigue siendo el sitio para aclarar lo que ha pasado. */}

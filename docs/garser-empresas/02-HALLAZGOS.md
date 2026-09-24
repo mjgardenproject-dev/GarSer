@@ -516,6 +516,16 @@ fitosanitarios 2. Son de tres tipos, ninguno de empresas:
 - **Horario de la semilla** (arbustos «cobertura», desbroce «sábado»): no hay horas libres en
   los días que la prueba elige.
 
+### H-28 · Detalles de textos y datos para F5 — 🟢 Anotado
+
+Vistos al probar F4 en el navegador; ninguno impide vender:
+- El resumen de la reserva dice **«Jardinero: Jardines Demo Costa»** y el botón del listado
+  **«Confirmar jardinero»**: con una empresa sería mejor «Profesional». Es código común con los
+  autónomos; se pule con D6 (F5), cuando el cliente vea también quién va.
+- Un cliente puede leer los `booking_blocks` de su reserva, y con ellos el **id** de la persona
+  asignada (no su nombre: no puede leer su perfil). D6 decide qué ve el cliente y cuándo; en F5
+  hay que cerrar esa lectura o convertirla en «nombre y foto el día antes».
+
 ---
 
 ## 2. Decisiones de arquitectura cerradas

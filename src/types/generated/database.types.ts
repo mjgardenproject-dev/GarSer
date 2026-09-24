@@ -988,6 +988,7 @@ export type Database = {
       }
       booking_schedule_holds: {
         Row: {
+          assignee_id: string | null
           booking_id: string | null
           client_id: string
           created_at: string
@@ -1006,6 +1007,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assignee_id?: string | null
           booking_id?: string | null
           client_id: string
           created_at?: string
@@ -1024,6 +1026,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assignee_id?: string | null
           booking_id?: string | null
           client_id?: string
           created_at?: string
@@ -1121,6 +1124,7 @@ export type Database = {
       }
       bookings: {
         Row: {
+          assignment_pending: boolean
           auto_completed_at: string | null
           buffer_applied: boolean | null
           cancellation_actor: string | null
@@ -1173,6 +1177,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          assignment_pending?: boolean
           auto_completed_at?: string | null
           buffer_applied?: boolean | null
           cancellation_actor?: string | null
@@ -1225,6 +1230,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          assignment_pending?: boolean
           auto_completed_at?: string | null
           buffer_applied?: boolean | null
           cancellation_actor?: string | null
@@ -1365,6 +1371,7 @@ export type Database = {
       }
       companies: {
         Row: {
+          assignment_mode: string
           created_at: string
           id: string
           legal_name: string | null
@@ -1375,6 +1382,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assignment_mode?: string
           created_at?: string
           id?: string
           legal_name?: string | null
@@ -1385,6 +1393,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assignment_mode?: string
           created_at?: string
           id?: string
           legal_name?: string | null
@@ -1500,6 +1509,7 @@ export type Database = {
           created_at: string
           created_by: string
           email: string
+          email_sent_at: string | null
           expires_at: string
           id: string
           revoked_at: string | null
@@ -1512,6 +1522,7 @@ export type Database = {
           created_at?: string
           created_by: string
           email: string
+          email_sent_at?: string | null
           expires_at: string
           id?: string
           revoked_at?: string | null
@@ -1524,6 +1535,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           email?: string
+          email_sent_at?: string | null
           expires_at?: string
           id?: string
           revoked_at?: string | null
@@ -2342,6 +2354,7 @@ export type Database = {
           has_phytosanitary_license: boolean | null
           is_available: boolean | null
           max_distance: number | null
+          provider_kind: string | null
           rating: number | null
           rating_average: number | null
           rating_count: number | null
@@ -2356,6 +2369,7 @@ export type Database = {
           has_phytosanitary_license?: boolean | null
           is_available?: boolean | null
           max_distance?: number | null
+          provider_kind?: string | null
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -2370,6 +2384,7 @@ export type Database = {
           has_phytosanitary_license?: boolean | null
           is_available?: boolean | null
           max_distance?: number | null
+          provider_kind?: string | null
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -2420,6 +2435,10 @@ export type Database = {
         Returns: undefined
       }
       auto_complete_due_bookings: { Args: never; Returns: number }
+      booking_requires_phyto_license: {
+        Args: { p_booking_id: string }
+        Returns: boolean
+      }
       booking_service_end: {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
@@ -2605,6 +2624,10 @@ export type Database = {
         Args: { p_attempt_id: string; p_result: string }
         Returns: undefined
       }
+      mark_company_invitation_emailed: {
+        Args: { p_caller: string; p_invitation_id: string; p_token: string }
+        Returns: Json
+      }
       mark_confirmation_prompt_failed: {
         Args: { p_booking_id: string; p_error?: string }
         Returns: undefined
@@ -2616,6 +2639,17 @@ export type Database = {
       mark_gardener_finished: { Args: { p_booking_id: string }; Returns: Json }
       my_company_id: { Args: never; Returns: string }
       my_company_membership: { Args: never; Returns: Json }
+      pick_provider_worker: {
+        Args: {
+          p_date: string
+          p_end_hour: number
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+          p_start_hour: number
+        }
+        Returns: string
+      }
       post_booking_system_message: {
         Args: { p_booking_id: string; p_text: string }
         Returns: undefined
@@ -2642,6 +2676,30 @@ export type Database = {
           p_reason?: string
         }
         Returns: Json
+      }
+      provider_free_hours: {
+        Args: {
+          p_end: string
+          p_exclude_hold_ids?: string[]
+          p_provider_ids: string[]
+          p_requires_license?: boolean
+          p_service_id: string
+          p_start: string
+        }
+        Returns: {
+          date: string
+          hour: number
+          provider_id: string
+          worker_id: string
+        }[]
+      }
+      provider_workers: {
+        Args: {
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+        }
+        Returns: string[]
       }
       purge_stale_ai_analysis_quota: { Args: never; Returns: number }
       record_incident_money_result: {
@@ -2749,6 +2807,7 @@ export type Database = {
       }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }
       safe_numeric: { Args: { p_value: string }; Returns: number }
+      set_company_assignment_mode: { Args: { p_mode: string }; Returns: Json }
       set_company_member_services: {
         Args: { p_member_id: string; p_service_ids: string[] }
         Returns: Json

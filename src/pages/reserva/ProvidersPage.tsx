@@ -24,7 +24,8 @@ import {
 } from '../../utils/bookingAuthorityService';
 import toast from 'react-hot-toast';
 
-interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number }
+// provider_kind (GarSer Empresas F4): 'company' pinta el distintivo «Empresa».
+interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number; provider_kind?: string | null }
 
 const ProvidersPage: React.FC = () => {
   const { bookingData, setBookingData, setCurrentStep } = useBooking();
@@ -446,7 +447,7 @@ const ProvidersPage: React.FC = () => {
         const { data: profiles } = eligibleProviderIds.length > 0
           ? await supabase
               .from('public_gardener_directory')
-              .select('user_id, full_name, avatar_url, rating_average, rating_count, has_phytosanitary_license')
+              .select('user_id, full_name, avatar_url, rating_average, rating_count, has_phytosanitary_license, provider_kind')
               .in('user_id', eligibleProviderIds)
           : { data: [] };
 
@@ -823,7 +824,12 @@ const ProvidersPage: React.FC = () => {
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 truncate">{p.full_name}</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="font-semibold text-gray-900 truncate">{p.full_name}</span>
+                        {p.provider_kind === 'company' && (
+                          <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">Empresa</span>
+                        )}
+                      </div>
                       <div className="mt-1">
                         {reservationTotal <= 0 ? (
                           <span className="text-sm text-gray-400 font-normal">No disponible</span>

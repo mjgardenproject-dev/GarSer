@@ -311,7 +311,24 @@ const ProvidersPage: React.FC = () => {
         providerId,
         monthDate: fmt(new Date(monthStart.getFullYear(), monthStart.getMonth(), 1)),
       });
-      if (reqIdRef.current === rid) {
+      if (reqIdRef.current === rid && !quote) {
+        // H-35: el mes no tiene ningún día reservable (antelación, fin de mes). No es un error:
+        // se pinta vacío y se deja el presupuesto de la tarjeta como estaba. Si el mes se abrió
+        // por la fecha elegida (no porque el cliente haya cambiado de mes) y el primer hueco del
+        // profesional cae más adelante, se salta a él.
+        setMonthDays(days || []);
+        setAvailabilityError('');
+        const earliest = previewQuotes[providerId]?.availability?.earliestSlot || earliestByProvider[providerId];
+        const monthEnd = fmt(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0));
+        const selectedInMonth = selectedDate.slice(0, 7) === fmt(monthStart).slice(0, 7);
+        if (earliest && earliest.date > monthEnd && selectedInMonth) {
+          const [y, m, d] = earliest.date.split('-').map(Number);
+          setSelectedDate(earliest.date);
+          setCalendarMonthDate(new Date(y, m - 1, d));
+        }
+        return;
+      }
+      if (reqIdRef.current === rid && quote) {
         setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
         setMonthDays(quote.availability?.calendarDays || days);
         const inMonth = new Date(Number(selectedDate.split('-')[0]), Number(selectedDate.split('-')[1]) - 1, Number(selectedDate.split('-')[2])).getMonth() === monthStart.getMonth();
@@ -345,8 +362,10 @@ const ProvidersPage: React.FC = () => {
         date,
       });
       if (hoursReqIdRef.current !== rid) return;
-      setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
-      setValidHours(quote.availability?.validStartHours || nextHours);
+      // H-35: un día sin horas reservables llega con `quote: null`: sin horas, y la tarjeta
+      // conserva su presupuesto.
+      if (quote) setPreviewQuotes((prev) => ({ ...prev, [providerId]: quote }));
+      setValidHours(quote?.availability?.validStartHours || nextHours || []);
       setSlotPlans(nextPlans || {});
       setSelectedHour(null);
       setAvailabilityError('');

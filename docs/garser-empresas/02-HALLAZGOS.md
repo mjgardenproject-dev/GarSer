@@ -566,7 +566,7 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
-### H-35 · Reservar: un mes sin días reservables rompe la pantalla del profesional — 🟡 Abierto (anterior a Empresas)
+### H-35 · Reservar: un mes sin días reservables rompe la pantalla del profesional — 🟢 Resuelto (2026-09-25, anterior a Empresas)
 
 Visto el 2026-09-25 en garser.es, justo tras la fusión, en el paso 4 del embudo (móvil, sin
 sesión). El jardinero de producción pide 168 h de antelación, así que septiembre no tiene ningún
@@ -582,6 +582,13 @@ se abre no tiene días reservables (antelación larga, fin de mes). **Arreglo pr
 fuera del alcance del proyecto; pendiente de que el usuario lo apruebe): con `quote: null`, no
 tocar el presupuesto de la tarjeta, pintar el mes vacío sin error y, si el primer hueco está en
 otro mes, abrir ese mes.
+
+**Arreglo (aprobado por el usuario):** `rebuildMonth` y `loadValidHours` aceptan `quote: null`
+(tipos de `fetchProviderMonthDays`/`fetchProviderValidHours` corregidos a `| null`): el mes o el
+día se pintan vacíos sin error y la tarjeta conserva su presupuesto; si el mes se abrió por la
+fecha elegida y el primer hueco del profesional cae después, se salta a ese mes (si el cliente
+vuelve atrás a mano, se le deja allí). 2 pruebas nuevas en `ProvidersPage.test.tsx` (fallan sin
+el arreglo). Rama `fix/h35-calendario-mes-vacio`.
 
 ### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟢 Resuelto por el usuario (2026-09-25)
 

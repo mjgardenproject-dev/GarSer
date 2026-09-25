@@ -566,6 +566,18 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟡 Abierto (datos, no código)
+
+Visto el 2026-09-25, tras aplicar las migraciones y desplegar las funciones. La web de reservas
+de producción (`booking-authority`, `preview_providers` de césped) contesta bien pero excluye a
+todos con `inactive_service`: `gardener_service_prices` tiene 2 filas, de 1 jardinero, las dos
+con `active = false`, sin cambios desde el 2026-07-08. **Es anterior a Empresas** (la regla de
+`active` es de antes: `booking-authority/index.ts:298`). Las funciones nuevas sí funcionan con ese
+jardinero: `provider_free_hours` devuelve sus 40 horas libres (= sus 40 horas disponibles) y
+`plan_booking_cells` aparta 2 horas para un trabajo de 2 h. **Consecuencia:** las pruebas P- que
+pagan (P-F1-1, P-F4-1, P-F8-1, P-F9-1) necesitan antes un profesional con un servicio activo
+(activarlo desde su panel de precios, o dar de alta uno de prueba).
+
 ### H-33 · «Solicitudes» no recibía los datos de F7 y F8 — 🟢 Resuelto en F9.4
 
 Visto al probar F9 en el navegador. `BookingRequestsManager` no pasa a la tarjeta la reserva tal

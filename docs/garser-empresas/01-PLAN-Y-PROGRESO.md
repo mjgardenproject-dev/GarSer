@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **todas las fases hechas: siguiente, la fusión (§5)** · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **todas las fases hechas · fusión en curso: BD y funciones ya en producción (2026-09-25), falta la web (§5 punto 8) y las pruebas P-** · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -786,6 +786,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F0 | Entorno local montado desde esta carpeta (BD reconstruida: tenía una migración ajena). Investigación de F0: **escalada a admin reproducida** (H-11), nada crea perfiles (H-12). F0 rediseñada. Sin código. | 462 ✅ | `845d4bc` |
 | 2026-09-23 | F0 | **Parte servidor hecha.** Migración de perfil al registrarse + cierre de H-11 + arreglo de H-15. Seed adaptado. Verificación 7/7 (1/7 antes de la migración), `db reset` desde cero limpio, relleno probado en transacción. | 462 ✅ · build ✅ · tsc 130 | `fc37a8d` |
 | 2026-09-23 | F0 | **Parte frontend hecha. F0 cerrada.** `AccountContext` + `useAccount()`, todas las deducciones de rol sustituidas, `RoleMonitor` reconvertido, `BottomNav` arreglado (H-16). 11 pruebas nuevas. Recorrido completo en navegador. | 473 ✅ · build ✅ · tsc 129 · lint 0 | `fa7527c` |
+| 2026-09-25 | Fusión | Comprobaciones previas de producción a 0; copia de seguridad; las 19 migraciones aplicadas y las 5 funciones desplegadas; verificado contra producción. H-34 (ningún servicio activo en producción, anterior al proyecto). Falta la web. | — | `652c4e1` + (este) |
 | 2026-09-24 | F9 | **Planes de mantenimiento. F9 cerrada. Todas las fases hechas.** D17–D20 del usuario. Planes que salen de una reserva; el reloj propone cada visita 7 días antes con el planificador y un presupuesto normal al precio fijo del plan; se confirma y paga con el pago de siempre (sin tarjetas guardadas); avisos por correo; pantallas de cliente y profesional. **H-33** (solicitudes sin los datos de F7/F8) cerrado. Recorrido en el navegador. | 524 ✅ · build ✅ · tsc 128 · F9 13 · F8 11+10 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 · servicios = H-27 | `3f463f3` `da41d54` + (este) |
 | 2026-09-24 | F8 | **Varios servicios en una reserva. F8 cerrada.** D14–D16 del usuario (un profesional para todo; solo los que hacen todos; en empresa, quien los hace todos). `booking_items` escritos solo por el pago; presupuesto que suma cada servicio calculado con el motor de siempre; embudo que rellena un servicio tras otro; nombre «A + B» en agendas, listas, chat y correos. Recorrido en el navegador. | 522 ✅ · build ✅ · tsc 128 · F8 11+10 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 | `7de198d` `7d74b9a` `1aa473c` + (este) |
 | 2026-09-24 | F7 | **Equipos y varios días. F7 cerrada.** D11–D13 del usuario. Un solo planificador en SQL (pago) y en TypeScript (web) con prueba de coherencia (A-40); equipos a la vez con límite de la empresa; trabajos de varios días también para autónomos (T7 deja de rechazarlos); cambiar una persona por otra (A-41); pantallas de reserva, cliente, empresa y empleado, y correos. **H-32** (la web perdía horas pasadas 1000 filas) cerrado. Recorrido en el navegador. | 513 ✅ · build ✅ · tsc 128 · F7 16+10 · F6 12+9 · F5 29 · F4 21 · F3 35+10 · F2 18 · F1 13 · F0 7 · servicios = H-27 | `d1b8a52` `78f1c01` + (este) |
@@ -826,6 +827,18 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 > licencias sin revisor = 0. Historial de migraciones de producción = 113, idéntico al del
 > repositorio salvo exactamente las 19 del proyecto (ninguna aplicada, ninguna ajena).
 > Punto 5: `main` sin commits nuevos desde `6eef75c` → nada que traer.
+>
+> **Puntos 6 y 7 hechos el 2026-09-25**, con permiso del usuario. Antes, copia de seguridad de
+> producción en su Mac: `~/Downloads/garser-backups/2026-09-25-antes-de-empresas/`
+> (`schema.sql`, `data.sql`, `auth-data.sql`, `roles.sql`, con `supabase db dump --linked`).
+> `supabase db push --linked` aplicó las 19 migraciones en orden, sin errores (solo avisos
+> «does not exist, skipping»). Desplegadas con `--use-api` las 5 funciones: `booking-authority`
+> v45, `booking-payment` v43, `send-email-notification` v34, `booking-confirmation-email` v18,
+> `booking-lifecycle-tick` v3. Comprobado: 132 migraciones; tablas, funciones e índices únicos
+> nuevos presentes; 0 usuarios sin perfil (F0 rellenó los 7); comprobaciones previas otra vez a
+> 0; las 5 funciones arrancan; `provider_free_hours` y `plan_booking_cells` responden con datos
+> reales. **Ojo, H-34:** en producción no hay ningún servicio activo, nadie es reservable.
+> **Falta el punto 8** (web) y las pruebas P-.
 
 **El día de la fusión — en este orden:**
 

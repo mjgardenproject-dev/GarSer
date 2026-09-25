@@ -818,6 +818,15 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 
 Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 
+> **Hecho el 2026-09-25 (fusión en curso).** Puntos 1–4 ejecutados por el chat contra
+> producción (`supabase db query --linked`, solo lectura, con permiso del usuario), consulta
+> única `precheck`: admins = solo el del usuario · usuarios sin perfil = 7 (los rellena F0) ·
+> disparadores en `auth.users` = solo `trg_provision_admin` · horas vendidas dos veces = 0 ·
+> bloques huérfanos = 0 · fichas sin solicitud aprobada = 0 · carnets sin licencia = 0 ·
+> licencias sin revisor = 0. Historial de migraciones de producción = 113, idéntico al del
+> repositorio salvo exactamente las 19 del proyecto (ninguna aplicada, ninguna ajena).
+> Punto 5: `main` sin commits nuevos desde `6eef75c` → nada que traer.
+
 **El día de la fusión — en este orden:**
 
 5. Traer a la rama lo que haya entrado en `main` mientras tanto.

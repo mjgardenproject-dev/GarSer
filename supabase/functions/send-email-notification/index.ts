@@ -9,12 +9,28 @@
 //   · booking_rejected                       → al cliente: la solicitud no fue aceptada
 //   · booking_cancelled                      → a cualquiera de las partes: reserva cancelada
 //   · booking_review_request                 → al cliente: servicio finalizado, pedimos valoracion
+//   · company_approved / company_rejected    → estado de la solicitud de empresa (GarSer Empresas)
+//   · company_invitation                     → a la persona invitada al equipo de una empresa
+//   · job_assigned / job_unassigned          → al empleado: le asignan o le quitan un trabajo
+//   · booking_reschedule_proposed / _answered → propuesta de nueva fecha (D9) y su respuesta
 //
 // Secretos (Supabase Secrets): SMTP_USER (remitente verificado en Brevo), SMTP_PASS (api-key),
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml, formatBookingDate } from '../_shared/emailBrand.ts';
+import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml, formatBookingDate, formatBookingWhen } from '../_shared/emailBrand.ts';
+
+// GarSer Empresas (F8): «Corte de césped + Poda de setos» si la reserva lleva varios servicios;
+// si no, el nombre del servicio de siempre.
+// deno-lint-ignore no-explicit-any
+function serviceLabelOf(row: any): string {
+  const items = Array.isArray(row?.booking_items) ? [...row.booking_items] : [];
+  if (items.length > 1) {
+    return items.sort((a, b) => Number(a.position || 0) - Number(b.position || 0))
+      .map((item) => String(item?.services?.name || '').trim()).filter(Boolean).join(' + ');
+  }
+  return String(row?.services?.name || '').trim();
+}
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
@@ -42,7 +58,24 @@ type EmailType =
   // de lo que pasa con su incidencia.
   | 'booking_client_confirmation_request'
   | 'booking_incident_received'
-  | 'booking_incident_resolved';
+  | 'booking_incident_resolved'
+  // GarSer Empresas (F3.4). Todo se resuelve en el servidor: destinatario, nombre y motivo
+  // salen de la base de datos, nunca del navegador.
+  | 'company_approved'
+  | 'company_rejected'
+  | 'company_invitation'
+  // GarSer Empresas (F5.4): al empleado, cuando un trabajo confirmado pasa a ser suyo o deja de
+  // serlo. Solo los pide el dueño de esa reserva; el destinatario sale de la agenda.
+  | 'job_assigned'
+  | 'job_unassigned'
+  // GarSer Empresas (F9): planes de mantenimiento — la propuesta de la próxima visita y el aviso
+  // de que esta vez no había hueco. Solo los pide el reloj (servidor).
+  | 'maintenance_visit_proposed'
+  | 'maintenance_visit_unavailable'
+  // GarSer Empresas (F6.3, D9): la empresa propone otra fecha (al cliente) y el cliente responde
+  // (a la empresa y, si acepta, a quien va). Cada uno, una sola vez por propuesta.
+  | 'booking_reschedule_proposed'
+  | 'booking_reschedule_answered';
 
 interface EmailPayload {
   /**
@@ -59,6 +92,18 @@ interface EmailPayload {
    * compuesto en un cliente no confiable, con un formato de euro distinto al del resto.
    */
   bookingId?: string;
+  /** F9: la visita de un plan de mantenimiento. */
+  visitId?: string;
+  /** company_approved / company_rejected: la solicitud revisada. */
+  companyApplicationId?: string;
+  /**
+   * company_invitation: la invitación y su token. El token viaja porque en la base de datos solo
+   * está su huella: sirve para demostrar que quien pide el correo acaba de crear la invitación.
+   */
+  invitationId?: string;
+  token?: string;
+  /** job_unassigned: la persona que deja de ir (se comprueba que es del equipo y ya no va). */
+  workerId?: string;
   data?: {
     name?: string;
     reason?: string;
@@ -168,6 +213,8 @@ Deno.serve(async (req) => {
     let bookingFeeNote = '';
     let confirmUrl: string | null = null;
     let deadlineAt: string | null = null;
+    let companyReason = '';
+    let invitation: { company_name: string | null; token: string; expires_at: string } | null = null;
 
     if (BOOKING_EMAIL_TYPES.has(type) && bookingId) {
       // ---- Contrato vigente: todo se resuelve aquí, con la clave de servicio ----
@@ -260,6 +307,376 @@ Deno.serve(async (req) => {
           console.error('Error fetching user email:', userError);
         }
       }
+    } else if (type === 'company_approved' || type === 'company_rejected') {
+      // Estado de la solicitud de empresa: solo administradores (o un servicio interno). El
+      // correo tiene que decir lo mismo que la base de datos: si la solicitud no está en ese
+      // estado, no se envía.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req) && !(await isAdminCaller(req, admin))) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: app } = await admin
+        .from('company_applications')
+        .select('user_id, status, commercial_name, contact_name, review_comment')
+        .eq('id', String(payload.companyApplicationId || ''))
+        .maybeSingle();
+      const expected = type === 'company_approved' ? 'approved' : 'rejected';
+      if (!app || app.status !== expected) {
+        return new Response(JSON.stringify({ error: 'application_state_mismatch' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: userData } = await admin.auth.admin.getUserById(app.user_id);
+      to = userData?.user?.email ?? undefined;
+      name = app.contact_name || app.commercial_name || 'empresa';
+      companyReason = app.review_comment || '';
+    } else if (type === 'company_invitation') {
+      // Invitación al equipo: solo el dueño que acaba de crearla, con su token, una vez. El
+      // destinatario es el correo guardado en la invitación. Todo lo comprueba y lo marca de una
+      // vez mark_company_invitation_emailed; si algo no cuadra devuelve null y no sale nada.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      const callerToken = presentedToken(req);
+      const { data: caller } = callerToken ? await admin.auth.getUser(callerToken) : { data: null };
+      const callerId = caller?.user?.id || '';
+      const token = String(payload.token || '');
+      const { data: marked, error: markError } = callerId
+        ? await admin.rpc('mark_company_invitation_emailed', {
+            p_invitation_id: String(payload.invitationId || ''),
+            p_token: token,
+            p_caller: callerId,
+          })
+        : { data: null, error: null };
+      if (markError) console.error('[send-email-notification] invitación:', markError.message);
+      if (!marked) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      to = marked.email;
+      invitation = { company_name: marked.company_name ?? null, token, expires_at: marked.expires_at };
+    } else if (type === 'maintenance_visit_proposed' || type === 'maintenance_visit_unavailable') {
+      // F9 (D17): el cliente confirma y paga cada visita de su plan. Este aviso lo pide el reloj
+      // (booking-lifecycle-tick) con la clave de servicio; nadie más.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: v } = await admin
+        .from('maintenance_visits')
+        .select('id, status, date, start_hour, planned_date, quote_id, maintenance_plans(client_id, provider_id, frequency, total_price, economic_snapshot, items, service_id)')
+        .eq('id', String(payload.visitId || ''))
+        .maybeSingle();
+      if (!v) {
+        return new Response(JSON.stringify({ error: 'visit_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const expected = type === 'maintenance_visit_proposed' ? 'proposed' : 'no_availability';
+      if (v.status !== expected) {
+        return new Response(JSON.stringify({ error: 'visit_state_changed', status: v.status }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      // deno-lint-ignore no-explicit-any
+      const plan = (v as any).maintenance_plans as {
+        client_id: string; provider_id: string; frequency: string; total_price: number;
+        economic_snapshot: { payableNow?: number } | null; items: Array<{ serviceId: string }> | null; service_id: string;
+      };
+      const serviceIds = Array.isArray(plan.items) && plan.items.length > 1 ? plan.items.map((i) => String(i.serviceId)) : [plan.service_id];
+      const { data: serviceRows } = await admin.from('services').select('id, name').in('id', serviceIds);
+      const serviceName = serviceIds
+        .map((id) => ((serviceRows || []) as { id: string; name: string }[]).find((r) => String(r.id) === id)?.name || '')
+        .filter(Boolean).join(' + ') || 'Mantenimiento del jardín';
+      const { data: providerRow } = await admin.from('gardener_profiles').select('full_name').eq('user_id', plan.provider_id).maybeSingle();
+      const providerName = String(providerRow?.full_name || 'Tu profesional');
+      const { data: clientUser } = await admin.auth.admin.getUserById(plan.client_id);
+      const clientEmail = clientUser?.user?.email;
+      if (!clientEmail) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: clientProfile } = await admin.from('profiles').select('full_name').eq('user_id', plan.client_id).maybeSingle();
+      const first = String(clientProfile?.full_name || '').split(' ')[0] || 'hola';
+      const euros = (value: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(value || 0));
+
+      let subject: string;
+      let opts: Parameters<typeof renderBrandedEmail>[0];
+      let pairs: Array<[string, string]>;
+      if (type === 'maintenance_visit_proposed') {
+        const when = formatBookingDate(v.date, `${String(v.start_hour).padStart(2, '0')}:00:00`);
+        const { data: quoteRow } = await admin.from('booking_quotes').select('expires_at').eq('id', v.quote_id).maybeSingle();
+        const until = quoteRow?.expires_at
+          ? new Date(quoteRow.expires_at).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })
+          : 'un día antes';
+        const fee = Number(plan.economic_snapshot?.payableNow || 0);
+        subject = `Tu próxima visita: ${serviceName}, ${when}`;
+        pairs = [['Servicio', serviceName], ['Cuándo', when], ['Con', providerName], ['Precio', euros(plan.total_price)], ['Pagas ahora (gestión)', euros(fee)]];
+        opts = {
+          title: subject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: `Toca la siguiente visita de tu plan de mantenimiento. Confírmala antes del ${escapeHtml(until)}: si no, esta visita se salta y el plan sigue.`,
+          bodyHtml: detailRows(pairs),
+          cta: { label: 'Confirmar la visita', url: `${BRAND.site}/dashboard` },
+          footerNote: 'El resto del precio se lo pagas al profesional al terminar, como siempre.',
+        };
+      } else {
+        const planned = formatBookingDate(v.planned_date, null);
+        subject = 'Esta vez no hay hueco para tu visita de mantenimiento';
+        pairs = [['Servicio', serviceName], ['Tocaba', planned], ['Con', providerName]];
+        opts = {
+          title: subject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: `${escapeHtml(providerName)} no tiene hueco cerca de esa fecha, así que esta visita se salta. Tu plan sigue activo: lo intentaremos de nuevo para la siguiente.`,
+          bodyHtml: detailRows(pairs),
+          cta: { label: 'Ver mi plan', url: `${BRAND.site}/dashboard` },
+          footerNote: 'Si lo necesitas antes, puedes reservar una visita suelta cuando quieras.',
+        };
+      }
+      const html = renderBrandedEmail(opts);
+      const text = renderPlainText({ ...opts, detailPairs: pairs });
+      if (!SMTP_USER || !SMTP_PASS) {
+        console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: clientEmail, type, subject });
+      } else {
+        const sent = await sendViaBrevo({ to: clientEmail, subject, html, text, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+        if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+      }
+      return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'job_assigned' || type === 'job_unassigned') {
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      const { data: b } = await admin
+        .from('bookings')
+        .select('id, gardener_id, status, date, start_time, end_date, client_address, services(name), booking_items(position, services(name))')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (!b) {
+        return new Response(JSON.stringify({ error: 'booking_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!isInternalServiceCaller(req)) {
+        const callerToken = presentedToken(req);
+        const { data: caller } = callerToken ? await admin.auth.getUser(callerToken) : { data: null };
+        if ((caller?.user?.id || '') !== b.gardener_id) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      if (b.status !== 'confirmed') {
+        return new Response(JSON.stringify({ error: 'booking_not_confirmed' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      // F6 (D10): un trabajo puede estar repartido por horas entre varias personas.
+      // F7: y durar varios días, con varias personas a la vez: las horas van por día.
+      const { data: blockRows } = await admin.from('booking_blocks').select('assignee_id, date, hour_block').eq('booking_id', bookingId);
+      const hoursByWorker = new Map<string, Map<string, number[]>>();
+      ((blockRows || []) as { assignee_id: string; date: string; hour_block: number }[]).forEach((row) => {
+        const days = hoursByWorker.get(row.assignee_id) || new Map<string, number[]>();
+        const day = String(row.date).slice(0, 10);
+        days.set(day, [...(days.get(day) || []), Number(row.hour_block)]);
+        hoursByWorker.set(row.assignee_id, days);
+      });
+      const hoursOn = (workerId: string) => [...(hoursByWorker.get(workerId)?.values() || [])].flat();
+      const firstDayHours = new Set(((blockRows || []) as { date: string; hour_block: number }[])
+        .filter((row) => String(row.date).slice(0, 10) === String(b.date).slice(0, 10)).map((row) => Number(row.hour_block))).size;
+      const multiDay = Boolean(b.end_date && String(b.end_date).slice(0, 10) > String(b.date).slice(0, 10));
+      let recipients: string[] = [];
+      if (type === 'job_assigned') {
+        const only = String(payload.workerId || '');
+        recipients = [...hoursByWorker.keys()].filter((id) => !only || id === only);
+      } else {
+        const candidate = String(payload.workerId || '');
+        const { data: member } = await admin
+          .from('company_members')
+          .select('user_id, companies!inner(provider_user_id)')
+          .eq('user_id', candidate)
+          .eq('status', 'active')
+          .eq('companies.provider_user_id', b.gardener_id)
+          .maybeSingle();
+        recipients = member && !hoursByWorker.has(candidate) ? [candidate] : [];
+      }
+      // A uno mismo no se le avisa (el dueño que trabaja y se asigna el trabajo).
+      recipients = recipients.filter((id) => id !== b.gardener_id);
+      if (recipients.length === 0) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
+      // deno-lint-ignore no-explicit-any
+      const serviceName = serviceLabelOf(b) || 'Trabajo';
+      const when = formatBookingWhen(b.date, b.start_time, b.end_date);
+      const companyName = String(company?.full_name || 'Tu empresa');
+      const range = (hours: number[]) => {
+        const sorted = [...hours].sort((x, y) => x - y);
+        return `${String(sorted[0]).padStart(2, '0')}:00 a ${String(sorted[sorted.length - 1] + 1).padStart(2, '0')}:00`;
+      };
+      let sentCount = 0;
+      for (const workerId of recipients) {
+        const { data: userData } = await admin.auth.admin.getUserById(workerId);
+        const workerEmail = userData?.user?.email;
+        if (!workerEmail) continue;
+        const { data: person } = await admin.from('profiles').select('full_name').eq('user_id', workerId).maybeSingle();
+        const first = String(person?.full_name || '').split(' ')[0] || 'hola';
+        const mine = hoursOn(workerId);
+        // «Tu parte»: en varios días, sus días y horas; en un día, si no hace todas las horas.
+        const myDays = [...(hoursByWorker.get(workerId)?.entries() || [])].sort(([x], [y]) => x.localeCompare(y));
+        const part = multiDay
+          ? myDays.map(([day, hours]) => `${new Date(`${day}T12:00:00Z`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', timeZone: 'UTC' })} de ${range(hours)}`).join('; ')
+          : mine.length && mine.length < firstDayHours ? `de ${range(mine)}` : '';
+        const pairs: Array<[string, string]> = type === 'job_assigned'
+          ? [['Servicio', serviceName], ['Cuándo', when], ...(part ? [['Tu parte', part] as [string, string]] : []), ['Dónde', String(b.client_address || '')]]
+          : [['Servicio', serviceName], ['Cuándo', when]];
+        const jobSubject = type === 'job_assigned'
+          ? `Nuevo trabajo: ${serviceName}, ${when}`
+          : `Ya no vas a este trabajo: ${serviceName}, ${when}`;
+        const jobOpts: Parameters<typeof renderBrandedEmail>[0] = {
+          title: jobSubject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: type === 'job_assigned'
+            ? `${escapeHtml(companyName)} te ha asignado un trabajo.`
+            : `${escapeHtml(companyName)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
+          bodyHtml: detailRows(pairs),
+          cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
+          footerNote: type === 'job_assigned' ? 'Si no puedes ir, avisa a tu empresa cuanto antes.' : 'Tus horas de ese día vuelven a estar libres.',
+        };
+        const jobHtml = renderBrandedEmail(jobOpts);
+        const jobText = renderPlainText({ ...jobOpts, detailPairs: pairs });
+        if (!SMTP_USER || !SMTP_PASS) {
+          console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: workerEmail, type, subject: jobSubject });
+        } else {
+          const sent = await sendViaBrevo({ to: workerEmail, subject: jobSubject, html: jobHtml, text: jobText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+          if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+        }
+        sentCount += 1;
+      }
+      return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'booking_reschedule_proposed' || type === 'booking_reschedule_answered') {
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      const { data: b } = await admin
+        .from('bookings')
+        .select('id, client_id, gardener_id, date, start_time, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, reschedule_proposal_notified_at, reschedule_answer_notified_at, services(name), booking_items(position, services(name))')
+        .eq('id', bookingId)
+        .maybeSingle();
+      if (!b) {
+        return new Response(JSON.stringify({ error: 'booking_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const callerToken = presentedToken(req);
+      const { data: caller } = callerToken ? await admin.auth.getUser(callerToken) : { data: null };
+      const callerId = caller?.user?.id || '';
+      const proposing = type === 'booking_reschedule_proposed';
+      const allowedCaller = isInternalServiceCaller(req) || callerId === (proposing ? b.gardener_id : b.client_id);
+      const rightState = proposing
+        ? b.reschedule_status === 'pending_client' && !b.reschedule_proposal_notified_at
+        : ['accepted', 'rejected'].includes(b.reschedule_status) && !b.reschedule_answer_notified_at;
+      if (!allowedCaller) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!rightState) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      await admin.from('bookings')
+        .update(proposing ? { reschedule_proposal_notified_at: new Date().toISOString() } : { reschedule_answer_notified_at: new Date().toISOString() })
+        .eq('id', bookingId);
+
+      const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
+      const companyName = String(company?.full_name || 'Tu empresa');
+      // deno-lint-ignore no-explicit-any
+      const serviceName = serviceLabelOf(b) || 'Servicio';
+      const proposedWhen = formatBookingDate(b.proposed_date, b.proposed_start_time);
+      const outbox: Array<{ userId: string; subject: string; intro: string; pairs: Array<[string, string]>; cta: { label: string; url: string } }> = [];
+      if (proposing) {
+        outbox.push({
+          userId: b.client_id,
+          subject: `${companyName} te propone otra fecha para tu ${serviceName.toLowerCase()}`,
+          intro: `${escapeHtml(companyName)} te propone cambiar la fecha de tu servicio. Puedes aceptarla o mantener la que tenías.`,
+          pairs: [
+            ['Servicio', serviceName],
+            ['Ahora', formatBookingDate(b.date, b.start_time)],
+            ['Propuesta', proposedWhen],
+            ...(b.reschedule_reason ? [['Motivo', String(b.reschedule_reason)] as [string, string]] : []),
+          ],
+          cta: { label: 'Ver la propuesta', url: `${BRAND.site}/bookings` },
+        });
+      } else {
+        const accepted = b.reschedule_status === 'accepted';
+        outbox.push({
+          userId: b.gardener_id,
+          subject: accepted ? `El cliente acepta la nueva fecha: ${proposedWhen}` : 'El cliente mantiene la fecha de su servicio',
+          intro: accepted
+            ? 'El cliente ha aceptado el cambio de fecha. Ya está movido en tu agenda.'
+            : 'El cliente prefiere mantener la fecha que tenía. No ha cambiado nada.',
+          pairs: [['Servicio', serviceName], ['Fecha', formatBookingDate(b.date, b.start_time)]],
+          cta: { label: 'Ver la agenda', url: `${BRAND.site}/empresa` },
+        });
+        if (accepted) {
+          const { data: blockRows } = await admin.from('booking_blocks').select('assignee_id').eq('booking_id', bookingId);
+          const workers = [...new Set(((blockRows || []) as { assignee_id: string }[]).map((r) => r.assignee_id))].filter((id) => id !== b.gardener_id);
+          workers.forEach((workerId) => outbox.push({
+            userId: workerId,
+            subject: `Tu trabajo cambia de fecha: ${serviceName}, ${proposedWhen}`,
+            intro: `${escapeHtml(companyName)}: el cliente ha aceptado mover este trabajo. Ahora es en esta fecha.`,
+            pairs: [['Servicio', serviceName], ['Cuándo', proposedWhen]],
+            cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
+          }));
+        }
+      }
+
+      let sentCount = 0;
+      for (const item of outbox) {
+        const { data: userData } = await admin.auth.admin.getUserById(item.userId);
+        const email = userData?.user?.email;
+        if (!email) continue;
+        const { data: person } = await admin.from('profiles').select('full_name').eq('user_id', item.userId).maybeSingle();
+        const first = String(person?.full_name || '').split(' ')[0] || 'hola';
+        const itemOpts: Parameters<typeof renderBrandedEmail>[0] = {
+          title: item.subject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: item.intro,
+          bodyHtml: detailRows(item.pairs),
+          cta: item.cta,
+        };
+        if (!SMTP_USER || !SMTP_PASS) {
+          console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: email, type, subject: item.subject });
+        } else {
+          const sent = await sendViaBrevo({
+            to: email, subject: item.subject, html: renderBrandedEmail(itemOpts), text: renderPlainText({ ...itemOpts, detailPairs: item.pairs }),
+            smtpUser: SMTP_USER, smtpPass: SMTP_PASS,
+          });
+          if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+        }
+        sentCount += 1;
+      }
+      return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     } else {
       // ---- Contrato LEGACY: RETIRADO (paso 9) ----
       // Aceptaba `user_id` + textos libres (`serviceName`, `dateText`, `priceText`) de
@@ -306,6 +723,40 @@ Deno.serve(async (req) => {
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Volver a solicitar', url: data?.applyUrl || `${BRAND.site}/apply` },
         footerNote: 'Este rechazo no es definitivo: puedes corregir la información y volver a enviar tu solicitud.',
+      };
+    } else if (type === 'company_approved') {
+      subject = 'Tu empresa ya está dada de alta en GarSer';
+      opts = {
+        title: subject,
+        heading: `¡Enhorabuena, ${escapeHtml(name)}!`,
+        intro: 'Hemos revisado tu solicitud y tu empresa ya forma parte de GarSer. Entra en tu panel para configurar tus servicios y precios e invitar a tu equipo.',
+        cta: { label: 'Ir a mi empresa', url: `${BRAND.site}/empresa` },
+        footerNote: 'Si tienes cualquier duda, responde a este correo y te ayudamos.',
+      };
+    } else if (type === 'company_rejected') {
+      subject = 'Actualización sobre la solicitud de tu empresa en GarSer';
+      detailPairs = companyReason ? [['Motivo', companyReason]] : [];
+      opts = {
+        title: subject,
+        heading: `Hola ${escapeHtml(name)}`,
+        intro: 'Gracias por tu interés en GarSer. Hemos revisado la solicitud de tu empresa y por ahora no podemos aceptarla por el siguiente motivo:',
+        bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
+        cta: { label: 'Corregir y enviar de nuevo', url: `${BRAND.site}/empresa/estado` },
+        footerNote: 'No es definitivo: puedes corregir la información y volver a enviar tu solicitud.',
+      };
+    } else if (type === 'company_invitation' && invitation) {
+      const company = invitation.company_name || 'Una empresa';
+      const expires = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' })
+        .format(new Date(invitation.expires_at));
+      subject = `${company} te invita a su equipo en GarSer`;
+      opts = {
+        title: subject,
+        heading: 'Hola',
+        intro: `${escapeHtml(company)} te invita a unirte a su equipo en GarSer. Tu empresa te asignará los trabajos y los verás desde tu móvil. Para aceptar, crea tu cuenta (o entra) con este mismo correo.`,
+        // La página es inerte para los escáneres de enlaces: aceptar exige pulsar un botón con
+        // la sesión abierta.
+        cta: { label: 'Ver la invitación', url: `${BRAND.site}/invitacion?token=${encodeURIComponent(invitation.token)}` },
+        footerNote: `La invitación caduca el ${expires}. Si no conoces a esta empresa, ignora este correo.`,
       };
     } else if (type === 'booking_accepted') {
       subject = '¡Tu reserva en GarSer ha sido aceptada!';

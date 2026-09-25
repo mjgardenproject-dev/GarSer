@@ -77,11 +77,18 @@ VALUES
    'email', now(), now(), now())
 ON CONFLICT DO NOTHING;
 
-INSERT INTO public.profiles (user_id, full_name, phone, address, role) VALUES
+-- Los perfiles ya existen: los crea el disparador trg_provision_profile al insertar en
+-- auth.users (migración 20260923120000, F0 de GarSer Empresas). Aquí solo se completan con
+-- los datos de prueba. El rol 'admin' no se puede autodeclarar al registrarse (la cuenta
+-- admin nace como 'client'): se asigna aquí, sin sesión, que es como se asigna de verdad.
+UPDATE public.profiles p
+SET full_name = v.full_name, phone = v.phone, address = v.address, role = v.role, updated_at = now()
+FROM (VALUES
   ('11111111-aaaa-4aaa-8aaa-111111111111','Miguel Ángel Ruiz','600112233','Marbella','gardener'),
   ('22222222-bbbb-4bbb-8bbb-222222222222','Laura Fernández','600445566','Nueva Andalucía, Marbella','client'),
   ('33333333-cccc-4ccc-8ccc-333333333333','Admin Local',NULL,NULL,'admin')
-ON CONFLICT DO NOTHING;
+) AS v(user_id, full_name, phone, address, role)
+WHERE p.user_id = v.user_id::uuid;
 
 -- Perfil operativo: Marbella centro, 40 km de radio (cubre Estepona–Fuengirola).
 INSERT INTO public.gardener_profiles (

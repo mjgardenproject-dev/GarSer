@@ -1,5 +1,6 @@
 import React from 'react';
 import ApplicationsAdmin from '../../components/admin/ApplicationsAdmin';
+import CompanyApplicationsAdmin from '../../components/admin/CompanyApplicationsAdmin';
 import RoleMonitor from '../../components/admin/RoleMonitor';
 import ReviewModeration from '../../components/admin/ReviewModeration';
 
@@ -12,6 +13,15 @@ const UserManagement: React.FC = () => {
         </h2>
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <ApplicationsAdmin />
+        </div>
+      </section>
+
+      <section aria-labelledby="company-applications-heading">
+        <h2 id="company-applications-heading" className="text-xl font-bold text-gray-900 mb-4 pb-2 border-b">
+          Solicitudes de Empresas
+        </h2>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <CompanyApplicationsAdmin />
         </div>
       </section>
 

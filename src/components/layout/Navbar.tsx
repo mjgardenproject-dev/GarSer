@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings, Star } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { fetchCurrentUserProfileRole, isAdminRole, type AppProfileRole } from '../../lib/adminAccess';
+import { isAdminRole } from '../../lib/adminAccess';
+import { useAccount } from '../../contexts/AccountContext';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
 import GarserLogo from '../common/GarserLogo';
 
@@ -13,7 +14,8 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   const { user, signOut } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [userRole, setUserRole] = useState<AppProfileRole>(null);
+  // Tipo de cuenta compartido (profiles.role); antes el Navbar hacía su propia consulta.
+  const { role: userRole } = useAccount();
   const unreadChats = useUnreadChats();
   
   // Use prop if available, otherwise default to null (or we could keep local state if prop is undefined)
@@ -35,9 +37,15 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
 
   const isAdmin = isAdminRole(userRole);
   
-  const showRoleBadge = isAdmin || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
+  const isCompany = userRole === 'company';
+  const isEmployee = userRole === 'employee';
+  const showRoleBadge = isAdmin || isCompany || isEmployee || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
   const roleBadgeLabel = isAdmin
     ? 'Admin'
+    : isCompany
+      ? 'Empresa'
+    : isEmployee
+      ? 'Empleado'
     : applicationStatus === 'pending'
       ? 'Jardinero (pendiente)'
       : applicationStatus === 'active'
@@ -46,39 +54,9 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
           ? 'Jardinero (no aceptado)'
           : '';
           
-  useEffect(() => {
-    let mounted = true;
-
-    const loadUserRole = async () => {
-      try {
-        if (!user?.id) {
-          if (mounted) {
-            setUserRole(null);
-          }
-          return;
-        }
-
-        const role = await fetchCurrentUserProfileRole(user.id);
-        if (mounted) {
-          setUserRole(role);
-        }
-      } catch (error) {
-        console.error('Error loading navbar role:', error);
-        if (mounted) {
-          setUserRole(null);
-        }
-      }
-    };
-
-    loadUserRole();
-
-    return () => {
-      mounted = false;
-    };
-  }, [user?.id]);
-
-  const isApplyPage = location.pathname === '/apply';
-  const isStatusPage = location.pathname === '/status';
+  // Alta en curso (jardinero o empresa, F3.2): sin menú, igual que hasta ahora /apply y /status.
+  const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud';
+  const isStatusPage = location.pathname === '/status' || location.pathname === '/empresa/estado';
   
   // Logic to hide nav:
   // 1. If user is gardener and NOT active -> Hide

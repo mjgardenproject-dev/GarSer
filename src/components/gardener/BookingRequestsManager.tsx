@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAccount } from '../../contexts/AccountContext';
+import { useBookingWorkers } from '../../hooks/useBookingWorkers';
+import AssignWorkerControl from '../empresa/AssignWorkerControl';
+import { formatDateRange } from '../../utils/jobShape';
+
+// GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
+const teamShape = (row: object) => {
+  const r = row as { end_date?: string | null; labour_hours?: number | null };
+  return { endDate: r.end_date || null, labour: r.labour_hours ?? null };
+};
 import { Calendar, Clock, MapPin, User, Check, X, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { BookingResponse } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -21,6 +31,7 @@ import ServiceDetailCard from './ServiceDetailCard';
 import PhotoGallery from '../common/PhotoGallery';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { formatEuro } from '../../shared/bookingAmounts';
+import { BOOKING_ITEMS_SELECT, bookingServiceLabel, isMultiServiceBooking } from '../../utils/bookingServiceLabel';
 
 interface BookingRequestWithDetails {
   id: string;
@@ -36,6 +47,8 @@ interface BookingRequestWithDetails {
   data_input_mode?: 'photos' | 'manual' | null;
   manual_declaration_id?: string | null;
   price_change_status?: 'none' | 'pending_client_acceptance' | 'accepted' | 'rejected' | 'expired';
+  /** GarSer Empresas (F4): la persona apartada es una propuesta (modo «yo elijo quién va»). */
+  assignment_pending?: boolean | null;
   pricing_context?: {
     service_type?: string;
     allows_price_change?: boolean;
@@ -78,6 +91,10 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [correctionFor, setCorrectionFor] = useState<BookingRequestWithDetails | null>(null);
   const [correctionLoading, setCorrectionLoading] = useState(false);
   const [correctionVars, setCorrectionVars] = useState<Record<string, Record<string, unknown>>>({});
+  // GarSer Empresas (F4): una cuenta de empresa ve también quién de su equipo va a cada trabajo.
+  const { role } = useAccount();
+  const [workersVersion, setWorkersVersion] = useState(0);
+  const workers = useBookingWorkers(requests, { enabled: role === 'company', myId: user?.id, version: workersVersion });
 
   const handleCorrectionSubmit = async (request: BookingRequestWithDetails, payload: ManualWizardSubmitPayload) => {
     const serviceKey = resolveManualServiceKey(request.services?.name);
@@ -128,7 +145,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       // Obtener reservas pendientes para este jardinero desde la tabla bookings
       const { data: bookings, error: bookingsError } = await supabase
         .from('bookings')
-        .select('*')
+        // F8: con sus servicios, para nombrar las reservas de varios servicios.
+        .select(`*, ${BOOKING_ITEMS_SELECT}`)
         .eq('gardener_id', user?.id)
         .eq('status', 'pending');
 
@@ -219,7 +237,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         data_input_mode: booking.data_input_mode,
         manual_declaration_id: booking.manual_declaration_id,
         price_change_status: booking.price_change_status,
+        assignment_pending: booking.assignment_pending,
         pricing_context: booking.pricing_context,
+        // GarSer Empresas: F7 (último día y horas de trabajo), F8 (servicios de la reserva) y F9
+        // (visita de un plan). Sin copiarlos aquí, las marcas de esas fases no llegaban a la tarjeta.
+        end_date: booking.end_date ?? null,
+        labour_hours: booking.labour_hours ?? null,
+        booking_items: booking.booking_items ?? null,
+        maintenance_plan_id: booking.maintenance_plan_id ?? null,
         created_at: booking.created_at,
         expires_at: booking.created_at, // Usar created_at como referencia
         client_profile: clientsMap.get(booking.client_id) || { full_name: 'Cliente desconocido', phone: '' },
@@ -307,6 +332,13 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
           bookingId: requestId,
           response: 'accept',
         });
+
+        // GarSer Empresas (F5.4): quien va se entera al confirmarse el trabajo, salvo que aún
+        // sea una propuesta sin decidir (modo «yo elijo quién va»). El servidor resuelve el
+        // destinatario y no avisa a la propia cuenta.
+        if (role === 'company' && !workers[requestId]?.pending) {
+          void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId: requestId } });
+        }
 
         toast.success('¡Solicitud aceptada! La reserva ha sido confirmada y tu agenda actualizada.');
       } else {
@@ -477,8 +509,12 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     </div>
                     <div>
                       <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
-                        {request.services?.name}
+                        {bookingServiceLabel(request as never) || request.services?.name}
                       </h3>
+                      {/* F9: la solicitud es una visita de un plan de mantenimiento del cliente. */}
+                      {(request as { maintenance_plan_id?: string | null }).maintenance_plan_id && (
+                        <span className="inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">Visita de un plan de mantenimiento</span>
+                      )}
                       <p className="text-gray-600 flex items-center">
                         <User className="w-4 h-4 mr-1" />
                         {request.client_profile?.full_name}
@@ -509,7 +545,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
-                    {format(parseISO(request.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                    {teamShape(request).endDate
+                      ? formatDateRange(request.date, String(teamShape(request).endDate))
+                      : format(parseISO(request.date), 'EEEE, d MMMM yyyy', { locale: es })}
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2" />
@@ -517,13 +555,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         elemento creado solo para formatear el rango de texto — no son filas reales de
                         `booking_blocks`, así que su `.length` siempre daba "(1h)" aunque el servicio
                         durase más. La duración real ya vive en `request.duration_hours`. */}
-                    {formatTimeBlocks(request.booking_blocks || [])} ({request.duration_hours}h)
+                    {formatTimeBlocks(request.booking_blocks || [])} ({request.duration_hours}h{teamShape(request).labour ? ` · ${teamShape(request).labour} h de trabajo` : ''})
                   </div>
                   <div className="flex items-center text-gray-600">
                     <MapPin className="w-4 h-4 mr-2" />
                     {request.client_address}
                   </div>
                 </div>
+                <AssignWorkerControl bookingId={request.id} worker={workers[request.id]} team={teamShape(request).labour != null} onChanged={() => setWorkersVersion((v) => v + 1)} />
 
                 {/* Detalle del servicio: qué trabajo es exactamente (para decidir si aceptar) */}
                 <ServiceDetailCard
@@ -551,7 +590,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                 {request.status === 'pending' && request.price_change_status !== 'pending_client_acceptance' && (
                   <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50">
                     <p className="text-sm font-medium text-blue-900 mb-2">Modificar precio y enviar propuesta al cliente</p>
-                    {request.data_input_mode === 'manual' && resolveManualServiceKey(request.services?.name) && (
+                    {/* F8: recalcular usa el motor de UN servicio: no en reservas de varios. */}
+                    {request.data_input_mode === 'manual' && resolveManualServiceKey(request.services?.name) && !isMultiServiceBooking(request as never) && (
                       <button
                         type="button"
                         onClick={() => setCorrectionFor(request)}
@@ -601,7 +641,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         Proponer
                       </button>
                     </div>
-                    {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia. */}
+                    {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia.
+                        F7: no en trabajos de equipo o de varios días (el servidor no lo acepta). */}
+                    {teamShape(request).labour == null && (
                     <div className="flex items-center gap-2 mt-2">
                       <input
                         type="number"
@@ -622,6 +664,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         horas totales (opcional — solo cambia la hora de fin)
                       </span>
                     </div>
+                    )}
                   </div>
                 )}
 

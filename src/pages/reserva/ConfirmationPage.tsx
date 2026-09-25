@@ -50,6 +50,7 @@ import {
   getBookingPaymentStatusCopy,
   isInFlightPaymentAttemptStatus,
 } from '../../shared/bookingPaymentCore';
+import { describeJobShape } from '../../utils/jobShape';
 
 const POLL_INTERVAL_MS = 1500;
 const POLL_MAX_ATTEMPTS = 8;
@@ -278,6 +279,8 @@ const ConfirmationPage: React.FC = () => {
 
   const authoritativeQuoteSnapshot = useMemo(() => readAuthoritativeQuoteSnapshot(bookingData), [bookingData]);
   const selectedQuoteSlot = useMemo(() => authoritativeQuoteSnapshot?.availability.selectedSlot || null, [authoritativeQuoteSnapshot]);
+  // GarSer Empresas (F7): trabajos de equipo o de varios días se cuentan con su forma.
+  const slotShape = useMemo(() => (selectedQuoteSlot ? describeJobShape(selectedQuoteSlot) : null), [selectedQuoteSlot]);
   const quoteEconomics: BookingQuoteEconomicBreakdown | null = useMemo(
     () => authoritativeQuoteSnapshot?.economics || null,
     [authoritativeQuoteSnapshot],
@@ -567,6 +570,11 @@ const ConfirmationPage: React.FC = () => {
   };
 
   const syncAuthoritativeQuote = async () => {
+    // F9 (D19): la visita de un plan tiene el precio del plan. Rehacer el presupuesto aquí daría
+    // uno normal con la tarifa del momento: si ha caducado, se espera a la siguiente propuesta.
+    if (bookingData.maintenanceVisitId) {
+      throw new Error('El plazo para confirmar esta visita del plan ha terminado. Te propondremos la siguiente.');
+    }
     const { serviceId, selectedSlot } = assertAuthoritativeSnapshot();
     const authoritativeQuote = await createAuthoritativeQuote({
       bookingData,
@@ -1654,7 +1662,7 @@ const ConfirmationPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="mx-auto w-full px-4 py-4 pb-32 sm:max-w-lg sm:pb-36" id="confirmation-main">
-        {!showSuccessView ? (
+        {!showSuccessView && !bookingData.maintenanceVisitId ? (
           <div className="mb-3 flex justify-start">
             <button
               type="button"
@@ -1718,7 +1726,10 @@ const ConfirmationPage: React.FC = () => {
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm text-gray-500">Fecha</span>
                   <span className="max-w-[14rem] text-right text-sm font-medium text-gray-900">
-                    {formattedDate} a las {formatSlotLabel(selectedQuoteSlot)}
+                    {slotShape?.multiDay ? slotShape.when : `${formattedDate} a las ${formatSlotLabel(selectedQuoteSlot)}`}
+                    {(slotShape?.team || slotShape?.labour) && (
+                      <span className="block font-normal text-gray-600">{[slotShape.team, slotShape.labour].filter(Boolean).join(' · ')}</span>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-start justify-between gap-3">
@@ -1803,8 +1814,11 @@ const ConfirmationPage: React.FC = () => {
             <div>
               <p className="font-medium text-gray-900">Fecha y hora</p>
               <p className="text-sm text-gray-600">
-                {formattedDate} a las {formatSlotLabel(selectedQuoteSlot)}
+                {slotShape?.multiDay ? slotShape.when : `${formattedDate} a las ${formatSlotLabel(selectedQuoteSlot)}`}
               </p>
+              {(slotShape?.team || slotShape?.labour) && (
+                <p className="text-sm text-gray-600">{[slotShape.team, slotShape.labour].filter(Boolean).join(' · ')}</p>
+              )}
             </div>
           </div>
 

@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
+import { normalizeAccountRole, type AccountRole } from './accountRole';
 
-export type AppProfileRole = 'admin' | 'gardener' | 'client' | null;
+export type AppProfileRole = AccountRole | null;
 
 async function fetchRoleByColumn(column: 'user_id' | 'id', userId: string) {
   const { data, error } = await supabase
@@ -13,7 +14,7 @@ async function fetchRoleByColumn(column: 'user_id' | 'id', userId: string) {
     throw error;
   }
 
-  return ((data as { role?: AppProfileRole } | null)?.role as AppProfileRole) || null;
+  return normalizeAccountRole((data as { role?: unknown } | null)?.role);
 }
 
 export async function fetchCurrentUserProfileRole(userId: string): Promise<AppProfileRole> {

@@ -19,6 +19,20 @@ import PhotoGallery from '../common/PhotoGallery';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
+import { useAccount } from '../../contexts/AccountContext';
+import { useBookingWorkers } from '../../hooks/useBookingWorkers';
+import AssignWorkerControl from '../empresa/AssignWorkerControl';
+import BookingWorkerLine from '../empresa/BookingWorkerLine';
+import { formatDateRange } from '../../utils/jobShape';
+import MaintenancePlansSection from '../maintenance/MaintenancePlansSection';
+import { fetchMyMaintenancePlans, FREQUENCY_LABEL, type MaintenancePlan } from '../../utils/maintenancePlans';
+import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
+
+// GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
+const teamShape = (row: object) => {
+  const r = row as { end_date?: string | null; labour_hours?: number | null };
+  return { endDate: r.end_date || null, labour: r.labour_hours ?? null };
+};
 
 interface GardenerBookingIncident {
   id: string;
@@ -62,10 +76,23 @@ const GardenerBookings: React.FC = () => {
   // penalización y un reembolso en su contra sin saber por qué.
   const [incidentDrafts, setIncidentDrafts] = useState<Record<string, string>>({});
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  // GarSer Empresas (F4): una cuenta de empresa ve también quién de su equipo va a cada trabajo.
+  const { role } = useAccount();
+  const [workersVersion, setWorkersVersion] = useState(0);
+  const workers = useBookingWorkers(bookings, { enabled: role === 'company', myId: user?.id, version: workersVersion });
+
+  // F9: planes de mantenimiento de los que salen visitas para este profesional.
+  const [plans, setPlans] = useState<MaintenancePlan[]>([]);
+  const loadPlans = () => {
+    void fetchMyMaintenancePlans()
+      .then((rows) => setPlans(rows.filter((plan) => plan.role === 'provider')))
+      .catch(() => setPlans([]));
+  };
 
   useEffect(() => {
     if (user) {
       fetchBookings();
+      loadPlans();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -74,7 +101,7 @@ const GardenerBookings: React.FC = () => {
     try {
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
-        .select(`*, services(name)`)
+        .select(`*, services(name), ${BOOKING_ITEMS_SELECT}`)
         .eq('gardener_id', user?.id)
         // 'disputed' incluido: es donde vive la incidencia que el jardinero tiene que poder
         // ver y responder. Sin esto la reserva desaparecía de esta pantalla en cuanto el
@@ -217,6 +244,11 @@ const GardenerBookings: React.FC = () => {
       />
 
       <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
+        {plans.some((plan) => plan.status === 'active') && (
+          <div className="mb-6">
+            <MaintenancePlansSection plans={plans} onChanged={loadPlans} />
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600"></div>
@@ -234,7 +266,16 @@ const GardenerBookings: React.FC = () => {
               <div key={booking.id} className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
                 <div className="flex items-center justify-between gap-2 mb-4">
                   <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900 truncate">{booking.services?.name}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 line-clamp-2 break-words">{bookingServiceLabel(booking as never) || booking.services?.name}</h3>
+                    {/* F9: visita de un plan de mantenimiento. */}
+                    {(booking as { maintenance_plan_id?: string | null }).maintenance_plan_id && (() => {
+                      const plan = plans.find((p) => p.id === (booking as { maintenance_plan_id?: string | null }).maintenance_plan_id);
+                      return (
+                        <span className="mt-0.5 inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                          Plan de mantenimiento{plan ? ` · ${FREQUENCY_LABEL[plan.frequency].toLowerCase()}` : ''}
+                        </span>
+                      );
+                    })()}
                     <p className="text-gray-600 truncate">Cliente: {booking.client_profile?.full_name}</p>
                   </div>
                   <span className={`shrink-0 px-3 py-1 rounded-full text-sm font-medium ${getBookingStatusTone(booking.status)}`}>
@@ -245,11 +286,13 @@ const GardenerBookings: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 mb-4 text-sm">
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2 shrink-0" />
-                    {format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
+                    {teamShape(booking).endDate
+                      ? formatDateRange(booking.date, String(teamShape(booking).endDate))
+                      : format(parseISO(booking.date), 'EEEE, d MMMM yyyy', { locale: es })}
                   </div>
                   <div className="flex items-center text-gray-600">
                     <Clock className="w-4 h-4 mr-2 shrink-0" />
-                    {booking.start_time} ({booking.duration_hours}h)
+                    {booking.start_time} ({booking.duration_hours}h{teamShape(booking).labour ? ` · ${teamShape(booking).labour} h de trabajo` : ''})
                     <GardenerBookingAmount booking={booking} className="ml-auto" />
                   </div>
                   <div className="flex items-start text-gray-600 sm:col-span-2">
@@ -257,6 +300,11 @@ const GardenerBookings: React.FC = () => {
                     <span className="break-words">{booking.client_address}</span>
                   </div>
                 </div>
+                {booking.status === 'confirmed' ? (
+                  <AssignWorkerControl bookingId={booking.id} worker={workers[booking.id]} notify team={teamShape(booking).labour != null} onChanged={() => setWorkersVersion((v) => v + 1)} />
+                ) : (
+                  <BookingWorkerLine worker={workers[booking.id]} />
+                )}
 
                 {/* Acciones de contacto y navegación: lo primero que necesita el jardinero en el móvil.
                     También en disputa: el chat sigue siendo el sitio para aclarar lo que ha pasado. */}

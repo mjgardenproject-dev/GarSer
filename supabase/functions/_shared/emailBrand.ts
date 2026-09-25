@@ -47,6 +47,23 @@ export function formatBookingDate(date: string | null, startTime: string | null)
   }
 }
 
+/**
+ * GarSer Empresas (F7): «Cuándo» de un trabajo que puede durar varios días. Un día: lo de
+ * siempre. Varios: «del lunes, 5 de mayo al viernes, 9 de mayo de 2026, desde las 08:00».
+ */
+export function formatBookingWhen(date: string | null, startTime: string | null, endDate?: string | null): string {
+  if (!date || !endDate || endDate.slice(0, 10) <= date.slice(0, 10)) return formatBookingDate(date, startTime);
+  try {
+    const day = (iso: string, withYear: boolean) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('es-ES', {
+      weekday: 'long', day: 'numeric', month: 'long', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC',
+    });
+    const from = `del ${day(date, false)} al ${day(endDate, true)}`;
+    return startTime ? `${from}, desde las ${startTime.slice(0, 5)}` : from;
+  } catch {
+    return formatBookingDate(date, startTime);
+  }
+}
+
 /** Filas etiqueta:valor para el cuerpo del email (ya escapadas). */
 export function detailRows(rows: Array<[string, string]>): string {
   return `

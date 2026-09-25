@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { fetchProfileNames } from './profileNames';
+import { fetchProviderNames } from './profileNames';
 
 /**
  * Acceso a reseñas.
@@ -129,7 +129,7 @@ export async function fetchMyReviews(clientId: string): Promise<MyReview[]> {
 
   const bookingIds = rows.map((row) => row.booking_id).filter((id): id is string => Boolean(id));
   const [names, bookingsResult] = await Promise.all([
-    fetchProfileNames(rows.map((row) => row.gardener_id)),
+    fetchProviderNames(rows.map((row) => row.gardener_id)),
     bookingIds.length
       ? supabase.from('bookings').select('id, services(name)').in('id', bookingIds)
       : Promise.resolve({ data: [] as unknown[] }),

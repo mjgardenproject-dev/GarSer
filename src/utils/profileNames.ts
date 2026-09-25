@@ -19,6 +19,8 @@ import { supabase } from '../lib/supabase';
 export interface ProfileName {
   full_name: string | null;
   phone: string | null;
+  /** Solo con fetchProviderNames: el proveedor es una empresa (su nombre es el comercial). */
+  is_company?: boolean;
 }
 
 export async function fetchProfileNames(userIds: Array<string | null | undefined>): Promise<Record<string, ProfileName>> {
@@ -52,4 +54,28 @@ export async function fetchProfileName(userId: string | null | undefined, fallba
   if (!userId) return fallback;
   const map = await fetchProfileNames([userId]);
   return map[userId]?.full_name?.trim() || fallback;
+}
+
+/**
+ * GarSer Empresas (F5.4, H-31): nombres para mostrar de PROVEEDORES. El de su ficha de
+ * profesional (`public_gardener_directory`, el mismo que ve el cliente en el listado al
+ * reservar), y si no tiene ficha, el de su perfil. Para una empresa, la ficha es su nombre
+ * comercial y el perfil es la persona del dueño: con `fetchProfileNames` el cliente habría visto
+ * «con Marta» en vez de «con Jardines Demo Costa». Sirve también con ids que no son proveedores
+ * (clientes): se quedan con el nombre de su perfil.
+ */
+export async function fetchProviderNames(userIds: Array<string | null | undefined>): Promise<Record<string, ProfileName>> {
+  const ids = Array.from(new Set(userIds.filter((id): id is string => Boolean(id))));
+  if (ids.length === 0) return {};
+  const [profiles, { data: providers }] = await Promise.all([
+    fetchProfileNames(ids),
+    supabase.from('public_gardener_directory').select('user_id, full_name, provider_kind').in('user_id', ids),
+  ]);
+  const map: Record<string, ProfileName> = { ...profiles };
+  (providers || []).forEach((row: { user_id: string | null; full_name: string | null; provider_kind?: string | null }) => {
+    const name = row.full_name?.trim();
+    if (!row.user_id || !name) return;
+    map[row.user_id] = { full_name: name, phone: map[row.user_id]?.phone ?? null, is_company: row.provider_kind === 'company' };
+  });
+  return map;
 }

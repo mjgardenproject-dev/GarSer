@@ -31,7 +31,22 @@ export interface BookingData {
     lng: number;
   };
   serviceIds: string[];
+  /**
+   * GarSer Empresas (F8): con varios servicios, cuál se está rellenando en la pantalla de
+   * detalles (índice en serviceIds). Sin él, el primero (lo de siempre).
+   */
+  activeServiceIndex?: number;
+  /**
+   * GarSer Empresas (F8): los datos de cada servicio ya rellenado, tal y como se mandan al
+   * servidor (uno por servicio). Solo con varios servicios.
+   */
+  serviceInputs?: Record<string, Record<string, unknown>>;
   restrictedGardenerId?: string;
+  /**
+   * GarSer Empresas (F9): se está pagando la visita propuesta de un plan de mantenimiento. Su
+   * presupuesto tiene el precio fijo del plan (D19): no se rehace ni se cambia de hora aquí.
+   */
+  maintenanceVisitId?: string;
   photos: File[];
   bookingPhotoContract?: BookingPhotoContract;
   description: string;

@@ -3,10 +3,15 @@ import { describe, expect, it } from 'vitest';
 import {
   bookingRequiresPhytosanitaryLicense,
   evaluateOperationalEligibility,
+  freeRun,
   getClientCoordinates,
   getProviderCoordinates,
   getValidStartHours,
+  getValidStartHoursForPlan,
+  getValidStartHoursForWorkers,
   isPhytosanitaryLicenseActive,
+  planBookingShape,
+  providerConfigVersionPayload,
 } from './bookingEligibilityCore';
 import type { SerializableBookingData } from './bookingQuoteCore';
 
@@ -276,12 +281,16 @@ describe('bookingEligibilityCore', () => {
 
     expect(result.quote.totalPrice).toBe(60);
     expect(result.validHoursForRequestedDate).toEqual([9]);
-    expect(result.earliestSlot).toEqual({
+    expect(result.earliestSlot).toMatchObject({
       date: '2026-06-15',
       startHour: 9,
       startTime: '09:00:00',
       endTime: '11:00:00',
       durationHours: 2,
+      // F7: la forma del trabajo viaja con la franja (una persona, un día).
+      endDate: null,
+      crew: 1,
+      labourHours: 2,
     });
   });
 });
@@ -303,6 +312,101 @@ describe('getValidStartHours (bordes del rango 7:00–20:00)', () => {
   it('respeta la contigüidad: un hueco rompe la franja reservable', () => {
     // 7 y 8 son contiguos (válidos para 2h). 10 está aislado, no cabe 2h.
     expect(getValidStartHours([7, 8, 10], 2)).toEqual([7]);
+  });
+});
+
+describe('GarSer Empresas F4 — horas de un equipo (H-26)', () => {
+  const companyProfile = {
+    max_distance: 50,
+    operational_latitude: 40.417,
+    operational_longitude: -3.703,
+    license_verification_status: null,
+    license_expires_at: null,
+  };
+
+  it('una hora vale si ALGUNA persona puede hacer el trabajo entero desde ella', () => {
+    const team = new Map([
+      ['ana', new Map([['2026-06-15', [9, 10]]])],
+      ['luis', new Map([['2026-06-15', [12, 13]]])],
+    ]);
+    expect(getValidStartHoursForWorkers(team, '2026-06-15', 2)).toEqual([9, 12]);
+  });
+
+  it('NO suma horas de personas distintas: Ana 9-10 y Luis 10-11 no hacen 2 h a las 9', () => {
+    const team = new Map([
+      ['ana', new Map([['2026-06-15', [9]]])],
+      ['luis', new Map([['2026-06-15', [10]]])],
+    ]);
+    expect(getValidStartHoursForWorkers(team, '2026-06-15', 2)).toEqual([]);
+    expect(getValidStartHoursForWorkers(team, '2026-06-15', 1)).toEqual([9, 10]);
+  });
+
+  it('con una sola persona da lo mismo que las horas del autónomo', () => {
+    const solo = new Map([['yo', new Map([['2026-06-15', [7, 8, 10]]])]]);
+    expect(getValidStartHoursForWorkers(solo, '2026-06-15', 2)).toEqual(getValidStartHours([7, 8, 10], 2));
+  });
+
+  it('la empresa es elegible con las horas de su equipo y el primer hueco es el de cualquiera', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: twoHourBookingInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile: companyProfile,
+      providerDates: new Map(),
+      workerDates: new Map([
+        ['ana', new Map([['2026-06-16', [9, 10]]])],
+        ['luis', new Map([['2026-06-15', [9]], ['2026-06-17', [8, 9]]])],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-20',
+    });
+    expect(result.eligible).toBe(true);
+    if (!result.eligible) return;
+    expect(result.validHoursForRequestedDate).toEqual([]);
+    expect(result.earliestSlot?.date).toBe('2026-06-16');
+    expect(result.earliestSlot?.startHour).toBe(9);
+  });
+
+  it('F6 (D10): con trabajos partidos, Ana 9 + Luis 10 sí cubren 2 h a las 9 (por turnos); sin ellos, no', () => {
+    const base = {
+      bookingInput: twoHourBookingInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile: companyProfile,
+      providerDates: new Map<string, number[]>(),
+      workerDates: new Map([
+        ['ana', new Map([['2026-06-15', [9]]])],
+        ['luis', new Map([['2026-06-15', [10]]])],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+    };
+    const whole = evaluateOperationalEligibility(base);
+    expect(whole.eligible).toBe(false);
+    const byTurns = evaluateOperationalEligibility({ ...base, allowSplitAcrossWorkers: true });
+    expect(byTurns.eligible).toBe(true);
+    if (byTurns.eligible) expect(byTurns.validHoursForRequestedDate).toEqual([9]);
+  });
+
+  it('trabajo con carnet: la empresa no se descarta por su ficha si el carnet se comprueba por persona', () => {
+    const phytoInput = { ...twoHourBookingInput, phytosanitaryZones: [{ area: 20, productPreference: 'chemical' as const }] };
+    const base = {
+      bookingInput: phytoInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile: companyProfile,
+      providerDates: new Map<string, number[]>(),
+      workerDates: new Map([['ana', new Map([['2026-06-15', [9, 10]]])]]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+    };
+    const withoutFlag = evaluateOperationalEligibility(base);
+    expect(withoutFlag.eligible).toBe(false);
+    if (!withoutFlag.eligible) expect(withoutFlag.exclusion.code).toBe('missing_phytosanitary_license');
+    // Con el carnet comprobado por persona, la puerta de la ficha no actúa (lo que decida
+    // después el presupuesto, con esta configuración de césped, no es lo que se prueba aquí).
+    const withFlag = evaluateOperationalEligibility({ ...base, licenseCheckedPerWorker: true });
+    if (!withFlag.eligible) expect(withFlag.exclusion.code).not.toBe('missing_phytosanitary_license');
   });
 });
 
@@ -528,10 +632,10 @@ describe('T1 (transversal) — puerta de licencia fitosanitaria', () => {
   });
 });
 
-describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
+describe('T7 → F7 (D12) — trabajos de más de 12 h', () => {
   // 1500 m² / 100 m²/h = 15 h → >8h, así que el motor aplica el descuento ×0.9 (T2) = 13.5h →
-  // 14h redondeadas al bloque — por encima de MAX_SINGLE_DAY_DURATION_HOURS (12, el mismo
-  // tope que ya exige el CHECK de `duration_hours` en BD).
+  // 14h redondeadas al bloque. Antes (T7) se rechazaba siempre por no caber en un día; desde F7
+  // se reparte en varios días (también para un autónomo).
   const bigJobInput: SerializableBookingData = {
     ...bookingInput,
     lawnZones: [{ quantity: 1500, state: 'normal' }],
@@ -545,27 +649,45 @@ describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
     license_expires_at: '2099-01-01T00:00:00Z',
   };
 
-  it('avisa de que el trabajo no cabe en un día cuando estimatedHours supera el tope de 12h — sin ni mirar la agenda del profesional', () => {
+  it('con un solo día libre no hay hueco (ni con el día entero): 12 h por jornada como mucho', () => {
     const result = evaluateOperationalEligibility({
       bookingInput: bigJobInput,
       providerConfig,
       providerConfigVersion: 'cfg-1',
       profile,
-      // Agenda deliberadamente amplísima (un día entero libre) para demostrar que el aviso no
-      // depende de lo ocupado que esté el profesional: ni con el día entero libre cabría.
       providerDates: new Map([
-        ['2026-06-15', Array.from({ length: 16 }, (_, i) => 6 + i)], // 6h-22h, 16h seguidas
+        ['2026-06-15', Array.from({ length: 14 }, (_, i) => 6 + i)], // 6h-20h
       ]),
       requestedDate: '2026-06-15',
       windowEndDate: '2026-06-15',
     });
 
-    expect(result).toEqual({
-      eligible: false,
-      exclusion: {
-        code: 'service_exceeds_single_day',
-        message: 'Este trabajo necesita 14 horas seguidas y ningún servicio se puede reservar por más de 12 horas en un solo día. Prueba a reducir el alcance del trabajo — de momento no ofrecemos reservas repartidas en varios días.',
-      },
+    expect(result).toMatchObject({ eligible: false, exclusion: { code: 'no_reservable_availability' } });
+  });
+
+  it('con el día siguiente libre se ofrece en dos días: 12 h el primero y 2 h el segundo', () => {
+    const result = evaluateOperationalEligibility({
+      bookingInput: bigJobInput,
+      providerConfig,
+      providerConfigVersion: 'cfg-1',
+      profile,
+      providerDates: new Map([
+        ['2026-06-15', Array.from({ length: 14 }, (_, i) => 6 + i)],
+        ['2026-06-16', [9, 10, 11]],
+      ]),
+      requestedDate: '2026-06-15',
+      windowEndDate: '2026-06-15',
+      restrictToRequestedDate: true,
+    });
+
+    expect(result.eligible).toBe(true);
+    if (!result.eligible) return;
+    // De 6 a 8: 12 h el primer día. A las 9: 11 h + las 3 del día siguiente = 14. A las 10 ya
+    // no llega (10 + 3).
+    expect(result.validHoursForRequestedDate).toEqual([6, 7, 8, 9]);
+    expect(result.earliestSlot).toMatchObject({
+      startHour: 6, durationHours: 12, endDate: '2026-06-16', crew: 1, labourHours: 14,
+      planDays: [{ date: '2026-06-15', people: 1, hours: 12 }, { date: '2026-06-16', people: 1, hours: 2 }],
     });
   });
 
@@ -590,5 +712,152 @@ describe('T7 (transversal, D4-a) — trabajo que no cabe en un día', () => {
         message: 'El profesional no tiene un hueco reservable válido para la duración estimada.',
       },
     });
+  });
+});
+
+describe('F7 — planBookingShape (la misma regla que plan_booking_cells en SQL)', () => {
+  const D1 = '2026-06-15';
+  const D2 = '2026-06-16';
+  const D3 = '2026-06-17';
+  const range = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => from + i);
+  const team = (people: Record<string, Record<string, number[]>>) =>
+    new Map(Object.entries(people).map(([id, days]) => [id, new Map(Object.entries(days))]));
+
+  it('freeRun: horas seguidas, como mucho 12 y hasta las 20:00', () => {
+    expect(freeRun([8, 9, 10, 12], 8)).toBe(3);
+    expect(freeRun(range(0, 24), 5)).toBe(12);
+    expect(freeRun(range(0, 24), 15)).toBe(5);
+    expect(freeRun([8], 20)).toBe(0);
+    expect(freeRun([8], Number.NaN)).toBe(0);
+  });
+
+  it('8 h de trabajo: con una persona de 4 h libres no cabe; con un equipo de 2, 4 h de reloj', () => {
+    const workerDates = team({ ana: { [D1]: range(8, 12) }, luis: { [D1]: range(8, 12) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 8, maxCrew: 1 })).toBeNull();
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 8, maxCrew: 2 })).toMatchObject({
+      mode: 'crew', crew: 2, firstDayHours: 4, endDate: null, days: [{ date: D1, people: 2, hours: 8 }],
+    });
+  });
+
+  it('elige el equipo más pequeño y reparte a partes iguales (7 h con 2: 4 + 3)', () => {
+    const workerDates = team({ ana: { [D1]: range(8, 11) }, luis: { [D1]: range(8, 12) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 7, maxCrew: 3 })).toMatchObject({ crew: 2, firstDayHours: 4 });
+    // Si nadie tiene 4 seguidas, no se puede con 2 aunque sumen 7.
+    const short = team({ ana: { [D1]: range(8, 11) }, luis: { [D1]: range(8, 11) } });
+    expect(planBookingShape({ workerDates: short, date: D1, startHour: 8, labourHours: 7, maxCrew: 2 })).toBeNull();
+  });
+
+  it('por turnos solo si la empresa lo acepta y son 12 h o menos', () => {
+    const workerDates = team({ ana: { [D1]: [9] }, luis: { [D1]: [10] } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 9, labourHours: 2, maxCrew: 2 })).toBeNull();
+    expect(planBookingShape({ workerDates, date: D1, startHour: 9, labourHours: 2, maxCrew: 2, allowSplit: true })).toMatchObject({ mode: 'turns' });
+  });
+
+  it('12 h o menos nunca en varios días', () => {
+    const workerDates = team({ ana: { [D1]: range(8, 12), [D2]: range(8, 20) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 10 })).toBeNull();
+  });
+
+  it('varios días: se salta el día sin nadie; los días siguientes cada persona desde su primera hora libre', () => {
+    const workerDates = team({
+      ana: { [D1]: range(8, 12), [D3]: range(15, 20) },
+      luis: { [D1]: range(8, 12), [D3]: range(8, 12) },
+    });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 15, maxCrew: 2 })).toMatchObject({
+      mode: 'multi_day', crew: 2, firstDayHours: 4, endDate: D3,
+      days: [{ date: D1, people: 2, hours: 8 }, { date: D3, people: 2, hours: 7 }],
+    });
+  });
+
+  it('varios días: el primer día alguien tiene que poder empezar a la hora elegida', () => {
+    const workerDates = team({ ana: { [D1]: range(10, 12), [D2]: range(8, 20) } });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 14 })).toBeNull();
+    // A las 10: 2 h + 12 h el día siguiente = 14. A las 11 ya no llega (1 + 12).
+    expect(getValidStartHoursForPlan({ workerDates, date: D1, labourHours: 14 })).toEqual([10]);
+  });
+
+  it('varios días con límite: cada día van como mucho N personas', () => {
+    const workerDates = team({
+      a: { [D1]: range(8, 12), [D2]: range(8, 12) },
+      b: { [D1]: range(8, 12), [D2]: range(8, 12) },
+      c: { [D1]: range(8, 12), [D2]: range(8, 12) },
+    });
+    // 16 h: con 3 a la vez no llega en un día (4 h cada una = 12); con 2 al día hace falta el 2.º.
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 16, maxCrew: 2 })).toMatchObject({
+      endDate: D2, days: [{ people: 2, hours: 8 }, { people: 2, hours: 8 }],
+    });
+    expect(planBookingShape({ workerDates, date: D1, startHour: 8, labourHours: 16, maxCrew: 3 })).toMatchObject({
+      endDate: D2, days: [{ people: 3, hours: 12 }, { people: 1, hours: 4 }],
+    });
+  });
+
+  it('no pasa de 21 días', () => {
+    const days = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`2026-07-${String(i + 1).padStart(2, '0')}`, [8]]));
+    const workerDates = team({ ana: days });
+    expect(planBookingShape({ workerDates, date: '2026-07-01', startHour: 8, labourHours: 21 })?.endDate).toBe('2026-07-21');
+    expect(planBookingShape({ workerDates, date: '2026-07-01', startHour: 8, labourHours: 22 })).toBeNull();
+  });
+});
+
+describe('F8 — varios servicios en una visita (mismo motor, se suman)', () => {
+  const profile = {
+    max_distance: 50,
+    operational_latitude: 40.417,
+    operational_longitude: -3.703,
+    license_verification_status: 'approved',
+    license_expires_at: '2099-01-01T00:00:00Z',
+  };
+  const secondConfig = { ...providerConfig, precioPorHora: 50 };
+  const base = {
+    bookingInput: twoHourBookingInput,
+    providerConfig,
+    providerConfigVersion: 'cfg-1',
+    profile,
+    providerDates: new Map([['2026-06-15', [8, 9, 10, 11, 12]]]),
+    requestedDate: '2026-06-15',
+    windowEndDate: '2026-06-15',
+    restrictToRequestedDate: true,
+    mainService: { serviceId: 'svc-a', serviceName: 'Césped' },
+  };
+
+  it('suma precio y horas de cada servicio con su tarifa; los gastos de gestión, sobre el total', () => {
+    const result = evaluateOperationalEligibility({
+      ...base,
+      extraServices: [{ serviceId: 'svc-b', serviceName: 'Otro', bookingInput, providerConfig: secondConfig }],
+    });
+    expect(result.eligible).toBe(true);
+    if (!result.eligible) return;
+    // 2 h a 30 € + 1 h a 50 € = 110 €, 3 h. Gestión 12,5 % de 110.
+    expect(result.quote.totalPrice).toBe(110);
+    expect(result.quote.estimatedHours).toBe(3);
+    expect(result.quote.economics.managementFee).toBe(13.75);
+    expect(result.validHoursForRequestedDate).toEqual([8, 9, 10]);
+    expect((result.quote as { items?: Array<{ serviceId: string; totalPrice: number }> }).items?.map((i) => `${i.serviceId}:${i.totalPrice}`))
+      .toEqual(['svc-a:60', 'svc-b:50']);
+    expect(result.quote.breakdown.every((line) => /^(Césped|Otro): /.test(line.desc))).toBe(true);
+  });
+
+  it('si el profesional no ofrece alguno de los servicios, no sale (D15)', () => {
+    const result = evaluateOperationalEligibility({
+      ...base,
+      extraServices: [{ serviceId: 'svc-b', bookingInput, providerConfig: null }],
+    });
+    expect(result).toMatchObject({ eligible: false, exclusion: { code: 'inactive_service' } });
+  });
+
+  it('un solo servicio: exactamente lo de siempre', () => {
+    const single = evaluateOperationalEligibility({ ...base });
+    const legacy = evaluateOperationalEligibility({ ...base, mainService: undefined });
+    expect(single).toEqual(legacy);
+  });
+});
+
+describe('F8 — versión de la configuración firmada', () => {
+  it('con un servicio es la de siempre; con varios, todas en orden', () => {
+    const a = { updated_at: '2026-01-01', additional_config: { x: 1 } };
+    const b = { created_at: '2026-02-02', additional_config: { y: 2 } };
+    expect(providerConfigVersionPayload([a])).toBe(JSON.stringify({ updated_at: '2026-01-01', config: { x: 1 } }));
+    expect(providerConfigVersionPayload([a, b])).toBe(JSON.stringify([{ updated_at: '2026-01-01', config: { x: 1 } }, { updated_at: '2026-02-02', config: { y: 2 } }]));
+    expect(providerConfigVersionPayload([null])).toBe(JSON.stringify({ updated_at: '', config: null }));
   });
 });

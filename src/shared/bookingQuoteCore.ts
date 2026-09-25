@@ -79,8 +79,18 @@ export interface BookingQuoteSlotSelection {
   date: string;
   startHour: number;
   startTime: string;
+  /** Fin del PRIMER día (en varios días, ver endDate). */
   endTime: string;
+  /** Lo que dura el primer día. */
   durationHours: number;
+  /** GarSer Empresas (F7): último día si el trabajo dura varios; null/ausente = un día. */
+  endDate?: string | null;
+  /** GarSer Empresas (F7): cuántas personas van a la vez como mucho (ausente = 1). */
+  crew?: number;
+  /** GarSer Empresas (F7): horas de trabajo totales (el precio sale de aquí). */
+  labourHours?: number;
+  /** GarSer Empresas (F7): cuántas personas y horas cada día. */
+  planDays?: { date: string; people: number; hours: number }[];
 }
 
 export interface BookingAvailabilityCalendarDay {
@@ -1725,5 +1735,75 @@ export function buildAuthoritativeBookingQuote(params: {
     eligibility: {
       isEligible: totalPrice > 0,
     },
+  };
+}
+
+/**
+ * GarSer Empresas (F8, D14) — un servicio de un presupuesto de varios: sus datos, su tarifa y lo
+ * que sale para él con el motor de siempre.
+ */
+export interface BookingQuoteServiceItem {
+  serviceId: string;
+  totalPrice: number;
+  estimatedHours: number;
+  breakdown: BookingQuoteLine[];
+  requiresLicense: boolean;
+}
+
+export type BookingMultiServiceQuoteResult = BookingQuoteResult & { items: BookingQuoteServiceItem[] };
+
+/**
+ * GarSer Empresas (F8) — presupuesto de varios servicios en una misma visita. NO es un motor
+ * nuevo: cada servicio se calcula con `buildAuthoritativeBookingQuote`, con sus datos y la tarifa
+ * del profesional para ESE servicio; aquí solo se suman precio y horas y se calculan los gastos de
+ * gestión sobre el total (un solo pago). Si un servicio no se puede presupuestar, el conjunto
+ * tampoco (D15: el profesional tiene que hacerlos todos).
+ */
+export function buildAuthoritativeMultiServiceQuote(parts: Array<{
+  serviceId: string;
+  serviceName?: string;
+  bookingData: SerializableBookingData;
+  providerConfig: any;
+  requiresLicense?: boolean;
+}>): BookingMultiServiceQuoteResult {
+  if (parts.length === 0) {
+    return { ...buildIneligibleQuote('missing_service_payload', 'No hay ningún servicio que presupuestar.'), items: [] };
+  }
+  const quotes = parts.map((part) => buildAuthoritativeBookingQuote({ bookingData: part.bookingData, providerConfig: part.providerConfig }));
+  const failed = quotes.findIndex((quote) => !quote.eligibility.isEligible || !(quote.totalPrice > 0));
+  if (failed >= 0) {
+    const reason = quotes[failed];
+    return { ...reason, totalPrice: 0, estimatedHours: 0, items: [], eligibility: { ...reason.eligibility, isEligible: false } };
+  }
+  const several = parts.length > 1;
+  const breakdown: BookingQuoteLine[] = quotes.flatMap((quote, index) => quote.breakdown.map((line) => ({
+    ...line,
+    desc: several && parts[index].serviceName ? `${parts[index].serviceName}: ${line.desc}` : line.desc,
+  })));
+  const warnings: BookingQuoteWarning[] = [];
+  quotes.forEach((quote) => quote.warnings.forEach((w) => {
+    if (!warnings.some((x) => x.code === w.code && x.message === w.message)) warnings.push(w);
+  }));
+  // El total es la suma de los precios YA redondeados de cada servicio: así cuadra al céntimo con
+  // la comprobación del pago (prepare_booking_payment_attempt_for_client).
+  const totalPrice = roundCurrency(quotes.reduce((sum, quote) => sum + roundCurrency(quote.totalPrice), 0));
+  const estimatedHours = Math.round(quotes.reduce((sum, quote) => sum + quote.estimatedHours, 0) * 100) / 100;
+  // Los datos de palmeras (cobertura parcial) son del servicio que las lleva; si no, del primero.
+  const metadata = (quotes.find((quote) => quote.metadata.palmCoverage) || quotes[0]).metadata;
+  return {
+    totalPrice,
+    estimatedHours,
+    breakdown,
+    warnings,
+    metadata,
+    economics: buildQuoteEconomics(totalPrice, breakdown),
+    eligibility: { isEligible: totalPrice > 0 },
+    items: quotes.map((quote, index) => ({
+      serviceId: parts[index].serviceId,
+      totalPrice: roundCurrency(quote.totalPrice),
+      estimatedHours: quote.estimatedHours,
+      breakdown: quote.breakdown,
+      requiresLicense: Boolean(parts[index].requiresLicense),
+    })),
   };
 }

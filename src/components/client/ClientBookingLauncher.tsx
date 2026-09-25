@@ -19,6 +19,10 @@ import ReviewModal from '../booking/ReviewModal';
 import ChatWindow from '../chat/ChatWindow';
 import { useConfirmDialog } from '../common/ConfirmDialog';
 import { formatEuro } from '../../shared/bookingAmounts';
+import { RESCHEDULE_MESSAGES, respondBookingReschedule } from '../../utils/bookingRescheduleService';
+import MaintenancePlansSection from '../maintenance/MaintenancePlansSection';
+import MakePlanSheet from '../maintenance/MakePlanSheet';
+import { fetchMaintenanceCheckout, fetchMyMaintenancePlans, type MaintenancePlan } from '../../utils/maintenancePlans';
 
 const ClientBookingLauncher = () => {
   const navigate = useNavigate();
@@ -34,6 +38,10 @@ const ClientBookingLauncher = () => {
   // reserva, hacerle buscarla otra vez era el fallo que arreglamos.
   const [chatTarget, setChatTarget] = useState<{ bookingId: string; gardenerName: string } | null>(null);
   const [reviewTarget, setReviewTarget] = useState<OverviewBooking | null>(null);
+  // F9: planes de mantenimiento del cliente y la reserva de la que se quiere hacer uno.
+  const [plans, setPlans] = useState<MaintenancePlan[]>([]);
+  const [planTarget, setPlanTarget] = useState<OverviewBooking | null>(null);
+  const [payingPlanId, setPayingPlanId] = useState<string | null>(null);
 
   const canResume = hasWizardResume({ userId: user?.id, allowAnonFallback: true });
   const firstName = (user?.user_metadata?.full_name as string | undefined)?.split(' ')[0];
@@ -41,7 +49,12 @@ const ClientBookingLauncher = () => {
   const load = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
-    setOverview(await fetchClientBookingsOverview(user.id));
+    const [nextOverview, nextPlans] = await Promise.all([
+      fetchClientBookingsOverview(user.id),
+      fetchMyMaintenancePlans().catch(() => [] as MaintenancePlan[]),
+    ]);
+    setOverview(nextOverview);
+    setPlans(nextPlans.filter((plan) => plan.role === 'client'));
     setLoading(false);
   }, [user?.id]);
 
@@ -145,6 +158,21 @@ const ClientBookingLauncher = () => {
    * precio"/"Rechazar" se renderizaban pero no hacían nada (`onClick` llamaba a `undefined?.()`).
    * Mismo patrón que `respondToPriceChange` en BookingsList.tsx, donde sí funcionan.
    */
+  // GarSer Empresas (F6.3, D9): respuesta a una propuesta de otra fecha.
+  const respondToReschedule = async (booking: OverviewBooking, accept: boolean) => {
+    setBusyId(booking.id);
+    try {
+      const outcome = await respondBookingReschedule(booking.id, accept);
+      if (outcome === 'accepted' || outcome === 'rejected') toast.success(RESCHEDULE_MESSAGES[outcome]);
+      else toast(RESCHEDULE_MESSAGES[outcome]);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo responder a la propuesta.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const respondToPriceChange = async (booking: OverviewBooking, accept: boolean) => {
     setBusyId(booking.id);
     try {
@@ -163,16 +191,40 @@ const ClientBookingLauncher = () => {
     }
   };
 
+  /**
+   * F9 (D17): pagar la visita propuesta de un plan. Se abre el pago de siempre con el
+   * presupuesto que ya hizo el plan (precio fijo, D19): no se vuelve a calcular.
+   */
+  const handlePayVisit = async (plan: MaintenancePlan) => {
+    if (!user?.id || !plan.proposal) return;
+    setPayingPlanId(plan.id);
+    try {
+      const bookingData = await fetchMaintenanceCheckout(plan.proposal.visit_id);
+      clearBookingResumeStorage({ userId: user.id, flow: 'wizard', includeAnonFallback: true });
+      writeBookingResume('draft', 'wizard', { bookingData, currentStep: 4 }, { userId: user.id });
+      navigate('/reservar');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se ha podido abrir el pago de la visita.');
+      setPayingPlanId(null);
+      void load();
+    }
+  };
+
+  const planSourceIds = new Set(plans.filter((plan) => plan.status === 'active').map((plan) => plan.source_booking_id));
+
   const cardHandlers = {
     onOpenChat: (booking: OverviewBooking) =>
       setChatTarget({ bookingId: booking.id, gardenerName: booking.gardener_name }),
     onCancel: handleCancel,
     onReview: (booking: OverviewBooking) => setReviewTarget(booking),
     onRebook: (booking: OverviewBooking) => void handleRebook(booking),
+    onMakePlan: (booking: OverviewBooking) => setPlanTarget(booking),
     onConfirmService: (booking: OverviewBooking) => void handleConfirmService(booking),
     onReportIncident: (booking: OverviewBooking) => navigate(`/incidencias/${booking.id}`),
     onAcceptPriceChange: (booking: OverviewBooking) => void respondToPriceChange(booking, true),
     onRejectPriceChange: (booking: OverviewBooking) => void respondToPriceChange(booking, false),
+    onAcceptReschedule: (booking: OverviewBooking) => void respondToReschedule(booking, true),
+    onRejectReschedule: (booking: OverviewBooking) => void respondToReschedule(booking, false),
   };
 
   return (
@@ -219,6 +271,8 @@ const ClientBookingLauncher = () => {
         </div>
       </div>
 
+      <MaintenancePlansSection plans={plans} onPayVisit={(plan) => void handlePayVisit(plan)} onChanged={() => void load()} busyPlanId={payingPlanId} />
+
       <section>
         <h2 className="text-lg font-semibold text-gray-900 mb-3">Mis reservas</h2>
 
@@ -252,7 +306,7 @@ const ClientBookingLauncher = () => {
                     accent="attention"
                     eyebrow="Confirma el servicio"
                     busy={busyId === booking.id}
-                    {...cardHandlers}
+                    {...cardHandlers} hasPlan={planSourceIds.has(booking.id)}
                   />
                 ))}
               </div>
@@ -263,7 +317,7 @@ const ClientBookingLauncher = () => {
             {overview.inReview.length > 0 && (
               <div className="space-y-3">
                 {overview.inReview.map((booking) => (
-                  <ClientBookingCard key={booking.id} booking={booking} compact busy={busyId === booking.id} {...cardHandlers} />
+                  <ClientBookingCard key={booking.id} booking={booking} compact busy={busyId === booking.id} {...cardHandlers} hasPlan={planSourceIds.has(booking.id)} />
                 ))}
               </div>
             )}
@@ -279,7 +333,7 @@ const ClientBookingLauncher = () => {
                     accent="upcoming"
                     eyebrow={booking.status === 'confirmed' ? 'Próxima reserva' : undefined}
                     busy={busyId === booking.id}
-                    {...cardHandlers}
+                    {...cardHandlers} hasPlan={planSourceIds.has(booking.id)}
                   />
                 ))}
               </div>
@@ -299,7 +353,7 @@ const ClientBookingLauncher = () => {
                       compact
                       accent="attention"
                       busy={busyId === booking.id}
-                      {...cardHandlers}
+                      {...cardHandlers} hasPlan={planSourceIds.has(booking.id)}
                     />
                   ))}
                 </div>
@@ -319,7 +373,7 @@ const ClientBookingLauncher = () => {
                       booking={booking}
                       compact
                       busy={busyId === booking.id}
-                      {...cardHandlers}
+                      {...cardHandlers} hasPlan={planSourceIds.has(booking.id)}
                     />
                   ))}
                 </div>
@@ -347,7 +401,7 @@ const ClientBookingLauncher = () => {
                         booking={booking}
                         compact
                         busy={busyId === booking.id}
-                        {...cardHandlers}
+                        {...cardHandlers} hasPlan={planSourceIds.has(booking.id)}
                       />
                     ))}
                   </div>
@@ -357,6 +411,17 @@ const ClientBookingLauncher = () => {
           </div>
         )}
       </section>
+
+      {planTarget && (
+        <MakePlanSheet
+          bookingId={planTarget.id}
+          serviceName={planTarget.service_name}
+          professionalName={planTarget.gardener_name}
+          price={planTarget.total_price}
+          onClose={() => setPlanTarget(null)}
+          onCreated={() => { setPlanTarget(null); void load(); }}
+        />
+      )}
 
       {chatTarget && (
         <ChatWindow

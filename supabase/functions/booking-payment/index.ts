@@ -1,6 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  bookingRequiresPhytosanitaryLicense,
+  buildProviderWorkerIndex,
   evaluateOperationalEligibility,
+  MAX_JOB_DAYS,
+  mergeWorkerDates,
+  providerConfigVersionPayload,
+  type ProviderFreeHourRow,
   type ProviderProfileLike,
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import {
@@ -121,6 +127,10 @@ type QuoteRow = {
   input_payload: SerializableBookingData | null;
   pricing_snapshot?: Record<string, unknown> | null;
   economic_snapshot?: Record<string, unknown> | null;
+  /** F8: los servicios del presupuesto (null = uno). */
+  items?: Array<{ serviceId: string; serviceName?: string | null; inputPayload?: SerializableBookingData }> | null;
+  /** F9: el presupuesto es la propuesta de una visita de un plan de mantenimiento. */
+  maintenance_visit_id?: string | null;
 };
 
 type ActivePriceRow = {
@@ -128,20 +138,6 @@ type ActivePriceRow = {
   additional_config: Record<string, unknown> | null;
   updated_at?: string | null;
   created_at?: string | null;
-};
-
-type AvailabilityRow = {
-  gardener_id: string;
-  date: string;
-  start_time: string;
-  is_available: boolean;
-};
-
-type HoldBlockRow = {
-  hold_id: string;
-  gardener_id: string;
-  date: string;
-  hour_block: number;
 };
 
 type ActiveHoldRow = {
@@ -379,7 +375,9 @@ async function getQuoteRow(
       provider_config_version,
       input_payload,
       pricing_snapshot,
-      economic_snapshot
+      economic_snapshot,
+      items,
+      maintenance_visit_id
     `)
     .eq('id', quoteId)
     .maybeSingle();
@@ -408,19 +406,19 @@ async function getActivePriceRow(
 async function getProviderProfile(
   admin: ReturnType<typeof createClient>,
   gardenerId: string,
-): Promise<(ProviderProfileLike & { address?: string | null }) | null> {
+): Promise<(ProviderProfileLike & { address?: string | null; provider_kind?: string | null }) | null> {
   const { data, error } = await admin
     .from('gardener_profiles')
     // T1 (transversal, 2026-09-13): campos de licencia — evaluateOperationalEligibility los
     // exige para volver a validar la elegibilidad justo antes de cobrar (ver
     // bookingEligibilityCore.ts). Sin ellos, esta revalidación trataría a CUALQUIER
     // jardinero como sin licencia y rechazaría el pago de trabajos químicos ya elegibles.
-    .select('address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at')
+    .select('address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at, provider_kind')
     .eq('user_id', gardenerId)
     .maybeSingle();
 
   if (error) throw error;
-  return (data as (ProviderProfileLike & { address?: string | null }) | null) || null;
+  return (data as (ProviderProfileLike & { address?: string | null; provider_kind?: string | null }) | null) || null;
 }
 
 async function ensureProviderOperationalCoordinates(
@@ -486,63 +484,54 @@ async function sha256(text: string) {
   return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, '0')).join('');
 }
 
-function buildAvailabilityIndex(rows: AvailabilityRow[]) {
-  const providerDates = new Map<string, number[]>();
-  rows.forEach((row) => {
-    const date = toIsoDate(row.date);
-    if (!date || !row.is_available) return;
-    const hours = providerDates.get(date) || [];
-    hours.push(extractHour(row.start_time));
-    providerDates.set(date, hours);
-  });
-  return providerDates;
-}
 
-async function fetchAvailabilityRowsForQuote(
+// GarSer Empresas (F4): las horas libres de cada persona que puede hacer el trabajo, con la
+// MISMA función SQL que usa la web (`provider_free_hours`). Los bloqueos del propio pago que se
+// revalida no cuentan como ocupados.
+async function fetchWorkerHoursForQuote(
   admin: ReturnType<typeof createClient>,
   params: {
     gardenerId: string;
+    serviceId: string;
     date: string;
+    requiresLicense: boolean;
     excludeHoldIds?: string[];
+    /** F8 (D16): los demás servicios del presupuesto: solo personas que los hagan todos. */
+    extraServiceIds?: string[];
   },
-): Promise<AvailabilityRow[]> {
+) {
+  // F7: un trabajo de varios días necesita también los días siguientes.
+  const lastDay = new Date(`${params.date}T12:00:00Z`);
+  lastDay.setUTCDate(lastDay.getUTCDate() + MAX_JOB_DAYS - 1);
+  const endDate = lastDay.toISOString().slice(0, 10);
   try {
     await admin.rpc('cleanup_expired_booking_payment_state', {
       p_gardener_ids: [params.gardenerId],
       p_start_date: params.date,
-      p_end_date: params.date,
+      p_end_date: endDate,
     });
   } catch {
     // No bloqueamos el pago por fallos de limpieza oportunista.
   }
 
-  const { data, error } = await admin
-    .from('availability')
-    .select('gardener_id, date, start_time, is_available')
-    .eq('gardener_id', params.gardenerId)
-    .eq('date', params.date)
-    .eq('is_available', true)
-    .order('start_time', { ascending: true });
-
-  if (error || !data) return [];
-
-  const { data: holdData } = await admin
-    .from('booking_schedule_hold_blocks')
-    .select('hold_id, gardener_id, date, hour_block')
-    .eq('gardener_id', params.gardenerId)
-    .eq('date', params.date);
-
-  const excludedHoldIds = new Set((params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean));
-  const heldSlots = new Set(
-    ((holdData || []) as HoldBlockRow[])
-      .filter((row) => !excludedHoldIds.has(String(row.hold_id)))
-      .map((row) => `${row.gardener_id}|${toIsoDate(row.date)}|${Number(row.hour_block)}`),
-  );
-
-  return (data as AvailabilityRow[]).filter((row) => {
-    const key = `${row.gardener_id}|${toIsoDate(row.date)}|${extractHour(row.start_time)}`;
-    return !heldSlots.has(key);
-  });
+  // H-32: PostgREST corta en 1000 filas; se piden por páginas (filas ordenadas).
+  const rows: ProviderFreeHourRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin.rpc('provider_free_hours', {
+      p_provider_ids: [params.gardenerId],
+      p_service_id: params.serviceId,
+      p_start: params.date,
+      p_end: endDate,
+      p_requires_license: params.requiresLicense,
+      p_exclude_hold_ids: (params.excludeHoldIds || []).map((value) => String(value || '').trim()).filter(Boolean),
+      p_extra_service_ids: params.extraServiceIds || [],
+    }).range(from, from + 999);
+    if (error || !data) return new Map<string, Map<string, number[]>>();
+    rows.push(...(data as ProviderFreeHourRow[]));
+    if ((data as unknown[]).length < 1000) break;
+  }
+  return buildProviderWorkerIndex(rows).get(params.gardenerId)
+    || new Map<string, Map<string, number[]>>();
 }
 
 async function getActiveHoldIdsForQuote(
@@ -607,6 +596,21 @@ async function revalidateQuoteBeforePayment(
     });
   }
 
+  // F9 (D19): la propuesta de una visita de un plan de mantenimiento tiene el precio del plan y NO
+  // se recalcula con la tarifa vigente. Se comprueba que es exactamente la que generó el plan y
+  // que plan y visita siguen vigentes; el hueco lo vuelve a comprobar el pago en SQL, como siempre.
+  if (quote.maintenance_visit_id) {
+    const { data: intact, error: intactError } = await admin.rpc('maintenance_quote_is_intact', { p_quote_id: quote.id });
+    if (intactError || intact !== true) {
+      throw new BookingPaymentHttpError({
+        status: 409,
+        code: 'maintenance_visit_unavailable',
+        message: 'Esta visita del plan ya no se puede confirmar.',
+      });
+    }
+    return { quote, evaluation: null };
+  }
+
   const selectedDate = toIsoDate(quote.selected_date);
   if (!selectedDate || !asString(quote.selected_start_time)) {
     throw new BookingPaymentHttpError({
@@ -622,24 +626,56 @@ async function revalidateQuoteBeforePayment(
     getActiveHoldIdsForQuote(admin, quote.id),
   ]);
 
-  const providerConfigVersion = await sha256(JSON.stringify({
-    updated_at: priceRow?.updated_at || priceRow?.created_at || '',
-    config: priceRow?.additional_config || null,
-  }));
+  // F8: presupuesto de varios servicios → cada uno con sus datos y su tarifa, y la «versión de
+  // la configuración» de todos en orden (la misma cuenta que booking-authority).
+  const quoteItems = Array.isArray(quote.items) && quote.items.length > 1 ? quote.items : [];
+  const extras = await Promise.all(quoteItems.slice(1).map(async (item) => ({
+    serviceId: String(item.serviceId),
+    serviceName: item.serviceName || undefined,
+    bookingInput: (item.inputPayload || {}) as SerializableBookingData,
+    priceRow: await getActivePriceRow(admin, quote.gardener_id, String(item.serviceId)),
+  })));
+  const providerConfigVersion = await sha256(providerConfigVersionPayload([priceRow, ...extras.map((extra) => extra.priceRow)]));
 
-  const availabilityRows = await fetchAvailabilityRowsForQuote(admin, {
+  const bookingInput = (quoteItems[0]?.inputPayload || quote.input_payload || {}) as SerializableBookingData;
+  // F6 (D10) y F7 (D11): se revalida con las mismas reglas de venta de la empresa que la web
+  // (trabajos partidos y cuántas personas a la vez). Autónomo: sin fila, una persona.
+  const { data: companyRow } = await admin
+    .from('companies')
+    .select('allow_split_jobs, max_crew')
+    .eq('provider_user_id', quote.gardener_id)
+    .eq('status', 'active')
+    .maybeSingle();
+  const company = companyRow as { allow_split_jobs: boolean; max_crew: number | null } | null;
+  const workerDates = await fetchWorkerHoursForQuote(admin, {
     gardenerId: quote.gardener_id,
+    serviceId: quote.service_id,
     date: selectedDate,
+    requiresLicense: [bookingInput, ...extras.map((extra) => extra.bookingInput)].some(bookingRequiresPhytosanitaryLicense),
     excludeHoldIds: excludedHoldIds,
+    extraServiceIds: extras.map((extra) => extra.serviceId),
   });
   const resolvedProfile = await ensureProviderOperationalCoordinates(admin, quote.gardener_id, profile);
 
   const evaluation = evaluateOperationalEligibility({
-    bookingInput: (quote.input_payload || {}) as SerializableBookingData,
+    bookingInput,
     providerConfig: priceRow?.additional_config || null,
     providerConfigVersion,
     profile: resolvedProfile,
-    providerDates: buildAvailabilityIndex(availabilityRows),
+    providerDates: mergeWorkerDates(workerDates),
+    workerDates,
+    licenseCheckedPerWorker: resolvedProfile?.provider_kind === 'company',
+    allowSplitAcrossWorkers: Boolean(company?.allow_split_jobs),
+    maxCrew: Math.max(1, Number(company?.max_crew || 1)),
+    ...(extras.length > 0 ? {
+      mainService: { serviceId: quote.service_id, serviceName: quoteItems[0]?.serviceName || undefined },
+      extraServices: extras.map((extra) => ({
+        serviceId: extra.serviceId,
+        serviceName: extra.serviceName,
+        bookingInput: extra.bookingInput,
+        providerConfig: extra.priceRow?.additional_config || null,
+      })),
+    } : {}),
     requestedDate: selectedDate,
     windowEndDate: selectedDate,
     restrictToRequestedDate: true,

@@ -1,7 +1,8 @@
 import { supabase } from '../lib/supabase';
-import { fetchProfileNames } from './profileNames';
+import { fetchProviderNames } from './profileNames';
 import { fetchBookingMediaMap } from './bookingMediaService';
 import { needsClientConfirmation } from '../shared/bookingStatus';
+import { bookingServiceLabel } from './bookingServiceLabel';
 
 /**
  * Reservas del cliente agrupadas para la pantalla de inicio.
@@ -40,6 +41,14 @@ export interface OverviewBooking {
   review_rating: number | null;
   /** Cuándo se da por completada sola si el cliente no confirma nada. */
   confirmation_deadline_at: string | null;
+  /** F6.3 (D9): propuesta de otra fecha de la empresa. */
+  reschedule_status?: string | null;
+  proposed_date?: string | null;
+  proposed_start_time?: string | null;
+  reschedule_reason?: string | null;
+  /** GarSer Empresas (F7): último día (varios días) y horas de trabajo (equipo o varios días). */
+  end_date?: string | null;
+  labour_hours?: number | null;
 }
 
 export interface ClientBookingsOverview {
@@ -80,7 +89,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
 
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_duration_hours, confirmation_deadline_at, services(name, icon)')
+    .select('id, status, date, start_time, duration_hours, client_address, gardener_id, service_id, notes, total_price, management_fee, management_fee_source, client_total_price, price_change_status, proposed_total_price, proposed_price_reason, proposed_duration_hours, confirmation_deadline_at, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, end_date, labour_hours, services(name, icon), booking_items(position, services(name))')
     .eq('client_id', clientId)
     .order('date', { ascending: false });
 
@@ -95,7 +104,7 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
   // Las reseñas propias se leen de `reviews` (el cliente ve las suyas por RLS) y no de la vista
   // pública: aquí hace falta saber si ESTE cliente ya valoró, no lo que se publica.
   const [names, reviewsResult, mediaMap] = await Promise.all([
-    fetchProfileNames(rows.map((row: { gardener_id: string }) => row.gardener_id)),
+    fetchProviderNames(rows.map((row: { gardener_id: string }) => row.gardener_id)),
     supabase.from('reviews').select('booking_id, rating').eq('client_id', clientId),
     // `statusByBooking` importa: sin él se muestran fotos legacy en reservas ya completadas,
     // cuyos archivos se borran de Storage al cerrarlas.
@@ -120,8 +129,10 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
     client_address: (row.client_address as string) ?? null,
     gardener_id: String(row.gardener_id || ''),
     service_id: (row.service_id as string) ?? null,
-    service_name: ((row.services as { name?: string } | null)?.name) || 'Servicio',
+    // F8: «Corte de césped + Poda de setos» si la reserva lleva varios servicios.
+    service_name: bookingServiceLabel(row as never) || 'Servicio',
     gardener_name: names[String(row.gardener_id)]?.full_name?.trim() || 'Tu profesional',
+    gardener_is_company: Boolean(names[String(row.gardener_id)]?.is_company),
     total_price: (row.total_price as number) ?? null,
     management_fee: (row.management_fee as number) ?? null,
     client_total_price: (row.client_total_price as number) ?? null,
@@ -134,6 +145,12 @@ export async function fetchClientBookingsOverview(clientId: string): Promise<Cli
     proposed_duration_hours: (row.proposed_duration_hours as number) ?? null,
     review_rating: ratingByBooking.get(String(row.id)) ?? null,
     confirmation_deadline_at: (row.confirmation_deadline_at as string) ?? null,
+    reschedule_status: (row.reschedule_status as string) ?? null,
+    proposed_date: (row.proposed_date as string) ?? null,
+    proposed_start_time: (row.proposed_start_time as string) ?? null,
+    reschedule_reason: (row.reschedule_reason as string) ?? null,
+    end_date: (row.end_date as string) ?? null,
+    labour_hours: (row.labour_hours as number) ?? null,
   }));
 
   return groupClientBookings(mapped, Date.now());

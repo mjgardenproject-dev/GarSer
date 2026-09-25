@@ -8,10 +8,11 @@ import { format, parseISO, isToday } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ChatWindow from './ChatWindow';
 import { fetchChatOverview } from '../../utils/chatService';
-import { fetchProfileNames } from '../../utils/profileNames';
+import { fetchProviderNames } from '../../utils/profileNames';
 import { fetchCurrentUserProfileRole } from '../../lib/adminAccess';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { Star } from 'lucide-react';
+import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 
 interface ChatItem {
   booking_id: string;
@@ -79,7 +80,7 @@ const ChatList: React.FC = () => {
       const [{ data: bookings, error: bookingsError }, overview] = await Promise.all([
         supabase
           .from('bookings')
-          .select(`id, client_id, gardener_id, date, start_time, status, services(name)`)
+          .select(`id, client_id, gardener_id, date, start_time, status, services(name), ${BOOKING_ITEMS_SELECT}`)
           .or(`client_id.eq.${user.id},gardener_id.eq.${user.id}`)
           .in('status', ['pending', 'confirmed', 'completed'])
           .order('date', { ascending: false }) as unknown as Promise<{ data: BookingWithProfiles[] | null; error: unknown }>,
@@ -95,7 +96,8 @@ const ChatList: React.FC = () => {
       if (uniqueUserIds.length > 0) {
         // Ver la nota de fetchProfileNames: por `id` no resolvia ninguno, asi que el chat
         // mostraba siempre el generico en vez del nombre de la otra parte.
-        const profilesMap = await fetchProfileNames(uniqueUserIds as string[]);
+        // F5.4 (GarSer Empresas): el proveedor, con el nombre de su ficha (el comercial si es empresa).
+        const profilesMap = await fetchProviderNames(uniqueUserIds as string[]);
         namesMap = Object.fromEntries(
           Object.entries(profilesMap).map(([id, profile]) => [id, profile.full_name || ''])
         );
@@ -107,7 +109,7 @@ const ChatList: React.FC = () => {
         const info = overview[booking.id];
         return {
           booking_id: booking.id,
-          service_name: booking.services?.name || 'Servicio',
+          service_name: bookingServiceLabel(booking as never) || 'Servicio',
           other_user_name: namesMap[otherUserId] || (isClient ? 'Jardinero' : 'Cliente'),
           other_user_id: otherUserId,
           date: booking.date,

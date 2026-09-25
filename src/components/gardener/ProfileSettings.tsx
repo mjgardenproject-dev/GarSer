@@ -360,16 +360,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
       return updatedProfile;
     }
 
-    const { data: insertedProfile, error: insertError } = await (supabase.from('gardener_profiles') as any)
-      .insert(profileData)
-      .select('user_id')
-      .single();
-
-    if (insertError) {
-      throw insertError;
-    }
-
-    return insertedProfile;
+    // La ficha de profesional la crea el servidor al aprobar la solicitud: desde el navegador ya
+    // no se puede crear (GarSer Empresas F2, H-21 — cualquiera podía darse de alta como
+    // profesional sin aprobación). Si no existe, no es algo que el jardinero pueda arreglar aquí.
+    throw new Error('No encontramos tu ficha de profesional. Escríbenos y la revisamos.');
   }, [user?.id]);
 
   // Combined loader for configs
@@ -780,6 +774,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                   setLicenseStatus={setLicenseStatus}
                   initialData={personalInitialData}
                   onSave={onSaveProfileInfo}
+                  showLicense={gardenerProfile?.provider_kind !== 'company'}
                 />
               )}
 

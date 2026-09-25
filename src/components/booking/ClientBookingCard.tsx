@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Calendar, Clock, MapPin, MessageCircle, Star, RotateCcw, ChevronDown, ImageIcon, Loader2 } from 'lucide-react';
+import { Calendar, Clock, MapPin, MessageCircle, Star, RotateCcw, ChevronDown, ImageIcon, Loader2, Repeat } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 import { ClientBookingAmounts } from './BookingAmounts';
 import { formatEuro } from '../../shared/bookingAmounts';
+import WhoIsComing from './WhoIsComing';
+import { formatDateRange, isMultiDay } from '../../utils/jobShape';
 import {
   canReportIncident,
   getBookingStatusLabel,
@@ -12,6 +14,7 @@ import {
   isCancellableStatus,
   needsClientConfirmation,
 } from '../../shared/bookingStatus';
+import { bookingServiceLabel } from '../../utils/bookingServiceLabel';
 
 /**
  * Tarjeta de reserva del cliente. Única para "Mis reservas" y para el inicio.
@@ -41,8 +44,10 @@ export interface ClientBookingCardBooking {
   // Nombre del servicio y del profesional: cada superficie los trae con una forma distinta.
   services?: { name?: string | null; icon?: string | null } | null;
   service_name?: string | null;
-  gardener_profile?: { full_name?: string | null } | null;
+  gardener_profile?: { full_name?: string | null; is_company?: boolean } | null;
   gardener_name?: string | null;
+  /** GarSer Empresas (F5.4): el proveedor es una empresa → se la nombra entera, no por su «nombre de pila». */
+  gardener_is_company?: boolean;
   // Importes
   total_price?: number | null;
   management_fee?: number | null;
@@ -56,6 +61,14 @@ export interface ClientBookingCardBooking {
   proposed_duration_hours?: number | null;
   /** Cuándo se da por completada sola si no se confirma nada. */
   confirmation_deadline_at?: string | null;
+  /** GarSer Empresas (F6.3, D9): la empresa propone otra fecha. */
+  reschedule_status?: string | null;
+  proposed_date?: string | null;
+  proposed_start_time?: string | null;
+  reschedule_reason?: string | null;
+  /** GarSer Empresas (F7): último día si dura varios, y horas de trabajo si es de equipo o de varios días. */
+  end_date?: string | null;
+  labour_hours?: number | null;
 }
 
 interface Props {
@@ -71,8 +84,14 @@ interface Props {
   onCancel?: (booking: ClientBookingCardBooking) => void;
   onReview?: (booking: ClientBookingCardBooking) => void;
   onRebook?: (booking: ClientBookingCardBooking) => void;
+  /** GarSer Empresas (F9): convertir esta reserva en un plan de mantenimiento. */
+  onMakePlan?: (booking: ClientBookingCardBooking) => void;
+  /** F9: ya hay un plan activo que sale de esta reserva. */
+  hasPlan?: boolean;
   onAcceptPriceChange?: (booking: ClientBookingCardBooking) => void;
   onRejectPriceChange?: (booking: ClientBookingCardBooking) => void;
+  onAcceptReschedule?: (booking: ClientBookingCardBooking) => void;
+  onRejectReschedule?: (booking: ClientBookingCardBooking) => void;
   /** El cliente confirma que el trabajo se hizo. Cierra la reserva y desbloquea la valoración. */
   onConfirmService?: (booking: ClientBookingCardBooking) => void;
   /** Abre el parte de incidencia. El cliente no cierra nada por su cuenta: lo revisa un admin. */
@@ -141,16 +160,23 @@ const ClientBookingCard = ({
   onCancel,
   onReview,
   onRebook,
+  onMakePlan,
+  hasPlan = false,
   onAcceptPriceChange,
   onRejectPriceChange,
+  onAcceptReschedule,
+  onRejectReschedule,
   onConfirmService,
   onReportIncident,
 }: Props) => {
   const [showDetails, setShowDetails] = useState(!compact);
 
-  const serviceName = booking.services?.name || booking.service_name || 'Servicio';
+  // F8: la etiqueta de varios servicios viene ya hecha (service_name) o de booking_items.
+  const serviceName = bookingServiceLabel(booking as never) || booking.service_name || 'Servicio';
+  const multiDay = isMultiDay({ date: booking.date, endDate: booking.end_date });
   const gardenerName = booking.gardener_profile?.full_name || booking.gardener_name || 'Tu profesional';
-  const gardenerFirstName = gardenerName.split(' ')[0];
+  const isCompany = Boolean(booking.gardener_profile?.is_company || booking.gardener_is_company);
+  const gardenerFirstName = isCompany ? gardenerName : gardenerName.split(' ')[0];
   const notes = cleanNotes(booking.notes);
   const photos = booking.media_urls || [];
   const hasPriceChange = booking.price_change_status === 'pending_client_acceptance';
@@ -173,8 +199,10 @@ const ClientBookingCard = ({
               {eyebrow}
             </span>
           )}
-          <h3 className="font-semibold text-gray-900 truncate">{serviceName}</h3>
+          {/* F8: con varios servicios el título es más largo: hasta dos líneas. */}
+          <h3 className="font-semibold text-gray-900 line-clamp-2 break-words">{serviceName}</h3>
           <p className="text-sm text-gray-600 truncate">con {gardenerName}</p>
+          <WhoIsComing bookingId={booking.id} status={booking.status} date={booking.date} />
         </div>
         <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${getBookingStatusTone(booking.status)}`}>
           {getBookingStatusLabel(booking.status, 'client')}
@@ -185,14 +213,20 @@ const ClientBookingCard = ({
       <dl className="mt-3 space-y-1.5 text-sm text-gray-600">
         <div className="flex items-center gap-2">
           <Calendar className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
-          <dd className="first-letter:uppercase">{format(parseISO(booking.date), "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}</dd>
+          <dd className="first-letter:uppercase">
+            {multiDay
+              ? formatDateRange(booking.date, String(booking.end_date))
+              : format(parseISO(booking.date), "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
+          </dd>
         </div>
         {formatTime(booking.start_time) && (
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
             <dd>
-              {formatTime(booking.start_time)}
-              {booking.duration_hours ? ` · ${booking.duration_hours} h` : ''}
+              {multiDay ? `Empieza a las ${formatTime(booking.start_time)}` : formatTime(booking.start_time)}
+              {!multiDay && booking.duration_hours ? ` · ${booking.duration_hours} h` : ''}
+              {/* F7: en equipo o en varios días, el reloj no dice cuánto trabajo es. */}
+              {booking.labour_hours ? ` · ${booking.labour_hours} h de trabajo${multiDay ? '' : ' en equipo'}` : ''}
             </dd>
           </div>
         )}
@@ -203,6 +237,33 @@ const ClientBookingCard = ({
           </div>
         )}
       </dl>
+
+      {/* F6.3 (D9): propuesta de otra fecha. Tampoco se pliega: espera respuesta. */}
+      {booking.reschedule_status === 'pending_client' && booking.proposed_date && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm text-amber-900">
+            {gardenerFirstName} te propone cambiar la fecha a{' '}
+            <strong>
+              {format(parseISO(booking.proposed_date), "EEEE d 'de' MMMM", { locale: es })}
+              {booking.proposed_start_time ? ` a las ${booking.proposed_start_time.slice(0, 5)}` : ''}
+            </strong>.
+          </p>
+          {booking.reschedule_reason && (
+            <p className="mt-1 text-sm text-amber-800"><span className="font-medium">Motivo:</span> {booking.reschedule_reason}</p>
+          )}
+          <p className="mt-1 text-xs text-amber-800">Si prefieres la fecha que tenías, no cambia nada.</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={() => onAcceptReschedule?.(booking)} disabled={busy}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} Aceptar nueva fecha
+            </button>
+            <button type="button" onClick={() => onRejectReschedule?.(booking)} disabled={busy}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60">
+              Mantener mi fecha
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* El cambio de precio NUNCA se pliega: mueve dinero y espera respuesta. */}
       {hasPriceChange && (
@@ -401,6 +462,23 @@ const ClientBookingCard = ({
             <RotateCcw className="w-4 h-4" aria-hidden="true" />
             {busy ? 'Preparando…' : 'Volver a reservar'}
           </button>
+        )}
+
+        {/* F9 (D17): de una reserva confirmada o terminada sale un plan de mantenimiento. */}
+        {onMakePlan && (isCompleted || booking.status === 'confirmed') && (
+          hasPlan ? (
+            <p className="text-center text-xs font-medium text-emerald-700">Tienes un plan de mantenimiento con esta reserva.</p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onMakePlan(booking)}
+              disabled={busy}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 transition-colors"
+            >
+              <Repeat className="w-4 h-4" aria-hidden="true" />
+              Repetir cada…
+            </button>
+          )
         )}
 
         {canCancel && (

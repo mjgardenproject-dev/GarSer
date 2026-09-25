@@ -2,12 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearBookingResumeStorage } from '../utils/bookingResumeStorage';
+import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, role: 'client' | 'gardener', _applicationPayload?: any) => Promise<void>;
+  signUp: (email: string, password: string, role: 'client' | 'gardener' | 'company', _applicationPayload?: any) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -171,8 +172,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Verifica tu correo para continuar.');
         }
         try {
-          const isGardenerIntent = (fresh as any)?.user_metadata?.role === 'gardener' || (fresh as any)?.user_metadata?.requested_role === 'gardener';
-          if (isGardenerIntent) {
+          // Tipo de cuenta desde profiles.role (F0 de GarSer Empresas), no desde user_metadata.
+          const accountRole = await fetchCurrentUserProfileRole(fresh.id);
+          if (accountRole === 'gardener') {
             const { data: app } = await supabase
               .from('gardener_applications')
               .select('id,status')
@@ -200,7 +202,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string, role: 'client' | 'gardener', _applicationPayload?: any) => {
+  const signUp = async (email: string, password: string, role: 'client' | 'gardener' | 'company', _applicationPayload?: any) => {
     // Eliminamos setLoading(true) para no desmontar AuthForm durante el proceso
     try {
       const { error } = await supabase.auth.signUp({

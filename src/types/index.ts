@@ -21,6 +21,8 @@ export interface Profile {
 export interface GardenerProfile extends Profile {
   services: string[];
   max_distance: number;
+  /** GarSer Empresas: 'solo' = jardinero autónomo, 'company' = empresa de jardinería. */
+  provider_kind?: 'solo' | 'company';
   operational_latitude?: number | null;
   operational_longitude?: number | null;
   rating: number;

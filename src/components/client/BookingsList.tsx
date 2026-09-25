@@ -8,7 +8,7 @@ import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
-import { fetchProfileNames } from '../../utils/profileNames';
+import { fetchProviderNames } from '../../utils/profileNames';
 import { fetchRebookPayload } from '../../utils/rebookService';
 import { cancelBooking, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { confirmBookingService } from '../../utils/bookingIncidentService';
@@ -18,10 +18,12 @@ import ChatWindow from '../chat/ChatWindow';
 import ClientBookingCard from '../booking/ClientBookingCard';
 import ReviewModal from '../booking/ReviewModal';
 import { useConfirmDialog } from '../common/ConfirmDialog';
+import { RESCHEDULE_MESSAGES, respondBookingReschedule } from '../../utils/bookingRescheduleService';
+import { BOOKING_ITEMS_SELECT } from '../../utils/bookingServiceLabel';
 
 interface BookingWithDetails extends Omit<Booking, 'services' | 'gardener_profile'> {
   services?: { name: string; icon?: string } | null;
-  gardener_profile?: { user_id?: string; full_name: string; phone?: string } | null;
+  gardener_profile?: { user_id?: string; full_name: string; phone?: string; is_company?: boolean } | null;
   media_urls?: string[];
   review_rating?: number | null;
 }
@@ -47,7 +49,7 @@ const BookingsList = () => {
     try {
       const { data: bookingsData, error } = await supabase
         .from('bookings')
-        .select('*, services(name, icon)')
+        .select(`*, services(name, icon), ${BOOKING_ITEMS_SELECT}`)
         .eq('client_id', user.id)
         .order('date', { ascending: false });
       if (error) throw error;
@@ -59,7 +61,7 @@ const BookingsList = () => {
       }
 
       const [names, mediaMap, reviewsResult] = await Promise.all([
-        fetchProfileNames(rows.map((row) => row.gardener_id)),
+        fetchProviderNames(rows.map((row) => row.gardener_id)),
         // `statusByBooking` evita mostrar fotos legacy en reservas ya completadas, cuyos
         // archivos se borran de Storage al cerrarlas.
         fetchBookingMediaMap(
@@ -79,7 +81,7 @@ const BookingsList = () => {
         rows.map((row) => ({
           ...row,
           gardener_profile: names[row.gardener_id]
-            ? { full_name: names[row.gardener_id].full_name || '', phone: names[row.gardener_id].phone || undefined }
+            ? { full_name: names[row.gardener_id].full_name || '', phone: names[row.gardener_id].phone || undefined, is_company: names[row.gardener_id].is_company }
             : null,
           media_urls: mediaMap[row.id] || [],
           review_rating: ratingByBooking.get(row.id) ?? null,
@@ -112,6 +114,21 @@ const BookingsList = () => {
     next.delete('review');
     setSearchParams(next, { replace: true });
   }, [bookings, searchParams, setSearchParams]);
+
+  // GarSer Empresas (F6.3, D9): respuesta a una propuesta de otra fecha.
+  const respondToReschedule = async (booking: BookingWithDetails, accept: boolean) => {
+    setBusyId(booking.id);
+    try {
+      const outcome = await respondBookingReschedule(booking.id, accept);
+      if (outcome === 'accepted' || outcome === 'rejected') toast.success(RESCHEDULE_MESSAGES[outcome]);
+      else toast(RESCHEDULE_MESSAGES[outcome]);
+      await fetchBookings();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo responder a la propuesta.');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const respondToPriceChange = async (booking: BookingWithDetails, accept: boolean) => {
     setBusyId(booking.id);
@@ -302,6 +319,8 @@ const BookingsList = () => {
               onRebook={() => void handleRebook(booking)}
               onAcceptPriceChange={() => void respondToPriceChange(booking, true)}
               onRejectPriceChange={() => void respondToPriceChange(booking, false)}
+              onAcceptReschedule={() => void respondToReschedule(booking, true)}
+              onRejectReschedule={() => void respondToReschedule(booking, false)}
               onConfirmService={() => void handleConfirmService(booking)}
               onReportIncident={() => navigate(`/incidencias/${booking.id}`)}
             />

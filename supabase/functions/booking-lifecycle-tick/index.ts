@@ -168,6 +168,30 @@ async function closeDueBookings(admin: any, supabaseUrl: string, serviceKey: str
   return { closed: Number(closedCount), reviewEmails, cleaned };
 }
 
+/**
+ * Trabajo 6 (GarSer Empresas F9, D17) — avisar al cliente de cada visita de su plan de
+ * mantenimiento: «confírmala» o «esta vez no hay hueco». Las propuestas las crea el SQL del reloj
+ * (generate_maintenance_proposals); aquí solo se mandan los correos. Si uno falla, vuelve a la cola.
+ */
+// deno-lint-ignore no-explicit-any
+async function sendMaintenanceNotifications(admin: any, supabaseUrl: string, serviceKey: string) {
+  const { data: claimed, error } = await admin.rpc('claim_maintenance_notifications', { p_limit: BATCH_LIMIT });
+  if (error) throw new Error(`claim_maintenance_notifications: ${error.message}`);
+  let sent = 0;
+  let failed = 0;
+  for (const row of (claimed || []) as Array<{ visit_id: string; email_type: string }>) {
+    const outcome = await requestEmail(supabaseUrl, serviceKey, { type: row.email_type, visitId: row.visit_id });
+    if (outcome.ok) {
+      sent += 1;
+    } else {
+      failed += 1;
+      await admin.rpc('release_maintenance_notification', { p_visit_id: row.visit_id });
+      await logEvent(admin, 'warn', 'maintenance.notification_failed', { visitId: row.visit_id, type: row.email_type, message: outcome.reason });
+    }
+  }
+  return { claimed: (claimed || []).length, sent, failed };
+}
+
 /** Trabajo 3 — caducar solicitudes sin responder. Ya existia; se conserva en el mismo reloj. */
 // deno-lint-ignore no-explicit-any
 async function expireStaleRequests(admin: any) {
@@ -380,6 +404,7 @@ Deno.serve(async (req) => {
     ['staleRequests', (a: unknown) => expireStaleRequests(a)],
     ['stuckPayments', (a: unknown) => reconcileStuckPayments(a, stripeSecret)],
     ['phytosanitaryLicenses', (a: unknown) => expirePhytosanitaryLicenses(a)],
+    ['maintenanceNotifications', (a: unknown) => sendMaintenanceNotifications(a, supabaseUrl, serviceKey)],
   ] as const) {
     try {
       result[name] = await job(admin);

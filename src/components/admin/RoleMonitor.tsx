@@ -7,9 +7,9 @@ import { isAdminRole } from '../../lib/adminAccess';
 
 interface RoleInconsistency {
   user_id: string;
-  profile_role: 'client' | 'gardener';
+  profile_role: 'client';
   has_gardener_profile: boolean;
-  expected_role: 'client' | 'gardener';
+  expected_role: 'gardener';
   full_name: string;
 }
 
@@ -57,21 +57,26 @@ const RoleMonitor = () => {
       profiles?.forEach((profile: any) => {
         const currentRole = profile.role;
 
-        // Los administradores quedan fuera: este monitor solo sabe de `client` y `gardener`,
-        // así que veía a un admin como "inconsistente" y proponía convertirlo en cliente.
-        // Aceptar esa corrección dejaba al admin sin acceso a su propio panel, sin forma de
-        // devolverse el rol desde la web.
-        if (isAdminRole(currentRole)) return;
+        // Desde F0 de GarSer Empresas (migración 20260923120000) todo usuario tiene perfil, y
+        // `gardener` significa «se registró como jardinero», no «está aprobado»: estar aprobado
+        // es tener fila en gardener_profiles. La regla antigua (rol = gardener si y solo si
+        // tiene gardener_profiles) marcaba como error a TODO jardinero pendiente de aprobación
+        // y «Corregir» lo degradaba a cliente, rompiendo su solicitud. También habría degradado
+        // a empresas y empleados.
+        //
+        // Única inconsistencia real: un jardinero aprobado cuyo perfil sigue en `client`. Este
+        // monitor solo corrige hacia arriba en ese caso; nunca degrada a nadie. Admin, empresa y
+        // empleado quedan fuera.
+        if (isAdminRole(currentRole) || currentRole !== 'client') return;
 
         const hasGardenerProfile = gardenerUserIds.has(profile.user_id);
-        const expectedRole: 'client' | 'gardener' = hasGardenerProfile ? 'gardener' : 'client';
 
-        if (currentRole !== expectedRole) {
+        if (hasGardenerProfile) {
           foundInconsistencies.push({
             user_id: profile.user_id,
-            profile_role: currentRole,
-            has_gardener_profile: hasGardenerProfile,
-            expected_role: expectedRole,
+            profile_role: 'client',
+            has_gardener_profile: true,
+            expected_role: 'gardener',
             full_name: profile.full_name || 'Sin nombre'
           });
         }

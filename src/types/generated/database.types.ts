@@ -270,6 +270,7 @@ export type Database = {
       }
       booking_blocks: {
         Row: {
+          assignee_id: string
           booking_id: string | null
           created_at: string | null
           date: string
@@ -277,6 +278,7 @@ export type Database = {
           id: string
         }
         Insert: {
+          assignee_id: string
           booking_id?: string | null
           created_at?: string | null
           date: string
@@ -284,6 +286,7 @@ export type Database = {
           id?: string
         }
         Update: {
+          assignee_id?: string
           booking_id?: string | null
           created_at?: string | null
           date?: string
@@ -492,6 +495,60 @@ export type Database = {
           },
         ]
       }
+      booking_items: {
+        Row: {
+          booking_id: string
+          breakdown: Json
+          created_at: string
+          id: string
+          input_payload: Json
+          labour_hours: number
+          position: number
+          requires_license: boolean
+          service_id: string
+          total_price: number
+        }
+        Insert: {
+          booking_id: string
+          breakdown?: Json
+          created_at?: string
+          id?: string
+          input_payload?: Json
+          labour_hours: number
+          position: number
+          requires_license?: boolean
+          service_id: string
+          total_price: number
+        }
+        Update: {
+          booking_id?: string
+          breakdown?: Json
+          created_at?: string
+          id?: string
+          input_payload?: Json
+          labour_hours?: number
+          position?: number
+          requires_license?: boolean
+          service_id?: string
+          total_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_items_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_items_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_manual_declarations: {
         Row: {
           accepted_at: string
@@ -604,11 +661,13 @@ export type Database = {
           currency: string
           duration_hours: number
           economic_snapshot: Json
+          end_date: string | null
           expired_at: string | null
           failed_at: string | null
           gardener_id: string
           gateway_response: Json
           id: string
+          labour_hours: number | null
           last_error_code: string | null
           last_error_message: string | null
           last_webhook_event_id: string | null
@@ -637,11 +696,13 @@ export type Database = {
           currency?: string
           duration_hours: number
           economic_snapshot?: Json
+          end_date?: string | null
           expired_at?: string | null
           failed_at?: string | null
           gardener_id: string
           gateway_response?: Json
           id?: string
+          labour_hours?: number | null
           last_error_code?: string | null
           last_error_message?: string | null
           last_webhook_event_id?: string | null
@@ -670,11 +731,13 @@ export type Database = {
           currency?: string
           duration_hours?: number
           economic_snapshot?: Json
+          end_date?: string | null
           expired_at?: string | null
           failed_at?: string | null
           gardener_id?: string
           gateway_response?: Json
           id?: string
+          labour_hours?: number | null
           last_error_code?: string | null
           last_error_message?: string | null
           last_webhook_event_id?: string | null
@@ -732,6 +795,8 @@ export type Database = {
           generated_at: string
           id: string
           input_payload: Json
+          items: Json | null
+          maintenance_visit_id: string | null
           pricing_snapshot: Json
           pricing_version: string
           provider_config_version: string
@@ -758,6 +823,8 @@ export type Database = {
           generated_at?: string
           id?: string
           input_payload?: Json
+          items?: Json | null
+          maintenance_visit_id?: string | null
           pricing_snapshot?: Json
           pricing_version: string
           provider_config_version: string
@@ -784,6 +851,8 @@ export type Database = {
           generated_at?: string
           id?: string
           input_payload?: Json
+          items?: Json | null
+          maintenance_visit_id?: string | null
           pricing_snapshot?: Json
           pricing_version?: string
           provider_config_version?: string
@@ -802,6 +871,13 @@ export type Database = {
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_quotes_maintenance_visit_id_fkey"
+            columns: ["maintenance_visit_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_visits"
             referencedColumns: ["id"]
           },
           {
@@ -985,6 +1061,7 @@ export type Database = {
       }
       booking_schedule_holds: {
         Row: {
+          assignee_id: string | null
           booking_id: string | null
           client_id: string
           created_at: string
@@ -1003,6 +1080,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assignee_id?: string | null
           booking_id?: string | null
           client_id: string
           created_at?: string
@@ -1021,6 +1099,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assignee_id?: string | null
           booking_id?: string | null
           client_id?: string
           created_at?: string
@@ -1118,6 +1197,7 @@ export type Database = {
       }
       bookings: {
         Row: {
+          assignment_pending: boolean
           auto_completed_at: string | null
           buffer_applied: boolean | null
           cancellation_actor: string | null
@@ -1140,11 +1220,14 @@ export type Database = {
           data_input_mode: string | null
           date: string
           duration_hours: number
+          end_date: string | null
           end_time: string | null
           gardener_finished_at: string | null
           gardener_id: string | null
           hourly_rate: number | null
           id: string
+          labour_hours: number | null
+          maintenance_plan_id: string | null
           management_fee: number
           management_fee_source: string
           manual_declaration_id: string | null
@@ -1153,15 +1236,23 @@ export type Database = {
           notes: string | null
           price_change_status: string | null
           pricing_context: Json
+          proposed_date: string | null
           proposed_duration_hours: number | null
           proposed_price_at: string | null
           proposed_price_by: string | null
           proposed_price_expires_at: string | null
           proposed_price_reason: string | null
+          proposed_start_time: string | null
           proposed_total_price: number | null
           provider_latitude: number | null
           provider_longitude: number | null
           request_id: string | null
+          reschedule_answer_notified_at: string | null
+          reschedule_expires_at: string | null
+          reschedule_proposal_notified_at: string | null
+          reschedule_proposed_at: string | null
+          reschedule_reason: string | null
+          reschedule_status: string
           service_id: string | null
           start_time: string
           status: string | null
@@ -1170,6 +1261,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          assignment_pending?: boolean
           auto_completed_at?: string | null
           buffer_applied?: boolean | null
           cancellation_actor?: string | null
@@ -1192,11 +1284,14 @@ export type Database = {
           data_input_mode?: string | null
           date: string
           duration_hours: number
+          end_date?: string | null
           end_time?: string | null
           gardener_finished_at?: string | null
           gardener_id?: string | null
           hourly_rate?: number | null
           id?: string
+          labour_hours?: number | null
+          maintenance_plan_id?: string | null
           management_fee: number
           management_fee_source: string
           manual_declaration_id?: string | null
@@ -1205,15 +1300,23 @@ export type Database = {
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
+          proposed_date?: string | null
           proposed_duration_hours?: number | null
           proposed_price_at?: string | null
           proposed_price_by?: string | null
           proposed_price_expires_at?: string | null
           proposed_price_reason?: string | null
+          proposed_start_time?: string | null
           proposed_total_price?: number | null
           provider_latitude?: number | null
           provider_longitude?: number | null
           request_id?: string | null
+          reschedule_answer_notified_at?: string | null
+          reschedule_expires_at?: string | null
+          reschedule_proposal_notified_at?: string | null
+          reschedule_proposed_at?: string | null
+          reschedule_reason?: string | null
+          reschedule_status?: string
           service_id?: string | null
           start_time: string
           status?: string | null
@@ -1222,6 +1325,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          assignment_pending?: boolean
           auto_completed_at?: string | null
           buffer_applied?: boolean | null
           cancellation_actor?: string | null
@@ -1244,11 +1348,14 @@ export type Database = {
           data_input_mode?: string | null
           date?: string
           duration_hours?: number
+          end_date?: string | null
           end_time?: string | null
           gardener_finished_at?: string | null
           gardener_id?: string | null
           hourly_rate?: number | null
           id?: string
+          labour_hours?: number | null
+          maintenance_plan_id?: string | null
           management_fee?: number
           management_fee_source?: string
           manual_declaration_id?: string | null
@@ -1257,15 +1364,23 @@ export type Database = {
           notes?: string | null
           price_change_status?: string | null
           pricing_context?: Json
+          proposed_date?: string | null
           proposed_duration_hours?: number | null
           proposed_price_at?: string | null
           proposed_price_by?: string | null
           proposed_price_expires_at?: string | null
           proposed_price_reason?: string | null
+          proposed_start_time?: string | null
           proposed_total_price?: number | null
           provider_latitude?: number | null
           provider_longitude?: number | null
           request_id?: string | null
+          reschedule_answer_notified_at?: string | null
+          reschedule_expires_at?: string | null
+          reschedule_proposal_notified_at?: string | null
+          reschedule_proposed_at?: string | null
+          reschedule_reason?: string | null
+          reschedule_status?: string
           service_id?: string | null
           start_time?: string
           status?: string | null
@@ -1274,6 +1389,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "bookings_maintenance_plan_id_fkey"
+            columns: ["maintenance_plan_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_plans"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "bookings_request_id_fkey"
             columns: ["request_id"]
@@ -1356,6 +1478,268 @@ export type Database = {
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      companies: {
+        Row: {
+          allow_split_jobs: boolean
+          assignment_mode: string
+          created_at: string
+          id: string
+          legal_name: string | null
+          logo_url: string | null
+          max_crew: number
+          provider_user_id: string
+          status: string
+          tax_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          allow_split_jobs?: boolean
+          assignment_mode?: string
+          created_at?: string
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          max_crew?: number
+          provider_user_id: string
+          status?: string
+          tax_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          allow_split_jobs?: boolean
+          assignment_mode?: string
+          created_at?: string
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          max_crew?: number
+          provider_user_id?: string
+          status?: string
+          tax_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "companies_provider_user_id_fkey"
+            columns: ["provider_user_id"]
+            isOneToOne: true
+            referencedRelation: "gardener_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "companies_provider_user_id_fkey"
+            columns: ["provider_user_id"]
+            isOneToOne: true
+            referencedRelation: "public_gardener_directory"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      company_applications: {
+        Row: {
+          accept_terms: boolean
+          address: string | null
+          answers: Json
+          city_zone: string | null
+          commercial_name: string | null
+          contact_name: string | null
+          created_at: string
+          declaration_truth: boolean
+          email: string | null
+          id: string
+          legal_name: string | null
+          logo_url: string | null
+          owner_works: boolean
+          phone: string | null
+          proof_photos: string[]
+          review_comment: string | null
+          reviewed_at: string | null
+          reviewer_id: string | null
+          services: string[]
+          status: string
+          submitted_at: string | null
+          tax_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          accept_terms?: boolean
+          address?: string | null
+          answers?: Json
+          city_zone?: string | null
+          commercial_name?: string | null
+          contact_name?: string | null
+          created_at?: string
+          declaration_truth?: boolean
+          email?: string | null
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          owner_works?: boolean
+          phone?: string | null
+          proof_photos?: string[]
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          services?: string[]
+          status?: string
+          submitted_at?: string | null
+          tax_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          accept_terms?: boolean
+          address?: string | null
+          answers?: Json
+          city_zone?: string | null
+          commercial_name?: string | null
+          contact_name?: string | null
+          created_at?: string
+          declaration_truth?: boolean
+          email?: string | null
+          id?: string
+          legal_name?: string | null
+          logo_url?: string | null
+          owner_works?: boolean
+          phone?: string | null
+          proof_photos?: string[]
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          services?: string[]
+          status?: string
+          submitted_at?: string | null
+          tax_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      company_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          email: string
+          email_sent_at: string | null
+          expires_at: string
+          id: string
+          revoked_at: string | null
+          token_hash: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          email: string
+          email_sent_at?: string | null
+          expires_at: string
+          id?: string
+          revoked_at?: string | null
+          token_hash: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          email?: string
+          email_sent_at?: string | null
+          expires_at?: string
+          id?: string
+          revoked_at?: string | null
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_invitations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_member_services: {
+        Row: {
+          created_at: string
+          member_id: string
+          service_id: string
+        }
+        Insert: {
+          created_at?: string
+          member_id: string
+          service_id: string
+        }
+        Update: {
+          created_at?: string
+          member_id?: string
+          service_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_member_services_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "company_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_member_services_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_members: {
+        Row: {
+          company_id: string
+          counts_as_labour: boolean
+          id: string
+          joined_at: string
+          left_at: string | null
+          role: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          counts_as_labour?: boolean
+          id?: string
+          joined_at?: string
+          left_at?: string | null
+          role?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          counts_as_labour?: boolean
+          id?: string
+          joined_at?: string
+          left_at?: string | null
+          role?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -1502,22 +1886,7 @@ export type Database = {
           terms_accepted?: boolean | null
           terms_accepted_at?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "gardener_licenses_gardener_id_fkey_profiles"
-            columns: ["gardener_id"]
-            isOneToOne: false
-            referencedRelation: "gardener_profiles"
-            referencedColumns: ["user_id"]
-          },
-          {
-            foreignKeyName: "gardener_licenses_gardener_id_fkey_profiles"
-            columns: ["gardener_id"]
-            isOneToOne: false
-            referencedRelation: "public_gardener_directory"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       gardener_profiles: {
         Row: {
@@ -1550,6 +1919,7 @@ export type Database = {
           professional_photo_url: string | null
           promotional_flyer_url: string | null
           proof_photos: string[] | null
+          provider_kind: string
           rating: number | null
           rating_average: number | null
           rating_count: number | null
@@ -1593,6 +1963,7 @@ export type Database = {
           professional_photo_url?: string | null
           promotional_flyer_url?: string | null
           proof_photos?: string[] | null
+          provider_kind?: string
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -1636,6 +2007,7 @@ export type Database = {
           professional_photo_url?: string | null
           promotional_flyer_url?: string | null
           proof_photos?: string[] | null
+          provider_kind?: string
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -1705,6 +2077,176 @@ export type Database = {
             columns: ["service_id"]
             isOneToOne: false
             referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_plans: {
+        Row: {
+          anchor_date: string
+          cancelled_at: string | null
+          cancelled_by: string | null
+          client_id: string
+          client_latitude: number | null
+          client_longitude: number | null
+          created_at: string
+          economic_snapshot: Json
+          estimated_hours: number
+          frequency: string
+          id: string
+          input_payload: Json
+          items: Json | null
+          next_visit_date: string
+          pricing_snapshot: Json
+          pricing_version: string
+          provider_config_version: string
+          provider_id: string
+          provider_latitude: number | null
+          provider_longitude: number | null
+          service_id: string
+          source_booking_id: string | null
+          source_quote_id: string | null
+          start_hour: number
+          status: string
+          total_price: number
+        }
+        Insert: {
+          anchor_date: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_id: string
+          client_latitude?: number | null
+          client_longitude?: number | null
+          created_at?: string
+          economic_snapshot?: Json
+          estimated_hours: number
+          frequency: string
+          id?: string
+          input_payload?: Json
+          items?: Json | null
+          next_visit_date: string
+          pricing_snapshot?: Json
+          pricing_version: string
+          provider_config_version: string
+          provider_id: string
+          provider_latitude?: number | null
+          provider_longitude?: number | null
+          service_id: string
+          source_booking_id?: string | null
+          source_quote_id?: string | null
+          start_hour: number
+          status?: string
+          total_price: number
+        }
+        Update: {
+          anchor_date?: string
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_id?: string
+          client_latitude?: number | null
+          client_longitude?: number | null
+          created_at?: string
+          economic_snapshot?: Json
+          estimated_hours?: number
+          frequency?: string
+          id?: string
+          input_payload?: Json
+          items?: Json | null
+          next_visit_date?: string
+          pricing_snapshot?: Json
+          pricing_version?: string
+          provider_config_version?: string
+          provider_id?: string
+          provider_latitude?: number | null
+          provider_longitude?: number | null
+          service_id?: string
+          source_booking_id?: string | null
+          source_quote_id?: string | null
+          start_hour?: number
+          status?: string
+          total_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_plans_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_plans_source_booking_id_fkey"
+            columns: ["source_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_plans_source_quote_id_fkey"
+            columns: ["source_quote_id"]
+            isOneToOne: false
+            referencedRelation: "booking_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_visits: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          date: string | null
+          id: string
+          notified_at: string | null
+          plan_id: string
+          planned_date: string
+          quote_id: string | null
+          start_hour: number | null
+          status: string
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          date?: string | null
+          id?: string
+          notified_at?: string | null
+          plan_id: string
+          planned_date: string
+          quote_id?: string | null
+          start_hour?: number | null
+          status: string
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          date?: string | null
+          id?: string
+          notified_at?: string | null
+          plan_id?: string
+          planned_date?: string
+          quote_id?: string | null
+          start_hour?: number | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_visits_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_visits_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_visits_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "booking_quotes"
             referencedColumns: ["id"]
           },
         ]
@@ -2101,6 +2643,7 @@ export type Database = {
           has_phytosanitary_license: boolean | null
           is_available: boolean | null
           max_distance: number | null
+          provider_kind: string | null
           rating: number | null
           rating_average: number | null
           rating_count: number | null
@@ -2115,6 +2658,7 @@ export type Database = {
           has_phytosanitary_license?: boolean | null
           is_available?: boolean | null
           max_distance?: number | null
+          provider_kind?: string | null
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -2129,6 +2673,7 @@ export type Database = {
           has_phytosanitary_license?: boolean | null
           is_available?: boolean | null
           max_distance?: number | null
+          provider_kind?: string | null
           rating?: number | null
           rating_average?: number | null
           rating_count?: number | null
@@ -2165,27 +2710,101 @@ export type Database = {
       }
     }
     Functions: {
+      accept_company_invitation: { Args: { p_token: string }; Returns: Json }
+      admin_review_company_application: {
+        Args: { p_application_id: string; p_comment?: string; p_status: string }
+        Returns: Json
+      }
       admin_review_gardener_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: undefined
+      }
+      assign_booking_hours: {
+        Args: { p_booking_id: string; p_workers: string[] }
+        Returns: Json
+      }
+      assign_booking_worker: {
+        Args: { p_booking_id: string; p_worker_id: string }
+        Returns: Json
       }
       attach_manual_declaration_to_booking: {
         Args: { p_booking_id: string; p_declaration_id: string }
         Returns: undefined
       }
       auto_complete_due_bookings: { Args: never; Returns: number }
+      booking_assignment_candidates: {
+        Args: { p_booking_id: string }
+        Returns: {
+          full_name: string
+          is_current: boolean
+          is_free: boolean
+          user_id: string
+        }[]
+      }
+      booking_hour_options: {
+        Args: { p_booking_id: string }
+        Returns: {
+          current_hours: number[]
+          free_hours: number[]
+          full_name: string
+          user_id: string
+        }[]
+      }
+      booking_replace_candidates: {
+        Args: { p_booking_id: string; p_from: string }
+        Returns: {
+          full_name: string
+          is_free: boolean
+          user_id: string
+        }[]
+      }
+      booking_replan_cells: {
+        Args: { p_booking_id: string; p_date: string; p_start_hour: number }
+        Returns: {
+          date: string
+          hour_block: number
+          worker_id: string
+        }[]
+      }
+      booking_requires_phyto_license: {
+        Args: { p_booking_id: string }
+        Returns: boolean
+      }
       booking_service_end: {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
       }
+      booking_service_ids: { Args: { p_booking_id: string }; Returns: string[] }
+      booking_service_label: { Args: { p_booking_id: string }; Returns: string }
       booking_service_start: {
         Args: { p_booking: Database["public"]["Tables"]["bookings"]["Row"] }
         Returns: string
+      }
+      booking_slot_workers: {
+        Args: { p_booking_id: string; p_date: string; p_start_hour: number }
+        Returns: string[]
+      }
+      booking_worker_for_client: {
+        Args: { p_booking_id: string }
+        Returns: Json
+      }
+      can_read_booking_items: {
+        Args: { p_booking_id: string }
+        Returns: boolean
+      }
+      can_read_company_member: {
+        Args: { p_member_id: string }
+        Returns: boolean
+      }
+      can_read_maintenance_plan: {
+        Args: { p_plan_id: string }
+        Returns: boolean
       }
       cancel_booking: {
         Args: { p_booking_id: string; p_reason?: string }
         Returns: Json
       }
+      cancel_maintenance_plan: { Args: { p_plan_id: string }; Returns: Json }
       chat_display_name: {
         Args: { p_fallback: string; p_user_id: string }
         Returns: string
@@ -2205,6 +2824,13 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: string[]
       }
+      claim_maintenance_notifications: {
+        Args: { p_limit?: number }
+        Returns: {
+          email_type: string
+          visit_id: string
+        }[]
+      }
       cleanup_expired_booking_payment_state: {
         Args: {
           p_end_date?: string
@@ -2214,6 +2840,11 @@ export type Database = {
         Returns: Json
       }
       cleanup_expired_requests: { Args: never; Returns: undefined }
+      company_schedule: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      company_team_overview: { Args: never; Returns: Json }
       complete_booking_batch_operation: {
         Args: {
           p_action: string
@@ -2295,6 +2926,16 @@ export type Database = {
         }
         Returns: Json
       }
+      create_company_invitation: { Args: { p_email: string }; Returns: Json }
+      create_maintenance_plan: {
+        Args: { p_booking_id: string; p_frequency: string }
+        Returns: Json
+      }
+      current_account_role: { Args: never; Returns: string }
+      deactivate_company_member: {
+        Args: { p_member_id: string }
+        Returns: Json
+      }
       expire_due_booking_requests: { Args: never; Returns: number }
       expire_due_phytosanitary_licenses: { Args: never; Returns: number }
       expire_pending_price_change: {
@@ -2306,6 +2947,8 @@ export type Database = {
         Returns: number
       }
       format_eur: { Args: { p_value: number }; Returns: string }
+      free_run: { Args: { p_from: number; p_hours: number[] }; Returns: number }
+      generate_maintenance_proposals: { Args: never; Returns: Json }
       generate_recurring_slots: {
         Args: { force_regenerate?: boolean; target_gardener_id: string }
         Returns: undefined
@@ -2319,7 +2962,13 @@ export type Database = {
         Returns: Json
       }
       get_rebook_payload: { Args: { p_booking_id: string }; Returns: Json }
+      has_valid_phyto_license: { Args: { p_user_id: string }; Returns: boolean }
+      invitation_preview: { Args: { p_token: string }; Returns: Json }
       is_admin: { Args: never; Returns: boolean }
+      is_booking_assignee: { Args: { p_booking_id: string }; Returns: boolean }
+      is_company_member: { Args: { p_company_id: string }; Returns: boolean }
+      is_company_owner: { Args: { p_company_id: string }; Returns: boolean }
+      is_my_team_member: { Args: { p_user_id: string }; Returns: boolean }
       issue_booking_confirmation_token: {
         Args: {
           p_booking_id: string
@@ -2339,9 +2988,34 @@ export type Database = {
           payment_intent_id: string
         }[]
       }
+      maintenance_find_slot: {
+        Args: { p_date: string; p_plan_id: string }
+        Returns: {
+          end_date: string
+          first_day_hours: number
+          slot_date: string
+          slot_hour: number
+        }[]
+      }
+      maintenance_next_date: {
+        Args: { p_date: string; p_frequency: string }
+        Returns: string
+      }
+      maintenance_quote_is_intact: {
+        Args: { p_quote_id: string }
+        Returns: boolean
+      }
+      maintenance_visit_checkout: {
+        Args: { p_visit_id: string }
+        Returns: Json
+      }
       mark_booking_payment_settled: {
         Args: { p_attempt_id: string; p_result: string }
         Returns: undefined
+      }
+      mark_company_invitation_emailed: {
+        Args: { p_caller: string; p_invitation_id: string; p_token: string }
+        Returns: Json
       }
       mark_confirmation_prompt_failed: {
         Args: { p_booking_id: string; p_error?: string }
@@ -2352,6 +3026,80 @@ export type Database = {
         Returns: undefined
       }
       mark_gardener_finished: { Args: { p_booking_id: string }; Returns: Json }
+      my_busy_hours: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          date: string
+          hour: number
+          status: string
+        }[]
+      }
+      my_company_id: { Args: never; Returns: string }
+      my_company_membership: { Args: never; Returns: Json }
+      my_jobs: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          assignment_pending: boolean
+          booking_id: string
+          client_address: string
+          client_name: string
+          client_phone: string
+          company_name: string
+          date: string
+          duration_hours: number
+          end_date: string
+          finished_at: string
+          labour_hours: number
+          my_days: Json
+          my_hours: number[]
+          notes: string
+          service_name: string
+          service_start: string
+          start_time: string
+          status: string
+          team_size: number
+        }[]
+      }
+      my_maintenance_plans: { Args: never; Returns: Json }
+      pick_provider_worker: {
+        Args: {
+          p_date: string
+          p_end_hour: number
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+          p_start_hour: number
+        }
+        Returns: string
+      }
+      pick_provider_workers_by_hour: {
+        Args: {
+          p_date: string
+          p_end_hour: number
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+          p_start_hour: number
+        }
+        Returns: string[]
+      }
+      plan_booking_cells: {
+        Args: {
+          p_date: string
+          p_extra_services?: string[]
+          p_ignore_booking?: string
+          p_labour: number
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+          p_start_hour: number
+        }
+        Returns: {
+          date: string
+          hour_block: number
+          worker_id: string
+        }[]
+      }
       post_booking_system_message: {
         Args: { p_booking_id: string; p_text: string }
         Returns: undefined
@@ -2378,6 +3126,53 @@ export type Database = {
           p_reason?: string
         }
         Returns: Json
+      }
+      propose_booking_reschedule: {
+        Args: {
+          p_booking_id: string
+          p_date: string
+          p_reason?: string
+          p_start_hour: number
+        }
+        Returns: Json
+      }
+      provider_allows_split_jobs: {
+        Args: { p_provider: string }
+        Returns: boolean
+      }
+      provider_free_hours: {
+        Args: {
+          p_end: string
+          p_exclude_hold_ids?: string[]
+          p_extra_service_ids?: string[]
+          p_provider_ids: string[]
+          p_requires_license?: boolean
+          p_service_id: string
+          p_start: string
+        }
+        Returns: {
+          date: string
+          hour: number
+          provider_id: string
+          worker_id: string
+        }[]
+      }
+      provider_max_crew: { Args: { p_provider: string }; Returns: number }
+      provider_workers: {
+        Args: {
+          p_provider: string
+          p_requires_license?: boolean
+          p_service: string
+        }
+        Returns: string[]
+      }
+      provider_workers_all: {
+        Args: {
+          p_provider: string
+          p_requires_license?: boolean
+          p_services: string[]
+        }
+        Returns: string[]
       }
       purge_stale_ai_analysis_quota: { Args: never; Returns: number }
       record_incident_money_result: {
@@ -2424,6 +3219,14 @@ export type Database = {
         Args: { p_booking_id: string }
         Returns: undefined
       }
+      release_maintenance_notification: {
+        Args: { p_visit_id: string }
+        Returns: undefined
+      }
+      replace_booking_worker: {
+        Args: { p_booking_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       report_booking_incident: {
         Args: { p_booking_id: string; p_description: string; p_kind: string }
         Returns: Json
@@ -2431,6 +3234,10 @@ export type Database = {
       report_booking_no_show: {
         Args: { p_booking_id: string; p_reason?: string }
         Returns: Json
+      }
+      reschedule_options: {
+        Args: { p_booking_id: string; p_date: string }
+        Returns: number[]
       }
       reserve_booking_schedule: {
         Args: { p_booking_id: string }
@@ -2467,6 +3274,10 @@ export type Database = {
         }
         Returns: Json
       }
+      respond_booking_reschedule: {
+        Args: { p_accept: boolean; p_booking_id: string }
+        Returns: Json
+      }
       respond_to_incident: {
         Args: { p_incident_id: string; p_response: string }
         Returns: Json
@@ -2479,17 +3290,41 @@ export type Database = {
         Args: { p_expires_at?: string; p_license_id: string; p_status: string }
         Returns: Json
       }
+      revoke_company_invitation: {
+        Args: { p_invitation_id: string }
+        Returns: Json
+      }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }
       safe_numeric: { Args: { p_value: string }; Returns: number }
+      set_company_allow_split_jobs: {
+        Args: { p_allow: boolean }
+        Returns: Json
+      }
+      set_company_assignment_mode: { Args: { p_mode: string }; Returns: Json }
+      set_company_max_crew: { Args: { p_max: number }; Returns: Json }
+      set_company_member_services: {
+        Args: { p_member_id: string; p_service_ids: string[] }
+        Returns: Json
+      }
+      set_company_owner_works: { Args: { p_works: boolean }; Returns: Json }
       set_incident_in_review: { Args: { p_incident_id: string }; Returns: Json }
       set_review_hidden: {
         Args: { p_hidden: boolean; p_reason?: string; p_review_id: string }
         Returns: Json
       }
       shares_booking_with: { Args: { target_user: string }; Returns: boolean }
+      signup_role_from_metadata: { Args: { p_meta: Json }; Returns: string }
+      submit_company_application: {
+        Args: { p_application_id: string }
+        Returns: Json
+      }
       update_own_review: {
         Args: { p_comment: string; p_rating: number; p_review_id: string }
         Returns: Json
+      }
+      worker_free_at: {
+        Args: { p_date: string; p_hour: number; p_worker: string }
+        Returns: boolean
       }
     }
     Enums: {

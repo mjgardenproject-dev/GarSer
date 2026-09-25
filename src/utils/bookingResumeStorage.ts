@@ -342,6 +342,8 @@ function isValidBookingDataPayload(value: unknown): value is Record<string, unkn
     ['phytosanitaryZones', (input) => input == null || Array.isArray(input)],
     ['weedingZones', (input) => input == null || Array.isArray(input)],
     ['servicesData', (input) => input == null || isPlainObject(input)],
+    ['activeServiceIndex', (input) => input == null || (isFiniteNumber(input) && Number(input) >= 0)],
+    ['serviceInputs', (input) => input == null || isPlainObject(input)],
     ['bookingPhotoContract', (input) => input == null || isValidBookingPhotoContract(input)],
   ];
 

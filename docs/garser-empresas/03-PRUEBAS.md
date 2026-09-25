@@ -481,7 +481,7 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F0-3 | Consulta 1 de `01-PLAN-Y-PROGRESO.md` §5b: solo aparece el admin legítimo | F0 | ✅ 2026-09-25: solo el admin del usuario |
 | P-F0-4 | `select count(*) from auth.users u where not exists (select 1 from profiles p where p.user_id=u.id)` → 0 | F0 | ✅ 2026-09-25: 0 (F0 rellenó 7) |
 | P-F0-5 | Entrar como jardinero aprobado en el móvil: la barra inferior dice «Panel» | F0 | ⬜ |
-| P-F0-6 | Panel de admin → Usuarios → Monitor de Roles: 0 inconsistencias, y ningún jardinero pendiente marcado | F0 | ⬜ |
+| P-F0-6 | Panel de admin → Usuarios → Monitor de Roles: 0 inconsistencias, y ningún jardinero pendiente marcado | F0 | ✅ 2026-09-25 (chat, sesión de admin): 8 usuarios, 8 coherentes, 0 inconsistencias; «Solicitudes de Empresas» y «Certificados Fito.» cargan sin errores |
 | P-F1-1 | **Justo tras migrar:** hacer una reserva real pagada con Stripe (modo prueba) y comprobar en el SQL Editor que sus filas de `booking_blocks` tienen `assignee_id` = el jardinero | F1 | ⬜ |
 | P-F1-2 | El jardinero propone una hora más en una reserva pendiente y el cliente acepta: la reserva se confirma y la agenda crece | F1 | ⬜ |
 | P-F1-3 | Cancelar esa reserva: las horas vuelven a estar libres en la web | F1 | ⬜ |

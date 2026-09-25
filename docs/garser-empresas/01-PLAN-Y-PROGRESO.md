@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **todas las fases hechas · fusión en curso: BD y funciones ya en producción (2026-09-25), falta la web (§5 punto 8) y las pruebas P-** · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **✅ FUSIONADO EN PRODUCCIÓN (2026-09-25): BD, funciones y web (#35); H-35 arreglado (#36, #37) · en curso: batería P- (03-PRUEBAS §3)** · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -838,7 +838,9 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 > nuevos presentes; 0 usuarios sin perfil (F0 rellenó los 7); comprobaciones previas otra vez a
 > 0; las 5 funciones arrancan; `provider_free_hours` y `plan_booking_cells` responden con datos
 > reales. **Ojo, H-34:** en producción no hay ningún servicio activo, nadie es reservable.
-> **Falta el punto 8** (web) y las pruebas P-.
+> **Punto 8 hecho el 2026-09-25:** PR #35 fusionada por el usuario (`7e38cfd`), Vercel publicó
+> garser.es con la versión de Empresas. Arreglos tras la fusión: H-35 (#36 `eb5603a`, #37
+> `7b33a5e`). Batería P- en curso: ver `03-PRUEBAS.md` §3.
 
 **El día de la fusión — en este orden:**
 

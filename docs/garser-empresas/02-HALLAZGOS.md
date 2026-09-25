@@ -593,6 +593,8 @@ Publicado (#36) y comprobado en garser.es: el calendario abre directamente octub
 horas y la tarjeta mantiene 50,63 €. Al volver a septiembre a mano no hay error, pero el mes
 salía **sin casillas** (el servidor manda `days: []`). Retoque (#37): se pintan los días del
 mes, todos en gris; la prueba lo comprueba (31 días de mayo, todos desactivados).
+Publicado (#37, `7b33a5e`) y comprobado en garser.es: septiembre sale con sus 30 días en gris, sin
+error, y la tarjeta mantiene 50,63 €. **Cerrado en producción.**
 
 ### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟢 Resuelto por el usuario (2026-09-25)
 

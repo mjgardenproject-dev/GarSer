@@ -566,6 +566,23 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-35 · Reservar: un mes sin días reservables rompe la pantalla del profesional — 🟡 Abierto (anterior a Empresas)
+
+Visto el 2026-09-25 en garser.es, justo tras la fusión, en el paso 4 del embudo (móvil, sin
+sesión). El jardinero de producción pide 168 h de antelación, así que septiembre no tiene ningún
+día reservable. `booking-authority` `month_days` contesta bien (`quote: null, days: []` y una
+`exclusion`; la telemetría lo registra como `availability_calendar_loaded` con 0 días), pero
+`ProvidersPage.rebuildMonth` (`src/pages/reserva/ProvidersPage.tsx:~308`) guarda ese `quote: null`
+como presupuesto del profesional y lee `quote.availability` → excepción → el cliente ve «No se ha
+podido cargar la disponibilidad» y la tarjeta pasa a «No disponible». Pulsando «→» (octubre) todo
+funciona: 50,63 €, 3 h, horas desde el 05/10, resumen correcto hasta «Accede para continuar».
+**Es anterior a Empresas:** el mismo código está en `6eef75c` (`ProvidersPage.tsx:299-300`) y el
+servidor ya devolvía `quote: null` en ese caso. Le pasa a cualquier profesional cuando el mes que
+se abre no tiene días reservables (antelación larga, fin de mes). **Arreglo propuesto** (pequeño,
+fuera del alcance del proyecto; pendiente de que el usuario lo apruebe): con `quote: null`, no
+tocar el presupuesto de la tarjeta, pintar el mes vacío sin error y, si el primer hueco está en
+otro mes, abrir ese mes.
+
 ### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟢 Resuelto por el usuario (2026-09-25)
 
 Visto el 2026-09-25, tras aplicar las migraciones y desplegar las funciones. La web de reservas

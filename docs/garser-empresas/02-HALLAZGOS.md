@@ -566,7 +566,7 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
-### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟡 Abierto (datos, no código)
+### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟢 Resuelto por el usuario (2026-09-25)
 
 Visto el 2026-09-25, tras aplicar las migraciones y desplegar las funciones. La web de reservas
 de producción (`booking-authority`, `preview_providers` de césped) contesta bien pero excluye a
@@ -577,6 +577,11 @@ jardinero: `provider_free_hours` devuelve sus 40 horas libres (= sus 40 horas di
 `plan_booking_cells` aparta 2 horas para un trabajo de 2 h. **Consecuencia:** las pruebas P- que
 pagan (P-F1-1, P-F4-1, P-F8-1, P-F9-1) necesitan antes un profesional con un servicio activo
 (activarlo desde su panel de precios, o dar de alta uno de prueba).
+
+**Resolución:** el usuario activó «Corte de césped» (15 €/h, 150 m²/h). Comprobado contra
+producción: 300 m² = 2 h / 30 € (gestión 3,75 €), elegible, primer hueco 06/10 a las 9:00. Antes
+de esa fecha no sale nada porque ese jardinero pide **168 h de antelación**
+(`recurring_availability_settings.min_notice_hours`, regla anterior a Empresas): no es un fallo.
 
 ### H-33 · «Solicitudes» no recibía los datos de F7 y F8 — 🟢 Resuelto en F9.4
 

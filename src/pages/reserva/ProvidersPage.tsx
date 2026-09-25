@@ -316,7 +316,14 @@ const ProvidersPage: React.FC = () => {
         // se pinta vacío y se deja el presupuesto de la tarjeta como estaba. Si el mes se abrió
         // por la fecha elegida (no porque el cliente haya cambiado de mes) y el primer hueco del
         // profesional cae más adelante, se salta a él.
-        setMonthDays(days || []);
+        // El servidor manda `days: []`: se pintan los días del mes, todos en gris.
+        const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+        setMonthDays(days && days.length > 0 ? days : Array.from({ length: daysInMonth }, (_, i) => ({
+          date: fmt(new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1)),
+          day: i + 1,
+          disabled: true,
+          count: 0,
+        })));
         setAvailabilityError('');
         const earliest = previewQuotes[providerId]?.availability?.earliestSlot || earliestByProvider[providerId];
         const monthEnd = fmt(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0));

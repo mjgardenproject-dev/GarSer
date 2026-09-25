@@ -480,30 +480,30 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F0-2 | Registrarse como jardinero → fila en `profiles` con rol `gardener` | F0 | ⬜ |
 | P-F0-3 | Consulta 1 de `01-PLAN-Y-PROGRESO.md` §5b: solo aparece el admin legítimo | F0 | ✅ 2026-09-25: solo el admin del usuario |
 | P-F0-4 | `select count(*) from auth.users u where not exists (select 1 from profiles p where p.user_id=u.id)` → 0 | F0 | ✅ 2026-09-25: 0 (F0 rellenó 7) |
-| P-F0-5 | Entrar como jardinero aprobado en el móvil: la barra inferior dice «Panel» | F0 | ⬜ |
+| P-F0-5 | Entrar como jardinero aprobado en el móvil: la barra inferior dice «Panel» | F0 | ✅ 2026-09-25 (chat, sesión de jardinero, móvil): la barra inferior dice «Panel» |
 | P-F0-6 | Panel de admin → Usuarios → Monitor de Roles: 0 inconsistencias, y ningún jardinero pendiente marcado | F0 | ✅ 2026-09-25 (chat, sesión de admin): 8 usuarios, 8 coherentes, 0 inconsistencias; «Solicitudes de Empresas» y «Certificados Fito.» cargan sin errores |
 | P-F1-1 | **Justo tras migrar:** hacer una reserva real pagada con Stripe (modo prueba) y comprobar en el SQL Editor que sus filas de `booking_blocks` tienen `assignee_id` = el jardinero | F1 | ⬜ |
 | P-F1-2 | El jardinero propone una hora más en una reserva pendiente y el cliente acepta: la reserva se confirma y la agenda crece | F1 | ⬜ |
 | P-F1-3 | Cancelar esa reserva: las horas vuelven a estar libres en la web | F1 | ⬜ |
 | P-F1-4 | `select count(*) from booking_blocks where assignee_id is null` → 0 | F1 | ✅ 2026-09-25: 0 |
-| P-F2-1 | Con una cuenta de cliente, intentar crear una ficha de proveedor por la API (`POST /rest/v1/gardener_profiles`) | F2 | ⬜ → debe dar 403 |
-| P-F2-2 | Con una cuenta de jardinero, intentar cambiar `license_verification_status` por la API | F2 | ⬜ → debe dar 403 |
+| P-F2-1 | Con una cuenta de cliente, intentar crear una ficha de proveedor por la API (`POST /rest/v1/gardener_profiles`) | F2 | ✅ 2026-09-25 (chat, en la BD de producción como `authenticated` con el `sub` del usuario, dentro de una transacción deshecha): cliente → `permission denied for table gardener_profiles` |
+| P-F2-2 | Con una cuenta de jardinero, intentar cambiar `license_verification_status` por la API | F2 | ✅ 2026-09-25 (chat, en la BD de producción como `authenticated` con el `sub` del usuario, dentro de una transacción deshecha): jardinero → `permission denied` (su descripción sí se guarda desde la web: permisos por columna) |
 | P-F2-3 | El admin aprueba una solicitud de jardinero real: aparece su ficha y puede configurar precios | F2 | ⬜ |
-| P-F2-4 | Un jardinero edita su perfil (descripción, zona) desde la web y se guarda | F2 | ⬜ |
+| P-F2-4 | Un jardinero edita su perfil (descripción, zona) desde la web y se guarda | F2 | ✅ 2026-09-25 (chat): descripción editada desde «Mi Perfil» → guardada en la BD (autoguardado) → devuelta a su valor |
 | P-F3-1 | Un jardinero sube un carnet nuevo desde su panel: queda **pendiente** y el admin lo ve para revisar | F3 | ⬜ |
-| P-F3-2 | Intentar crear por la API una licencia con `status: approved` | F3 | ⬜ → debe dar 403 |
+| P-F3-2 | Intentar crear por la API una licencia con `status: approved` | F3 | ✅ 2026-09-25 (chat, en la BD de producción como `authenticated` con el `sub` del usuario, dentro de una transacción deshecha): `new row violates row-level security policy` |
 | P-F3-3 | Registrarse en `garser.es` como empresa, rellenar la encuesta en el móvil y enviarla | F3 | ⬜ |
 | P-F3-4 | Como admin, aprobar esa empresa desde Usuarios → Solicitudes de Empresas; la empresa entra en su panel | F3 | ⬜ |
 | P-F3-5 | Rechazar otra con motivo; la empresa lo ve y puede corregir y reenviar | F3 | ⬜ |
 | P-F3-6 | La empresa aprobada invita a un correo real; desde otro móvil, abrir el enlace, crear la cuenta, **confirmar el correo** y comprobar que al entrar se retoma la invitación y se acepta | F3 | ⬜ |
 | P-F3-7 | El empleado sube su carnet; el admin lo ve con «· empleado de <empresa>» y lo aprueba; la empresa le asigna fitosanitarios | F3 | ⬜ |
-| P-F3-8 | Por la API, con una cuenta de cliente, llamar a `has_valid_phyto_license` con el id de otra persona | F3 | ⬜ → debe dar 403 |
+| P-F3-8 | Por la API, con una cuenta de cliente, llamar a `has_valid_phyto_license` con el id de otra persona | F3 | ✅ 2026-09-25 (chat, en la BD de producción como `authenticated` con el `sub` del usuario, dentro de una transacción deshecha): `permission denied for function has_valid_phyto_license` |
 | P-F3-9 | La empresa invita a un correo real: el correo llega (revisar también la carpeta de spam), con el nombre de la empresa, y su botón abre la invitación | F3 | ⬜ |
 | P-F3-10 | El admin aprueba una empresa: le llega «Tu empresa ya está dada de alta en GarSer» y el botón lleva a su panel | F3 | ⬜ |
 | P-F3-11 | El admin rechaza otra con motivo: le llega el correo con ese motivo y el botón «Corregir y enviar de nuevo» | F3 | ⬜ |
 | P-F4-1 | Con la empresa de prueba y un empleado con horario: reservar y pagar (Stripe en modo prueba) un trabajo de 2 h; comprobar en el SQL Editor que `booking_blocks.assignee_id` es el empleado y la reserva es de la empresa | F4 | ⬜ |
 | P-F4-2 | Un autónomo real sigue apareciendo en el listado con sus mismas horas y precio | F4 | ✅ 2026-09-25 (chat, navegador móvil, sin sesión): el autónomo sale con 50,63 € / 3 h y horas desde el 05/10 (antelación 168 h). Ver H-35 |
-| P-F5-1 | Un autónomo real guarda su horario de una semana en la que tiene una reserva: la hora reservada sigue «Reservado» y no se ofrece a otros clientes | F5 | ⬜ |
+| P-F5-1 | Un autónomo real guarda su horario de una semana en la que tiene una reserva: la hora reservada sigue «Reservado» y no se ofrece a otros clientes | F5 | ⏸ 2026-09-25: el jardinero de producción no tiene reservas futuras; se hace tras P-F1-1 |
 | P-F5-2 | Un empleado real pone su horario en «Mi trabajo» → «Semana» → «Mi horario»; la empresa recibe una reserva en esas horas y le toca a él | F5 | ⬜ |
 | P-F5-3 | La empresa cambia quién va en un trabajo confirmado: a los dos les llega su correo | F5 | ⬜ |
 | P-F5-4 | El cliente de esa reserva ve «Irá …» con nombre y foto el día antes, y no antes | F5 | ⬜ |

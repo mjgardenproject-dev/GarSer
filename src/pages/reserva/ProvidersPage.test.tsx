@@ -319,6 +319,10 @@ describe('ProvidersPage', () => {
         expect(mocks.fetchProviderMonthDays.mock.calls.filter(([p]) => p.monthDate === '2026-05-01').length).toBe(2);
       });
       await waitFor(() => expect(document.body.textContent).toMatch(/mayo/i));
+      // Los 31 días de mayo, en gris (antes el mes salía sin ninguna casilla).
+      const may = await screen.findAllByRole('button', { name: /^Seleccionar 2026-05-/ });
+      expect(may).toHaveLength(31);
+      expect(may.every((day) => (day as HTMLButtonElement).disabled)).toBe(true);
       const rendered = document.body.textContent || '';
       expect(rendered).not.toContain('No se ha podido cargar la disponibilidad');
       expect(rendered).toContain('177,75 €');

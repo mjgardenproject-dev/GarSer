@@ -589,6 +589,10 @@ día se pintan vacíos sin error y la tarjeta conserva su presupuesto; si el mes
 fecha elegida y el primer hueco del profesional cae después, se salta a ese mes (si el cliente
 vuelve atrás a mano, se le deja allí). 2 pruebas nuevas en `ProvidersPage.test.tsx` (fallan sin
 el arreglo). Rama `fix/h35-calendario-mes-vacio`.
+Publicado (#36) y comprobado en garser.es: el calendario abre directamente octubre con sus
+horas y la tarjeta mantiene 50,63 €. Al volver a septiembre a mano no hay error, pero el mes
+salía **sin casillas** (el servidor manda `days: []`). Retoque (#37): se pintan los días del
+mes, todos en gris; la prueba lo comprueba (31 días de mayo, todos desactivados).
 
 ### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟢 Resuelto por el usuario (2026-09-25)
 

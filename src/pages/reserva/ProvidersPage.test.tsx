@@ -267,4 +267,61 @@ describe('ProvidersPage', () => {
       );
     });
   });
+
+  // H-35: un mes (o un día) sin horas reservables llega del servidor con `quote: null`. Antes la
+  // pantalla lo leía como un presupuesto → «No se ha podido cargar la disponibilidad» y la
+  // tarjeta en «No disponible». Visto en garser.es con un profesional de 168 h de antelación.
+  describe('mes sin días reservables (H-35)', () => {
+    const juneQuote = {
+      ...quote,
+      availability: {
+        ...quote.availability,
+        requestedDate: '2026-06-03',
+        calendarDays: [{ date: '2026-06-03', day: 3, disabled: false, count: 2 }],
+        earliestSlot: { ...quote.availability.earliestSlot, date: '2026-06-03' },
+      },
+    };
+
+    beforeEach(() => {
+      mocks.previewProviderQuotes.mockResolvedValue({
+        quotes: { 'gardener-1': juneQuote },
+        eligibleProviderIds: ['gardener-1'],
+        earliestByProvider: { 'gardener-1': { date: '2026-06-03', startHour: 9 } },
+      });
+      mocks.fetchProviderMonthDays.mockImplementation(async ({ monthDate }: { monthDate: string }) => (
+        monthDate === '2026-06-01'
+          ? { quote: juneQuote, days: juneQuote.availability.calendarDays }
+          : { quote: null, days: [] }
+      ));
+      mocks.fetchProviderValidHours.mockImplementation(async ({ date }: { date: string }) => (
+        date === '2026-06-03' ? { quote: juneQuote, validHours: [9, 10] } : { quote: null, validHours: [] }
+      ));
+    });
+
+    it('no da error, conserva el presupuesto y salta al mes del primer hueco', async () => {
+      render(<ProvidersPage />);
+
+      expect(await screen.findByRole('button', { name: '09:00' })).toBeTruthy();
+      expect(mocks.fetchProviderMonthDays).toHaveBeenCalledWith(expect.objectContaining({ monthDate: '2026-05-01' }));
+      expect(mocks.fetchProviderMonthDays).toHaveBeenCalledWith(expect.objectContaining({ monthDate: '2026-06-01' }));
+      const rendered = document.body.textContent || '';
+      expect(rendered).not.toContain('No se ha podido cargar la disponibilidad');
+      expect(rendered).not.toContain('No disponible');
+      expect(rendered).toContain('177,75 €');
+    });
+
+    it('si el cliente vuelve al mes vacío, lo ve vacío y sin error (no le devuelve al otro)', async () => {
+      render(<ProvidersPage />);
+      await screen.findByRole('button', { name: '09:00' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Ver mes anterior' }));
+      await waitFor(() => {
+        expect(mocks.fetchProviderMonthDays.mock.calls.filter(([p]) => p.monthDate === '2026-05-01').length).toBe(2);
+      });
+      await waitFor(() => expect(document.body.textContent).toMatch(/mayo/i));
+      const rendered = document.body.textContent || '';
+      expect(rendered).not.toContain('No se ha podido cargar la disponibilidad');
+      expect(rendered).toContain('177,75 €');
+    });
+  });
 });

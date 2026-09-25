@@ -266,11 +266,12 @@ export async function fetchProviderValidHours(params: {
   serviceId: string;
   providerId: string;
   date: string;
-}): Promise<{ quote: ProviderQuotePreview; validHours: number[]; slotPlans: Record<number, BookingQuoteSlotSelection> }> {
+}): Promise<{ quote: ProviderQuotePreview | null; validHours: number[]; slotPlans: Record<number, BookingQuoteSlotSelection> }> {
   try {
     // GarSer Empresas (F7): `slotPlans` trae, por hora, la forma del trabajo (personas, días,
     // fin). Una versión antigua del servidor no lo manda: se trata como vacío.
-    const response = await invokeAuthority<{ quote: ProviderQuotePreview; validHours: number[]; slotPlans?: Record<number, BookingQuoteSlotSelection> }>({
+    // H-35: un día sin horas reservables llega con `quote: null` (y una `exclusion`), no con error.
+    const response = await invokeAuthority<{ quote: ProviderQuotePreview | null; validHours: number[]; slotPlans?: Record<number, BookingQuoteSlotSelection> }>({
       action: 'valid_hours',
       serviceId: params.serviceId,
       providerId: params.providerId,
@@ -306,9 +307,10 @@ export async function fetchProviderMonthDays(params: {
   serviceId: string;
   providerId: string;
   monthDate: string;
-}): Promise<{ quote: ProviderQuotePreview; days: ProviderMonthDay[] }> {
+}): Promise<{ quote: ProviderQuotePreview | null; days: ProviderMonthDay[] }> {
   try {
-    const response = await invokeAuthority<{ quote: ProviderQuotePreview; days: ProviderMonthDay[] }>({
+    // H-35: un mes sin días reservables llega con `quote: null` y `days: []`, no con error.
+    const response = await invokeAuthority<{ quote: ProviderQuotePreview | null; days: ProviderMonthDay[] }>({
       action: 'month_days',
       serviceId: params.serviceId,
       providerId: params.providerId,

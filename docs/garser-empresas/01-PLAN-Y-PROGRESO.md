@@ -102,6 +102,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D18 | ¿Cada cuánto? (2026-09-24) | **Semanal, quincenal o mensual**, a elección del cliente. | | F9 |
 | D19 | ¿Precio de cada visita? (2026-09-24) | **El del primer presupuesto**, fijo mientras dure el plan (mismo motor, sin descuentos). | Un cambio de tarifas del profesional vale para planes nuevos. | F9 |
 | D20 | ¿Quién ofrece planes? (2026-09-24) | **Todos** (autónomos y empresas). | | F9 |
+| D21 | ¿Cómo entra el empleado invitado que no tiene cuenta? (2026-09-26) | **«La manera más fácil y rápida pero segura»**: pone nombre y contraseña en la propia invitación y entra directo a su panel, sin correo de confirmación. | Ver H-39. Si ya tiene cuenta con ese correo, entra y se une en el mismo paso. | Tras la fusión |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -882,6 +883,11 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
    batería), para que `main` tenga el mismo código que las funciones de producción.
 2. **D7: validar la encuesta de alta de empresas.** Sigue en borrador (§3, «D7 — Borrador»):
    producción la usa tal cual. El usuario la revisa; si cambia algo, no hace falta migración.
+2b. **Arreglados tras la fusión (2026-09-26):** H-38 (tarifas por debajo de 1 €: «0,5» se
+   guardaba como 5) y H-39 / D21 (invitación: el empleado pone su contraseña en la invitación y
+   entra directo a su panel; correo nuevo). Despliegue: migración `20260927120000`, funciones
+   `company-invitation-signup` (nueva) y `send-email-notification`, y la web (PR). Pruebas en
+   garser.es: P-H38-1, P-D21-1, P-D21-2.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

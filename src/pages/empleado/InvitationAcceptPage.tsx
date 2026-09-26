@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Loader2, Users } from 'lucide-react';
+import { AlertTriangle, Eye, EyeOff, Loader2, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import GarserLogo from '../../components/common/GarserLogo';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,8 +9,14 @@ import { supabase } from '../../lib/supabase';
 import { clearPendingInvitation, invitationPath, readPendingInvitation, savePendingInvitation } from '../../lib/pendingInvitation';
 
 // Enlace de invitación de una empresa (/invitacion?token=…, GarSer Empresas F3.3). Pública: quien
-// la abre aún puede no tener cuenta. Solo explica y lleva a registrarse o entrar; la aceptación
-// y todas sus reglas (correo, tipo de cuenta, caducidad) las decide accept_company_invitation.
+// la abre aún puede no tener cuenta. D21 / H-39 (2026-09-26): sin sesión, el invitado escribe aquí
+// mismo su nombre y una contraseña y entra directo a su panel (Edge Function
+// company-invitation-signup crea la cuenta ya confirmada y la une al equipo); si ya tiene cuenta
+// con ese correo, entra con su contraseña y se une. Antes tenía que registrarse aparte, confirmar
+// el correo con otro mensaje y volver al enlace en el mismo navegador: casi nunca llegaba.
+// Todas las reglas (correo, tipo de cuenta, caducidad) las decide el servidor.
+
+const MIN_PASSWORD = 8;
 
 type PreviewState = 'valid' | 'revoked' | 'accepted' | 'expired' | 'company_inactive' | 'invalid';
 interface Preview { state: PreviewState; company_name?: string; email?: string }
@@ -37,13 +43,20 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 const InvitationAcceptPage: React.FC = () => {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signIn, signOut } = useAuth();
   const { role, loading: roleLoading, refresh } = useAccount();
   const token = params.get('token') || readPendingInvitation() || '';
 
   const [preview, setPreview] = useState<Preview | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
+  // Sin sesión: crear la cuenta aquí mismo ('signup') o entrar con la que ya tiene ('login').
+  const [mode, setMode] = useState<'signup' | 'login'>('signup');
+  const [fullName, setFullName] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -85,6 +98,13 @@ const InvitationAcceptPage: React.FC = () => {
   const company = preview.company_name || 'Una empresa';
   const back = invitationPath(token);
 
+  const enterTeam = async () => {
+    clearPendingInvitation();
+    await refresh();
+    toast.success(`Ya formas parte de ${company}`);
+    navigate('/mi-trabajo', { replace: true });
+  };
+
   const accept = async () => {
     setAccepting(true);
     setAcceptError(null);
@@ -94,10 +114,71 @@ const InvitationAcceptPage: React.FC = () => {
       setAccepting(false);
       return;
     }
-    clearPendingInvitation();
-    await refresh();
-    toast.success(`Ya formas parte de ${company}`);
-    navigate('/mi-trabajo', { replace: true });
+    await enterTeam();
+  };
+
+  const email = preview.email || '';
+
+  // Cuenta nueva: la crea el servidor ya confirmada (el enlace demuestra que el correo es suyo),
+  // la une al equipo, y aquí se entra con la contraseña que acaba de elegir.
+  const joinWithNewAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setFormError(null);
+    if (fullName.trim().length < 2) { setFormError('Escribe tu nombre.'); return; }
+    if (password.length < MIN_PASSWORD) { setFormError(`La contraseña tiene que tener al menos ${MIN_PASSWORD} caracteres.`); return; }
+    setSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('company-invitation-signup', {
+        body: { token, fullName: fullName.trim(), password },
+      });
+      let body = data as { ok?: boolean; error?: string; message?: string } | null;
+      if (error) {
+        // functions.invoke no lanza en 4xx: el motivo viene en el cuerpo de la respuesta.
+        const context = (error as { context?: Response }).context;
+        body = context ? await context.json().catch(() => null) : null;
+      }
+      if (body?.error === 'account_exists') {
+        setMode('login');
+        setPassword('');
+        setFormError('Ya tienes una cuenta con este correo: entra con tu contraseña para unirte.');
+        return;
+      }
+      if (!body?.ok) {
+        setFormError(body?.message || 'No se ha podido crear tu cuenta. Inténtalo de nuevo.');
+        return;
+      }
+      await signIn(email, password);
+      await enterTeam();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'No se ha podido crear tu cuenta. Inténtalo de nuevo.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Ya tiene cuenta con ese correo: entra y se une en el mismo paso.
+  const joinWithExistingAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setFormError(null);
+    if (!password) { setFormError('Escribe tu contraseña.'); return; }
+    setSubmitting(true);
+    try {
+      await signIn(email, password);
+      const { error } = await supabase.rpc('accept_company_invitation', { p_token: token });
+      if (error) {
+        // La sesión queda abierta y la página pasa a la vista «con sesión»: el motivo (otra
+        // empresa, cuenta de profesional…) se enseña ahí.
+        setAcceptError(error.message || 'No se ha podido aceptar la invitación.');
+        return;
+      }
+      await enterTeam();
+    } catch (err) {
+      setFormError(err instanceof Error && /invalid login/i.test(err.message)
+        ? 'Contraseña incorrecta.'
+        : (err instanceof Error ? err.message : 'No se ha podido entrar.'));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const switchAccount = async () => {
@@ -116,29 +197,75 @@ const InvitationAcceptPage: React.FC = () => {
   );
 
   if (!user) {
+    const inputClass = 'w-full rounded-xl border border-gray-300 px-3 py-3 text-base focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30';
     return (
       <Shell>
         {heading}
-        <p className="mt-4 rounded-xl bg-gray-50 px-3 py-2 text-center text-sm text-gray-700">
-          Usa el correo <span className="font-semibold">{preview.email}</span>
-        </p>
-        <div className="mt-5 space-y-2">
+        <form onSubmit={mode === 'signup' ? joinWithNewAccount : joinWithExistingAccount} className="mt-5 space-y-3" noValidate>
+          <div>
+            <label htmlFor="inv-email" className="mb-1 block text-sm font-medium text-gray-700">Tu correo</label>
+            <input id="inv-email" type="email" value={email} readOnly className={`${inputClass} bg-gray-50 text-gray-600`} />
+          </div>
+          {mode === 'signup' && (
+            <div>
+              <label htmlFor="inv-name" className="mb-1 block text-sm font-medium text-gray-700">Tu nombre</label>
+              <input id="inv-name" type="text" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputClass} />
+            </div>
+          )}
+          <div>
+            <label htmlFor="inv-password" className="mb-1 block text-sm font-medium text-gray-700">
+              {mode === 'signup' ? 'Elige una contraseña' : 'Tu contraseña'}
+            </label>
+            <div className="relative">
+              <input
+                id="inv-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`${inputClass} pr-12`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+              >
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+            {mode === 'signup' && <p className="mt-1 text-xs text-gray-500">Mínimo {MIN_PASSWORD} caracteres. Con ella entrarás los próximos días.</p>}
+          </div>
+          {formError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{formError}</p>}
           <button
-            type="button"
-            onClick={() => navigate('/auth', { state: { initialMode: 'signup', forceClientOnly: true, redirectTo: back } })}
-            className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white shadow-lg shadow-emerald-700/20 hover:bg-emerald-800 active:scale-[0.98]"
+            type="submit"
+            disabled={submitting}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white shadow-lg shadow-emerald-700/20 hover:bg-emerald-800 active:scale-[0.98] disabled:opacity-50"
           >
-            Crear mi cuenta
+            {submitting && <Loader2 className="h-5 w-5 animate-spin" />}
+            {mode === 'signup' ? 'Unirme al equipo' : 'Entrar y unirme'}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate('/auth', { state: { initialMode: 'login', forceClientOnly: true, redirectTo: back } })}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-700 hover:bg-gray-50"
-          >
-            Ya tengo cuenta
-          </button>
+        </form>
+        <div className="mt-4 text-center text-sm">
+          {mode === 'signup' ? (
+            <button type="button" onClick={() => { setMode('login'); setFormError(null); }} className="font-semibold text-emerald-700 underline">
+              Ya tengo cuenta con este correo
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => navigate('/auth', { state: { initialMode: 'login', forceClientOnly: true, redirectTo: back } })}
+                className="block w-full font-semibold text-emerald-700 underline"
+              >
+                He olvidado mi contraseña
+              </button>
+              <button type="button" onClick={() => { setMode('signup'); setFormError(null); }} className="block w-full text-gray-600 underline">
+                No tengo cuenta: crearla
+              </button>
+            </div>
+          )}
         </div>
-        <p className="mt-4 text-center text-xs text-gray-500">Después de crear la cuenta tendrás que confirmar tu correo y volver a entrar.</p>
       </Shell>
     );
   }
@@ -162,7 +289,13 @@ const InvitationAcceptPage: React.FC = () => {
             {role === 'employee' ? (
               <Link to="/mi-trabajo" className="block w-full rounded-xl bg-emerald-700 px-4 py-3 text-center font-bold text-white hover:bg-emerald-800">Ir a mi trabajo</Link>
             ) : role === 'company' ? (
-              <Link to="/empresa" className="block w-full rounded-xl bg-emerald-700 px-4 py-3 text-center font-bold text-white hover:bg-emerald-800">Volver a tu empresa</Link>
+              <>
+                <Link to="/empresa" className="block w-full rounded-xl bg-emerald-700 px-4 py-3 text-center font-bold text-white hover:bg-emerald-800">Volver a tu empresa</Link>
+                {/* Si el enlace se abre en un móvil con la sesión de la empresa: dejarla lista para el empleado. */}
+                <button type="button" onClick={() => { void signOut(); }} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-700 hover:bg-gray-50">
+                  No soy yo: cerrar sesión
+                </button>
+              </>
             ) : (
               <button type="button" onClick={switchAccount} className="w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white hover:bg-emerald-800">
                 Entrar con otra cuenta

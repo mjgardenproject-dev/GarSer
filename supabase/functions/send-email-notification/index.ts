@@ -33,6 +33,7 @@ function serviceLabelOf(row: any): string {
 }
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
 import { cancellationCopy } from '../_shared/bookingEmailCopy.ts';
+import { invitationEmailCopy } from '../_shared/companyEmailCopy.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
 const corsHeaders = {
@@ -759,18 +760,21 @@ Deno.serve(async (req) => {
         footerNote: 'No es definitivo: puedes corregir la información y volver a enviar tu solicitud.',
       };
     } else if (type === 'company_invitation' && invitation) {
-      const company = invitation.company_name || 'Una empresa';
       const expires = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' })
         .format(new Date(invitation.expires_at));
-      subject = `${company} te invita a su equipo en GarSer`;
+      // H-39: dirigido al EMPLEADO, con los pasos de la página (D21: contraseña en la invitación).
+      const copy = invitationEmailCopy({ companyName: invitation.company_name, email: to, expiresLabel: expires });
+      subject = copy.subject;
+      detailPairs = copy.steps;
       opts = {
         title: subject,
-        heading: 'Hola',
-        intro: `${escapeHtml(company)} te invita a unirte a su equipo en GarSer. Tu empresa te asignará los trabajos y los verás desde tu móvil. Para aceptar, crea tu cuenta (o entra) con este mismo correo.`,
-        // La página es inerte para los escáneres de enlaces: aceptar exige pulsar un botón con
-        // la sesión abierta.
-        cta: { label: 'Ver la invitación', url: `${BRAND.site}/invitacion?token=${encodeURIComponent(invitation.token)}` },
-        footerNote: `La invitación caduca el ${expires}. Si no conoces a esta empresa, ignora este correo.`,
+        heading: copy.heading,
+        intro: copy.intro,
+        bodyHtml: detailRows(copy.steps),
+        // La página es inerte para los escáneres de enlaces: unirse exige escribir una contraseña
+        // (o entrar) y pulsar un botón.
+        cta: { label: copy.ctaLabel, url: `${BRAND.site}/invitacion?token=${encodeURIComponent(invitation.token)}` },
+        footerNote: copy.footerNote,
       };
     } else if (type === 'booking_accepted') {
       subject = '¡Tu reserva en GarSer ha sido aceptada!';

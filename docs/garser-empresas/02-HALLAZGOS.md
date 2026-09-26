@@ -566,6 +566,27 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-39 · El empleado invitado no podía llegar a su panel y el correo no le hablaba a él — 🟢 Resuelto (2026-09-26, D21)
+
+Visto por el usuario en producción. **Correo** (`send-email-notification`, `company_invitation`):
+encabezado «Hola», «Tu empresa te asignará…», sin decir «empleado» ni qué hacer. **Acceso:** el
+enlace llevaba a registrarse como «Cliente — permanente» (`AuthForm` con `forceClientOnly`), el
+alta mandaba el correo de confirmación de Supabase (sin `emailRedirectTo`: vuelve a la portada) y
+la invitación solo se retomaba si ese correo se abría en el mismo navegador (token en
+`localStorage`, H-25). En el móvil casi nunca pasa: acababa en «reservar jardinero». Las pruebas de
+F3 lo dieron por bueno porque en local el correo se confirma solo (F3-56); P-F3-6 nunca se hizo.
+**Arreglo (D21, decisión del usuario: «lo más fácil y rápido pero seguro»):** la página
+`/invitacion` pide nombre y contraseña y la Edge Function `company-invitation-signup` crea la
+cuenta **ya confirmada** con el correo de la invitación (lo toma del servidor, nunca de quien llama)
+y la une al equipo con `private.accept_company_invitation_for` (las mismas reglas que
+`accept_company_invitation`, que ahora la usa); si falla la unión, borra la cuenta recién creada.
+Seguridad: el token es de 256 bits, de un solo uso, caduca a los 7 días, solo se guarda su hash y
+solo llegó a ese buzón (como un enlace mágico). Si ya hay cuenta con ese correo: «Entrar y unirme».
+El dueño que abre el enlace con su sesión puede cerrarla («No soy yo»). Correo nuevo en
+`_shared/companyEmailCopy.ts`. **Imprevisto al probarlo en el navegador:**
+`AccountContext.refresh` releía el rol con el usuario de cuando se pintó quien llama (ninguno,
+justo antes de entrar) y lo borraba: ahora usa la sesión actual.
+
 ### H-38 · Las tarifas no admitían precios por debajo de 1 €: «0,5» se guardaba como 5 € — 🟢 Resuelto (2026-09-26, anterior a Empresas, grave)
 
 Encontrado por el usuario en garser.es configurando «Corte de césped»: no podía poner 0,5 €/m².

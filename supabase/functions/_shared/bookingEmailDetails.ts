@@ -16,6 +16,7 @@ import {
   getBookingAmounts,
 } from '../../../src/shared/bookingAmounts.ts';
 import { formatBookingWhen } from './emailBrand.ts';
+import { proposedDurationText } from './bookingEmailCopy.ts';
 
 export type DetailPair = [string, string];
 
@@ -41,13 +42,18 @@ export interface BookingEmailDetails {
     proposed_total_price: number | null;
     proposed_price_reason: string | null;
     cancellation_actor: string | null;
+    duration_hours: number | null;
+    proposed_duration_hours: number | null;
+    price_change_status: string | null;
   };
   serviceName: string;
   whenText: string;
   address: string;
   client: BookingEmailRecipient;
   gardener: BookingEmailRecipient;
-  /** Filas del CAMBIO DE PRECIO propuesto (nuevo precio, nuevo total y motivo). */
+  /** Servicio, fecha y dirección, sin importes (H-37: la cancelación no lleva «Cobrarás»). */
+  basePairs: DetailPair[];
+  /** Filas del CAMBIO DE PRECIO propuesto (nuevo precio, nueva duración, nuevo total y motivo). */
   priceChangeClientPairs: DetailPair[];
   /** Filas del cambio de precio para el JARDINERO: su nuevo importe, íntegro. */
   priceChangeGardenerPairs: DetailPair[];
@@ -60,7 +66,7 @@ export interface BookingEmailDetails {
 }
 
 const BOOKING_COLUMNS =
-  'id, client_id, gardener_id, service_id, status, date, start_time, end_date, total_price, management_fee, management_fee_source, client_address, proposed_total_price, proposed_price_reason, cancellation_actor';
+  'id, client_id, gardener_id, service_id, status, date, start_time, end_date, total_price, management_fee, management_fee_source, client_address, proposed_total_price, proposed_price_reason, cancellation_actor, duration_hours, proposed_duration_hours, price_change_status';
 
 // deno-lint-ignore no-explicit-any
 type AdminClient = any;
@@ -155,10 +161,17 @@ export async function buildBookingEmailDetails(
     ? getBookingAmounts({ ...booking, total_price: proposed })
     : null;
 
+  const newDuration = proposedDurationText({
+    startTime: booking.start_time,
+    durationHours: booking.duration_hours,
+    proposedDurationHours: booking.proposed_duration_hours,
+  });
   const priceChangeClientPairs: DetailPair[] = hasProposal
     ? [
         ...base,
         ['Precio del servicio propuesto', formatEuro(proposed)],
+        // H-37: la nueva duración, como la enseña la web.
+        ...(newDuration ? [['Nueva duración', newDuration] as DetailPair] : []),
         ...(proposedAmounts && proposedAmounts.feeIsKnown
           ? [[`Nuevo ${BOOKING_AMOUNT_LABELS.clientTotal.toLowerCase()}`, formatEuro(proposedAmounts.clientTotal)] as DetailPair]
           : []),
@@ -179,6 +192,7 @@ export async function buildBookingEmailDetails(
     address,
     client,
     gardener,
+    basePairs: base,
     clientPairs,
     gardenerPairs,
     priceChangeClientPairs,

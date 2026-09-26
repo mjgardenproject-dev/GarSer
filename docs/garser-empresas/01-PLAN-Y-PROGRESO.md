@@ -5,7 +5,7 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **todas las fases hechas · fusión en curso: BD y funciones ya en producción (2026-09-25), falta la web (§5 punto 8) y las pruebas P-** · ⏸ HITO tras F5 · D7 en borrador para validar
+**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **✅ FUSIONADO EN PRODUCCIÓN (2026-09-25): BD, funciones y web (#35); H-35 arreglado (#36, #37) · en curso: batería P- (03-PRUEBAS §3)** · ⏸ HITO tras F5 · D7 en borrador para validar
 **Última actualización:** 2026-09-24
 **Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
 
@@ -838,7 +838,9 @@ Si alguna devuelve filas, se revisa antes de seguir (lo haremos juntos).
 > nuevos presentes; 0 usuarios sin perfil (F0 rellenó los 7); comprobaciones previas otra vez a
 > 0; las 5 funciones arrancan; `provider_free_hours` y `plan_booking_cells` responden con datos
 > reales. **Ojo, H-34:** en producción no hay ningún servicio activo, nadie es reservable.
-> **Falta el punto 8** (web) y las pruebas P-.
+> **Punto 8 hecho el 2026-09-25:** PR #35 fusionada por el usuario (`7e38cfd`), Vercel publicó
+> garser.es con la versión de Empresas. Arreglos tras la fusión: H-35 (#36 `eb5603a`, #37
+> `7b33a5e`). Batería P- en curso: ver `03-PRUEBAS.md` §3.
 
 **El día de la fusión — en este orden:**
 
@@ -869,6 +871,37 @@ invitación real llega y se acepta) y **P-F3-9 a P-F3-11** (llegan los correos).
 
 **Si antes de terminar garser.es recibe usuarios reales**, los puntos 1 y la migración de F0
 (escalada a administrador, H-11) se adelantan (D8).
+
+---
+
+## 5c. Cierre del proyecto: lo que falta (2026-09-26)
+
+Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo para clientes reales**:
+
+1. **Fusionar la PR #38** (arreglo de correos H-37, ya desplegado, y la documentación de la
+   batería), para que `main` tenga el mismo código que las funciones de producción.
+2. **D7: validar la encuesta de alta de empresas.** Sigue en borrador (§3, «D7 — Borrador»):
+   producción la usa tal cual. El usuario la revisa; si cambia algo, no hace falta migración.
+3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
+   cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
+   - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).
+   - **Autónomo:** P-F2-3 (aprobar al jardinero nuevo), P-F3-1 (subir carnet), P-F7-2 (trabajo
+     de más de 12 h en varios días), P-F8-1 (césped + setos: el jardinero activa setos).
+   - **Empresa:** P-F3-3 a P-F3-11 (alta, aprobación, rechazo, invitación y sus correos), P-F4-1
+     (vender con empleado), P-F5-2 a P-F5-4, P-F6-1, P-F6-2, P-F7-1 (dos personas a la vez),
+     P-F9-1 (plan quincenal: la propuesta llega 7 días antes de la visita).
+   - En la primera reserva nueva, comprobar los correos arreglados en H-37.
+4. **Limpieza de datos de prueba** en producción al acabar (reservas y cuentas de prueba), y
+   decidir qué hacer con la solicitud de jardinero pendiente `"><u>test`.
+5. **Antes de clientes reales (fuera del proyecto, pero bloquea «producción»):** Stripe de
+   producción está en **modo prueba** (`pk_test_`): cambiar a claves `live` y al secreto del
+   webhook de modo real, y repetir P-F1-1 con un pago real.
+6. **Documentos:** marcar como cerrados H-02, H-03 y H-06 (los resolvieron F7, F1 y F0), estado
+   global «Terminado» y la fila final del registro.
+
+Fuera de alcance, anotado para después: H-13 («Mi cuenta» actualiza la columna equivocada), H-27
+(9 fallos antiguos en las baterías de preparación de servicios), H-07 (`ARCHITECTURE.md`
+desactualizado), H-36 (`booking_items` tras un cambio de precio).
 
 ---
 

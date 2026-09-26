@@ -26,6 +26,7 @@ import {
 } from '../_shared/emailBrand.ts';
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE, type DetailPair } from '../_shared/bookingEmailDetails.ts';
 import { isInternalServiceCaller, resolveServiceRoleKey } from '../_shared/functionAuth.ts';
+import { shouldSendGardenerConfirmation } from '../_shared/bookingEmailCopy.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -167,7 +168,9 @@ Deno.serve(async (req) => {
           cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
           footerNote: clientFeeNote || 'El profesional se pondrá en contacto contigo por el chat si necesita algún detalle adicional.',
         });
-        await dispatch('gardener', gardener, 'Nueva reserva confirmada en GarSer', gardenerPairs, {
+        // H-37: si se confirmó porque el cliente aceptó el precio que propuso el jardinero, este
+        // ya recibió «El cliente ha aceptado tu nuevo precio»: no se le repite el aviso.
+        if (shouldSendGardenerConfirmation(booking)) await dispatch('gardener', gardener, 'Nueva reserva confirmada en GarSer', gardenerPairs, {
           title: 'Nueva reserva confirmada en GarSer',
           heading: `Nueva reserva, ${gardener.name || 'jardinero'}`,
           intro: 'Tienes una nueva reserva confirmada:',

@@ -32,6 +32,7 @@ function serviceLabelOf(row: any): string {
   return String(row?.services?.name || '').trim();
 }
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
+import { cancellationCopy } from '../_shared/bookingEmailCopy.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 
 const corsHeaders = {
@@ -211,6 +212,7 @@ Deno.serve(async (req) => {
     let counterpartName = data?.counterpartName || '';
     let bookingPairs: Array<[string, string]> = [];
     let bookingFeeNote = '';
+    let cancellation: { intro: string; footerNote: string } | null = null;
     let confirmUrl: string | null = null;
     let deadlineAt: string | null = null;
     let companyReason = '';
@@ -267,6 +269,18 @@ Deno.serve(async (req) => {
         counterpartName = details.gardener.name || '';
         bookingPairs = isPriceChange ? details.priceChangeClientPairs : details.clientPairs;
         bookingFeeNote = details.clientFeeNote;
+      }
+
+      if (type === 'booking_cancelled') {
+        // H-37: una reserva cancelada no lleva importes («Cobrarás 60 €» a quien ya no va a
+        // cobrar) y dice quién la canceló.
+        bookingPairs = details.basePairs;
+        cancellation = cancellationCopy({
+          actor: details.booking.cancellation_actor as 'client' | 'gardener' | 'system' | null,
+          audience: cancelledByClient ? 'gardener' : 'client',
+          counterpartName,
+          reason: data?.reason,
+        });
       }
 
       if (type === 'booking_client_confirmation_request') {
@@ -786,10 +800,10 @@ Deno.serve(async (req) => {
       opts = {
         title: subject,
         heading: `Hola ${escapeHtml(name)}`,
-        intro: 'Te confirmamos que la siguiente reserva ha quedado cancelada:',
+        intro: cancellation?.intro || 'Esta reserva ha quedado cancelada:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
-        footerNote: data?.reason ? `Motivo: ${data.reason}` : bookingFeeNote,
+        footerNote: cancellation?.footerNote || (data?.reason ? `Motivo: ${data.reason}` : ''),
       };
     } else if (type === 'booking_review_request') {
       subject = '¿Qué tal ha ido el servicio?';

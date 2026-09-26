@@ -566,6 +566,51 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-37 · Correos de la reserva de prueba: el de cancelación al jardinero dice «Cobrarás 60 €» — 🟢 Resuelto (2026-09-26, anterior a Empresas)
+
+Revisados el 2026-09-26 los 7 correos reales de P-F1-1…P-F1-3 (capturas del usuario). Correctos
+en datos: «Hemos recibido tu reserva» (50,63 / 45), «Nueva solicitud» al jardinero (45 íntegro),
+propuesta de precio al cliente (60, nuevo total 65,63, motivo), «Tu reserva está confirmada»
+(65,63 / 60), «El cliente ha aceptado tu nuevo precio» (60). Problemas:
+
+1. **Cancelación al jardinero** (`send-email-notification`, `booking_cancelled`,
+   `index.ts:783`): lleva la fila «Cobrarás (íntegro) 60,00 €» y la nota «Íntegro para ti…» de
+   una reserva que ya no va a cobrar, y el texto «Te confirmamos que la siguiente reserva ha
+   quedado cancelada» no dice que la canceló el cliente. Si cancela el jardinero, al cliente le
+   llegaría «Pendiente de pagar al profesional 60 €» con el mismo problema.
+2. **Propuesta de precio al cliente**: no dice la nueva duración (4 h, fin a las 13:00), que la
+   web sí enseña (`price_change_duration_change`, `20260913121000`).
+3. **Dos correos al jardinero al aceptar el cliente el precio** de una reserva pendiente: «El
+   cliente ha aceptado tu nuevo precio» (`send-email-notification`) y «Nueva reserva confirmada»
+   (`booking-confirmation-email`, que manda `booking-payment-webhook` cuando se cobran los gastos
+   de gestión retenidos). Datos iguales; es un aviso repetido.
+4. Al cliente no le llega correo de su propia cancelación: por diseño (lo avisa la web), no es
+   un fallo.
+
+Todo es anterior a Empresas (plantillas de #8/#10, agosto). **Arreglo (el usuario pidió los tres
+puntos):** textos en `supabase/functions/_shared/bookingEmailCopy.ts` (sin Deno, probado con
+vitest en `src/shared/bookingEmailCopy.test.ts`, 6 pruebas). (1) La cancelación usa solo servicio,
+fecha y dirección (`basePairs`) y dice quién canceló («Marta ha cancelado esta reserva» / «Jardines
+Sol ha cancelado tu reserva»), con «Esas horas vuelven a estar libres en tu agenda» al jardinero.
+(2) La propuesta añade «Nueva duración: 4 h (fin a las 13:00) — antes 3 h». (3)
+`booking-confirmation-email` no manda «Nueva reserva confirmada» al jardinero si la reserva tiene
+`price_change_status = 'accepted'`. Comprobado: filas generadas con una reserva simulada; las dos
+funciones arrancan en local; baterías de correos F3 10/10, F5 13/13, F6 9/9, F8 10/10, F9 13/13;
+532 pruebas. **Desplegadas en producción el 2026-09-26** (`send-email-notification`,
+`booking-confirmation-email`). Falta verlo con correos reales en la próxima reserva de prueba.
+
+### H-36 · Tras un cambio de precio, `booking_items` conserva el precio y las horas del presupuesto pagado — 🔵 Anotado (sin efecto hoy)
+
+Visto el 2026-09-26 en P-F1-2 (producción): la reserva pasó a 60 € y 4 h al aceptar el cliente la
+propuesta del jardinero, pero su única fila de `booking_items` sigue en 45 € y 3 h. `booking_items`
+lo escribe solo el pago (F8) y es una **foto del presupuesto pagado**; el cambio de precio y de
+duración actúa sobre `bookings` (`total_price`, `end_time`, bloques), que es la fuente de verdad.
+**Hoy no se ve en ningún sitio:** la web, las listas y los correos solo leen de `booking_items` la
+posición y el nombre del servicio (`clientBookingsOverview.ts:92`, `bookingEmailDetails.ts:99`,
+`send-email-notification/index.ts:463`). **Regla para el futuro:** no sumar precios u horas de
+`booking_items` para enseñar el total de una reserva; si algún día se enseña el desglose por
+servicio de una reserva con cambio de precio, habrá que decidir cómo repartir la diferencia.
+
 ### H-35 · Reservar: un mes sin días reservables rompe la pantalla del profesional — 🟢 Resuelto (2026-09-25, anterior a Empresas)
 
 Visto el 2026-09-25 en garser.es, justo tras la fusión, en el paso 4 del embudo (móvil, sin
@@ -593,6 +638,8 @@ Publicado (#36) y comprobado en garser.es: el calendario abre directamente octub
 horas y la tarjeta mantiene 50,63 €. Al volver a septiembre a mano no hay error, pero el mes
 salía **sin casillas** (el servidor manda `days: []`). Retoque (#37): se pintan los días del
 mes, todos en gris; la prueba lo comprueba (31 días de mayo, todos desactivados).
+Publicado (#37, `7b33a5e`) y comprobado en garser.es: septiembre sale con sus 30 días en gris, sin
+error, y la tarjeta mantiene 50,63 €. **Cerrado en producción.**
 
 ### H-34 · En producción no hay ningún servicio activo: nadie es reservable — 🟢 Resuelto por el usuario (2026-09-25)
 

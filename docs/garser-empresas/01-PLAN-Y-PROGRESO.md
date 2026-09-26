@@ -874,6 +874,37 @@ invitación real llega y se acepta) y **P-F3-9 a P-F3-11** (llegan los correos).
 
 ---
 
+## 5c. Cierre del proyecto: lo que falta (2026-09-26)
+
+Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo para clientes reales**:
+
+1. **Fusionar la PR #38** (arreglo de correos H-37, ya desplegado, y la documentación de la
+   batería), para que `main` tenga el mismo código que las funciones de producción.
+2. **D7: validar la encuesta de alta de empresas.** Sigue en borrador (§3, «D7 — Borrador»):
+   producción la usa tal cual. El usuario la revisa; si cambia algo, no hace falta migración.
+3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
+   cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
+   - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).
+   - **Autónomo:** P-F2-3 (aprobar al jardinero nuevo), P-F3-1 (subir carnet), P-F7-2 (trabajo
+     de más de 12 h en varios días), P-F8-1 (césped + setos: el jardinero activa setos).
+   - **Empresa:** P-F3-3 a P-F3-11 (alta, aprobación, rechazo, invitación y sus correos), P-F4-1
+     (vender con empleado), P-F5-2 a P-F5-4, P-F6-1, P-F6-2, P-F7-1 (dos personas a la vez),
+     P-F9-1 (plan quincenal: la propuesta llega 7 días antes de la visita).
+   - En la primera reserva nueva, comprobar los correos arreglados en H-37.
+4. **Limpieza de datos de prueba** en producción al acabar (reservas y cuentas de prueba), y
+   decidir qué hacer con la solicitud de jardinero pendiente `"><u>test`.
+5. **Antes de clientes reales (fuera del proyecto, pero bloquea «producción»):** Stripe de
+   producción está en **modo prueba** (`pk_test_`): cambiar a claves `live` y al secreto del
+   webhook de modo real, y repetir P-F1-1 con un pago real.
+6. **Documentos:** marcar como cerrados H-02, H-03 y H-06 (los resolvieron F7, F1 y F0), estado
+   global «Terminado» y la fila final del registro.
+
+Fuera de alcance, anotado para después: H-13 («Mi cuenta» actualiza la columna equivocada), H-27
+(9 fallos antiguos en las baterías de preparación de servicios), H-07 (`ARCHITECTURE.md`
+desactualizado), H-36 (`booking_items` tras un cambio de precio).
+
+---
+
 ## 5b. Consulta para el usuario en producción (solo lectura)
 
 Para cerrar el diseño de F0 y medir el alcance de H-11. Se ejecuta en el **SQL Editor del

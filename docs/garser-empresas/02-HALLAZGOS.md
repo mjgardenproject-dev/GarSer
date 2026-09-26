@@ -566,6 +566,30 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-37 · Correos de la reserva de prueba: el de cancelación al jardinero dice «Cobrarás 60 €» — 🟡 Abierto (anterior a Empresas)
+
+Revisados el 2026-09-26 los 7 correos reales de P-F1-1…P-F1-3 (capturas del usuario). Correctos
+en datos: «Hemos recibido tu reserva» (50,63 / 45), «Nueva solicitud» al jardinero (45 íntegro),
+propuesta de precio al cliente (60, nuevo total 65,63, motivo), «Tu reserva está confirmada»
+(65,63 / 60), «El cliente ha aceptado tu nuevo precio» (60). Problemas:
+
+1. **Cancelación al jardinero** (`send-email-notification`, `booking_cancelled`,
+   `index.ts:783`): lleva la fila «Cobrarás (íntegro) 60,00 €» y la nota «Íntegro para ti…» de
+   una reserva que ya no va a cobrar, y el texto «Te confirmamos que la siguiente reserva ha
+   quedado cancelada» no dice que la canceló el cliente. Si cancela el jardinero, al cliente le
+   llegaría «Pendiente de pagar al profesional 60 €» con el mismo problema.
+2. **Propuesta de precio al cliente**: no dice la nueva duración (4 h, fin a las 13:00), que la
+   web sí enseña (`price_change_duration_change`, `20260913121000`).
+3. **Dos correos al jardinero al aceptar el cliente el precio** de una reserva pendiente: «El
+   cliente ha aceptado tu nuevo precio» (`send-email-notification`) y «Nueva reserva confirmada»
+   (`booking-confirmation-email`, que manda `booking-payment-webhook` cuando se cobran los gastos
+   de gestión retenidos). Datos iguales; es un aviso repetido.
+4. Al cliente no le llega correo de su propia cancelación: por diseño (lo avisa la web), no es
+   un fallo.
+
+Todo es anterior a Empresas (plantillas de #8/#10, agosto). Pendiente de que el usuario decida
+si se arregla.
+
 ### H-36 · Tras un cambio de precio, `booking_items` conserva el precio y las horas del presupuesto pagado — 🔵 Anotado (sin efecto hoy)
 
 Visto el 2026-09-26 en P-F1-2 (producción): la reserva pasó a 60 € y 4 h al aceptar el cliente la

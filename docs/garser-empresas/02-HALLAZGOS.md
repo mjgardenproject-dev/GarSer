@@ -566,7 +566,7 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
-### H-37 · Correos de la reserva de prueba: el de cancelación al jardinero dice «Cobrarás 60 €» — 🟡 Abierto (anterior a Empresas)
+### H-37 · Correos de la reserva de prueba: el de cancelación al jardinero dice «Cobrarás 60 €» — 🟢 Resuelto (2026-09-26, anterior a Empresas)
 
 Revisados el 2026-09-26 los 7 correos reales de P-F1-1…P-F1-3 (capturas del usuario). Correctos
 en datos: «Hemos recibido tu reserva» (50,63 / 45), «Nueva solicitud» al jardinero (45 íntegro),
@@ -587,8 +587,17 @@ propuesta de precio al cliente (60, nuevo total 65,63, motivo), «Tu reserva est
 4. Al cliente no le llega correo de su propia cancelación: por diseño (lo avisa la web), no es
    un fallo.
 
-Todo es anterior a Empresas (plantillas de #8/#10, agosto). Pendiente de que el usuario decida
-si se arregla.
+Todo es anterior a Empresas (plantillas de #8/#10, agosto). **Arreglo (el usuario pidió los tres
+puntos):** textos en `supabase/functions/_shared/bookingEmailCopy.ts` (sin Deno, probado con
+vitest en `src/shared/bookingEmailCopy.test.ts`, 6 pruebas). (1) La cancelación usa solo servicio,
+fecha y dirección (`basePairs`) y dice quién canceló («Marta ha cancelado esta reserva» / «Jardines
+Sol ha cancelado tu reserva»), con «Esas horas vuelven a estar libres en tu agenda» al jardinero.
+(2) La propuesta añade «Nueva duración: 4 h (fin a las 13:00) — antes 3 h». (3)
+`booking-confirmation-email` no manda «Nueva reserva confirmada» al jardinero si la reserva tiene
+`price_change_status = 'accepted'`. Comprobado: filas generadas con una reserva simulada; las dos
+funciones arrancan en local; baterías de correos F3 10/10, F5 13/13, F6 9/9, F8 10/10, F9 13/13;
+532 pruebas. **Desplegadas en producción el 2026-09-26** (`send-email-notification`,
+`booking-confirmation-email`). Falta verlo con correos reales en la próxima reserva de prueba.
 
 ### H-36 · Tras un cambio de precio, `booking_items` conserva el precio y las horas del presupuesto pagado — 🔵 Anotado (sin efecto hoy)
 

@@ -566,6 +566,18 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-36 · Tras un cambio de precio, `booking_items` conserva el precio y las horas del presupuesto pagado — 🔵 Anotado (sin efecto hoy)
+
+Visto el 2026-09-26 en P-F1-2 (producción): la reserva pasó a 60 € y 4 h al aceptar el cliente la
+propuesta del jardinero, pero su única fila de `booking_items` sigue en 45 € y 3 h. `booking_items`
+lo escribe solo el pago (F8) y es una **foto del presupuesto pagado**; el cambio de precio y de
+duración actúa sobre `bookings` (`total_price`, `end_time`, bloques), que es la fuente de verdad.
+**Hoy no se ve en ningún sitio:** la web, las listas y los correos solo leen de `booking_items` la
+posición y el nombre del servicio (`clientBookingsOverview.ts:92`, `bookingEmailDetails.ts:99`,
+`send-email-notification/index.ts:463`). **Regla para el futuro:** no sumar precios u horas de
+`booking_items` para enseñar el total de una reserva; si algún día se enseña el desglose por
+servicio de una reserva con cambio de precio, habrá que decidir cómo repartir la diferencia.
+
 ### H-35 · Reservar: un mes sin días reservables rompe la pantalla del profesional — 🟢 Resuelto (2026-09-25, anterior a Empresas)
 
 Visto el 2026-09-25 en garser.es, justo tras la fusión, en el paso 4 del embudo (móvil, sin

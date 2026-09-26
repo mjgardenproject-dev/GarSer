@@ -1,5 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
+/** Lo que vale el texto de la casilla («0,» → 0, «12,5» → 12.5); `null` si está vacía. */
+const parseLocal = (text: string): number | null => {
+  if (text === '') return null;
+  const num = parseFloat(text.replace(',', '.'));
+  return Number.isNaN(num) ? null : num;
+};
+
 interface Props {
   value: number | null | undefined | string;
   onChange: (val: any) => void;
@@ -31,17 +38,18 @@ export const UnifiedNumericInput: React.FC<Props> = ({
     ? `${Math.max(2.75, Math.min(4.5, 1.5 + normalizedSuffix.length * 0.55))}rem`
     : '0.75rem';
 
-  // Sync from prop
+  // Sync from prop. H-38: solo se reescribe la casilla si lo que llega es OTRO número; si vale lo
+  // mismo que lo escrito se respeta el texto («0,», «0,0», «0,50» mientras se teclea). Antes «0,»
+  // se vaciaba y el «5» siguiente se guardaba como 5 € en vez de 0,5.
   useEffect(() => {
-    if (value === null || value === undefined || value === '' || Number.isNaN(Number(value))) {
-      setLocalValue('');
-    } else {
-      const parsedLocal = parseFloat(localValue.replace(',', '.'));
+    const empty = value === null || value === undefined || value === '' || Number.isNaN(Number(value));
+    setLocalValue((current) => {
+      const typed = parseLocal(current);
+      // Hay configuradores que guardan el 0 como vacío: «0,» tampoco se borra ahí.
+      if (empty) return typed === null || typed === 0 ? current : '';
       const numValue = Number(value);
-      if (isNaN(parsedLocal) || parsedLocal !== numValue) {
-        setLocalValue(String(numValue).replace('.', ','));
-      }
-    }
+      return typed === numValue ? current : String(numValue).replace('.', ',');
+    });
   }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,18 +72,14 @@ export const UnifiedNumericInput: React.FC<Props> = ({
       raw = '0' + raw;
     }
 
+    // Sin ceros de más a la izquierda: «05» → «5», «00,5» → «0,5».
+    raw = raw.replace(/^0+(?=\d)/, '');
+
     setLocalValue(raw);
 
-    if (raw === '' || raw === '0,') {
-      onChange(null);
-    } else {
-      // Convert to number
-      const numString = raw.replace(',', '.');
-      const num = parseFloat(numString);
-      if (!Number.isNaN(num)) {
-        onChange(num);
-      }
-    }
+    // Solo la casilla vacía es «sin valor»: «0,» vale 0 mientras se escriben los decimales.
+    const num = parseLocal(raw);
+    onChange(num);
   };
 
   const handleBlur = () => {

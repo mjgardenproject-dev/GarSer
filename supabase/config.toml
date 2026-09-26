@@ -39,6 +39,11 @@ verify_jwt = false
 [functions.send-email-notification]
 verify_jwt = false
 
+# GarSer Empresas (D21): el empleado invitado crea su cuenta desde la invitación. Pública: el
+# token de la invitación es la credencial (lo valida la propia función).
+[functions.company-invitation-signup]
+verify_jwt = false
+
 # Capa de compatibilidad retroactiva: delega en la RPC mark_gardener_finished, que valida
 # propietario y ventana por su cuenta. Ya no completa ninguna reserva -ver el comentario de
 # cabecera del propio index.ts-.

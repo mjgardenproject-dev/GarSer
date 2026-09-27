@@ -466,6 +466,17 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | F9-23 | Navegador: la empresa ve la solicitud marcada «Visita de un plan» y sus planes en «Mis reservas» | Correcto | ✅ F9.4 |
 | F9-24 | Preparar el pago de una visita | Con el presupuesto del plan (no se rehace) | ✅ F9.3 (prueba unitaria) |
 
+### Tras la fusión — tarifas con decimales (H-38) e invitación con contraseña (D21, H-39)
+
+| # | Prueba | Resultado esperado | Estado |
+|---|---|---|---|
+| PF-01 | Escribir «0,5», «0.5», «0,05», «12,75», «05», «00,5» en una casilla de tarifa (padre como césped y padre que guarda el 0 como vacío) | Se guarda 0.5 / 0.5 / 0.05 / 12.75 / 5 / 0.5 y la casilla enseña lo escrito | ✅ `UnifiedNumericInput.test.tsx` (10; 6 fallaban antes) |
+| PF-02 | Navegador: césped del jardinero local, precio por m² «0,5», guardar, recargar | BD `0.5`, la casilla sigue «0,5» | ✅ 2026-09-26 |
+| IS-01…07 | Invitación con contraseña: cuenta nueva confirmada y empleada; enlace de un uso; caducada/anulada/token falso sin cuenta; contraseña corta; cuenta ya existente; aceptación de servicio vedada a usuarios | Todo como dice | ✅ `verify-invite-signup` 7/7 |
+| IS-10 | Página `/invitacion` (pruebas de componente): crear cuenta → entra → «Mi trabajo»; contraseña corta no envía; cuenta existente → «Entrar y unirme» | Correcto | ✅ `InvitationAcceptPage.test.tsx` (3) |
+| IS-11 | Correo de invitación: quién invita, «como empleado», pasos, «Unirme al equipo», para qué correo y caducidad | Correcto | ✅ `companyEmailCopy.test.ts` (4) · `verify-f3-emails` 10/10 |
+| IS-12 | Navegador (móvil, local): abrir la invitación sin sesión → nombre y contraseña → «Unirme al equipo» | Llega a «Mi trabajo» ya dentro | ✅ 2026-09-26 (la primera vez acabó en el inicio de cliente: `AccountContext.refresh` usaba el usuario de antes de entrar → arreglado) |
+
 ---
 
 ## 3. Batería de producción (`garser.es`)
@@ -513,6 +524,9 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F7-2 | Un trabajo grande (más de 12 h) de un autónomo: la web lo ofrece en varios días, se paga y queda «del X al Y» | F7 | ⬜ |
 | P-F8-1 | Un cliente reserva césped + setos con un profesional que hace los dos: un solo pago de gestión sobre el total; la reserva enseña los dos servicios | F8 | ⬜ |
 | P-F9-1 | Un cliente crea un plan quincenal desde una reserva; 7 días antes de la visita le llega «Tu próxima visita», la confirma y paga desde su inicio, y a la empresa le llega la solicitud marcada como visita de un plan | F9 | ⬜ |
+| P-H38-1 | En garser.es, poner 0,5 €/m² en la tarifa de césped y guardar; comprobar en la BD `0.5` y recargar | Se guarda 0,5 | ⬜ |
+| P-D21-1 | Una empresa invita a un correo real sin cuenta; abrirlo en el móvil, poner nombre y contraseña | Entra directo a «Mi trabajo», sin correo de confirmación; el correo explica que es para trabajar como empleado | ⬜ |
+| P-D21-2 | Invitar a un correo que ya tiene cuenta de cliente | «Ya tienes cuenta» → contraseña → «Entrar y unirme» → «Mi trabajo» | ⬜ |
 
 ---
 

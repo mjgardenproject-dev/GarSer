@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
+import { supabase } from '../lib/supabase';
 import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
 import type { AccountRole } from '../lib/accountRole';
 
@@ -63,7 +64,13 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
     void load(userId);
   }, [authLoading, userId, load]);
 
-  const refresh = useCallback(() => load(userId), [load, userId]);
+  // Se relee con la sesión ACTUAL, no con el usuario de cuando se pintó quien llama: quien acaba
+  // de entrar y en el mismo paso pide refrescar (el invitado que crea su cuenta en /invitacion,
+  // D21) tenía aquí aún `null` y borraba el tipo de cuenta que se estaba cargando.
+  const refresh = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    await load(data.session?.user?.id ?? null);
+  }, [load]);
 
   return (
     <AccountContext.Provider value={{ role, loading: authLoading || loading, refresh }}>

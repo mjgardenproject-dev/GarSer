@@ -698,21 +698,21 @@ const PhytosanitaryPricingConfigurator: React.FC<Props> = ({ value, initialConfi
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-gray-400 text-sm font-medium">+</span>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                className={`h-10 w-[6.5rem] px-3 pr-8 border rounded-lg text-right text-base sm:text-sm tabular-nums focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${validationErrors.includes('modifier_eco') ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
-                value={Number(config.pricing_modifiers?.eco?.percentage || 0) === 0 ? '' : Number(config.pricing_modifiers?.eco?.percentage || 0)}
-                placeholder="-"
-                onChange={(e) => {
-                  setEcoModifier(parseFloat(e.target.value) || 0);
-                  if (validationErrors.includes('modifier_eco')) {
-                    setValidationErrors((prev) => prev.filter((x) => x !== 'modifier_eco'));
-                  }
-                }}
-              />
-              <span className="text-gray-500 text-sm font-medium w-4">%</span>
+              {/* H-38: la misma casilla numérica que el resto de tarifas (antes, `type="number"`
+                  con `parseFloat`, que según el idioma del móvil no admite la coma). */}
+              <div className="w-[7.5rem]">
+                <UnifiedNumericInput
+                  value={Number(config.pricing_modifiers?.eco?.percentage || 0) === 0 ? '' : Number(config.pricing_modifiers?.eco?.percentage || 0)}
+                  suffix="%"
+                  hasError={validationErrors.includes('modifier_eco')}
+                  onChange={(next: number | null) => {
+                    setEcoModifier(next ?? 0);
+                    if (validationErrors.includes('modifier_eco')) {
+                      setValidationErrors((prev) => prev.filter((x) => x !== 'modifier_eco'));
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
           {/* El suplemento «fungicida + insecticida» se retiró el 2026-09-12: por decisión de

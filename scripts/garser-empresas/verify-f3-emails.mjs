@@ -137,7 +137,7 @@ async function main() {
     const log = edgeLog();
     const sent = sql(`select email_sent_at is not null from public.company_invitations where id='${invitationId}'`);
     record('F3E-06', 'El dueño lo envía: llega al correo invitado, con el nombre de la empresa, y queda marcado',
-      ok.ok && log.includes(guest) && log.includes('Correos Prueba te invita a su equipo en GarSer') && sent === 't' && !log.includes('victima@ejemplo.com'),
+      ok.ok && log.includes(guest) && log.includes('Correos Prueba te invita a trabajar con su equipo en GarSer') && sent === 't' && !log.includes('victima@ejemplo.com'),
       `HTTP ${ok.status}, marcado ${sent}`);
     const again = await mail(ownerToken, { type: 'company_invitation', invitationId, token });
     record('F3E-07', 'La misma invitación no se puede enviar dos veces (no sirve para bombardear un correo)', again.status === 403, `HTTP ${again.status}`);

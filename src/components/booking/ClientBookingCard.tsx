@@ -223,7 +223,10 @@ const ClientBookingCard = ({
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
             <dd>
-              {multiDay ? `Empieza a las ${formatTime(booking.start_time)}` : formatTime(booking.start_time)}
+              {/* H-44: inicio y fin («09:00 – 13:00»), también tras cambiar la fecha o la duración. */}
+              {multiDay
+                ? `Empieza a las ${formatTime(booking.start_time)}`
+                : `${formatTime(booking.start_time)}${addHoursToTime(booking.start_time, booking.duration_hours) ? ` – ${addHoursToTime(booking.start_time, booking.duration_hours)}` : ''}`}
               {!multiDay && booking.duration_hours ? ` · ${booking.duration_hours} h` : ''}
               {/* F7: en equipo o en varios días, el reloj no dice cuánto trabajo es. */}
               {booking.labour_hours ? ` · ${booking.labour_hours} h de trabajo${multiDay ? '' : ' en equipo'}` : ''}
@@ -245,7 +248,12 @@ const ClientBookingCard = ({
             {gardenerFirstName} te propone cambiar la fecha a{' '}
             <strong>
               {format(parseISO(booking.proposed_date), "EEEE d 'de' MMMM", { locale: es })}
-              {booking.proposed_start_time ? ` a las ${booking.proposed_start_time.slice(0, 5)}` : ''}
+              {/* H-44: con la hora de fin. En equipo o varios días el fin exacto se calcula al aceptar. */}
+              {booking.proposed_start_time
+                ? (!multiDay && !booking.labour_hours && addHoursToTime(booking.proposed_start_time, booking.duration_hours)
+                  ? `, de ${booking.proposed_start_time.slice(0, 5)} a ${addHoursToTime(booking.proposed_start_time, booking.duration_hours)}`
+                  : `, desde las ${booking.proposed_start_time.slice(0, 5)}`)
+                : ''}
             </strong>.
           </p>
           {booking.reschedule_reason && (

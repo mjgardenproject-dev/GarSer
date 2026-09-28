@@ -388,7 +388,7 @@ Deno.serve(async (req) => {
       }
       const { data: v } = await admin
         .from('maintenance_visits')
-        .select('id, status, date, start_hour, planned_date, quote_id, maintenance_plans(client_id, provider_id, frequency, total_price, economic_snapshot, items, service_id)')
+        .select('id, status, date, start_hour, planned_date, quote_id, maintenance_plans(client_id, provider_id, frequency, total_price, economic_snapshot, items, service_id, estimated_hours)')
         .eq('id', String(payload.visitId || ''))
         .maybeSingle();
       if (!v) {
@@ -405,7 +405,7 @@ Deno.serve(async (req) => {
       // deno-lint-ignore no-explicit-any
       const plan = (v as any).maintenance_plans as {
         client_id: string; provider_id: string; frequency: string; total_price: number;
-        economic_snapshot: { payableNow?: number } | null; items: Array<{ serviceId: string }> | null; service_id: string;
+        economic_snapshot: { payableNow?: number } | null; items: Array<{ serviceId: string }> | null; service_id: string; estimated_hours?: number | null;
       };
       const serviceIds = Array.isArray(plan.items) && plan.items.length > 1 ? plan.items.map((i) => String(i.serviceId)) : [plan.service_id];
       const { data: serviceRows } = await admin.from('services').select('id, name').in('id', serviceIds);
@@ -429,7 +429,7 @@ Deno.serve(async (req) => {
       let opts: Parameters<typeof renderBrandedEmail>[0];
       let pairs: Array<[string, string]>;
       if (type === 'maintenance_visit_proposed') {
-        const when = formatBookingDate(v.date, `${String(v.start_hour).padStart(2, '0')}:00:00`);
+        const when = formatBookingDate(v.date, `${String(v.start_hour).padStart(2, '0')}:00:00`, Math.ceil(Number(plan.estimated_hours || 0)) || null);
         const { data: quoteRow } = await admin.from('booking_quotes').select('expires_at').eq('id', v.quote_id).maybeSingle();
         const until = quoteRow?.expires_at
           ? new Date(quoteRow.expires_at).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })
@@ -475,7 +475,7 @@ Deno.serve(async (req) => {
       }
       const { data: b } = await admin
         .from('bookings')
-        .select('id, gardener_id, status, date, start_time, end_date, client_address, services(name), booking_items(position, services(name))')
+        .select('id, gardener_id, status, date, start_time, end_date, duration_hours, client_address, services(name), booking_items(position, services(name))')
         .eq('id', bookingId)
         .maybeSingle();
       if (!b) {
@@ -537,7 +537,7 @@ Deno.serve(async (req) => {
       const { data: company } = await admin.from('gardener_profiles').select('full_name').eq('user_id', b.gardener_id).maybeSingle();
       // deno-lint-ignore no-explicit-any
       const serviceName = serviceLabelOf(b) || 'Trabajo';
-      const when = formatBookingWhen(b.date, b.start_time, b.end_date);
+      const when = formatBookingWhen(b.date, b.start_time, b.end_date, b.duration_hours);
       const companyName = String(company?.full_name || 'Tu empresa');
       const range = (hours: number[]) => {
         const sorted = [...hours].sort((x, y) => x - y);
@@ -591,7 +591,7 @@ Deno.serve(async (req) => {
       }
       const { data: b } = await admin
         .from('bookings')
-        .select('id, client_id, gardener_id, date, start_time, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, reschedule_proposal_notified_at, reschedule_answer_notified_at, services(name), booking_items(position, services(name))')
+        .select('id, client_id, gardener_id, date, start_time, end_date, duration_hours, labour_hours, reschedule_status, proposed_date, proposed_start_time, reschedule_reason, reschedule_proposal_notified_at, reschedule_answer_notified_at, services(name), booking_items(position, services(name))')
         .eq('id', bookingId)
         .maybeSingle();
       if (!b) {
@@ -625,7 +625,9 @@ Deno.serve(async (req) => {
       const companyName = String(company?.full_name || 'Tu empresa');
       // deno-lint-ignore no-explicit-any
       const serviceName = serviceLabelOf(b) || 'Servicio';
-      const proposedWhen = formatBookingDate(b.proposed_date, b.proposed_start_time);
+      // H-44: con la hora de fin. En equipo o varios días el fin se recalcula al aceptar: solo el inicio.
+      const simpleShape = !b.labour_hours && !(b.end_date && String(b.end_date) > String(b.date));
+      const proposedWhen = formatBookingDate(b.proposed_date, b.proposed_start_time, simpleShape ? b.duration_hours : null);
       const outbox: Array<{ userId: string; subject: string; intro: string; pairs: Array<[string, string]>; cta: { label: string; url: string } }> = [];
       if (proposing) {
         outbox.push({
@@ -634,7 +636,7 @@ Deno.serve(async (req) => {
           intro: `${escapeHtml(companyName)} te propone cambiar la fecha de tu servicio. Puedes aceptarla o mantener la que tenías.`,
           pairs: [
             ['Servicio', serviceName],
-            ['Ahora', formatBookingDate(b.date, b.start_time)],
+            ['Ahora', formatBookingWhen(b.date, b.start_time, b.end_date, b.duration_hours)],
             ['Propuesta', proposedWhen],
             ...(b.reschedule_reason ? [['Motivo', String(b.reschedule_reason)] as [string, string]] : []),
           ],
@@ -648,7 +650,7 @@ Deno.serve(async (req) => {
           intro: accepted
             ? 'El cliente ha aceptado el cambio de fecha. Ya está movido en tu agenda.'
             : 'El cliente prefiere mantener la fecha que tenía. No ha cambiado nada.',
-          pairs: [['Servicio', serviceName], ['Fecha', formatBookingDate(b.date, b.start_time)]],
+          pairs: [['Servicio', serviceName], ['Fecha', formatBookingWhen(b.date, b.start_time, b.end_date, b.duration_hours)]],
           cta: { label: 'Ver la agenda', url: `${BRAND.site}/empresa` },
         });
         if (accepted) {

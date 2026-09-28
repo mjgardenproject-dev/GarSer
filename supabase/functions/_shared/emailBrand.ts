@@ -30,7 +30,11 @@ export function formatPrice(value: number | null | undefined): string {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n);
 }
 
-export function formatBookingDate(date: string | null, startTime: string | null): string {
+/**
+ * «lunes, 5 de octubre de 2026 a las 09:00». Con `durationHours` (H-44): «…, de 09:00 a 13:00»,
+ * para que el cliente vea también cuándo acaba (sobre todo tras cambiar la fecha o la duración).
+ */
+export function formatBookingDate(date: string | null, startTime: string | null, durationHours?: number | null): string {
   if (!date) return 'Fecha por confirmar';
   try {
     const iso = startTime ? `${date}T${startTime}` : `${date}T00:00:00`;
@@ -41,6 +45,13 @@ export function formatBookingDate(date: string | null, startTime: string | null)
     });
     if (!startTime) return datePart;
     const timePart = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const hours = Number(durationHours);
+    if (Number.isFinite(hours) && hours > 0) {
+      const end = new Date(d.getTime() + hours * 3600 * 1000);
+      if (end.getDate() === d.getDate()) {
+        return `${datePart}, de ${timePart} a ${end.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
+      }
+    }
     return `${datePart} a las ${timePart}`;
   } catch {
     return date;
@@ -51,8 +62,8 @@ export function formatBookingDate(date: string | null, startTime: string | null)
  * GarSer Empresas (F7): «Cuándo» de un trabajo que puede durar varios días. Un día: lo de
  * siempre. Varios: «del lunes, 5 de mayo al viernes, 9 de mayo de 2026, desde las 08:00».
  */
-export function formatBookingWhen(date: string | null, startTime: string | null, endDate?: string | null): string {
-  if (!date || !endDate || endDate.slice(0, 10) <= date.slice(0, 10)) return formatBookingDate(date, startTime);
+export function formatBookingWhen(date: string | null, startTime: string | null, endDate?: string | null, durationHours?: number | null): string {
+  if (!date || !endDate || endDate.slice(0, 10) <= date.slice(0, 10)) return formatBookingDate(date, startTime, durationHours);
   try {
     const day = (iso: string, withYear: boolean) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('es-ES', {
       weekday: 'long', day: 'numeric', month: 'long', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC',

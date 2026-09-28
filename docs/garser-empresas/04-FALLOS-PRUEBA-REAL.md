@@ -22,6 +22,12 @@
 |---|---|---|---|---|
 | R-01 | Al iniciar sesión como admin, la consola se llena de errores | Baja (sin efecto funcional) | Una parte sí (1 aviso); el resto es de una extensión de Chrome | Analizado |
 | R-02 | Supabase no deja borrar al usuario dueño de una empresa («Database error deleting user»); y borrar otras cuentas deja restos | Media (no se puede dar de baja; restos que confunden al admin) | Sí | Analizado · **decisión pendiente** · el usuario pide un sistema seguro para borrar o suspender empresas |
+| R-03 | No hay forma de recargar para ver el estado nuevo de las reservas (jardinero y cliente) | Media (en la app instalada no hay botón de recargar) | Sí | Analizado |
+| R-04 | Cuando un jardinero acepta la invitación, la empresa no se entera ni sabe que tiene que configurarlo | Media (el empleado nunca recibe trabajos y nadie lo avisa) | Sí (falta) | Analizado |
+| R-05 | El trabajador no recibe ningún aviso cuando la empresa le cambia el horario | Media | Sí (falta) | Analizado |
+| R-06 | Al enviar una propuesta de precio y duración se cerró la sesión de la empresa; además la solicitud decía «Hace 1 hora» a los pocos minutos | **Alta** (sesiones que se cierran solas y correos que no salen) | Sí | Analizado · causa confirmada en producción |
+| R-07 | El empleado ve el trabajo «Por confirmar» antes de que el dueño lo acepte; y no siempre le llega un correo cuando ya es suyo | Media | Sí | Analizado |
+| R-08 | Todo lo que llega por correo tiene que llegar también como notificación al móvil, a todos los usuarios | Nueva función | — | Analizado · **decisión pendiente** |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo)
 · **Media** (lo completa, pero mal o confuso) · **Baja** (cosmético, o solo se ve en la consola).
@@ -284,6 +290,354 @@ el punto 3.
   - Tras la limpieza, la consulta de restos devuelve 0 en producción.
   - El usuario borra desde Admin → Usuarios una cuenta de prueba sin historial.
   - Intentar borrar desde el panel de Supabase una cuenta con reservas no se lleva nada.
+
+### R-03 — Un botón para recargar las reservas (jardinero y cliente)
+
+**Qué pide el usuario.** Un botón pequeño de recargar para que el jardinero vea las novedades
+de sus reservas y el cliente vea el estado actualizado de las suyas.
+
+**Por qué hace falta** (comprobado en el código):
+
+- **Las listas de reservas solo se cargan al abrir la página.** No se refrescan al volver a la
+  pestaña o a la app: no hay ningún `visibilitychange` ni `focus` en `src/`. Tampoco escuchan
+  cambios en tiempo real: el tiempo real solo se usa en el chat (`useUnreadChats`, `ChatList`,
+  `ChatWindow`, `chatService`).
+- **Si la otra parte acepta, propone o cancela, la pantalla sigue enseñando lo de antes** hasta
+  que se recarga a mano.
+- **La web se instala como app** (`public/site.webmanifest`: `"display": "standalone"`). En la
+  app instalada **no hay barra del navegador ni botón de recargar**, así que el usuario no tiene
+  forma de refrescar, salvo cerrar la app.
+- Pantallas afectadas:
+  - Cliente: `/bookings` → `BookingsList` (`src/App.tsx:77`).
+  - Jardinero autónomo y empresa: `/bookings` → `GardenerBookings` (`:52`) y «Solicitudes»
+    (`BookingRequestsManager`).
+  - Empresa: `/empresa` (agenda) y `/empresa/solicitudes`.
+  - Empleado: `/mi-trabajo` (`useMyJobs`).
+
+**Solución propuesta.**
+
+1. **Un botón «Actualizar»** pequeño (icono de flechas, con texto accesible) en la cabecera de
+   esas cinco pantallas. Vuelve a pedir los datos sin recargar la web entera, con un giro
+   mientras carga y sin perder los borradores escritos. Es el mismo patrón que ya usan
+   `ApplicationsAdmin` y `AvailabilityManager` (`RefreshCw`).
+2. **Refresco automático** de esas listas al volver a la pestaña o a la app
+   (`visibilitychange`), con un mínimo de unos 30 s entre refrescos. El botón queda para quien
+   lo quiera usar, pero la pantalla ya no enseña datos viejos al volver.
+3. **Opcional, a decidir en el plan:** escuchar en tiempo real los cambios de las reservas
+   propias, igual que el chat, para que el estado cambie solo sin tocar nada.
+
+**Pruebas.**
+
+- **Unitarias:**
+  - El botón vuelve a llamar a la carga y no borra un borrador de propuesta.
+  - Volver a la pestaña recarga, y dos veces seguidas en menos de 30 s solo una vez.
+- **Navegador local:**
+  - Con el cliente en una pestaña y el jardinero en otra: el jardinero acepta, el cliente pulsa
+    «Actualizar» y ve «Confirmada».
+  - Igual al volver a la pestaña, sin pulsar nada.
+- **En garser.es (P-R03-1):** con la app instalada en el móvil, el botón actualiza el estado.
+
+### R-04 — Aviso a la empresa cuando un jardinero acepta la invitación
+
+**Qué pide el usuario.** Cuando un jardinero invitado acepta, en el panel de la empresa tiene
+que aparecer «*X* ha aceptado tu solicitud de unirse a tu equipo. Configura su perfil para que
+pueda realizar servicios dentro de tu empresa», con un botón para configurarlo. El aviso sigue
+ahí hasta que ese jardinero tenga un **horario fijo** y **al menos un servicio activo**.
+
+**Qué hay hoy** (código):
+
+- **Al aceptar la invitación no se avisa a la empresa**, ni en el panel ni por correo. No hay
+  ningún tipo de correo `invitation_accepted` en `send-email-notification` (tiene 22 tipos; la cabecera de `index.ts:7-15` resume los principales).
+- En «Equipo», la tarjeta del empleado dice «Sin servicios asignados»
+  (`TeamMemberCard.tsx:120-121`), pero nada indica que le falta el horario.
+- `company_team_overview` (lo que carga el equipo, `useCompanyTeam.ts:44`) devuelve los
+  servicios de cada miembro, pero **no si tiene horario fijo**.
+- La consecuencia real: un empleado sin servicio o sin horario **nunca recibe trabajos**. La
+  venta solo aparta a quien hace el servicio y está libre (A-29). Nadie avisa a la empresa, que
+  puede pensar que la web no le reparte trabajo.
+- El panel de la empresa ya tiene un aviso parecido, «Aún no ofreces ningún servicio»
+  (`CompanyHomePage.tsx:143-146`), que se puede tomar como modelo.
+
+**Solución propuesta.**
+
+1. `company_team_overview` devuelve, por empleado activo, `has_recurring_schedule` (tiene
+   reglas en `recurring_schedules`) y `active_services_count`. Así el servidor decide si está
+   configurado y la pantalla no lo deduce.
+2. En el panel de la empresa (`/empresa`), **un aviso por cada empleado sin configurar**, con el
+   texto que pide el usuario y un botón «Configurar a *X*». El botón lleva a lo que falte: su
+   horario (`/empresa/equipo/:memberId/horario`) o sus servicios en «Equipo». El aviso dice qué
+   le falta («Le falta: horario fijo · servicios») y **desaparece solo** cuando tiene las dos
+   cosas. No hace falta guardar un «visto»: se calcula cada vez.
+3. **Un correo al dueño** cuando el jardinero acepta, con el mismo texto y un enlace al panel.
+   Sale del servidor, desde `company-invitation-signup` y la aceptación con cuenta existente, y
+   no del navegador (ver R-06, punto 3).
+4. Criterio de «configurado», a confirmar con el usuario: el horario fijo cuenta si tiene al
+   menos una franja semanal. Unos días sueltos sin horario fijo no cuentan.
+
+**Pruebas.**
+
+- **Batería local:**
+  - Invitar y aceptar: el aviso sale en el panel y llega el correo al dueño.
+  - Con solo servicio sigue saliendo; con solo horario, también; con los dos, desaparece.
+  - Un empleado inactivo no sale.
+  - Otra empresa no ve los empleados de esta.
+- **Unitarias:** el aviso con cada combinación y el destino del botón.
+- **En garser.es (P-R04-1):** invitar a una cuenta nueva, aceptar, ver el aviso, configurar el
+  horario y un servicio, y ver que el aviso se va.
+
+### R-05 — Correo al trabajador cuando la empresa le cambia el horario
+
+**Qué pide el usuario.** Cuando la empresa modifique el horario de un trabajador, a este le
+llega un correo: «Tienes un nuevo horario publicado».
+
+**Qué hay hoy** (código):
+
+- El dueño guarda el horario de un empleado por dos vías (D22):
+  - El horario fijo semanal, con `set_member_recurring_schedule`
+    (`RecurringScheduleManager.tsx:259`).
+  - Los ajustes de días sueltos, con `set_member_day_availability`, que se llama **una vez por
+    cada día cambiado** (`AvailabilityManager.tsx:258-266`).
+- Ninguna de las dos avisa al empleado.
+
+**Solución propuesta.**
+
+1. **Un correo nuevo, `member_schedule_published`**, «Tu empresa ha publicado tu nuevo
+   horario», que dice qué ha cambiado y enlaza a «Mi trabajo → Horario»:
+   - Horario fijo: el resumen semanal nuevo (por ejemplo «lunes a viernes de 9:00 a 14:00»).
+   - Días sueltos: la lista de días cambiados y sus horas.
+2. **Un solo correo por cada vez que se pulsa «Guardar»**, no uno por día. Los ajustes de días
+   sueltos se guardarán en una sola llamada con todos los días
+   (`set_member_days_availability(p_member_id, p_days jsonb)`). Esa llamada es además todo o
+   nada, así que ya no puede quedar un horario guardado a medias.
+3. El correo sale del servidor, desde las propias funciones de guardar, y no del navegador
+   (R-06, punto 3). No se envía si en realidad no ha cambiado nada, ni cuando el dueño cambia su
+   propio horario.
+4. Con R-08, además, como notificación al móvil.
+
+**Pruebas.**
+
+- **Batería local:**
+  - Guardar el horario fijo: sale 1 correo con el resumen.
+  - Guardar 5 días sueltos: sale 1 correo con los 5 días.
+  - Guardar sin cambios no manda nada.
+  - Un dueño de otra empresa no puede cambiar el horario ni provocar el correo.
+- **En garser.es (P-R05-1):** el dueño cambia el horario del empleado y le llega un solo correo.
+
+### R-06 — Al enviar una propuesta de precio se cerró la sesión de la empresa
+
+**Qué vio el usuario.** Desde la cuenta de empresa, en una solicitud pulsó «Enviar propuesta al
+cliente» con nuevo precio, duración y motivo. La web le cerró la sesión. En la consola salieron:
+
+- `GET /auth/v1/user 403`.
+- `rpc/expire_stale_booking_requests 400` con «Debes iniciar sesión».
+- `functions/v1/send-email-notification 403`.
+
+Al volver a entrar, la propuesta estaba enviada y el cliente la tenía, pero la solicitud decía
+«Hace 1 hora» cuando era de hacía minutos.
+
+**Causa exacta** (comprobada en producción con el registro de Auth, `auth.audit_log_entries`,
+2026-09-28, horas en UTC). Cuenta de empresa `javieerrodriguez1204@gmail.com`, reserva
+`f3bc0b82-…`:
+
+| Hora | Qué pasa |
+|---|---|
+| 19:00:01 y 19:00:35 | Dos inicios de sesión de la cuenta de empresa: dos sesiones, en dos pestañas o dispositivos. |
+| **19:19:36** | **`logout` de la cuenta de empresa**, en uno de los dos sitios. |
+| 19:20:26 y 19:20:27 | Se crea la cuenta `jrodgom1204@…` por la invitación (`company-invitation-signup`) e inicia sesión. Es decir, se cerró la sesión de la empresa para aceptar la invitación como empleado. |
+| 19:30:09 | El cliente crea la solicitud. |
+| 19:33:21 | Se guarda la propuesta de precio. La llamada funcionó. |
+| (justo después) | La web pide `/auth/v1/user` → **403**: la sesión ya no existe. Supabase borra la sesión del navegador y la web te saca. |
+| 19:36:16 | Vuelves a entrar. Queda una sola sesión, en el móvil. |
+
+1. **Cerrar sesión en GarSer cierra la sesión en TODOS los dispositivos.** Todas las llamadas a
+   `supabase.auth.signOut()` van sin opciones, y en supabase-js 2.57 eso es
+   `{ scope: 'global' }` (`node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:1378`):
+   revoca todas las sesiones del usuario. Las llamadas están en `AuthContext.tsx:171`, `:216` y
+   `:227` (el `signOut` que usan `Navbar.tsx:30`, `MyAccount.tsx:116`, `GardenerStatusPage.tsx:19`
+   y `CompanyStatusPage.tsx:61`), `AdminLayout.tsx:38` e `InvitationAcceptPage.tsx:188` y `:311`.
+   El botón de la invitación «No soy yo: cerrar sesión» (`:311`) existe justo para abrir el enlace
+   en un móvil con la sesión de la empresa. Al pulsarlo, **cierra también la empresa en el
+   ordenador**.
+2. **La pestaña que seguía abierta no se entera hasta que habla con Auth.** Su token de acceso
+   sigue valiendo hasta que caduca (1 h), así que la propuesta se guardó bien. Pero la primera
+   comprobación contra Auth (`getUser`) devuelve 403 y supabase-js cierra la sesión local de
+   golpe, **sin ningún aviso**. Para el usuario parece un fallo de la web.
+3. **Se perdió el correo de la propuesta al cliente.** Después de guardar, el navegador pide el
+   correo a `send-email-notification` (`bookingPriceChangeService.ts:35`). La función comprueba
+   al que llama con `getUser` (`send-email-notification/index.ts:182` y `:242`) y, con la sesión
+   revocada, responde **403**. El cliente vio la propuesta en la web, pero **muy probablemente no
+   le llegó el correo** (a confirmar con el usuario). Es un defecto de diseño que va más allá de
+   este caso: **16 correos los pide el navegador después de la acción**
+   (`grep "invoke('send-email-notification'" src`). Si la pestaña se cierra, se pierde la
+   conexión o caduca la sesión en ese momento, la acción queda hecha y el correo no sale nunca.
+4. **«Hace 1 hora» a los pocos minutos.** `getBookingStatus` redondea las horas **hacia arriba**:
+   `Math.ceil(...)` en `BookingRequestsManager.tsx:476`. Un segundo después de llegar ya da 1, y
+   «Recién recibida» (`:478`) no sale nunca. Igual con los días: a las 25 h dice «Hace 2 días».
+   Afecta también a los autónomos, porque es la misma pantalla. No tiene que ver con la zona
+   horaria.
+
+**Solución propuesta.**
+
+1. **Cerrar sesión solo en este dispositivo:** `signOut({ scope: 'local' })` en todas las
+   salidas normales, y en la invitación, el registro y la cuenta sin verificar. Cerrar todas las
+   sesiones (`global`) quedaría solo para cuando hace falta de verdad: cambio o restablecimiento
+   de contraseña y un botón explícito «Cerrar sesión en todos mis dispositivos» en «Mi cuenta».
+2. **Si la sesión se cierra desde fuera, decirlo y no perder el trabajo.**
+   - Distinguir un `SIGNED_OUT` que no ha pedido el usuario.
+   - Enseñar «Tu sesión se ha cerrado (por ejemplo, desde otro dispositivo). Vuelve a entrar
+     para continuar».
+   - Llevar a `/auth` con vuelta a la misma página (`redirectTo`).
+   - Conservar los borradores escritos (propuesta, motivo).
+3. **Que los correos no dependan del navegador** (cambio de diseño: Regla 7, se decide con el
+   usuario en el plan).
+   - Las funciones del servidor que hacen la acción (proponer precio, aceptar, cancelar,
+     asignar, etc.) apuntan el aviso en una tabla de pendientes (`notification_outbox`), **en la
+     misma transacción** que la acción.
+   - Un proceso del servidor (reloj de `pg_cron` o disparador hacia una función) los envía con
+     reintentos y marca cada uno como enviado. Si falla la sesión, la red o se cierra la
+     pestaña, el correo sale igual y sale una sola vez.
+   - Es también la base de R-05, R-07 y R-08: el mismo aviso se manda por correo y al móvil.
+4. **Tiempo relativo correcto:** redondear hacia abajo y usar minutos por debajo de una hora
+   («Hace 5 min», «Hace 1 hora» a partir de 60 min, «Hace 1 día» a partir de 24 h).
+
+**Pruebas.**
+
+- **Unitarias:**
+  - Cerrar sesión llama a `signOut` con `scope: 'local'`.
+  - Un `SIGNED_OUT` que no ha pedido el usuario enseña el aviso y lleva a `/auth` con vuelta.
+  - `getBookingStatus` a los 30 s, 5 min, 59 min, 61 min, 23 h y 25 h.
+- **Batería local:**
+  - Dos sesiones de la misma cuenta: cerrar una no invalida la otra, que sigue pudiendo pedir
+    `getUser` y llamar a funciones.
+  - Proponer un precio deja un aviso en la tabla de pendientes en la misma transacción. El
+    proceso lo envía una vez y, si se relanza, no lo repite.
+  - Si la llamada del navegador no llega, el correo sale igualmente.
+- **En garser.es (P-R06-1):**
+  - Empresa abierta en el ordenador y en el móvil. Cerrar sesión en el móvil y enviar una
+    propuesta en el ordenador: no se cierra la sesión y al cliente le llega el correo.
+  - Una solicitud recién llegada dice «Hace X min».
+
+### R-07 — El empleado ve el trabajo antes de que el dueño lo acepte
+
+**Qué pide el usuario.**
+
+- Mientras la empresa no ha aceptado la solicitud, al jardinero **no** le tiene que aparecer
+  como «Por confirmar». Solo le aparece cuando el trabajo ya está confirmado y asignado a él.
+- En ese momento **le llega un correo**.
+
+**Causa exacta** (código):
+
+- La venta ya aparta a una persona (A-29, `booking_blocks.assignee_id`), incluso con la reserva
+  `pending`.
+- `my_jobs`, lo que carga «Mi trabajo», devuelve las reservas con
+  `b.status IN ('pending', 'confirmed', …)` y un bloque de esa persona
+  (`supabase/migrations/20260925190000_empresas_f7_crew_multiday.sql:2099-2102`). **No mira ni la aceptación del dueño ni `assignment_pending`**
+  (en modo manual, la persona es solo una propuesta que el dueño todavía no ha decidido).
+- `JobCard.tsx:103-104` pinta esas reservas pendientes con la etiqueta «Por confirmar».
+
+**El correo existe, pero hay caminos en los que no sale.** `job_assigned` («Te han asignado un
+trabajo») lo pide el navegador:
+
+- Al aceptar en «Solicitudes» (`BookingRequestsManager.tsx:348-353`).
+- Al asignar o cambiar a mano (`AssignWorkerControl.tsx:65`, `JobSheet.tsx:76`,
+  `TeamJobSection.tsx:39`).
+
+Pero **no sale cuando la reserva se confirma porque el cliente acepta una propuesta de precio o
+de duración**. `respond_booking_price_change` confirma la reserva y el navegador del cliente
+solo avisa al proveedor (`bookingPriceChangeService.ts:95-105`). Es justo el caso del usuario:
+la reserva `f3bc0b82-…` quedó confirmada a las 19:38 con `jrodgom1204@…` asignado (modo
+`auto`), y a él no le llegó nada. Además, como todos los de R-06, depende del navegador.
+
+**Solución propuesta.**
+
+1. `my_jobs` y lo que el empleado ve de su agenda solo devuelven un trabajo cuando
+   `status IN ('confirmed', 'in_progress', 'completed', 'disputed')` **y** `assignment_pending =
+   false`. La etiqueta «Por confirmar» de `JobCard` desaparece, porque deja de tener sentido.
+   Las horas siguen apartadas a esa persona mientras tanto; solo no se le enseña el trabajo. En
+   su horario, esas horas salen como «reservadas», sin datos del cliente, para que no parezcan
+   libres.
+2. **Un único momento de aviso, decidido en el servidor:** cuando una reserva pasa a confirmada
+   con su persona decidida, o cuando se decide o cambia la persona de una reserva confirmada, se
+   apunta `job_assigned` para cada persona nueva y `job_unassigned` para quien sale. Va en la
+   tabla de pendientes de R-06, sea cual sea el camino: el dueño acepta, el cliente acepta una
+   propuesta, se confirma una asignación manual o se reparte a un equipo. Se quitan las llamadas
+   sueltas del navegador.
+3. Idempotente: el mismo trabajo no avisa dos veces a la misma persona si no ha cambiado nada.
+
+**Pruebas.**
+
+- **Batería local (`verify-employee-visibility.mjs`):**
+  - Reserva pendiente: el empleado no la ve en `my_jobs`.
+  - El dueño acepta: la ve y le llega 1 correo.
+  - Modo manual con persona sin decidir: no la ve aunque esté confirmada; el dueño la decide y
+    la ve, con su correo.
+  - El cliente acepta una propuesta de precio: el empleado recibe el correo, el caso de hoy.
+  - Se cambia la persona: correo a la nueva y aviso a la anterior.
+  - Repetir la acción no manda correos duplicados.
+  - El autónomo no cambia (Regla 2).
+- **En garser.es (P-R07-1):** una solicitud nueva a la empresa no aparece en «Mi trabajo» del
+  empleado. Al aceptarla aparece y le llega el correo, también si se confirma por una propuesta
+  de precio.
+
+### R-08 — Notificaciones al móvil de todo lo que se manda por correo
+
+**Qué pide el usuario.** Que todos los avisos que hoy llegan por correo lleguen también como
+notificación de la app al teléfono, a todos los usuarios: clientes, autónomos, empresas y
+empleados.
+
+**Qué hay hoy** (código):
+
+- **No hay notificaciones al móvil.** La web se puede instalar (`public/site.webmanifest`,
+  `display: standalone`, iconos; `index.html:25-29`). Pero no tiene *service worker* ni push:
+  no hay `serviceWorker`, `PushManager` ni `web-push` en `src/`, `public/` ni la configuración
+  de Vite. Tampoco hay app nativa.
+- Los correos salen de tres funciones:
+  - `send-email-notification`: 22 tipos, 16 pedidos desde el navegador.
+  - `booking-confirmation-email`: reserva confirmada, a las dos partes.
+  - `booking-lifecycle-tick`: recordatorios y caducidades, desde el reloj.
+
+**Solución propuesta.**
+
+1. **Un único sitio que decide los avisos:** la tabla de pendientes de R-06. Cada aviso tiene
+   destinatario, tipo y datos, y se envía por **cada canal** que tenga el usuario (correo y
+   móvil). Añadir el móvil es una sola pieza, no 25 sitios.
+2. **Notificaciones push web (PWA).**
+   - *Service worker* en la web y claves VAPID en el servidor.
+   - Tabla `push_subscriptions` por usuario y dispositivo, con RLS «solo las tuyas».
+   - Función que envía con `web-push` y borra las suscripciones caducadas (410).
+   - Botón «Activar notificaciones» en «Mi cuenta» y un aviso tras la primera reserva. El
+     navegador exige que lo pulse el usuario.
+   - Al tocar la notificación, se abre la pantalla de esa reserva.
+3. Preferencias por usuario (por ejemplo, desactivar el móvil y dejar solo el correo), si el
+   usuario lo quiere.
+
+**Límites que el usuario tiene que conocer** (a decidir en el plan):
+
+- **Android** (Chrome y otros): funciona con la web, sin instalar nada.
+- **iPhone**: solo funciona si el usuario **añade GarSer a la pantalla de inicio** (iOS 16.4 o
+  posterior) y activa las notificaciones desde esa app instalada. Desde Safari sin instalar, no.
+  Habría que enseñar cómo instalarla.
+- La alternativa es una **app nativa** en las tiendas (por ejemplo, empaquetar la web con
+  Capacitor y usar Firebase y APNs). Funciona en todos los iPhone sin instalar desde la web,
+  pero exige cuentas de desarrollador, publicación y revisión de Apple y Google. Es un proyecto
+  aparte.
+
+**DECISIÓN PENDIENTE (producto).** ¿Push web (PWA), recomendado para empezar porque sirve para
+la web actual sin tiendas, o app nativa? ¿Todos los avisos al móvil, o solo los que piden
+actuar (solicitud nueva, propuesta, cambio de fecha, trabajo asignado, recordatorio)?
+
+**Pruebas.**
+
+- **Unitarias:** registro de la suscripción, botón de activar y la notificación abre la
+  pantalla correcta.
+- **Batería local:**
+  - Cada tipo de aviso crea una notificación por cada suscripción del destinatario y ninguna
+    para otros usuarios.
+  - Una suscripción caducada se borra.
+  - Sin suscripción, solo sale el correo.
+- **En garser.es (P-R08-1):**
+  - Android: activar notificaciones, hacer una reserva y que llegue al jardinero y al cliente.
+  - iPhone: instalada en la pantalla de inicio, lo mismo.
 
 ---
 

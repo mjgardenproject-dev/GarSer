@@ -1214,6 +1214,29 @@ A-34 en `02-HALLAZGOS.md`.
   - Ana pulsa «Actualizar» y ve el trabajo del jueves 1 de 10:00 a 12:00, sin etiqueta, y
     «Qué hay que hacer» se abre.
 
+#### F5 — en curso (parado por límite de uso, 2026-09-28)
+
+**Hecho, sin probar aún:**
+
+- Migración `20260929120000_team_setup_and_schedule_notices.sql`, aplicada **solo en local**:
+  - `company_team_overview` devuelve `has_recurring_schedule` e `is_configured`.
+  - *Trigger* `company_member_joined`, que avisa al dueño.
+  - `set_member_days_availability`: una llamada, todo o nada, con aviso si algo cambia.
+  - `set_member_recurring_schedule` avisa si el horario cambia.
+- `send-email-notification`: tipos `company_member_joined` y `member_schedule_published`, solo
+  por llamada interna, con `weeklySummary` y `hoursRanges`.
+
+**Falta:**
+
+1. `useCompanyTeam`: añadir `has_recurring_schedule` e `is_configured` al tipo.
+2. `CompanyHomePage`: aviso por cada empleado sin configurar, con «Le falta: …» y el botón
+   «Configurar» (horario → `/empresa/equipo/:memberId/horario`; servicios → pestaña Equipo).
+3. `AvailabilityManager`: con `member`, una sola llamada `set_member_days_availability` con
+   todos los días cambiados.
+4. Regenerar los tipos, la batería `verify-team-setup.mjs`, pruebas unitarias del aviso, pasar
+   todas las baterías y probarlo en el navegador local.
+5. Después, F6, F7 y F8.
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
@@ -1222,7 +1245,7 @@ A-34 en `02-HALLAZGOS.md`.
 | F2 | ✅ Hecho (2026-09-28) | 576 pruebas (+3), `tsc` 128, compila; navegador local (abajo) | ver git |
 | F3 | ✅ Hecho (2026-09-28) | 579 pruebas (+3), `tsc` 128, compila; baterías 20/20 (244 comprobaciones, `verify-notification-outbox` 14/14 nueva; `verify-f3-emails` y `verify-f6-reschedule` adaptadas); navegador local | ver git |
 | F4 | ✅ Hecho (2026-09-28) | 579 pruebas, `tsc` 128, compila; baterías 21/21 (252 comprobaciones, `verify-employee-visibility` 7/7 nueva, 6 adaptadas); navegador local | ver git |
-| F5 | Pendiente | | |
+| F5 | 🟡 En curso (2026-09-28) | ver «F5 — en curso» | WIP |
 | F6 | Pendiente | | |
 | F7 | Pendiente | | |
 | F8 | Pendiente | | |

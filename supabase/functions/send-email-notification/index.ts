@@ -77,7 +77,11 @@ type EmailType =
   // GarSer Empresas (F6.3, D9): la empresa propone otra fecha (al cliente) y el cliente responde
   // (a la empresa y, si acepta, a quien va). Cada uno, una sola vez por propuesta.
   | 'booking_reschedule_proposed'
-  | 'booking_reschedule_answered';
+  | 'booking_reschedule_answered'
+  // Prueba real (F5): al dueño, cuando alguien acepta unirse a su equipo (R-04); al empleado,
+  // cuando el dueño le publica un horario nuevo (R-05). Solo desde la cola del servidor.
+  | 'company_member_joined'
+  | 'member_schedule_published';
 
 interface EmailPayload {
   /**
@@ -148,7 +152,33 @@ export const SERVER_MANAGED_TYPES = new Set<string>([
   'gardener_approved', 'gardener_rejected', 'company_approved', 'company_rejected',
   // F4 (R-07): quién va a cada trabajo lo compara el servidor al final de cada cambio.
   'job_assigned', 'job_unassigned',
+  'company_member_joined', 'member_schedule_published',
 ]);
+
+const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const hhmm = (t: unknown) => String(t || '').slice(0, 5);
+
+/** «lunes de 09:00 a 14:00 y de 16:00 a 19:00» por día, a partir de las reglas del horario fijo. */
+export function weeklySummary(rules: Array<{ day_of_week: number; start_time: string; end_time: string }>): Array<[string, string]> {
+  const byDay = new Map<number, string[]>();
+  [...rules].sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time)))
+    .forEach((r) => byDay.set(r.day_of_week, [...(byDay.get(r.day_of_week) || []), `de ${hhmm(r.start_time)} a ${hhmm(r.end_time)}`]));
+  // De lunes a domingo, como se lee un horario.
+  return [1, 2, 3, 4, 5, 6, 0].filter((d) => byDay.has(d)).map((d) => [WEEKDAYS[d][0].toUpperCase() + WEEKDAYS[d].slice(1), (byDay.get(d) || []).join(' y ')]);
+}
+
+/** Horas sueltas de un día → «09:00 a 13:00 y 16:00 a 18:00». */
+export function hoursRanges(hours: number[]): string {
+  const sorted = [...new Set(hours)].sort((a, b) => a - b);
+  if (sorted.length === 0) return 'Sin horas';
+  const ranges: Array<[number, number]> = [];
+  sorted.forEach((h) => {
+    const last = ranges[ranges.length - 1];
+    if (last && last[1] === h) last[1] = h + 1;
+    else ranges.push([h, h + 1]);
+  });
+  return ranges.map(([a, b]) => `${String(a).padStart(2, '0')}:00 a ${String(b).padStart(2, '0')}:00`).join(' y ');
+}
 
 // deno-lint-ignore no-explicit-any
 async function outboxIsLive(admin: any): Promise<boolean> {
@@ -506,6 +536,100 @@ Deno.serve(async (req) => {
         console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: clientEmail, type, subject });
       } else {
         const sent = await sendViaBrevo({ to: clientEmail, subject, html, text, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+        if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+      }
+      return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'company_member_joined' || type === 'member_schedule_published') {
+      // Prueba real, F5: solo desde la cola del servidor (notification-dispatch).
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: member } = await admin
+        .from('company_members')
+        .select('id, user_id, role, status, companies!inner(provider_user_id)')
+        .eq('id', String(payload.memberId || ''))
+        .maybeSingle();
+      // deno-lint-ignore no-explicit-any
+      const providerId = String((member as any)?.companies?.provider_user_id || '');
+      if (!member || member.role !== 'employee' || member.status !== 'active' || !providerId) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: companyProfile } = await admin.from('gardener_profiles').select('full_name').eq('user_id', providerId).maybeSingle();
+      const companyName = String(companyProfile?.full_name || 'Tu empresa');
+      const { data: person } = await admin.from('profiles').select('full_name').eq('user_id', member.user_id).maybeSingle();
+      const personName = String(person?.full_name || '').trim();
+      const recipientId = type === 'company_member_joined' ? providerId : member.user_id;
+      const { data: recipientUser } = await admin.auth.admin.getUserById(recipientId);
+      const recipientEmail = recipientUser?.user?.email;
+      if (!recipientEmail) {
+        return new Response(JSON.stringify({ error: 'recipient_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let teamSubject: string;
+      let teamOpts: Parameters<typeof renderBrandedEmail>[0];
+      let teamPairs: Array<[string, string]> = [];
+      if (type === 'company_member_joined') {
+        // Sin nombre en su perfil todavía (acaba de crear la cuenta), su correo.
+        const memberEmail = personName ? '' : String((await admin.auth.admin.getUserById(member.user_id)).data?.user?.email || '');
+        const who = personName || memberEmail || 'Un jardinero';
+        teamSubject = `${who} se ha unido a tu equipo`;
+        teamOpts = {
+          title: teamSubject,
+          heading: 'Tienes a alguien nuevo en tu equipo',
+          intro: `${escapeHtml(who)} ha aceptado tu solicitud de unirse a tu equipo. Configura su perfil para que pueda realizar servicios dentro de tu empresa: ponle su horario fijo y los servicios que hace.`,
+          cta: { label: `Configurar a ${escapeHtml(who)}`, url: `${BRAND.site}/empresa` },
+          footerNote: 'Hasta que tenga horario fijo y al menos un servicio, GarSer no le asignará trabajos.',
+        };
+      } else {
+        const first = personName.split(' ')[0] || 'hola';
+        if (payload.kind === 'days') {
+          const dates = (Array.isArray(payload.dates) ? payload.dates : []).map(String).sort();
+          const { data: slots } = dates.length
+            ? await admin.from('availability').select('date, start_time').eq('gardener_id', member.user_id).eq('is_available', true).in('date', dates)
+            : { data: [] };
+          const byDate = new Map<string, number[]>();
+          ((slots || []) as Array<{ date: string; start_time: string }>).forEach((row) => {
+            const d = String(row.date).slice(0, 10);
+            byDate.set(d, [...(byDate.get(d) || []), Number(String(row.start_time).slice(0, 2))]);
+          });
+          teamPairs = dates.map((d) => [
+            new Date(`${d}T12:00:00Z`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }),
+            hoursRanges(byDate.get(d) || []),
+          ]);
+        } else {
+          const { data: rules } = await admin.from('recurring_schedules').select('day_of_week, start_time, end_time').eq('gardener_id', member.user_id);
+          teamPairs = weeklySummary((rules || []) as Array<{ day_of_week: number; start_time: string; end_time: string }>);
+          if (teamPairs.length === 0) teamPairs = [['Horario fijo', 'Sin días asignados']];
+        }
+        teamSubject = 'Tienes un nuevo horario publicado';
+        teamOpts = {
+          title: teamSubject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: payload.kind === 'days'
+            ? `${escapeHtml(companyName)} ha cambiado tu horario de estos días:`
+            : `${escapeHtml(companyName)} ha publicado tu nuevo horario fijo:`,
+          bodyHtml: detailRows(teamPairs),
+          cta: { label: 'Ver mi horario', url: `${BRAND.site}/mi-trabajo/horario` },
+          footerNote: 'Si algo no te cuadra, habla con tu empresa.',
+        };
+      }
+      const teamHtml = renderBrandedEmail(teamOpts);
+      const teamText = renderPlainText({ ...teamOpts, detailPairs: teamPairs });
+      if (!SMTP_USER || !SMTP_PASS) {
+        console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: recipientEmail, type, subject: teamSubject });
+      } else {
+        const sent = await sendViaBrevo({ to: recipientEmail, subject: teamSubject, html: teamHtml, text: teamText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
         if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
       }
       return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {

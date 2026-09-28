@@ -32,6 +32,23 @@
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo)
 · **Media** (lo completa, pero mal o confuso) · **Baja** (cosmético, o solo se ve en la consola).
 
+### 1b. Clasificación (2026-09-28, antes del plan)
+
+Qué es cada cosa reportada: **fallo** (la web hace algo mal), **mal diagnóstico** (lo que se vio
+no es un fallo de GarSer, o no es lo que parecía) o **función nueva** (algo que falta y se pide).
+
+| # | Lo reportado | Clasificación | Lo que sí hay que corregir |
+|---|---|---|---|
+| R-01a | 92 errores de consola al entrar como admin | **Mal diagnóstico**: son de una extensión de Chrome | Nada |
+| R-01b | Aviso del WebSocket al entrar como admin | Fallo menor (solo consola, sin efecto) | El contador de chats abre y cierra una conexión en el panel de admin |
+| R-02 | Supabase no deja borrar al dueño de la empresa | **Mal diagnóstico**: el freno es a propósito, para no borrar una empresa con su histórico | **Hallazgos reales** que salieron al investigar: restos de cuentas borradas (solicitud huérfana en el admin); borrar un cliente o autónomo desde Supabase se lleva sus reservas pagadas; y **función nueva** pedida: borrar o suspender empresas de forma segura |
+| R-03 | Botón de recargar | Función nueva (en la app instalada no hay forma de recargar) | Botón «Actualizar» y refresco al volver a la app |
+| R-04 | Aviso «X ha aceptado… configúralo» | Función nueva | Aviso hasta tener horario fijo y un servicio, y correo al dueño |
+| R-05 | Correo «tienes un nuevo horario» | Función nueva | Un correo por cada «Guardar» |
+| R-06 | «Al enviar la propuesta me cerró la sesión» | **Mal diagnóstico en parte**: no lo provocó la propuesta, sino un cierre de sesión de la empresa 14 min antes en otro sitio | **Fallos reales**: cerrar sesión cierra todos los dispositivos sin avisar; el correo de la propuesta no salió (los correos dependen del navegador); «Hace 1 hora» a los pocos minutos |
+| R-07 | El empleado ve trabajos sin aceptar | **Fallo** | Solo ver trabajos confirmados y con su persona decidida; el correo al empleado no sale cuando se confirma por una propuesta de precio |
+| R-08 | Notificaciones al móvil | Función nueva (decisión pendiente) | Push web o app nativa |
+
 ---
 
 ## 2. Fallos

@@ -2711,6 +2711,10 @@ export type Database = {
     }
     Functions: {
       accept_company_invitation: { Args: { p_token: string }; Returns: Json }
+      accept_company_invitation_as_service: {
+        Args: { p_token: string; p_user_id: string }
+        Returns: Json
+      }
       admin_review_company_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: Json
@@ -3026,6 +3030,18 @@ export type Database = {
         Returns: undefined
       }
       mark_gardener_finished: { Args: { p_booking_id: string }; Returns: Json }
+      member_busy_hours: {
+        Args: { p_end: string; p_member_id: string; p_start: string }
+        Returns: {
+          date: string
+          hour: number
+          status: string
+        }[]
+      }
+      member_recurring_schedule: {
+        Args: { p_member_id: string }
+        Returns: Json
+      }
       my_busy_hours: {
         Args: { p_end: string; p_start: string }
         Returns: {
@@ -3308,6 +3324,14 @@ export type Database = {
       }
       set_company_owner_works: { Args: { p_works: boolean }; Returns: Json }
       set_incident_in_review: { Args: { p_incident_id: string }; Returns: Json }
+      set_member_day_availability: {
+        Args: { p_date: string; p_hours: number[]; p_member_id: string }
+        Returns: undefined
+      }
+      set_member_recurring_schedule: {
+        Args: { p_member_id: string; p_rules: Json; p_weeks?: number }
+        Returns: undefined
+      }
       set_review_hidden: {
         Args: { p_hidden: boolean; p_reason?: string; p_review_id: string }
         Returns: Json

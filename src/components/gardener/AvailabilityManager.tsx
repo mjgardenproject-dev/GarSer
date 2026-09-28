@@ -25,10 +25,21 @@ interface AvailabilityManagerProps {
   busyFrom?: 'provider' | 'me';
   /** GarSer Empresas (F5): en un empleado la antelación mínima la decide su empresa. */
   hideMinNotice?: boolean;
+  /**
+   * D22 (2026-09-28): el horario de un empleado lo pone el dueño de la empresa. Con `member`, esta
+   * pantalla edita el de ese empleado (lee y guarda por las RPC del dueño) en vez del propio.
+   */
+  member?: { memberId: string; userId: string; name: string };
+  /** D22: el empleado ve su horario, pero no lo cambia (se lo pone su empresa). */
+  readOnly?: boolean;
+  /** Texto del aviso en solo lectura (p. ej. «Tu horario lo pone Jardines Sol»). */
+  readOnlyNote?: string;
 }
 
-const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyFrom = 'provider', hideMinNotice = false }) => {
+const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyFrom = 'provider', hideMinNotice = false, member, readOnly = false, readOnlyNote }) => {
   const { user, loading: authLoading } = useAuth();
+  // De quién es el horario que se ve: el propio o (D22) el de un empleado del dueño.
+  const ownerUserId = member?.userId ?? user?.id;
   const [activeTab, setActiveTab] = useState<'weekly' | 'recurring'>('weekly');
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [weeklyAvailability, setWeeklyAvailability] = useState<{ [date: string]: { [hour: number]: boolean } }>({});
@@ -64,20 +75,27 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
   const timeBlocks = generateDailyTimeBlocks();
 
   const checkRecurringSchedule = useCallback(async () => {
-    if (!user?.id) return;
+    if (!ownerUserId) return;
+    if (member) {
+      const { data, error } = await supabase.rpc('member_recurring_schedule', { p_member_id: member.memberId });
+      if (!error) setHasRecurringSchedule(((data as { rules?: unknown[] } | null)?.rules || []).length > 0);
+      return;
+    }
     const { count, error } = await supabase
       .from('recurring_schedules')
       .select('*', { count: 'exact', head: true })
-      .eq('gardener_id', user.id);
+      .eq('gardener_id', ownerUserId);
     
     if (!error) {
       setHasRecurringSchedule(count !== null && count > 0);
     }
-  }, [user?.id]);
+  }, [ownerUserId, member]);
 
   // Lazy maintenance: Ensure future slots exist based on recurring rules
   useEffect(() => {
-    if (user?.id) {
+    // D22: solo quien puede escribir su propio horario lo mantiene al abrir (no el empleado, no
+    // el dueño mirando el de otro: ese se regenera en el servidor al guardar).
+    if (user?.id && !member && !readOnly) {
       checkRecurringSchedule();
 
       supabase.rpc('generate_recurring_slots', {
@@ -88,17 +106,19 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
           console.error('Error in lazy schedule maintenance:', error);
         }
       });
+    } else if (ownerUserId) {
+      checkRecurringSchedule();
     }
-  }, [user?.id, checkRecurringSchedule]);
+  }, [user?.id, ownerUserId, member, readOnly, checkRecurringSchedule]);
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user?.id) return;
+    if (!ownerUserId) return;
     if (activeTab === 'weekly') {
       fetchWeeklyAvailability();
       checkRecurringSchedule();
     }
-  }, [selectedWeek, user?.id, authLoading, activeTab, checkRecurringSchedule]);
+  }, [selectedWeek, ownerUserId, authLoading, activeTab, checkRecurringSchedule]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -112,7 +132,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
   }, [hasUnsavedChanges]);
 
   const fetchWeeklyAvailability = async () => {
-    if (!user?.id) return;
+    if (!ownerUserId) return;
 
     setLoading(true);
     try {
@@ -123,7 +143,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
       const endStr = format(weekEnd, 'yyyy-MM-dd');
 
       // Disponibilidad de toda la semana en una sola query (antes: 7 secuenciales)
-      const byDate = await getGardenerAvailabilityByDate(user.id, startStr, endStr);
+      const byDate = await getGardenerAvailabilityByDate(ownerUserId, startStr, endStr);
       const weeklyData: { [date: string]: { [hour: number]: boolean } } = {};
       weekDays.forEach((day) => {
         const dateStr = format(day, 'yyyy-MM-dd');
@@ -141,8 +161,10 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
       setHasUnsavedChanges(false); // Reset changes flag on load
 
       // Reservas confirmadas y solicitudes pendientes de la semana → marcar bloques
-      if (busyFrom === 'me') {
-        const { data: busy, error: busyError } = await supabase.rpc('my_busy_hours', { p_start: startStr, p_end: endStr });
+      if (busyFrom === 'me' || member) {
+        const { data: busy, error: busyError } = member
+          ? await supabase.rpc('member_busy_hours', { p_member_id: member.memberId, p_start: startStr, p_end: endStr })
+          : await supabase.rpc('my_busy_hours', { p_start: startStr, p_end: endStr });
         const bookedMap: { [date: string]: Set<number> } = {};
         const pendingMap: { [date: string]: Set<number> } = {};
         if (busyError) console.warn('Error fetching busy hours:', busyError);
@@ -158,7 +180,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
         const { data: bookings, error: bookingsError } = await supabase
           .from('bookings')
           .select('date, start_time, duration_hours, status')
-          .eq('gardener_id', user.id)
+          .eq('gardener_id', ownerUserId)
           .in('status', ['pending', 'confirmed'])
           .gte('date', startStr)
           .lte('date', endStr);
@@ -238,6 +260,12 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
           const availableHours = Object.entries(weeklyAvailability[date])
             .filter(([, isAvailable]) => isAvailable)
             .map(([hour]) => parseInt(hour));
+          // D22: el horario de un empleado lo guarda el dueño por su RPC (comprueba que es suyo).
+          if (member) {
+            return supabase
+              .rpc('set_member_day_availability', { p_member_id: member.memberId, p_date: date, p_hours: availableHours })
+              .then(({ error }) => { if (error) throw error; });
+          }
           return setGardenerAvailability(user.id, date, availableHours);
         })
       );
@@ -390,10 +418,15 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
   return (
     <div className="relative">
       <AppHeader
-        title="Gestión de Disponibilidad"
+        title={member ? `Horario de ${member.name}` : readOnly ? 'Mi horario' : 'Gestión de Disponibilidad'}
         onBack={onBack ? handleBack : undefined}
         backLabel="Salir"
       >
+        {readOnly ? (
+          <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+            {readOnlyNote || 'Tu horario lo pone tu empresa. Si necesitas cambiar algo, habla con ella.'}
+          </p>
+        ) : (<>
         <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
           <button
             onClick={() => switchTab('weekly')}
@@ -438,13 +471,20 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
           )}
           {savingCombined ? 'Guardando…' : 'Guardar cambios'}
         </button>
+        </>)}
       </AppHeader>
 
       <div className="max-w-full sm:max-w-3xl md:max-w-4xl mx-auto px-4 py-4 sm:p-6">
         <p className="text-xs text-gray-500 mb-6 px-1">
-          {activeTab === 'weekly'
-            ? 'Modifica franjas concretas de esta semana — excepciones, bloqueos o horas extra sobre tu horario fijo.'
-            : 'Define tu plantilla semanal recurrente. Se aplica automáticamente a las próximas semanas.'}
+          {readOnly
+            ? 'Las horas en verde son las que tu empresa cuenta contigo; en ámbar y verde oscuro, trabajos.'
+            : member
+              ? (activeTab === 'weekly'
+                ? `Cambia las horas de ${member.name} en días concretos. Las horas con trabajo no se pueden quitar.`
+                : `Define el horario fijo de ${member.name}. Se aplica automáticamente a las próximas semanas.`)
+              : activeTab === 'weekly'
+                ? 'Modifica franjas concretas de esta semana — excepciones, bloqueos o horas extra sobre tu horario fijo.'
+                : 'Define tu plantilla semanal recurrente. Se aplica automáticamente a las próximas semanas.'}
         </p>
 
         {activeTab === 'recurring' ? (
@@ -454,7 +494,8 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
             registerSaveHandler={registerRecurringSave}
             onSavingChange={setRecurringSaving}
             registerExplicitSaveTrigger={registerRecurringExplicitSave}
-            hideMinNotice={hideMinNotice}
+            hideMinNotice={hideMinNotice || !!member}
+            member={member}
           />
         ) : (
           <>
@@ -535,7 +576,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
                     const isBooked = isBlockBooked(dateStr, timeBlock.hour);
                     const isPending = isBlockPending(dateStr, timeBlock.hour);
                     const isPast = isBefore(day, startOfToday());
-                    const locked = isBooked || isPending || isPast;
+                    const locked = isBooked || isPending || isPast || readOnly;
 
                     return (
                       <button
@@ -598,7 +639,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
                       const isBooked = isBlockBooked(dateStr, timeBlock.hour);
                       const isPending = isBlockPending(dateStr, timeBlock.hour);
                       const isPast = isBefore(day, startOfToday());
-                      const locked = isBooked || isPending || isPast;
+                      const locked = isBooked || isPending || isPast || readOnly;
 
                       return (
                         <button

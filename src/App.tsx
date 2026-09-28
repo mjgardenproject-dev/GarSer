@@ -61,6 +61,7 @@ const CompanyConfigPage = lazy(() => import('./pages/empresa/CompanyConfigPage')
 const CompanyRequestsPage = lazy(() => import('./pages/empresa/CompanyRequestsPage'));
 // GarSer Empresas (F5.1): horarios del equipo.
 const CompanySchedulePage = lazy(() => import('./pages/empresa/CompanySchedulePage'));
+const CompanyMemberSchedulePage = lazy(() => import('./pages/empresa/CompanyMemberSchedulePage'));
 const EmployeeSchedulePage = lazy(() => import('./pages/empleado/EmployeeSchedulePage'));
 const InvitationAcceptPage = lazy(() => import('./pages/empleado/InvitationAcceptPage'));
 const EmployeeHomePage = lazy(() => import('./pages/empleado/EmployeeHomePage'));
@@ -547,6 +548,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/empresa/configuracion" element={<ProtectedRoute><CompanyConfigPage /></ProtectedRoute>} />
         <Route path="/empresa/solicitudes" element={<ProtectedRoute><CompanyRequestsPage /></ProtectedRoute>} />
         <Route path="/empresa/horario" element={<ProtectedRoute><CompanySchedulePage /></ProtectedRoute>} />
+        <Route path="/empresa/equipo/:memberId/horario" element={<ProtectedRoute><CompanyMemberSchedulePage /></ProtectedRoute>} />
         <Route path="/mi-trabajo/horario" element={<ProtectedRoute><EmployeeSchedulePage /></ProtectedRoute>} />
         {/* Pública a propósito: quien recibe la invitación puede no tener cuenta todavía. */}
         <Route path="/invitacion" element={<InvitationAcceptPage />} />

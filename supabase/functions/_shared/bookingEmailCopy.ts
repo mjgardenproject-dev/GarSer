@@ -59,7 +59,7 @@ export function proposedDurationText(params: {
 /**
  * «Nueva reserva confirmada» al jardinero cuando se cobran los gastos de gestión. Si la reserva
  * se confirmó porque el cliente aceptó el precio que propuso el jardinero, ese ya recibió «El
- * cliente ha aceptado tu nuevo precio» en el mismo momento: no se le repite el aviso.
+ * cliente ha aceptado tu propuesta» en el mismo momento: no se le repite el aviso.
  */
 export function shouldSendGardenerConfirmation(booking: { price_change_status?: string | null }): boolean {
   return booking.price_change_status !== 'accepted';

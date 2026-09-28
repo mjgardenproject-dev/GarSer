@@ -180,6 +180,9 @@ const ClientBookingCard = ({
   const notes = cleanNotes(booking.notes);
   const photos = booking.media_urls || [];
   const hasPriceChange = booking.price_change_status === 'pending_client_acceptance';
+  // H-40: la propuesta puede cambiar solo la duración (mismo precio): se dice así.
+  const priceChanges = Number(booking.proposed_total_price) !== Number(booking.total_price);
+  const durationChanges = booking.proposed_duration_hours != null && booking.proposed_duration_hours !== booking.duration_hours;
   const canCancel = isCancellableStatus(booking.status) && Boolean(onCancel);
   const isCompleted = booking.status === 'completed';
   const isDisputed = booking.status === 'disputed';
@@ -277,15 +280,23 @@ const ClientBookingCard = ({
       {hasPriceChange && (
         <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-amber-50">
           <p className="text-sm text-amber-900">
-            {gardenerFirstName} propone un nuevo precio del servicio:{' '}
-            <strong>{formatEuro(booking.proposed_total_price)}</strong>
+            {priceChanges || !durationChanges ? (
+              <>
+                {gardenerFirstName} propone un nuevo precio del servicio:{' '}
+                <strong>{formatEuro(booking.proposed_total_price)}</strong>
+              </>
+            ) : (
+              <>
+                {gardenerFirstName} propone cambiar la duración del servicio. El precio no cambia:{' '}
+                <strong>{formatEuro(booking.total_price)}</strong>
+              </>
+            )}
           </p>
           {/* D5: la propuesta puede traer también un cambio de duración (solo la hora de fin
               se mueve; el inicio nunca cambia). */}
-          {booking.proposed_duration_hours != null
-            && booking.proposed_duration_hours !== booking.duration_hours && (
+          {durationChanges && (
             <p className="mt-1 text-sm text-amber-900">
-              Y una nueva duración: <strong>{booking.proposed_duration_hours} h</strong>
+              {priceChanges ? 'Y una nueva duración' : 'Nueva duración'}: <strong>{booking.proposed_duration_hours} h</strong>
               {addHoursToTime(booking.start_time, booking.proposed_duration_hours) && (
                 <> (fin a las {addHoursToTime(booking.start_time, booking.proposed_duration_hours)})</>
               )}
@@ -313,7 +324,7 @@ const ClientBookingCard = ({
                   Aceptando…
                 </>
               ) : (
-                'Aceptar nuevo precio'
+                priceChanges || !durationChanges ? 'Aceptar nuevo precio' : 'Aceptar el cambio'
               )}
             </button>
             <button

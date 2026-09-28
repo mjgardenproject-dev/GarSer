@@ -29,6 +29,14 @@ describe('ClientBookingCard: hora de fin (H-44)', () => {
     expect(t).toContain('de 12:00 a 16:00');
   });
 
+  it('propuesta solo de duración: no dice «nuevo precio» y enseña el nuevo fin (H-40)', () => {
+    const t = text({ ...base, duration_hours: 2, total_price: 54, price_change_status: 'pending_client_acceptance', proposed_total_price: 54, proposed_duration_hours: 3 });
+    expect(t).toContain('propone cambiar la duración del servicio');
+    expect(t).not.toContain('nuevo precio del servicio');
+    expect(t).toContain('Nueva duración: 3 h (fin a las 12:00) — antes 2 h');
+    expect(t).toContain('Aceptar el cambio');
+  });
+
   it('en un trabajo de equipo la propuesta dice «desde» (el fin se calcula al aceptar)', () => {
     const t = text({ ...base, labour_hours: 8, reschedule_status: 'pending_client', proposed_date: '2026-09-30', proposed_start_time: '12:00:00' });
     expect(t).toContain('desde las 12:00');

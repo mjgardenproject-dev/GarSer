@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
           footerNote: clientFeeNote || 'El profesional se pondrá en contacto contigo por el chat si necesita algún detalle adicional.',
         });
         // H-37: si se confirmó porque el cliente aceptó el precio que propuso el jardinero, este
-        // ya recibió «El cliente ha aceptado tu nuevo precio»: no se le repite el aviso.
+        // ya recibió «El cliente ha aceptado tu propuesta»: no se le repite el aviso.
         if (shouldSendGardenerConfirmation(booking)) await dispatch('gardener', gardener, 'Nueva reserva confirmada en GarSer', gardenerPairs, {
           title: 'Nueva reserva confirmada en GarSer',
           heading: `Nueva reserva, ${gardener.name || 'jardinero'}`,

@@ -677,7 +677,7 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
         {/* Nota de uso */}
         {activeTab === 'weekly' && (
           <div className="mt-6 bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
-            <p className="leading-snug">Toca cada bloque para cambiar tu disponibilidad. Horario: 7:00 – 20:00 (bloques de 1 hora).</p>
+            <p className="leading-snug">{readOnly ? 'Horario: 7:00 – 20:00 (bloques de 1 hora).' : `Toca cada bloque para cambiar ${member ? `la disponibilidad de ${member.name}` : 'tu disponibilidad'}. Horario: 7:00 – 20:00 (bloques de 1 hora).`}</p>
           </div>
         )}
       </div>

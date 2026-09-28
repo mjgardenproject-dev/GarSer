@@ -214,6 +214,8 @@ Deno.serve(async (req) => {
     let bookingPairs: Array<[string, string]> = [];
     let bookingFeeNote = '';
     let cancellation: { intro: string; footerNote: string } | null = null;
+    // H-40: propuesta que solo cambia la duración (mismo precio).
+    let durationOnly = false;
     let confirmUrl: string | null = null;
     let deadlineAt: string | null = null;
     let companyReason = '';
@@ -270,6 +272,12 @@ Deno.serve(async (req) => {
         counterpartName = details.gardener.name || '';
         bookingPairs = isPriceChange ? details.priceChangeClientPairs : details.clientPairs;
         bookingFeeNote = details.clientFeeNote;
+      }
+
+      if (type.startsWith('booking_price_change')) {
+        const b = details.booking;
+        durationOnly = Number(b.proposed_total_price) === Number(b.total_price)
+          && b.proposed_duration_hours != null && Number(b.proposed_duration_hours) !== Number(b.duration_hours);
       }
 
       if (type === 'booking_cancelled') {
@@ -825,23 +833,26 @@ Deno.serve(async (req) => {
         footerNote: 'Solo te llevará un minuto. Puedes editarla durante las 48 horas siguientes.',
       };
     } else if (type === 'booking_price_change_proposed') {
-      subject = 'El profesional propone un nuevo precio para tu reserva';
+      subject = durationOnly ? 'El profesional propone cambiar la duración de tu reserva' : 'El profesional propone un nuevo precio para tu reserva';
       detailPairs = bookingPairs;
       opts = {
         title: subject,
         heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(counterpartName || 'El profesional')} ha propuesto un nuevo precio para tu reserva. Revísalo y decide si lo aceptas; hasta entonces la reserva mantiene el precio actual.`,
+        intro: durationOnly
+          ? `${counterpartName || 'El profesional'} ha propuesto cambiar la duración de tu servicio; el precio no cambia. Revísalo y decide si lo aceptas; hasta entonces la reserva sigue como está.`
+          : `${escapeHtml(counterpartName || 'El profesional')} ha propuesto un nuevo precio para tu reserva. Revísalo y decide si lo aceptas; hasta entonces la reserva mantiene el precio actual.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Revisar la propuesta', url: `${BRAND.site}/bookings` },
         footerNote: 'Los gastos de gestión que ya abonaste no cambian. Si no respondes, la propuesta caduca y la reserva sigue con el precio original.',
       };
     } else if (type === 'booking_price_change_accepted') {
-      subject = 'El cliente ha aceptado tu nuevo precio';
+      // H-40: vale para precio, duración o las dos (tras aceptar ya no consta qué cambió).
+      subject = 'El cliente ha aceptado tu propuesta';
       detailPairs = bookingPairs;
       opts = {
         title: subject,
         heading: `Buenas noticias, ${escapeHtml(name)}`,
-        intro: `${escapeHtml(counterpartName || 'El cliente')} ha aceptado el nuevo precio. La reserva queda confirmada con el importe actualizado:`,
+        intro: `${counterpartName || 'El cliente'} ha aceptado tu propuesta. La reserva queda confirmada así:`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
         footerNote: bookingFeeNote,

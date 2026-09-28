@@ -42,6 +42,26 @@ interface RecurringScheduleManagerProps {
   registerExplicitSaveTrigger?: (fn: () => void) => void;
   /** GarSer Empresas (F5): en un empleado la antelación mínima la decide su empresa. */
   hideMinNotice?: boolean;
+  /** D22: el dueño edita el horario fijo de este empleado (RPC del dueño, no el propio). */
+  member?: { memberId: string; userId: string; name: string };
+}
+
+/** Matriz día → horas a reglas {day_of_week, start_time, end_time} agrupando horas seguidas. */
+function matrixToRules(matrix: Record<number, Set<number>>) {
+  const rules: Array<{ day_of_week: number; start_time: string; end_time: string }> = [];
+  const hh = (h: number) => `${String(h).padStart(2, '0')}:00:00`;
+  Object.entries(matrix).forEach(([day, set]) => {
+    const hours = Array.from(set || []).sort((a, b) => a - b);
+    let from: number | null = null;
+    hours.forEach((h, i) => {
+      if (from === null) from = h;
+      if (hours[i + 1] !== h + 1) {
+        rules.push({ day_of_week: Number(day), start_time: hh(from), end_time: hh(h + 1) });
+        from = null;
+      }
+    });
+  });
+  return rules;
 }
 
 export default function RecurringScheduleManager({
@@ -50,6 +70,7 @@ export default function RecurringScheduleManager({
   onSavingChange,
   registerExplicitSaveTrigger,
   hideMinNotice = false,
+  member,
 }: RecurringScheduleManagerProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -137,22 +158,33 @@ export default function RecurringScheduleManager({
     try {
       setLoading(true);
 
-      // 1. Cargar horarios recurrentes existentes
-      const { data: schedData, error: schedError } = await supabase
-        .from('recurring_schedules')
-        .select('*')
-        .eq('gardener_id', user?.id);
+      // 1-2. Horario fijo y configuración: los propios, o (D22) los del empleado por la RPC del dueño.
+      let schedData: Array<{ day_of_week: number; start_time: string; end_time: string }> | null;
+      let settData: { weeks_to_maintain?: number; min_notice_hours?: number; last_generated_date?: string } | null;
+      if (member) {
+        const { data, error } = await supabase.rpc('member_recurring_schedule', { p_member_id: member.memberId });
+        if (error) throw error;
+        const payload = (data || {}) as { rules?: typeof schedData; weeks_to_maintain?: number | null };
+        schedData = payload.rules || [];
+        settData = payload.weeks_to_maintain ? { weeks_to_maintain: payload.weeks_to_maintain, min_notice_hours: 0 } : null;
+      } else {
+        const { data: ownRules, error: schedError } = await supabase
+          .from('recurring_schedules')
+          .select('*')
+          .eq('gardener_id', user?.id);
 
-      if (schedError) throw schedError;
+        if (schedError) throw schedError;
+        schedData = ownRules;
 
-      // 2. Cargar configuración
-      const { data: settData, error: settError } = await supabase
-        .from('recurring_availability_settings')
-        .select('*')
-        .eq('gardener_id', user?.id)
-        .single();
+        const { data: ownSettings, error: settError } = await supabase
+          .from('recurring_availability_settings')
+          .select('*')
+          .eq('gardener_id', user?.id)
+          .single();
 
-      if (settError && settError.code !== 'PGRST116') throw settError;
+        if (settError && settError.code !== 'PGRST116') throw settError;
+        settData = ownSettings;
+      }
 
       // 3. Reconstruir la matriz desde los datos
       const matrix: Record<number, Set<number>> = {};
@@ -222,6 +254,19 @@ export default function RecurringScheduleManager({
 
     try {
       if (!user?.id) return false;
+
+      if (member) {
+        const { error } = await supabase.rpc('set_member_recurring_schedule', {
+          p_member_id: member.memberId,
+          p_rules: matrixToRules(scheduleMatrix),
+          p_weeks: settings.weeks_to_maintain,
+        });
+        if (error) throw error;
+        toast.success(`Horario fijo de ${member.name} guardado y aplicado`);
+        setDirty(false);
+        onChangePending?.(false);
+        return true;
+      }
 
       // 1. Guardar Configuración
       const { error: settError } = await supabase
@@ -320,7 +365,7 @@ export default function RecurringScheduleManager({
     } finally {
       setSaving(false);
     }
-  }, [settings, scheduleMatrix, user?.id]);
+  }, [settings, scheduleMatrix, user?.id, member]);
   
   useEffect(() => {
     registerSaveHandler?.(commitSave);

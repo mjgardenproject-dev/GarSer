@@ -58,6 +58,7 @@ describe('InvitationAcceptPage sin sesión (D21)', () => {
     expect((screen.getByLabelText('Tu correo') as HTMLInputElement).value).toBe('ana@correo.com');
     fireEvent.change(screen.getByLabelText('Tu nombre'), { target: { value: 'Ana Pérez' } });
     fireEvent.change(screen.getByLabelText('Elige una contraseña'), { target: { value: 'ClaveSegura1' } });
+    fireEvent.change(screen.getByLabelText('Repite la contraseña'), { target: { value: 'ClaveSegura1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Unirme al equipo' }));
 
     expect(await screen.findByText('Panel de empleado')).toBeTruthy();
@@ -77,12 +78,24 @@ describe('InvitationAcceptPage sin sesión (D21)', () => {
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
+  it('si las dos contraseñas no coinciden, lo dice y no envía nada (H-43)', async () => {
+    renderPage();
+    await screen.findByText('Jardines Sol te invita a su equipo');
+    fireEvent.change(screen.getByLabelText('Tu nombre'), { target: { value: 'Ana' } });
+    fireEvent.change(screen.getByLabelText('Elige una contraseña'), { target: { value: 'ClaveSegura1' } });
+    fireEvent.change(screen.getByLabelText('Repite la contraseña'), { target: { value: 'ClaveSegura2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Unirme al equipo' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('no coinciden');
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
   it('si ya tiene cuenta con ese correo, pide su contraseña, entra y se une', async () => {
     mocks.invoke.mockResolvedValue({ data: { ok: false, error: 'account_exists' }, error: null });
     renderPage();
     await screen.findByText('Jardines Sol te invita a su equipo');
     fireEvent.change(screen.getByLabelText('Tu nombre'), { target: { value: 'Ana' } });
     fireEvent.change(screen.getByLabelText('Elige una contraseña'), { target: { value: 'ClaveSegura1' } });
+    fireEvent.change(screen.getByLabelText('Repite la contraseña'), { target: { value: 'ClaveSegura1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Unirme al equipo' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar y unirme' })).toBeTruthy());

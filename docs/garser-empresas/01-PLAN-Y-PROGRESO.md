@@ -103,6 +103,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D19 | ¿Precio de cada visita? (2026-09-24) | **El del primer presupuesto**, fijo mientras dure el plan (mismo motor, sin descuentos). | Un cambio de tarifas del profesional vale para planes nuevos. | F9 |
 | D20 | ¿Quién ofrece planes? (2026-09-24) | **Todos** (autónomos y empresas). | | F9 |
 | D21 | ¿Cómo entra el empleado invitado que no tiene cuenta? (2026-09-26) | **«La manera más fácil y rápida pero segura»**: pone nombre y contraseña en la propia invitación y entra directo a su panel, sin correo de confirmación. | Ver H-39. Si ya tiene cuenta con ese correo, entra y se une en el mismo paso. | Tras la fusión |
+| D22 | ¿Quién pone el horario de un empleado? (2026-09-28) | **El dueño de la empresa**, no el empleado (el empleado lo ve en solo lectura). | Cambia A-06 (sigue siendo por persona). Ver H-41. | Tras la fusión |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -888,6 +889,12 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
    entra directo a su panel; correo nuevo). Despliegue: migración `20260927120000`, funciones
    `company-invitation-signup` (nueva) y `send-email-notification`, y la web (PR). Pruebas en
    garser.es: P-H38-1, P-D21-1, P-D21-2.
+2c. **Arreglados el 2026-09-28** (fallos que encontró el usuario probando empresas): H-40 (cambiar
+   la duración aparta ya las horas de quien va; también autónomos), H-41 / D22 (el dueño pone el
+   horario de cada empleado), H-42 («Mover a otra fecha» como página fija móvil), H-43 (repetir la
+   contraseña en la invitación), H-44 (el cliente ve la hora de fin). Despliegue: migración
+   `20260928120000`, funciones `send-email-notification` y `booking-confirmation-email`, y la web
+   (PR). Pruebas en garser.es: P-H40-1, P-D22-1, P-H42-1, P-H44-1.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

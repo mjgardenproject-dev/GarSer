@@ -112,11 +112,16 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         correctedBookingInput: patch as Record<string, unknown>,
       });
       // Drop the authoritative recomputed total into the existing proposal input.
+      // H-40: también las horas que salen de las medidas reales (antes se perdían y la reserva
+      // seguía con la duración de antes, sin apartar las horas de más).
+      const recalculatedHours = Math.max(1, Math.ceil(Number(result.estimatedHours) || 0));
+      const durationChanged = teamShape(request).labour == null && recalculatedHours !== Number(request.duration_hours);
       setPriceDrafts((prev) => ({
         ...prev,
         [request.id]: {
           amount: String(result.totalPrice),
           reason: prev[request.id]?.reason || 'Medidas reales verificadas en el jardín',
+          ...(durationChanged ? { duration: String(recalculatedHours) } : {}),
         },
       }));
       setCorrectionVars((prev) => ({ ...prev, [request.id]: declaredVariables }));
@@ -314,6 +319,13 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   };
 
   const respondToRequest = async (requestId: string, responseType: 'accept' | 'reject') => {
+    // H-40: si hay un precio o una duración escritos sin enviar, «Aceptar» los perdía sin avisar
+    // (y la reserva se quedaba con la duración de antes).
+    const unsent = priceDrafts[requestId];
+    if (responseType === 'accept' && ((unsent?.amount || '').trim() !== '' || (unsent?.duration || '').trim() !== '')) {
+      toast.error('Tienes un cambio de precio o de duración sin enviar: pulsa «Enviar propuesta al cliente» o borra esos campos.');
+      return;
+    }
     try {
       setResponding(requestId);
 
@@ -377,7 +389,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       return;
     }
     const draft = priceDrafts[request.id] || { amount: '', reason: '' };
-    const value = Number(draft.amount);
+    const priceTyped = (draft.amount || '').trim() !== '';
+    const durationTyped = (draft.duration || '').trim() !== '';
+    if (!priceTyped && !durationTyped) {
+      toast.error('Escribe un nuevo precio, una nueva duración o las dos cosas.');
+      return;
+    }
+    // H-40: se puede cambiar solo la duración; el precio se queda como está.
+    const value = priceTyped ? Number(draft.amount) : Number(request.total_price);
     if (!(value > 0)) {
       toast.error('Introduce un precio válido para proponer el cambio.');
       return;
@@ -420,7 +439,10 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         });
       }
 
-      toast.success('Propuesta de precio enviada al cliente.');
+      toast.success(durationValue && durationValue > Number(request.duration_hours || 0)
+        ? 'Propuesta enviada al cliente. Las horas de más ya quedan apartadas en la agenda.'
+        : 'Propuesta enviada al cliente.');
+      setPriceDrafts((prev) => ({ ...prev, [request.id]: { amount: '', reason: '' } }));
       await fetchBookingRequests();
     } catch (error: any) {
       console.error('Error proposing new booking price:', error);
@@ -434,7 +456,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
       });
       toast.error(error?.message || 'No se pudo proponer el nuevo precio.');
     } finally {
-      setPriceDrafts((prev) => ({ ...prev, [request.id]: { ...draft, loading: false } }));
+      setPriceDrafts((prev) => ({ ...prev, [request.id]: { ...(prev[request.id] || draft), loading: false } }));
     }
   };
 
@@ -589,7 +611,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
 
                 {request.status === 'pending' && request.price_change_status !== 'pending_client_acceptance' && (
                   <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50">
-                    <p className="text-sm font-medium text-blue-900 mb-2">Modificar precio y enviar propuesta al cliente</p>
+                    <p className="text-sm font-medium text-blue-900 mb-2">Cambiar precio o duración (se lo proponemos al cliente)</p>
                     {/* F8: recalcular usa el motor de UN servicio: no en reservas de varios. */}
                     {request.data_input_mode === 'manual' && resolveManualServiceKey(request.services?.name) && !isMultiServiceBooking(request as never) && (
                       <button
@@ -605,66 +627,74 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                         Cambio de precio no permitido: esta reserva de palmeras no está en el último rango abierto de especie.
                       </p>
                     )}
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={priceDrafts[request.id]?.amount || ''}
-                        onChange={(e) =>
-                          setPriceDrafts((prev) => ({
-                            ...prev,
-                            [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), amount: e.target.value }
-                          }))
-                        }
-                        placeholder={`Nuevo precio del servicio (€), actual: ${formatEuro(request.total_price)}`}
-                        className="flex-1 px-3 py-2 border border-blue-200 rounded-md text-sm"
-                      />
-                      <input
-                        type="text"
-                        value={priceDrafts[request.id]?.reason || ''}
-                        onChange={(e) =>
-                          setPriceDrafts((prev) => ({
-                            ...prev,
-                            [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), reason: e.target.value }
-                          }))
-                        }
-                        placeholder="Motivo (opcional)"
-                        className="flex-1 px-3 py-2 border border-blue-200 rounded-md text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => submitPriceProposal(request)}
-                        disabled={priceDrafts[request.id]?.loading || (request.pricing_context?.service_type === 'palm_pruning' && request.pricing_context?.allows_price_change !== true)}
-                        className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-60"
-                      >
-                        Proponer
-                      </button>
+                    {/* H-40: precio y duración juntos y un solo botón. Antes la duración iba debajo
+                        de «Proponer», que exigía precio, y «Aceptar» la perdía sin avisar. */}
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <label className="block text-xs font-medium text-blue-900">
+                        Nuevo precio del servicio (€)
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={priceDrafts[request.id]?.amount || ''}
+                          onChange={(e) =>
+                            setPriceDrafts((prev) => ({
+                              ...prev,
+                              [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), amount: e.target.value }
+                            }))
+                          }
+                          placeholder={`Ahora: ${formatEuro(request.total_price)}`}
+                          className="mt-1 w-full min-w-0 px-3 py-2 border border-blue-200 rounded-md text-base font-normal"
+                        />
+                      </label>
+                      {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia.
+                          F7: no en trabajos de equipo o de varios días (el servidor no lo acepta). */}
+                      {teamShape(request).labour == null && (
+                        <label className="block text-xs font-medium text-blue-900">
+                          Nueva duración (horas en total)
+                          <input
+                            type="number"
+                            min="1"
+                            max="12"
+                            step="1"
+                            inputMode="numeric"
+                            value={priceDrafts[request.id]?.duration || ''}
+                            onChange={(e) =>
+                              setPriceDrafts((prev) => ({
+                                ...prev,
+                                [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), duration: e.target.value }
+                              }))
+                            }
+                            placeholder={`Ahora: ${request.duration_hours} h`}
+                            className="mt-1 w-full min-w-0 px-3 py-2 border border-blue-200 rounded-md text-base font-normal"
+                          />
+                        </label>
+                      )}
                     </div>
-                    {/* D5: opcional, solo mueve la hora de FIN — el inicio nunca cambia.
-                        F7: no en trabajos de equipo o de varios días (el servidor no lo acepta). */}
-                    {teamShape(request).labour == null && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max="12"
-                        step="1"
-                        value={priceDrafts[request.id]?.duration || ''}
-                        onChange={(e) =>
-                          setPriceDrafts((prev) => ({
-                            ...prev,
-                            [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), duration: e.target.value }
-                          }))
-                        }
-                        placeholder={`Nueva duración (h), actual: ${request.duration_hours}`}
-                        className="w-40 px-3 py-2 border border-blue-200 rounded-md text-sm"
-                      />
-                      <span className="text-xs text-blue-700">
-                        horas totales (opcional — solo cambia la hora de fin)
-                      </span>
-                    </div>
-                    )}
+                    <input
+                      type="text"
+                      value={priceDrafts[request.id]?.reason || ''}
+                      onChange={(e) =>
+                        setPriceDrafts((prev) => ({
+                          ...prev,
+                          [request.id]: { ...(prev[request.id] || { amount: '', reason: '' }), reason: e.target.value }
+                        }))
+                      }
+                      placeholder="Motivo (opcional, lo verá el cliente)"
+                      className="mt-2 w-full min-w-0 px-3 py-2 border border-blue-200 rounded-md text-base"
+                    />
+                    <p className="mt-1 text-xs text-blue-800">
+                      Puedes cambiar solo el precio, solo la duración o las dos cosas. Si alargas, las horas de más quedan apartadas en la agenda hasta que el cliente responda.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => submitPriceProposal(request)}
+                      disabled={priceDrafts[request.id]?.loading || (request.pricing_context?.service_type === 'palm_pruning' && request.pricing_context?.allows_price_change !== true)}
+                      className="mt-2 w-full px-3 py-2.5 bg-blue-600 text-white rounded-md text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      Enviar propuesta al cliente
+                    </button>
                   </div>
                 )}
 

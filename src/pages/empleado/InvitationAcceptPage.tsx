@@ -54,6 +54,8 @@ const InvitationAcceptPage: React.FC = () => {
   const [mode, setMode] = useState<'signup' | 'login'>('signup');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
+  // H-43: al crear la cuenta se repite, para no quedarse fuera por un error al teclearla.
+  const [passwordRepeat, setPasswordRepeat] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -126,6 +128,7 @@ const InvitationAcceptPage: React.FC = () => {
     setFormError(null);
     if (fullName.trim().length < 2) { setFormError('Escribe tu nombre.'); return; }
     if (password.length < MIN_PASSWORD) { setFormError(`La contraseña tiene que tener al menos ${MIN_PASSWORD} caracteres.`); return; }
+    if (password !== passwordRepeat) { setFormError('Las dos contraseñas no coinciden.'); return; }
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke('company-invitation-signup', {
@@ -236,6 +239,19 @@ const InvitationAcceptPage: React.FC = () => {
             </div>
             {mode === 'signup' && <p className="mt-1 text-xs text-gray-500">Mínimo {MIN_PASSWORD} caracteres. Con ella entrarás los próximos días.</p>}
           </div>
+          {mode === 'signup' && (
+            <div>
+              <label htmlFor="inv-password-repeat" className="mb-1 block text-sm font-medium text-gray-700">Repite la contraseña</label>
+              <input
+                id="inv-password-repeat"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={passwordRepeat}
+                onChange={(e) => setPasswordRepeat(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          )}
           {formError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{formError}</p>}
           <button
             type="submit"

@@ -134,7 +134,7 @@ const EmployeeHomePage: React.FC = () => {
             <CalendarClock className="h-6 w-6 shrink-0 text-emerald-700" />
             <span className="flex-1">
               <span className="block font-semibold text-gray-900">Mi horario</span>
-              <span className="block text-sm text-gray-600">Los días y horas en que puedes trabajar. Tu empresa solo te asigna trabajos dentro de ellos.</span>
+              <span className="block text-sm text-gray-600">Los días y horas que tu empresa cuenta contigo (los pone ella). Solo te asigna trabajos dentro de ellos.</span>
             </span>
             <ChevronRight className="h-5 w-5 text-gray-400" />
           </Link>

@@ -566,6 +566,56 @@ D6 en el navegador. **Arreglo:** `fetchProviderNames` toma el nombre de la ficha
 tarjeta no recorta a «nombre de pila» el nombre de una empresa. Para un autónomo, pasa a verse el
 nombre de su ficha (el del listado): normalmente es el mismo.
 
+### H-40 · Cambiar la duración no apartaba las horas de quien va — 🟢 Resuelto (2026-09-28, también autónomos)
+
+Visto por el usuario en garser.es con empresas; **pasa igual a los autónomos** (la misma pantalla).
+En «Solicitudes» (`BookingRequestsManager.tsx`) la «Nueva duración» solo viajaba con «Proponer»,
+que exigía precio, y **«Aceptar» la ignoraba sin avisar**: en producción la única reserva de
+empresa no tenía ningún cambio guardado (1 h). Además, aunque se propusiera, las horas nuevas no se
+apartaban hasta que el cliente aceptaba (otro cliente podía comprarlas y la aceptación fallaba),
+`resize_booking_schedule` solo miraba `availability` (no los pagos en curso: podía quitarle la hora
+a un cliente que estaba pagando), y «Recalcular con las medidas reales» tiraba las horas
+recalculadas. Las propuestas vencidas solo se marcaban cuando alguien volvía a tocar la reserva.
+**Arreglo:** migración `20260928120000`: `private.sync_booking_span` (una sola función ajusta la
+agenda comprobando cada hora con `worker_free_at`; sin agenda en una empresa, se niega), trigger
+que **aparta las horas al proponer** y las devuelve si la propuesta caduca, reloj
+`expire-price-change-proposals` (cada 15 min). Pantalla: precio y duración juntos con un solo botón
+(se puede cambiar solo la duración), «Aceptar» avisa si hay un cambio sin enviar, «Recalcular»
+rellena las horas; el chat igual (sin duración en equipos). El cliente ve «propone cambiar la
+duración… el precio no cambia» y «Aceptar el cambio» cuando el precio es el mismo; correos igual.
+Nota: una propuesta solo se puede hacer con la reserva **pendiente** (regla anterior: el trigger
+`prevent_confirm_when_price_change_pending`). Batería `verify-duration-holds` 6/6.
+
+### H-41 · El empleado ponía su propio horario y el dueño no podía — 🟢 Resuelto (2026-09-28, D22)
+
+Decisión del usuario: la disponibilidad de un empleado la configura el dueño. Antes el empleado la
+editaba en «Mi trabajo → Horario» (escritura directa, RLS «el tuyo») y el dueño no tenía pantalla.
+**Arreglo:** RLS de `availability`, `availability_blocks`, `recurring_schedules` y
+`recurring_availability_settings`: escribir exige ser dueño de la fila y **no ser empleado**
+(autónomos y dueño, igual). RPC del dueño, con comprobación en el servidor de que es un empleado
+activo de SU empresa: `member_recurring_schedule`, `set_member_recurring_schedule`,
+`set_member_day_availability`, `member_busy_hours`. Pantalla `/empresa/equipo/:memberId/horario`
+(la misma de horario, sobre el empleado) con botón «Horario» en su tarjeta; el empleado la ve en
+solo lectura. Las horas vendidas siguen protegidas (A-32). `verify-f5-schedules` adaptada (9/9).
+
+### H-42 · «Mover a otra fecha» hacía scroll lateral en el móvil — 🟢 Resuelto (2026-09-28)
+
+Iba al final de la hoja del trabajo (`JobSheet.tsx`, sin `overflow-x-hidden`, sin bloquear el
+fondo) con un `<input type="date">` nativo, que en iOS no respeta el ancho. Ahora es una página fija
+a pantalla completa (cabecera, días en rejilla que salta de línea, horas «09:00–11:00», motivo y
+«Cancelar / Proponer al cliente» fijos abajo). Medido a 375 px: ancho de contenido = 375.
+
+### H-43 · Invitación: la contraseña no se repetía — 🟢 Resuelto (2026-09-28)
+
+`InvitationAcceptPage.tsx`: campo «Repite la contraseña» al crear la cuenta; si no coinciden, aviso
+y no se envía.
+
+### H-44 · El cliente solo veía la hora de inicio — 🟢 Resuelto (2026-09-28, también autónomos)
+
+Tarjeta del cliente «09:00 – 11:00 · 2 h»; propuesta de otra fecha «de 12:00 a 14:00» (en equipo o
+varios días «desde las 12:00»: el fin se calcula al aceptar); correos con fin
+(`formatBookingDate/When` con duración: reserva, cambio de fecha, aviso al empleado, visitas).
+
 ### H-39 · El empleado invitado no podía llegar a su panel y el correo no le hablaba a él — 🟢 Resuelto (2026-09-26, D21)
 
 Visto por el usuario en producción. **Correo** (`send-email-notification`, `company_invitation`):
@@ -729,7 +779,7 @@ esta es la respuesta.
 | A-03 | **El empleado no es proveedor.** No tiene fila en `gardener_profiles`. | Sin esa fila no puede tener precios ni aparecer en el directorio. Es una imposibilidad del modelo, no un `if` que se pueda olvidar. |
 | A-04 | **No existe tabla de sesiones/jornadas.** Una jornada es `GROUP BY assignee_id, date`. | Almacenarla crea un segundo sitio donde la verdad se desincroniza. |
 | A-05 | **La reseña es de la empresa**, con `performed_by` interno y fuera de la vista pública. | El cliente contrata a la empresa. Si el empleado se va, la reputación no se va con él. |
-| A-06 | **La disponibilidad se declara siempre por persona.** La de la empresa se **deriva**, no se declara. | Es lo que impide tener dos sistemas de disponibilidad. |
+| A-06 | **La disponibilidad se declara siempre por persona.** La de la empresa se **deriva**, no se declara. **D22 (2026-09-28): la de cada empleado la declara el dueño** (el empleado la ve en solo lectura); sigue siendo por persona. | Es lo que impide tener dos sistemas de disponibilidad. |
 | A-07 | **Empieza con vista, no con tabla materializada**, para la capacidad. | Una proyección materializada puede divergir de la realidad. Se materializa solo si se mide que hace falta. |
 | A-08 | **Roles internos: solo `owner` y `employee`** al principio. El `CHECK` admite `manager` sin exponerlo. | Añadir un valor después es una migración de una línea. Construir hoy una matriz de permisos que nadie ha pedido, no. |
 | A-09 | **El modelo económico no cambia.** Empresa cobra en mano, cliente paga la comisión por Stripe. | No hay Connect ni payouts. Salvo que D1 diga otra cosa. |

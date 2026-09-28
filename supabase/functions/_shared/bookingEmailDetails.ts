@@ -114,7 +114,7 @@ export async function buildBookingEmailDetails(
     if (service?.name) serviceName = service.name;
   }
 
-  const whenText = formatBookingWhen(booking.date, booking.start_time, booking.end_date);
+  const whenText = formatBookingWhen(booking.date, booking.start_time, booking.end_date, booking.duration_hours);
   const address = booking.client_address || 'Dirección indicada en la reserva';
   const amounts = getBookingAmounts(booking);
   const [client, gardener] = await Promise.all([

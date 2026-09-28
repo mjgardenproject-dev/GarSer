@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -44,15 +44,16 @@ const CompanyPanel: React.FC = () => {
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
   // Solicitudes de reserva por responder (F4): la empresa es el proveedor de sus reservas.
-  useEffect(() => {
+  const loadPendingRequests = useCallback(async () => {
     if (!user?.id) return;
-    void supabase
+    const { count } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('gardener_id', user.id)
-      .eq('status', 'pending')
-      .then(({ count }) => setPendingRequests(count ?? 0));
+      .eq('status', 'pending');
+    setPendingRequests(count ?? 0);
   }, [user?.id]);
+  useEffect(() => { void loadPendingRequests(); }, [loadPendingRequests]);
 
   if (loading && !data) return <Spinner />;
   if (!data) {
@@ -136,7 +137,7 @@ const CompanyPanel: React.FC = () => {
 
       <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
         {tab === 'agenda' ? (
-          <CompanyAgenda pendingRequests={pendingRequests} />
+          <CompanyAgenda pendingRequests={pendingRequests} onRefreshExtra={loadPendingRequests} />
         ) : tab === 'team' ? (
           <>
             {data.offered_services.length === 0 && (

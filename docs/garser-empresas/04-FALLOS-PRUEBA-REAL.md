@@ -691,6 +691,7 @@ Decisiones técnicas tomadas por el chat (reversibles, §5 de la guía):
 | R-11 | El correo «tu propuesta ha caducado» (`booking_price_change_expired`) tiene plantilla, pero **nada lo envía**: ni el reloj nuevo `expire-price-change-proposals` ni la caducidad perezosa. El jardinero no se entera de que su propuesta caducó. | Funcionamiento | F3 |
 | R-12 | Borrar desde Supabase a un **cliente o autónomo con reservas pagadas se lleva sus reservas**, por el `ON DELETE CASCADE` de `bookings.client_id` y `bookings.gardener_id` y de lo que cuelga de ellas. Es anterior a empresas (ver R-02). | **Datos y dinero** | F6 |
 | R-14 | En el móvil, el panel de admin **no tiene botón de cerrar sesión**: solo estaba en la barra lateral, que se oculta por debajo de 768 px (`AdminLayout.tsx`). Visto al probar F1. | Diseño / UX | F1 (hecho) |
+| R-15 | El botón de salir de la barra superior en el móvil es solo un icono **sin nombre accesible**: un lector de pantalla lo anuncia como «botón» (`Navbar.tsx`). | Accesibilidad | F2 (hecho) |
 | R-13 | Restos en producción de cuentas borradas: una solicitud de empresa «enviada» huérfana (`af612d76-…`), que el admin ve como pendiente y no puede aprobar. | Datos | F6 |
 
 ### 3.3 Fases
@@ -1050,12 +1051,49 @@ A-34 en `02-HALLAZGOS.md`.
 - Utilidad nueva para probar: `scripts/garser-empresas/demo-pending-request.mjs` (crea una
   solicitud pendiente del cliente al jardinero de la semilla, solo en local).
 
+#### F2 — hecho (2026-09-28)
+
+**Código.**
+
+- `useRefreshOnReturn` (`src/hooks/useRefreshOnReturn.ts`): recarga al volver a la pestaña o a la
+  app (`visibilitychange` y `pageshow` desde la caché), como mucho cada 30 s y sin solaparse.
+- `RefreshButton` (`src/components/common/RefreshButton.tsx`): 44 px de alto, nombre accesible
+  «Actualizar», gira mientras carga y no admite doble toque.
+- Pantallas en las que están:
+  - `BookingsList` (cliente), que recarga en silencio (`fetchBookings({ silent: true })`).
+  - `GardenerBookings`: reservas y planes.
+  - `BookingRequestsManager` («Solicitudes» del autónomo y de la empresa), que recarga en
+    silencio y conserva los borradores.
+  - `CompanyAgenda`: agenda más el aviso de solicitudes por aceptar, que ahora se puede volver a
+    pedir (`loadPendingRequests`).
+  - `EmployeeHomePage` («Mi trabajo»).
+- Texto de «Solicitudes» sin trabajos: «aparecerán aquí» (antes decía «automáticamente», y no
+  era verdad).
+- R-15: `aria-label` en el botón de salir de la barra.
+
+**Pruebas.**
+
+- Unitarias: `useRefreshOnReturn` (vuelta, límite de 30 s, oculto o desactivado) y
+  `RefreshButton` (llama, se desactiva, no hay doble toque).
+- **Navegador local**, con dos sesiones a la vez: cliente en `127.0.0.1:5190` y jardinero en
+  `localhost:5190`, que son orígenes distintos.
+  - El jardinero acepta la solicitud; el cliente pulsa «Actualizar» y la ve «Confirmada» **sin
+    recargar la web** (se conserva una marca puesta en `window`).
+  - Se crea otra reserva por detrás, pasan más de 30 s y se lanza `visibilitychange`: aparece
+    la reserva nueva sin pulsar nada. En el panel las pestañas de fondo siguen «visibles», así
+    que el evento se lanza a mano.
+  - La empresa (`demo-company.mjs`) entra directa a `/empresa`. Se crea otra solicitud por
+    detrás y «Actualizar» cambia el aviso de «1 solicitud» a «2 solicitudes por aceptar».
+  - La empleada entra directa a `/mi-trabajo`, con el botón en la cabecera. Capturas a 305 px.
+- Utilidad nueva: `scripts/garser-empresas/demo-company.mjs` (empresa y empleada de prueba con
+  una solicitud; `--clean` las borra; solo en local).
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
 |---|---|---|---|
 | F1 | ✅ Hecho (2026-09-28) | 573 pruebas (+15), `tsc` 128, compila; batería `verify-session-scope` 3/3; navegador local (abajo) | ver git |
-| F2 | Pendiente | | |
+| F2 | ✅ Hecho (2026-09-28) | 576 pruebas (+3), `tsc` 128, compila; navegador local (abajo) | ver git |
 | F3 | Pendiente | | |
 | F4 | Pendiente | | |
 | F5 | Pendiente | | |

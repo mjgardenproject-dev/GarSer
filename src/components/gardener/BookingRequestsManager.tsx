@@ -5,6 +5,8 @@ import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import { formatDateRange } from '../../utils/jobShape';
 import { receivedAgo } from '../../utils/receivedAgo';
+import { useRefreshOnReturn } from '../../hooks/useRefreshOnReturn';
+import RefreshButton from '../common/RefreshButton';
 import { readPriceDrafts, writePriceDrafts } from '../../utils/sessionDrafts';
 
 // GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
@@ -152,9 +154,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
     fetchBookingRequests();
   }, [user?.id]);
 
-  const fetchBookingRequests = async () => {
+  const refreshSilently = () => fetchBookingRequests({ silent: true });
+  useRefreshOnReturn(refreshSilently, { enabled: !!user?.id });
+
+  // `silent`: recarga sin sustituir la pantalla por el indicador de carga (R-03). Los borradores
+  // de propuesta viven en su propio estado y no se tocan.
+  const fetchBookingRequests = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       await expireStaleBookingRequests();
 
       // Obtener reservas pendientes para este jardinero desde la tabla bookings
@@ -507,8 +514,11 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Solicitudes de Reserva</h1>
           <p className="text-gray-600 mt-2">Gestiona las solicitudes de tus clientes</p>
         </div>
-        <div className="bg-green-100 px-4 py-2 rounded-lg self-start sm:self-auto">
-          <span className="text-green-800 font-semibold">{requests.length} solicitudes pendientes</span>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="bg-green-100 px-4 py-2 rounded-lg">
+            <span className="text-green-800 font-semibold">{requests.length} solicitudes pendientes</span>
+          </div>
+          <RefreshButton onRefresh={refreshSilently} />
         </div>
       </div>
 
@@ -516,7 +526,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
           <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600 text-lg">No tienes solicitudes pendientes</p>
-          <p className="text-gray-500">Las nuevas solicitudes aparecerán aquí automáticamente</p>
+          <p className="text-gray-500">Las nuevas solicitudes aparecerán aquí</p>
         </div>
       ) : (
         <div className="space-y-4 sm:space-y-6">

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { useRefreshOnReturn } from '../../hooks/useRefreshOnReturn';
+import RefreshButton from '../common/RefreshButton';
 import { Calendar, Clock, MapPin, MessageCircle, Check, ChevronDown, Phone, Navigation, Loader2, MessageSquareQuote, AlertTriangle } from 'lucide-react';
 import AppHeader from '../common/AppHeader';
 import { createPortal } from 'react-dom';
@@ -214,6 +216,14 @@ const GardenerBookings: React.FC = () => {
     setSelectedChat({ bookingId, clientName });
   };
 
+  // R-03: botón «Actualizar» y recarga al volver a la app (fetchBookings no enseña el
+  // indicador de carga al repetir, así que la lista no parpadea).
+  const refreshAll = async () => {
+    loadPlans();
+    await fetchBookings();
+  };
+  useRefreshOnReturn(refreshAll, { enabled: !!user });
+
   const mapsUrl = (address: string) =>
     `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
 
@@ -225,6 +235,8 @@ const GardenerBookings: React.FC = () => {
         title="Mis Reservas"
         onBack={() => navigate('/dashboard')}
         rightSlot={
+          <div className="flex items-center gap-2">
+          <RefreshButton onRefresh={refreshAll} />
           <div className="relative">
             <select
               value={statusFilter}
@@ -239,6 +251,7 @@ const GardenerBookings: React.FC = () => {
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
               <ChevronDown className="h-4 w-4" />
             </div>
+          </div>
           </div>
         }
       />

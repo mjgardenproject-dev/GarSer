@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { addDays, format, parseISO, startOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -9,6 +9,8 @@ import {
 } from '../../../hooks/useCompanySchedule';
 import { describeJobShape } from '../../../utils/jobShape';
 import JobSheet from './JobSheet';
+import RefreshButton from '../../common/RefreshButton';
+import { useRefreshOnReturn } from '../../../hooks/useRefreshOnReturn';
 
 // Planificador de la empresa (GarSer Empresas F6.2), móvil primero, en tres densidades:
 // · Día: una fila por persona con sus horas (libre / trabajo / sin horario) y sus trabajos.
@@ -170,7 +172,7 @@ const ListView: React.FC<{ data: CompanySchedule; members: ScheduleMember[]; onO
   );
 };
 
-const CompanyAgenda: React.FC<{ pendingRequests: number | null }> = ({ pendingRequests }) => {
+const CompanyAgenda: React.FC<{ pendingRequests: number | null; onRefreshExtra?: () => unknown }> = ({ pendingRequests, onRefreshExtra }) => {
   const [density, setDensity] = useState<Density>('day');
   const [anchor, setAnchor] = useState(() => new Date());
   const [openJob, setOpenJob] = useState<ScheduleJob | null>(null);
@@ -181,6 +183,13 @@ const CompanyAgenda: React.FC<{ pendingRequests: number | null }> = ({ pendingRe
   const to = density === 'day' ? iso(anchor) : density === 'week' ? days[6] : iso(addDays(new Date(), 13));
   const { data, loading, error, refresh } = useCompanySchedule(from, to);
   const members = (data?.members || []).filter((m) => m.works);
+
+  // R-03: «Actualizar» y recarga al volver a la app (agenda y solicitudes por aceptar). La agenda
+  // solo enseña el indicador de carga si aún no hay datos, así que no parpadea.
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refresh(), onRefreshExtra?.()]);
+  }, [refresh, onRefreshExtra]);
+  useRefreshOnReturn(refreshAll, { enabled: !openJob });
 
   const step = (dir: number) => setAnchor((d) => addDays(d, density === 'week' ? 7 * dir : dir));
   const title = density === 'day'
@@ -197,11 +206,14 @@ const CompanyAgenda: React.FC<{ pendingRequests: number | null }> = ({ pendingRe
         </Link>
       )}
 
-      <div role="tablist" aria-label="Vista" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
-        {([['day', 'Día'], ['week', 'Semana'], ['list', 'Lista']] as const).map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={density === key} onClick={() => setDensity(key)}
-            className={`rounded-lg py-1.5 text-sm font-semibold ${density === key ? 'bg-white text-emerald-800 shadow-sm' : 'text-gray-600'}`}>{label}</button>
-        ))}
+      <div className="flex items-center gap-2">
+        <div role="tablist" aria-label="Vista" className="grid flex-1 grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+          {([['day', 'Día'], ['week', 'Semana'], ['list', 'Lista']] as const).map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={density === key} onClick={() => setDensity(key)}
+              className={`rounded-lg py-1.5 text-sm font-semibold ${density === key ? 'bg-white text-emerald-800 shadow-sm' : 'text-gray-600'}`}>{label}</button>
+          ))}
+        </div>
+        <RefreshButton onRefresh={refreshAll} />
       </div>
 
       <div className="flex items-center justify-between gap-2">

@@ -21,7 +21,7 @@
 | # | Qué ve el usuario | Gravedad | ¿Es de GarSer? | Estado |
 |---|---|---|---|---|
 | R-01 | Al iniciar sesión como admin, la consola se llena de errores | Baja (sin efecto funcional) | Una parte sí (1 aviso); el resto es de una extensión de Chrome | Analizado |
-| R-02 | Supabase no deja borrar al usuario dueño de una empresa («Database error deleting user»); y borrar otras cuentas deja restos | Media (no se puede dar de baja; restos que confunden al admin) | Sí | Analizado · **decisión pendiente** |
+| R-02 | Supabase no deja borrar al usuario dueño de una empresa («Database error deleting user»); y borrar otras cuentas deja restos | Media (no se puede dar de baja; restos que confunden al admin) | Sí | Analizado · **decisión pendiente** · el usuario pide un sistema seguro para borrar o suspender empresas |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo)
 · **Media** (lo completa, pero mal o confuso) · **Baja** (cosmético, o solo se ve en la consola).
@@ -235,6 +235,34 @@ empresa, eso hoy lo impide por casualidad el `RESTRICT` de arriba.
 La propuesta es dar de baja y anonimizar, conservando las reservas y los importes, que son los
 justificantes del dinero, en lugar de borrar. La alternativa sería no permitirlo nunca, y que el
 admin solo pueda suspender. Se le pregunta al usuario al escribir el plan.
+
+**Petición del usuario (2026-09-28): hay que crear un sistema para borrar o suspender empresas de
+forma segura, que no deje sin hacer reservas ya citadas.** Es un requisito del plan de §3, no
+una mejora opcional. Lo que tiene que cumplir:
+
+- **Ninguna reserva citada se queda sin hacer en silencio.** Si la empresa tiene reservas
+  confirmadas o pendientes con fecha futura, ni el borrado ni la suspensión pueden dejarlas
+  huérfanas. La herramienta se niega y las enseña, para que se completen, se cancelen con
+  reembolso y aviso al cliente, o se reasignen. Solo después se puede seguir.
+- **Suspender** significa dejar de recibir reservas nuevas (fuera del catálogo y de los
+  presupuestos) sin tocar las ya citadas, que se siguen pudiendo hacer, cobrar y valorar. Hoy
+  existe `companies.status = 'suspended'`, pero hay que comprobar qué hace de verdad cuando se
+  escriba el plan.
+- **Borrar** solo se puede si no queda nada pendiente. Sin historial, se borra entero. Con
+  historial, se aplica la decisión pendiente de arriba.
+- Lo mismo vale para **dar de baja a un empleado** que tiene horas asignadas: primero se
+  reasignan sus trabajos (F6), y después se le da de baja.
+
+**Borrado puntual de la cuenta de prueba `jrodgom1204@gmail.com`** (2026-09-28, lo pidió el
+usuario). Se hace con un script SQL de un solo bloque (todo o nada) que se para si la cuenta
+tiene reservas, horas asignadas o planes. Si no, borra en orden: servicios de los miembros,
+miembros, empresa (con sus invitaciones), solicitud de empresa y usuario (con su perfil, ficha y
+precios). No tiene ficheros en Storage.
+
+Antes se comprobó en producción con una prueba en seco, dentro de un bloque que se deshace: no
+quedaba ninguna fila de la cuenta ni de la empresa. El script lo ejecuta el usuario en el editor
+SQL de Supabase. Los restos antiguos (la solicitud huérfana `af612d76-…`) siguen pendientes para
+el punto 3.
 
 **Pruebas propuestas.**
 

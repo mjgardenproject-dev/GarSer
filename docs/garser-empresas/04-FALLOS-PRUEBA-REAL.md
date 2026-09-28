@@ -21,6 +21,7 @@
 | # | Qué ve el usuario | Gravedad | ¿Es de GarSer? | Estado |
 |---|---|---|---|---|
 | R-01 | Al iniciar sesión como admin, la consola se llena de errores | Baja (sin efecto funcional) | Una parte sí (1 aviso); el resto es de una extensión de Chrome | Analizado |
+| R-02 | Supabase no deja borrar al usuario dueño de una empresa («Database error deleting user»); y borrar otras cuentas deja restos | Media (no se puede dar de baja; restos que confunden al admin) | Sí | Analizado · **decisión pendiente** |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo)
 · **Media** (lo completa, pero mal o confuso) · **Baja** (cosmético, o solo se ve en la consola).
@@ -140,6 +141,121 @@ funciones del rastro.
 - **En garser.es (P-R01-1):** iniciar sesión como admin en una ventana de incógnito sin
   extensiones y comprobar que la consola queda limpia. Repetir como dueño de empresa y como
   cliente, y comprobar que el chat avisa en tiempo real.
+
+### R-02 — No se puede borrar en Supabase al usuario dueño de una empresa
+
+**Qué se ve.** En el panel de Supabase (Authentication → Users), al borrar el usuario
+`jrodgom1204@gmail.com` (`289c6a0f-…`), sale «Failed to delete selected users: Database error
+deleting user». La consola del panel muestra un `DELETE …/platform/auth/…` con error 500. Los
+avisos de `ConfigCat` que aparecen en la consola son del propio panel de Supabase, no de GarSer.
+
+**Quién es ese usuario** (consulta de solo lectura en producción, 2026-09-28):
+
+- Es la cuenta de la empresa «Jardines sa» (`companies.id 5b013f6f-…`, activa), la **única
+  empresa de producción**.
+- Tiene `profiles.role = 'company'`, una ficha en `gardener_profiles`, su solicitud de empresa
+  aprobada y su fila de dueño en `company_members`.
+- Hay además un empleado inactivo, 4 invitaciones y 1 presupuesto. No tiene reservas.
+
+**Causa exacta.** Se ha comprobado en producción con un borrado de prueba dentro de un bloque que
+siempre se deshace. El usuario sigue existiendo.
+
+1. Supabase borra la fila de `auth.users`. Por `ON DELETE CASCADE` intenta borrar su
+   `gardener_profiles`.
+2. `companies.provider_user_id` apunta a esa ficha con **`ON DELETE RESTRICT`**
+   (`supabase/migrations/20260924120000_empresas_f2_provider_model.sql:72`). Postgres responde
+   `update or delete on table "gardener_profiles" violates foreign key constraint
+   "companies_provider_user_id_fkey" on table "companies"`, y Supabase lo enseña como el genérico
+   «Database error deleting user».
+3. Detrás hay un segundo freno: `company_members.company_id` también es `RESTRICT` (`:87`).
+   No se puede borrar la empresa mientras tenga miembros.
+4. Con los miembros y la empresa fuera, el usuario sí se borraría. Se comprobó en el mismo bloque
+   deshecho y no hay más frenos.
+
+Los frenos son **a propósito**. El diseño de F2 dice que las personas de una empresa «nunca se
+borran: al salir pasan a inactive», para conservar el histórico (comentario de
+`company_members`, `:98`). Lo que **no se diseñó** es qué pasa cuando hay que dar de baja la
+cuenta entera: una cuenta de prueba, una empresa que se va o el derecho de supresión de datos.
+Hoy la única vía es el panel de Supabase, que hace un borrado en bruto sin saber nada de
+empresas.
+
+**El problema contrario: lo que sí se borra deja restos.** Las columnas de personas que añadió
+GarSer Empresas **no tienen clave foránea**: `company_members.user_id`,
+`booking_blocks.assignee_id`, `company_applications.user_id` y `reviewer_id`, y
+`company_invitations.created_by` y `accepted_by` (comprobado en la BD local, igual que
+producción). Borrar un empleado o un solicitante deja filas que apuntan a nadie. En producción
+ya hay:
+
+- Una fila de miembro (empleado, inactivo desde el 2026-09-28 18:01) de una cuenta que ya no
+  existe (`c18d4ce4-…`), y una invitación aceptada por esa misma cuenta.
+- **Una solicitud de empresa «enviada»** (`company_applications`, 2026-09-25) de un usuario
+  borrado (`af612d76-…`). El admin la ve como pendiente de revisar, y aprobarla fallaría porque
+  la cuenta ya no existe (deducido del código: aprobar crea la ficha de proveedor de ese usuario;
+  no se ha probado).
+- Si se borrara un empleado con trabajos asignados, sus horas en `booking_blocks` quedarían a
+  nombre de nadie, y el trabajo, sin persona que lo haga y sin aviso.
+
+**Riesgo relacionado, más grave, anterior a empresas** (afecta también a autónomos y clientes).
+`bookings.gardener_id` y `bookings.client_id` son `ON DELETE CASCADE`, igual que reseñas, pagos
+en curso y planes de mantenimiento. Borrar desde Supabase a un autónomo o a un cliente con
+historial **borra sus reservas pagadas**, y con ellas el rastro del dinero cobrado. Con una
+empresa, eso hoy lo impide por casualidad el `RESTRICT` de arriba.
+
+**Solución propuesta** (a confirmar en el plan de §3):
+
+1. **Una sola vía segura para dar de baja una cuenta: «Eliminar cuenta» en el panel de admin de
+   garser.es.** Sería una función del servidor que solo puede usar un admin. Antes de tocar nada,
+   revisa y dice qué hay:
+   - Sin historial (sin reservas ni pagos), como las cuentas de prueba: la borra entera en el
+     orden correcto y en una sola transacción. Primero servicios de los miembros, miembros,
+     invitaciones, empresa y solicitudes; después la cuenta, con `auth.admin.deleteUser`.
+   - Con historial: **no borra**. Da de baja la cuenta: empresa suspendida, miembros inactivos,
+     fuera del catálogo y sin poder iniciar sesión. Anonimiza los datos personales (nombre,
+     teléfono, correo) y conserva las reservas y los importes.
+   - Con trabajo pendiente (reservas futuras, pagos o reembolsos en curso, planes activos): se
+     niega y dice cuáles son, para resolverlos antes.
+2. **Que la base de datos no deje restos nunca**, pase lo que pase en el panel de Supabase:
+   - Poner las claves foráneas que faltan, en modo `RESTRICT`: miembros, horas asignadas y
+     solicitudes enviadas o aprobadas.
+   - Borrar en cascada lo que no tiene valor histórico: borradores de solicitud, invitaciones
+     pendientes y la marca de quién revisó, que pasa a `SET NULL`.
+   - Cambiar `bookings.client_id` y `bookings.gardener_id` de `CASCADE` a `RESTRICT`, para que
+     un borrado en bruto nunca se lleve reservas pagadas.
+   - Un aviso claro cuando el borrado en bruto se frene (por ejemplo «Esta cuenta es la dueña de
+     la empresa Jardines sa: dala de baja desde Admin → Usuarios»). Supabase seguirá enseñando su
+     mensaje genérico, pero el motivo quedará en los registros de Postgres.
+3. **Limpiar los restos que ya hay en producción** (con permiso): el miembro y la invitación de la
+   cuenta borrada, y la solicitud de empresa huérfana. Antes de las claves foráneas, porque sin
+   esa limpieza la migración no se podría aplicar.
+4. **La cuenta `jrodgom1204@gmail.com`:** cuando exista la vía segura, borrarla desde ella. Hoy no
+   tiene reservas, así que se borraría entera. Hay que tener en cuenta que es la única empresa de
+   producción y que el usuario la está usando para probar.
+
+**DECISIÓN PENDIENTE (producto).** Qué significa «eliminar» una cuenta que ya tiene reservas.
+La propuesta es dar de baja y anonimizar, conservando las reservas y los importes, que son los
+justificantes del dinero, en lugar de borrar. La alternativa sería no permitirlo nunca, y que el
+admin solo pueda suspender. Se le pregunta al usuario al escribir el plan.
+
+**Pruebas propuestas.**
+
+- **Baterías locales** (`verify-account-deletion.mjs`):
+  - Borrar desde la herramienta una empresa sin historial no deja ninguna fila de esa empresa
+    ni de su dueño.
+  - Con reservas pasadas, la da de baja y anonimiza, las reservas siguen y los importes no
+    cambian.
+  - Con una reserva futura o un pago en curso, se niega y dice cuál.
+  - Un no-admin no puede usarla.
+  - Borrar un empleado con horas asignadas, en bruto como hace el panel de Supabase, **falla**
+    en vez de dejar restos.
+  - Borrar en bruto un cliente con reservas pagadas **falla** en vez de llevárselas.
+  - Un autónomo sin historial se sigue pudiendo borrar (Regla 2).
+  - La consulta de restos devuelve 0.
+- **Unitarias:** la pantalla de Admin → Usuarios enseña qué va a pasar (borrar, dar de baja o
+  negarse, con el motivo) antes de confirmar.
+- **En garser.es (P-R02-1):**
+  - Tras la limpieza, la consulta de restos devuelve 0 en producción.
+  - El usuario borra desde Admin → Usuarios una cuenta de prueba sin historial.
+  - Intentar borrar desde el panel de Supabase una cuenta con reservas no se lleva nada.
 
 ---
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from 'node:child_process';
 // GarSer Empresas · F6.3 — mover un trabajo de fecha con propuesta al cliente (D9), contra el
 // Supabase LOCAL por los caminos reales.
 //
@@ -24,6 +25,20 @@ const mail = async (token, body) => {
   });
   let data; try { data = await res.json(); } catch { data = null; }
   return { status: res.status, ok: res.ok, body: data };
+};
+
+// Prueba real · F3 (D24): los avisos del cambio de fecha los apunta el servidor al proponer y al
+// responder (notification_outbox) y los envía notification-dispatch. Una llamada desde el
+// navegador ya no envía nada.
+const edgeLog = () => execFileSync('sh', ['-c', 'docker logs --since 2m supabase_edge_runtime_GarSer-main_4 2>&1'], { encoding: 'utf8' });
+const outboxOf = (bookingId, type) => sql(`select coalesce(string_agg(status, ',' order by created_at), '') from public.notification_outbox where booking_id='${bookingId}' and type='${type}'`);
+const waitOutbox = async (bookingId, type, count) => {
+  for (let i = 0; i < 30; i++) {
+    const rows = outboxOf(bookingId, type);
+    if (rows.split(',').filter((x) => x === 'sent' || x === 'failed').length >= count) return rows;
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  return outboxOf(bookingId, type);
 };
 
 async function main() {
@@ -59,11 +74,12 @@ async function main() {
       !byEmployee.ok && !nobody.ok && ok.ok && state().endsWith('pending_client'), `empleada ${byEmployee.status}, sin nadie ${nobody.status}${why(nobody)}, válida ${ok.status}${why(ok)}`);
   }
   {
-    const first = await mail(owner.token, { type: 'booking_reschedule_proposed', bookingId: B });
-    const again = await mail(owner.token, { type: 'booking_reschedule_proposed', bookingId: B });
+    const rows = await waitOutbox(B, 'booking_reschedule_proposed', 1);
+    const byOwner = await mail(owner.token, { type: 'booking_reschedule_proposed', bookingId: B });
     const byClient = await mail(client.token, { type: 'booking_reschedule_proposed', bookingId: B });
-    record('F6-32', 'El aviso de la propuesta llega al cliente una sola vez y solo lo pide la empresa',
-      first.ok && first.body?.sent === 1 && again.body?.skipped === true && byClient.status === 403, `1º ${JSON.stringify(first.body)}, 2º ${JSON.stringify(again.body)}, cliente ${byClient.status}`);
+    record('F6-32', 'El aviso de la propuesta lo envía el servidor al cliente una sola vez; pedirlo desde el navegador no manda otro',
+      rows === 'sent' && edgeLog().includes(client.email) && byOwner.body?.skipped === 'server_managed' && byClient.body?.skipped === 'server_managed',
+      `cola [${rows}], empresa ${JSON.stringify(byOwner.body)}, cliente ${JSON.stringify(byClient.body)}`);
   }
   {
     const other = await rpc('respond_booking_reschedule', { p_booking_id: B, p_accept: true }, stranger.token);
@@ -71,8 +87,8 @@ async function main() {
     record('F6-33', 'Otro cliente no puede responder; si el cliente rechaza, NO cambia nada (ni se cancela)',
       !other.ok && reject.ok && state() === `${D1} 09 rejected` && agenda() === '9Ana 10Ana' && sql(`select status from public.bookings where id='${B}'`) === 'confirmed',
       `otro ${other.status}, rechazo ${reject.status} → ${state()} [${agenda()}]`);
-    const answered = await mail(client.token, { type: 'booking_reschedule_answered', bookingId: B });
-    record('F6-34', 'La respuesta avisa a la empresa (rechazo: solo a ella)', answered.ok && answered.body?.sent === 1, JSON.stringify(answered.body));
+    const rows = await waitOutbox(B, 'booking_reschedule_answered', 1);
+    record('F6-34', 'La respuesta avisa a la empresa (rechazo: solo a ella), desde el servidor', rows === 'sent' && edgeLog().includes(owner.email), `cola [${rows}]`);
   }
   {
     await rpc('propose_booking_reschedule', { p_booking_id: B, p_date: D2, p_start_hour: 14, p_reason: null }, owner.token);
@@ -81,8 +97,8 @@ async function main() {
       accept.ok && accept.body?.outcome === 'accepted' && state() === `${D2} 14 accepted` && agenda() === '14Luis 15Luis' &&
       freeHoursOf(ana.id, D1) === '9,10' && freeHoursOf(luis.id, D2) === '',
       `HTTP ${accept.status}${why(accept)} ${JSON.stringify(accept.body)} → ${state()} [${agenda()}], Ana D1 libre [${freeHoursOf(ana.id, D1)}]`);
-    const answered = await mail(client.token, { type: 'booking_reschedule_answered', bookingId: B });
-    record('F6-35', 'Al aceptar se avisa a la empresa y a quien va (2 correos)', answered.ok && answered.body?.sent === 2, JSON.stringify(answered.body));
+    const rows = await waitOutbox(B, 'booking_reschedule_answered', 2);
+    record('F6-35', 'Al aceptar se avisa a la empresa y a quien va (Luis), desde el servidor', rows === 'sent,sent' && edgeLog().includes(luis.email), `cola [${rows}]`);
   }
   {
     await rpc('propose_booking_reschedule', { p_booking_id: B, p_date: D2, p_start_hour: 10, p_reason: null }, owner.token);

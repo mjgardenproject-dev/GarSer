@@ -48,28 +48,8 @@ const ApplicationsAdmin: React.FC = () => {
     fetchSubmitted();
   }, []);
 
-  const sendNotification = async (app: Application, type: 'gardener_approved' | 'gardener_rejected', reason?: string) => {
-    try {
-      const { error } = await supabase.functions.invoke('send-email-notification', {
-        body: {
-          // El destinatario lo resuelve la edge function desde user_id: enviar un `to` desde
-          // el navegador permitía dirigir un correo con la marca GarSer a cualquier dirección.
-          user_id: app.user_id,
-          type,
-          data: {
-            name: app.full_name || 'Jardinero',
-            reason,
-            loginUrl: `${window.location.origin}/auth`,
-            applyUrl: `${window.location.origin}/apply`
-          }
-        }
-      });
-      
-      if (error) console.error('Error enviando notificación:', error);
-    } catch (err) {
-      console.error('Error al invocar función de email:', err);
-    }
-  };
+  // Los correos de alta o rechazo los apunta el servidor al guardar la revisión (prueba real F3),
+  // con el nombre y el motivo de la solicitud y con reintentos.
 
   const fetchSubmitted = async () => {
     setLoading(true);
@@ -107,8 +87,6 @@ const ApplicationsAdmin: React.FC = () => {
         setProcessingId(null);
         return;
       }
-
-      await sendNotification(app, 'gardener_approved');
 
       if (selected?.id === app.id) setSelected(null);
       await fetchSubmitted();
@@ -148,8 +126,6 @@ const ApplicationsAdmin: React.FC = () => {
         setProcessingId(null);
         return;
       }
-
-      await sendNotification(appToReject, 'gardener_rejected', rejectReason);
 
       setRejectModalOpen(false);
       setAppToReject(null);

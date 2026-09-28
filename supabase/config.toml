@@ -64,3 +64,10 @@ verify_jwt = false
 # uso hasheado, y confirmar no mueve dinero (los gastos de gestion ya se capturaron antes).
 [functions.booking-confirm-service]
 verify_jwt = false
+
+# Prueba real (F3): envía los avisos de `notification_outbox`. La llama pg_net (al apuntar un
+# aviso y cada minuto) con el mismo secreto dedicado que el reloj (`x-lifecycle-secret`); la
+# función lo valida por sí misma. Quien lo tenga solo puede hacer que salga lo que ya estaba en
+# la cola.
+[functions.notification-dispatch]
+verify_jwt = false

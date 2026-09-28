@@ -104,6 +104,10 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D20 | ¿Quién ofrece planes? (2026-09-24) | **Todos** (autónomos y empresas). | | F9 |
 | D21 | ¿Cómo entra el empleado invitado que no tiene cuenta? (2026-09-26) | **«La manera más fácil y rápida pero segura»**: pone nombre y contraseña en la propia invitación y entra directo a su panel, sin correo de confirmación. | Ver H-39. Si ya tiene cuenta con ese correo, entra y se une en el mismo paso. | Tras la fusión |
 | D22 | ¿Quién pone el horario de un empleado? (2026-09-28) | **El dueño de la empresa**, no el empleado (el empleado lo ve en solo lectura). | Cambia A-06 (sigue siendo por persona). Ver H-41. | Tras la fusión |
+| D23 | ¿Qué es «eliminar» una cuenta con reservas? (2026-09-28) | **Dar de baja y anonimizar**: no entra, fuera del catálogo, datos personales borrados; reservas e importes se conservan. Sin historial, se borra entera. Reservas futuras o pagos en curso bloquean. | R-02 (`04-FALLOS-PRUEBA-REAL.md`), fase F6 de ese plan. | Prueba real |
+| D24 | ¿Quién envía los correos? (2026-09-28) | **El servidor**: cada acción apunta su aviso en `notification_outbox` en la misma transacción y `notification-dispatch` lo envía con reintentos. | R-06; A-40. | Prueba real |
+| D25 | ¿Cómo llegan los avisos al móvil? (2026-09-28) | **Notificaciones web (PWA)** de todo lo que hoy va por correo. | R-08. | Prueba real |
+| D26 | ¿Reservas en tiempo real? (2026-09-28) | **No**: botón «Actualizar» y recarga al volver a la app. | R-03. | Prueba real |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se

@@ -24,9 +24,16 @@ const InviteMemberCard: React.FC<Props> = ({ onInvited }) => {
       const { data, error } = await supabase.rpc('create_company_invitation', { p_email: email });
       if (error) throw error;
       const result = data as { invitation_id: string; token: string; email: string };
-      const { error: mailError } = await supabase.functions.invoke('send-email-notification', {
-        body: { type: 'company_invitation', invitationId: result.invitation_id, token: result.token },
-      });
+      // El único correo que sigue saliendo del navegador (prueba real F3): lleva el código de la
+      // invitación en claro, que la base de datos solo guarda cifrado. Un reintento si falla la
+      // red; si aun así no sale, el dueño tiene el enlace para copiarlo aquí mismo.
+      let mailError: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        ({ error: mailError } = await supabase.functions.invoke('send-email-notification', {
+          body: { type: 'company_invitation', invitationId: result.invitation_id, token: result.token },
+        }));
+        if (!mailError) break;
+      }
       setLink({ url: `${window.location.origin}/invitacion?token=${result.token}`, email: result.email, emailed: !mailError });
       setCopied(false);
       setEmail('');

@@ -692,6 +692,8 @@ Decisiones técnicas tomadas por el chat (reversibles, §5 de la guía):
 | R-12 | Borrar desde Supabase a un **cliente o autónomo con reservas pagadas se lleva sus reservas**, por el `ON DELETE CASCADE` de `bookings.client_id` y `bookings.gardener_id` y de lo que cuelga de ellas. Es anterior a empresas (ver R-02). | **Datos y dinero** | F6 |
 | R-14 | En el móvil, el panel de admin **no tiene botón de cerrar sesión**: solo estaba en la barra lateral, que se oculta por debajo de 768 px (`AdminLayout.tsx`). Visto al probar F1. | Diseño / UX | F1 (hecho) |
 | R-15 | El botón de salir de la barra superior en el móvil es solo un icono **sin nombre accesible**: un lector de pantalla lo anuncia como «botón» (`Navbar.tsx`). | Accesibilidad | F2 (hecho) |
+| R-16 | **El navegador podía cambiar el estado de una reserva** (`bookings.status`) por PostgREST: regla «Participants can update bookings» + `GRANT UPDATE (status)` (`20260713000001`). Comprobado en local: el jardinero pasa su reserva de `pending` a `confirmed` y a `completed` sin la aceptación del cliente ni el cobro de los gastos de gestión, y el cliente podría cancelar saltándose la política de cancelación. | **Seguridad y dinero (crítica)** | F3 (hecho) |
+| R-17 | El correo al jardinero cuando el cliente **rechaza** su propuesta decía «La reserva continúa con el precio original», pero rechazar **cancela** la solicitud (`respond_booking_price_change`). | Funcionamiento (correo engañoso) | F3 (hecho) |
 | R-13 | Restos en producción de cuentas borradas: una solicitud de empresa «enviada» huérfana (`af612d76-…`), que el admin ve como pendiente y no puede aprobar. | Datos | F6 |
 
 ### 3.3 Fases
@@ -1088,13 +1090,82 @@ A-34 en `02-HALLAZGOS.md`.
 - Utilidad nueva: `scripts/garser-empresas/demo-company.mjs` (empresa y empleada de prueba con
   una solicitud; `--clean` las borra; solo en local).
 
+#### F3 — hecho (2026-09-28)
+
+**Servidor** (migración `20260929100000_notification_outbox.sql`).
+
+- **R-16:** fuera la regla «Participants can update bookings» y los permisos `UPDATE (status)` y
+  `DELETE` de `authenticated` sobre `bookings`.
+- `notification_outbox` (RLS sin reglas y sin permisos para usuarios) y
+  `private.enqueue_notification` (idempotente por `dedupe_key`).
+- Timbre:
+  - `private.ring_notification_dispatch`: `pg_net` con el secreto del reloj y la URL deducida
+    de `lifecycle_tick_url`, o de `notification_dispatch_url` si existe.
+  - *Trigger* `AFTER INSERT` por sentencia.
+  - Reloj `notification-outbox-dispatch` cada minuto, que solo llama si hay algo pendiente.
+- `claim_notification_outbox` y `complete_notification_outbox` (solo `service_role`), con
+  reintentos a 1, 5, 15 y 60 min y `failed` al quinto intento o si el fallo es un 4xx.
+- *Triggers* que apuntan:
+  - Precio: propuesta, aceptada, rechazada y **caducada (R-11)**.
+  - Otra fecha: propuesta y respuesta.
+  - Incidencia recibida.
+  - Alta de jardinero y de empresa, aprobada o rechazada.
+  - Sin `OF columna`, para que se vea la caducidad perezosa que pone un *trigger* `BEFORE`.
+- `respond_booking_request`: envoltura sobre `private.respond_booking_request_core` (la de
+  siempre, sin cambios), que apunta «aceptada» o «rechazada» solo si de verdad responde.
+
+**Funciones.**
+
+- `notification-dispatch` (nueva; `verify_jwt = false`, valida `x-lifecycle-secret` o la clave de
+  servicio).
+- `send-email-notification`:
+  - `SERVER_MANAGED_TYPES`: las peticiones del navegador a esos tipos devuelven
+    `skipped: server_managed` si la cola existe.
+  - La caducidad va al jardinero, con un texto que le dice qué hacer.
+  - R-17: el correo de propuesta rechazada dice que la solicitud queda cancelada.
+
+**Web.** Fuera las 9 llamadas del navegador a esos correos:
+
+- `bookingPriceChangeService` (tres), `bookingRescheduleService`, `bookingIncidentService` y
+  `bookingRequestService` (dos).
+- `RescheduleSection`, `ApplicationsAdmin` y `CompanyApplicationsAdmin`.
+- El camino muerto de `GardenerDashboard` que escribía `bookings.status`.
+- La invitación sigue en el navegador, ahora con un reintento.
+
+**Pruebas.**
+
+- Unitarias: `serverManagedEmails.test.ts` (proponer, responder, aceptar y cambiar de fecha no
+  piden correos).
+- Batería nueva `verify-notification-outbox.mjs`, 14/14:
+  - NO-01: proponer con la **sesión revocada** (el caso de producción) apunta y envía el aviso.
+  - NO-07: la web vieja recibe `server_managed`.
+  - NO-11: tres pasadas a la vez envían el aviso una sola vez.
+  - NO-12: R-16.
+  - NO-06: R-11.
+- `verify-f3-emails` y `verify-f6-reschedule` reescritas en sus comprobaciones de correo: nadie de
+  fuera provoca el correo, y el servidor lo envía una vez al destinatario correcto. Las otras 18
+  baterías siguen en verde sin cambios.
+- **Navegador local:** el jardinero envía una propuesta desde «Solicitudes». El navegador no hace
+  ninguna petición a `send-email-notification`; el aviso queda en la cola y sale 1 s después al
+  correo del cliente (visto en el registro de la función en local, con el envío simulado).
+- Configuración local para probarlo: `lifecycle_tick_url` (hacia
+  `supabase_kong_GarSer-main_4:8000`) y `lifecycle_tick_secret` en el Vault local.
+
+**Para producción (F8).**
+
+1. Comprobar que el Vault tiene `lifecycle_tick_url` y `lifecycle_tick_secret` (los usa el reloj
+   del ciclo de vida).
+2. Desplegar `send-email-notification` antes que la migración, y después `notification-dispatch`.
+3. Aplicar la migración.
+4. Publicar la web.
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
 |---|---|---|---|
 | F1 | ✅ Hecho (2026-09-28) | 573 pruebas (+15), `tsc` 128, compila; batería `verify-session-scope` 3/3; navegador local (abajo) | ver git |
 | F2 | ✅ Hecho (2026-09-28) | 576 pruebas (+3), `tsc` 128, compila; navegador local (abajo) | ver git |
-| F3 | Pendiente | | |
+| F3 | ✅ Hecho (2026-09-28) | 579 pruebas (+3), `tsc` 128, compila; baterías 20/20 (244 comprobaciones, `verify-notification-outbox` 14/14 nueva; `verify-f3-emails` y `verify-f6-reschedule` adaptadas); navegador local | ver git |
 | F4 | Pendiente | | |
 | F5 | Pendiente | | |
 | F6 | Pendiente | | |

@@ -80,20 +80,8 @@ export async function reportBookingIncident(bookingId: string, kind: IncidentKin
     context: { bookingId, kind, blocksCompletion: result.blocksCompletion },
   });
 
-  // Best-effort: el cliente autenticado es participante de la reserva, así que puede disparar
-  // este correo directamente. Si falla, la incidencia ya quedó registrada y visible en la app
-  // -no se pierde nada salvo el aviso-, pero queda en telemetría en vez de en silencio.
-  try {
-    const { error } = await supabase.functions.invoke('send-email-notification', {
-      body: { type: 'booking_incident_received', bookingId },
-    });
-    if (error) throw error;
-  } catch (emailError) {
-    reportBookingEvent('warn', {
-      event: 'booking.incident_received_email_failed',
-      context: { bookingId, message: emailError instanceof Error ? emailError.message : 'unknown' },
-    });
-  }
+  // El acuse «Hemos recibido tu incidencia» lo apunta el servidor al crear la incidencia
+  // (notification_outbox, prueba real F3): ya no depende de esta pestaña.
 
   return result;
 }

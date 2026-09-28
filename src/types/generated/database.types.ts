@@ -2251,6 +2251,51 @@ export type Database = {
           },
         ]
       }
+      notification_outbox: {
+        Row: {
+          attempts: number
+          booking_id: string | null
+          created_at: string
+          dedupe_key: string
+          id: string
+          last_error: string | null
+          locked_until: string | null
+          next_attempt_at: string
+          payload: Json
+          sent_at: string | null
+          status: string
+          type: string
+        }
+        Insert: {
+          attempts?: number
+          booking_id?: string | null
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          payload?: Json
+          sent_at?: string | null
+          status?: string
+          type: string
+        }
+        Update: {
+          attempts?: number
+          booking_id?: string | null
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          payload?: Json
+          sent_at?: string | null
+          status?: string
+          type?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           address: string | null
@@ -2835,6 +2880,16 @@ export type Database = {
           visit_id: string
         }[]
       }
+      claim_notification_outbox: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          booking_id: string
+          id: string
+          payload: Json
+          type: string
+        }[]
+      }
       cleanup_expired_booking_payment_state: {
         Args: {
           p_end_date?: string
@@ -2864,6 +2919,15 @@ export type Database = {
           p_response_payload: Json
         }
         Returns: undefined
+      }
+      complete_notification_outbox: {
+        Args: {
+          p_error?: string
+          p_id: string
+          p_ok: boolean
+          p_permanent?: boolean
+        }
+        Returns: string
       }
       confirm_booking_payment_attempt: {
         Args: {

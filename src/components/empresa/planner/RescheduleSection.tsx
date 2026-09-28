@@ -84,7 +84,7 @@ const RescheduleSection: React.FC<{ job: ScheduleJob; onProposed: () => void }> 
       toast.error(error.message || 'No se ha podido proponer.');
       return;
     }
-    void supabase.functions.invoke('send-email-notification', { body: { type: 'booking_reschedule_proposed', bookingId: job.booking_id } });
+    // El correo al cliente lo apunta el servidor al guardar la propuesta (prueba real F3).
     toast.success('Propuesta enviada al cliente');
     setOpen(false);
     onProposed();

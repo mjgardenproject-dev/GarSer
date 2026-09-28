@@ -130,7 +130,33 @@ const BOOKING_EMAIL_TYPES = new Set<EmailType>([
 // decide), y el desenlace le importa al JARDINERO (es quien lo pidió).
 const PRICE_CHANGE_TO_GARDENER = new Set<EmailType>([
   'booking_price_change_accepted', 'booking_price_change_rejected',
+  // R-11: la caducidad la tiene que saber quien propuso: la reserva sigue esperando su respuesta.
+  'booking_price_change_expired',
 ]);
+
+/**
+ * Prueba real, F3 (D24): estos avisos los apunta el SERVIDOR en `notification_outbox`, en la
+ * misma transacción que la acción, y los envía `notification-dispatch`. Si los pide un navegador
+ * (una pestaña con la web anterior en caché), se ignoran para no mandarlos dos veces. Solo cuando
+ * la cola existe: desplegar esta función antes que la migración no deja a nadie sin correo.
+ */
+export const SERVER_MANAGED_TYPES = new Set<string>([
+  'booking_accepted', 'booking_rejected',
+  'booking_price_change_proposed', 'booking_price_change_accepted', 'booking_price_change_rejected',
+  'booking_reschedule_proposed', 'booking_reschedule_answered',
+  'booking_incident_received',
+  'gardener_approved', 'gardener_rejected', 'company_approved', 'company_rejected',
+]);
+
+// deno-lint-ignore no-explicit-any
+async function outboxIsLive(admin: any): Promise<boolean> {
+  try {
+    const { error } = await admin.from('notification_outbox').select('id', { head: true, count: 'exact' }).limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Enlace de confirmacion de un clic.
@@ -208,6 +234,12 @@ Deno.serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const admin =
       SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) : null;
+
+    if (SERVER_MANAGED_TYPES.has(type) && !isInternalServiceCaller(req) && admin && (await outboxIsLive(admin))) {
+      return new Response(JSON.stringify({ success: true, skipped: 'server_managed' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     let name = data?.name || 'cliente';
     let counterpartName = data?.counterpartName || '';
@@ -858,15 +890,17 @@ Deno.serve(async (req) => {
         footerNote: bookingFeeNote,
       };
     } else if (type === 'booking_price_change_rejected') {
-      subject = 'El cliente no ha aceptado el cambio de precio';
+      // R-17: rechazar la propuesta CANCELA la solicitud (respond_booking_price_change). Antes el
+      // correo decía «La reserva continúa con el precio original», y el jardinero la esperaba.
+      subject = 'El cliente no ha aceptado tu propuesta';
       detailPairs = bookingPairs;
       opts = {
         title: subject,
         heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(counterpartName || 'El cliente')} no ha aceptado el nuevo precio. La reserva continúa con el precio original:`,
+        intro: `${escapeHtml(counterpartName || 'El cliente')} no ha aceptado tu propuesta de cambio, así que esta solicitud queda cancelada y sus horas vuelven a estar libres en tu agenda:`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
-        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
-        footerNote: 'Puedes hablarlo con el cliente por el chat de la reserva.',
+        cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
+        footerNote: 'Al cliente no se le cobra nada. Si quiere, puede volver a reservar con las condiciones que acordéis.',
       };
     } else if (type === 'booking_price_change_expired') {
       subject = 'La propuesta de cambio de precio ha caducado';
@@ -874,10 +908,10 @@ Deno.serve(async (req) => {
       opts = {
         title: subject,
         heading: `Hola ${escapeHtml(name)}`,
-        intro: 'La propuesta de cambio de precio ha caducado sin respuesta. La reserva mantiene su precio original:',
+        intro: 'Tu propuesta de cambio de precio o duración ha caducado sin respuesta del cliente. La solicitud sigue pendiente con su precio y su duración originales:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
-        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
-        footerNote: 'Si sigue siendo necesario ajustar el precio, podéis acordarlo por el chat.',
+        cta: { label: 'Ver la solicitud', url: `${BRAND.site}/bookings` },
+        footerNote: 'Puedes aceptarla tal cual, rechazarla o enviar otra propuesta. Si hace falta, acordadlo por el chat.',
       };
     } else if (type === 'booking_client_confirmation_request') {
       // El unico correo del que depende que NO se cobre un servicio no prestado: si el cliente

@@ -690,6 +690,7 @@ Decisiones técnicas tomadas por el chat (reversibles, §5 de la guía):
 | R-10 | El empleado puede leer los datos del cliente (dirección, teléfono, qué hay que hacer) de un trabajo **todavía pendiente o sin asignar del todo**: `is_booking_assignee` (`20260925140000_empresas_f5_assign_and_work.sql`) solo mira que tenga horas apartadas, no el estado de la reserva. Lo usan `can_read_booking_items` (`20260926120000_empresas_f8_booking_items.sql:49`) y el detalle y «he terminado» de F5. | **Seguridad y privacidad** (mínimo privilegio, A-33) | F4 |
 | R-11 | El correo «tu propuesta ha caducado» (`booking_price_change_expired`) tiene plantilla, pero **nada lo envía**: ni el reloj nuevo `expire-price-change-proposals` ni la caducidad perezosa. El jardinero no se entera de que su propuesta caducó. | Funcionamiento | F3 |
 | R-12 | Borrar desde Supabase a un **cliente o autónomo con reservas pagadas se lleva sus reservas**, por el `ON DELETE CASCADE` de `bookings.client_id` y `bookings.gardener_id` y de lo que cuelga de ellas. Es anterior a empresas (ver R-02). | **Datos y dinero** | F6 |
+| R-14 | En el móvil, el panel de admin **no tiene botón de cerrar sesión**: solo estaba en la barra lateral, que se oculta por debajo de 768 px (`AdminLayout.tsx`). Visto al probar F1. | Diseño / UX | F1 (hecho) |
 | R-13 | Restos en producción de cuentas borradas: una solicitud de empresa «enviada» huérfana (`af612d76-…`), que el admin ve como pendiente y no puede aprobar. | Datos | F6 |
 
 ### 3.3 Fases
@@ -999,11 +1000,61 @@ A-34 en `02-HALLAZGOS.md`.
 - **Pruebas en garser.es:** P-R01-1, P-R03-1, P-R04-1, P-R05-1, P-R06-1, P-R07-1, P-R02-1 y
   P-R08-1 (en Android y en iPhone instalada), apuntadas en `03-PRUEBAS.md`.
 
+### 3.4 Qué se hizo en cada fase
+
+#### F1 — hecho (2026-09-28)
+
+**Código.**
+
+- `AuthContext.tsx`:
+  - `signOut` cierra **solo este dispositivo** (`scope: 'local'`). También el alta, la cuenta sin
+    verificar y la invitación, que usan el mismo `signOut`.
+  - Nuevo `signOutEverywhere`, con el botón «Cerrar todas» en «Mi cuenta → Seguridad».
+  - `sessionEndedAt` cuando llega un `SIGNED_OUT` que no ha pedido esta pestaña.
+  - `signIn` devuelve el tipo de cuenta.
+  - Los `console.log` solo salen en desarrollo.
+- `SessionEndedNotice.tsx` (nuevo, dentro del router): aviso «Tu sesión se ha cerrado (por
+  ejemplo, desde otro dispositivo)…» y vuelta a `/auth` con la página de origen.
+- `ProtectedRoute` pasa `redirectTo`: antes, tras volver a entrar siempre se iba a `/dashboard`.
+- `AuthForm` usa `postLoginPath` (`src/utils/postLoginPath.ts`): el admin va a
+  `/admin/dashboard`, la empresa a `/empresa` y el empleado a `/mi-trabajo`. Solo acepta rutas
+  de vuelta internas.
+- `AdminLayout`:
+  - Cierra sesión con el mismo `signOut` que el resto de la web; antes llamaba al global y no
+    limpiaba el almacenamiento.
+  - Botón «Salir» en la barra del móvil (R-14).
+- `ResetPassword`: tras cambiar la contraseña cierra las **demás** sesiones
+  (`scope: 'others'`).
+- `receivedAgo` (`src/utils/receivedAgo.ts`) sustituye a `getBookingStatus` en «Solicitudes».
+- Borradores de propuesta en `sessionStorage` por usuario (`src/utils/sessionDrafts.ts`). El
+  cierre normal los borra (`clearAuthStorage`).
+- `useUnreadChats`: un canal por usuario compartido por las dos barras, que se suelta 2 s
+  después del último, y ninguno para el admin ni mientras no se sabe el tipo de cuenta.
+
+**Pruebas.**
+
+- Unitarias nuevas: `postLoginPath`, `receivedAgo`, `sessionDrafts`, `useUnreadChats` (canal
+  compartido) y `AuthContext` (local, global, cerrada desde fuera).
+- Batería `verify-session-scope.mjs`, 3/3:
+  - SS-01: cerrar en local deja viva la otra sesión.
+  - SS-02: reproduce lo de producción; con el cierre global, la otra sesión recibe 403.
+  - SS-03: `others` al cambiar la contraseña.
+- **Navegador local** (`empresas-dev`, 305 px):
+  - El admin entra y va directo a `/admin/dashboard`, sin aviso del WebSocket ni conexión de
+    tiempo real.
+  - «Salir» en el móvil lleva a `/auth` y deja el almacenamiento `sb-*` vacío.
+  - Con una solicitud creada con `demo-pending-request.mjs`, «Solicitudes» dice «Hace 1 min».
+  - Se escribe un borrador (70 € y un motivo), se borran en el servidor las sesiones del
+    jardinero y se llama a `getUser`. Resultado: aviso de sesión cerrada, vuelta a `/auth` con
+    `redirectTo`, y al volver a entrar, «Solicitudes» con el borrador intacto.
+- Utilidad nueva para probar: `scripts/garser-empresas/demo-pending-request.mjs` (crea una
+  solicitud pendiente del cliente al jardinero de la semilla, solo en local).
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
 |---|---|---|---|
-| F1 | Pendiente | | |
+| F1 | ✅ Hecho (2026-09-28) | 573 pruebas (+15), `tsc` 128, compila; batería `verify-session-scope` 3/3; navegador local (abajo) | ver git |
 | F2 | Pendiente | | |
 | F3 | Pendiente | | |
 | F4 | Pendiente | | |

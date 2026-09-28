@@ -10,7 +10,7 @@ import AppHeader from '../common/AppHeader';
 import InstallAppPrompt from '../common/InstallAppPrompt';
 
 function MyAccount() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, signOutEverywhere } = useAuth();
   const { role: accountRole } = useAccount();
   const navigate = useNavigate();
   const [myProfile, setMyProfile] = useState<any>(null);
@@ -213,6 +213,20 @@ function MyAccount() {
               className="px-3 py-3 sm:py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
             >
               Enviar
+            </button>
+          </div>
+          {/* R-06: cerrar sesión es solo en este dispositivo; esto cierra todos (móvil perdido, etc.). */}
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
+            <div className="text-sm text-gray-700">Cerrar sesión en todos tus dispositivos</div>
+            <button
+              onClick={() => {
+                if (window.confirm('Se cerrará tu sesión en todos los dispositivos donde hayas entrado, también en este. ¿Continuar?')) {
+                  void signOutEverywhere();
+                }
+              }}
+              className="shrink-0 px-3 py-3 sm:py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
+            >
+              Cerrar todas
             </button>
           </div>
         </div>

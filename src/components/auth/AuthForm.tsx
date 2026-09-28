@@ -8,6 +8,7 @@ import { Eye, EyeOff, User, Briefcase, Building2, Check, Mail, Lock, AlertTriang
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
+import { postLoginPath } from '../../utils/postLoginPath';
 import EmailConfirmationModal from './EmailConfirmationModal';
 import GarserLogo from '../common/GarserLogo';
 import { supabase } from '../../lib/supabase';
@@ -133,9 +134,9 @@ const AuthForm = () => {
     setLoading(true);
     try {
       if (isLogin) {
-        await signIn(data.email, data.password);
+        const accountRole = await signIn(data.email, data.password);
         toast.success('¡Bienvenido de vuelta!');
-        navigate(redirectTo || '/dashboard');
+        navigate(postLoginPath(accountRole, redirectTo));
       } else {
         // El rol viaja en los metadatos del alta y el servidor crea el perfil con él
         // (trg_provision_profile). Ya no se guarda en localStorage: era una segunda fuente

@@ -34,6 +34,9 @@ const ResetPassword: React.FC = () => {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
+      // Contraseña nueva: se cierran las demás sesiones (si alguien más tenía la cuenta abierta,
+      // la pierde) y se mantiene esta. Las salidas normales ya no son globales (R-06).
+      await supabase.auth.signOut({ scope: 'others' }).catch(() => undefined);
       toast.success('Contraseña cambiada con éxito');
       
       navigate('/dashboard');

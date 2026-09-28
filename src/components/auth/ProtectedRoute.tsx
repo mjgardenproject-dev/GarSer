@@ -25,7 +25,14 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   // Si no hay usuario, redirigir de forma estable a /auth
   if (location.pathname !== '/auth') {
-    return <Navigate to="/auth" replace state={{ from: location }} />;
+    // Al volver a entrar, a la misma página (R-06: también cuando la sesión se cerró desde fuera).
+    return (
+      <Navigate
+        to="/auth"
+        replace
+        state={{ from: location, initialMode: 'login', redirectTo: `${location.pathname}${location.search}` }}
+      />
+    );
   }
 
   // Ya estamos en /auth, permitir la ruta actual

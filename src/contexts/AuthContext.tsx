@@ -7,10 +7,36 @@ import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  /** Devuelve el tipo de cuenta (profiles.role) para llevarla directa a su panel. */
+  signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string, role: 'client' | 'gardener' | 'company', _applicationPayload?: any) => Promise<void>;
+  /** Cierra la sesión SOLO en este dispositivo (R-06). */
   signOut: () => Promise<void>;
+  /** Cierra la sesión en todos los dispositivos de la cuenta (botón explícito de «Mi cuenta»). */
+  signOutEverywhere: () => Promise<void>;
+  /**
+   * La sesión se cerró sin que el usuario lo pidiera en esta pestaña (revocada desde otro
+   * dispositivo, caducada o cerrada en otra pestaña). Guarda la ruta en la que estaba para
+   * volver a ella al entrar. La consume <SessionEndedNotice/>, que vive dentro del router.
+   */
+  sessionEndedAt: string | null;
+  clearSessionEnded: () => void;
 }
+
+// Solo en desarrollo: en producción la consola queda para los errores de verdad (R-01b).
+const debugLog = (...args: unknown[]) => { if (import.meta.env.DEV) console.log(...args); };
+
+/**
+ * R-06: supabase-js cierra por defecto con `scope: 'global'`, que revoca TODAS las sesiones de
+ * la cuenta. Un cierre de sesión en el móvil echaba sin aviso al ordenador (y la pestaña vieja
+ * perdía el correo que estaba pidiendo). Las salidas normales son locales.
+ */
+export const SIGN_OUT_LOCAL = { scope: 'local' as const };
+
+// Marca de «este SIGNED_OUT lo ha pedido el usuario en esta pestaña». Vive en el módulo (no en
+// el estado) porque el evento llega antes de que React vuelva a pintar.
+let intentionalSignOut = false;
+export const markIntentionalSignOut = () => { intentionalSignOut = true; };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -23,6 +49,7 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [sessionEndedAt, setSessionEndedAt] = useState<string | null>(null);
   const ts = () => new Date().toISOString();
 
   const clearAuthStorage = () => {
@@ -35,7 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
       sessionStorage.clear();
-      console.log('🧽 Storage limpiado');
+      debugLog('🧽 Storage limpiado');
     } catch (e) {
       console.warn('No se pudo limpiar storage:', e);
     }
@@ -47,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const restoreSession = async () => {
       setLoading(true);
-      console.log('🕒', ts(), '🔐 Restaurando sesión inicial...');
+      debugLog('🕒', ts(), '🔐 Restaurando sesión inicial...');
       try {
         // Pequeño retry para absorber delays de hidratación tras F5
         let restoredUser: User | null = null;
@@ -69,7 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Intento explícito de refresh si hay token en storage
           const hasToken = Object.keys(localStorage).some(k => k.startsWith('sb-'));
           if (hasToken) {
-            console.log('🕒', ts(), '🔁 Intentando refreshSession...');
+            debugLog('🕒', ts(), '🔁 Intentando refreshSession...');
             try {
               const { data, error } = await supabase.auth.refreshSession();
               if (error) {
@@ -85,9 +112,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (mounted && restoredUser) {
           setUser(restoredUser);
           lastKnownUserId = restoredUser.id;
-          console.log('✅ Session restored');
+          debugLog('✅ Session restored');
         } else {
-          console.log('ℹ️ No active session');
+          debugLog('ℹ️ No active session');
         }
       } finally {
         if (mounted) setLoading(false);
@@ -103,14 +130,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'INITIAL_SESSION':
         case 'SIGNED_IN':
         case 'TOKEN_REFRESHED': {
-          console.log('🕒', ts(), event);
+          debugLog('🕒', ts(), event);
           setUser(u);
           lastKnownUserId = u?.id ?? null;
+          // Una marca de cierre que no llegó a consumirse (p. ej. el signOut falló) no puede
+          // tapar un cierre inesperado posterior.
+          if (u) intentionalSignOut = false;
           setLoading(false);
           break;
         }
         case 'PASSWORD_RECOVERY': {
-          console.log('🕒', ts(), 'Recuperación de contraseña detectada');
+          debugLog('🕒', ts(), 'Recuperación de contraseña detectada');
           // Redirigir a la página de reset si no estamos ya allí
           if (window.location.pathname !== '/reset-password') {
              window.location.assign('/reset-password');
@@ -118,7 +148,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           break;
         }
         case 'SIGNED_OUT': {
-          console.log('🕒', ts(), 'Signed out');
+          debugLog('🕒', ts(), 'Signed out');
+          // R-06: si había alguien dentro y no lo ha pedido en esta pestaña, se le avisa y se le
+          // devuelve luego a la misma página, en vez de sacarle sin explicación.
+          if (!intentionalSignOut && lastKnownUserId) {
+            setSessionEndedAt(`${window.location.pathname}${window.location.search}`);
+          }
+          intentionalSignOut = false;
           
           // Limpiar progreso del wizard de jardineros
           try {
@@ -168,12 +204,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const fresh = userInfo?.user || data.user;
         const verified = !!(fresh as any)?.email_confirmed_at;
         if (!verified) {
-          await supabase.auth.signOut();
+          markIntentionalSignOut();
+          await supabase.auth.signOut(SIGN_OUT_LOCAL);
           throw new Error('Verifica tu correo para continuar.');
         }
+        let accountRole: string | null = null;
         try {
           // Tipo de cuenta desde profiles.role (F0 de GarSer Empresas), no desde user_metadata.
-          const accountRole = await fetchCurrentUserProfileRole(fresh.id);
+          accountRole = await fetchCurrentUserProfileRole(fresh.id);
           if (accountRole === 'gardener') {
             const { data: app } = await supabase
               .from('gardener_applications')
@@ -191,11 +229,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn('Bootstrapping warning (ignorable):', bootstrapError);
         }
         setUser(fresh);
-        console.log('✅ Signed in');
-        // Let the component handle navigation
-      } else {
-        console.warn('No user returned on signIn');
+        setSessionEndedAt(null);
+        debugLog('✅ Signed in');
+        // La navegación la decide el componente (postLoginPath).
+        return accountRole;
       }
+      console.warn('No user returned on signIn');
+      return null;
     } catch (e: any) {
       console.error('Error on signIn:', e?.message || e);
       throw e;
@@ -213,23 +253,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
       // No hacemos escrituras en tablas protegidas aquí: aún no hay sesión confirmada.
       // Se bootstrappea en el primer signIn tras verificar el email.
-      await supabase.auth.signOut();
-      console.log('ℹ️ Registro completado. Verifica tu correo para continuar.');
+      markIntentionalSignOut();
+      await supabase.auth.signOut(SIGN_OUT_LOCAL);
+      debugLog('ℹ️ Registro completado. Verifica tu correo para continuar.');
     } catch (e: any) {
       console.error('Error on signUp:', e?.message || e);
       throw e;
     }
   };
 
-  const signOut = async () => {
+  const endSession = async (scope: 'local' | 'global') => {
     setLoading(true);
     try {
-      await supabase.auth.signOut();
+      markIntentionalSignOut();
+      setSessionEndedAt(null);
+      await supabase.auth.signOut({ scope });
       clearAuthStorage();
       clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
       try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
       setUser(null);
-      console.log('✅ Signed out');
+      debugLog('✅ Signed out');
       window.location.assign('/auth');
     } catch (e: any) {
       console.error('Error on signOut:', e?.message || e);
@@ -238,8 +281,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const signOut = () => endSession('local');
+  const signOutEverywhere = () => endSession('global');
+  const clearSessionEnded = () => setSessionEndedAt(null);
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, signOutEverywhere, sessionEndedAt, clearSessionEnded }}>
       {children}
     </AuthContext.Provider>
   );

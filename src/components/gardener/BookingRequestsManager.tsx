@@ -4,6 +4,8 @@ import { useAccount } from '../../contexts/AccountContext';
 import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import { formatDateRange } from '../../utils/jobShape';
+import { receivedAgo } from '../../utils/receivedAgo';
+import { readPriceDrafts, writePriceDrafts } from '../../utils/sessionDrafts';
 
 // GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
 const teamShape = (row: object) => {
@@ -87,6 +89,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { amount: string; reason: string; duration?: string; loading?: boolean }>>({});
+  // R-06: el borrador sobrevive si la sesión se cierra desde fuera mientras se escribe.
+  const draftsUserId = user?.id ?? null;
+  useEffect(() => {
+    if (draftsUserId) setPriceDrafts((prev) => ({ ...readPriceDrafts(draftsUserId), ...prev }));
+  }, [draftsUserId]);
+  useEffect(() => {
+    writePriceDrafts(draftsUserId, priceDrafts);
+  }, [draftsUserId, priceDrafts]);
   // On-site variable correction (manual bookings): recompute price with the engine.
   const [correctionFor, setCorrectionFor] = useState<BookingRequestWithDetails | null>(null);
   const [correctionLoading, setCorrectionLoading] = useState(false);
@@ -470,18 +480,6 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
     return `${startTime} - ${endTime}`;
   };
 
-  const getBookingStatus = (createdAt: string) => {
-    const created = parseISO(createdAt);
-    const now = new Date();
-    const diffInHours = Math.ceil((now.getTime() - created.getTime()) / (1000 * 60 * 60));
-    
-    if (diffInHours < 1) return 'Recién recibida';
-    if (diffInHours === 1) return 'Hace 1 hora';
-    if (diffInHours < 24) return `Hace ${diffInHours} horas`;
-    const diffInDays = Math.ceil(diffInHours / 24);
-    if (diffInDays === 1) return 'Hace 1 día';
-    return `Hace ${diffInDays} días`;
-  };
 
   if (loading) {
     return (
@@ -559,7 +557,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     )}
                     <div className="text-sm text-orange-600 flex items-center">
                       <AlertCircle className="w-4 h-4 mr-1" />
-                      {getBookingStatus(request.created_at)}
+                      {receivedAgo(request.created_at)}
                     </div>
                   </div>
                 </div>

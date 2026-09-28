@@ -548,7 +548,7 @@ Al volver a entrar, la propuesta estaba enviada y el cliente la tenía, pero la 
   `pending`.
 - `my_jobs`, lo que carga «Mi trabajo», devuelve las reservas con
   `b.status IN ('pending', 'confirmed', …)` y un bloque de esa persona
-  (`supabase/migrations/20260925190000_empresas_f7_crew_multiday.sql:2099-2102`). **No mira ni la aceptación del dueño ni `assignment_pending`**
+  (versión vigente en `supabase/migrations/20260926130000_empresas_f8_service_label.sql:132`). **No mira ni la aceptación del dueño ni `assignment_pending`**
   (en modo manual, la persona es solo una propuesta que el dueño todavía no ha decidido).
 - `JobCard.tsx:103-104` pinta esas reservas pendientes con la etiqueta «Por confirmar».
 
@@ -660,4 +660,354 @@ actuar (solicitud nueva, propuesta, cambio de fecha, trabajo asignado, recordato
 
 ## 3. Plan de implementación
 
-*(Se escribe cuando el usuario termine de reportar los fallos.)*
+> Aprobado el alcance el 2026-09-28: **se corrige todo menos los malos diagnósticos** (R-01a y la
+> parte de R-02 que era un freno a propósito). Rama `fix/prueba-real-r01-r08`, desde `main`
+> (`39c8308`, tras la PR #40). Línea base: **558 pruebas / 86 ficheros**, `tsc` en 128.
+
+### 3.1 Decisiones del usuario (2026-09-28)
+
+| # | Pregunta | Decisión |
+|---|---|---|
+| D23 | R-02: eliminar una cuenta que ya tiene reservas | **Dar de baja y anonimizar.** La cuenta no puede entrar y sale del catálogo, sus datos personales se borran, y se conservan las reservas y los importes. Sin historial, se borra entera. Las reservas futuras o con pagos en curso **siempre bloquean**. |
+| D24 | R-06: quién envía los correos | **El servidor.** Cada acción deja el aviso apuntado en la base de datos en la misma transacción, y un proceso del servidor lo envía con reintentos. |
+| D25 | R-08: cómo llegan los avisos al móvil | **Notificaciones web (PWA)**, de **todos** los avisos que hoy se mandan por correo. |
+| D26 | R-03: tiempo real en las reservas | **No.** Botón «Actualizar» y refresco al volver a la app. |
+
+Decisiones técnicas tomadas por el chat (reversibles, §5 de la guía):
+
+- R-04: «configurado» significa **al menos una franja semanal en el horario fijo** y **al menos
+  un servicio asignado**.
+- El **correo de invitación** a un empleado se sigue pidiendo desde el navegador del dueño. El
+  enlace lleva el código de la invitación en claro, que la base de datos solo guarda cifrado, y
+  no se va a guardar en claro en una cola. Se le añaden reintentos y el botón «Reenviar» que ya
+  existe.
+
+### 3.2 Hallazgos nuevos del análisis (se corrigen en este plan)
+
+| # | Hallazgo | Tipo | Fase |
+|---|---|---|---|
+| R-09 | `companies.status = 'suspended'` existe en el esquema, pero **ninguna función lo mira**: una empresa «suspendida» seguiría vendiendo. No hay ninguna forma de suspender a un proveedor. | Funcionamiento | F6 |
+| R-10 | El empleado puede leer los datos del cliente (dirección, teléfono, qué hay que hacer) de un trabajo **todavía pendiente o sin asignar del todo**: `is_booking_assignee` (`20260925140000_empresas_f5_assign_and_work.sql`) solo mira que tenga horas apartadas, no el estado de la reserva. Lo usan `can_read_booking_items` (`20260926120000_empresas_f8_booking_items.sql:49`) y el detalle y «he terminado» de F5. | **Seguridad y privacidad** (mínimo privilegio, A-33) | F4 |
+| R-11 | El correo «tu propuesta ha caducado» (`booking_price_change_expired`) tiene plantilla, pero **nada lo envía**: ni el reloj nuevo `expire-price-change-proposals` ni la caducidad perezosa. El jardinero no se entera de que su propuesta caducó. | Funcionamiento | F3 |
+| R-12 | Borrar desde Supabase a un **cliente o autónomo con reservas pagadas se lleva sus reservas**, por el `ON DELETE CASCADE` de `bookings.client_id` y `bookings.gardener_id` y de lo que cuelga de ellas. Es anterior a empresas (ver R-02). | **Datos y dinero** | F6 |
+| R-13 | Restos en producción de cuentas borradas: una solicitud de empresa «enviada» huérfana (`af612d76-…`), que el admin ve como pendiente y no puede aprobar. | Datos | F6 |
+
+### 3.3 Fases
+
+Orden por dependencias: F3 (sistema de avisos) es la base de F4, F5 y F7. Cada fase se cierra con
+la Regla 4 de la guía:
+
+- `npm test` con el mismo número de pruebas o más.
+- `npm run build` sin errores.
+- `tsc` sin pasar de 128 errores.
+- Las baterías locales afectadas en verde.
+- **Prueba en el navegador local**, con captura.
+- Este documento actualizado en §4 (registro) y un commit.
+
+#### F1 — Sesiones y tiempos (R-06 a, b y d; R-01b)
+
+- **Cerrar sesión solo en este dispositivo.** Todas las salidas normales pasan a
+  `signOut({ scope: 'local' })`. Son las de `AuthContext.tsx` (`:171`, `:216` y `:227`, que usan
+  Navbar, «Mi cuenta», el estado del jardinero y el de la empresa), `AdminLayout.tsx:38` e
+  `InvitationAcceptPage.tsx:188` y `:311`. Se queda en `global` solo tras restablecer la
+  contraseña, y se añade un botón explícito «Cerrar sesión en todos mis dispositivos» en «Mi
+  cuenta».
+- **Sesión cerrada desde fuera.** `AuthContext` distingue un `SIGNED_OUT` que no ha pedido el
+  usuario (una marca que pone el propio `signOut`). En ese caso enseña «Tu sesión se ha cerrado,
+  por ejemplo desde otro dispositivo. Vuelve a entrar para continuar» y lleva a `/auth` con
+  `redirectTo` a la página en la que estaba. Los borradores de la propuesta de precio no se
+  pierden: se guardan en `sessionStorage` por reserva mientras se escriben.
+- **«Hace X».** `getBookingStatus` (`BookingRequestsManager.tsx:473-484`) pasa a una utilidad
+  compartida y probada:
+  - «Recién recibida» por debajo de 1 min.
+  - «Hace N min» por debajo de 1 h.
+  - «Hace N h» por debajo de 24 h.
+  - «Hace N días» a partir de ahí.
+
+  Siempre redondea hacia abajo. Se cambia también en cualquier otro sitio con el mismo cálculo
+  (se buscará `Math.ceil` junto a `1000 * 60 * 60`).
+- **R-01b.**
+  - Tras iniciar sesión, cada cuenta va directamente a su panel: el admin, a `/admin/dashboard`.
+  - `useUnreadChats` no abre canal para el admin.
+  - Un solo canal de «sin leer» compartido por `Navbar` y `BottomNav`, con un contador de uso en
+    un módulo.
+  - Los `console.log` de diagnóstico de `AuthContext` solo salen en desarrollo
+    (`import.meta.env.DEV`).
+- **Pruebas.**
+  - Unitarias:
+    - `signOut` con `scope: 'local'`.
+    - `SIGNED_OUT` no pedido → aviso y `redirectTo`.
+    - Utilidad de tiempo: 30 s, 5 min, 59 min, 61 min, 23 h, 25 h y 49 h.
+    - Destino tras iniciar sesión por tipo de cuenta.
+    - Canal de chats: uno solo con dos barras, ninguno para el admin.
+  - Batería: la misma cuenta con dos sesiones. Cerrar una deja la otra válida (`getUser` y una
+    función con su token).
+  - Navegador local:
+    - Admin: la consola queda limpia al entrar.
+    - Empresa en dos pestañas aisladas: cerrar sesión en una no saca a la otra.
+    - Forzar la revocación de la sesión: aparece el aviso y se vuelve a la misma página.
+    - Una solicitud recién creada dice «Recién recibida».
+
+#### F2 — Recargar reservas (R-03, D26)
+
+- **Hook compartido `useRefreshOnReturn(load, { minIntervalMs: 30000 })`.** Recarga al volver a la
+  pestaña o a la app (`visibilitychange` a `visible` y `pageshow` desde la caché del navegador),
+  sin repetir si ya hay una carga en curso.
+- **Componente `RefreshButton`**: icono `RefreshCw`, gira mientras carga, con `aria-label`
+  «Actualizar» y un área de toque de 44 px. Va en la cabecera de:
+  - `BookingsList` (cliente).
+  - `GardenerBookings` y `BookingRequestsManager` (autónomo y empresa).
+  - La agenda de `/empresa` y `/empresa/solicitudes`.
+  - `/mi-trabajo` (`useMyJobs`).
+- Recargar **no borra lo escrito** (borradores de propuesta, motivo) ni cierra una ficha abierta.
+- **Pruebas.**
+  - Unitarias:
+    - El hook recarga al volver y respeta los 30 s.
+    - El botón llama a la carga, se desactiva mientras carga y conserva el borrador.
+  - Navegador local: cliente y jardinero en contextos separados. El jardinero acepta; el
+    cliente pulsa «Actualizar» y ve «Confirmada». Luego, lo mismo cambiando de pestaña sin
+    pulsar nada. Captura a 375 px del botón en cada pantalla.
+
+#### F3 — Los avisos los envía el servidor (R-06 c, R-11, D24)
+
+Es la base de F4, F5 y F7. **Cambia el diseño** (decidido por el usuario, D24); se anota como
+A-34 en `02-HALLAZGOS.md`.
+
+- **Tabla `notification_outbox`.**
+  - Columnas: `id`, `type`, `booking_id` y otras referencias, `payload jsonb`, `dedupe_key`
+    (única), `status` (`pending`, `sending`, `sent` o `failed`), `attempts`,
+    `next_attempt_at`, `last_error`, `created_at` y `sent_at`.
+  - Sin acceso para `anon` ni `authenticated`: RLS activado y sin reglas.
+  - Solo la escriben funciones `SECURITY DEFINER` y *triggers*.
+- **Quién apunta los avisos.** *Triggers* `AFTER` sobre cambios de estado reales (`OLD` frente a
+  `NEW`), así que valen para cualquier camino (web, RPC, reloj o admin):
+
+  | Cambio | Aviso (el mismo correo de hoy) |
+  |---|---|
+  | `bookings.price_change_status` pasa a `pending_client_acceptance` | `booking_price_change_proposed` |
+  | … a `accepted`, `rejected` o `expired` | `…_accepted`, `…_rejected` y `…_expired` (**R-11**) |
+  | `bookings.status` pasa de `pending` a `confirmed` (acepta el proveedor) | `booking_accepted` |
+  | `bookings.status` pasa a `rejected` o a `cancelled` | `booking_rejected` y `booking_cancelled` |
+  | `bookings.reschedule_status` pasa a `pending_client` o a una respuesta | `booking_reschedule_proposed` y `_answered` |
+  | Alta en `booking_incidents` | `booking_incident_received` |
+  | `gardener_applications.status` y `company_applications.status` pasan a `approved` o `rejected` | `gardener_…` y `company_approved` o `company_rejected` |
+
+  - La lista exacta de transiciones se saca de lo que hoy dispara cada una de las 16 llamadas
+    del navegador. No se inventan correos nuevos en esta fase, salvo R-11.
+  - `dedupe_key` (por ejemplo `tipo:reserva:marca de la transición`) impide duplicados si la
+    misma transición se repite.
+- **Quién los envía: función nueva `notification-dispatch`.**
+  - La llaman `pg_net` justo al apuntar un aviso (un *trigger* `AFTER INSERT` sobre la cola,
+    asíncrono, que no frena la transacción) y un reloj `pg_cron` cada minuto que recoge lo
+    atrasado.
+  - Se autoriza con un secreto guardado en Vault, igual que `booking-lifecycle-tick`
+    (`20260827120000_lifecycle_tick_cron.sql`).
+  - Reclama avisos con `FOR UPDATE SKIP LOCKED`, el mismo patrón que
+    `claim_maintenance_notifications` (F9), para que dos pasadas no manden el mismo.
+  - Para cada aviso llama a `send-email-notification` como servicio interno
+    (`isInternalServiceCaller`). Es el único sitio que redacta los correos, así que no se duplica
+    ninguna plantilla.
+  - Si falla, reintenta con espera creciente: 1, 5, 15 y 60 min, hasta 5 intentos. Después queda
+    en `failed`, visible para el admin.
+- **Retirar las llamadas del navegador** a los tipos que pasan a la cola: `bookingPriceChangeService`,
+  `bookingRescheduleService`, `bookingIncidentService`, `bookingRequestService`,
+  `RescheduleSection`, `ApplicationsAdmin` y `CompanyApplicationsAdmin`. Las de trabajos de
+  empresa se retiran en F4. Se queda la de la invitación, con reintentos (decisión de §3.1).
+- **Sin duplicados mientras se despliega.** `send-email-notification` rechaza con
+  `{ skipped: 'server_managed' }` las llamadas **del navegador** a esos tipos cuando la cola ya
+  existe. Orden de despliegue:
+  1. La función, que sin la cola sigue enviando como ahora.
+  2. La migración.
+  3. La web.
+
+  Así una pestaña con la web vieja no manda el correo dos veces.
+- **Pruebas.**
+  - Batería `verify-notification-outbox.mjs`:
+    - Cada transición deja exactamente 1 aviso con el tipo correcto.
+    - Repetirla no deja otro.
+    - Proponer con la sesión revocada: el aviso está en la cola aunque el navegador no llame a
+      nada (el caso de hoy).
+    - El envío lo marca `sent`.
+    - Un fallo simulado reintenta y a los 5 intentos queda `failed`.
+    - Dos envíos a la vez no mandan el mismo aviso dos veces.
+    - Una llamada del navegador a un tipo gestionado devuelve `skipped`.
+    - Un usuario normal no puede leer ni escribir la cola.
+    - Caducar una propuesta manda `…_expired` (R-11).
+    - El autónomo recibe los mismos correos que antes (Regla 2).
+  - Unitarias: las pantallas ya no llaman a `send-email-notification` salvo la invitación.
+  - Navegador local: proponer un precio, aceptar y cancelar; ver en la cola que cada aviso queda
+    `sent`, y en el registro de la función de correo local que se ha enviado uno por acción.
+
+#### F4 — El empleado solo ve lo suyo y confirmado (R-07, R-10)
+
+- `my_jobs` y la agenda del empleado solo devuelven trabajos con
+  `status IN ('confirmed', 'in_progress', 'completed', 'disputed')` y
+  `assignment_pending = false`. Sus horas apartadas siguen bloqueadas: en su horario salen como
+  «reservadas», sin datos del cliente. Se quita la etiqueta «Por confirmar» de
+  `JobCard.tsx:103-104`.
+- **R-10.** `is_booking_assignee` exige lo mismo: reserva en esos estados y sin
+  `assignment_pending`. Así el detalle, `can_read_booking_items` y «he terminado» se cierran al
+  mismo tiempo.
+- **Aviso al empleado desde el servidor** (sobre F3). Un *trigger* apunta `job_assigned` a cada
+  persona nueva y `job_unassigned` a quien sale, en dos casos:
+  - Cuando la reserva pasa a confirmada con su persona decidida, sea cual sea el camino: acepta
+    el dueño, acepta el cliente una propuesta (el caso de hoy), se confirma la asignación manual
+    o se reparte un equipo.
+  - Cuando cambian las personas de una reserva ya confirmada.
+
+  `dedupe_key` por reserva y persona, así que no se repite si no cambia nada. Se retiran las
+  llamadas del navegador de `BookingRequestsManager.tsx:348-353`, `AssignWorkerControl.tsx:65-67`,
+  `JobSheet.tsx:76-79` y `TeamJobSection.tsx:39-42`.
+- **Pruebas.**
+  - Batería `verify-employee-visibility.mjs`:
+    - Pendiente: el empleado no la ve y no puede abrir el detalle (R-10).
+    - El dueño acepta: la ve y le llega 1 aviso.
+    - Modo manual sin decidir: no la ve aunque esté confirmada; al decidir, la ve y le llega su
+      aviso.
+    - El cliente acepta una propuesta de precio: le llega el aviso.
+    - Cambio de persona: aviso a la nueva y a la anterior.
+    - Repetir no duplica.
+    - El autónomo no cambia.
+    - `verify-f5-*`, `verify-f6-*` y `verify-f7-*` siguen en verde.
+  - Navegador local: una solicitud nueva no aparece en «Mi trabajo»; se acepta y aparece, sin
+    «Por confirmar».
+
+#### F5 — Equipo: aviso de configurar y correo de horario (R-04, R-05)
+
+- **R-04.**
+  - `company_team_overview` devuelve por empleado activo `has_recurring_schedule` y
+    `is_configured`.
+  - En `/empresa`, un aviso por cada empleado sin configurar: «*X* ha aceptado tu solicitud de
+    unirse a tu equipo. Configura su perfil para que pueda realizar servicios dentro de tu
+    empresa», con lo que le falta («Le falta: horario fijo · servicios») y el botón «Configurar».
+    El botón lleva a su horario (`/empresa/equipo/:memberId/horario`) o a sus servicios en
+    «Equipo». Desaparece solo cuando está configurado.
+  - Correo nuevo `company_member_joined` al dueño, apuntado en la cola cuando el miembro pasa a
+    activo (invitación aceptada, con cuenta nueva o existente).
+- **R-05.**
+  - Los ajustes de días sueltos del dueño se guardan en **una sola llamada**:
+    `set_member_days_availability(p_member_id, p_days jsonb)`, todo o nada, con las mismas
+    comprobaciones que `set_member_day_availability`. `AvailabilityManager` la usa cuando el
+    horario es de un empleado.
+  - Esa llamada y `set_member_recurring_schedule` apuntan **un** aviso
+    `member_schedule_published` al empleado, **solo si algo ha cambiado**. El correo resume el
+    horario fijo nuevo o los días cambiados y enlaza a «Mi trabajo → Horario».
+- **Pruebas.**
+  - Batería `verify-team-setup.mjs`:
+    - Aceptar deja el aviso al dueño y `is_configured = false`.
+    - Solo servicio o solo horario sigue en `false`; con los dos, `true`.
+    - Guardar 5 días deja 1 aviso; guardar sin cambios, 0.
+    - Guardar el horario fijo deja 1 aviso.
+    - Otra empresa no puede ni leer ni escribir.
+    - Guardar varios días es todo o nada: con un día pasado, no guarda ninguno.
+  - Unitarias: el aviso con cada combinación y el destino del botón.
+  - Navegador local: invitar y aceptar, ver el aviso, configurar y ver que se va. Cambiar el
+    horario y ver 1 correo en el registro local.
+
+#### F6 — Bajas seguras de cuentas (R-02, R-09, R-12, R-13, D23)
+
+- **Suspender (R-09).** Aplicar `companies.status = 'suspended'` y un estado equivalente para
+  autónomos (columna nueva, `DEFAULT` activo, Regla 2).
+  - Sale del catálogo (`booking-authority`) y del directorio público.
+  - Las funciones de presupuesto, pago y alargar rechazan las reservas **nuevas**.
+  - Las reservas ya citadas se siguen haciendo, cobrando y valorando.
+- **Herramienta «Eliminar o dar de baja» en Admin → Usuarios**, con una función de servidor solo
+  para admin. Primero enseña qué va a pasar y por qué:
+  - **Bloquea** si hay reservas futuras o en curso, pagos o reembolsos pendientes, o planes de
+    mantenimiento activos. Las enseña, para completarlas, cancelarlas con reembolso o
+    reasignarlas.
+  - **Sin historial:** borra entera en una transacción, en orden: miembros, empresa,
+    solicitudes, invitaciones y usuario (con `auth.admin.deleteUser`). Es lo mismo que el script
+    probado con `jrodgom1204@…`.
+  - **Con historial (D23):**
+    - Veta el inicio de sesión (`ban`).
+    - Suspende la empresa y pone inactivos a los miembros.
+    - Anonimiza los datos personales: nombre, teléfono, correo en el perfil, dirección de la
+      ficha y avatar.
+    - Conserva reservas, importes y reseñas (estas, con autor anónimo).
+  - Para un **empleado**: si tiene trabajos futuros, se niega hasta que se reasignan (F6 de
+    empresas). Si no, pasa a inactivo y sigue lo mismo.
+- **Que el panel de Supabase no pueda romper nada (R-12).**
+  - Claves foráneas `RESTRICT` en `company_members.user_id`, `booking_blocks.assignee_id` y
+    `company_applications.user_id` (en `SET NULL` para `reviewer_id`).
+  - `bookings.client_id` y `bookings.gardener_id` pasan de `CASCADE` a `RESTRICT`.
+  - Un borrado en bruto de una cuenta con historial falla (Postgres dice por qué) en vez de
+    llevarse datos. Las cuentas sin historial se siguen pudiendo borrar desde el panel.
+- **Limpieza de restos (R-13).** Se hace en la propia migración, antes de las claves: elimina las
+  filas que apuntan a cuentas que no existen y lo apunta en el registro. En producción, esto
+  incluye la solicitud huérfana `af612d76-…`, el miembro y la invitación de `c18d4ce4-…`.
+- **Pruebas.**
+  - Batería `verify-account-deletion.mjs`:
+    - Sin historial: no queda ninguna fila.
+    - Con historial: baja, anonimizada, sin poder entrar, reservas e importes intactos.
+    - Con una reserva futura o un pago en curso: se niega y la nombra.
+    - Un no-admin no puede usarla.
+    - En bruto, un empleado con horas o un cliente con reservas pagadas: falla sin borrar.
+    - Una empresa suspendida no aparece ni vende, y su reserva ya citada se completa y se cobra.
+    - Un autónomo sin historial se sigue pudiendo borrar (Regla 2).
+    - La consulta de restos da 0.
+  - Unitarias: la pantalla de admin en sus tres casos.
+  - Navegador local: el admin da de baja una empresa de prueba con una reserva pasada, y el
+    dueño ya no puede entrar.
+
+#### F7 — Notificaciones al móvil (R-08, D25)
+
+- **Un solo punto de envío.** Cada vez que `send-email-notification` envía un correo, envía
+  también la notificación al móvil a ese mismo usuario. Por ahí pasan todos los correos: los de
+  la cola (F3), los del reloj (`booking-lifecycle-tick`), `booking-confirmation-email`, los
+  pagos y la invitación. Así, «todo lo que llega por correo llega al móvil» sin tocar 25 sitios.
+  El texto es el asunto del correo, una línea de resumen y el enlace a la pantalla. Si falla el
+  envío al móvil, el correo sale igual.
+- **Servidor.**
+  - Tabla `push_subscriptions` (usuario, *endpoint*, claves, dispositivo, `created_at` y
+    `last_used_at`), con RLS: solo las tuyas.
+  - RPC para guardar y borrar la suscripción propia.
+  - Claves VAPID como secretos de las funciones.
+  - Envío con una librería de *web push* compatible con Deno. Si el servicio de push contesta
+    404 o 410, borra la suscripción caducada.
+- **Web.**
+  - `public/sw.js`: un *service worker* **solo para push**. No guarda la web en caché, para no
+    servir versiones viejas.
+  - Recibe la notificación y, al tocarla, abre la URL.
+  - Botón «Activar notificaciones» en «Mi cuenta» y una invitación tras la primera reserva o
+    trabajo. El navegador exige que lo pulse el usuario.
+  - En iPhone fuera de la app instalada, explica cómo añadir GarSer a la pantalla de inicio.
+- **Pruebas.**
+  - Unitarias: registro de la suscripción, estados del botón (no soportado, iPhone sin instalar,
+    denegado o activo) y apertura de la URL.
+  - Batería `verify-push.mjs`:
+    - Cada correo manda 1 notificación a cada suscripción del destinatario y ninguna a otros.
+    - 410 borra la suscripción.
+    - Sin suscripción, solo sale el correo.
+    - Un usuario no puede registrar suscripciones a nombre de otro.
+  - Navegador local: activar las notificaciones en el navegador del panel, provocar una
+    propuesta y ver llegar la notificación (el `service worker` funciona en `localhost`).
+
+#### F8 — Despliegue a producción y pruebas en garser.es
+
+- **Orden de despliegue** (lo hace el chat con permiso, como en la #40; la PR la fusiona el
+  usuario):
+  1. `send-email-notification`, en la versión que convive con la web vieja.
+  2. `notification-dispatch`.
+  3. Secretos: VAPID y el secreto de la cola en Vault.
+  4. Migraciones.
+  5. El resto de funciones que cambien (`booking-authority` por la suspensión, `booking-payment`
+     si cambia).
+  6. Web (PR).
+- **Antes de la migración de F6,** consulta en producción de solo lectura: restos, claves que
+  fallarían y reservas afectadas.
+- **Pruebas en garser.es:** P-R01-1, P-R03-1, P-R04-1, P-R05-1, P-R06-1, P-R07-1, P-R02-1 y
+  P-R08-1 (en Android y en iPhone instalada), apuntadas en `03-PRUEBAS.md`.
+
+## 4. Registro de avance
+
+| Fase | Estado | Pruebas | Commit |
+|---|---|---|---|
+| F1 | Pendiente | | |
+| F2 | Pendiente | | |
+| F3 | Pendiente | | |
+| F4 | Pendiente | | |
+| F5 | Pendiente | | |
+| F6 | Pendiente | | |
+| F7 | Pendiente | | |
+| F8 | Pendiente | | |

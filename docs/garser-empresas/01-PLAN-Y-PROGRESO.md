@@ -898,6 +898,8 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 2d. **Prueba real del usuario (desde el 2026-09-28, tras la PR #40):** reporta los fallos uno a
    uno; se analizan y apuntan en `04-FALLOS-PRUEBA-REAL.md` (R-01…) sin tocar código, y al acabar
    se escribe allí el plan por fases con sus pruebas.
+   **Plan aprobado (2026-09-28):** F1–F8 en `04-FALLOS-PRUEBA-REAL.md` §3, decisiones D23–D26, rama
+   `fix/prueba-real-r01-r08`.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

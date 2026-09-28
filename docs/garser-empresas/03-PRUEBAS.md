@@ -307,8 +307,8 @@ comprobaciones con el token de cada persona) y navegador:
 
 | # | Prueba | Resultado esperado | Estado |
 |---|---|---|---|
-| F5-20 | Un empleado pone su horario; intenta tocar el de un compañero | El suyo sí; el ajeno, denegado | ✅ F5.1 |
-| F5-21 | Un empleado guarda un horario fijo | Se generan sus horas | ✅ F5.1 |
+| F5-20 | ~~Un empleado pone su horario~~ **D22:** el dueño pone el de un día de Ana; Ana no puede escribir el suyo ni el de un compañero | Dueño sí; empleada, denegado | ✅ F5.1 · ✅ D22 (2026-09-28) |
+| F5-21 | ~~Un empleado guarda un horario fijo~~ **D22:** el dueño guarda el horario fijo de Luis; Luis no puede | Se generan sus horas; Luis, denegado | ✅ F5.1 · ✅ D22 (2026-09-28) |
 | F5-22 | Quien tiene horas vendidas las vuelve a marcar libres (guardando el día o a mano) | Siguen ocupadas (H-29) | ✅ F5.1 |
 | F5-23 | Regenerar su horario fijo | Tampoco las reabre | ✅ F5.1 |
 | F5-24 | Horas de esa persona para vender | Sin las vendidas | ✅ F5.1 |
@@ -476,6 +476,15 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 | IS-10 | Página `/invitacion` (pruebas de componente): crear cuenta → entra → «Mi trabajo»; contraseña corta no envía; cuenta existente → «Entrar y unirme» | Correcto | ✅ `InvitationAcceptPage.test.tsx` (3) |
 | IS-11 | Correo de invitación: quién invita, «como empleado», pasos, «Unirme al equipo», para qué correo y caducidad | Correcto | ✅ `companyEmailCopy.test.ts` (4) · `verify-f3-emails` 10/10 |
 | IS-12 | Navegador (móvil, local): abrir la invitación sin sesión → nombre y contraseña → «Unirme al equipo» | Llega a «Mi trabajo» ya dentro | ✅ 2026-09-26 (la primera vez acabó en el inicio de cliente: `AccountContext.refresh` usaba el usuario de antes de entrar → arreglado) |
+| DH-01…06 | Duración (H-40): proponer +1 h aparta ya la hora al que va (autónomo y empresa) y la web deja de ofrecerla; si caduca se devuelve; aceptar la mantiene; no se alarga sobre un pago en curso (dice la hora); rechazar libera | Todo como dice | ✅ `verify-duration-holds` 6/6 |
+| DU-01 | Navegador (empresa): escribir 3 h en «Nueva duración» y pulsar «Aceptar» | Aviso «Tienes un cambio… sin enviar», la reserva sigue pendiente | ✅ 2026-09-28 |
+| DU-02 | Navegador: «Enviar propuesta al cliente» solo con duración | Propuesta 54 € (igual) y 3 h; la hora 11 de Ana apartada | ✅ 2026-09-28 |
+| DU-03 | Navegador (cliente): tarjeta de la reserva y de la propuesta | «09:00 – 11:00 · 2 h»; «propone cambiar la duración… el precio no cambia», «3 h (fin a las 12:00)», «Aceptar el cambio» | ✅ 2026-09-28 (y `ClientBookingCard.test.tsx`, 4) |
+| DS-01 | Navegador (dueña): «Equipo» → «Horario» de Ana: abrir miércoles 7:00 y guardar | BD 7:00 libre; horas con trabajo bloqueadas | ✅ 2026-09-28 |
+| DS-02 | Navegador (Ana): «Mi horario» | Solo lectura (91 casillas bloqueadas, sin «Guardar» ni «Horario fijo»), aviso «Tu horario lo pone tu empresa» | ✅ 2026-09-28 |
+| RS-01 | Navegador (375 px): «Mover a otra fecha» | Sin scroll lateral (375 = 375), pie fijo, horas «09:00–11:00» | ✅ 2026-09-28 |
+| PW-01 | Invitación: las dos contraseñas no coinciden | Aviso y no se envía | ✅ `InvitationAcceptPage.test.tsx` |
+| EM-01 | Correos con hora de fin | «lunes, 5 de octubre de 2026, de 09:00 a 13:00» | ✅ `emailBrand.test.ts` (4) |
 
 ---
 
@@ -515,7 +524,7 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-F4-1 | Con la empresa de prueba y un empleado con horario: reservar y pagar (Stripe en modo prueba) un trabajo de 2 h; comprobar en el SQL Editor que `booking_blocks.assignee_id` es el empleado y la reserva es de la empresa | F4 | ⬜ |
 | P-F4-2 | Un autónomo real sigue apareciendo en el listado con sus mismas horas y precio | F4 | ✅ 2026-09-25 (chat, navegador móvil, sin sesión): el autónomo sale con 50,63 € / 3 h y horas desde el 05/10 (antelación 168 h). Ver H-35 |
 | P-F5-1 | Un autónomo real guarda su horario de una semana en la que tiene una reserva: la hora reservada sigue «Reservado» y no se ofrece a otros clientes | F5 | ✅ 2026-09-26 (sesión de jardinero, móvil): semana del 05/10 con la reserva pendiente: 9–11 en amarillo («Solicitada») y no se dejan tocar; se abrió el sábado 10 a las 9 y se guardó → 9–11 siguen ocupadas con sus 3 bloques y la web solo ofrece 12–14 ese día; se deshizo el cambio |
-| P-F5-2 | Un empleado real pone su horario en «Mi trabajo» → «Semana» → «Mi horario»; la empresa recibe una reserva en esas horas y le toca a él | F5 | ⬜ |
+| P-F5-2 | **D22:** el dueño pone el horario de un empleado real en «Equipo» → «Horario»; el empleado lo ve en solo lectura; la empresa recibe una reserva en esas horas y le toca a él | F5 | ⬜ |
 | P-F5-3 | La empresa cambia quién va en un trabajo confirmado: a los dos les llega su correo | F5 | ⬜ |
 | P-F5-4 | El cliente de esa reserva ve «Irá …» con nombre y foto el día antes, y no antes | F5 | ⬜ |
 | P-F6-1 | La empresa reparte un trabajo de 3 h entre dos personas desde la agenda; a cada una le llega su aviso con «Tu parte» | F6 | ⬜ |
@@ -527,6 +536,10 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-H38-1 | En garser.es, poner 0,5 €/m² en la tarifa de césped y guardar; comprobar en la BD `0.5` y recargar | Se guarda 0,5 | ⬜ |
 | P-D21-1 | Una empresa invita a un correo real sin cuenta; abrirlo en el móvil, poner nombre y contraseña | Entra directo a «Mi trabajo», sin correo de confirmación; el correo explica que es para trabajar como empleado | ⬜ |
 | P-D21-2 | Invitar a un correo que ya tiene cuenta de cliente | «Ya tienes cuenta» → contraseña → «Entrar y unirme» → «Mi trabajo» | ⬜ |
+| P-H40-1 | Autónomo y empresa: en una solicitud pendiente, proponer solo +1 h; comprobar en la BD la hora apartada a quien va; el cliente la acepta (o la deja caducar y se libera) | Horas apartadas al proponer | ⬜ |
+| P-D22-1 | El dueño pone el horario de un empleado desde «Equipo» → «Horario»; el empleado lo ve sin poder cambiarlo | Correcto | ⬜ |
+| P-H42-1 | En el móvil: «Mover a otra fecha» de un trabajo confirmado | Página fija, sin scroll lateral | ⬜ |
+| P-H44-1 | El cliente ve «inicio – fin» en su reserva y en los correos tras un cambio de fecha o de duración | Correcto | ⬜ |
 
 ---
 

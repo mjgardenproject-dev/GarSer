@@ -15,8 +15,6 @@ interface Props {
   bookingId: string;
   worker?: BookingWorker;
   onChanged: () => void;
-  /** Trabajo ya confirmado: avisar por correo a quien pasa a ir y a quien deja de ir. */
-  notify?: boolean;
   /**
    * F7 (A-41): trabajo de equipo o de varios días. No se da «todo a una persona»: se cambia a una
    * persona por otra desde la agenda, donde se ve quién va cada día.
@@ -24,7 +22,7 @@ interface Props {
   team?: boolean;
 }
 
-const AssignWorkerControl: React.FC<Props> = ({ bookingId, worker, onChanged, notify = false, team = false }) => {
+const AssignWorkerControl: React.FC<Props> = ({ bookingId, worker, onChanged, team = false }) => {
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -53,20 +51,13 @@ const AssignWorkerControl: React.FC<Props> = ({ bookingId, worker, onChanged, no
 
   const assign = async (workerId: string) => {
     setSaving(workerId);
-    const { data, error } = await supabase.rpc('assign_booking_worker', { p_booking_id: bookingId, p_worker_id: workerId });
+    const { error } = await supabase.rpc('assign_booking_worker', { p_booking_id: bookingId, p_worker_id: workerId });
     setSaving(null);
     if (error) {
       toast.error(error.message || 'No se ha podido asignar.');
       return;
     }
-    if (notify) {
-      // Avisos: a quien pasa a ir, y a cada persona que se queda sin ninguna hora del trabajo.
-      const result = (data || {}) as { removedWorkerIds?: string[] };
-      void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId, workerId } });
-      (result.removedWorkerIds || []).forEach((removed) => {
-        void supabase.functions.invoke('send-email-notification', { body: { type: 'job_unassigned', bookingId, workerId: removed } });
-      });
-    }
+    // El aviso a quien entra o sale del trabajo lo apunta el servidor al final del cambio (F4, R-07).
     toast.success(workerId === worker.workerId ? 'Confirmado' : 'Trabajo reasignado');
     setOpen(false);
     onChanged();

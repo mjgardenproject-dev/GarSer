@@ -146,6 +146,8 @@ export const SERVER_MANAGED_TYPES = new Set<string>([
   'booking_reschedule_proposed', 'booking_reschedule_answered',
   'booking_incident_received',
   'gardener_approved', 'gardener_rejected', 'company_approved', 'company_rejected',
+  // F4 (R-07): quién va a cada trabajo lo compara el servidor al final de cada cambio.
+  'job_assigned', 'job_unassigned',
 ]);
 
 // deno-lint-ignore no-explicit-any
@@ -532,7 +534,9 @@ Deno.serve(async (req) => {
           });
         }
       }
-      if (b.status !== 'confirmed') {
+      // F4: si el trabajo se cancela, a quien iba se le avisa de que ya no tiene que ir.
+      const cancelledJob = type === 'job_unassigned' && ['cancelled', 'expired', 'rejected'].includes(String(b.status));
+      if (!['confirmed', 'in_progress'].includes(String(b.status)) && !cancelledJob) {
         return new Response(JSON.stringify({ error: 'booking_not_confirmed' }), {
           status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -601,13 +605,17 @@ Deno.serve(async (req) => {
           : [['Servicio', serviceName], ['Cuándo', when]];
         const jobSubject = type === 'job_assigned'
           ? `Nuevo trabajo: ${serviceName}, ${when}`
-          : `Ya no vas a este trabajo: ${serviceName}, ${when}`;
+          : cancelledJob
+            ? `Trabajo cancelado: ${serviceName}, ${when}`
+            : `Ya no vas a este trabajo: ${serviceName}, ${when}`;
         const jobOpts: Parameters<typeof renderBrandedEmail>[0] = {
           title: jobSubject,
           heading: `Hola ${escapeHtml(first)}`,
           intro: type === 'job_assigned'
             ? `${escapeHtml(companyName)} te ha asignado un trabajo.`
-            : `${escapeHtml(companyName)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
+            : cancelledJob
+              ? `Este trabajo de ${escapeHtml(companyName)} se ha cancelado. No tienes que ir.`
+              : `${escapeHtml(companyName)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
           bodyHtml: detailRows(pairs),
           cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
           footerNote: type === 'job_assigned' ? 'Si no puedes ir, avisa a tu empresa cuanto antes.' : 'Tus horas de ese día vuelven a estar libres.',

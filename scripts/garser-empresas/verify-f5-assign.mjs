@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 // GarSer Empresas · F5.2 — asignar y ejecutar, contra el Supabase LOCAL y por la API con el token
 // de cada persona (dueña, empleados, cliente).
 //
@@ -34,6 +35,14 @@ async function main() {
   const first = workerOf(B) === ana.id ? ana : luis;
   const second = first === ana ? luis : ana;
   const name = (p) => (p === ana ? 'Ana' : p === luis ? 'Luis' : 'Pepe');
+
+  // Prueba real · F4 (R-07): el empleado solo ve el trabajo cuando la empresa lo ha aceptado.
+  {
+    const before = await rpc('my_jobs', { p_from: D, p_to: D }, first.token);
+    const accepted = await rpc('respond_booking_request', { p_booking_id: B, p_response: 'accept', p_operation_id: randomUUID() }, owner.token);
+    record('F5-00', `Mientras la empresa no la acepta, ${name(first)} no la ve; al aceptarla, sí`,
+      (before.body || []).length === 0 && accepted.ok, `antes ve ${(before.body || []).length}${why(accepted)}`);
+  }
 
   // ── Lo que ve cada uno ───────────────────────────────────────────────────────
   {

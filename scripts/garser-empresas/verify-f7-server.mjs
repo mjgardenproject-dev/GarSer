@@ -169,6 +169,8 @@ async function main() {
       `máx ${maxDay} h/día, primer día ${dur} h, Luis día 6 [${day6}]`);
   }
   {
+    // Prueba real · F4 (R-07): el empleado lo ve cuando la empresa lo ha aceptado.
+    await rpc('respond_booking_request', { p_booking_id: B2, p_response: 'accept', p_operation_id: randomUUID() }, owner.token);
     const luisJobs = await rpc('my_jobs', { p_from: D[8], p_to: D[8] }, luis.token);
     const job = (luisJobs.body || []).find((j) => j.booking_id === B2);
     const sched = await rpc('company_schedule', { p_from: D[9], p_to: D[9] }, owner.token);

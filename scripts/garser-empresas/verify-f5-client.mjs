@@ -84,31 +84,41 @@ async function main() {
   }
 
   // ── Correos al empleado ──────────────────────────────────────────────────────
+  // Prueba real · F4 (R-07): quién va lo compara el SERVIDOR al final de cada cambio y apunta los
+  // avisos en la cola; ya no los pide la pestaña de la dueña (antes no salían si la reserva se
+  // confirmaba porque el cliente aceptaba una propuesta).
+  const jobNotices = (b) => sql(`select coalesce(string_agg(type || '>' || (payload->>'workerId') || ':' || status, ',' order by created_at), '') from public.notification_outbox where booking_id = '${b}' and type in ('job_assigned','job_unassigned')`);
+  const waitJobs = async (b) => {
+    for (let i = 0; i < 30; i++) {
+      if (!/:(pending|sending)/.test(jobNotices(b))) return jobNotices(b);
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    return jobNotices(b);
+  };
   {
+    const rows = await waitJobs(soon.bookingId);
     const byClient = await mail(client.token, { type: 'job_assigned', bookingId: soon.bookingId });
     const byEmployee = await mail(luis.token, { type: 'job_assigned', bookingId: soon.bookingId });
-    const ok = await mail(owner.token, { type: 'job_assigned', bookingId: soon.bookingId, to: 'victima@ejemplo.com' });
+    const byOwner = await mail(owner.token, { type: 'job_assigned', bookingId: soon.bookingId, to: 'victima@ejemplo.com' });
     const log = edgeLog();
-    record('F5-08', 'Al asignar un trabajo confirmado, el correo va a quien va (solo lo pide la empresa; el destinatario no se puede cambiar)',
-      byClient.status === 403 && byEmployee.status === 403 && ok.ok && log.includes(ana.email) && /Nuevo trabajo: Corte de césped/.test(log) && !log.includes('victima@ejemplo.com'),
-      `cliente ${byClient.status}, empleado ${byEmployee.status}, empresa ${ok.status} ${JSON.stringify(ok.body)}`);
+    record('F5-08', 'Al aceptar, el servidor avisa a quien va (Ana); nadie puede pedir el correo desde fuera ni cambiar el destinatario',
+      rows === `job_assigned>${ana.id}:sent` && log.includes(ana.email) && /Nuevo trabajo: Corte de césped/.test(log) && !log.includes('victima@ejemplo.com')
+        && [byClient, byEmployee, byOwner].every((r) => r.body?.skipped === 'server_managed'),
+      `cola [${rows}], cliente ${JSON.stringify(byClient.body)}, dueña ${JSON.stringify(byOwner.body)}`);
   }
   {
     const r = await rpc('assign_booking_worker', { p_booking_id: soon.bookingId, p_worker_id: luis.id }, owner.token);
-    const unassigned = await mail(owner.token, { type: 'job_unassigned', bookingId: soon.bookingId, workerId: r.body?.previousWorkerId });
-    const assigned = await mail(owner.token, { type: 'job_assigned', bookingId: soon.bookingId });
+    const rows = await waitJobs(soon.bookingId);
     const log = edgeLog();
-    const toCurrent = await mail(owner.token, { type: 'job_unassigned', bookingId: soon.bookingId, workerId: luis.id });
-    const toStranger = await mail(owner.token, { type: 'job_unassigned', bookingId: soon.bookingId, workerId: stranger.id });
-    record('F5-42', 'Al cambiar quién va: aviso a quien deja de ir y a quien pasa a ir; no se puede «desavisar» a quien va ni a alguien de fuera',
-      r.ok && unassigned.ok && assigned.ok && log.includes(`Ya no vas a este trabajo`) && log.includes(luis.email) &&
-      toCurrent.body?.skipped === true && toStranger.body?.skipped === true,
-      `cambio ${r.status}${why(r)} (ahora ${who(soon.bookingId)}), avisos ${unassigned.status}/${assigned.status}, a quien va ${JSON.stringify(toCurrent.body)}, a un extraño ${JSON.stringify(toStranger.body)}`);
+    record('F5-42', 'Al cambiar quién va: aviso a quien deja de ir (Ana) y a quien pasa a ir (Luis), una vez cada uno',
+      r.ok && rows.split(',').sort().join(',') === [`job_assigned>${ana.id}:sent`, `job_unassigned>${ana.id}:sent`, `job_assigned>${luis.id}:sent`].sort().join(',')
+        && log.includes('Ya no vas a este trabajo') && log.includes(luis.email),
+      `cambio ${r.status}${why(r)} (ahora ${who(soon.bookingId)}), cola [${rows}]`);
   }
   {
     const pendingSale = await pay(owner.id, stranger, TOMORROW, 18);
-    const r = pendingSale.bookingId ? await mail(owner.token, { type: 'job_assigned', bookingId: pendingSale.bookingId }) : { status: 0 };
-    record('F5-43', 'Un trabajo aún sin aceptar no genera aviso', r.status === 409, `HTTP ${r.status}${pendingSale.error ? ` ${pendingSale.error}` : ''}`);
+    const rows = pendingSale.bookingId ? jobNotices(pendingSale.bookingId) : 'sin venta';
+    record('F5-43', 'Un trabajo aún sin aceptar no genera aviso', rows === '', `cola [${rows}]${pendingSale.error ? ` ${pendingSale.error}` : ''}`);
   }
 }
 

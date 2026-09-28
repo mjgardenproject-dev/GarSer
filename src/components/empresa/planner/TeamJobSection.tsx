@@ -26,22 +26,13 @@ const ReplaceRow: React.FC<{ job: ScheduleJob; workerId: string; name: string; e
 
   const replace = async (to: Candidate) => {
     setSaving(true);
-    const { data, error } = await supabase.rpc('replace_booking_worker', { p_booking_id: job.booking_id, p_from: workerId, p_to: to.user_id });
+    const { error } = await supabase.rpc('replace_booking_worker', { p_booking_id: job.booking_id, p_from: workerId, p_to: to.user_id });
     setSaving(false);
     if (error) {
       toast.error(error.message || 'No se ha podido cambiar.');
       return;
     }
-    // Avisos solo de trabajos confirmados, como al repartir (A-36).
-    if (job.status === 'confirmed') {
-      const result = (data || {}) as { addedWorkerIds?: string[]; removedWorkerIds?: string[] };
-      (result.addedWorkerIds || []).forEach((id) => {
-        void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId: job.booking_id, workerId: id } });
-      });
-      (result.removedWorkerIds || []).forEach((id) => {
-        void supabase.functions.invoke('send-email-notification', { body: { type: 'job_unassigned', bookingId: job.booking_id, workerId: id } });
-      });
-    }
+    // El aviso a quien entra o sale del trabajo lo apunta el servidor al final del cambio (F4, R-07).
     toast.success(`${to.full_name} va en lugar de ${name}`);
     onReplaced();
   };

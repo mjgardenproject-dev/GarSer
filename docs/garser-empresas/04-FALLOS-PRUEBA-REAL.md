@@ -1159,6 +1159,61 @@ A-34 en `02-HALLAZGOS.md`.
 3. Aplicar la migración.
 4. Publicar la web.
 
+#### F4 — hecho (2026-09-28)
+
+**Servidor** (migración `20260929110000_employee_jobs_visibility.sql`).
+
+- `my_jobs` solo devuelve trabajos `confirmed`, `in_progress`, `completed` o `disputed` **y**
+  sin `assignment_pending` (R-07).
+- `is_booking_assignee` exige lo mismo (R-10). Con eso se cierran a la vez el detalle («Qué hay
+  que hacer»), `can_read_booking_items` y «he terminado» de los trabajos que aún no son del
+  empleado.
+- Avisos de trabajo:
+  - `private.booking_job_notices` guarda a quién se le ha avisado.
+  - `private.sync_job_notices` compara a quién le toca ahora con quién ya estaba avisado.
+  - Lo lanzan *triggers* diferidos (`CONSTRAINT TRIGGER … DEFERRABLE INITIALLY DEFERRED`) sobre
+    `booking_blocks` y sobre el estado o `assignment_pending` de `bookings`. Así se ve el estado
+    final de la transacción, y repartir o mover horas de la misma persona no avisa en falso.
+  - Apunta `job_assigned` a quien entra y `job_unassigned` a quien sale o si se cancela.
+  - Solo en reservas de empresa, y nunca al dueño que trabaja (Regla 2).
+  - Relleno inicial: los que ya van a trabajos confirmados cuentan como avisados, para no
+    repetirles el correo.
+- `send-email-notification`:
+  - `job_assigned` y `job_unassigned` pasan a ser del servidor.
+  - `job_unassigned` de un trabajo cancelado dice «Trabajo cancelado: … No tienes que ir».
+
+**Web.**
+
+- Fuera las llamadas a esos correos de `BookingRequestsManager`, `AssignWorkerControl` (y su
+  propiedad `notify`), `JobSheet` y `TeamJobSection`.
+- Fuera la etiqueta «Por confirmar» de `JobCard`.
+
+**Pruebas.**
+
+- Batería nueva `verify-employee-visibility.mjs`, 7/7:
+  - Pendiente: no la ve ni la abre.
+  - Aceptada: la ve y recibe 1 aviso.
+  - **El cliente acepta una propuesta de precio: recibe el aviso**, que es el caso del usuario.
+  - Modo manual: sin decidir no la ve; al decidir, la ve.
+  - Cambio de persona: un aviso a cada una, sin duplicados.
+  - Cancelación: «Trabajo cancelado».
+  - Autónomo: sin cambios.
+- Baterías adaptadas, que esperaban que el empleado viera trabajos sin aceptar o pedían el correo
+  desde el navegador. Lo que comprueban no cambia; ahora se acepta antes, o se mira la cola:
+  - `verify-f5-assign`, con la nueva F5-00.
+  - `verify-f5-client`: F5-08, F5-42 y F5-43.
+  - `verify-f6-planning`: F6-13 y F6-18.
+  - `verify-f7-server`: F7-17.
+  - `verify-f7-web`: F7-27.
+  - `verify-f8-web`: F8-41.
+- **Navegador local:** con la empresa de demostración, una solicitud a 3 días asignada a Ana,
+  aún pendiente.
+  - «Mi trabajo → Semana» de Ana, tras pulsar «Actualizar», dice «No tienes trabajos»; antes
+    salía con «Por confirmar».
+  - La empresa la acepta: en la cola, `job_assigned` y `booking_accepted` enviados.
+  - Ana pulsa «Actualizar» y ve el trabajo del jueves 1 de 10:00 a 12:00, sin etiqueta, y
+    «Qué hay que hacer» se abre.
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
@@ -1166,7 +1221,7 @@ A-34 en `02-HALLAZGOS.md`.
 | F1 | ✅ Hecho (2026-09-28) | 573 pruebas (+15), `tsc` 128, compila; batería `verify-session-scope` 3/3; navegador local (abajo) | ver git |
 | F2 | ✅ Hecho (2026-09-28) | 576 pruebas (+3), `tsc` 128, compila; navegador local (abajo) | ver git |
 | F3 | ✅ Hecho (2026-09-28) | 579 pruebas (+3), `tsc` 128, compila; baterías 20/20 (244 comprobaciones, `verify-notification-outbox` 14/14 nueva; `verify-f3-emails` y `verify-f6-reschedule` adaptadas); navegador local | ver git |
-| F4 | Pendiente | | |
+| F4 | ✅ Hecho (2026-09-28) | 579 pruebas, `tsc` 128, compila; baterías 21/21 (252 comprobaciones, `verify-employee-visibility` 7/7 nueva, 6 adaptadas); navegador local | ver git |
 | F5 | Pendiente | | |
 | F6 | Pendiente | | |
 | F7 | Pendiente | | |

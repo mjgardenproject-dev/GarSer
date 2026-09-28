@@ -28,19 +28,18 @@ const quoteAt = (provider, client, date, hour, m2) => authority(
 const sqlValidHours = (provider, date, labour) => sql(`select coalesce(string_agg(h::text, ',' order by h), '') from generate_series(0, 19) h
   where exists (select 1 from public.plan_booking_cells('${provider}', '${LAWN}', '${date}', h, ${labour}, false, null))`);
 
-const mail = async (token, body) => {
-  const res = await fetch(`${apiUrl}/functions/v1/send-email-notification`, {
-    method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  });
-  let data; try { data = await res.json(); } catch { data = null; }
-  return { status: res.status, ok: res.ok, body: data };
-};
 
 // Generador pseudoaleatorio con semilla (la prueba se puede repetir igual).
 function rng(seed) {
   let x = seed >>> 0;
   return () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 2 ** 32; };
 }
+
+const outboxStatus = (b, type) => sql(`select coalesce(string_agg(status, ',' order by created_at), '') from public.notification_outbox where booking_id='${b}' and type='${type}'`);
+const waitOutbox = async (b, type) => {
+  for (let i = 0; i < 30 && /pending|sending/.test(outboxStatus(b, type)); i++) await new Promise((r) => setTimeout(r, 700));
+  return outboxStatus(b, type);
+};
 
 async function main() {
   const owner = await createCompany(acc.newUser, 'duena-web');
@@ -95,10 +94,11 @@ async function main() {
     record('F7-24', 'Se paga y la reserva queda del día 30 al 35 con 36 h de trabajo', row === `${M[4]}|36`, row || sale.error || why(sale.confirm));
     if (sale.bookingId) {
       await rpc('respond_booking_request', { p_booking_id: sale.bookingId, p_response: 'accept', p_operation_id: randomUUID() }, owner.token);
-      const sent = await mail(owner.token, { type: 'job_assigned', bookingId: sale.bookingId });
-      const accepted = await mail(owner.token, { type: 'booking_accepted', bookingId: sale.bookingId });
-      record('F7-27', 'Al aceptar un trabajo de varios días se avisa a cada persona que va (2) y al cliente', sent.ok && sent.body?.sent === 2 && accepted.ok,
-        `empleados ${JSON.stringify(sent.body)}, cliente ${accepted.status}`);
+      // Prueba real · F3/F4: los avisos los apunta y envía el servidor al aceptar.
+      const sent = await waitOutbox(sale.bookingId, 'job_assigned');
+      const accepted = await waitOutbox(sale.bookingId, 'booking_accepted');
+      record('F7-27', 'Al aceptar un trabajo de varios días se avisa a cada persona que va (2) y al cliente', sent === 'sent,sent' && accepted === 'sent',
+        `empleados [${sent}], cliente [${accepted}]`);
     }
   }
   {

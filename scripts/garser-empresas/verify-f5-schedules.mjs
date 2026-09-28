@@ -2,7 +2,8 @@
 // GarSer Empresas · F5.1 — horarios del equipo, contra el Supabase LOCAL y por la API (con el
 // token de cada persona, como lo haría la pantalla de horario).
 //
-// Comprueba que cada persona pone su propio horario (a mano y con el horario fijo), que una hora
+// D22 (2026-09-28): el horario de cada empleado lo pone el dueño (a mano y con el horario fijo), y
+// el empleado ya no puede escribirlo. Comprueba eso, que una hora
 // ya vendida no se puede volver a abrir por ningún camino, que el horario del dueño que trabaja no
 // se cierra por los trabajos de su equipo, que cancelar libera, y la antelación de la empresa.
 //
@@ -25,24 +26,26 @@ async function main() {
   const luis = await joinTeam(acc.newUser, owner.token, 'luis');
   const client = await acc.newUser('cliente');
 
-  // ── Cada uno, su horario ─────────────────────────────────────────────────────
+  // ── D22 (2026-09-28): el horario de cada empleado lo pone el dueño ──────────
   {
-    const mine = await rest('POST', '/rest/v1/availability', ana.token, [9, 10, 11, 12].map((h) => ({
-      gardener_id: ana.id, date: D1, start_time: `${String(h).padStart(2, '0')}:00`, end_time: `${String(h + 1).padStart(2, '0')}:00`, is_available: true,
-    })));
-    const other = await rest('POST', '/rest/v1/availability', ana.token, {
-      gardener_id: luis.id, date: D1, start_time: '15:00', end_time: '16:00', is_available: true,
+    const own = await rest('POST', '/rest/v1/availability', ana.token, {
+      gardener_id: ana.id, date: D1, start_time: '09:00', end_time: '10:00', is_available: true,
     });
-    record('F5-20', 'Una empleada pone su propio horario; no puede tocar el de un compañero',
-      mine.ok && freeHoursOf(ana.id, D1) === '9,10,11,12' && !other.ok && freeHoursOf(luis.id, D1) === '',
-      `suyo ${mine.status}, ajeno ${other.status}`);
+    const set = await rpc('set_member_day_availability', { p_member_id: ana.memberId, p_date: D1, p_hours: [9, 10, 11, 12] }, owner.token);
+    const byMate = await rpc('set_member_day_availability', { p_member_id: luis.memberId, p_date: D1, p_hours: [15] }, ana.token);
+    record('F5-20', 'El dueño pone el horario de un día de Ana; Ana no puede escribir el suyo ni el de un compañero',
+      !own.ok && set.ok && freeHoursOf(ana.id, D1) === '9,10,11,12' && !byMate.ok && freeHoursOf(luis.id, D1) === '',
+      `Ana el suyo ${own.status}, dueño ${set.status}${why(set)}, Ana el de Luis ${byMate.status}`);
   }
   {
-    const settings = await rest('POST', '/rest/v1/recurring_availability_settings', luis.token, { gardener_id: luis.id, weeks_to_maintain: 2, min_notice_hours: 0 });
-    const rule = await rest('POST', '/rest/v1/recurring_schedules', luis.token, { gardener_id: luis.id, day_of_week: DOW, start_time: '09:00', end_time: '13:00' });
-    const gen = await rpc('generate_recurring_slots', { target_gardener_id: luis.id, force_regenerate: true }, luis.token);
-    record('F5-21', 'Un empleado guarda un horario fijo y se generan sus horas', settings.ok && rule.ok && gen.ok && freeHoursOf(luis.id, D1) === '9,10,11,12',
-      `ajustes ${settings.status}, regla ${rule.status}, generar ${gen.status}${why(gen)}, horas [${freeHoursOf(luis.id, D1)}]`);
+    const byHimself = await rest('POST', '/rest/v1/recurring_schedules', luis.token, { gardener_id: luis.id, day_of_week: DOW, start_time: '09:00', end_time: '13:00' });
+    const set = await rpc('set_member_recurring_schedule', {
+      p_member_id: luis.memberId, p_rules: [{ day_of_week: DOW, start_time: '09:00', end_time: '13:00' }], p_weeks: 2,
+    }, owner.token);
+    const read = await rpc('member_recurring_schedule', { p_member_id: luis.memberId }, owner.token);
+    record('F5-21', 'El dueño guarda el horario fijo de Luis y se generan sus horas; Luis no puede guardarlo',
+      !byHimself.ok && set.ok && freeHoursOf(luis.id, D1) === '9,10,11,12' && (read.body?.rules || []).length === 1,
+      `Luis ${byHimself.status}, dueño ${set.status}${why(set)}, horas [${freeHoursOf(luis.id, D1)}]`);
   }
 
   // ── Una hora vendida no se reabre ────────────────────────────────────────────
@@ -50,21 +53,16 @@ async function main() {
   const soldTo = sold.bookingId ? workerOf(sold.bookingId) : '';
   const seller = soldTo === ana.id ? ana : luis;
   {
-    // Lo que hace la pantalla al guardar un día: borrar el día y volver a crear las horas marcadas.
-    await rest('DELETE', `/rest/v1/availability?gardener_id=eq.${seller.id}&date=eq.${D1}`, seller.token);
-    const reinsert = await rest('POST', '/rest/v1/availability', seller.token, [9, 10, 11, 12].map((h) => ({
-      gardener_id: seller.id, date: D1, start_time: `${String(h).padStart(2, '0')}:00`, end_time: `${String(h + 1).padStart(2, '0')}:00`, is_available: true,
-    })));
-    const direct = await rest('PATCH', `/rest/v1/availability?gardener_id=eq.${seller.id}&date=eq.${D1}&start_time=eq.09:00:00`, seller.token, { is_available: true });
-    record('F5-22', 'Quien tiene vendido 9-11 no puede volver a marcarlo libre (ni guardando el día ni a mano)',
-      !!sold.bookingId && reinsert.ok && direct.ok && freeHoursOf(seller.id, D1) === '11,12',
+    // Lo que hace la pantalla del dueño al guardar un día: el día entero con sus horas marcadas.
+    const reset = await rpc('set_member_day_availability', { p_member_id: seller.memberId, p_date: D1, p_hours: [9, 10, 11, 12] }, owner.token);
+    record('F5-22', 'Quien tiene vendido 9-11 no vuelve a quedar libre aunque el dueño guarde el día entero',
+      !!sold.bookingId && reset.ok && freeHoursOf(seller.id, D1) === '11,12',
       `${sold.error || ''}vendido a ${seller === ana ? 'Ana' : 'Luis'}, libres [${freeHoursOf(seller.id, D1)}]`);
   }
   {
-    const settings = await rest('POST', '/rest/v1/recurring_availability_settings', seller.token, { gardener_id: seller.id, weeks_to_maintain: 2, min_notice_hours: 0 }, );
-    void settings;
-    await rest('POST', '/rest/v1/recurring_schedules', seller.token, { gardener_id: seller.id, day_of_week: DOW, start_time: '09:00', end_time: '13:00' });
-    const gen = await rpc('generate_recurring_slots', { target_gardener_id: seller.id, force_regenerate: true }, seller.token);
+    const gen = await rpc('set_member_recurring_schedule', {
+      p_member_id: seller.memberId, p_rules: [{ day_of_week: DOW, start_time: '09:00', end_time: '13:00' }], p_weeks: 2,
+    }, owner.token);
     record('F5-23', 'Regenerar su horario fijo tampoco reabre las horas vendidas', gen.ok && freeHoursOf(seller.id, D1) === '11,12',
       `generar ${gen.status}${why(gen)}, libres [${freeHoursOf(seller.id, D1)}]`);
   }

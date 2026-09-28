@@ -44,6 +44,8 @@ type BookingChatMeta = {
   duration_hours?: number | null;
   start_time?: string | null;
   proposed_duration_hours?: number | null;
+  /** F7: trabajo de equipo o de varios días (su duración no se cambia). */
+  labour_hours?: number | null;
   pricing_context?: {
     service_type?: string;
     allows_price_change?: boolean;
@@ -146,7 +148,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
   const refreshBookingMeta = useCallback(async () => {
     const { data, error } = await supabase
       .from('bookings')
-      .select('id, client_id, gardener_id, status, total_price, management_fee, management_fee_source, price_change_status, proposed_total_price, proposed_price_reason, proposed_price_expires_at, duration_hours, start_time, proposed_duration_hours, pricing_context')
+      .select('id, client_id, gardener_id, status, total_price, management_fee, management_fee_source, price_change_status, proposed_total_price, proposed_price_reason, proposed_price_expires_at, duration_hours, start_time, proposed_duration_hours, labour_hours, pricing_context')
       .eq('id', bookingId)
       .single();
     if (!error && data) setBookingMeta(data as BookingChatMeta);
@@ -412,7 +414,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
       toast.error('Solo puedes proponer ajuste en palmeras del último rango abierto.');
       return;
     }
-    const value = Number(proposalPrice);
+    // H-40: se puede cambiar solo la duración; el precio se queda como está.
+    if (proposalPrice.trim() === '' && proposalDuration.trim() === '') {
+      toast.error('Escribe un nuevo precio, una nueva duración o las dos cosas.');
+      return;
+    }
+    const value = proposalPrice.trim() === '' ? Number(bookingMeta.total_price) : Number(proposalPrice);
     if (!(value > 0)) {
       toast.error('Introduce un precio válido');
       return;
@@ -621,7 +628,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
               placeholder="Motivo (opcional)"
               className="w-full px-3 py-2 border border-blue-200 rounded-lg text-base sm:text-sm mb-2"
             />
-            {/* D5: opcional, solo mueve la hora de FIN. La de inicio nunca se toca. */}
+            {/* D5: opcional, solo mueve la hora de FIN. La de inicio nunca se toca. H-40: no en
+                trabajos de equipo o de varios días (el servidor no lo acepta). */}
+            {bookingMeta?.labour_hours == null && (<>
             <label className="block text-[11px] font-medium text-blue-700 mb-1">
               Nueva duración total (opcional — solo cambia la hora de fin)
             </label>
@@ -644,6 +653,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
                 )}
               </span>
             </div>
+            </>)}
           </div>
         )}
 

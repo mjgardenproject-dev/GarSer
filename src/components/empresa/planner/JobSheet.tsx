@@ -31,6 +31,13 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
   // F7: un trabajo de varios días se puede tocar mientras le quede algún día.
   const editable = (job.status === 'pending' || job.status === 'confirmed') && (job.end_date || job.date) >= new Date().toISOString().slice(0, 10);
   const team = isTeamJob(job);
+  // H-42: con la hoja abierta, la agenda de detrás no se mueve.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
   const shape = describeJobShape({ date: job.date, startHour: job.start_hour, durationHours: job.duration, endDate: job.end_date, labourHours: job.labour_hours });
   const nameOf = (id: string) => members.find((m) => m.user_id === id)?.name || options?.find((o) => o.user_id === id)?.full_name || 'Sin asignar';
 
@@ -78,13 +85,13 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
 
   return createPortal(
     <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/50 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="job-sheet-title" onClick={() => !saving && onClose()}>
-      <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-md sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90dvh] w-full overflow-y-auto overflow-x-hidden overscroll-contain rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-md sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 id="job-sheet-title" className="text-lg font-bold text-gray-900">{job.service}</h2>
+            <h2 id="job-sheet-title" className="break-words text-lg font-bold text-gray-900">{job.service}</h2>
             <p className="text-sm text-gray-600">{shape.multiDay ? shape.when : `${hourLabel(job.start_hour)}–${hourLabel(job.start_hour + job.duration)}`}{job.client_name ? ` · ${job.client_name}` : ''}</p>
             {shape.labour && <p className="text-sm text-gray-600">{shape.labour}</p>}
-            {job.address && <p className="mt-1 flex items-start gap-1 text-xs text-gray-500"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{job.address}</p>}
+            {job.address && <p className="mt-1 flex items-start gap-1 break-words text-xs text-gray-500"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span className="min-w-0">{job.address}</span></p>}
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button>
         </div>

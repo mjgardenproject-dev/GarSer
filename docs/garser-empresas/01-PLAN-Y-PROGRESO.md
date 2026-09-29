@@ -886,8 +886,8 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 
 1. **Fusionar la PR #38** (arreglo de correos H-37, ya desplegado, y la documentación de la
    batería), para que `main` tenga el mismo código que las funciones de producción.
-2. **D7: validar la encuesta de alta de empresas.** Sigue en borrador (§3, «D7 — Borrador»):
-   producción la usa tal cual. El usuario la revisa; si cambia algo, no hace falta migración.
+2. ~~**D7: validar la encuesta de alta de empresas.**~~ **Cerrada (2026-09-29): el usuario la da por
+   buena tal como está.**
 2b. **Arreglados tras la fusión (2026-09-26):** H-38 (tarifas por debajo de 1 €: «0,5» se
    guardaba como 5) y H-39 / D21 (invitación: el empleado pone su contraseña en la invitación y
    entra directo a su panel; correo nuevo). Despliegue: migración `20260927120000`, funciones
@@ -904,6 +904,9 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
    se escribe allí el plan por fases con sus pruebas.
    **Plan aprobado (2026-09-28):** F1–F8 en `04-FALLOS-PRUEBA-REAL.md` §3, decisiones D23–D26, rama
    `fix/prueba-real-r01-r08`.
+2e. **Pendientes consolidados (2026-09-29):** `05-HALLAZGOS-PENDIENTES.md` (PH-01…PH-13: lo que sigue
+   abierto de `02-HALLAZGOS.md` y lo visto en la prueba real fuera de ella, con las decisiones del
+   usuario) y `06-PRUEBA-REAL-PENDIENTE.md` (PR-01…PR-05 y la guía única de pruebas en garser.es).
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

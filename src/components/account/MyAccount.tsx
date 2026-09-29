@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import PushNotificationsCard from './PushNotificationsCard';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
 import { supabase } from '../../lib/supabase';
@@ -199,6 +200,8 @@ function MyAccount() {
             </div>
           </div>
         )}
+
+        <PushNotificationsCard />
 
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
           <div className="flex items-center mb-3">

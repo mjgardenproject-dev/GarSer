@@ -1348,6 +1348,69 @@ A-34 en `02-HALLAZGOS.md`.
 **Pendiente, anotado (R-20, diseño):** un proveedor suspendido no ve en su panel que lo está. Solo
 nota que no le llegan reservas. Se propone un aviso en su panel en la próxima tanda.
 
+#### F7 — hecho (2026-09-29)
+
+**Servidor.**
+
+- Migración `20260929140000_push_subscriptions.sql`:
+  - Tabla `push_subscriptions` (usuario, *endpoint*, claves, dispositivo), con RLS de solo las
+    tuyas (leer y borrar).
+  - `CHECK` de **solo servicios de push conocidos por https** (Google, Mozilla, Apple y
+    Microsoft) y de la longitud de las claves: contra SSRF, porque el *endpoint* lo manda el
+    navegador.
+  - `save_push_subscription`: si el mismo dispositivo tenía otra cuenta, pasa a la actual;
+    máximo 10 dispositivos por cuenta.
+  - `push_subscriptions_for_email`: solo `service_role`.
+- `_shared/webPush.ts`: RFC 8291 (cifrado `aes128gcm`) y RFC 8292 (VAPID ES256) con Web Crypto,
+  sin dependencias. También comprueba la lista de servicios permitidos antes de llamar.
+- `_shared/pushDelivery.ts`: `pushForEmail` manda la notificación a los dispositivos del
+  destinatario, borra las caducadas (404/410) y nunca rompe el correo. Sin claves VAPID, no hace
+  nada.
+- Enganchado en **los 6 puntos donde sale un correo**: los 5 de `send-email-notification`
+  (principal, planes, equipo, trabajos y cambio de fecha) y `booking-confirmation-email`. Así
+  **todo lo que va por correo va también al móvil**: los de la cola de F3, los del reloj, los de
+  pagos y la confirmación de reserva.
+- Claves VAPID:
+  - La pública, en `src/config/push.ts`; es pública por diseño.
+  - La privada, **solo** en `supabase/functions/.env` (fuera de git). En producción irá a los
+    secretos `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` (F8).
+
+**Web.**
+
+- `public/sw.js`: un *service worker* solo para las notificaciones. No intercepta peticiones ni
+  guarda caché. Al tocar una notificación abre la pantalla correspondiente, siempre dentro de la
+  web.
+- `src/utils/pushNotifications.ts`: estados `unsupported`, `ios-needs-install`, `denied`,
+  `disabled` y `enabled`; activar, desactivar, y olvidar el dispositivo al cerrar sesión (en
+  `AuthContext`, con 1,5 s como máximo). Un móvil compartido no sigue recibiendo los avisos de la
+  cuenta anterior.
+- «Mi cuenta» → tarjeta «Notificaciones en el móvil», con el texto de cada estado. En iPhone
+  explica cómo añadir GarSer a la pantalla de inicio.
+
+**Pruebas.**
+
+- Unitarias:
+  - `src/shared/webPush.test.ts`, 6 casos:
+    - Haciendo de navegador, se descifra exactamente el mensaje.
+    - La firma VAPID se verifica con la clave pública.
+    - La lista de servicios permitidos rechaza http, dominios parecidos, IP y puertos.
+    - Cabeceras del estándar.
+    - Un 410 marca la suscripción como caducada.
+    - Una dirección no permitida no se llama nunca.
+  - `pushNotifications.test.ts`, 3 casos: iPhone sin instalar, sin push, y bloqueadas,
+    activadas o por activar.
+- **Extremo a extremo en local**, con el Supabase local y el servidor de funciones:
+  - Se guarda una suscripción con claves reales y un *endpoint* de FCM inventado.
+  - Una dirección no permitida la rechaza la base de datos.
+  - El jardinero propone un precio: sale el correo, la notificación se envía a Google, Google
+    responde que ese dispositivo no existe, y la suscripción se borra sola.
+- **Navegador local:**
+  - «Mi cuenta» muestra la tarjeta con el estado real. El navegador del panel trae las
+    notificaciones bloqueadas: «Las has bloqueado para esta web…».
+  - `/sw.js` se registra y queda `activated`; después se quitó.
+- **Lo que solo se puede probar en garser.es** (P-R08-1): la entrega real en un Android y en un
+  iPhone con GarSer en la pantalla de inicio.
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
@@ -1358,5 +1421,5 @@ nota que no le llegan reservas. Se propone un aviso en su panel en la próxima t
 | F4 | ✅ Hecho (2026-09-28) | 579 pruebas, `tsc` 128, compila; baterías 21/21 (252 comprobaciones, `verify-employee-visibility` 7/7 nueva, 6 adaptadas); navegador local | ver git |
 | F5 | ✅ Hecho (2026-09-29) | 584 pruebas, `tsc` 128, compila; baterías 22/22 (259); navegador local | ver git |
 | F6 | ✅ Hecho (2026-09-29) | 587 pruebas, `tsc` 128, compila; baterías 23/23 (268 comprobaciones); navegador local | ver git |
-| F7 | Pendiente | | |
+| F7 | ✅ Hecho (2026-09-29) | 596 pruebas, `tsc` 128, compila; baterías 23/23 (268); extremo a extremo local con FCM; navegador local | ver git |
 | F8 | Pendiente | | |

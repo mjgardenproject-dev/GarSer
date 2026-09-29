@@ -2335,6 +2335,39 @@ export type Database = {
         }
         Relationships: []
       }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: string
+          last_used_at: string | null
+          p256dh: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          last_used_at?: string | null
+          p256dh: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          last_used_at?: string | null
+          p256dh?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       recurring_availability_settings: {
         Row: {
           gardener_id: string
@@ -3270,6 +3303,15 @@ export type Database = {
         Returns: string[]
       }
       purge_stale_ai_analysis_quota: { Args: never; Returns: number }
+      push_subscriptions_for_email: {
+        Args: { p_email: string }
+        Returns: {
+          auth: string
+          endpoint: string
+          id: string
+          p256dh: string
+        }[]
+      }
       record_incident_money_result: {
         Args: {
           p_incident_id: string
@@ -3391,6 +3433,15 @@ export type Database = {
       }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }
       safe_numeric: { Args: { p_value: string }; Returns: number }
+      save_push_subscription: {
+        Args: {
+          p_auth: string
+          p_endpoint: string
+          p_p256dh: string
+          p_user_agent?: string
+        }
+        Returns: undefined
+      }
       set_company_allow_split_jobs: {
         Args: { p_allow: boolean }
         Returns: Json

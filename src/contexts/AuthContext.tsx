@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearBookingResumeStorage } from '../utils/bookingResumeStorage';
 import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
+import { forgetThisDevicePush } from '../utils/pushNotifications';
 
 interface AuthContextType {
   user: User | null;
@@ -267,6 +268,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       markIntentionalSignOut();
       setSessionEndedAt(null);
+      // F7: un dispositivo compartido no debe seguir recibiendo los avisos de esta cuenta. Como
+      // mucho 1,5 s: cerrar sesión no espera a la red.
+      await Promise.race([forgetThisDevicePush(), new Promise((resolve) => setTimeout(resolve, 1500))]);
       await supabase.auth.signOut({ scope });
       clearAuthStorage();
       clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });

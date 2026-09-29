@@ -35,6 +35,7 @@ import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/booki
 import { cancellationCopy } from '../_shared/bookingEmailCopy.ts';
 import { invitationEmailCopy } from '../_shared/companyEmailCopy.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
+import { pushForEmail } from '../_shared/pushDelivery.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -538,6 +539,7 @@ Deno.serve(async (req) => {
         const sent = await sendViaBrevo({ to: clientEmail, subject, html, text, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
         if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
       }
+      await pushForEmail(admin, clientEmail, subject, opts.intro || '', opts.cta?.url);
       return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -632,6 +634,7 @@ Deno.serve(async (req) => {
         const sent = await sendViaBrevo({ to: recipientEmail, subject: teamSubject, html: teamHtml, text: teamText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
         if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
       }
+      await pushForEmail(admin, recipientEmail, teamSubject, teamOpts.intro || '', teamOpts.cta?.url);
       return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -752,6 +755,7 @@ Deno.serve(async (req) => {
           const sent = await sendViaBrevo({ to: workerEmail, subject: jobSubject, html: jobHtml, text: jobText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
           if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
         }
+        await pushForEmail(admin, workerEmail, jobSubject, jobOpts.intro || '', jobOpts.cta?.url);
         sentCount += 1;
       }
       return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
@@ -861,6 +865,7 @@ Deno.serve(async (req) => {
           });
           if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
         }
+        await pushForEmail(admin, email, item.subject, item.intro, item.cta?.url);
         sentCount += 1;
       }
       return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
@@ -1097,6 +1102,7 @@ Deno.serve(async (req) => {
 
     if (!SMTP_USER || !SMTP_PASS) {
       console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to, type, subject });
+      await pushForEmail(admin, to, subject, opts.intro || '', opts.cta?.url);
       return new Response(JSON.stringify({ success: true, mock: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -1106,6 +1112,7 @@ Deno.serve(async (req) => {
     if (!sent.ok) {
       throw new Error(sent.error || 'Error sending email via Brevo');
     }
+    await pushForEmail(admin, to, subject, opts.intro || '', opts.cta?.url);
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

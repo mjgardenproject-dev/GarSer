@@ -252,22 +252,36 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
     }
 
     setSaving(true);
+    const hoursOf = (date: string) => Object.entries(weeklyAvailability[date])
+      .filter(([, isAvailable]) => isAvailable)
+      .map(([hour]) => parseInt(hour));
+
+    // R-05 (prueba real): el horario de un empleado lo guarda el dueño en UNA llamada, todo o
+    // nada, y el servidor le manda al empleado un solo correo «nuevo horario publicado».
+    if (member) {
+      try {
+        const { error } = await supabase.rpc('set_member_days_availability', {
+          p_member_id: member.memberId,
+          p_days: changedDates.map((date) => ({ date, hours: hoursOf(date) })),
+        });
+        if (error) throw error;
+        toast.success(`Horario de ${member.name} guardado. Le avisamos por correo.`);
+        setSavedSnapshot(JSON.parse(JSON.stringify(weeklyAvailability)));
+        setHasUnsavedChanges(false);
+        return true;
+      } catch (error: unknown) {
+        toast.error((error as { message?: string })?.message || 'No se ha podido guardar. No se ha cambiado ningún día: vuelve a intentarlo.');
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    }
+
     try {
       // Guardamos solo los días modificados y reportamos exactamente cuáles fallan,
       // en vez de un "todo o nada" que dejaba días a medias sin avisar.
       const results = await Promise.allSettled(
-        changedDates.map((date) => {
-          const availableHours = Object.entries(weeklyAvailability[date])
-            .filter(([, isAvailable]) => isAvailable)
-            .map(([hour]) => parseInt(hour));
-          // D22: el horario de un empleado lo guarda el dueño por su RPC (comprueba que es suyo).
-          if (member) {
-            return supabase
-              .rpc('set_member_day_availability', { p_member_id: member.memberId, p_date: date, p_hours: availableHours })
-              .then(({ error }) => { if (error) throw error; });
-          }
-          return setGardenerAvailability(user.id, date, availableHours);
-        })
+        changedDates.map((date) => setGardenerAvailability(user.id, date, hoursOf(date)))
       );
 
       const failedDates = changedDates.filter((_, i) => results[i].status === 'rejected');
@@ -581,6 +595,8 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
                     return (
                       <button
                         key={`${dateStr}-${timeBlock.hour}`}
+                        aria-label={`${format(day, "EEEE d 'de' MMMM", { locale: es })}, ${String(timeBlock.hour).padStart(2, '0')}:00, ${isBooked ? 'con trabajo' : isPending ? 'solicitada' : isAvailable ? 'disponible' : 'no disponible'}`}
+                        aria-pressed={isAvailable}
                         onClick={() => { if (!locked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
                         disabled={locked}
                         className={`
@@ -644,6 +660,8 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
                       return (
                         <button
                           key={`mob-${dateStr}-${timeBlock.hour}`}
+                          aria-label={`${format(day, "EEEE d 'de' MMMM", { locale: es })}, ${String(timeBlock.hour).padStart(2, '0')}:00, ${isBooked ? 'con trabajo' : isPending ? 'solicitada' : isAvailable ? 'disponible' : 'no disponible'}`}
+                          aria-pressed={isAvailable}
                           onClick={() => { if (!locked) toggleBlockAvailability(dateStr, timeBlock.hour); }}
                           disabled={locked}
                           className={`

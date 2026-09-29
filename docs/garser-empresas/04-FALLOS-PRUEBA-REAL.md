@@ -694,6 +694,8 @@ Decisiones técnicas tomadas por el chat (reversibles, §5 de la guía):
 | R-15 | El botón de salir de la barra superior en el móvil es solo un icono **sin nombre accesible**: un lector de pantalla lo anuncia como «botón» (`Navbar.tsx`). | Accesibilidad | F2 (hecho) |
 | R-16 | **El navegador podía cambiar el estado de una reserva** (`bookings.status`) por PostgREST: regla «Participants can update bookings» + `GRANT UPDATE (status)` (`20260713000001`). Comprobado en local: el jardinero pasa su reserva de `pending` a `confirmed` y a `completed` sin la aceptación del cliente ni el cobro de los gastos de gestión, y el cliente podría cancelar saltándose la política de cancelación. | **Seguridad y dinero (crítica)** | F3 (hecho) |
 | R-17 | El correo al jardinero cuando el cliente **rechaza** su propuesta decía «La reserva continúa con el precio original», pero rechazar **cancela** la solicitud (`respond_booking_price_change`). | Funcionamiento (correo engañoso) | F3 (hecho) |
+| R-18 | La pantalla de horario fijo de un empleado le hablaba al dueño en segunda persona («Crea tu horario fijo», «Marca tus días»). | Texto | F5 (hecho) |
+| R-19 | Las casillas de las rejillas de horario solo decían la hora («07:00» siete veces): sin día ni estado para un lector de pantalla. | Accesibilidad | F5 (hecho) |
 | R-13 | Restos en producción de cuentas borradas: una solicitud de empresa «enviada» huérfana (`af612d76-…`), que el admin ve como pendiente y no puede aprobar. | Datos | F6 |
 
 ### 3.3 Fases
@@ -1214,28 +1216,63 @@ A-34 en `02-HALLAZGOS.md`.
   - Ana pulsa «Actualizar» y ve el trabajo del jueves 1 de 10:00 a 12:00, sin etiqueta, y
     «Qué hay que hacer» se abre.
 
-#### F5 — en curso (parado por límite de uso, 2026-09-28)
+#### F5 — hecho (2026-09-29)
 
-**Hecho, sin probar aún:**
+**Servidor** (migración `20260929120000_team_setup_and_schedule_notices.sql`).
 
-- Migración `20260929120000_team_setup_and_schedule_notices.sql`, aplicada **solo en local**:
-  - `company_team_overview` devuelve `has_recurring_schedule` e `is_configured`.
-  - *Trigger* `company_member_joined`, que avisa al dueño.
-  - `set_member_days_availability`: una llamada, todo o nada, con aviso si algo cambia.
-  - `set_member_recurring_schedule` avisa si el horario cambia.
-- `send-email-notification`: tipos `company_member_joined` y `member_schedule_published`, solo
-  por llamada interna, con `weeklySummary` y `hoursRanges`.
+- `company_team_overview` devuelve por miembro `has_recurring_schedule` y `is_configured`
+  (horario fijo **y** al menos un servicio).
+- *Trigger* en `company_members`: cuando un empleado queda activo (invitación aceptada, con cuenta
+  nueva o existente), apunta `company_member_joined` para el dueño.
+- `set_member_days_availability(p_member_id, p_days jsonb)`: todos los días en una llamada, todo
+  o nada, con las mismas comprobaciones de siempre por día. Apunta `member_schedule_published`
+  (días) **solo si algo cambió**: compara las horas antes y después.
+- `set_member_recurring_schedule`: igual que antes, y apunta `member_schedule_published`
+  (semanal) si cambió.
+- `send-email-notification`, dos correos nuevos que solo se pueden pedir desde la cola:
+  - Al dueño: «*X* se ha unido a tu equipo», con el texto que pidió el usuario y el botón
+    «Configurar».
+  - Al empleado: «Tienes un nuevo horario publicado», con el horario semanal o los días
+    cambiados, y el botón «Ver mi horario».
 
-**Falta:**
+**Web.**
 
-1. `useCompanyTeam`: añadir `has_recurring_schedule` e `is_configured` al tipo.
-2. `CompanyHomePage`: aviso por cada empleado sin configurar, con «Le falta: …» y el botón
-   «Configurar» (horario → `/empresa/equipo/:memberId/horario`; servicios → pestaña Equipo).
-3. `AvailabilityManager`: con `member`, una sola llamada `set_member_days_availability` con
-   todos los días cambiados.
-4. Regenerar los tipos, la batería `verify-team-setup.mjs`, pruebas unitarias del aviso, pasar
-   todas las baterías y probarlo en el navegador local.
-5. Después, F6, F7 y F8.
+- `MemberSetupNotices`, en el panel de la empresa (Agenda y Equipo), un aviso por empleado sin
+  configurar:
+  - «*X* ha aceptado tu solicitud de unirse a tu equipo. Configura su perfil…»
+  - «Le falta: horario fijo · servicios».
+  - El botón «Configurar» lleva a su horario o a su tarjeta de servicios.
+  - Desaparece solo en cuanto el empleado está configurado.
+- `AvailabilityManager`, con un empleado: una sola llamada. Si falla, no se cambia ningún día y lo
+  dice.
+- `RecurringScheduleManager`, con un empleado: el aviso de guardado dice que le avisamos, y los
+  textos pasan a tercera persona («Crea su horario fijo», «Marca sus días»…). Antes le hablaban al
+  dueño como si fuera su propio horario (R-18).
+- R-19: las casillas de las dos rejillas de horario tienen `aria-label` (día, hora y estado) y
+  `aria-pressed`. Antes un lector de pantalla oía «07:00» siete veces.
+- `TeamMemberCard` con ancla `member-<id>`.
+
+**Pruebas.**
+
+- Unitarias: `MemberSetupNotices.test.tsx`, 5 casos: qué le falta, a dónde lleva el botón,
+  quién no sale y botón sin nombre.
+- Batería nueva `verify-team-setup.mjs`, 7/7:
+  - Correo al dueño al unirse.
+  - `is_configured` con servicio, con horario y con los dos.
+  - 1 correo por horario fijo, y guardar igual no manda otro.
+  - 5 días = 1 correo, y repetirlo no manda nada.
+  - Todo o nada con un día pasado.
+  - Otra empresa y la propia empleada no pueden.
+  - El correo no se puede pedir desde el navegador.
+- Todas las baterías: **22/22, 259 comprobaciones**.
+- **Navegador local** (empresa de demostración):
+  - El aviso sale para Ana («Le falta: horario fijo»). Se vio que el botón con el correo entero se
+    salía de la tarjeta; ahora dice «Configurar» si no hay nombre.
+  - «Configurar» lleva a su horario.
+  - En «Ajustes puntuales», dos horas del viernes: «Horario de … guardado. Le avisamos por
+    correo», 1 aviso «días» enviado y las horas guardadas.
+  - «Horario fijo» L–V, con la confirmación: 5 franjas guardadas y 1 aviso «semanal» enviado.
+  - Vuelta al panel: el aviso ha desaparecido.
 
 ## 4. Registro de avance
 
@@ -1245,7 +1282,7 @@ A-34 en `02-HALLAZGOS.md`.
 | F2 | ✅ Hecho (2026-09-28) | 576 pruebas (+3), `tsc` 128, compila; navegador local (abajo) | ver git |
 | F3 | ✅ Hecho (2026-09-28) | 579 pruebas (+3), `tsc` 128, compila; baterías 20/20 (244 comprobaciones, `verify-notification-outbox` 14/14 nueva; `verify-f3-emails` y `verify-f6-reschedule` adaptadas); navegador local | ver git |
 | F4 | ✅ Hecho (2026-09-28) | 579 pruebas, `tsc` 128, compila; baterías 21/21 (252 comprobaciones, `verify-employee-visibility` 7/7 nueva, 6 adaptadas); navegador local | ver git |
-| F5 | 🟡 En curso (2026-09-28) | ver «F5 — en curso» | WIP |
+| F5 | ✅ Hecho (2026-09-29) | 584 pruebas, `tsc` 128, compila; baterías 22/22 (259); navegador local | ver git |
 | F6 | Pendiente | | |
 | F7 | Pendiente | | |
 | F8 | Pendiente | | |

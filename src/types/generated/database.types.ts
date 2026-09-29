@@ -3392,6 +3392,10 @@ export type Database = {
         Args: { p_date: string; p_hours: number[]; p_member_id: string }
         Returns: undefined
       }
+      set_member_days_availability: {
+        Args: { p_days: Json; p_member_id: string }
+        Returns: Json
+      }
       set_member_recurring_schedule: {
         Args: { p_member_id: string; p_rules: Json; p_weeks?: number }
         Returns: undefined

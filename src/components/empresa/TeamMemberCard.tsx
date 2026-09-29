@@ -71,7 +71,7 @@ const TeamMemberCard: React.FC<Props> = ({ member, offeredServices, onChanged, o
   };
 
   return (
-    <li className="rounded-2xl border border-gray-200 bg-white p-4">
+    <li id={`member-${member.member_id}`} className="scroll-mt-24 rounded-2xl border border-gray-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold text-gray-900">{displayName}</p>

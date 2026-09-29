@@ -8,6 +8,7 @@ import AllowSplitJobsCard from '../../components/empresa/AllowSplitJobsCard';
 import MaxCrewCard from '../../components/empresa/MaxCrewCard';
 import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
+import MemberSetupNotices from '../../components/empresa/MemberSetupNotices';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
@@ -136,6 +137,16 @@ const CompanyPanel: React.FC = () => {
       </AppHeader>
 
       <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
+        {tab !== 'company' && (
+          <MemberSetupNotices
+            members={data.members}
+            onConfigureServices={(memberId) => {
+              setTab('team');
+              // Lleva a su tarjeta, donde se le asignan los servicios.
+              setTimeout(() => document.getElementById(`member-${memberId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+            }}
+          />
+        )}
         {tab === 'agenda' ? (
           <CompanyAgenda pendingRequests={pendingRequests} onRefreshExtra={loadPendingRequests} />
         ) : tab === 'team' ? (

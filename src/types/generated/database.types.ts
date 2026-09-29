@@ -1924,6 +1924,7 @@ export type Database = {
           rating_average: number | null
           rating_count: number | null
           services: string[] | null
+          suspended_at: string | null
           test_grass_frequency: string | null
           test_hedge_season: string | null
           test_pest_action: string | null
@@ -1968,6 +1969,7 @@ export type Database = {
           rating_average?: number | null
           rating_count?: number | null
           services?: string[] | null
+          suspended_at?: string | null
           test_grass_frequency?: string | null
           test_hedge_season?: string | null
           test_pest_action?: string | null
@@ -2012,6 +2014,7 @@ export type Database = {
           rating_average?: number | null
           rating_count?: number | null
           services?: string[] | null
+          suspended_at?: string | null
           test_grass_frequency?: string | null
           test_hedge_season?: string | null
           test_pest_action?: string | null
@@ -2251,6 +2254,51 @@ export type Database = {
           },
         ]
       }
+      notification_outbox: {
+        Row: {
+          attempts: number
+          booking_id: string | null
+          created_at: string
+          dedupe_key: string
+          id: string
+          last_error: string | null
+          locked_until: string | null
+          next_attempt_at: string
+          payload: Json
+          sent_at: string | null
+          status: string
+          type: string
+        }
+        Insert: {
+          attempts?: number
+          booking_id?: string | null
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          payload?: Json
+          sent_at?: string | null
+          status?: string
+          type: string
+        }
+        Update: {
+          attempts?: number
+          booking_id?: string | null
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          payload?: Json
+          sent_at?: string | null
+          status?: string
+          type?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           address: string | null
@@ -2284,6 +2332,39 @@ export type Database = {
           role?: string | null
           updated_at?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: string
+          last_used_at: string | null
+          p256dh: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          last_used_at?: string | null
+          p256dh: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          last_used_at?: string | null
+          p256dh?: string
+          user_agent?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -2715,6 +2796,10 @@ export type Database = {
         Args: { p_token: string; p_user_id: string }
         Returns: Json
       }
+      admin_account_closure_preview: {
+        Args: { p_email: string }
+        Returns: Json
+      }
       admin_review_company_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: Json
@@ -2722,6 +2807,10 @@ export type Database = {
       admin_review_gardener_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: undefined
+      }
+      admin_set_provider_suspended: {
+        Args: { p_suspended: boolean; p_user_id: string }
+        Returns: Json
       }
       assign_booking_hours: {
         Args: { p_booking_id: string; p_workers: string[] }
@@ -2835,6 +2924,16 @@ export type Database = {
           visit_id: string
         }[]
       }
+      claim_notification_outbox: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          booking_id: string
+          id: string
+          payload: Json
+          type: string
+        }[]
+      }
       cleanup_expired_booking_payment_state: {
         Args: {
           p_end_date?: string
@@ -2864,6 +2963,15 @@ export type Database = {
           p_response_payload: Json
         }
         Returns: undefined
+      }
+      complete_notification_outbox: {
+        Args: {
+          p_error?: string
+          p_id: string
+          p_ok: boolean
+          p_permanent?: boolean
+        }
+        Returns: string
       }
       confirm_booking_payment_attempt: {
         Args: {
@@ -3077,6 +3185,10 @@ export type Database = {
         }[]
       }
       my_maintenance_plans: { Args: never; Returns: Json }
+      perform_account_closure: {
+        Args: { p_admin_id: string; p_expected_mode: string; p_user_id: string }
+        Returns: Json
+      }
       pick_provider_worker: {
         Args: {
           p_date: string
@@ -3191,6 +3303,15 @@ export type Database = {
         Returns: string[]
       }
       purge_stale_ai_analysis_quota: { Args: never; Returns: number }
+      push_subscriptions_for_email: {
+        Args: { p_email: string }
+        Returns: {
+          auth: string
+          endpoint: string
+          id: string
+          p256dh: string
+        }[]
+      }
       record_incident_money_result: {
         Args: {
           p_incident_id: string
@@ -3312,6 +3433,15 @@ export type Database = {
       }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }
       safe_numeric: { Args: { p_value: string }; Returns: number }
+      save_push_subscription: {
+        Args: {
+          p_auth: string
+          p_endpoint: string
+          p_p256dh: string
+          p_user_agent?: string
+        }
+        Returns: undefined
+      }
       set_company_allow_split_jobs: {
         Args: { p_allow: boolean }
         Returns: Json
@@ -3327,6 +3457,10 @@ export type Database = {
       set_member_day_availability: {
         Args: { p_date: string; p_hours: number[]; p_member_id: string }
         Returns: undefined
+      }
+      set_member_days_availability: {
+        Args: { p_days: Json; p_member_id: string }
+        Returns: Json
       }
       set_member_recurring_schedule: {
         Args: { p_member_id: string; p_rules: Json; p_weeks?: number }

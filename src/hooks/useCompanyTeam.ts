@@ -19,6 +19,10 @@ export interface TeamMember {
   services: TeamService[];
   license_status: 'pending' | 'approved' | 'rejected' | 'expired' | null;
   has_valid_phyto_license: boolean;
+  /** R-04: tiene horario fijo (al menos una franja semanal). */
+  has_recurring_schedule?: boolean;
+  /** R-04: horario fijo y al menos un servicio: ya puede recibir trabajos. */
+  is_configured?: boolean;
 }
 
 export interface TeamInvitation { id: string; email: string; created_at: string; expires_at: string }

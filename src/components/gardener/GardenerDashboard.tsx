@@ -16,7 +16,7 @@ import BookingRequestsManager from './BookingRequestsManager';
 import GardenerReviews from './GardenerReviews';
 import { fetchBookingMediaMap } from '../../utils/bookingMediaService';
 import { markGardenerFinished } from '../../utils/bookingIncidentService';
-import { respondBookingRequest, notifyClientOfCancellation } from '../../utils/bookingRequestService';
+import { respondBookingRequest } from '../../utils/bookingRequestService';
 import { cancelBooking, canMarkGardenerFinished, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
@@ -196,20 +196,10 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
               ? 'Ya habías avisado de que terminaste este servicio.'
               : 'Avisado. El cliente tiene que confirmar para cerrar la reserva.',
           );
-        } else {
-          const { error } = await supabase
-            .from('bookings')
-            .update({ status })
-            .eq('id', bookingId);
-
-          if (error) throw error;
-
-          // Reserva ya confirmada que el jardinero cancela: avisar al cliente por email
-          // (el rechazo de una solicitud pendiente ya envía su propio aviso).
-          if (status === 'cancelled') {
-            void notifyClientOfCancellation(bookingId);
-          }
         }
+        // R-16: no hay más cambios de estado desde aquí. El navegador ya no puede escribir
+        // `bookings.status` (cancelar una reserva confirmada va por booking-payment, que avisa a
+        // la otra parte desde el servidor).
       }
 
       // Enviar mensaje automático según el estado

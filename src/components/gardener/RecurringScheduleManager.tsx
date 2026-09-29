@@ -262,7 +262,7 @@ export default function RecurringScheduleManager({
           p_weeks: settings.weeks_to_maintain,
         });
         if (error) throw error;
-        toast.success(`Horario fijo de ${member.name} guardado y aplicado`);
+        toast.success(`Horario fijo de ${member.name} guardado y aplicado. Si ha cambiado, le avisamos por correo.`);
         setDirty(false);
         onChangePending?.(false);
         return true;
@@ -407,21 +407,21 @@ export default function RecurringScheduleManager({
           <div className="shrink-0 w-9 h-9 rounded-full bg-green-100 flex items-center justify-center">
             <Info className="w-5 h-5 text-green-700" />
           </div>
-          <h3 className="flex-1 text-sm font-bold text-green-900">Cómo funciona tu horario</h3>
+          <h3 className="flex-1 text-sm font-bold text-green-900">{member ? 'Cómo funciona su horario' : 'Cómo funciona tu horario'}</h3>
           <ChevronDown className={`w-5 h-5 shrink-0 text-green-700 transition-transform ${showHelp ? 'rotate-180' : ''}`} />
         </button>
         {showHelp && (
           <div className="px-4 pb-4 pl-[4.25rem]">
             <ol className="space-y-1.5 text-sm text-green-900/90 list-decimal list-inside marker:font-semibold">
               <li><span className="font-semibold">Elige días y franja base</span> arriba para rellenar el calendario de golpe.</li>
-              <li><span className="font-semibold">Ajusta horas sueltas</span> tocando las casillas: lo que quede en verde es tu horario real.</li>
+              <li><span className="font-semibold">Ajusta horas sueltas</span> tocando las casillas: lo que quede en verde es {member ? 'su' : 'tu'} horario real.</li>
               <li><span className="font-semibold">Define las reglas</span> de antelación y guarda. El horario se renueva solo cada día.</li>
             </ol>
             <div className="mt-3 space-y-1 text-xs text-green-800/80">
               <p>• Este <span className="font-semibold">horario fijo</span> es tu plantilla semanal y se aplica automáticamente a las próximas semanas.</p>
               <p>• Para excepciones de una semana concreta (un día libre, una hora extra puntual) usa la pestaña <span className="font-semibold">«Ajustes puntuales»</span>: modifican tu base sin cambiar la plantilla.</p>
               <p>• Cada casilla es un bloque de <span className="font-semibold">1 hora</span>. Puedes ofrecer desde las <span className="font-semibold">7:00</span> hasta las <span className="font-semibold">20:00</span>.</p>
-              <p>• Tus clientes solo verán y podrán reservar exactamente las horas que dejes en verde.</p>
+              <p>• {member ? `Solo se le asignarán trabajos a ${member.name} en las horas que dejes en verde.` : 'Tus clientes solo verán y podrán reservar exactamente las horas que dejes en verde.'}</p>
             </div>
           </div>
         )}
@@ -431,10 +431,10 @@ export default function RecurringScheduleManager({
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <Clock className="w-5 h-5 text-green-600" />
-          Crea tu horario fijo
+          {member ? 'Crea su horario fijo' : 'Crea tu horario fijo'}
         </h2>
         <p className="text-sm text-gray-600 mb-4">
-          Marca tus días habituales y la franja base (de 7:00 a 20:00). Se rellenará el calendario de abajo, que podrás afinar a mano.
+          {member ? 'Marca sus días habituales' : 'Marca tus días habituales'} y la franja base (de 7:00 a 20:00). Se rellenará el calendario de abajo, que podrás afinar a mano.
         </p>
         
         <div className="grid gap-6 md:grid-cols-2">
@@ -517,7 +517,7 @@ export default function RecurringScheduleManager({
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-green-600" />
-            Perfecciona tu horario
+            {member ? 'Perfecciona su horario' : 'Perfecciona tu horario'}
           </h2>
           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
             Toca las casillas para añadir/quitar horas
@@ -525,7 +525,7 @@ export default function RecurringScheduleManager({
         </div>
         
         <p className="text-sm text-gray-600 mb-6">
-          Añade pausas o ajusta horas sueltas. Lo que veas aquí será tu horario fijo real.
+          Añade pausas o ajusta horas sueltas. Lo que veas aquí será {member ? 'su' : 'tu'} horario fijo real.
         </p>
 
         {/* Grid Calendario Semanal Fijo (Estilo unificado con AvailabilityManager) */}
@@ -553,6 +553,8 @@ export default function RecurringScheduleManager({
                       <button
                         key={`${day.value}-${hour}`}
                         onClick={() => toggleMatrixCell(day.value, hour)}
+                        aria-label={`${day.full}, ${hour.toString().padStart(2, '0')}:00, ${isActive ? 'en el horario' : 'fuera del horario'}`}
+                        aria-pressed={!!isActive}
                         className={`
                           py-3 sm:py-4 px-2 sm:px-3 rounded-lg border-2 transition-all duration-200 
                           flex items-center justify-center font-medium text-xs sm:text-sm

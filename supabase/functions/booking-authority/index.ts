@@ -226,7 +226,10 @@ async function fetchProviderProfiles(
   const { data, error } = await admin
     .from('gardener_profiles')
     .select('user_id, address, max_distance, operational_latitude, operational_longitude, license_verification_status, license_expires_at, provider_kind')
-    .in('user_id', providerIds);
+    .in('user_id', providerIds)
+    // Prueba real · F6 (R-09): un proveedor suspendido no recibe reservas nuevas. Sin ficha, sale
+    // excluido de la lista, de las horas y del presupuesto (y la base de datos no deja crearlo).
+    .is('suspended_at', null);
 
   if (error || !data) return {};
   return Object.fromEntries(

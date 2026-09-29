@@ -7,6 +7,8 @@ import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import JobCard from '../../components/empleado/JobCard';
 import { expandMyJobDays, useMyJobs } from '../../hooks/useMyJobs';
+import { useRefreshOnReturn } from '../../hooks/useRefreshOnReturn';
+import RefreshButton from '../../components/common/RefreshButton';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
@@ -45,6 +47,9 @@ const EmployeeHomePage: React.FC = () => {
   const today = format(new Date(), 'yyyy-MM-dd');
   const weekEnd = format(addDays(new Date(), 6), 'yyyy-MM-dd');
   const { jobs, loading: jobsLoading, refresh: refreshJobs } = useMyJobs(today, weekEnd);
+  // R-03: al volver a la app, los trabajos al día (la lista no parpadea: solo enseña el
+  // indicador si aún no hay ninguno cargado).
+  useRefreshOnReturn(refreshJobs);
   // F7: un trabajo de varios días sale en cada día en que la persona va.
   const jobDays = expandMyJobDays(jobs, today, weekEnd);
   const todayJobs = jobDays.filter((d) => d.date === today);
@@ -87,7 +92,7 @@ const EmployeeHomePage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AppHeader title="Mi trabajo">
+      <AppHeader title="Mi trabajo" rightSlot={membership ? <RefreshButton onRefresh={refreshJobs} /> : undefined}>
         <div role="tablist" aria-label="Secciones" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
           {TABS.map(([key, label]) => (
             <button

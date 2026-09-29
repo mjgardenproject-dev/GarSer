@@ -540,6 +540,17 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-D22-1 | El dueño pone el horario de un empleado desde «Equipo» → «Horario»; el empleado lo ve sin poder cambiarlo | Correcto | ⬜ |
 | P-H42-1 | En el móvil: «Mover a otra fecha» de un trabajo confirmado | Página fija, sin scroll lateral | ⬜ |
 | P-H44-1 | El cliente ve «inicio – fin» en su reserva y en los correos tras un cambio de fecha o de duración | Correcto | ⬜ |
+| P-R01-1 | Prueba real F1: entrar como admin en una ventana de incógnito sin extensiones | Va directo a su panel y la consola no muestra el aviso del WebSocket | ⬜ |
+| P-R06-1 | Prueba real F1+F3: empresa abierta en el ordenador y en el móvil; cerrar sesión en el móvil y, en el ordenador, enviar una propuesta de precio | El ordenador sigue dentro; el cliente recibe el correo de la propuesta; la solicitud dice «Hace X min» | ⬜ |
+| P-R06-2 | Prueba real F1: con la sesión abierta en otro sitio, «Mi cuenta → Cerrar todas» | Aviso «Tu sesión se ha cerrado…» en el otro dispositivo al usarlo, y vuelve a la misma página al entrar | ⬜ |
+| P-R03-1 | Prueba real F2: con la app instalada, el jardinero acepta y el cliente pulsa «Actualizar» (o vuelve a la app) | Ve «Confirmada» sin cerrar la app | ⬜ |
+| P-R07-1 | Prueba real F4: una solicitud nueva a la empresa, aún sin aceptar | No aparece en «Mi trabajo» del empleado; al aceptarla aparece y le llega «Nuevo trabajo» | ⬜ |
+| P-R07-2 | Prueba real F4: la empresa propone un precio y el cliente lo acepta | Al empleado asignado le llega «Nuevo trabajo» (antes no) | ⬜ |
+| P-R04-1 | Prueba real F5: invitar a una cuenta nueva y aceptar | Correo al dueño «… se ha unido a tu equipo»; aviso en el panel «Le falta: horario fijo · servicios»; al configurarlo, el aviso se va | ⬜ |
+| P-R05-1 | Prueba real F5: el dueño cambia el horario fijo y luego dos días sueltos del empleado | Al empleado le llegan 2 correos «Tienes un nuevo horario publicado» (uno por guardado), con el horario | ⬜ |
+| P-R02-1 | Prueba real F6: Admin → Usuarios → «Dar de baja o suspender»: revisar la empresa (con reservas) y una cuenta de prueba sin reservas | La empresa sale «Aún no se puede dar de baja» con el motivo; la de prueba se borra entera | ⬜ |
+| P-R09-1 | Prueba real F6: suspender la empresa desde el admin y buscarla como cliente; reactivarla | Suspendida no aparece para reservar; sus reservas siguen; reactivada vuelve | ⬜ |
+| P-R08-1 | Prueba real F7: «Mi cuenta → Activar notificaciones» en Android (Chrome) y en iPhone con GarSer en la pantalla de inicio; provocar un aviso (p. ej. una propuesta) | Llega la notificación al móvil con el mismo aviso que el correo; al tocarla abre la pantalla | ⬜ |
 
 ---
 

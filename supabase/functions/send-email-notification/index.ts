@@ -35,6 +35,7 @@ import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/booki
 import { cancellationCopy } from '../_shared/bookingEmailCopy.ts';
 import { invitationEmailCopy } from '../_shared/companyEmailCopy.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
+import { pushForEmail } from '../_shared/pushDelivery.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,7 +78,11 @@ type EmailType =
   // GarSer Empresas (F6.3, D9): la empresa propone otra fecha (al cliente) y el cliente responde
   // (a la empresa y, si acepta, a quien va). Cada uno, una sola vez por propuesta.
   | 'booking_reschedule_proposed'
-  | 'booking_reschedule_answered';
+  | 'booking_reschedule_answered'
+  // Prueba real (F5): al dueño, cuando alguien acepta unirse a su equipo (R-04); al empleado,
+  // cuando el dueño le publica un horario nuevo (R-05). Solo desde la cola del servidor.
+  | 'company_member_joined'
+  | 'member_schedule_published';
 
 interface EmailPayload {
   /**
@@ -130,7 +135,61 @@ const BOOKING_EMAIL_TYPES = new Set<EmailType>([
 // decide), y el desenlace le importa al JARDINERO (es quien lo pidió).
 const PRICE_CHANGE_TO_GARDENER = new Set<EmailType>([
   'booking_price_change_accepted', 'booking_price_change_rejected',
+  // R-11: la caducidad la tiene que saber quien propuso: la reserva sigue esperando su respuesta.
+  'booking_price_change_expired',
 ]);
+
+/**
+ * Prueba real, F3 (D24): estos avisos los apunta el SERVIDOR en `notification_outbox`, en la
+ * misma transacción que la acción, y los envía `notification-dispatch`. Si los pide un navegador
+ * (una pestaña con la web anterior en caché), se ignoran para no mandarlos dos veces. Solo cuando
+ * la cola existe: desplegar esta función antes que la migración no deja a nadie sin correo.
+ */
+export const SERVER_MANAGED_TYPES = new Set<string>([
+  'booking_accepted', 'booking_rejected',
+  'booking_price_change_proposed', 'booking_price_change_accepted', 'booking_price_change_rejected',
+  'booking_reschedule_proposed', 'booking_reschedule_answered',
+  'booking_incident_received',
+  'gardener_approved', 'gardener_rejected', 'company_approved', 'company_rejected',
+  // F4 (R-07): quién va a cada trabajo lo compara el servidor al final de cada cambio.
+  'job_assigned', 'job_unassigned',
+  'company_member_joined', 'member_schedule_published',
+]);
+
+const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const hhmm = (t: unknown) => String(t || '').slice(0, 5);
+
+/** «lunes de 09:00 a 14:00 y de 16:00 a 19:00» por día, a partir de las reglas del horario fijo. */
+export function weeklySummary(rules: Array<{ day_of_week: number; start_time: string; end_time: string }>): Array<[string, string]> {
+  const byDay = new Map<number, string[]>();
+  [...rules].sort((a, b) => a.day_of_week - b.day_of_week || String(a.start_time).localeCompare(String(b.start_time)))
+    .forEach((r) => byDay.set(r.day_of_week, [...(byDay.get(r.day_of_week) || []), `de ${hhmm(r.start_time)} a ${hhmm(r.end_time)}`]));
+  // De lunes a domingo, como se lee un horario.
+  return [1, 2, 3, 4, 5, 6, 0].filter((d) => byDay.has(d)).map((d) => [WEEKDAYS[d][0].toUpperCase() + WEEKDAYS[d].slice(1), (byDay.get(d) || []).join(' y ')]);
+}
+
+/** Horas sueltas de un día → «09:00 a 13:00 y 16:00 a 18:00». */
+export function hoursRanges(hours: number[]): string {
+  const sorted = [...new Set(hours)].sort((a, b) => a - b);
+  if (sorted.length === 0) return 'Sin horas';
+  const ranges: Array<[number, number]> = [];
+  sorted.forEach((h) => {
+    const last = ranges[ranges.length - 1];
+    if (last && last[1] === h) last[1] = h + 1;
+    else ranges.push([h, h + 1]);
+  });
+  return ranges.map(([a, b]) => `${String(a).padStart(2, '0')}:00 a ${String(b).padStart(2, '0')}:00`).join(' y ');
+}
+
+// deno-lint-ignore no-explicit-any
+async function outboxIsLive(admin: any): Promise<boolean> {
+  try {
+    const { error } = await admin.from('notification_outbox').select('id', { head: true, count: 'exact' }).limit(1);
+    return !error;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Enlace de confirmacion de un clic.
@@ -208,6 +267,12 @@ Deno.serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const admin =
       SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) : null;
+
+    if (SERVER_MANAGED_TYPES.has(type) && !isInternalServiceCaller(req) && admin && (await outboxIsLive(admin))) {
+      return new Response(JSON.stringify({ success: true, skipped: 'server_managed' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     let name = data?.name || 'cliente';
     let counterpartName = data?.counterpartName || '';
@@ -474,6 +539,102 @@ Deno.serve(async (req) => {
         const sent = await sendViaBrevo({ to: clientEmail, subject, html, text, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
         if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
       }
+      await pushForEmail(admin, clientEmail, subject, opts.intro || '', opts.cta?.url);
+      return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'company_member_joined' || type === 'member_schedule_published') {
+      // Prueba real, F5: solo desde la cola del servidor (notification-dispatch).
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: member } = await admin
+        .from('company_members')
+        .select('id, user_id, role, status, companies!inner(provider_user_id)')
+        .eq('id', String(payload.memberId || ''))
+        .maybeSingle();
+      // deno-lint-ignore no-explicit-any
+      const providerId = String((member as any)?.companies?.provider_user_id || '');
+      if (!member || member.role !== 'employee' || member.status !== 'active' || !providerId) {
+        return new Response(JSON.stringify({ success: true, skipped: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: companyProfile } = await admin.from('gardener_profiles').select('full_name').eq('user_id', providerId).maybeSingle();
+      const companyName = String(companyProfile?.full_name || 'Tu empresa');
+      const { data: person } = await admin.from('profiles').select('full_name').eq('user_id', member.user_id).maybeSingle();
+      const personName = String(person?.full_name || '').trim();
+      const recipientId = type === 'company_member_joined' ? providerId : member.user_id;
+      const { data: recipientUser } = await admin.auth.admin.getUserById(recipientId);
+      const recipientEmail = recipientUser?.user?.email;
+      if (!recipientEmail) {
+        return new Response(JSON.stringify({ error: 'recipient_not_found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let teamSubject: string;
+      let teamOpts: Parameters<typeof renderBrandedEmail>[0];
+      let teamPairs: Array<[string, string]> = [];
+      if (type === 'company_member_joined') {
+        // Sin nombre en su perfil todavía (acaba de crear la cuenta), su correo.
+        const memberEmail = personName ? '' : String((await admin.auth.admin.getUserById(member.user_id)).data?.user?.email || '');
+        const who = personName || memberEmail || 'Un jardinero';
+        teamSubject = `${who} se ha unido a tu equipo`;
+        teamOpts = {
+          title: teamSubject,
+          heading: 'Tienes a alguien nuevo en tu equipo',
+          intro: `${escapeHtml(who)} ha aceptado tu solicitud de unirse a tu equipo. Configura su perfil para que pueda realizar servicios dentro de tu empresa: ponle su horario fijo y los servicios que hace.`,
+          cta: { label: `Configurar a ${escapeHtml(who)}`, url: `${BRAND.site}/empresa` },
+          footerNote: 'Hasta que tenga horario fijo y al menos un servicio, GarSer no le asignará trabajos.',
+        };
+      } else {
+        const first = personName.split(' ')[0] || 'hola';
+        if (payload.kind === 'days') {
+          const dates = (Array.isArray(payload.dates) ? payload.dates : []).map(String).sort();
+          const { data: slots } = dates.length
+            ? await admin.from('availability').select('date, start_time').eq('gardener_id', member.user_id).eq('is_available', true).in('date', dates)
+            : { data: [] };
+          const byDate = new Map<string, number[]>();
+          ((slots || []) as Array<{ date: string; start_time: string }>).forEach((row) => {
+            const d = String(row.date).slice(0, 10);
+            byDate.set(d, [...(byDate.get(d) || []), Number(String(row.start_time).slice(0, 2))]);
+          });
+          teamPairs = dates.map((d) => [
+            new Date(`${d}T12:00:00Z`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }),
+            hoursRanges(byDate.get(d) || []),
+          ]);
+        } else {
+          const { data: rules } = await admin.from('recurring_schedules').select('day_of_week, start_time, end_time').eq('gardener_id', member.user_id);
+          teamPairs = weeklySummary((rules || []) as Array<{ day_of_week: number; start_time: string; end_time: string }>);
+          if (teamPairs.length === 0) teamPairs = [['Horario fijo', 'Sin días asignados']];
+        }
+        teamSubject = 'Tienes un nuevo horario publicado';
+        teamOpts = {
+          title: teamSubject,
+          heading: `Hola ${escapeHtml(first)}`,
+          intro: payload.kind === 'days'
+            ? `${escapeHtml(companyName)} ha cambiado tu horario de estos días:`
+            : `${escapeHtml(companyName)} ha publicado tu nuevo horario fijo:`,
+          bodyHtml: detailRows(teamPairs),
+          cta: { label: 'Ver mi horario', url: `${BRAND.site}/mi-trabajo/horario` },
+          footerNote: 'Si algo no te cuadra, habla con tu empresa.',
+        };
+      }
+      const teamHtml = renderBrandedEmail(teamOpts);
+      const teamText = renderPlainText({ ...teamOpts, detailPairs: teamPairs });
+      if (!SMTP_USER || !SMTP_PASS) {
+        console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: recipientEmail, type, subject: teamSubject });
+      } else {
+        const sent = await sendViaBrevo({ to: recipientEmail, subject: teamSubject, html: teamHtml, text: teamText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+        if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+      }
+      await pushForEmail(admin, recipientEmail, teamSubject, teamOpts.intro || '', teamOpts.cta?.url);
       return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -500,7 +661,9 @@ Deno.serve(async (req) => {
           });
         }
       }
-      if (b.status !== 'confirmed') {
+      // F4: si el trabajo se cancela, a quien iba se le avisa de que ya no tiene que ir.
+      const cancelledJob = type === 'job_unassigned' && ['cancelled', 'expired', 'rejected'].includes(String(b.status));
+      if (!['confirmed', 'in_progress'].includes(String(b.status)) && !cancelledJob) {
         return new Response(JSON.stringify({ error: 'booking_not_confirmed' }), {
           status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -569,13 +732,17 @@ Deno.serve(async (req) => {
           : [['Servicio', serviceName], ['Cuándo', when]];
         const jobSubject = type === 'job_assigned'
           ? `Nuevo trabajo: ${serviceName}, ${when}`
-          : `Ya no vas a este trabajo: ${serviceName}, ${when}`;
+          : cancelledJob
+            ? `Trabajo cancelado: ${serviceName}, ${when}`
+            : `Ya no vas a este trabajo: ${serviceName}, ${when}`;
         const jobOpts: Parameters<typeof renderBrandedEmail>[0] = {
           title: jobSubject,
           heading: `Hola ${escapeHtml(first)}`,
           intro: type === 'job_assigned'
             ? `${escapeHtml(companyName)} te ha asignado un trabajo.`
-            : `${escapeHtml(companyName)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
+            : cancelledJob
+              ? `Este trabajo de ${escapeHtml(companyName)} se ha cancelado. No tienes que ir.`
+              : `${escapeHtml(companyName)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
           bodyHtml: detailRows(pairs),
           cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
           footerNote: type === 'job_assigned' ? 'Si no puedes ir, avisa a tu empresa cuanto antes.' : 'Tus horas de ese día vuelven a estar libres.',
@@ -588,6 +755,7 @@ Deno.serve(async (req) => {
           const sent = await sendViaBrevo({ to: workerEmail, subject: jobSubject, html: jobHtml, text: jobText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
           if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
         }
+        await pushForEmail(admin, workerEmail, jobSubject, jobOpts.intro || '', jobOpts.cta?.url);
         sentCount += 1;
       }
       return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
@@ -697,6 +865,7 @@ Deno.serve(async (req) => {
           });
           if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
         }
+        await pushForEmail(admin, email, item.subject, item.intro, item.cta?.url);
         sentCount += 1;
       }
       return new Response(JSON.stringify({ success: true, sent: sentCount, mock: !SMTP_USER || !SMTP_PASS }), {
@@ -858,15 +1027,17 @@ Deno.serve(async (req) => {
         footerNote: bookingFeeNote,
       };
     } else if (type === 'booking_price_change_rejected') {
-      subject = 'El cliente no ha aceptado el cambio de precio';
+      // R-17: rechazar la propuesta CANCELA la solicitud (respond_booking_price_change). Antes el
+      // correo decía «La reserva continúa con el precio original», y el jardinero la esperaba.
+      subject = 'El cliente no ha aceptado tu propuesta';
       detailPairs = bookingPairs;
       opts = {
         title: subject,
         heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(counterpartName || 'El cliente')} no ha aceptado el nuevo precio. La reserva continúa con el precio original:`,
+        intro: `${escapeHtml(counterpartName || 'El cliente')} no ha aceptado tu propuesta de cambio, así que esta solicitud queda cancelada y sus horas vuelven a estar libres en tu agenda:`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
-        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
-        footerNote: 'Puedes hablarlo con el cliente por el chat de la reserva.',
+        cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
+        footerNote: 'Al cliente no se le cobra nada. Si quiere, puede volver a reservar con las condiciones que acordéis.',
       };
     } else if (type === 'booking_price_change_expired') {
       subject = 'La propuesta de cambio de precio ha caducado';
@@ -874,10 +1045,10 @@ Deno.serve(async (req) => {
       opts = {
         title: subject,
         heading: `Hola ${escapeHtml(name)}`,
-        intro: 'La propuesta de cambio de precio ha caducado sin respuesta. La reserva mantiene su precio original:',
+        intro: 'Tu propuesta de cambio de precio o duración ha caducado sin respuesta del cliente. La solicitud sigue pendiente con su precio y su duración originales:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
-        cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
-        footerNote: 'Si sigue siendo necesario ajustar el precio, podéis acordarlo por el chat.',
+        cta: { label: 'Ver la solicitud', url: `${BRAND.site}/bookings` },
+        footerNote: 'Puedes aceptarla tal cual, rechazarla o enviar otra propuesta. Si hace falta, acordadlo por el chat.',
       };
     } else if (type === 'booking_client_confirmation_request') {
       // El unico correo del que depende que NO se cobre un servicio no prestado: si el cliente
@@ -931,6 +1102,7 @@ Deno.serve(async (req) => {
 
     if (!SMTP_USER || !SMTP_PASS) {
       console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to, type, subject });
+      await pushForEmail(admin, to, subject, opts.intro || '', opts.cta?.url);
       return new Response(JSON.stringify({ success: true, mock: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -940,6 +1112,7 @@ Deno.serve(async (req) => {
     if (!sent.ok) {
       throw new Error(sent.error || 'Error sending email via Brevo');
     }
+    await pushForEmail(admin, to, subject, opts.intro || '', opts.cta?.url);
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -27,6 +27,7 @@ import {
 import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE, type DetailPair } from '../_shared/bookingEmailDetails.ts';
 import { isInternalServiceCaller, resolveServiceRoleKey } from '../_shared/functionAuth.ts';
 import { shouldSendGardenerConfirmation } from '../_shared/bookingEmailCopy.ts';
+import { pushForEmail } from '../_shared/pushDelivery.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -110,6 +111,8 @@ Deno.serve(async (req) => {
           results.push({ bookingId, role, status: 'skipped', reason: 'no_email' });
           return;
         }
+        // Prueba real · F7: la misma noticia, al móvil (si la tiene activada).
+        await pushForEmail(admin, recipient.email, subject, opts.intro || '', opts.cta?.url);
         if (mock) {
           console.log(`MOCK EMAIL (${role}) -> ${recipient.email} | ${subject}`);
           results.push({ bookingId, role, status: 'mock', to: recipient.email });

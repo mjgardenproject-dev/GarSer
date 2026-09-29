@@ -104,6 +104,10 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D20 | ¿Quién ofrece planes? (2026-09-24) | **Todos** (autónomos y empresas). | | F9 |
 | D21 | ¿Cómo entra el empleado invitado que no tiene cuenta? (2026-09-26) | **«La manera más fácil y rápida pero segura»**: pone nombre y contraseña en la propia invitación y entra directo a su panel, sin correo de confirmación. | Ver H-39. Si ya tiene cuenta con ese correo, entra y se une en el mismo paso. | Tras la fusión |
 | D22 | ¿Quién pone el horario de un empleado? (2026-09-28) | **El dueño de la empresa**, no el empleado (el empleado lo ve en solo lectura). | Cambia A-06 (sigue siendo por persona). Ver H-41. | Tras la fusión |
+| D23 | ¿Qué es «eliminar» una cuenta con reservas? (2026-09-28) | **Dar de baja y anonimizar**: no entra, fuera del catálogo, datos personales borrados; reservas e importes se conservan. Sin historial, se borra entera. Reservas futuras o pagos en curso bloquean. | R-02 (`04-FALLOS-PRUEBA-REAL.md`), fase F6 de ese plan. | Prueba real |
+| D24 | ¿Quién envía los correos? (2026-09-28) | **El servidor**: cada acción apunta su aviso en `notification_outbox` en la misma transacción y `notification-dispatch` lo envía con reintentos. | R-06; A-40. | Prueba real |
+| D25 | ¿Cómo llegan los avisos al móvil? (2026-09-28) | **Notificaciones web (PWA)** de todo lo que hoy va por correo. | R-08. | Prueba real |
+| D26 | ¿Reservas en tiempo real? (2026-09-28) | **No**: botón «Actualizar» y recarga al volver a la app. | R-03. | Prueba real |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -882,8 +886,8 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 
 1. **Fusionar la PR #38** (arreglo de correos H-37, ya desplegado, y la documentación de la
    batería), para que `main` tenga el mismo código que las funciones de producción.
-2. **D7: validar la encuesta de alta de empresas.** Sigue en borrador (§3, «D7 — Borrador»):
-   producción la usa tal cual. El usuario la revisa; si cambia algo, no hace falta migración.
+2. ~~**D7: validar la encuesta de alta de empresas.**~~ **Cerrada (2026-09-29): el usuario la da por
+   buena tal como está.**
 2b. **Arreglados tras la fusión (2026-09-26):** H-38 (tarifas por debajo de 1 €: «0,5» se
    guardaba como 5) y H-39 / D21 (invitación: el empleado pone su contraseña en la invitación y
    entra directo a su panel; correo nuevo). Despliegue: migración `20260927120000`, funciones
@@ -895,6 +899,14 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
    contraseña en la invitación), H-44 (el cliente ve la hora de fin). Despliegue: migración
    `20260928120000`, funciones `send-email-notification` y `booking-confirmation-email`, y la web
    (PR). Pruebas en garser.es: P-H40-1, P-D22-1, P-H42-1, P-H44-1.
+2d. **Prueba real del usuario (desde el 2026-09-28, tras la PR #40):** reporta los fallos uno a
+   uno; se analizan y apuntan en `04-FALLOS-PRUEBA-REAL.md` (R-01…) sin tocar código, y al acabar
+   se escribe allí el plan por fases con sus pruebas.
+   **Plan aprobado (2026-09-28):** F1–F8 en `04-FALLOS-PRUEBA-REAL.md` §3, decisiones D23–D26, rama
+   `fix/prueba-real-r01-r08`.
+2e. **Pendientes consolidados (2026-09-29):** `05-HALLAZGOS-PENDIENTES.md` (PH-01…PH-13: lo que sigue
+   abierto de `02-HALLAZGOS.md` y lo visto en la prueba real fuera de ella, con las decisiones del
+   usuario) y `06-PRUEBA-REAL-PENDIENTE.md` (PR-01…PR-05 y la guía única de pruebas en garser.es).
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

@@ -98,10 +98,9 @@ const JobCard: React.FC<{ job: MyJob; day?: MyJobDay; showDate?: boolean; onChan
             </p>
           )}
         </div>
+        {/* R-07: el empleado solo recibe trabajos confirmados y ya suyos (my_jobs): no hay «Por confirmar». */}
         {job.finished_at ? (
           <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">Terminado</span>
-        ) : job.status === 'pending' ? (
-          <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">Por confirmar</span>
         ) : null}
       </div>
 

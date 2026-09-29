@@ -16,9 +16,6 @@ export const RESCHEDULE_MESSAGES: Record<RescheduleOutcome, string> = {
 export async function respondBookingReschedule(bookingId: string, accept: boolean): Promise<RescheduleOutcome> {
   const { data, error } = await supabase.rpc('respond_booking_reschedule', { p_booking_id: bookingId, p_accept: accept });
   if (error) throw new Error(error.message || 'No se ha podido responder a la propuesta.');
-  const outcome = ((data || {}) as { outcome?: RescheduleOutcome }).outcome || 'expired';
-  if (outcome === 'accepted' || outcome === 'rejected') {
-    void supabase.functions.invoke('send-email-notification', { body: { type: 'booking_reschedule_answered', bookingId } });
-  }
-  return outcome;
+  // El aviso a la empresa (y a quien va) lo apunta el servidor al cambiar reschedule_status.
+  return ((data || {}) as { outcome?: RescheduleOutcome }).outcome || 'expired';
 }

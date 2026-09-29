@@ -34,6 +34,12 @@ async function payQuote(quoteId, client) {
   return { bookingId: conf.body?.bookingId ?? null, fee: prep.body.payableNowAmountCents, error: conf.body?.bookingId ? null : JSON.stringify(conf.body).slice(0, 200) };
 }
 
+const outboxStatus = (b, type) => sql(`select coalesce(string_agg(status, ',' order by created_at), '') from public.notification_outbox where booking_id='${b}' and type='${type}'`);
+const waitOutbox = async (b, type) => {
+  for (let i = 0; i < 30 && /pending|sending/.test(outboxStatus(b, type)); i++) await new Promise((r) => setTimeout(r, 700));
+  return outboxStatus(b, type);
+};
+
 async function main() {
   const a = await createCompany(acc.newUser, 'empresa-a', [LAWN, HEDGE]);
   const ana = await joinTeam(acc.newUser, a.token, 'ana', [LAWN, HEDGE]);
@@ -96,22 +102,16 @@ async function main() {
     record('F8-40', 'Agenda de la empresa, del empleado y chat dicen «Corte de césped + Poda de setos»; el cliente lee los dos servicios',
       job?.service === LABEL && mineJob?.service_name === LABEL && chat.includes(LABEL) && clientSees === 2,
       `empresa «${job?.service}», Ana «${mineJob?.service_name}», chat ${chat.includes(LABEL) ? 'sí' : `no («${chat.slice(0, 80)}»)`}, cliente ${clientSees}`);
-    const mailBody = async (body) => {
-      const res = await fetch(`${apiUrl}/functions/v1/send-email-notification`, {
-        method: 'POST', headers: { apikey: anonKey, Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
-      return res.json().catch(() => null);
-    };
-    const since = new Date().toISOString();
-    const job1 = await mailBody({ type: 'job_assigned', bookingId: B });
-    const acc1 = await mailBody({ type: 'booking_accepted', bookingId: B });
-    const logs = execSync(`docker logs --since ${since} supabase_edge_runtime_GarSer-main_4 2>&1`).toString();
+    // Prueba real · F3/F4: los avisos los envía el servidor al aceptar (arriba).
+    const job1 = await waitOutbox(B, 'job_assigned');
+    const acc1 = await waitOutbox(B, 'booking_accepted');
+    const logs = execSync('docker logs --since 5m supabase_edge_runtime_GarSer-main_4 2>&1').toString();
     // En local los correos se simulan y solo se registra el asunto: el del aviso al empleado
     // nombra el trabajo; el de «reserva aceptada» no lleva el servicio (va en el cuerpo, que sale
     // de bookingEmailDetails con la misma regla).
     record('F8-41', 'El aviso a quien va nombra los dos servicios; el correo al cliente sale',
-      job1?.sent >= 1 && acc1?.success === true && logs.includes(`Nuevo trabajo: ${LABEL}`),
-      `aviso ${JSON.stringify(job1)}, aceptada ${JSON.stringify(acc1).slice(0, 60)}`);
+      /sent/.test(job1) && acc1 === 'sent' && logs.includes(`Nuevo trabajo: ${LABEL}`),
+      `aviso [${job1}], aceptada [${acc1}]`);
   }
   {
     // Coherencia web ↔ pago con varios servicios (la regla de F7, con las personas que hacen todos).

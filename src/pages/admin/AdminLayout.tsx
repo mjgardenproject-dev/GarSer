@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Leaf, 
@@ -15,8 +15,7 @@ import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 const AdminLayout: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const [openIncidents, setOpenIncidents] = useState(0);
 
   // Sin este contador la sección es invisible hasta que a alguien se le ocurre mirar: es dinero
@@ -33,11 +32,10 @@ const AdminLayout: React.FC = () => {
     return () => { alive = false; };
   }, []);
 
+  // Mismo cierre que el resto de la web: solo este dispositivo (R-06) y limpieza del almacenamiento.
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
-      navigate('/auth');
-      toast.success('Sesión administrativa cerrada');
+      await signOut();
     } catch (error) {
       toast.error('Error al cerrar sesión');
     }
@@ -110,6 +108,15 @@ const AdminLayout: React.FC = () => {
               )}
             </NavLink>
           ))}
+          {/* R-14: en el móvil el botón de salir solo existía en la barra lateral, que se oculta. */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg whitespace-nowrap bg-gray-800 text-red-300"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="text-sm font-medium">Salir</span>
+          </button>
         </nav>
 
         <div className="p-4 border-t border-gray-800 hidden md:block">

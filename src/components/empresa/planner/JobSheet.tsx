@@ -63,22 +63,13 @@ const JobSheet: React.FC<Props> = ({ job, members, onClose, onSaved }) => {
 
   const save = async () => {
     setSaving(true);
-    const { data, error } = await supabase.rpc('assign_booking_hours', { p_booking_id: job.booking_id, p_workers: plan });
+    const { error } = await supabase.rpc('assign_booking_hours', { p_booking_id: job.booking_id, p_workers: plan });
     setSaving(false);
     if (error) {
       toast.error(error.message || 'No se ha podido guardar el reparto.');
       return;
     }
-    // Avisos solo de trabajos confirmados: quien entra y quien se queda sin ninguna hora.
-    if (job.status === 'confirmed') {
-      const result = (data || {}) as { addedWorkerIds?: string[]; removedWorkerIds?: string[] };
-      (result.addedWorkerIds || []).forEach((workerId) => {
-        void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId: job.booking_id, workerId } });
-      });
-      (result.removedWorkerIds || []).forEach((workerId) => {
-        void supabase.functions.invoke('send-email-notification', { body: { type: 'job_unassigned', bookingId: job.booking_id, workerId } });
-      });
-    }
+    // El aviso a quien entra o sale del trabajo lo apunta el servidor al final del cambio (F4, R-07).
     toast.success('Reparto guardado');
     onSaved();
   };

@@ -53,8 +53,10 @@ async function main() {
   {
     const a = await rpc('my_jobs', { p_from: D, p_to: D }, ana.token);
     const l = await rpc('my_jobs', { p_from: D, p_to: D }, luis.token);
-    record('F6-13', 'Cada uno ve el trabajo con SUS horas', a.body?.[0]?.my_hours?.join(',') === '9' && l.body?.[0]?.my_hours?.join(',') === '10',
-      `Ana ${JSON.stringify(a.body?.[0]?.my_hours)}, Luis ${JSON.stringify(l.body?.[0]?.my_hours)}`);
+    // Prueba real · F4 (R-07): hasta que la empresa lo acepta, nadie del equipo lo ve (sus horas SÍ
+    // están apartadas). Que cada uno vea SUS horas se comprueba al aceptarlo (F6-18).
+    record('F6-13', 'Mientras la empresa no lo acepta, ninguno de los dos lo ve en «Mi trabajo»', (a.body || []).length === 0 && (l.body || []).length === 0,
+      `Ana ${(a.body || []).length}, Luis ${(l.body || []).length}`);
   }
 
   // ── Alargar y acortar un trabajo repartido (negociación previa a aceptar) ────
@@ -100,14 +102,19 @@ async function main() {
   // ── Aviso a cada persona de un trabajo repartido ─────────────────────────────
   {
     const acceptRes = await rpc('respond_booking_request', { p_booking_id: B, p_response: 'accept', p_operation_id: randomUUID() }, owner.token);
-    const res = await fetch(`${apiUrl}/functions/v1/send-email-notification`, {
-      method: 'POST',
-      headers: { apikey: anonKey, Authorization: `Bearer ${owner.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'job_assigned', bookingId: B }),
-    });
-    const body = await res.json();
-    record('F6-18', 'Al confirmarse un trabajo repartido, cada persona recibe su aviso (Ana y Luis: 2)', acceptRes.ok && res.ok && body?.sent === 2,
-      `aceptar ${acceptRes.status}${why(acceptRes)}, correo ${res.status} ${JSON.stringify(body)}`);
+    // F4: el aviso lo apunta el servidor al confirmarse, uno por persona.
+    const rows = () => sql(`select coalesce(string_agg((payload->>'workerId') || ':' || status, ',' order by payload->>'workerId'), '') from public.notification_outbox where booking_id='${B}' and type='job_assigned'`);
+    for (let i = 0; i < 30 && /pending|sending/.test(rows()); i++) await new Promise((r) => setTimeout(r, 700));
+    // La reserva quedó confirmada al aceptar el cliente la propuesta de precio (arriba), así que cada
+    // cambio de persona posterior ya avisó a quien entraba y a quien salía. Al final, los avisados
+    // son exactamente quienes van: Ana y Luis.
+    const notified = sql(`select string_agg(assignee_id::text, ',' order by assignee_id) from private.booking_job_notices where booking_id='${B}'`);
+    const a = await rpc('my_jobs', { p_from: D, p_to: D }, ana.token);
+    const l = await rpc('my_jobs', { p_from: D, p_to: D }, luis.token);
+    record('F6-18', 'Un trabajo repartido y confirmado: los avisados son quienes van (Ana y Luis), todos los avisos salieron, y cada uno ve SUS horas',
+      acceptRes.ok && notified === [ana.id, luis.id].sort().join(',') && !/pending|sending|failed/.test(rows())
+        && a.body?.[0]?.my_hours?.join(',') === '9' && l.body?.[0]?.my_hours?.join(',') === '10,11',
+      `aceptar ${acceptRes.status}${why(acceptRes)}, avisos [${rows()}], Ana ${JSON.stringify(a.body?.[0]?.my_hours)}, Luis ${JSON.stringify(l.body?.[0]?.my_hours)}`);
   }
 
   // ── Agenda de la empresa ─────────────────────────────────────────────────────

@@ -95,30 +95,44 @@ async function main() {
   const client = await newUser('cliente');
 
   // ── Empresa aprobada / rechazada ────────────────────────────────────────────
+  // Prueba real · F3 (D24): estos correos ya no los pide la pestaña del admin. Los apunta el
+  // servidor al guardar la revisión (notification_outbox) con el estado REAL de la solicitud, y
+  // una llamada desde fuera (anónimo, cliente, la empresa o el propio admin) no envía nada.
+  const outboxRow = (appId) => sql(`select type || ':' || status from public.notification_outbox where payload->>'companyApplicationId' = '${appId}' order by created_at`);
+  const waitOutbox = async (appId) => {
+    for (let i = 0; i < 30; i++) {
+      const row = outboxRow(appId);
+      if (row && !/:(pending|sending)$/.test(row)) return row;
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    return outboxRow(appId);
+  };
   const approved = await companyApplication('dueno', 'Correos Prueba');
   {
     const early = await mail(adminToken, { type: 'company_approved', companyApplicationId: approved.appId });
-    record('F3E-01', 'No se avisa de «aprobada» si la solicitud aún no lo está', early.status === 409, `HTTP ${early.status}`);
+    record('F3E-01', 'No se avisa de «aprobada» si la solicitud aún no lo está (no hay aviso en la cola y la llamada no envía nada)',
+      outboxRow(approved.appId) === '' && early.data?.skipped === 'server_managed', `HTTP ${early.status} ${JSON.stringify(early.data)}`);
     await rpc('admin_review_company_application', adminToken, { p_application_id: approved.appId, p_status: 'approved', p_comment: null });
     const anon = await mail(null, { type: 'company_approved', companyApplicationId: approved.appId });
     const byClient = await mail(client.token, { type: 'company_approved', companyApplicationId: approved.appId });
     const byOwner = await mail(approved.owner.token, { type: 'company_approved', companyApplicationId: approved.appId });
-    record('F3E-02', 'Solo el admin pide el correo de empresa aprobada (anónimo, cliente y la propia empresa, no)',
-      anon.status === 403 && byClient.status === 403 && byOwner.status === 403, `anónimo ${anon.status}, cliente ${byClient.status}, empresa ${byOwner.status}`);
-    const ok = await mail(adminToken, { type: 'company_approved', companyApplicationId: approved.appId, to: 'victima@ejemplo.com' });
+    const byAdmin = await mail(adminToken, { type: 'company_approved', companyApplicationId: approved.appId, to: 'victima@ejemplo.com' });
+    record('F3E-02', 'Nadie puede pedir desde fuera el correo de empresa aprobada: anónimo, cliente, la empresa y el admin reciben «server_managed»',
+      [anon, byClient, byOwner, byAdmin].every((r) => r.data?.skipped === 'server_managed'),
+      `anónimo ${anon.status}, cliente ${byClient.status}, empresa ${byOwner.status}, admin ${byAdmin.status}`);
+    const row = await waitOutbox(approved.appId);
     const log = edgeLog();
-    record('F3E-03', 'El admin lo envía y llega al correo de la empresa, no a uno inyectado en la petición',
-      ok.ok && log.includes(approved.owner.email) && /Tu empresa ya está dada de alta/.test(log) && !log.includes('victima@ejemplo.com'),
-      `HTTP ${ok.status} ${JSON.stringify(ok.data)}`);
+    record('F3E-03', 'Al aprobar, el servidor envía 1 correo «ya está dada de alta» al correo de la empresa (nunca a uno inyectado)',
+      row === 'company_approved:sent' && log.includes(approved.owner.email) && /Tu empresa ya está dada de alta/.test(log) && !log.includes('victima@ejemplo.com'),
+      `cola: ${row}`);
   }
 
   const rejected = await companyApplication('dueno-rechazado', 'Correos Rechazo');
   {
     await rpc('admin_review_company_application', adminToken, { p_application_id: rejected.appId, p_status: 'rejected', p_comment: 'Falta el seguro' });
-    const wrong = await mail(adminToken, { type: 'company_approved', companyApplicationId: rejected.appId });
-    const ok = await mail(adminToken, { type: 'company_rejected', companyApplicationId: rejected.appId, data: { reason: 'Texto inventado' } });
-    record('F3E-04', 'Rechazada: el correo sale con el estado real (no se puede avisar de «aprobada») y al correo de la empresa',
-      wrong.status === 409 && ok.ok && edgeLog().includes(rejected.owner.email), `aprobada ${wrong.status}, rechazada ${ok.status}`);
+    const row = await waitOutbox(rejected.appId);
+    record('F3E-04', 'Rechazada: el servidor envía el correo del estado real («rechazada», nunca «aprobada») al correo de la empresa',
+      row === 'company_rejected:sent' && edgeLog().includes(rejected.owner.email), `cola: ${row}`);
   }
 
   // ── Invitación ──────────────────────────────────────────────────────────────

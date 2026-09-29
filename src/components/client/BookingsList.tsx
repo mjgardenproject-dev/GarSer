@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useRefreshOnReturn } from '../../hooks/useRefreshOnReturn';
+import RefreshButton from '../common/RefreshButton';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Calendar, ArrowLeft, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -43,9 +45,11 @@ const BookingsList = () => {
   const [selectedChat, setSelectedChat] = useState<{ bookingId: string; gardenerName: string } | null>(null);
   const [reviewTarget, setReviewTarget] = useState<BookingWithDetails | null>(null);
 
-  const fetchBookings = useCallback(async () => {
+  // `silent`: recarga sin cambiar la lista por el indicador de carga (botón «Actualizar» y
+  // vuelta a la app, R-03).
+  const fetchBookings = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const { data: bookingsData, error } = await supabase
         .from('bookings')
@@ -99,6 +103,9 @@ const BookingsList = () => {
     if (authLoading) return;
     void fetchBookings();
   }, [authLoading, fetchBookings]);
+
+  const refreshSilently = useCallback(() => fetchBookings({ silent: true }), [fetchBookings]);
+  useRefreshOnReturn(refreshSilently, { enabled: !authLoading && !!user?.id });
 
   /**
    * Enlace profundo `?review=<bookingId>`: el CTA del email de valoración abre el formulario
@@ -252,7 +259,10 @@ const BookingsList = () => {
       </button>
 
       <div className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4">Mis reservas</h1>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Mis reservas</h1>
+          <RefreshButton onRefresh={refreshSilently} />
+        </div>
         <div className="flex items-center gap-2">
           <label htmlFor="status-filter" className="text-sm text-gray-600">Estado</label>
           <div className="relative">

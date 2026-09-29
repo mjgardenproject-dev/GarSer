@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -8,6 +8,7 @@ import AllowSplitJobsCard from '../../components/empresa/AllowSplitJobsCard';
 import MaxCrewCard from '../../components/empresa/MaxCrewCard';
 import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
+import MemberSetupNotices from '../../components/empresa/MemberSetupNotices';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
@@ -44,15 +45,16 @@ const CompanyPanel: React.FC = () => {
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
   // Solicitudes de reserva por responder (F4): la empresa es el proveedor de sus reservas.
-  useEffect(() => {
+  const loadPendingRequests = useCallback(async () => {
     if (!user?.id) return;
-    void supabase
+    const { count } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
       .eq('gardener_id', user.id)
-      .eq('status', 'pending')
-      .then(({ count }) => setPendingRequests(count ?? 0));
+      .eq('status', 'pending');
+    setPendingRequests(count ?? 0);
   }, [user?.id]);
+  useEffect(() => { void loadPendingRequests(); }, [loadPendingRequests]);
 
   if (loading && !data) return <Spinner />;
   if (!data) {
@@ -135,8 +137,18 @@ const CompanyPanel: React.FC = () => {
       </AppHeader>
 
       <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
+        {tab !== 'company' && (
+          <MemberSetupNotices
+            members={data.members}
+            onConfigureServices={(memberId) => {
+              setTab('team');
+              // Lleva a su tarjeta, donde se le asignan los servicios.
+              setTimeout(() => document.getElementById(`member-${memberId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+            }}
+          />
+        )}
         {tab === 'agenda' ? (
-          <CompanyAgenda pendingRequests={pendingRequests} />
+          <CompanyAgenda pendingRequests={pendingRequests} onRefreshExtra={loadPendingRequests} />
         ) : tab === 'team' ? (
           <>
             {data.offered_services.length === 0 && (

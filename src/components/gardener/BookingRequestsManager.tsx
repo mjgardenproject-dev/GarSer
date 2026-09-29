@@ -4,6 +4,10 @@ import { useAccount } from '../../contexts/AccountContext';
 import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import { formatDateRange } from '../../utils/jobShape';
+import { receivedAgo } from '../../utils/receivedAgo';
+import { useRefreshOnReturn } from '../../hooks/useRefreshOnReturn';
+import RefreshButton from '../common/RefreshButton';
+import { readPriceDrafts, writePriceDrafts } from '../../utils/sessionDrafts';
 
 // GarSer Empresas (F7): último día y horas de trabajo de un trabajo de equipo o de varios días.
 const teamShape = (row: object) => {
@@ -87,6 +91,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [loading, setLoading] = useState(true);
   const [responding, setResponding] = useState<string | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, { amount: string; reason: string; duration?: string; loading?: boolean }>>({});
+  // R-06: el borrador sobrevive si la sesión se cierra desde fuera mientras se escribe.
+  const draftsUserId = user?.id ?? null;
+  useEffect(() => {
+    if (draftsUserId) setPriceDrafts((prev) => ({ ...readPriceDrafts(draftsUserId), ...prev }));
+  }, [draftsUserId]);
+  useEffect(() => {
+    writePriceDrafts(draftsUserId, priceDrafts);
+  }, [draftsUserId, priceDrafts]);
   // On-site variable correction (manual bookings): recompute price with the engine.
   const [correctionFor, setCorrectionFor] = useState<BookingRequestWithDetails | null>(null);
   const [correctionLoading, setCorrectionLoading] = useState(false);
@@ -142,9 +154,14 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
     fetchBookingRequests();
   }, [user?.id]);
 
-  const fetchBookingRequests = async () => {
+  const refreshSilently = () => fetchBookingRequests({ silent: true });
+  useRefreshOnReturn(refreshSilently, { enabled: !!user?.id });
+
+  // `silent`: recarga sin sustituir la pantalla por el indicador de carga (R-03). Los borradores
+  // de propuesta viven en su propio estado y no se tocan.
+  const fetchBookingRequests = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       await expireStaleBookingRequests();
 
       // Obtener reservas pendientes para este jardinero desde la tabla bookings
@@ -345,12 +362,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
           response: 'accept',
         });
 
-        // GarSer Empresas (F5.4): quien va se entera al confirmarse el trabajo, salvo que aún
-        // sea una propuesta sin decidir (modo «yo elijo quién va»). El servidor resuelve el
-        // destinatario y no avisa a la propia cuenta.
-        if (role === 'company' && !workers[requestId]?.pending) {
-          void supabase.functions.invoke('send-email-notification', { body: { type: 'job_assigned', bookingId: requestId } });
-        }
+        // Quien va se entera por correo en cuanto el trabajo es suyo: lo apunta el servidor al
+        // confirmarse (F4, R-07), también si se confirma porque el cliente acepta una propuesta.
 
         toast.success('¡Solicitud aceptada! La reserva ha sido confirmada y tu agenda actualizada.');
       } else {
@@ -470,18 +483,6 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
     return `${startTime} - ${endTime}`;
   };
 
-  const getBookingStatus = (createdAt: string) => {
-    const created = parseISO(createdAt);
-    const now = new Date();
-    const diffInHours = Math.ceil((now.getTime() - created.getTime()) / (1000 * 60 * 60));
-    
-    if (diffInHours < 1) return 'Recién recibida';
-    if (diffInHours === 1) return 'Hace 1 hora';
-    if (diffInHours < 24) return `Hace ${diffInHours} horas`;
-    const diffInDays = Math.ceil(diffInHours / 24);
-    if (diffInDays === 1) return 'Hace 1 día';
-    return `Hace ${diffInDays} días`;
-  };
 
   if (loading) {
     return (
@@ -509,8 +510,11 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Solicitudes de Reserva</h1>
           <p className="text-gray-600 mt-2">Gestiona las solicitudes de tus clientes</p>
         </div>
-        <div className="bg-green-100 px-4 py-2 rounded-lg self-start sm:self-auto">
-          <span className="text-green-800 font-semibold">{requests.length} solicitudes pendientes</span>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="bg-green-100 px-4 py-2 rounded-lg">
+            <span className="text-green-800 font-semibold">{requests.length} solicitudes pendientes</span>
+          </div>
+          <RefreshButton onRefresh={refreshSilently} />
         </div>
       </div>
 
@@ -518,7 +522,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
           <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600 text-lg">No tienes solicitudes pendientes</p>
-          <p className="text-gray-500">Las nuevas solicitudes aparecerán aquí automáticamente</p>
+          <p className="text-gray-500">Las nuevas solicitudes aparecerán aquí</p>
         </div>
       ) : (
         <div className="space-y-4 sm:space-y-6">
@@ -559,7 +563,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                     )}
                     <div className="text-sm text-orange-600 flex items-center">
                       <AlertCircle className="w-4 h-4 mr-1" />
-                      {getBookingStatus(request.created_at)}
+                      {receivedAgo(request.created_at)}
                     </div>
                   </div>
                 </div>

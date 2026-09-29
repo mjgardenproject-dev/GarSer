@@ -9,6 +9,7 @@ import ResetPassword from './components/auth/ResetPassword';
 import AdminRoute from './components/auth/AdminRoute';
 import Navbar from './components/layout/Navbar';
 import BottomNav from './components/layout/BottomNav';
+import SessionEndedNotice from './components/auth/SessionEndedNotice';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ScrollToTop from './components/common/ScrollToTop';
 import LegacyBookingRedirect from './components/client/LegacyBookingRedirect';
@@ -604,6 +605,7 @@ function App() {
   return (
     <>
       <AppContent />
+      <SessionEndedNotice />
       <Toaster position="top-right" />
     </>
   );

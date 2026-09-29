@@ -9,7 +9,7 @@ Se actualiza en el mismo commit que el cambio que describe. Estados: ⬜ pendien
 |---|---|---|---|
 | Auditoría y plan | ✅ | 2026-09-29 (decisiones D1–D7) | — |
 | Documentos de seguimiento | ✅ | — | `11a0dad` |
-| 0 · Línea base y herramientas | ⏸️ | — | rama `claude/elegant-keller-8drvlu` |
+| 0 · Línea base y herramientas | ⏸️ | — | `83f3ff9` |
 | 1 · Correcciones críticas | ⬜ | — | — |
 | 2 · Componentes y capa de presentación | ⬜ | — | — |
 | 3 · Estructura del asistente | ⬜ | — | — |

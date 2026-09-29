@@ -15,6 +15,8 @@ de árboles), que se hace aislada y con su propia verificación de precio.
 | [`PLAN-IMPLEMENTACION.md`](PLAN-IMPLEMENTACION.md) | Fases, archivos, riesgos, criterios de aceptación y la **puerta de prueba local** que cierra cada fase. |
 | [`PROGRESO.md`](PROGRESO.md) | Estado de cada fase y paso, commits, resultados de las pruebas y aprobaciones. Se actualiza en cada commit. |
 | [`HALLAZGOS-NUEVOS.md`](HALLAZGOS-NUEVOS.md) | Todo lo que se descubra durante la implementación y no estuviera en la auditoría. |
+| [`CONTEXTO-NUEVA-SESION.md`](CONTEXTO-NUEVA-SESION.md) | Lo que una sesión nueva debe saber para continuar y no está en los demás documentos. |
+| [`qa/`](qa/) | Informes del banco de pruebas de cada fase (la línea base es `fase-0-linea-base.md`). |
 | Informe de auditoría | Página privada: https://claude.ai/artifact/A6vZDrhMBZn23pvbaS3yTc (diagnóstico completo, capturas, sistema UX, fuentes). |
 
 ## Código auditado

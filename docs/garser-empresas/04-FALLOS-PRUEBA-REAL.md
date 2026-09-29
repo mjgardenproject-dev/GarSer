@@ -1411,6 +1411,38 @@ nota que no le llegan reservas. Se propone un aviso en su panel en la próxima t
 - **Lo que solo se puede probar en garser.es** (P-R08-1): la entrega real en un Android y en un
   iPhone con GarSer en la pantalla de inicio.
 
+#### F8 — despliegue (2026-09-29), con el permiso del usuario
+
+1. **Comprobación previa en producción, solo lectura:**
+   - Vault con `lifecycle_tick_url` y `lifecycle_tick_secret`.
+   - 134 migraciones.
+   - **R-16 confirmado en producción:** existían la regla y el permiso.
+   - 1 solicitud de empresa huérfana (R-13) y 0 restos más.
+   - 0 propuestas o cambios de fecha a medias.
+   - 1 trabajo de empresa confirmado, que se marcaría como ya avisado.
+2. Secretos `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT`, pasados desde un fichero
+   temporal (la clave privada no aparece en ningún comando).
+3. Funciones desplegadas: `send-email-notification`, `notification-dispatch` (nueva),
+   `admin-account-closure` (nueva), `booking-authority` y `booking-confirmation-email`.
+4. `db push`: 5 migraciones, del `20260929100000` al `20260929140000`, y 139 en total. Limpió la
+   solicitud huérfana.
+5. Comprobado en producción:
+   - Cola de avisos, reloj `notification-outbox-dispatch` y dirección
+     `…/functions/v1/notification-dispatch`.
+   - R-16 cerrado.
+   - Reservas en `RESTRICT`.
+   - `respond_booking_request` con su envoltura.
+   - 1 trabajo marcado como ya avisado.
+   - Las funciones internas no las puede ejecutar ni `anon` ni `authenticated`.
+   - `booking-authority` ofrece horas de la empresa entre semana (con las coordenadas del
+     cliente).
+   - `notification-dispatch` sin secreto responde 401 y `admin-account-closure` sin sesión, 403.
+   - Una petición de correo del navegador a un tipo del servidor responde `server_managed`.
+6. Web: PR (la fusiona el usuario).
+
+Pruebas en garser.es: P-R01-1, P-R06-1, P-R06-2, P-R03-1, P-R07-1, P-R07-2, P-R04-1, P-R05-1,
+P-R02-1, P-R09-1 y P-R08-1 (`03-PRUEBAS.md` §3).
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
@@ -1422,4 +1454,4 @@ nota que no le llegan reservas. Se propone un aviso en su panel en la próxima t
 | F5 | ✅ Hecho (2026-09-29) | 584 pruebas, `tsc` 128, compila; baterías 22/22 (259); navegador local | ver git |
 | F6 | ✅ Hecho (2026-09-29) | 587 pruebas, `tsc` 128, compila; baterías 23/23 (268 comprobaciones); navegador local | ver git |
 | F7 | ✅ Hecho (2026-09-29) | 596 pruebas, `tsc` 128, compila; baterías 23/23 (268); extremo a extremo local con FCM; navegador local | ver git |
-| F8 | Pendiente | | |
+| F8 | 🟡 Desplegado el servidor (2026-09-29); falta fusionar la PR de la web y las pruebas P-R en garser.es | ver «F8» | ver git |

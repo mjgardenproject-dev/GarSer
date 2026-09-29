@@ -42,26 +42,45 @@ antes de pedir aprobación.
 
 | Comprobación | Comando | Criterio |
 |---|---|---|
-| Tipos | `npx tsc -p tsconfig.app.json --noEmit` | Sin errores |
+| Tipos | `npx tsc -p tsconfig.app.json --noEmit` | **Ningún error nuevo.** `main` ya tiene 128 errores previos, ninguno en estos formularios (ver H-02): se compara el recuento y se comprueba que ninguno cae en un archivo tocado. |
 | Lint de los archivos tocados | `npx eslint <archivos>` | Sin errores nuevos |
-| Tests completos | `npx vitest run` | Todo en verde |
-| **Paridad de precio** | `npx vitest run src/pages/reserva/manualEntryPricingParity.test.ts` | Snapshots **idénticos** (salvo el cambio esperado y documentado de D1) |
-| Tests de la entrada manual | `npx vitest run src/shared/manualEntry/ src/pages/reserva/manualEntryBuilders.test.ts src/pages/reserva/manualCorrectionRecompute.test.ts src/components/booking/manual/` | Todo en verde; ningún test de lógica modificado |
-| Compilación de producción | `npx vite build` | Compila |
+| Tests completos | `npx vitest run` | Todo en verde (línea base de la Fase 0: 98 archivos / 692 tests) |
+| **Paridad de precio** | `npx vitest run src/pages/reserva/manualEntryPricingParity.test.ts` | 88 snapshots **idénticos** (salvo el cambio esperado y documentado de D1) y cobertura de ramas en verde |
+| Tests de la entrada manual | `npx vitest run src/shared/manualEntry/ src/pages/reserva/manualEntryBuilders.test.ts src/pages/reserva/manualCorrectionRecompute.test.ts src/components/booking/manual/ src/pages/reserva/manualEntryPricingParity.test.ts` | Todo en verde; ningún test de lógica modificado |
+| Compilación de producción | `npx vite build` | Compila, y ni las respuestas de referencia ni el banco aparecen en `dist` |
+
+**En el entorno de Claude Code** no hay `.env`, y 13 archivos de test no cargan porque el
+cliente de Supabase exige `VITE_SUPABASE_URL` al importarse (H-03). Los comandos de test y
+build se lanzan con valores ficticios, que no provocan llamadas de red:
+
+```bash
+export VITE_SUPABASE_URL=https://qaharnessqaharnes.supabase.co VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_qa
+```
 
 ### Nivel B · Banco de pruebas visual (componentes reales)
 
 Renderiza `ManualEntryChoice` y `ManualEntryWizard` reales dentro de la misma cabecera de
-«Detalles» y recorre los 7 servicios con Playwright (se crea en la Fase 0, en
-`scripts/qa/manual-entry/`, fuera de `src` y fuera del build).
+«Detalles» y recorre los 7 servicios con Playwright. Vive en
+[`scripts/qa/manual-entry/`](../../../scripts/qa/manual-entry/README.md), fuera de `src` y del
+build:
+
+```bash
+node scripts/qa/manual-entry/bench.mjs --out /tmp/garser-manual-entry-qa   # añadir --strict a partir de que la fase lo exija
+```
+
+El informe de cada fase se guarda en [`qa/`](qa/) junto a la línea base
+([`qa/fase-0-linea-base.md`](qa/fase-0-linea-base.md)), para comparar antes y después.
 
 - Anchos: 320, 360, 375, 414, 768 y 1280 px.
 - Criterios automáticos por pantalla: `scrollWidth ≤ viewport`; el CTA principal dentro del
-  viewport a 375×667; controles interactivos ≥ 44 px de alto; sin errores de consola.
+  viewport a 375×667 midiendo desde arriba de la pantalla; controles interactivos ≥ 44 px;
+  sin errores de consola.
 - Casos fijos: recorrido completo de cada servicio; error de validación; añadir + volver
   atrás en repetibles; cambiar de especie tras elegir altura; fito con cada tipo de
   vegetación y curativo/preventivo; teclado (Tab, flechas, Intro); coma decimal.
-- El payload de `onSubmit` de cada recorrido se compara con el fixture de la Fase 0.
+- El payload de `onSubmit` de cada recorrido debe construir el mismo `patch` que la
+  respuesta de referencia, y payload + eventos de telemetría deben ser idénticos a
+  `scripts/qa/manual-entry/baseline/payloads.json`.
 - Capturas antes/después a 375 px de cada pantalla afectada, enviadas en el mensaje de cierre.
 
 ### Nivel C · Aplicación real en local

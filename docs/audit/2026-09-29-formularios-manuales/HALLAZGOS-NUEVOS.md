@@ -42,3 +42,37 @@ hallazgos de la auditoría tienen IDs V*/S-* en el [`README.md`](README.md)).
 - ⚠️ Afecta a datos/precio: sí, si se tocan esos archivos. En esta ronda solo lo hace D1.
 - Propuesta: recogido en el plan (Fase 4.3-D1 y pendiente P-03 de `PROGRESO.md`).
 - Decisión: no requiere; es información para el despliegue.
+
+---
+
+## H-02 — `tsc` no pasa en `main`: 128 errores de tipos previos — 🔍 verificado
+
+- Severidad: Media (calidad; no bloquea el build de Vite, que no comprueba tipos)
+- Detectado en: Fase 0, 2026-09-29
+- Evidencia: `npx tsc -p tsconfig.app.json --noEmit` sobre `main @ 999a811` sin cambios →
+  128 errores (por ejemplo `src/utils/weedingPricing.ts:1` importa `WeedingPricingConfig`, que
+  `serviceValidation.ts` no exporta; variables sin usar en `serviceValidation.ts:486` y
+  `weedingPromptQuality.test.ts:41`). Ninguno en los archivos de la entrada manual.
+- Qué pasa: el comando de tipos no sirve como semáforo tal cual; un error nuevo quedaría
+  escondido entre los 128.
+- ⚠️ Afecta a datos/precio: no.
+- Propuesta: en esta ronda, el criterio es «ningún error nuevo y ninguno en archivos tocados»
+  (recogido en el plan). Limpiar los 128 es una ronda aparte.
+- Decisión: pendiente (no bloquea).
+
+## H-03 — Trece archivos de test no cargan sin `VITE_SUPABASE_URL` — 🔍 verificado
+
+- Severidad: Baja (entorno de pruebas)
+- Detectado en: Fase 0, 2026-09-29
+- Evidencia: sin `.env`, `npx vitest run` → 13 archivos fallan al importar con «Falta
+  `VITE_SUPABASE_URL` para inicializar Supabase» (`src/lib/supabaseConfig.ts:146`). Entre ellos
+  `manualEntryBuilders.test.ts` y `manualCorrectionRecompute.test.ts`: el builder de la
+  entrada manual importa `bookingTelemetry.ts`, que importa el cliente de Supabase. Con valores
+  ficticios cargan y pasan todos (98 archivos / 692 tests).
+- Qué pasa: en cualquier entorno sin `.env` (CI, un clon nuevo) esos tests no se ejecutan, y
+  la protección de la paridad de precio depende de ellos.
+- ⚠️ Afecta a datos/precio: no.
+- Propuesta: documentado en el plan cómo lanzarlos aquí. Una solución de fondo (inicializar
+  Supabase de forma perezosa, o un `setupFiles` de Vitest con valores de prueba) sería una
+  ronda aparte.
+- Decisión: pendiente (no bloquea).

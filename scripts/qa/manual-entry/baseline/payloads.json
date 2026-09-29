@@ -1,0 +1,1993 @@
+[
+  {
+    "fixtureId": "lawn/normal-80m2",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 80,
+          "estado_jardin": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "lawn/descuidado-80m2",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 80,
+          "estado_jardin": "descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "lawn/muy-descuidado-250m2",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 250,
+          "estado_jardin": "muy descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "lawn/minimo-1m2",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 1,
+          "estado_jardin": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "lawn/maximo-5000m2",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 5000,
+          "estado_jardin": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "lawn/decimal-72.5m2-sin-retirada",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 72.5,
+          "estado_jardin": "descuidado"
+        }
+      ],
+      "wasteRemoval": false
+    },
+    "stepEvents": [
+      "surface",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/altura-0.3m-caras-1-normal",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 14,
+          "altura_m": 0.3,
+          "caras": "1",
+          "estado_seto": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/altura-1.9m-caras-2-media",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 14,
+          "altura_m": 1.9,
+          "caras": "2",
+          "estado_seto": "media"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/altura-2m-caras-1-alta",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 14,
+          "altura_m": 2,
+          "caras": "1",
+          "estado_seto": "alta"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/altura-2.1m-caras-2-normal",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 14,
+          "altura_m": 2.1,
+          "caras": "2",
+          "estado_seto": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/altura-4m-caras-1-media",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 14,
+          "altura_m": 4,
+          "caras": "1",
+          "estado_seto": "media"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/altura-4.1m-caras-2-alta",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 14,
+          "altura_m": 4.1,
+          "caras": "2",
+          "estado_seto": "alta"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/altura-6m-caras-1-normal",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 14,
+          "altura_m": 6,
+          "caras": "1",
+          "estado_seto": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/longitud-minima-1m",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 1,
+          "altura_m": 1.5,
+          "caras": "1",
+          "estado_seto": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "hedge/longitud-maxima-200m-sin-retirada",
+    "payload": {
+      "items": [
+        {
+          "longitud_m": 200,
+          "altura_m": 2.5,
+          "caras": "2",
+          "estado_seto": "alta"
+        }
+      ],
+      "wasteRemoval": false
+    },
+    "stepEvents": [
+      "length",
+      "height",
+      "faces",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/small-structural-acceso-normal",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "small",
+          "pruningType": "structural",
+          "difficultyHigh": false
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/small-shaping-acceso-dificil",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "small",
+          "pruningType": "shaping",
+          "difficultyHigh": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/medium-structural-acceso-normal",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "medium",
+          "pruningType": "structural",
+          "difficultyHigh": false
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/medium-shaping-acceso-dificil",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "medium",
+          "pruningType": "shaping",
+          "difficultyHigh": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/large-structural-acceso-normal",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "large",
+          "pruningType": "structural",
+          "difficultyHigh": false
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/large-shaping-acceso-dificil",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "large",
+          "pruningType": "shaping",
+          "difficultyHigh": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/over_9-structural-acceso-normal",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "over_9",
+          "pruningType": "structural",
+          "difficultyHigh": false
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/over_9-shaping-acceso-dificil",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "over_9",
+          "pruningType": "shaping",
+          "difficultyHigh": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/medium-structural-acceso-dificil-sin-retirada",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "medium",
+          "pruningType": "structural",
+          "difficultyHigh": true
+        }
+      ],
+      "wasteRemoval": false
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "tree/tres-arboles-distintos",
+    "payload": {
+      "items": [
+        {
+          "aiSizeBand": "small",
+          "pruningType": "shaping",
+          "difficultyHigh": false
+        },
+        {
+          "aiSizeBand": "medium",
+          "pruningType": "structural",
+          "difficultyHigh": true
+        },
+        {
+          "aiSizeBand": "large",
+          "pruningType": "structural",
+          "difficultyHigh": false
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "size",
+      "pruning_type",
+      "access",
+      "size",
+      "pruning_type",
+      "access",
+      "size",
+      "pruning_type",
+      "access"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Phoenix canariensis-0-4m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 1,
+          "hasPhytosanitary": true,
+          "species": "Phoenix canariensis",
+          "height": "0-4m",
+          "state": "normal",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Phoenix canariensis-4-10m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 2,
+          "hasPhytosanitary": false,
+          "species": "Phoenix canariensis",
+          "height": "4-10m",
+          "state": "descuidado",
+          "hasTrunkPeeling": true,
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Phoenix canariensis->10m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 3,
+          "hasPhytosanitary": true,
+          "species": "Phoenix canariensis",
+          "height": ">10m",
+          "state": "muy descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Phoenix dactylifera-0-5m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 2,
+          "hasPhytosanitary": false,
+          "species": "Phoenix dactylifera",
+          "height": "0-5m",
+          "state": "descuidado",
+          "hasTrunkPeeling": true,
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Phoenix dactylifera-5-10m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 3,
+          "hasPhytosanitary": true,
+          "species": "Phoenix dactylifera",
+          "height": "5-10m",
+          "state": "muy descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Phoenix dactylifera-10-15m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 4,
+          "hasPhytosanitary": false,
+          "species": "Phoenix dactylifera",
+          "height": "10-15m",
+          "state": "normal",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Phoenix dactylifera->15m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 1,
+          "hasPhytosanitary": true,
+          "species": "Phoenix dactylifera",
+          "height": ">15m",
+          "state": "descuidado",
+          "hasTrunkPeeling": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Washingtonia robusta/filifera-0-4m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 3,
+          "hasPhytosanitary": true,
+          "species": "Washingtonia robusta/filifera",
+          "height": "0-4m",
+          "state": "muy descuidado",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Washingtonia robusta/filifera-4-12m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 4,
+          "hasPhytosanitary": false,
+          "species": "Washingtonia robusta/filifera",
+          "height": "4-12m",
+          "state": "normal",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Washingtonia robusta/filifera-12-20m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 1,
+          "hasPhytosanitary": true,
+          "species": "Washingtonia robusta/filifera",
+          "height": "12-20m",
+          "state": "descuidado",
+          "hasTrunkPeeling": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Washingtonia robusta/filifera->20m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 2,
+          "hasPhytosanitary": false,
+          "species": "Washingtonia robusta/filifera",
+          "height": ">20m",
+          "state": "muy descuidado",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Syagrus romanzoffiana-0-5m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 4,
+          "hasPhytosanitary": true,
+          "species": "Syagrus romanzoffiana",
+          "height": "0-5m",
+          "state": "normal",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Syagrus romanzoffiana-5-10m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 1,
+          "hasPhytosanitary": true,
+          "species": "Syagrus romanzoffiana",
+          "height": "5-10m",
+          "state": "descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Syagrus romanzoffiana->10m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 2,
+          "hasPhytosanitary": true,
+          "species": "Syagrus romanzoffiana",
+          "height": ">10m",
+          "state": "muy descuidado",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Trachycarpus fortunei-0-3m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 1,
+          "hasPhytosanitary": true,
+          "species": "Trachycarpus fortunei",
+          "height": "0-3m",
+          "state": "descuidado",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Trachycarpus fortunei-3-6m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 2,
+          "hasPhytosanitary": false,
+          "species": "Trachycarpus fortunei",
+          "height": "3-6m",
+          "state": "muy descuidado",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Trachycarpus fortunei->6m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 3,
+          "hasPhytosanitary": true,
+          "species": "Trachycarpus fortunei",
+          "height": ">6m",
+          "state": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Roystonea regia-0-6m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 2,
+          "hasPhytosanitary": true,
+          "species": "Roystonea regia",
+          "height": "0-6m",
+          "state": "muy descuidado",
+          "hasAccessDifficulty": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/Roystonea regia->6m",
+    "payload": {
+      "items": [
+        {
+          "quantity": 3,
+          "hasPhytosanitary": true,
+          "species": "Roystonea regia",
+          "height": ">6m",
+          "state": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/cantidad-maxima-50",
+    "payload": {
+      "items": [
+        {
+          "quantity": 50,
+          "hasPhytosanitary": true,
+          "species": "Phoenix canariensis",
+          "height": "4-10m",
+          "state": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "palm/dos-grupos-sin-retirada",
+    "payload": {
+      "items": [
+        {
+          "quantity": 2,
+          "hasPhytosanitary": true,
+          "species": "Phoenix canariensis",
+          "height": ">10m",
+          "state": "muy descuidado",
+          "hasTrunkPeeling": true,
+          "hasAccessDifficulty": true
+        },
+        {
+          "quantity": 5,
+          "hasPhytosanitary": false,
+          "species": "Washingtonia robusta/filifera",
+          "height": "4-12m",
+          "state": "normal"
+        }
+      ],
+      "wasteRemoval": false
+    },
+    "stepEvents": [
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras",
+      "species",
+      "height",
+      "state",
+      "quantity",
+      "extras"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/pequeñas-normal",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 6,
+          "tamano_dominante": "pequeñas",
+          "estado_plantas": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/pequeñas-descuidado",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 9,
+          "tamano_dominante": "pequeñas",
+          "estado_plantas": "descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/pequeñas-muy descuidado",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 12,
+          "tamano_dominante": "pequeñas",
+          "estado_plantas": "muy descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/medianas-normal",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 17,
+          "tamano_dominante": "medianas",
+          "estado_plantas": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/medianas-descuidado",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 20,
+          "tamano_dominante": "medianas",
+          "estado_plantas": "descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/medianas-muy descuidado",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 23,
+          "tamano_dominante": "medianas",
+          "estado_plantas": "muy descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/grandes-normal",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 28,
+          "tamano_dominante": "grandes",
+          "estado_plantas": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/grandes-descuidado",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 31,
+          "tamano_dominante": "grandes",
+          "estado_plantas": "descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/grandes-muy descuidado",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 34,
+          "tamano_dominante": "grandes",
+          "estado_plantas": "muy descuidado"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/maximo-2000m2-sin-retirada",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 2000,
+          "tamano_dominante": "grandes",
+          "estado_plantas": "normal"
+        }
+      ],
+      "wasteRemoval": false
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "shrub/minimo-1m2",
+    "payload": {
+      "items": [
+        {
+          "superficie_m2": 1,
+          "tamano_dominante": "pequeñas",
+          "estado_plantas": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "surface",
+      "size",
+      "state"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Césped-preventive",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Césped",
+          "area": 40,
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Césped-curative-insects",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Césped",
+          "area": 55,
+          "intent": "curative",
+          "curativeTarget": "insects",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Césped-curative-fungus",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Césped",
+          "area": 70,
+          "intent": "curative",
+          "curativeTarget": "fungus",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Césped-curative-both",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Césped",
+          "area": 85,
+          "intent": "curative",
+          "curativeTarget": "both",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Plantas bajas-preventive",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Plantas bajas",
+          "area": 40,
+          "sizeBand": "pequenas",
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Plantas bajas-curative-insects",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Plantas bajas",
+          "area": 55,
+          "sizeBand": "medianas",
+          "intent": "curative",
+          "curativeTarget": "insects",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Plantas bajas-curative-fungus",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Plantas bajas",
+          "area": 70,
+          "sizeBand": "grandes",
+          "intent": "curative",
+          "curativeTarget": "fungus",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Plantas bajas-curative-both",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Plantas bajas",
+          "area": 85,
+          "sizeBand": "pequenas",
+          "intent": "curative",
+          "curativeTarget": "both",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Setos-preventive",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Setos",
+          "area": 40,
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "product",
+      "height"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Setos-curative-insects",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": true,
+          "wantsEndotherapy": false,
+          "affectedType": "Setos",
+          "area": 55,
+          "intent": "curative",
+          "curativeTarget": "insects",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "target",
+      "product",
+      "height"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Setos-curative-fungus",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Setos",
+          "area": 70,
+          "intent": "curative",
+          "curativeTarget": "fungus",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "target",
+      "product",
+      "height"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Setos-curative-both",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": true,
+          "wantsEndotherapy": false,
+          "affectedType": "Setos",
+          "area": 85,
+          "intent": "curative",
+          "curativeTarget": "both",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "target",
+      "product",
+      "height"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Árboles-preventive",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Árboles",
+          "area": 3,
+          "sizeBand": "pequenos",
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Árboles-curative-insects",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Árboles",
+          "area": 4,
+          "sizeBand": "medianos",
+          "intent": "curative",
+          "curativeTarget": "insects",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Árboles-curative-fungus",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Árboles",
+          "area": 5,
+          "sizeBand": "grandes",
+          "intent": "curative",
+          "curativeTarget": "fungus",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Árboles-curative-both",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Árboles",
+          "area": 6,
+          "sizeBand": "pequenos",
+          "intent": "curative",
+          "curativeTarget": "both",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Palmeras-preventive",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Palmeras",
+          "area": 3,
+          "sizeBand": "pequenas",
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "product",
+      "endotherapy"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Palmeras-curative-insects",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": true,
+          "affectedType": "Palmeras",
+          "area": 4,
+          "sizeBand": "medianas",
+          "intent": "curative",
+          "curativeTarget": "insects",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product",
+      "endotherapy"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Palmeras-curative-fungus",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Palmeras",
+          "area": 5,
+          "sizeBand": "altas",
+          "intent": "curative",
+          "curativeTarget": "fungus",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product",
+      "endotherapy"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/Palmeras-curative-both",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": true,
+          "affectedType": "Palmeras",
+          "area": 6,
+          "sizeBand": "pequenas",
+          "intent": "curative",
+          "curativeTarget": "both",
+          "productPreference": "ecological"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "target",
+      "product",
+      "endotherapy"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/arboles-grandes-palmeras-altas-plantas-grandes",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Árboles",
+          "area": 3,
+          "sizeBand": "grandes",
+          "intent": "preventive",
+          "productPreference": "chemical"
+        },
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Palmeras",
+          "area": 3,
+          "sizeBand": "altas",
+          "intent": "preventive",
+          "productPreference": "chemical"
+        },
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Plantas bajas",
+          "area": 40,
+          "sizeBand": "grandes",
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "product",
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "product",
+      "endotherapy",
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/minimo-1-arbol",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Árboles",
+          "area": 1,
+          "sizeBand": "pequenos",
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "size",
+      "intent",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "phytosanitary/maximo-5000m2-cesped",
+    "payload": {
+      "items": [
+        {
+          "aboveThreeMeters": false,
+          "wantsEndotherapy": false,
+          "affectedType": "Césped",
+          "area": 5000,
+          "intent": "preventive",
+          "productPreference": "chemical"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "affected",
+      "area",
+      "intent",
+      "product"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/normal-sin-herbicida",
+    "payload": {
+      "items": [
+        {
+          "area": 120,
+          "state": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/normal-con-herbicida",
+    "payload": {
+      "items": [
+        {
+          "area": 120,
+          "state": "normal",
+          "applyHerbicide": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/dificultad_media-sin-herbicida",
+    "payload": {
+      "items": [
+        {
+          "area": 210,
+          "state": "dificultad_media"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/dificultad_media-con-herbicida",
+    "payload": {
+      "items": [
+        {
+          "area": 210,
+          "state": "dificultad_media",
+          "applyHerbicide": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/dificultad_alta-sin-herbicida",
+    "payload": {
+      "items": [
+        {
+          "area": 300,
+          "state": "dificultad_alta"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/dificultad_alta-con-herbicida",
+    "payload": {
+      "items": [
+        {
+          "area": 300,
+          "state": "dificultad_alta",
+          "applyHerbicide": true
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/minimo-1m2",
+    "payload": {
+      "items": [
+        {
+          "area": 1,
+          "state": "normal"
+        }
+      ],
+      "wasteRemoval": true
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  },
+  {
+    "fixtureId": "weeding/maximo-10000m2-sin-retirada",
+    "payload": {
+      "items": [
+        {
+          "area": 10000,
+          "state": "dificultad_alta",
+          "applyHerbicide": true
+        }
+      ],
+      "wasteRemoval": false
+    },
+    "stepEvents": [
+      "area",
+      "state",
+      "herbicide"
+    ],
+    "consentEvents": 1
+  }
+]

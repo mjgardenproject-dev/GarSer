@@ -696,6 +696,7 @@ Decisiones técnicas tomadas por el chat (reversibles, §5 de la guía):
 | R-17 | El correo al jardinero cuando el cliente **rechaza** su propuesta decía «La reserva continúa con el precio original», pero rechazar **cancela** la solicitud (`respond_booking_price_change`). | Funcionamiento (correo engañoso) | F3 (hecho) |
 | R-18 | La pantalla de horario fijo de un empleado le hablaba al dueño en segunda persona («Crea tu horario fijo», «Marca tus días»). | Texto | F5 (hecho) |
 | R-19 | Las casillas de las rejillas de horario solo decían la hora («07:00» siete veces): sin día ni estado para un lector de pantalla. | Accesibilidad | F5 (hecho) |
+| R-20 | Un proveedor suspendido no ve en su panel que lo está (solo nota que no le llegan reservas). | Diseño | Pendiente (próxima tanda) |
 | R-13 | Restos en producción de cuentas borradas: una solicitud de empresa «enviada» huérfana (`af612d76-…`), que el admin ve como pendiente y no puede aprobar. | Datos | F6 |
 
 ### 3.3 Fases
@@ -1274,6 +1275,79 @@ A-34 en `02-HALLAZGOS.md`.
   - «Horario fijo» L–V, con la confirmación: 5 franjas guardadas y 1 aviso «semanal» enviado.
   - Vuelta al panel: el aviso ha desaparecido.
 
+#### F6 — hecho (2026-09-29)
+
+**Servidor** (migración `20260929130000_account_closure.sql`).
+
+- **R-13, restos:** borra miembros y solicitudes de empresa de cuentas que ya no existen, y
+  vacía `accepted_by` y `reviewer_id` huérfanos. Dice cuántos por `NOTICE`; en local, 0.
+- **Claves foráneas nuevas:**
+  - `company_members.user_id` y `booking_blocks.assignee_id` → `RESTRICT`.
+  - `company_applications.user_id` → `CASCADE` (una solicitud no es historial), y `reviewer_id` →
+    `SET NULL`.
+  - `company_invitations.created_by` → `CASCADE`, y `accepted_by` → `SET NULL`.
+  - Quién revisó solicitudes o carnets → `SET NULL`.
+- **R-12:** `bookings.client_id` y `gardener_id` pasan de `CASCADE` a **`RESTRICT`**.
+- **R-09, suspensión:**
+  - Columna `gardener_profiles.suspended_at` (NULL = activo).
+  - *Trigger* que no deja crear presupuestos a un proveedor suspendido.
+  - `admin_set_provider_suspended` (solo admin; pone también `companies.status`).
+- **La baja:**
+  - `private.account_closure_plan`: qué es la cuenta, qué bloquea (reservas sin terminar,
+    trabajos asignados, pagos a medias, incidencias abiertas, planes activos, cuenta de admin) y
+    el modo: `delete`, `deactivate` o `blocked`.
+  - `admin_account_closure_preview(email)`: solo admin.
+  - `perform_account_closure(user, modo esperado, admin)`: solo `service_role`. Bloquea la fila,
+    vuelve a analizar y se niega si algo ha cambiado.
+    - `delete`: borra empresa, miembros, planes cancelados y el usuario, en una transacción.
+    - `deactivate` (D23): datos personales fuera (perfil, ficha, solicitudes, dirección y notas
+      de sus reservas); ficha suspendida y precios inactivos; empresa suspendida, equipo
+      inactivo e invitaciones anuladas; horarios futuros borrados. Reservas, importes y reseñas
+      se conservan.
+
+**Funciones.**
+
+- `admin-account-closure` (nueva, `verify_jwt = false`). Comprueba que quien llama es admin y
+  ejecuta `perform_account_closure`. En `deactivate` veta el acceso (`ban_duration`) y cambia el
+  correo por `baja+<id>@garser.invalid` con la API de administración de Auth, lo que deja libre el
+  correo real. Es idempotente: si falla la parte de Auth, se puede reintentar.
+- `booking-authority`: los proveedores suspendidos salen sin ficha, así que quedan fuera de la
+  lista, de las horas y del presupuesto. **Hay que redesplegarla.**
+
+**Web.** «Admin → Usuarios → Dar de baja o suspender una cuenta» (`AccountClosureAdmin`):
+
+- Se busca por correo y se ve el análisis: bloqueada con los motivos, «Borrar cuenta» o «Dar de
+  baja».
+- Pide confirmación, explicando qué pasa.
+- Para proveedores, «Suspender» o «Reactivar».
+
+**Pruebas.**
+
+- Unitarias: `AccountClosureAdmin.test.tsx`, 3 casos (bloqueada, borrar o dar de baja, no
+  existe).
+- Batería nueva `verify-account-deletion.mjs`, 9/9:
+  - Empresa sin reservas: se borra entera y su empleada sigue existiendo.
+  - Cliente con una solicitud pendiente: bloqueado, y forzar la ejecución no cambia nada.
+  - **Borrado en bruto** de una empleada con horas o de un cliente con reservas: falla y la
+    reserva sigue.
+  - Cliente con historial: se da de baja con correo anónimo y sin acceso, y la reserva conserva
+    importe y comisión, con la dirección eliminada.
+  - Empresa con historial: suspendida, sin nombre ni equipo activo.
+  - Un no-admin no puede nada.
+  - **Suspender:** sin horas ni ventas nuevas, la solicitud anterior se sigue aceptando, y al
+    reactivarla vuelve.
+  - Cuenta sin reservas: se sigue pudiendo borrar desde el panel de Supabase.
+  - Ningún resto.
+  - Primer intento: salió un fallo real. `gardener_profiles.phone` no admite NULL, así que se
+    usa cadena vacía.
+- **Navegador local** (admin, 305 px):
+  - La empresa de demostración sale «Aún no se puede dar de baja: 3 reservas sin terminar».
+  - Una cuenta desechable sale «Borrar cuenta», con su confirmación, y queda «Cuenta borrada»
+    (0 filas en `auth.users`).
+
+**Pendiente, anotado (R-20, diseño):** un proveedor suspendido no ve en su panel que lo está. Solo
+nota que no le llegan reservas. Se propone un aviso en su panel en la próxima tanda.
+
 ## 4. Registro de avance
 
 | Fase | Estado | Pruebas | Commit |
@@ -1283,6 +1357,6 @@ A-34 en `02-HALLAZGOS.md`.
 | F3 | ✅ Hecho (2026-09-28) | 579 pruebas (+3), `tsc` 128, compila; baterías 20/20 (244 comprobaciones, `verify-notification-outbox` 14/14 nueva; `verify-f3-emails` y `verify-f6-reschedule` adaptadas); navegador local | ver git |
 | F4 | ✅ Hecho (2026-09-28) | 579 pruebas, `tsc` 128, compila; baterías 21/21 (252 comprobaciones, `verify-employee-visibility` 7/7 nueva, 6 adaptadas); navegador local | ver git |
 | F5 | ✅ Hecho (2026-09-29) | 584 pruebas, `tsc` 128, compila; baterías 22/22 (259); navegador local | ver git |
-| F6 | Pendiente | | |
+| F6 | ✅ Hecho (2026-09-29) | 587 pruebas, `tsc` 128, compila; baterías 23/23 (268 comprobaciones); navegador local | ver git |
 | F7 | Pendiente | | |
 | F8 | Pendiente | | |

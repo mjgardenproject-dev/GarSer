@@ -1924,6 +1924,7 @@ export type Database = {
           rating_average: number | null
           rating_count: number | null
           services: string[] | null
+          suspended_at: string | null
           test_grass_frequency: string | null
           test_hedge_season: string | null
           test_pest_action: string | null
@@ -1968,6 +1969,7 @@ export type Database = {
           rating_average?: number | null
           rating_count?: number | null
           services?: string[] | null
+          suspended_at?: string | null
           test_grass_frequency?: string | null
           test_hedge_season?: string | null
           test_pest_action?: string | null
@@ -2012,6 +2014,7 @@ export type Database = {
           rating_average?: number | null
           rating_count?: number | null
           services?: string[] | null
+          suspended_at?: string | null
           test_grass_frequency?: string | null
           test_hedge_season?: string | null
           test_pest_action?: string | null
@@ -2760,6 +2763,10 @@ export type Database = {
         Args: { p_token: string; p_user_id: string }
         Returns: Json
       }
+      admin_account_closure_preview: {
+        Args: { p_email: string }
+        Returns: Json
+      }
       admin_review_company_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: Json
@@ -2767,6 +2774,10 @@ export type Database = {
       admin_review_gardener_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: undefined
+      }
+      admin_set_provider_suspended: {
+        Args: { p_suspended: boolean; p_user_id: string }
+        Returns: Json
       }
       assign_booking_hours: {
         Args: { p_booking_id: string; p_workers: string[] }
@@ -3141,6 +3152,10 @@ export type Database = {
         }[]
       }
       my_maintenance_plans: { Args: never; Returns: Json }
+      perform_account_closure: {
+        Args: { p_admin_id: string; p_expected_mode: string; p_user_id: string }
+        Returns: Json
+      }
       pick_provider_worker: {
         Args: {
           p_date: string

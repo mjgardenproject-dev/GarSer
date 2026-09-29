@@ -3,6 +3,7 @@ import ApplicationsAdmin from '../../components/admin/ApplicationsAdmin';
 import CompanyApplicationsAdmin from '../../components/admin/CompanyApplicationsAdmin';
 import RoleMonitor from '../../components/admin/RoleMonitor';
 import ReviewModeration from '../../components/admin/ReviewModeration';
+import AccountClosureAdmin from '../../components/admin/AccountClosureAdmin';
 
 const UserManagement: React.FC = () => {
   return (
@@ -31,6 +32,15 @@ const UserManagement: React.FC = () => {
         </h2>
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <ReviewModeration />
+        </div>
+      </section>
+
+      <section aria-labelledby="closure-heading">
+        <h2 id="closure-heading" className="text-xl font-bold text-gray-900 mb-4 pb-2 border-b">
+          Dar de baja o suspender una cuenta
+        </h2>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <AccountClosureAdmin />
         </div>
       </section>
 

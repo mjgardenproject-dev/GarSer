@@ -1,0 +1,15 @@
+# Hallazgos nuevos (fuera de alcance o para profundizar)
+
+Formato: ID · fecha · dónde · qué · evidencia · propuesta · estado. Lo que pertenece al
+alcance de la ronda está en `AUDITORIA.md` (T-xx, P-xx), no aquí.
+
+| ID | Fecha | Dónde | Qué | Evidencia | Propuesta | Estado |
+|---|---|---|---|---|---|---|
+| H-N-01 | 2026-09-30 | Paso «Servicios» de la reserva | Tras entrar en «Detalles» con césped, volver a «Servicios», desmarcar césped, marcar setos y continuar **seguía cargando césped** (el borrador guardado conservaba `serviceIds` = césped y al volver a «Servicios» aparecía césped marcado) | Recorrido local a 375 px; `booking_resume_v2:anon:wizard` | Reproducir con calma en la pre-fase (¿diálogo de confirmación no visto? ¿guardado que pisa la selección?) y, si se confirma, tratarlo como fallo aparte del funnel | Abierto, a verificar |
+| H-N-02 | 2026-09-30 | Supabase local | Faltan 3 migraciones (`20260929120000`, `…130000`, `…140000`); el `edge_runtime` se reinicia por otra sesión | `supabase_migrations.schema_migrations` máx. = `20260928120000` | Pre-fase PRE-4 | Planificado |
+| H-N-03 | 2026-09-30 | `manualEntryPricingParity.test.ts` | 5 snapshots obsoletos (`phytosanitary/*-curative-insects 2`): nombres de caso repetidos en las fixtures | Salida de `vitest` | No se tocan en esta ronda (regla 9). Revisar las fixtures en otra tarea: renombrar casos duplicados | Abierto |
+| H-N-04 | 2026-09-30 | Documentación de la skill `garser-manual-entry` | Dice césped 1–2000 m²; el código tiene 1–5000 | `MANUAL_RANGES.lawn` | Alinear la documentación de la skill (no el código) | Abierto |
+| H-N-05 | 2026-09-30 | Árboles (datos) | El manual no pregunta cantidad; el flujo de fotos sí habla de «grupo de árboles iguales» y la validación admite `quantity` 1–20 | Schema + texto del modo fotos | Decisión de datos fuera de esta ronda. Mitigación de interfaz: «Duplicar» (D-04) | Abierto (decisión del usuario) |
+| H-N-06 | 2026-09-30 | Palmeras (negocio) | El fitosanitario viene activado por defecto; la skill dice «extras opt-in, off por defecto» | Schema, comentario del campo | Se mantiene (decisión vigente); solo mejora de presentación | Informativo |
+| H-N-07 | 2026-09-30 | MCP de Supabase | No conecta en esta sesión (error 400) | Aviso del sistema | Usar la CLI; revisar la conexión si hace falta consultar producción (`booking_funnel_events` para validar prioridades) | Abierto |
+| H-N-08 | 2026-09-30 | `scripts/qa/manual-entry/` | El script E2E de la app real (`e2e-local.mjs`) solo existía en la rama retirada | `git show ef03651 --stat` | Reconstruirlo en la pre-fase (PRE-8) partiendo de cero, con las mismas garantías (C1–C4) | Planificado |

@@ -1,7 +1,7 @@
 # Banco de pruebas de la entrada manual
 
 Herramienta de la ronda de rediseño de los formularios manuales
-([`docs/audit/2026-09-29-formularios-manuales/`](../../../docs/audit/2026-09-29-formularios-manuales/README.md)).
+([`docs/audit/2026-09-30-formularios-manuales-ux/`](../../../docs/audit/2026-09-30-formularios-manuales-ux/README.md); creado en la ronda del 2026-09-29, que se retiró).
 Es el **Nivel B** de la puerta de prueba local de cada fase. No forma parte de la aplicación:
 no entra en el `vite build` ni en el `tsc` del proyecto.
 
@@ -38,7 +38,7 @@ node scripts/qa/manual-entry/bench.mjs --out /tmp/garser-manual-entry-qa
 | `--skip-payloads` | Sin la paridad de lo enviado (rápido, solo maquetación y escenarios). |
 | `--no-shots` | Sin capturas. |
 | `--strict` | Termina con código 1 si algún criterio falla (para las fases posteriores). |
-| `--write-baseline` | Regenera `baseline/payloads.json`. **Solo** en un paso del plan que prevea el cambio (hoy, 4.3-D1), revisando el diff. |
+| `--write-baseline` | Regenera `baseline/payloads.json`. **Solo** en un paso del plan que prevea el cambio (ninguno en la ronda actual), revisando el diff. |
 | `--port 5199` | Puerto del servidor del banco. |
 
 Requisitos: Playwright (paquete `playwright` del proyecto o global) con su Chromium. El banco

@@ -22,6 +22,29 @@ Todas las fases siguen `REGLAS.md` y cierran con la puerta de `METODO-Y-PRUEBAS.
 | D-10 | Palmeras: nombre común como etiqueta principal (Palmera canaria, Palmera datilera, Washingtonia o palmera de abanico, Pindó, Palmera de molino, Palmera real) y latín debajo | **Sí** | Los `value` no cambian |
 | D-11 | Plegar el selector fotos/manual a una línea una vez elegido el modo manual | **Sí** | Libera ≈ 250 px del primer pliegue. Puede bajar algo el uso de fotos: se mide con la telemetría existente |
 
+### 0.1 Respuestas del usuario (2026-09-30)
+
+| ID | Respuesta | Efecto en el plan |
+|---|---|---|
+| D-01 | Sí | Capa de presentación de cliente; schema y validación intactos |
+| D-02 | Sí | F4 cambia `initialWasteRemoval` en `DetailsPage` (única diferencia de huella permitida, documentada) |
+| D-03 | **No. Quitar por completo las referencias, porque no son fiables** | Fuera todas las comparaciones con objetos, cuerpo o edificios (puerta, planta de edificio, tejado, rodilla, cintura, pecho, cabeza, plaza de garaje, pista de pádel, coche, cama, parcela urbana, «1 paso ≈ 0,8 m»). Se conservan los **rangos numéricos** y las **instrucciones de cómo medir** («mide solo el tronco», «suma los tramos si hace esquinas», «desde el suelo hasta lo más alto»). «¿Cómo lo mido?» pasa a contener solo el método. Ver D-12 para las opciones que se quedan sin criterio |
+| D-04 | Sí | F6: «Duplicar este árbol» |
+| D-05 | Sí | Agrupaciones en F5, F8 y F9, emitiendo todos los `stepId` |
+| D-06 | **Sí** (imágenes por especie de palmera) | Entra en F7. Hace falta una fuente de imágenes (ver D-13) |
+| D-07 | Sí | F1: «1.000» = 1000 en superficies, con lectura en vivo |
+| D-08 | Sí | F2: sin «Atrás» en la primera pregunta |
+| D-09 | Sí | F4: retirada como dos opciones explícitas |
+| D-10 | Sí | F7: nombre común + latín |
+| D-11 | Sí | F2: selector plegado en modo manual |
+
+### 0.2 Decisiones nuevas que salen de las respuestas
+
+| ID | Decisión | Mi recomendación | Cuándo hace falta |
+|---|---|---|---|
+| D-12 | Al quitar las referencias (D-03), hay opciones de tamaño que **se quedan sin criterio**, porque solo se definían por comparación: arbustos (pequeñas/medianas/grandes) y plantas, palmeras y setos de fitosanitarios. Y los rangos que hoy ve el cliente en fitosanitarios **no coinciden** con los que el jardinero usa para fijar su precio (H-N-09). Propuesta: mostrar al cliente **los mismos rangos en metros que ve el jardinero** en su configurador (arbustos 0–1 / 1–2 / 2–3 m; fitos-palmeras < 3,5 / 3,5–8 / > 8 m; fitos-plantas < 0,5 / 0,5–1,5 / 1,5–2 m; fitos-setos altos 2,5–5 m). Los valores enviados no cambian; cambia el criterio con el que el cliente elige, y eso puede cambiar qué tramo escoge | Sí, alinear con el jardinero, porque es la definición con la que él cobra | Antes de F8 (fitosanitarios) y F11 (arbustos) |
+| D-13 | Imágenes de palmeras (D-06): ¿de dónde salen? (a) fotos propias o con licencia que me pases, (b) siluetas SVG sencillas dibujadas para GarSer, (c) banco libre (Unsplash/Pexels, licencia a verificar) | (b) siluetas propias: ligeras, coherentes con Lucide y sin problemas de licencia. Si hay fotos propias, mejor (a) | Antes de F7 |
+
 ---
 
 ## Pre-fase — Entorno limpio, duplicado real de producción y línea base
@@ -130,19 +153,19 @@ iconos) y, si hace falta, un componente específico. **Plantilla común de cada 
 - **Aceptación:** recorrido real completo a 375 px y a 1280 px sin desbordes, con CTA
   visible y objetivos ≥ 44 px; todas las ramas del servicio en el banco con 0 diferencias
   de envío; paridad del servicio idéntica; E2E local con el mismo precio por profesional y
-  la misma huella; revisión fiel; el usuario aprueba los textos nuevos (D-03).
+  la misma huella; revisión fiel; el usuario aprueba los textos nuevos que cambien cómo se interpreta un dato (D-12).
 - **Precio:** los casos de paridad del servicio + el E2E del servicio + (si hay agrupación)
   comprobación de que se emiten los mismos `stepId` en el mismo orden.
 
 | Fase | Servicio | Cambios concretos |
 |---|---|---|
-| F5 | **Setos** | Pantalla «Medidas del seto» (longitud `NumberField` + altura `Stepper` con rejilla y feedback de tramo desde `HEDGE_BAND_LABELS`) si D-05; caras con dibujo simple o lista sin el icono `Square`; estado en `OptionList`; referencias (coche 4,5 m, paso 0,8 m, puerta 2 m) en «¿Cómo lo mido?»; una sola frase de apoyo |
-| F6 | **Árboles** | Tamaño en `OptionList` con tramo como dato y referencia coherente (D-03); poda con la ayuda aclarada (nombres intactos); acceso como elección compacta; `ItemList` con «Duplicar» (D-04); cabecera «Árbol N» |
-| F7 | **Palmeras** | Especie con nombre común + latín (D-10); altura en `SegmentedChoice` + aviso si se reinicia al cambiar de especie; «¿En qué estado está la palmera?»; número con `Stepper`; extras: fitosanitario «Recomendado» primero con una línea + «Por qué» plegado, pelado y acceso como `ToggleRow`, acceso oculto en el tramo más bajo (P-04) |
-| F8 | **Fitosanitarios** | 4 pantallas (D-05): qué tratar → «¿Cuántos…?» con título y unidad según el tipo (m² / m / ejemplares) + tamaño o «¿supera 2 m?» → tratamiento con objetivo revelado y endoterapia (palmeras) → producto (`SegmentedChoice` + ayuda común); «Pregunta X de Y» que solo baja; unidad en la revisión |
-| F9 | **Desbroce** | Superficie `NumberField` con miles (D-07) y referencia de parcela/catastro; dificultad en `OptionList`; «Opciones del servicio» (herbicida + retirada) si D-05, con el coste mencionado |
-| F10 | **Césped** | Superficie `NumberField` con referencias (plaza de garaje, pádel, método de pasos); estado en `OptionList`; queda como patrón de referencia del sistema |
-| F11 | **Arbustos** | Superficie `NumberField` con referencias (cama ≈ 3 m², jardinera); tamaño con una referencia corporal por tramo (D-03) e iconos de la misma progresión; estado en `OptionList` |
+| F5 | **Setos** | Pantalla «Medidas del seto» (longitud `NumberField` + altura `Stepper` con rejilla y feedback de tramo desde `HEDGE_BAND_LABELS`); caras con dibujo simple o lista sin el icono `Square`; estado en `OptionList`; **sin referencias** (D-03): «¿Cómo lo mido?» solo con el método (suma de tramos; desde el suelo hasta lo más alto, incluidos muros); una sola frase de apoyo |
+| F6 | **Árboles** | Tamaño en `OptionList` con el tramo en metros como único criterio (**sin referencias**, D-03); poda con la ayuda aclarada (nombres intactos); acceso como elección compacta; `ItemList` con «Duplicar» (D-04); cabecera «Árbol N» |
+| F7 | **Palmeras** | Especie con nombre común + latín (D-10) e imagen por especie (D-06, fuente según D-13); altura en `SegmentedChoice` + aviso si se reinicia al cambiar de especie; «¿En qué estado está la palmera?»; número con `Stepper`; extras: fitosanitario «Recomendado» primero con una línea + «Por qué» plegado, pelado y acceso como `ToggleRow`, acceso oculto en el tramo más bajo (P-04) |
+| F8 | **Fitosanitarios** | Tamaños con rangos en metros según D-12 (sin referencias); 4 pantallas (D-05): qué tratar → «¿Cuántos…?» con título y unidad según el tipo (m² / m / ejemplares) + tamaño o «¿supera 2 m?» → tratamiento con objetivo revelado y endoterapia (palmeras) → producto (`SegmentedChoice` + ayuda común); «Pregunta X de Y» que solo baja; unidad en la revisión |
+| F9 | **Desbroce** | Superficie `NumberField` con miles (D-07) y la nota «si la conoces por la escritura o el catastro, usa esa cifra» (es una fuente del dato, no una comparación); dificultad en `OptionList`; «Opciones del servicio» (herbicida + retirada) si D-05, con el coste mencionado |
+| F10 | **Césped** | Superficie `NumberField` sin referencias (D-03), «¿Cómo lo mido?» con el método (largo × ancho; suma de zonas); estado en `OptionList`; queda como patrón del sistema |
+| F11 | **Arbustos** | Superficie `NumberField` sin referencias; tamaño con rangos en metros según D-12 e iconos de la misma progresión; estado en `OptionList` |
 
 ## F12 — Cohesión, accesibilidad, verificación final y paso a producción
 

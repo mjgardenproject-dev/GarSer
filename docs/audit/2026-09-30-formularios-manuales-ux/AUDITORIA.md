@@ -11,6 +11,11 @@ varios servicios). **P-xx** = punto con posible efecto en precio (§10). Las med
 son CSS px a 375 px de ancho; «y» es la posición vertical en la página, con el pliegue
 en 812.
 
+> **Nota posterior (respuestas del usuario, 2026-09-30):** las propuestas de esta auditoría que
+> hablan de conservar o reescribir referencias de medida (plaza de garaje, puerta, rodilla…)
+> quedan sustituidas por D-03: **se quitan todas las referencias** y se conservan solo los
+> rangos numéricos y el método de medida. Ver `PLAN-IMPLEMENTACION.md` §0.1-0.2.
+
 ---
 
 ## 1. Auditoría del código relevante

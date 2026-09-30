@@ -78,6 +78,7 @@ medida la línea base (visual, de envío y de precio) contra la que se compara c
 | PRE-8 | **Línea base** (en `qa/linea-base.md`): `tsc` (número de errores preexistentes), `vitest` completo, paridad de precio (88 casos), banco visual en 6 anchos × 7 servicios, envío del banco (0 diferencias), y E2E local: por servicio un juego fijo de respuestas → precio por profesional en «Profesionales» + huella SHA-256 de la colección guardada; más una corrección del jardinero («Recalcular precio») | Archivo con los números; capturas en `qa/linea-base/` |
 
 **Criterio de salida:** PRE-1…PRE-8 en verde y anotados en `PROGRESO.md`. Sin esto no empieza F1.
+**Estado (2026-09-30): cumplido.** Resultado en `qa/pre-fase.md` y `qa/linea-base.md`.
 **Riesgos:** Docker colgado (hay *workaround*); datos semilla sin los 7 servicios (se completan con el configurador en local, nunca en producción).
 **No se modifica:** ningún archivo de `src/`, `supabase/` ni configuración de producción.
 

@@ -43,8 +43,12 @@ Debe salir **vacío**.
 ### Nivel B — Banco de componentes (Playwright)
 
 ```bash
-node scripts/qa/manual-entry/bench.mjs --out /tmp/garser-manual-entry-qa --strict
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/bench.mjs --out ~/Downloads/auditorias/formularios-qa/fase-N-bench
 ```
+(Playwright vive aislado en `~/Downloads/auditorias/qa-tools`, ver H-N-11. La línea base de la
+pre-fase está en `qa/linea-base.md`: la comparación es contra ella, no contra «todo en verde»,
+porque varios criterios de maquetación y los escenarios fallan hoy a propósito.)
 - Maquetación de los 7 en 320/360/375/414/768/1280: sin desborde, CTA visible, controles ≥ 44 px, consola limpia.
 - **Paridad de lo enviado: 0 diferencias** con `baseline/payloads.json` (payload + telemetría).
 - Escenarios de hallazgos (stepper de setos, coma decimal, elementos fantasma, Intro, «Atrás» en la primera pantalla) con el resultado esperado de la fase.
@@ -53,9 +57,18 @@ node scripts/qa/manual-entry/bench.mjs --out /tmp/garser-manual-entry-qa --stric
 
 ### Nivel C — App real en local contra Supabase local
 
-Script E2E a reconstruir en la pre-fase (`scripts/qa/manual-entry/e2e-local.mjs`; el de la
-ronda anterior se retiró con su rama): recorre la reserva real en 5192 (`main`) y en 5191
-(rama) con las mismas respuestas por servicio y compara:
+`scripts/qa/manual-entry/e2e-local.mjs` (reconstruido en la pre-fase; uso en
+`scripts/qa/manual-entry/README.md`):
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/e2e-local.mjs --out ~/Downloads/auditorias/formularios-qa/fase-N-e2e --widths 375,1280
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/e2e-local.mjs --out ~/Downloads/auditorias/formularios-qa/fase-N-e2e-login --login
+```
+
+Recorre la reserva real en 5192 (`main`) y en 5191 (rama) con las mismas respuestas por
+servicio y compara (además, cada total y cada huella deben ser **los de `qa/linea-base.md`**):
 - **C1** pantallas de «Detalles» a 375 y 1280 px: desbordes, consola, respuestas HTTP ≥ 400;
 - **C2** precio por profesional en «Profesionales» y huella SHA-256 de la colección guardada
   en `booking_resume_v2:*` (sin ids ni fechas): **deben coincidir**;
@@ -70,9 +83,14 @@ casilla, recargar a mitad).
 
 ### Nivel D — Corrección del jardinero (fases F2-F4 y F12)
 
-Con una reserva manual creada en local: panel del jardinero → solicitud → corregir datos
-→ «Recalcular precio» con los mismos datos = **mismo importe** que la línea base; con un
-dato cambiado, el importe esperado por el motor.
+Tres capas:
+1. **Precio de la corrección** (en cada fase, automático): el E2E llama a
+   `booking-authority` `recalculate_correction` con lo que guardó la reserva; debe dar el
+   importe al profesional y las horas de la línea base.
+2. **Interfaz del modal** (en cada fase que toque el shell): banco con `gardener=1`
+   (sin casilla, «Recalcular precio», sin «Cambiar a fotos»).
+3. **Recorrido real en el panel del jardinero** (F4 y F12): exige una solicitud creada, y
+   crearla pasa por el pago de prueba → solo con autorización del usuario (Nivel E).
 
 ### Nivel E — Pago de prueba (solo F4 y F12, con autorización del usuario)
 

@@ -50,3 +50,36 @@ La forma de conducir cada pantalla (textos de botones, `aria-label`, detección 
 vive en `detectScreen`, `planItemScreen` y `applyActions` de `bench.mjs`, y el marco de la
 página en `main.tsx`. Se actualizan con la fase. **Nunca** se tocan las respuestas de
 referencia ni la línea base para que un recorrido «pase».
+
+## App real en local: `e2e-local.mjs` (Nivel C y D)
+
+Recorre la reserva REAL (dirección → servicio → «Detalles» manual → «Profesionales») contra el
+Supabase local, en `main` (5192) y en la rama (5191), con las mismas respuestas por servicio,
+y compara: total y horas por profesional, huella de lo guardado, telemetría
+(`booking_funnel_events`), declaraciones (`--login`) y el precio de la corrección del
+jardinero (`recalculate_correction`, Nivel D).
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/e2e-local.mjs --out ~/Downloads/auditorias/formularios-qa/fase-N-e2e --widths 375,1280
+```
+
+| Opción | Efecto |
+|---|---|
+| `--targets main=URL,rama=URL` | Servidores a comparar (solo localhost). Por defecto 5192 y 5191. |
+| `--services lawn,hedge` | Solo esos servicios. |
+| `--widths 375,1280` | Anchos (por defecto 375). |
+| `--login` | Con el cliente de `supabase/seed.sql` (credenciales leídas de ese archivo en tiempo de ejecución). Añade la comparación de `booking_manual_declarations`. |
+| `--correction-from DIR` | Solo recalcula el Nivel D sobre una ejecución anterior. |
+| `--no-shots` | Sin capturas. |
+
+Requisitos del entorno local: tras cada `supabase db reset`, dar licencia vigente al jardinero
+sembrado (la siembra no fija `license_expires_at` y la puerta de licencia deja fitosanitarios y
+desbroce con herbicida sin profesionales):
+
+```bash
+docker exec supabase_db_GarSer-main_4 psql -U postgres -c "update gardener_profiles set license_expires_at = now() + interval '1 year', license_verified_at = now() where user_id = '11111111-aaaa-4aaa-8aaa-111111111111'"
+```
+
+Las respuestas (`SPECS`) no se cambian entre fases; cuando una fase cambie la interfaz, se
+adaptan los conductores (`drive*`, `ACTION_BUTTONS`).

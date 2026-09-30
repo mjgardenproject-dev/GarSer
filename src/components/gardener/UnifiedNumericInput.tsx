@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-/** Lo que vale el texto de la casilla («0,» → 0, «12,5» → 12.5); `null` si está vacía. */
-const parseLocal = (text: string): number | null => {
-  if (text === '') return null;
-  const num = parseFloat(text.replace(',', '.'));
-  return Number.isNaN(num) ? null : num;
-};
+import { parseDecimalText as parseLocal, sanitizeDecimalTyping } from '../../utils/decimalText';
 
 interface Props {
   value: number | null | undefined | string;
@@ -53,28 +47,7 @@ export const UnifiedNumericInput: React.FC<Props> = ({
   }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let raw = e.target.value;
-    
-    // Replace dots with commas automatically
-    raw = raw.replace(/\./g, ',');
-    
-    // Remove invalid characters
-    raw = raw.replace(/[^0-9,]/g, '');
-    
-    // Allow only one comma
-    const parts = raw.split(',');
-    if (parts.length > 2) {
-      raw = parts[0] + ',' + parts.slice(1).join('');
-    }
-
-    // Auto pad ",5" to "0,5"
-    if (raw.startsWith(',')) {
-      raw = '0' + raw;
-    }
-
-    // Sin ceros de más a la izquierda: «05» → «5», «00,5» → «0,5».
-    raw = raw.replace(/^0+(?=\d)/, '');
-
+    const raw = sanitizeDecimalTyping(e.target.value);
     setLocalValue(raw);
 
     // Solo la casilla vacía es «sin valor»: «0,» vale 0 mientras se escriben los decimales.
@@ -87,8 +60,7 @@ export const UnifiedNumericInput: React.FC<Props> = ({
     if (localValue.endsWith(',')) {
       const newVal = localValue.slice(0, -1);
       setLocalValue(newVal);
-      const parsed = parseFloat(newVal.replace(',', '.'));
-      onChange(Number.isNaN(parsed) ? null : parsed);
+      onChange(parseLocal(newVal));
     }
   };
 

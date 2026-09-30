@@ -3,8 +3,8 @@
 | Fase | Estado | Fecha | Commit | Puerta (A/B/C/D/E) | Notas |
 |---|---|---|---|---|---|
 | Auditoría y plan | ✅ Aprobado (D-01…D-11 respondidas) | 2026-09-30 | 757d21c + siguiente | — | D-03 = quitar referencias; nuevas D-12 (antes de F8/F11) y D-13 (antes de F7) |
-| Pre-fase | ✅ Terminada, **esperando visto bueno** | 2026-09-30 | (este commit) | A ✅ · B línea base · C ✅ · D-precio ✅ | `qa/pre-fase.md`, `qa/linea-base.md`. BD local rehecha (copia previa), licencia del jardinero en local, Playwright aislado, `e2e-local.mjs` reconstruido |
-| F1 Cimientos | ⏳ Pendiente | | | | |
+| Pre-fase | ✅ Terminada y aprobada | 2026-09-30 | 1d157f1 | A ✅ · B línea base · C ✅ · D-precio ✅ | `qa/pre-fase.md`, `qa/linea-base.md`. BD local rehecha (copia previa), licencia del jardinero en local, Playwright aislado, `e2e-local.mjs` reconstruido |
+| F1 Cimientos | ✅ Terminada, **esperando visto bueno** | 2026-09-30 | (este commit) | A ✅ · B = línea base · C ✅ · D ✅ | `qa/fase-1.md`. Sin cambio visible ni de precio |
 | F2 Carcasa y navegación | ⏳ Pendiente | | | | |
 | F3 Controles | ⏳ Pendiente | | | | |
 | F4 Repetibles y revisión | ⏳ Pendiente | | | | |
@@ -43,3 +43,10 @@
 - PRE-6/7: claves de prueba correctas; Playwright instalado aislado (H-N-11).
 - PRE-8: línea base A/B/C/D medida; `main` y rama idénticas en los 7 servicios.
 - Siguiente: F1 (cimientos sin cambio visible), pendiente del visto bueno del usuario.
+
+### 2026-09-30 — F1 Cimientos
+- `decimalText.ts` compartido (tarifas del jardinero + asistente), capa de presentación,
+  `screens.ts` y `formatManualValue.ts` (sin conectar hasta F4); el asistente navega por pantallas.
+- Puerta: typecheck igual (128), vitest 729/729, paridad 88/88, banco idéntico, E2E y
+  corrección idénticos a la línea base en los 7 servicios.
+- Siguiente: F2 (carcasa y navegación), pendiente del visto bueno del usuario.

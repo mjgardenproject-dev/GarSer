@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Camera, Plus } from 'lucide-react';
 import {
-  getVisibleFields,
   MANUAL_GLOBAL_WASTE_FIELD,
   serviceAsksForWasteRemoval,
   type ManualAnswers,
@@ -11,6 +10,8 @@ import { validateManualField } from '../../../shared/manualEntry/manualEntryVali
 import { MANUAL_ENTRY_STRINGS } from '../../../shared/manualEntry/strings';
 import { ManualFieldRenderer } from './fields/ManualFieldRenderer';
 import { ManualEntrySummary } from './ManualEntrySummary';
+import { getManualPresentation } from './presentation/manualEntryPresentation';
+import { getVisibleScreens } from './presentation/screens';
 
 // La fase 'consent' se retiró: ocupaba una pantalla entera al final para una sola frase, y
 // además separaba la declaración de veracidad de los datos a los que se refiere. Ahora se
@@ -87,11 +88,15 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const activeItem = items[activeItemIndex] || {};
+  const presentation = getManualPresentation(survey.serviceKey);
+  // Pantallas visibles del elemento activo. La presentación decide qué pasos del schema
+  // comparten pantalla; hoy es uno por pantalla, igual que antes de existir esta capa.
   const visibleSteps = useMemo(
-    () => survey.steps.filter((step) => getVisibleFields(step, activeItem).length > 0),
-    [survey, activeItem],
+    () => getVisibleScreens(survey, presentation, activeItem),
+    [survey, presentation, activeItem],
   );
   const currentStep = visibleSteps[activeStepIndex];
+  const currentHeading = currentStep?.steps[0];
 
   useEffect(() => {
     onDraftChange?.({ items, wasteRemoval });
@@ -112,7 +117,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
 
   const currentStepErrors = useMemo(() => {
     if (phase !== 'item' || !currentStep) return [] as Array<{ field: string; message: string }>;
-    return getVisibleFields(currentStep, activeItem)
+    return currentStep.fields
       .map((field) => validateManualField(field, activeItem[field.key], activeItem))
       .filter((error): error is NonNullable<typeof error> => Boolean(error))
       .map((error) => ({ field: error.field, message: error.message }));
@@ -146,7 +151,8 @@ export const ManualEntryWizard: React.FC<Props> = ({
       return;
     }
     setShowErrors(false);
-    if (currentStep) onStepComplete?.(currentStep.id);
+    // Una pantalla puede reunir varios pasos: cada uno sigue emitiendo su `stepId`, en orden.
+    currentStep?.stepIds.forEach((stepId) => onStepComplete?.(stepId));
 
     if (activeStepIndex < visibleSteps.length - 1) {
       setActiveStepIndex((index) => index + 1);
@@ -236,12 +242,12 @@ export const ManualEntryWizard: React.FC<Props> = ({
       {phase === 'item' && currentStep && (
         <div>
           <h3 ref={headingRef} tabIndex={-1} className="text-lg font-bold text-gray-900 outline-none">
-            {currentStep.title}
+            {currentHeading?.title}
           </h3>
-          {currentStep.description && <p className="text-sm text-gray-500 mt-1 mb-4 leading-relaxed">{currentStep.description}</p>}
-          {!currentStep.description && <div className="mb-4" />}
+          {currentHeading?.description && <p className="text-sm text-gray-500 mt-1 mb-4 leading-relaxed">{currentHeading.description}</p>}
+          {!currentHeading?.description && <div className="mb-4" />}
           <div className="space-y-5">
-            {getVisibleFields(currentStep, activeItem).map((field) => (
+            {currentStep.fields.map((field) => (
               <ManualFieldRenderer
                 key={field.key}
                 field={field}

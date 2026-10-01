@@ -13,6 +13,8 @@ interface Props {
   onEdit: (index: number) => void;
   /** Sin esta función (o con un solo elemento) no se ofrece eliminar. */
   onRemove?: (index: number) => void;
+  /** «Duplicar» (D-04): añade una copia idéntica. Solo en los servicios que lo declaran. */
+  onDuplicate?: (index: number) => void;
 }
 
 const W = MANUAL_ENTRY_STRINGS.wizard;
@@ -21,10 +23,10 @@ const ACTION =
 
 /**
  * Lo que lleva añadido el cliente en un formulario repetible (SISTEMA-UX §6.12): cada elemento con
- * su resumen, «Editar» y «Eliminar». Antes la pantalla solo decía «Has añadido 2 árbols» y no
+ * su resumen, «Editar», «Duplicar» (si el servicio lo declara) y «Eliminar». Antes la pantalla solo decía «Has añadido 2 árbols» y no
  * dejaba quitar ninguno.
  */
-export const ItemList: React.FC<Props> = ({ items, onEdit, onRemove }) => (
+export const ItemList: React.FC<Props> = ({ items, onEdit, onRemove, onDuplicate }) => (
   <ul className="space-y-2">
     {items.map((item, index) => (
       <li key={index} data-manual-item className="rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -36,7 +38,7 @@ export const ItemList: React.FC<Props> = ({ items, onEdit, onRemove }) => (
             {W.missingData}
           </p>
         ) : null}
-        <div className="-mx-3 mt-1 flex justify-between">
+        <div className="-mx-3 mt-1 flex flex-wrap items-center">
           <button
             type="button"
             onClick={() => onEdit(index)}
@@ -45,12 +47,22 @@ export const ItemList: React.FC<Props> = ({ items, onEdit, onRemove }) => (
           >
             {item.incomplete ? W.complete : W.edit}
           </button>
+          {onDuplicate && !item.incomplete ? (
+            <button
+              type="button"
+              onClick={() => onDuplicate(index)}
+              aria-label={`${W.duplicate} ${item.title.toLowerCase()}`}
+              className={`${ACTION} text-emerald-700`}
+            >
+              {W.duplicate}
+            </button>
+          ) : null}
           {onRemove && items.length > 1 ? (
             <button
               type="button"
               onClick={() => onRemove(index)}
               aria-label={`${W.remove} ${item.title.toLowerCase()}`}
-              className={`${ACTION} text-red-700`}
+              className={`${ACTION} ml-auto text-red-700`}
             >
               {W.remove}
             </button>

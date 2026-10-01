@@ -13,8 +13,10 @@ interface Props {
 }
 
 /**
- * Selección entre 2-4 opciones de etiqueta corta y sin ayuda propia (SISTEMA-UX §6.6), con el
- * mismo aspecto que el selector de `AvailabilityManager` («Ajustes puntuales / Horario fijo»).
+ * Selección entre 2-4 opciones de etiqueta corta y sin ayuda propia (SISTEMA-UX §6.6), con la
+ * forma del selector de `AvailabilityManager` («Ajustes puntuales / Horario fijo»). Lo elegido
+ * lleva el verde de `OptionList`: blanco sobre gris no bastaba para una respuesta que cambia el
+ * precio (F6, acceso de árboles).
  * Lo usan los servicios que lo declaran en su presentación (p. ej. altura de palmera, F7).
  */
 export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected, onSelect, help, error }) => {
@@ -41,7 +43,7 @@ export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected,
               aria-checked={isSelected}
               onClick={() => onSelect(option.value)}
               className={`min-h-12 rounded-lg px-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation] ${
-                isSelected ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
+                isSelected ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-600' : 'text-gray-700'
               }`}
             >
               {option.label}

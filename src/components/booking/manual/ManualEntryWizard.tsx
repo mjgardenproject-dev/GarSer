@@ -112,6 +112,14 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const [focusErrorKey, setFocusErrorKey] = useState<string | null>(null);
   // Se llegó a la pregunta desde «Cambiar» en la revisión: al terminar, se vuelve a ella.
   const [returnToReview, setReturnToReview] = useState(false);
+  // Aviso tras «Duplicar» («Añadido el árbol 3, igual que el árbol 1»). Solo vive en la lista:
+  // se borra en cuanto se sale de ella.
+  const [duplicateNotice, setDuplicateNotice] = useState<string | null>(null);
+  const [noticePhase, setNoticePhase] = useState(phase);
+  if (phase !== noticePhase) {
+    setNoticePhase(phase);
+    if (duplicateNotice) setDuplicateNotice(null);
+  }
   const headingRef = useRef<HTMLHeadingElement>(null);
   const { openConfirm, confirmDialog } = useConfirmDialog();
 
@@ -310,6 +318,12 @@ export const ManualEntryWizard: React.FC<Props> = ({
     setPhase('waste');
   };
 
+  /** «Duplicar» (D-04): una copia idéntica al final de la lista. Mismo contrato: N elementos. */
+  const duplicateItem = (itemIndex: number) => {
+    setDuplicateNotice(W.duplicated(manualItemTitle(survey, items.length), manualItemTitle(survey, itemIndex)));
+    setItems((prev) => [...prev, { ...prev[itemIndex] }]);
+  };
+
   const removeItem = (itemIndex: number) => {
     const title = manualItemTitle(survey, itemIndex);
     openConfirm({
@@ -319,6 +333,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
       cancelLabel: W.keepCta,
       tone: 'danger',
       onConfirm: () => {
+        setDuplicateNotice(null);
         setItems((prev) => prev.filter((_, index) => index !== itemIndex));
         setActiveItemIndex(0);
       },
@@ -468,7 +483,11 @@ export const ManualEntryWizard: React.FC<Props> = ({
             }))}
             onEdit={editItemFromList}
             onRemove={removeItem}
+            onDuplicate={presentation.allowDuplicate ? duplicateItem : undefined}
           />
+          <p role="status" className={duplicateNotice ? 'mt-2 text-sm text-gray-700' : 'sr-only'}>
+            {duplicateNotice}
+          </p>
           <button
             type="button"
             onClick={addAnotherItem}

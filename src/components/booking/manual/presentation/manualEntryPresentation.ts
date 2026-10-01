@@ -65,6 +65,12 @@ export interface ManualFieldPresentation {
   feedback?: (answers: ManualAnswers) => string | null | undefined;
   /** Pictograma por valor de opción (nombre del registro de `ui/Pictogram.tsx`). */
   optionPictograms?: Record<string, ManualPictogramName>;
+  /** Etiqueta que se enseña por valor de opción (el `value` enviado no cambia). */
+  optionLabels?: Record<string, string>;
+  /** Ayuda que se enseña por valor de opción; `null` la oculta (p. ej. ayudas comparativas, D-03). */
+  optionHelp?: Record<string, string | null>;
+  /** Ayuda propia del campo, en lugar de la del schema. */
+  helpText?: string;
 }
 
 /** Pictogramas propios (dibujos sencillos que dicen algo que un icono genérico no dice). */
@@ -74,6 +80,8 @@ export interface ManualServicePresentation {
   screens: ManualScreenPresentation[];
   /** Plural del sustantivo del elemento («árboles», no «árbols»). */
   itemNounPlural: string;
+  /** Ofrecer «Duplicar» en la lista de elementos (árboles iguales, D-04). */
+  allowDuplicate?: boolean;
   fields: Record<string, ManualFieldPresentation>;
 }
 
@@ -128,9 +136,39 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
     },
   },
   tree: {
-    screens: onePerStep(['size', 'pruning_type', 'access']),
+    screens: [
+      {
+        id: 'size',
+        stepIds: ['size'],
+        measureHelp: [
+          'Mide la altura total: desde el suelo hasta lo más alto de la copa.',
+          'Si el árbol está entre dos tramos, elige el que más se aproxime. El profesional lo comprueba al llegar.',
+        ],
+      },
+      { id: 'pruning_type', stepIds: ['pruning_type'] },
+      { id: 'access', stepIds: ['access'] },
+    ],
     itemNounPlural: 'árboles',
-    fields: {},
+    // Cinco árboles iguales eran quince pantallas: «Duplicar» crea otro elemento idéntico (D-04).
+    allowDuplicate: true,
+    fields: {
+      aiSizeBand: {
+        // El tramo en metros es el único criterio (D-03): fuera «planta baja», «tejado»…, que
+        // llevaban a tramos distintos según la casa de cada uno.
+        optionLabels: { over_9: 'Muy grande (más de 9 m)' },
+        optionHelp: { small: null, medium: null, large: null, over_9: null },
+      },
+      pruningType: {
+        // Mismos nombres; la ayuda dice lo mismo que la definición del configurador del jardinero
+        // (`TreePruningConfigurator`), que es con la que pone precio a cada tipo.
+        optionHelp: {
+          structural: 'Para árboles grandes, ramas pesadas o saneamiento profundo.',
+          shaping: 'Para árboles jóvenes o mantenimiento ligero.',
+        },
+      },
+      // Dos respuestas cortas: segmentado. Qué es «difícil» lo dice la frase de apoyo de la pantalla.
+      difficultyHigh: { control: 'segmented' },
+    },
   },
   palm: {
     screens: onePerStep(['species', 'height', 'state', 'quantity', 'extras']),
@@ -165,6 +203,17 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
 
 export function getManualPresentation(serviceKey: ManualServiceKey): ManualServicePresentation {
   return MANUAL_ENTRY_PRESENTATION[serviceKey];
+}
+
+/** Etiqueta y ayuda con las que se enseña una opción, según la presentación del campo. */
+export function presentOption(
+  option: { value: string; label: string; help?: string },
+  fieldPresentation?: ManualFieldPresentation,
+): { label: string; help?: string } {
+  const label = fieldPresentation?.optionLabels?.[option.value] ?? option.label;
+  const helpOverride = fieldPresentation?.optionHelp?.[option.value];
+  const help = helpOverride === null ? undefined : helpOverride ?? option.help;
+  return { label, help };
 }
 
 /** Control efectivo de un campo: el de la presentación o, si no lo dice, el que sale del schema. */

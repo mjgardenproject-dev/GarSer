@@ -32,7 +32,7 @@ import {
   type ManualFieldDef,
   type ManualFieldValue,
 } from '../../../../shared/manualEntry/manualEntrySchema';
-import { resolveFieldControl, type ManualFieldPresentation } from '../presentation/manualEntryPresentation';
+import { presentOption, resolveFieldControl, type ManualFieldPresentation } from '../presentation/manualEntryPresentation';
 import { HelpDisclosure } from '../ui/HelpDisclosure';
 import { NumberField } from '../ui/NumberField';
 import { OptionList } from '../ui/OptionList';
@@ -91,7 +91,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
   const shownError = showError ? error ?? null : null;
   // D-03: el `example` del schema eran comparaciones (plaza de garaje, puerta, cama…) y ya no se
   // enseña. La ayuda solo si no repite la frase de apoyo de la pantalla (T-18).
-  const help = !fieldPresentation?.hideHelp ? field.help : undefined;
+  const help = !fieldPresentation?.hideHelp ? fieldPresentation?.helpText ?? field.help : undefined;
   const helpId = help ? `${id}-help` : undefined;
   const measureHelp = fieldPresentation?.measureHelp ? (
     <HelpDisclosure>{fieldPresentation.measureHelp}</HelpDisclosure>
@@ -169,7 +169,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
       <SegmentedChoice
         id={id}
         label={field.label}
-        options={options.map((option) => ({ value: option.value, label: option.label }))}
+        options={options.map((option) => ({ value: option.value, label: presentOption(option, fieldPresentation).label }))}
         selected={selected}
         onSelect={select}
         help={help}
@@ -185,7 +185,8 @@ export const ManualFieldRenderer: React.FC<Props> = ({
         label={field.label}
         options={options.map((option) => {
           const pictogram = fieldPresentation?.optionPictograms?.[option.value];
-          return { value: option.value, label: option.label, help: option.help, media: pictogram ? <Pictogram name={pictogram} /> : undefined };
+          const shown = presentOption(option, fieldPresentation);
+          return { value: option.value, label: shown.label, help: shown.help, media: pictogram ? <Pictogram name={pictogram} /> : undefined };
         })}
         selected={selected}
         onSelect={select}

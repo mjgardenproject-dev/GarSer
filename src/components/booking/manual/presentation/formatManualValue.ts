@@ -8,7 +8,7 @@ import {
   type ManualAnswers,
   type ManualFieldDef,
 } from '../../../../shared/manualEntry/manualEntrySchema';
-import type { ManualFieldPresentation } from './manualEntryPresentation';
+import { presentOption, type ManualFieldPresentation } from './manualEntryPresentation';
 
 export const EMPTY_VALUE = '—';
 
@@ -44,7 +44,7 @@ export function formatManualValue(
     if (field.options && field.options.length > 0) {
       if (value !== true && value !== false) return EMPTY_VALUE;
       const option = field.options.find((o) => o.value === String(value));
-      return option?.label ?? (value ? 'Sí' : 'No');
+      return option ? presentOption(option, fieldPresentation).label : value ? 'Sí' : 'No';
     }
     return value === true ? 'Sí' : 'No';
   }
@@ -52,7 +52,7 @@ export function formatManualValue(
   if (field.type === 'enum') {
     if (value === undefined || value === null || value === '') return EMPTY_VALUE;
     const option = getFieldOptions(field, answers).find((o) => o.value === value);
-    return option?.label ?? String(value);
+    return option ? presentOption(option, fieldPresentation).label : String(value);
   }
 
   if (typeof value !== 'number' || !Number.isFinite(value)) return EMPTY_VALUE;

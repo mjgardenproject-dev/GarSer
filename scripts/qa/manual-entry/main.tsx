@@ -25,6 +25,7 @@ import {
   type ManualServiceKey,
 } from '../../../src/shared/manualEntry/manualEntrySchema';
 import { buildManualBookingPatch } from '../../../src/pages/reserva/manualEntryBuilders';
+import { getManualPresentation, presentOption } from '../../../src/components/booking/manual/presentation/manualEntryPresentation';
 import { MANUAL_PARITY_FIXTURES } from '../../../src/pages/reserva/manualEntryParityFixtures';
 
 const params = new URLSearchParams(window.location.search);
@@ -38,6 +39,9 @@ const qa = {
   surveys: MANUAL_ENTRY_SURVEYS,
   getVisibleFields,
   getFieldOptions,
+  // Etiqueta con la que se enseña cada opción (F6: «Muy grande (más de 9 m)»).
+  shownOptionLabel: (key: ManualServiceKey, fieldKey: string, option: { value: string; label: string }) =>
+    presentOption(option, getManualPresentation(key).fields[fieldKey]).label,
   buildManualBookingPatch,
   fixtures: MANUAL_PARITY_FIXTURES,
   submitted: null as ManualWizardSubmitPayload | null,

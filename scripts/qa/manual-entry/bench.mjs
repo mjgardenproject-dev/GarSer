@@ -150,7 +150,7 @@ async function planItemScreen(page, screen, item) {
           const options = field.type === 'boolean' ? field.options || [] : qa.getFieldOptions(field, item);
           const option = options.find((candidate) => candidate.value === String(value));
           if (!option) return { error: `Opción ${String(value)} no disponible en ${field.key}` };
-          actions.push({ type: 'radio', group: field.label, label: option.label });
+          actions.push({ type: 'radio', group: field.label, label: qa.shownOptionLabel(qa.serviceKey, field.key, option) });
         } else {
           actions.push({ type: 'number', label: field.label, value });
         }

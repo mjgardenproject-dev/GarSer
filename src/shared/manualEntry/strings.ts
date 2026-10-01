@@ -34,6 +34,9 @@ export const MANUAL_ENTRY_STRINGS = {
     addedCount: (countText: string) => `Has añadido ${countText}.`,
     backToReview: 'Volver a la revisión',
     remove: 'Eliminar',
+    duplicate: 'Duplicar',
+    duplicated: (newTitle: string, sourceTitle: string) =>
+      `Añadido el ${newTitle.toLowerCase()}, igual que el ${sourceTitle.toLowerCase()}.`,
     change: 'Cambiar',
     complete: 'Completar',
     missingData: 'Faltan datos',

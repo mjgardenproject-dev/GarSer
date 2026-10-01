@@ -113,7 +113,9 @@ Dos variantes, decididas por el contenido y no por el servicio:
 ayuda por opción** (alturas de palmera, «1 cara / 2 caras» si se decide sin ayuda,
 «Convencional / Ecológico» con una ayuda común debajo). Patrón ya existente en
 `AvailabilityManager.tsx:366-403` (`bg-gray-100 rounded-xl p-1`, activa `bg-white shadow-sm`),
-con 48 px de alto.
+con 48 px de alto. **Ajuste F6:** la activa lleva además `ring-1 ring-emerald-600` y texto
+`emerald-800`: blanco sobre gris no se distinguía bien a 375 px para una respuesta que cambia el
+precio (acceso de árboles).
 
 Se descarta la rejilla de 2 columnas de tarjetas por debajo de `md:` (regla de
 `docs/design-system.md` §9).
@@ -188,6 +190,9 @@ Pantalla intermedia rediseñada:
 - «Atrás» desde la primera pregunta de un elemento recién añadido y vacío → lo descarta.
 - Eliminar pide confirmación con `ConfirmDialog` (componente canónico).
 - Un elemento incompleto nunca llega al resumen como válido (P-01).
+- **F6:** los servicios que lo declaran (`allowDuplicate`, hoy solo árboles, D-04) ofrecen
+  «Duplicar» entre «Editar» y «Eliminar» en los elementos completos; la copia se añade al
+  final y se anuncia («Añadido el árbol 3, igual que el árbol 1.», `role="status"`).
 - Cabecera del elemento en las preguntas: «Árbol 2 · Pregunta 1 de 3».
 
 ### 6.13 Revisión (`ReviewList`) y consentimiento

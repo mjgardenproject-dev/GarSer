@@ -8,8 +8,8 @@
 | F2 Carcasa y navegación | ✅ Terminada y aprobada | 2026-10-01 | 90a7308 | A ✅ · B envío = línea base · C ✅ · D ✅ (+ modal real) | `qa/fase-2.md`. CTA fuera: 242 → 1; desborde 16 → 0. Pendiente: prueba con teclado de iOS (H-N-14) |
 | F3 Controles | ✅ Terminada y aprobada | 2026-10-01 | 7d1733a | A ✅ · B envío = línea base · C ✅ · D ✅ | `qa/fase-3.md`. Controles < 44 px 43 → 7 (resumen, F4); escenarios 4/7 (fantasmas en F4) |
 | F4 Repetibles y revisión | ✅ Terminada y aprobada | 2026-10-01 | 5fd2af9 | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
-| F5 Setos | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. Decisión abierta H-N-15 |
-| F6 Árboles | ⏳ Pendiente | | | | |
+| F5 Setos | ✅ Terminada y aprobada | 2026-10-01 | 8eacc7f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. H-N-15 decidido: el tramo se queda visible |
+| F6 Árboles | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | (ver commit F6) | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Pendiente: aprobar las ayudas del tipo de poda; decidir H-N-17 |
 | F7 Palmeras | ⏳ Pendiente | | | | |
 | F8 Fitosanitarios | ⏳ Pendiente | | | | |
 | F9 Desbroce | ⏳ Pendiente | | | | |
@@ -95,3 +95,30 @@ misma pantalla agrupada (las respuestas no cambian).
 - Incidencias de herramientas resueltas (H-N-16: Maps lento, eventos simultáneos).
 - Decisión abierta para el usuario: H-N-15.
 - Siguiente: F6 (árboles), pendiente del visto bueno.
+
+### 2026-10-01 — F6 Árboles (inicio)
+H-N-15 decidido por el usuario: el tramo de tarifa de setos se queda visible.
+Ya resuelto en F2-F4 para árboles: lista de una columna, fantasma, lista con editar/eliminar,
+cabecera «Árbol N», revisión con «Cambiar». Lo que cambia en F6:
+1. Tamaño: el tramo en metros como único criterio; fuera las ayudas comparativas («planta baja o
+   puerta», «una planta de un edificio», «tejado») (D-03). «¿Cómo lo mido?» con el método.
+2. Tipo de poda: nombres intactos; ayuda alineada con la definición del configurador del jardinero
+   («Formación: árboles jóvenes o mantenimiento ligero» / «Estructural: árboles grandes, ramas
+   pesadas o saneamiento profundo»). Es un texto que cambia la interpretación de un dato de precio:
+   se presenta al usuario para su aprobación al cerrar la fase (REGLAS 14).
+3. Acceso: elección compacta (segmentado «Acceso normal / Acceso difícil»), con la definición de
+   difícil en la frase de apoyo.
+4. «Duplicar» en la lista de árboles (D-04): añade una copia idéntica (mismo contrato: N elementos).
+Infraestructura: la presentación admite etiqueta y ayuda por opción (sustituir u ocultar), ayuda
+propia del campo, y duplicar en la lista de elementos.
+
+### 2026-10-01 — F6 Árboles (cierre)
+- Hecho lo previsto: tamaño solo por tramo en metros (+ «¿Cómo lo mido?»), ayuda del tipo de poda
+  alineada con el configurador del jardinero, acceso en segmentado, «Duplicar» en la lista.
+- Fuera de lo previsto, por la prueba real a 375 px: lo elegido en el segmentado lleva el verde
+  de la lista de opciones (blanco sobre gris no se distinguía). Anotado en `SISTEMA-UX.md` §6.6.
+- Precio, horas, huella, telemetría y declaraciones de los 7 servicios idénticos a `main` y a la
+  línea base; banco 100 % en verde.
+- Hallazgos: H-N-17 (acceso que se puede saltar, decisión del usuario), H-N-18 (caché del banco,
+  resuelto).
+- Siguiente: F7 (palmeras), pendiente del visto bueno y de D-13 (fuente de las imágenes).

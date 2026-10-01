@@ -24,6 +24,8 @@ interface Props {
   requireConsent?: boolean;
   consentChecked?: boolean;
   onConsentChange?: (checked: boolean) => void;
+  /** El asistente pinta el título con su cabecera común; fuera de él, lo pinta el resumen. */
+  showHeading?: boolean;
 }
 
 const S = MANUAL_ENTRY_STRINGS.summary;
@@ -48,13 +50,16 @@ export const ManualEntrySummary: React.FC<Props> = ({
   requireConsent = false,
   consentChecked = false,
   onConsentChange,
+  showHeading = true,
 }) => {
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-bold text-gray-900">{S.title}</h3>
-        <p className="text-sm text-gray-500 mt-1">{S.subtitle}</p>
-      </div>
+      {showHeading ? (
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">{S.title}</h3>
+          <p className="text-sm text-gray-500 mt-1">{S.subtitle}</p>
+        </div>
+      ) : null}
 
       {items.map((item, index) => {
         const rows = survey.steps.flatMap((step) =>

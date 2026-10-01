@@ -21,9 +21,16 @@ export const MANUAL_ENTRY_STRINGS = {
       title: 'Escribo los datos',
       description: 'Respondes unas preguntas sencillas.',
     },
+    /** Selector plegado a una línea mientras se rellena el asistente (D-11). */
+    compactLabel: 'Introduces los datos a mano',
+    compactSwitch: 'Usar fotos',
   },
   wizard: {
     stepProgress: (current: number, total: number) => `Paso ${current} de ${total}`,
+    /** «Paso» es el de la reserva («Paso 3 de 5»); dentro del asistente se habla de preguntas. */
+    questionProgress: (current: number, total: number) => `Pregunta ${current} de ${total}`,
+    reviewLabel: 'Revisión',
+    addMoreTitle: '¿Quieres añadir más?',
     back: 'Atrás',
     next: 'Siguiente',
     continueToSummary: 'Revisar mis datos',
@@ -41,7 +48,7 @@ export const MANUAL_ENTRY_STRINGS = {
   consent: {
     confirmCta: 'Confirmar y continuar',
     checkboxAriaLabel: 'Confirmo que la información proporcionada es real',
-    mustAccept: 'Debes confirmar que los datos son reales para continuar.',
+    mustAccept: 'Marca la casilla para poder continuar.',
     /**
      * Etiqueta corta de la casilla. El texto legal íntegro sigue siendo el que se registra y
      * se prueba (`MANUAL_ENTRY_CONSENT_TEXT`); esto es su resumen legible, con el texto

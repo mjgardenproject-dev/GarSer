@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Camera, Plus } from 'lucide-react';
+import { Camera, Plus } from 'lucide-react';
 import {
   MANUAL_GLOBAL_WASTE_FIELD,
+  MANUAL_GLOBAL_WASTE_STEP,
   serviceAsksForWasteRemoval,
   type ManualAnswers,
   type ManualServiceSurvey,
@@ -11,7 +12,9 @@ import { MANUAL_ENTRY_STRINGS } from '../../../shared/manualEntry/strings';
 import { ManualFieldRenderer } from './fields/ManualFieldRenderer';
 import { ManualEntrySummary } from './ManualEntrySummary';
 import { getManualPresentation } from './presentation/manualEntryPresentation';
-import { getVisibleScreens } from './presentation/screens';
+import { getQuestionProgress, getVisibleScreens } from './presentation/screens';
+import { ManualStepHeader } from './ui/ManualStepHeader';
+import { WizardFooter } from './ui/WizardFooter';
 
 // La fase 'consent' se retiró: ocupaba una pantalla entera al final para una sola frase, y
 // además separaba la declaración de veracidad de los datos a los que se refiere. Ahora se
@@ -40,6 +43,16 @@ interface Props {
   submitLabel?: string;
   /** When false, the "switch to photos" affordance is hidden. */
   showSwitchToPhotos?: boolean;
+  /**
+   * Pie de navegación fijo abajo (página «Detalles»). Por defecto va en línea, que es lo que
+   * necesita el modal de corrección del jardinero.
+   */
+  stickyFooter?: boolean;
+  /**
+   * Nombre del servicio en la cabecera de cada pregunta. La página lo apaga cuando ya lo dice
+   * ella («Servicio 2 de 5: Poda de palmeras»), para no repetirlo.
+   */
+  showServiceName?: boolean;
   onDraftChange?: (payload: ManualWizardSubmitPayload) => void;
   onStepComplete?: (stepId: string) => void;
   onConsentAccepted?: () => void;
@@ -68,6 +81,8 @@ export const ManualEntryWizard: React.FC<Props> = ({
   requireConsent = true,
   submitLabel,
   showSwitchToPhotos = true,
+  stickyFooter = false,
+  showServiceName = true,
   onDraftChange,
   onStepComplete,
   onConsentAccepted,
@@ -135,15 +150,24 @@ export const ManualEntryWizard: React.FC<Props> = ({
   // producto, no una poda). Preguntarla allí daba una respuesta que no cambiaba el precio
   // pero sí lo que el profesional leía en la solicitud.
   const asksWaste = serviceAsksForWasteRemoval(survey.serviceKey);
-  const extraPhases = asksWaste ? 3 : 2;
 
-  const progressPct = useMemo(() => {
-    if (phase === 'item') return Math.round(((activeStepIndex + 1) / (visibleSteps.length + extraPhases)) * 100);
-    if (phase === 'interstitial') return Math.round(((visibleSteps.length + 0.5) / (visibleSteps.length + extraPhases)) * 100);
-    if (phase === 'waste') return Math.round(((visibleSteps.length + 1) / (visibleSteps.length + extraPhases)) * 100);
-    if (phase === 'summary') return Math.round(((visibleSteps.length + extraPhases - 1) / (visibleSteps.length + extraPhases)) * 100);
-    return 100;
-  }, [phase, activeStepIndex, visibleSteps.length, extraPhases]);
+  // Un solo indicador de progreso en pantalla: la barra es la de la reserva («Paso 3 de 5») y
+  // aquí solo se dice en qué pregunta se está. El total cuenta la retirada de restos (que antes
+  // quedaba fuera: «Paso 2 de 2» y luego venían más pantallas) y nunca crece al responder.
+  const eyebrow = useMemo(() => {
+    const service = showServiceName ? survey.serviceLabel : '';
+    const join = (...parts: string[]) => parts.filter(Boolean).join(' · ');
+    if (phase === 'summary') return join(service, W.reviewLabel);
+    if (phase === 'interstitial') return service || undefined;
+    const answers = phase === 'waste' ? items[items.length - 1] || {} : activeItem;
+    const screenId = phase === 'waste' ? 'waste' : currentStep?.id ?? '';
+    const progress = getQuestionProgress(survey, presentation, answers, screenId, { asksWaste });
+    return join(service, W.questionProgress(progress.current, progress.total));
+  }, [phase, showServiceName, survey, presentation, items, activeItem, currentStep, asksWaste]);
+
+  // En la primera pregunta del primer elemento no hay adónde volver dentro del asistente: el
+  // botón no hacía nada (D-08). La cabecera de la página sigue llevando al paso anterior.
+  const isFirstScreen = phase === 'item' && activeStepIndex === 0 && activeItemIndex === 0;
 
   const goNextFromItem = () => {
     if (currentStepErrors.length > 0) {
@@ -214,38 +238,83 @@ export const ManualEntryWizard: React.FC<Props> = ({
     onSubmit({ items, wasteRemoval });
   };
 
+  const switchToPhotos =
+    showSwitchToPhotos && onSwitchToPhotos ? (
+      <button
+        type="button"
+        onClick={onSwitchToPhotos}
+        className="-mr-2 inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+      >
+        <Camera className="h-4 w-4" aria-hidden />
+        {W.switchToPhotos}
+      </button>
+    ) : null;
+
+  const footer = (() => {
+    if (phase === 'item') {
+      return (
+        <WizardFooter
+          sticky={stickyFooter}
+          back={isFirstScreen ? null : { label: W.back, onClick: goBack }}
+          primary={{
+            label: W.next,
+            onClick: goNextFromItem,
+            disabled: showErrors && currentStepErrors.length > 0,
+            forward: true,
+          }}
+        />
+      );
+    }
+    if (phase === 'interstitial') {
+      return (
+        <WizardFooter
+          sticky={stickyFooter}
+          primary={{ label: W.finishItems, onClick: () => setPhase(asksWaste ? 'waste' : 'summary'), forward: true }}
+        />
+      );
+    }
+    if (phase === 'waste') {
+      return (
+        <WizardFooter
+          sticky={stickyFooter}
+          back={{ label: W.back, onClick: goBack }}
+          primary={{ label: W.continueToSummary, onClick: () => setPhase('summary'), forward: true }}
+        />
+      );
+    }
+    // Un único botón final: el que antes llevaba a la pantalla de consentimiento y el que
+    // enviaba desde allí eran el mismo gesto partido en dos. La casilla sigue siendo
+    // obligatoria, solo que se marca sin cambiar de pantalla.
+    return (
+      <WizardFooter
+        sticky={stickyFooter}
+        back={{ label: W.back, onClick: goBack }}
+        primary={{
+          label: submitting ? 'Guardando…' : submitLabel || MANUAL_ENTRY_STRINGS.consent.confirmCta,
+          onClick: confirm,
+          disabled: (requireConsent && !consentChecked) || submitting,
+        }}
+        // El aviso va junto al botón que explica, no debajo de «Atrás».
+        note={requireConsent && !consentChecked ? MANUAL_ENTRY_STRINGS.consent.mustAccept : null}
+      />
+    );
+  })();
+
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 sm:p-6">
-      {/* Progress */}
-      <div className="mb-5">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-gray-500">
-            {phase === 'item' ? W.stepProgress(activeStepIndex + 1, visibleSteps.length) : survey.serviceLabel}
-          </span>
-          {showSwitchToPhotos && onSwitchToPhotos && (
-            <button
-              type="button"
-              onClick={onSwitchToPhotos}
-              className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded px-2 py-1"
-            >
-              <Camera className="w-3.5 h-3.5" aria-hidden />
-              {W.switchToPhotos}
-            </button>
-          )}
-        </div>
-        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
-          <div className="h-full bg-green-600 transition-all duration-300" style={{ width: `${progressPct}%` }} />
-        </div>
-      </div>
+    // Sin tarjeta envolvente: el asistente es la página. Con el pie fijo, el contenido deja
+    // sitio abajo para que nada quede tapado por él.
+    <div className={stickyFooter ? 'pb-10' : undefined}>
+      {switchToPhotos ? <div className="-mt-2 mb-2 flex justify-end">{switchToPhotos}</div> : null}
 
       {/* Phase: item step */}
       {phase === 'item' && currentStep && (
-        <div>
-          <h3 ref={headingRef} tabIndex={-1} className="text-lg font-bold text-gray-900 outline-none">
-            {currentHeading?.title}
-          </h3>
-          {currentHeading?.description && <p className="text-sm text-gray-500 mt-1 mb-4 leading-relaxed">{currentHeading.description}</p>}
-          {!currentHeading?.description && <div className="mb-4" />}
+        <div data-manual-screen={currentStep.id} data-manual-step-ids={currentStep.stepIds.join(' ')}>
+          <ManualStepHeader
+            eyebrow={eyebrow}
+            title={currentHeading?.title || ''}
+            description={currentHeading?.description}
+            headingRef={headingRef}
+          />
           <div className="space-y-5">
             {currentStep.fields.map((field) => (
               <ManualFieldRenderer
@@ -258,45 +327,38 @@ export const ManualEntryWizard: React.FC<Props> = ({
               />
             ))}
           </div>
-          <p className="text-xs text-gray-400 mt-5">{W.priceHint}</p>
         </div>
       )}
 
       {/* Phase: interstitial (repeatable services) */}
       {phase === 'interstitial' && (
-        <div className="text-center py-4">
-          <h3 ref={headingRef} tabIndex={-1} className="text-lg font-bold text-gray-900 outline-none">
-            ¿Quieres añadir más?
-          </h3>
-          <p className="text-sm text-gray-500 mt-1 mb-5">
-            Has añadido {items.length} {items.length === 1 ? survey.itemNoun : `${survey.itemNoun}s`}.
-          </p>
-          <div className="flex flex-col gap-3 max-w-xs mx-auto">
-            <button
-              type="button"
-              onClick={addAnotherItem}
-              className="inline-flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-green-200 text-green-700 font-medium hover:bg-green-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-            >
-              <Plus className="w-4 h-4" aria-hidden />
-              {survey.addItemLabel || W.addItem}
-            </button>
-            <button
-              type="button"
-              onClick={() => setPhase(asksWaste ? 'waste' : 'summary')}
-              className="py-3 px-4 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-            >
-              {W.finishItems}
-            </button>
-          </div>
+        <div data-manual-screen="interstitial">
+          <ManualStepHeader
+            eyebrow={eyebrow}
+            title={W.addMoreTitle}
+            description={`Has añadido ${items.length} ${items.length === 1 ? survey.itemNoun : `${survey.itemNoun}s`}.`}
+            headingRef={headingRef}
+          />
+          <button
+            type="button"
+            onClick={addAnotherItem}
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 font-medium text-emerald-700 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            {survey.addItemLabel || W.addItem}
+          </button>
         </div>
       )}
 
       {/* Phase: global waste */}
       {phase === 'waste' && (
-        <div>
-          <h3 ref={headingRef} tabIndex={-1} className="text-lg font-bold text-gray-900 outline-none mb-4">
-            {MANUAL_GLOBAL_WASTE_FIELD.label}
-          </h3>
+        <div data-manual-screen="waste">
+          <ManualStepHeader
+            eyebrow={eyebrow}
+            title={MANUAL_GLOBAL_WASTE_STEP.title}
+            description={MANUAL_GLOBAL_WASTE_STEP.description}
+            headingRef={headingRef}
+          />
           <ManualFieldRenderer
             field={MANUAL_GLOBAL_WASTE_FIELD}
             value={wasteRemoval}
@@ -308,7 +370,13 @@ export const ManualEntryWizard: React.FC<Props> = ({
 
       {/* Phase: summary */}
       {phase === 'summary' && (
-        <div ref={headingRef} tabIndex={-1} className="outline-none">
+        <div data-manual-screen="summary">
+          <ManualStepHeader
+            eyebrow={eyebrow}
+            title={MANUAL_ENTRY_STRINGS.summary.title}
+            description={MANUAL_ENTRY_STRINGS.summary.subtitle}
+            headingRef={headingRef}
+          />
           <ManualEntrySummary
             survey={survey}
             items={items}
@@ -317,64 +385,14 @@ export const ManualEntryWizard: React.FC<Props> = ({
             requireConsent={requireConsent}
             consentChecked={consentChecked}
             onConsentChange={setConsentChecked}
+            showHeading={false}
           />
+          {/* El precio se ve en el paso siguiente: se dice una vez, aquí, y no en cada pregunta. */}
+          {requireConsent ? <p className="mt-4 text-sm text-gray-600">{W.priceHint}</p> : null}
         </div>
       )}
 
-      {/* Footer navigation */}
-      {/* En móvil se apila con la acción principal arriba y a ancho completo: en una fila de
-          375 px "Confirmar y continuar" no cabe junto a "Atrás" y partía en dos líneas. */}
-      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:gap-3">
-        {phase !== 'interstitial' && (
-          <button
-            type="button"
-            onClick={goBack}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
-          >
-            <ArrowLeft className="w-4 h-4" aria-hidden />
-            {W.back}
-          </button>
-        )}
-        <div className="hidden sm:block sm:flex-1" />
-        {phase === 'item' && (
-          <button
-            type="button"
-            onClick={goNextFromItem}
-            disabled={showErrors && currentStepErrors.length > 0}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            {W.next}
-            <ArrowRight className="w-4 h-4" aria-hidden />
-          </button>
-        )}
-        {phase === 'waste' && (
-          <button
-            type="button"
-            onClick={() => setPhase('summary')}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            {W.continueToSummary}
-            <ArrowRight className="w-4 h-4" aria-hidden />
-          </button>
-        )}
-        {/* Un único botón final: el que antes llevaba a la pantalla de consentimiento y el que
-            enviaba desde allí eran el mismo gesto partido en dos. La casilla sigue siendo
-            obligatoria, solo que ahora se marca sin cambiar de pantalla. */}
-        {phase === 'summary' && (
-          <button
-            type="button"
-            onClick={confirm}
-            disabled={(requireConsent && !consentChecked) || submitting}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 py-3 px-6 rounded-xl bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            {submitting ? 'Guardando…' : (submitLabel || MANUAL_ENTRY_STRINGS.consent.confirmCta)}
-          </button>
-        )}
-      </div>
-
-      {phase === 'summary' && requireConsent && !consentChecked && (
-        <p className="text-xs text-gray-400 mt-2 text-right">{MANUAL_ENTRY_STRINGS.consent.mustAccept}</p>
-      )}
+      {footer}
     </div>
   );
 };

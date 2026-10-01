@@ -226,7 +226,11 @@ export const ManualFieldRenderer: React.FC<Props> = ({ field, value, answers, er
                     <Icon className="w-5 h-5" aria-hidden />
                   </span>
                 )}
-                <span className="flex-1">
+                {/* `min-w-0` + guionado por sílabas (`lang="es"`): sin esto, una palabra larga en una columna estrecha
+                    («Aproximadamente», «romanzoffiana») desbordaba la tarjeta y la página se volvía
+                    más ancha que la pantalla, y en el móvil el pie fijo dejaba de recibir el toque.
+                    El rediseño de estas opciones (F3) las pasa a una columna. */}
+                <span className="flex-1 min-w-0 break-words hyphens-auto">
                   <span className={`block font-medium ${isSelected ? 'text-green-800' : 'text-gray-900'}`}>{option.label}</span>
                   {option.help && <span className="block text-sm text-gray-500 mt-0.5 leading-relaxed">{option.help}</span>}
                 </span>

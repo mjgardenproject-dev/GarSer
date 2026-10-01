@@ -83,3 +83,15 @@ docker exec supabase_db_GarSer-main_4 psql -U postgres -c "update gardener_profi
 
 Las respuestas (`SPECS`) no se cambian entre fases; cuando una fase cambie la interfaz, se
 adaptan los conductores (`drive*`, `ACTION_BUTTONS`).
+
+## Modal de corrección del jardinero: `gardener-local.mjs` (Nivel D, interfaz)
+
+Abre el modal real del panel del jardinero a 375 px, recalcula con 80 m², «Descuidado» y retirada,
+y comprueba que propone **45 €** (línea base), sin pie fijo dentro del modal y sin errores de
+consola. Necesita una solicitud manual `pending` de césped (la consulta para crearla está en la
+cabecera del script).
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/gardener-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-jardinero
+```

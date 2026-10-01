@@ -7,6 +7,12 @@ export type DataInputMode = 'photos' | 'manual';
 interface Props {
   mode: DataInputMode;
   onSelect: (mode: DataInputMode) => void;
+  /**
+   * Plegado a una línea mientras se rellena el asistente manual (D-11). Las dos tarjetas
+   * ocupaban unos 300 px del primer pliegue en cada pregunta; la decisión ya está tomada y solo
+   * hace falta poder deshacerla.
+   */
+  compact?: boolean;
 }
 
 const S = MANUAL_ENTRY_STRINGS.choice;
@@ -16,14 +22,33 @@ const S = MANUAL_ENTRY_STRINGS.choice;
  * Photos stays the suggested default; manual is a first-class alternative, not a
  * hidden or degraded mode.
  */
-export const ManualEntryChoice: React.FC<Props> = ({ mode, onSelect }) => {
+export const ManualEntryChoice: React.FC<Props> = ({ mode, onSelect, compact = false }) => {
+  if (compact && mode === 'manual') {
+    return (
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="flex min-w-0 items-center gap-2 text-sm text-gray-600">
+          <PencilLine className="h-4 w-4 shrink-0 text-emerald-700" aria-hidden />
+          <span className="truncate">{S.compactLabel}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => onSelect('photos')}
+          className="-mr-2 inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]"
+        >
+          <Camera className="h-4 w-4" aria-hidden />
+          {S.compactSwitch}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <section aria-label={S.heading} className="mb-5">
       {/* Sigue siendo un h2 por semántica, pero con peso visual de apoyo: el encabezado
           principal del pliegue es la tarea del servicio, no esta decisión secundaria. */}
-      <h2 className="text-sm font-semibold text-gray-700 mb-2">{S.heading}</h2>
+      <h2 id="manual-entry-choice-heading" className="text-sm font-semibold text-gray-700 mb-2">{S.heading}</h2>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div role="radiogroup" aria-labelledby="manual-entry-choice-heading" className="grid grid-cols-2 gap-2">
         <OptionCard
           selected={mode === 'photos'}
           onClick={() => onSelect('photos')}

@@ -26,7 +26,11 @@ historial de su grafo de imports.
 ## PRE-3 · Duplicado de referencia
 
 - Worktree `~/Downloads/auditorias/formularios-main` en `origin/main` (`81397be`, desacoplado),
-  con `.env.local` copiado y `node_modules` enlazado. **Nunca se edita.**
+  con `.env.local` copiado. **Nunca se edita.**
+- `node_modules`: **carpeta propia con un enlace por paquete** al `node_modules` del checkout
+  principal, **sin** `.vite`, `.vite-temp` ni `.cache` (corregido en F2, H-N-13). Al principio se
+  enlazó la carpeta entera, y los dos servidores compartían la caché de Vite y se la invalidaban
+  mutuamente (504 «Outdated Optimize Dep», panel caído al azar).
 - `.claude/launch.json` (marcado `skip-worktree`): `formularios-main` → 5192,
   `formularios-rama` → 5191.
 

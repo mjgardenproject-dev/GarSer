@@ -110,27 +110,35 @@ async function detectScreen(page) {
   return page.evaluate((primaryLabels) => {
     const visibleButton = (label) =>
       [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === label && button.offsetParent);
-    const heading = document.querySelector('h3[tabindex="-1"]')?.textContent?.trim() || '';
+    // F2: la cabecera de cada pantalla lleva `data-manual-heading` y la pantalla dice qué pasos
+    // del schema enseña (`data-manual-step-ids`), que es lo que se usa para rellenarla.
+    const heading = document.querySelector('[data-manual-heading]')?.textContent?.trim() || '';
+    const stepIds = (document.querySelector('[data-manual-step-ids]')?.getAttribute('data-manual-step-ids') || '')
+      .split(' ')
+      .filter(Boolean);
     if (visibleButton('Confirmar y continuar') || visibleButton('Recalcular precio') || visibleButton('Guardando…')) {
       return { kind: 'summary', heading: 'Resumen' };
     }
     if (visibleButton('Revisar mis datos')) return { kind: 'waste', heading };
     if (heading === '¿Quieres añadir más?') return { kind: 'interstitial', heading };
-    if (visibleButton('Siguiente')) return { kind: 'item', heading };
+    if (visibleButton('Siguiente')) return { kind: 'item', heading, stepIds };
     return { kind: 'unknown', heading, primary: primaryLabels.filter((label) => visibleButton(label)) };
   }, PRIMARY_LABELS);
 }
 
 /** Acciones para rellenar la pantalla actual con las respuestas de `item`. */
-async function planItemScreen(page, heading, item) {
+async function planItemScreen(page, screen, item) {
   return page.evaluate(
-    ({ heading, item }) => {
+    ({ heading, stepIds, item }) => {
       const qa = window.__qa;
       const survey = qa.surveys[qa.serviceKey];
-      const step = survey.steps.find((candidate) => candidate.title === heading);
-      if (!step) return { error: `Paso no reconocido: «${heading}»` };
+      const steps = stepIds && stepIds.length
+        ? stepIds.map((id) => survey.steps.find((candidate) => candidate.id === id)).filter(Boolean)
+        : survey.steps.filter((candidate) => candidate.title === heading);
+      if (steps.length === 0) return { error: `Paso no reconocido: «${heading}»` };
+      const step = steps[0];
       const actions = [];
-      for (const field of qa.getVisibleFields(step, item)) {
+      for (const field of steps.flatMap((candidate) => qa.getVisibleFields(candidate, item))) {
         const value = item[field.key];
         if (value === undefined) {
           if (field.type === 'boolean') continue;
@@ -147,9 +155,9 @@ async function planItemScreen(page, heading, item) {
           actions.push({ type: 'number', label: field.label, value });
         }
       }
-      return { stepId: step.id, actions };
+      return { stepId: steps.map((candidate) => candidate.id).join('+'), actions };
     },
-    { heading, item },
+    { heading: screen.heading, stepIds: screen.stepIds, item },
   );
 }
 
@@ -247,7 +255,7 @@ async function openService(browser, serviceKey, width, { gardener = false } = {}
   });
   page.on('pageerror', (error) => consoleErrors.push(String(error)));
   await page.goto(`http://127.0.0.1:${PORT}/?s=${serviceKey}${gardener ? '&gardener=1' : ''}`);
-  await page.waitForSelector('h3[tabindex="-1"]');
+  await page.waitForSelector('[data-manual-heading]');
   return { context, page, consoleErrors };
 }
 
@@ -283,7 +291,7 @@ async function driveFixture(browser, fixture, { width = 375, layout = false, gar
     for (let guard = 0; guard < 80; guard += 1) {
       const screen = await detectScreen(page);
       if (screen.kind === 'item') {
-        const plan = await planItemScreen(page, screen.heading, fixture.items[itemIndex]);
+        const plan = await planItemScreen(page, screen, fixture.items[itemIndex]);
         if (plan.error) throw new Error(plan.error);
         await applyActions(page, plan.actions);
         if (layout) await record(`elemento-${itemIndex + 1}-${plan.stepId}`);
@@ -376,7 +384,7 @@ async function scenarioPhantom(browser, serviceKey, fixtureId) {
     for (let guard = 0; guard < 20; guard += 1) {
       const screen = await detectScreen(page);
       if (screen.kind !== 'item') break;
-      const plan = await planItemScreen(page, screen.heading, fixture.items[0]);
+      const plan = await planItemScreen(page, screen, fixture.items[0]);
       if (plan.error) throw new Error(plan.error);
       await applyActions(page, plan.actions);
       await clickPrimary(page, 'Siguiente');

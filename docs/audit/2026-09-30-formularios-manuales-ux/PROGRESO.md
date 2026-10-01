@@ -4,8 +4,8 @@
 |---|---|---|---|---|---|
 | Auditoría y plan | ✅ Aprobado (D-01…D-11 respondidas) | 2026-09-30 | 757d21c + siguiente | — | D-03 = quitar referencias; nuevas D-12 (antes de F8/F11) y D-13 (antes de F7) |
 | Pre-fase | ✅ Terminada y aprobada | 2026-09-30 | 1d157f1 | A ✅ · B línea base · C ✅ · D-precio ✅ | `qa/pre-fase.md`, `qa/linea-base.md`. BD local rehecha (copia previa), licencia del jardinero en local, Playwright aislado, `e2e-local.mjs` reconstruido |
-| F1 Cimientos | ✅ Terminada, **esperando visto bueno** | 2026-09-30 | (este commit) | A ✅ · B = línea base · C ✅ · D ✅ | `qa/fase-1.md`. Sin cambio visible ni de precio |
-| F2 Carcasa y navegación | ⏳ Pendiente | | | | |
+| F1 Cimientos | ✅ Terminada y aprobada | 2026-09-30 | c5704fa | A ✅ · B = línea base · C ✅ · D ✅ | `qa/fase-1.md`. Sin cambio visible ni de precio |
+| F2 Carcasa y navegación | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B envío = línea base · C ✅ · D ✅ (+ modal real) | `qa/fase-2.md`. CTA fuera: 242 → 1; desborde 16 → 0. Pendiente: prueba con teclado de iOS (H-N-14) |
 | F3 Controles | ⏳ Pendiente | | | | |
 | F4 Repetibles y revisión | ⏳ Pendiente | | | | |
 | F5 Setos | ⏳ Pendiente | | | | |
@@ -50,3 +50,11 @@
 - Puerta: typecheck igual (128), vitest 729/729, paridad 88/88, banco idéntico, E2E y
   corrección idénticos a la línea base en los 7 servicios.
 - Siguiente: F2 (carcasa y navegación), pendiente del visto bueno del usuario.
+
+### 2026-10-01 — F2 Carcasa y navegación
+- Cabecera «Servicio · Pregunta X de Y», una sola barra, selector plegado, pie fijo, sin
+  tarjeta envolvente, sin «Atrás» en la primera pregunta, aviso de precio en la revisión.
+- Corregido mi montaje: caché de Vite compartida entre `main` y la rama (H-N-13).
+- Nuevo `scripts/qa/manual-entry/gardener-local.mjs`: modal real del jardinero (45 €).
+- Puerta: envío y precio idénticos a la línea base en los 7; CTA fuera 242 → 1; desborde 16 → 0.
+- Siguiente: F3 (controles), pendiente del visto bueno del usuario.

@@ -82,12 +82,17 @@ function Page() {
         </div>
       </div>
       <div data-qa-form className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md">
-        {!gardenerMode && !manualOnly ? <ManualEntryChoice mode={mode} onSelect={selectMode} /> : null}
+        {!gardenerMode && !manualOnly ? (
+          <ManualEntryChoice mode={mode} onSelect={selectMode} compact={mode === 'manual'} />
+        ) : null}
         {mode === 'manual' ? (
           <ManualEntryWizard
             survey={survey}
             requireConsent={!gardenerMode}
-            showSwitchToPhotos={!gardenerMode && !manualOnly}
+            // Igual que `DetailsPage` (F2): «Usar fotos» vive en el selector plegado y el pie va
+            // fijo; en modo jardinero, como en el modal, el pie va en línea.
+            showSwitchToPhotos={false}
+            stickyFooter={!gardenerMode}
             submitLabel={gardenerMode ? 'Recalcular precio' : undefined}
             onDraftChange={() => {
               qa.drafts += 1;

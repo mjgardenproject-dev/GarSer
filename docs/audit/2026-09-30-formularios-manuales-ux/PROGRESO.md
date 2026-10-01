@@ -9,7 +9,7 @@
 | F3 Controles | ✅ Terminada y aprobada | 2026-10-01 | 7d1733a | A ✅ · B envío = línea base · C ✅ · D ✅ | `qa/fase-3.md`. Controles < 44 px 43 → 7 (resumen, F4); escenarios 4/7 (fantasmas en F4) |
 | F4 Repetibles y revisión | ✅ Terminada y aprobada | 2026-10-01 | 5fd2af9 | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
 | F5 Setos | ✅ Terminada y aprobada | 2026-10-01 | 8eacc7f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. H-N-15 decidido: el tramo se queda visible |
-| F6 Árboles | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | (ver commit F6) | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Pendiente: aprobar las ayudas del tipo de poda; decidir H-N-17 |
+| F6 Árboles | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | b1362fb | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Pendiente: aprobar las ayudas del tipo de poda; decidir H-N-17 |
 | F7 Palmeras | ⏳ Pendiente | | | | |
 | F8 Fitosanitarios | ⏳ Pendiente | | | | |
 | F9 Desbroce | ⏳ Pendiente | | | | |

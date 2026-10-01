@@ -95,3 +95,14 @@ cabecera del script).
 npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
   node scripts/qa/manual-entry/gardener-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-jardinero
 ```
+
+## Escenarios de F4 en la app real: `scenarios-local.mjs`
+
+Repite en la app real dos fallos corregidos en F4: el elemento fantasma de árboles (debe quedar
+un solo árbol guardado y el total de un árbol) y la retirada heredada tras fitosanitarios (el
+desbroce debe arrancar en «Sí»). Termina con código 1 si alguno vuelve.
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/scenarios-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-escenarios
+```

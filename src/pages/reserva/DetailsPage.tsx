@@ -836,6 +836,11 @@ const DetailsPage: React.FC = () => {
         manualConsent?: { declaredVariables?: { items?: Array<Record<string, unknown>> } };
       }).manualConsent?.declaredVariables?.items
     : undefined;
+  /** Retirada declarada en la reserva que se repite (es la del mismo servicio). */
+  const rebookManualWasteRemoval = isRebooking
+    ? (bookingData as { manualConsent?: { declaredVariables?: { wasteRemoval?: boolean } } }).manualConsent
+        ?.declaredVariables?.wasteRemoval
+    : undefined;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -4696,7 +4701,16 @@ const analyzeTreeGroup = async (id: string) => {
             submitting={manualSubmitting}
             initialItems={manualDraft?.items ?? persistedManualDraft?.items ?? rebookManualItems}
             initialPhase={startsOnRebookSummary ? 'summary' : 'item'}
-            initialWasteRemoval={manualDraft?.wasteRemoval ?? persistedManualDraft?.wasteRemoval ?? bookingData.wasteRemoval}
+            // D-02: la retirada sale del borrador de ESTE servicio (o, al repetir, de su reserva
+            // anterior) y si no hay, del valor por defecto del asistente (sí). Antes caía en
+            // `bookingData.wasteRemoval`, que es global: tras un servicio fitosanitario (que la pone
+            // en `false` porque no la factura) el siguiente servicio arrancaba en «No» sin que el
+            // cliente lo eligiera.
+            initialWasteRemoval={
+              manualDraft?.wasteRemoval ??
+              persistedManualDraft?.wasteRemoval ??
+              (isRebooking ? rebookManualWasteRemoval : undefined)
+            }
             onDraftChange={handleManualDraftChange}
             onStepComplete={(stepId) =>
               reportBookingEvent('info', {

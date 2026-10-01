@@ -9,13 +9,24 @@ import {
 } from '../../../shared/manualEntry/manualEntrySchema';
 import { validateManualField } from '../../../shared/manualEntry/manualEntryValidation';
 import { MANUAL_ENTRY_STRINGS } from '../../../shared/manualEntry/strings';
+import { useConfirmDialog } from '../../common/ConfirmDialog';
 import { ManualFieldRenderer } from './fields/ManualFieldRenderer';
 import { manualFieldId } from './ui/fieldIds';
 import { ManualEntrySummary } from './ManualEntrySummary';
 import { formatManualFieldError } from './presentation/fieldErrors';
+import {
+  createEmptyManualItem,
+  firstIncompleteScreenIndex,
+  isManualItemEmpty,
+  manualItemCount,
+  manualItemTitle,
+  summarizeManualItem,
+} from './presentation/items';
 import { getManualPresentation } from './presentation/manualEntryPresentation';
 import { getQuestionProgress, getVisibleScreens } from './presentation/screens';
+import { ItemList } from './ui/ItemList';
 import { ManualStepHeader } from './ui/ManualStepHeader';
+import { OptionList } from './ui/OptionList';
 import { WizardFooter } from './ui/WizardFooter';
 
 // La fase 'consent' se retiró: ocupaba una pantalla entera al final para una sola frase, y
@@ -63,16 +74,7 @@ interface Props {
 }
 
 const W = MANUAL_ENTRY_STRINGS.wizard;
-
-function makeEmptyItem(survey: ManualServiceSurvey): ManualAnswers {
-  const item: ManualAnswers = {};
-  survey.steps.forEach((step) =>
-    step.fields.forEach((field) => {
-      if (field.defaultValue !== undefined) item[field.key] = field.defaultValue;
-    }),
-  );
-  return item;
-}
+const WASTE = MANUAL_ENTRY_STRINGS.waste;
 
 export const ManualEntryWizard: React.FC<Props> = ({
   survey,
@@ -92,7 +94,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
   onSwitchToPhotos,
 }) => {
   const [items, setItems] = useState<ManualAnswers[]>(
-    initialItems && initialItems.length > 0 ? initialItems : [makeEmptyItem(survey)],
+    initialItems && initialItems.length > 0 ? initialItems : [createEmptyManualItem(survey)],
   );
   const [wasteRemoval, setWasteRemoval] = useState<boolean>(
     initialWasteRemoval ?? (MANUAL_GLOBAL_WASTE_FIELD.defaultValue === true),
@@ -107,12 +109,15 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
   // Campo al que llevar el foco tras pulsar «Siguiente» con errores.
   const [focusErrorKey, setFocusErrorKey] = useState<string | null>(null);
+  // Se llegó a la pregunta desde «Cambiar» en la revisión: al terminar, se vuelve a ella.
+  const [returnToReview, setReturnToReview] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const { openConfirm, confirmDialog } = useConfirmDialog();
 
   const activeItem = useMemo(() => items[activeItemIndex] || {}, [items, activeItemIndex]);
   const presentation = getManualPresentation(survey.serviceKey);
   // Pantallas visibles del elemento activo. La presentación decide qué pasos del schema
-  // comparten pantalla; hoy es uno por pantalla, igual que antes de existir esta capa.
+  // comparten pantalla.
   const visibleSteps = useMemo(
     () => getVisibleScreens(survey, presentation, activeItem),
     [survey, presentation, activeItem],
@@ -180,9 +185,16 @@ export const ManualEntryWizard: React.FC<Props> = ({
   // pero sí lo que el profesional leía en la solicitud.
   const asksWaste = serviceAsksForWasteRemoval(survey.serviceKey);
 
+  // Primer elemento que no está completo (P-01): con él pendiente no se puede confirmar.
+  const firstIncompleteItem = useMemo(
+    () => items.findIndex((item) => firstIncompleteScreenIndex(survey, presentation, item) !== -1),
+    [items, survey, presentation],
+  );
+  const activeItemComplete = firstIncompleteScreenIndex(survey, presentation, activeItem) === -1;
+
   // Un solo indicador de progreso en pantalla: la barra es la de la reserva («Paso 3 de 5») y
-  // aquí solo se dice en qué pregunta se está. El total cuenta la retirada de restos (que antes
-  // quedaba fuera: «Paso 2 de 2» y luego venían más pantallas) y nunca crece al responder.
+  // aquí solo se dice en qué pregunta se está. El total cuenta la retirada de restos y nunca
+  // crece al responder. Con varios elementos, también cuál se está rellenando («Árbol 2»).
   const eyebrow = useMemo(() => {
     const service = showServiceName ? survey.serviceLabel : '';
     const join = (...parts: string[]) => parts.filter(Boolean).join(' · ');
@@ -191,12 +203,21 @@ export const ManualEntryWizard: React.FC<Props> = ({
     const answers = phase === 'waste' ? items[items.length - 1] || {} : activeItem;
     const screenId = phase === 'waste' ? 'waste' : currentStep?.id ?? '';
     const progress = getQuestionProgress(survey, presentation, answers, screenId, { asksWaste });
-    return join(service, W.questionProgress(progress.current, progress.total));
-  }, [phase, showServiceName, survey, presentation, items, activeItem, currentStep, asksWaste]);
+    const itemLabel = phase === 'item' && survey.repeatable && items.length > 1 ? manualItemTitle(survey, activeItemIndex) : '';
+    return join(service, itemLabel, W.questionProgress(progress.current, progress.total));
+  }, [phase, showServiceName, survey, presentation, items, activeItem, activeItemIndex, currentStep, asksWaste]);
 
-  // En la primera pregunta del primer elemento no hay adónde volver dentro del asistente: el
-  // botón no hacía nada (D-08). La cabecera de la página sigue llevando al paso anterior.
-  const isFirstScreen = phase === 'item' && activeStepIndex === 0 && activeItemIndex === 0;
+  const lastScreenIndexOf = (itemIndex: number) =>
+    Math.max(0, getVisibleScreens(survey, presentation, items[itemIndex] || {}).length - 1);
+
+  const goToItemScreen = (itemIndex: number, screenIndex: number) => {
+    setActiveItemIndex(itemIndex);
+    setActiveStepIndex(screenIndex);
+    setShowErrors(false);
+    setPhase('item');
+  };
+
+  const afterItem = () => setPhase(survey.repeatable ? 'interstitial' : asksWaste ? 'waste' : 'summary');
 
   const goNextFromItem = () => {
     if (currentStepErrors.length > 0) {
@@ -208,61 +229,104 @@ export const ManualEntryWizard: React.FC<Props> = ({
     // Una pantalla puede reunir varios pasos: cada uno sigue emitiendo su `stepId`, en orden.
     currentStep?.stepIds.forEach((stepId) => onStepComplete?.(stepId));
 
+    // Desde «Cambiar» en la revisión: si el elemento ya está completo, se vuelve a la revisión;
+    // si el cambio ha abierto preguntas nuevas sin contestar (p. ej. otro tipo de vegetación),
+    // se siguen hasta completarlo.
+    if (returnToReview && activeItemComplete) {
+      setReturnToReview(false);
+      setPhase('summary');
+      return;
+    }
     if (activeStepIndex < visibleSteps.length - 1) {
       setActiveStepIndex((index) => index + 1);
       return;
     }
-    // Finished the active item.
-    setPhase(survey.repeatable ? 'interstitial' : (asksWaste ? 'waste' : 'summary'));
+    if (returnToReview) {
+      setReturnToReview(false);
+      setPhase('summary');
+      return;
+    }
+    afterItem();
   };
+
+  // «Atrás» en la primera pregunta de un elemento que no es el único vuelve a la lista. Si el
+  // elemento está vacío (se añadió y no se contestó nada), se descarta: es el arreglo de P-01.
+  const canLeaveItemToList = survey.repeatable && items.length > 1;
+  const showBackInItem = returnToReview || activeStepIndex > 0 || canLeaveItemToList;
 
   const goBack = () => {
     setShowErrors(false);
+    if (returnToReview && (phase === 'item' || phase === 'waste')) {
+      setReturnToReview(false);
+      setPhase('summary');
+      return;
+    }
     if (phase === 'summary') {
       if (asksWaste) return setPhase('waste');
       if (survey.repeatable) return setPhase('interstitial');
-      setActiveItemIndex(items.length - 1);
-      setActiveStepIndex(Math.max(0, visibleSteps.length - 1));
-      return setPhase('item');
+      return goToItemScreen(items.length - 1, lastScreenIndexOf(items.length - 1));
     }
     if (phase === 'waste') {
       if (survey.repeatable) return setPhase('interstitial');
-      setActiveItemIndex(items.length - 1);
-      setActiveStepIndex(Math.max(0, visibleSteps.length - 1));
-      return setPhase('item');
+      return goToItemScreen(items.length - 1, lastScreenIndexOf(items.length - 1));
     }
     if (phase === 'interstitial') {
-      setActiveStepIndex(Math.max(0, visibleSteps.length - 1));
-      return setPhase('item');
+      return goToItemScreen(items.length - 1, lastScreenIndexOf(items.length - 1));
     }
     // phase === 'item'
     if (activeStepIndex > 0) {
       setActiveStepIndex((index) => index - 1);
       return;
     }
-    if (activeItemIndex > 0) {
-      setActiveItemIndex((index) => index - 1);
-      setActiveStepIndex(0);
-      return;
+    if (canLeaveItemToList) {
+      if (isManualItemEmpty(survey, activeItem)) {
+        const discarded = activeItemIndex;
+        setItems((prev) => prev.filter((_, index) => index !== discarded));
+        setActiveItemIndex(0);
+      }
+      setPhase('interstitial');
     }
-    // First screen: nothing to go back to within the wizard.
   };
 
   const addAnotherItem = () => {
-    setItems((prev) => [...prev, makeEmptyItem(survey)]);
-    setActiveItemIndex(items.length);
-    setActiveStepIndex(0);
-    setPhase('item');
+    setItems((prev) => [...prev, createEmptyManualItem(survey)]);
+    goToItemScreen(items.length, 0);
   };
 
-  const editItem = (itemIndex: number) => {
-    setActiveItemIndex(itemIndex);
-    setActiveStepIndex(0);
-    setShowErrors(false);
-    setPhase('item');
+  /** «Editar» / «Completar» desde la lista: a la primera pregunta que falte, o a la primera. */
+  const editItemFromList = (itemIndex: number) => {
+    setReturnToReview(false);
+    goToItemScreen(itemIndex, Math.max(0, firstIncompleteScreenIndex(survey, presentation, items[itemIndex])));
+  };
+
+  /** «Cambiar» en la revisión: a esa pregunta, y de vuelta a la revisión al terminar. */
+  const changeAnswer = (itemIndex: number, screenIndex: number) => {
+    setReturnToReview(true);
+    goToItemScreen(itemIndex, screenIndex);
+  };
+
+  const changeWaste = () => {
+    setReturnToReview(true);
+    setPhase('waste');
+  };
+
+  const removeItem = (itemIndex: number) => {
+    const title = manualItemTitle(survey, itemIndex);
+    openConfirm({
+      title: W.removeConfirmTitle(title),
+      message: W.removeConfirmMessage,
+      confirmLabel: W.removeConfirmCta,
+      cancelLabel: W.keepCta,
+      tone: 'danger',
+      onConfirm: () => {
+        setItems((prev) => prev.filter((_, index) => index !== itemIndex));
+        setActiveItemIndex(0);
+      },
+    });
   };
 
   const confirm = () => {
+    if (firstIncompleteItem !== -1) return;
     if (requireConsent && !consentChecked) return;
     if (requireConsent) onConsentAccepted?.();
     onSubmit({ items, wasteRemoval });
@@ -285,9 +349,9 @@ export const ManualEntryWizard: React.FC<Props> = ({
       return (
         <WizardFooter
           sticky={stickyFooter}
-          back={isFirstScreen ? null : { label: W.back, onClick: goBack }}
+          back={showBackInItem ? { label: W.back, onClick: goBack } : null}
           primary={{
-            label: W.next,
+            label: returnToReview && activeItemComplete ? W.backToReview : W.next,
             onClick: goNextFromItem,
             forward: true,
           }}
@@ -298,6 +362,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
       return (
         <WizardFooter
           sticky={stickyFooter}
+          back={{ label: W.back, onClick: goBack }}
           primary={{ label: W.finishItems, onClick: () => setPhase(asksWaste ? 'waste' : 'summary'), forward: true }}
         />
       );
@@ -307,13 +372,26 @@ export const ManualEntryWizard: React.FC<Props> = ({
         <WizardFooter
           sticky={stickyFooter}
           back={{ label: W.back, onClick: goBack }}
-          primary={{ label: W.continueToSummary, onClick: () => setPhase('summary'), forward: true }}
+          primary={{
+            label: W.continueToSummary,
+            onClick: () => {
+              setReturnToReview(false);
+              setPhase('summary');
+            },
+            forward: true,
+          }}
         />
       );
     }
     // Un único botón final: el que antes llevaba a la pantalla de consentimiento y el que
     // enviaba desde allí eran el mismo gesto partido en dos. La casilla sigue siendo
     // obligatoria, solo que se marca sin cambiar de pantalla.
+    const incompleteNote =
+      firstIncompleteItem === -1
+        ? null
+        : survey.repeatable
+          ? W.incompleteNote(manualItemTitle(survey, firstIncompleteItem))
+          : W.incompleteSingleNote;
     return (
       <WizardFooter
         sticky={stickyFooter}
@@ -321,10 +399,10 @@ export const ManualEntryWizard: React.FC<Props> = ({
         primary={{
           label: submitting ? 'Guardando…' : submitLabel || MANUAL_ENTRY_STRINGS.consent.confirmCta,
           onClick: confirm,
-          disabled: (requireConsent && !consentChecked) || submitting,
+          disabled: firstIncompleteItem !== -1 || (requireConsent && !consentChecked) || submitting,
         }}
         // El aviso va junto al botón que explica, no debajo de «Atrás».
-        note={requireConsent && !consentChecked ? MANUAL_ENTRY_STRINGS.consent.mustAccept : null}
+        note={incompleteNote ?? (requireConsent && !consentChecked ? MANUAL_ENTRY_STRINGS.consent.mustAccept : null)}
       />
     );
   })();
@@ -370,13 +448,22 @@ export const ManualEntryWizard: React.FC<Props> = ({
           <ManualStepHeader
             eyebrow={eyebrow}
             title={W.addMoreTitle}
-            description={`Has añadido ${items.length} ${items.length === 1 ? survey.itemNoun : `${survey.itemNoun}s`}.`}
+            description={W.addedCount(manualItemCount(survey, presentation, items.length))}
             headingRef={headingRef}
+          />
+          <ItemList
+            items={items.map((item, index) => ({
+              title: manualItemTitle(survey, index),
+              summary: summarizeManualItem(survey, presentation, item),
+              incomplete: firstIncompleteScreenIndex(survey, presentation, item) !== -1,
+            }))}
+            onEdit={editItemFromList}
+            onRemove={removeItem}
           />
           <button
             type="button"
             onClick={addAnotherItem}
-            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 font-medium text-emerald-700 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+            className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 py-3 font-medium text-emerald-700 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
           >
             <Plus className="h-4 w-4" aria-hidden />
             {survey.addItemLabel || W.addItem}
@@ -384,7 +471,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Phase: global waste */}
+      {/* Phase: global waste — elección explícita (D-09): mismo booleano, mismo valor por defecto. */}
       {phase === 'waste' && (
         <div data-manual-screen="waste">
           <ManualStepHeader
@@ -393,11 +480,15 @@ export const ManualEntryWizard: React.FC<Props> = ({
             description={MANUAL_GLOBAL_WASTE_STEP.description}
             headingRef={headingRef}
           />
-          <ManualFieldRenderer
-            field={MANUAL_GLOBAL_WASTE_FIELD}
-            value={wasteRemoval}
-            answers={{}}
-            onChange={(value) => setWasteRemoval(value === true)}
+          <OptionList
+            id={manualFieldId(MANUAL_GLOBAL_WASTE_FIELD.key)}
+            label={MANUAL_GLOBAL_WASTE_FIELD.label}
+            options={[
+              { value: 'true', label: WASTE.yes.label, help: WASTE.yes.help },
+              { value: 'false', label: WASTE.no.label, help: WASTE.no.help },
+            ]}
+            selected={wasteRemoval ? 'true' : 'false'}
+            onSelect={(value) => setWasteRemoval(value === 'true')}
           />
         </div>
       )}
@@ -415,7 +506,9 @@ export const ManualEntryWizard: React.FC<Props> = ({
             survey={survey}
             items={items}
             wasteRemoval={wasteRemoval}
-            onEditItem={editItem}
+            onChangeAnswer={changeAnswer}
+            onChangeWaste={changeWaste}
+            onRemoveItem={removeItem}
             requireConsent={requireConsent}
             consentChecked={consentChecked}
             onConsentChange={setConsentChecked}
@@ -427,6 +520,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
       )}
 
       {footer}
+      {confirmDialog}
     </div>
   );
 };

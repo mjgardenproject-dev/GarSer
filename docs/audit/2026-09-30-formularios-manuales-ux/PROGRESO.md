@@ -6,8 +6,8 @@
 | Pre-fase | ✅ Terminada y aprobada | 2026-09-30 | 1d157f1 | A ✅ · B línea base · C ✅ · D-precio ✅ | `qa/pre-fase.md`, `qa/linea-base.md`. BD local rehecha (copia previa), licencia del jardinero en local, Playwright aislado, `e2e-local.mjs` reconstruido |
 | F1 Cimientos | ✅ Terminada y aprobada | 2026-09-30 | c5704fa | A ✅ · B = línea base · C ✅ · D ✅ | `qa/fase-1.md`. Sin cambio visible ni de precio |
 | F2 Carcasa y navegación | ✅ Terminada y aprobada | 2026-10-01 | 90a7308 | A ✅ · B envío = línea base · C ✅ · D ✅ (+ modal real) | `qa/fase-2.md`. CTA fuera: 242 → 1; desborde 16 → 0. Pendiente: prueba con teclado de iOS (H-N-14) |
-| F3 Controles | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B envío = línea base · C ✅ · D ✅ | `qa/fase-3.md`. Controles < 44 px 43 → 7 (resumen, F4); escenarios 4/7 (fantasmas en F4) |
-| F4 Repetibles y revisión | ⏳ Pendiente | | | | |
+| F3 Controles | ✅ Terminada y aprobada | 2026-10-01 | 7d1733a | A ✅ · B envío = línea base · C ✅ · D ✅ | `qa/fase-3.md`. Controles < 44 px 43 → 7 (resumen, F4); escenarios 4/7 (fantasmas en F4) |
+| F4 Repetibles y revisión | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
 | F5 Setos | ⏳ Pendiente | | | | |
 | F6 Árboles | ⏳ Pendiente | | | | |
 | F7 Palmeras | ⏳ Pendiente | | | | |
@@ -67,3 +67,11 @@
   Simulator lo denegó el usuario → prueba de teclado pendiente (H-N-14).
 - Puerta: envío y precio idénticos a la línea base; desborde 0, CTA fuera 0, controles < 44 px 7.
 - Siguiente: F4 (repetibles, revisión y consentimiento), pendiente del visto bueno del usuario.
+
+### 2026-10-01 — F4 Repetibles, revisión y consentimiento
+- Fantasma corregido en la interfaz (descartar vacío, «Faltan datos», confirmar bloqueado);
+  lista con editar/eliminar; revisión con «Cambiar» por fila y valores en español; casilla de
+  44 px con el texto legal intacto; retirada en dos opciones (D-09) y no heredada (D-02).
+- App real: en `main` el fantasma cobra 162,00 € (dos árboles) y en la rama 103,50 € (uno).
+- Banco completamente en verde por primera vez (7/7 escenarios, 0 controles < 44 px).
+- Siguiente: F5 (setos), pendiente del visto bueno del usuario.

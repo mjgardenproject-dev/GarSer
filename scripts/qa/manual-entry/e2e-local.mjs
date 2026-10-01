@@ -256,7 +256,7 @@ async function drivePick(page, group, option) {
       const firstLine = (el) => (el.innerText || el.textContent || '').split('\n').map((s) => s.trim()).filter(Boolean)[0] || '';
       const matches = (el) => {
         const line = firstLine(el);
-        return line === option || line.startsWith(`${option} `) || line.startsWith(`${option}(`);
+        return line === option || line.startsWith(`${option} `) || line.startsWith(`${option}(`) || line.startsWith(`${option},`);
       };
       const groups = [...document.querySelectorAll('[role=radiogroup]')].filter(
         (g) => g.getAttribute('aria-label') === group,

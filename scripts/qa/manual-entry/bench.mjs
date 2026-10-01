@@ -306,7 +306,10 @@ async function driveFixture(browser, fixture, { width = 375, layout = false, gar
           await clickPrimary(page, 'Continuar');
         }
       } else if (screen.kind === 'waste') {
-        await applyActions(page, [{ type: 'switch', label: 'Retirada de restos', value: fixture.wasteRemoval }]);
+        // F4 (D-09): la retirada es una elección explícita de dos opciones.
+        await applyActions(page, [
+          { type: 'radio', group: 'Retirada de restos', label: fixture.wasteRemoval ? 'Sí, que se lleven los restos' : 'No, me encargo yo' },
+        ]);
         if (layout) await record('retirada');
         await clickPrimary(page, 'Revisar mis datos');
       } else if (screen.kind === 'summary') {
@@ -401,7 +404,7 @@ async function scenarioPhantom(browser, serviceKey, fixtureId) {
       else if (screen.kind === 'waste') await clickPrimary(page, 'Revisar mis datos');
       else break;
     }
-    const itemsInSummary = await page.locator('h4').count();
+    const itemsInSummary = await page.locator('[data-manual-review-item]').count();
     const consent = page.locator('input[type="checkbox"]');
     if (await consent.count()) await consent.check();
     await clickPrimary(page, 'Confirmar y continuar');

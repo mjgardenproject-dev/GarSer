@@ -52,6 +52,10 @@ porque varios criterios de maquetación y los escenarios fallan hoy a propósito
 - Maquetación de los 7 en 320/360/375/414/768/1280: sin desborde, CTA visible, controles ≥ 44 px, consola limpia.
 - **Paridad de lo enviado: 0 diferencias** con `baseline/payloads.json` (payload + telemetría).
 - Escenarios de hallazgos (stepper de setos, coma decimal, elementos fantasma, Intro, «Atrás» en la primera pantalla) con el resultado esperado de la fase.
+- **Diferencias previstas** (desde F7): el banco solo acepta como prevista la de P-04 (acceso
+  difícil de palmeras oculto en el tramo más bajo): quitando de la línea base esas claves y el
+  `stepId` de una pantalla que se queda sin preguntas, lo enviado debe ser idéntico, y el `patch`
+  igual al de referencia. Se listan aparte en el informe; cualquier otra diferencia es un fallo.
 - Si la fase cambia la interfaz, se adaptan `detectScreen`/`planItemScreen`/`applyActions`
   del banco. **Nunca** las respuestas ni la línea base.
 

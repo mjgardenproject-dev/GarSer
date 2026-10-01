@@ -130,6 +130,15 @@ Se descarta la rejilla de 2 columnas de tarjetas por debajo de `md:` (regla de
   defecto: se ve lo que se elige.
 - **Extra recomendado activado** (fitosanitario de palmera): etiqueta «Recomendado» y
   primera posición. Se mantiene activado (P-13).
+- **F7:** el coste se dice **una vez**, en la frase de apoyo de la pantalla («Cada opción puede
+  tener un coste adicional según el profesional.»), no en cada fila. La insignia es `badge` en la
+  presentación (`ToggleRow`), y se lee como descripción del interruptor.
+- **Ocultar lo inerte** (`hiddenWhen`): solo si el constructor ya descarta la respuesta (P-04,
+  acceso de palmeras en el tramo más bajo). Si una pantalla se queda sin preguntas, desaparece.
+
+**Fotos por opción** (`optionImages`, F7): 56 × 56 px a la izquierda de la fila, decorativas
+(`alt=""`). Sin foto no se pinta hueco vacío. Las de palmeras se registran en
+`presentation/palmSpeciesPhotos.ts` (D-13: las aporta el usuario más adelante).
 
 ### 6.8 Ayudas y contexto (`HelpDisclosure`, `ReferenceNote`)
 

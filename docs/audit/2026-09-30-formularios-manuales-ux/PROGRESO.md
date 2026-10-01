@@ -122,3 +122,23 @@ propia del campo, y duplicar en la lista de elementos.
 - Hallazgos: H-N-17 (acceso que se puede saltar, decisión del usuario), H-N-18 (caché del banco,
   resuelto).
 - Siguiente: F7 (palmeras), pendiente del visto bueno y de D-13 (fuente de las imágenes).
+
+### 2026-10-01 — F7 Palmeras (inicio)
+D-13 respondido: fotos propias más adelante; ahora solo los huecos por especie (archivos estáticos del
+frontend; sin foto, la opción se ve sin imagen). Ya resuelto en F2-F4 para palmeras: lista de una
+columna sin desbordes, plurales («grupos de palmeras»), lista con editar/eliminar, fantasma. Lo que
+cambia en F7:
+1. Especie: nombre común como etiqueta y latín debajo (D-10), con su rasgo para reconocerla; hueco de
+   foto por especie (D-06/D-13).
+2. Altura del tronco: segmentado; el aviso del tramo más alto como línea bajo el control; si se
+   cambia de especie y la altura elegida ya no existe, se dice («elige de nuevo la altura»).
+3. Estado: «¿En qué estado está la palmera?».
+4. Número: stepper sin la abreviatura «ud».
+5. Extras: pregunta en vez de «Opciones adicionales»; coste dicho una vez en la frase de apoyo;
+   fitosanitario primero con «Recomendado» y una línea; pelado y acceso con una línea cada uno;
+   **acceso oculto en el tramo más bajo** (P-04: el constructor ya lo descarta). Consecuencia
+   prevista: en las respuestas de referencia del tramo más bajo el envío deja de llevar
+   `hasAccessDifficulty: true` (el `patch` es idéntico) y, en pindó y palmera real de tramo bajo, la
+   pantalla de extras desaparece (no se emite su `stepId`). Se documenta como diferencia prevista en
+   el banco, no se toca la línea base.
+Textos para aprobar al cierre (REGLAS 14): nombres comunes, frase de coste de los extras.

@@ -28,6 +28,8 @@ interface Props {
   onValidityChange?: (invalid: boolean) => void;
   /** `id` del error que pinta el contenedor (stepper), para `aria-describedby`. */
   externalErrorId?: string;
+  /** Línea de contexto bajo el campo (p. ej. un tramo de tarifa). */
+  feedback?: string | null;
 }
 
 const toText = (value: unknown) =>
@@ -58,6 +60,7 @@ export const NumberField: React.FC<Props> = ({
   size = 'large',
   onValidityChange,
   externalErrorId,
+  feedback,
 }) => {
   const [text, setText] = useState(() => toText(value));
   const [syncedValue, setSyncedValue] = useState(value);
@@ -141,6 +144,7 @@ export const NumberField: React.FC<Props> = ({
       {input}
       <FieldError id={errorId} message={message} />
       {readingNote && !message ? <p className="mt-2 text-sm text-gray-600">{readingNote}</p> : null}
+      {feedback && !message ? <p className="mt-2 text-sm text-gray-600">{feedback}</p> : null}
     </div>
   );
 };

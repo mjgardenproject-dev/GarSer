@@ -19,7 +19,9 @@ describe('presentación de los formularios manuales', () => {
     expect(describePresentationMismatch(MANUAL_ENTRY_SURVEYS[key], getManualPresentation(key))).toBeNull();
   });
 
-  it('las 88 respuestas de referencia ven las mismas pantallas, campos y stepIds que antes', () => {
+  // Desde F5 algunas pantallas reúnen varios pasos (setos: longitud + altura). Lo que no puede
+  // cambiar es QUÉ se pregunta y en qué orden: los mismos pasos visibles, los mismos campos.
+  it('las 88 respuestas de referencia ven los mismos pasos y campos, en el mismo orden, que antes', () => {
     let items = 0;
     for (const fixture of MANUAL_PARITY_FIXTURES) {
       const survey = MANUAL_ENTRY_SURVEYS[fixture.serviceKey];
@@ -27,12 +29,11 @@ describe('presentación de los formularios manuales', () => {
       // También con el elemento vacío (primera pantalla) y a medio responder.
       for (const answers of [{}, ...fixture.items]) {
         const screens = getVisibleScreens(survey, presentation, answers);
-        expect(screens.map((s) => s.id)).toEqual(legacyVisibleStepIds(fixture.serviceKey, answers));
-        expect(screens.flatMap((s) => s.stepIds)).toEqual(legacyVisibleStepIds(fixture.serviceKey, answers));
-        for (const screen of screens) {
-          const step = survey.steps.find((s) => s.id === screen.id)!;
-          expect(screen.fields.map((f) => f.key)).toEqual(getVisibleFields(step, answers).map((f) => f.key));
-        }
+        const legacy = legacyVisibleStepIds(fixture.serviceKey, answers);
+        expect(screens.flatMap((s) => s.stepIds)).toEqual(legacy);
+        expect(screens.flatMap((s) => s.fields.map((f) => f.key))).toEqual(
+          legacy.flatMap((id) => getVisibleFields(survey.steps.find((s) => s.id === id)!, answers).map((f) => f.key)),
+        );
         items += 1;
       }
     }

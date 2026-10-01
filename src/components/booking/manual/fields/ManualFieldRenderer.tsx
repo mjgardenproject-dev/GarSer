@@ -40,6 +40,7 @@ import { SegmentedChoice } from '../ui/SegmentedChoice';
 import { Stepper } from '../ui/Stepper';
 import { ToggleRow } from '../ui/ToggleRow';
 import { manualFieldId } from '../ui/fieldIds';
+import { Pictogram } from '../ui/Pictogram';
 
 /**
  * Registro de los iconos Lucide que nombra el schema. Desde F3 la lista de opciones no pinta
@@ -102,6 +103,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
   ) : null;
   const unit = fieldPresentation?.unit?.(answers) ?? field.unit;
   const format = fieldPresentation?.numberFormat ?? (field.type === 'integer' ? 'quantity' : 'decimal');
+  const feedback = fieldPresentation?.feedback?.(answers) ?? null;
 
   if (control === 'number') {
     return (
@@ -119,6 +121,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
           helpId={helpId}
           onBlur={onBlur}
           onEnter={onEnter}
+          feedback={feedback}
         />
         {helpText}
         {measureHelp}
@@ -145,6 +148,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
           helpId={helpId}
           onBlur={onBlur}
           onEnter={onEnter}
+          feedback={feedback}
         />
         {helpText}
         {measureHelp}
@@ -179,7 +183,10 @@ export const ManualFieldRenderer: React.FC<Props> = ({
       <OptionList
         id={id}
         label={field.label}
-        options={options.map((option) => ({ value: option.value, label: option.label, help: option.help }))}
+        options={options.map((option) => {
+          const pictogram = fieldPresentation?.optionPictograms?.[option.value];
+          return { value: option.value, label: option.label, help: option.help, media: pictogram ? <Pictogram name={pictogram} /> : undefined };
+        })}
         selected={selected}
         onSelect={select}
         error={shownError}

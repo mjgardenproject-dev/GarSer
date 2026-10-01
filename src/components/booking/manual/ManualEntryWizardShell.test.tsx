@@ -59,7 +59,8 @@ describe('carcasa del asistente (F2)', () => {
 
   it('sin el nombre del servicio cuando la página ya lo dice (varios servicios)', () => {
     render(<ManualEntryWizard survey={MANUAL_ENTRY_SURVEYS.hedge} onSubmit={vi.fn()} showServiceName={false} />);
-    expect(eyebrow()).toBe('Pregunta 1 de 5');
+    // F5: longitud y altura comparten pantalla → 3 pantallas + retirada.
+    expect(eyebrow()).toBe('Pregunta 1 de 4');
   });
 
   it('fitosanitarios: el total de preguntas no crece al ir respondiendo', () => {

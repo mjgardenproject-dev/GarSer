@@ -5,6 +5,8 @@ export interface OptionListItem {
   value: string;
   label: string;
   help?: string;
+  /** Dibujo a la izquierda (solo cuando explica algo que la etiqueta no; p. ej. caras del seto). */
+  media?: React.ReactNode;
 }
 
 interface Props {
@@ -77,6 +79,7 @@ export const OptionList: React.FC<Props> = ({ id, label, options, selected, onSe
                   : `bg-white [@media(hover:hover)]:hover:border-gray-300 ${error ? 'border-red-300' : 'border-gray-200'}`
               }`}
             >
+              {option.media ? <span className="shrink-0">{option.media}</span> : null}
               <span className="min-w-0 flex-1">
                 <span className="block text-base font-semibold text-gray-900">{option.label}</span>
                 {option.help ? <span className="mt-0.5 block text-sm leading-5 text-gray-600">{option.help}</span> : null}

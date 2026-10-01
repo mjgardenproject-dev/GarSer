@@ -72,7 +72,7 @@ servicio y compara (además, cada total y cada huella deben ser **los de `qa/lin
 - **C1** pantallas de «Detalles» a 375 y 1280 px: desbordes, consola, respuestas HTTP ≥ 400;
 - **C2** precio por profesional en «Profesionales» y huella SHA-256 de la colección guardada
   en `booking_resume_v2:*` (sin ids ni fechas): **deben coincidir**;
-- **C3** eventos de `booking_funnel_events` (evento, servicio, `stepId`) en el mismo orden;
+- **C3** eventos de `booking_funnel_events` (evento, servicio, `stepId`) en el mismo orden (los que llegan a la vez, < 100 ms, como en una pantalla que reúne varios pasos, se comparan como grupo: ver H-N-16);
 - **C4** con sesión de cliente sembrado: filas de `booking_manual_declarations` equivalentes
   (mismas `declared_variables`, salvo ids y fechas).
 

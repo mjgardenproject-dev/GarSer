@@ -16,6 +16,10 @@ import type { ManualScreenPresentation, ManualServicePresentation } from './manu
 
 export interface ManualScreen {
   id: string;
+  /** Pregunta de la pantalla: la de la presentación o, si no la hay, la del primer paso. */
+  title: string;
+  description?: string;
+  measureHelp?: string[];
   /** Pasos del schema visibles en esta pantalla, en el orden del schema. */
   steps: ManualStep[];
   /** `stepId` que se emiten al completar la pantalla (telemetría), en orden. */
@@ -39,6 +43,9 @@ const buildScreen = (
   if (visible.length === 0) return null;
   return {
     id: screen.id,
+    title: screen.title ?? visible[0].title,
+    description: screen.title || screen.description ? screen.description : visible[0].description,
+    measureHelp: screen.measureHelp,
     steps: visible,
     stepIds: visible.map((step) => step.id),
     fields: visible.flatMap((step) => getVisibleFields(step, answers)),

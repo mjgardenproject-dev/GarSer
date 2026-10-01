@@ -24,6 +24,7 @@ import {
 } from './presentation/items';
 import { getManualPresentation } from './presentation/manualEntryPresentation';
 import { getQuestionProgress, getVisibleScreens } from './presentation/screens';
+import { HelpDisclosure } from './ui/HelpDisclosure';
 import { ItemList } from './ui/ItemList';
 import { ManualStepHeader } from './ui/ManualStepHeader';
 import { OptionList } from './ui/OptionList';
@@ -123,7 +124,6 @@ export const ManualEntryWizard: React.FC<Props> = ({
     [survey, presentation, activeItem],
   );
   const currentStep = visibleSteps[activeStepIndex];
-  const currentHeading = currentStep?.steps[0];
 
   useEffect(() => {
     onDraftChange?.({ items, wasteRemoval });
@@ -418,8 +418,8 @@ export const ManualEntryWizard: React.FC<Props> = ({
         <div data-manual-screen={currentStep.id} data-manual-step-ids={currentStep.stepIds.join(' ')}>
           <ManualStepHeader
             eyebrow={eyebrow}
-            title={currentHeading?.title || ''}
-            description={currentHeading?.description}
+            title={currentStep.title}
+            description={currentStep.description}
             headingRef={headingRef}
           />
           <div className="space-y-5">
@@ -439,6 +439,15 @@ export const ManualEntryWizard: React.FC<Props> = ({
               />
             ))}
           </div>
+          {currentStep.measureHelp?.length ? (
+            <HelpDisclosure>
+              <ul className="space-y-1">
+                {currentStep.measureHelp.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </HelpDisclosure>
+          ) : null}
         </div>
       )}
 

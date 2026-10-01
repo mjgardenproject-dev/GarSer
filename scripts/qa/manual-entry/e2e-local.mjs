@@ -315,6 +315,18 @@ const ACTION_BUTTONS = {
   review: ['Revisar mis datos'],
 };
 
+/** ¿La respuesta `action` se contesta en la pantalla que hay ahora? */
+async function nextAnswerOnThisScreen(page, action) {
+  if (!action || typeof action === 'string') return false;
+  if (action.num) return (await page.getByLabel(action.num[0], { exact: true }).count()) > 0;
+  if (action.plus) return (await page.getByRole('button', { name: `Aumentar ${action.plus[0].toLowerCase()}` }).count()) > 0;
+  if (action.toggle) return (await page.getByRole('switch', { name: action.toggle[0], exact: true }).count()) > 0;
+  if (action.pick) {
+    return page.evaluate((group) => [...document.querySelectorAll('[role=radiogroup]')].some((g) => g.getAttribute('aria-label') === group), action.pick[0]);
+  }
+  return false;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Recorrido de un servicio                                                  */
 /* ------------------------------------------------------------------------ */
@@ -349,8 +361,18 @@ async function runService({ browser, targetName, baseUrl, width, key, session })
   let error = null;
   try {
     await page.goto(`${baseUrl}/reservar`, { waitUntil: 'networkidle' });
-    await page.getByPlaceholder(/Buscar dirección/).fill(ADDRESS);
-    await page.getByText('Marbella, España').first().click({ timeout: 15000 });
+    // El autocompletado depende de Google Maps, que a veces tarda en cargar («Cargando servicio de
+    // direcciones…»): se espera más y, si no aparece la sugerencia, se vuelve a escribir.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.getByPlaceholder(/Buscar dirección/).fill('');
+      await page.getByPlaceholder(/Buscar dirección/).fill(ADDRESS);
+      try {
+        await page.getByText('Marbella, España').first().click({ timeout: 20000 });
+        break;
+      } catch (err) {
+        if (attempt === 2) throw err;
+      }
+    }
     await clickButton(page, ['Continuar a servicios']);
     await page.getByRole('button', { name: `Seleccionar ${spec.service}` }).click({ timeout: 15000 });
     await clickButton(page, ['Continuar a los detalles del servicio']);
@@ -360,8 +382,14 @@ async function runService({ browser, targetName, baseUrl, width, key, session })
     await page.waitForTimeout(400);
 
     let index = 0;
-    for (const action of spec.actions) {
+    for (const [position, action] of spec.actions.entries()) {
       const info = await wizardScreenInfo(page);
+      // Pantallas agrupadas (F5+): si la siguiente respuesta ya está en esta pantalla, el
+      // «siguiente» que la separaba no existe en la interfaz nueva y se salta (los datos no cambian).
+      if (action === 'next' && (await nextAnswerOnThisScreen(page, spec.actions[position + 1]))) {
+        index += 1;
+        continue;
+      }
       if (typeof action === 'string') {
         if (SHOTS && (action === 'next' || action === 'submit' || action === 'review')) {
           const file = `${String(index).padStart(2, '0')}.png`;
@@ -419,7 +447,7 @@ async function runService({ browser, targetName, baseUrl, width, key, session })
 
   await sleep(1500); // la telemetría viaja por una Edge Function
   const telemetry = psql(
-    `select coalesce(json_agg(json_build_object('e', event, 's', context->>'stepId', 'k', context->>'serviceKey') order by created_at, id), '[]') ` +
+    `select coalesce(json_agg(json_build_object('e', event, 's', context->>'stepId', 'k', context->>'serviceKey', 't', (extract(epoch from created_at) * 1000)::bigint) order by created_at, id), '[]') ` +
       `from booking_funnel_events where created_at >= '${t0}' and event like 'booking.manual%'`,
   );
   let declarations = null;
@@ -533,8 +561,28 @@ function report(results, outDir = OUT) {
       const fp = same((r) => r?.fingerprint);
       // Los pasos, en orden; el resto de eventos como conjunto (dos eventos del mismo instante
       // pueden llegar a la BD en cualquier orden, como «input_mode_changed» y «entry_started»).
+      // Los pasos, en orden; los que llegan a la BD a la vez (< 100 ms: una pantalla que reúne
+      // varios pasos los emite con un solo «Siguiente», y la Edge Function los inserta en cualquier
+      // orden) se comparan como conjunto. El resto de eventos, como conjunto.
+      const stepGroups = (telemetry) => {
+        const groups = [];
+        let last = null;
+        for (const event of telemetry.filter((e) => e.s)) {
+          if (last !== null && event.t !== undefined && event.t - last < 100) groups[groups.length - 1].push(event.s);
+          else groups.push([event.s]);
+          last = event.t ?? null;
+        }
+        return groups;
+      };
+      // Orden de referencia: el de la primera ejecución de la fila. Dentro de un grupo simultáneo
+      // se ordena según la referencia, y la secuencia resultante tiene que ser la misma.
+      const reference = (row[0]?.telemetry || []).filter((e) => e.s).map((e) => e.s);
+      const rank = (step) => {
+        const index = reference.indexOf(step);
+        return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+      };
       const telemetryKey = (r) => ({
-        steps: (r?.telemetry || []).filter((e) => e.s).map((e) => e.s),
+        steps: stepGroups(r?.telemetry || []).flatMap((group) => [...group].sort((a, b) => rank(a) - rank(b))),
         events: (r?.telemetry || []).map((e) => `${e.e}|${e.s ?? ''}|${e.k ?? ''}`).sort(),
       });
       const tel = same(telemetryKey);

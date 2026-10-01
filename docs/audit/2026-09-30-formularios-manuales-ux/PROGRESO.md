@@ -7,8 +7,8 @@
 | F1 Cimientos | ✅ Terminada y aprobada | 2026-09-30 | c5704fa | A ✅ · B = línea base · C ✅ · D ✅ | `qa/fase-1.md`. Sin cambio visible ni de precio |
 | F2 Carcasa y navegación | ✅ Terminada y aprobada | 2026-10-01 | 90a7308 | A ✅ · B envío = línea base · C ✅ · D ✅ (+ modal real) | `qa/fase-2.md`. CTA fuera: 242 → 1; desborde 16 → 0. Pendiente: prueba con teclado de iOS (H-N-14) |
 | F3 Controles | ✅ Terminada y aprobada | 2026-10-01 | 7d1733a | A ✅ · B envío = línea base · C ✅ · D ✅ | `qa/fase-3.md`. Controles < 44 px 43 → 7 (resumen, F4); escenarios 4/7 (fantasmas en F4) |
-| F4 Repetibles y revisión | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
-| F5 Setos | ⏳ Pendiente | | | | |
+| F4 Repetibles y revisión | ✅ Terminada y aprobada | 2026-10-01 | 5fd2af9 | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
+| F5 Setos | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. Decisión abierta H-N-15 |
 | F6 Árboles | ⏳ Pendiente | | | | |
 | F7 Palmeras | ⏳ Pendiente | | | | |
 | F8 Fitosanitarios | ⏳ Pendiente | | | | |
@@ -75,3 +75,23 @@
 - App real: en `main` el fantasma cobra 162,00 € (dos árboles) y en la rama 103,50 € (uno).
 - Banco completamente en verde por primera vez (7/7 escenarios, 0 controles < 44 px).
 - Siguiente: F5 (setos), pendiente del visto bueno del usuario.
+
+### 2026-10-01 — F5 Setos (inicio)
+Ya resuelto en F2-F4 para setos: stepper con rejilla (2,0 m), coma decimal, lista de opciones sin
+desbordes ni icono `Square`, «2,3 m» en la revisión. Lo que cambia en F5:
+1. Pantalla «¿Cuánto mide el seto?» con longitud y altura juntas (D-05), emitiendo `length` y
+   `height` en orden. «Pregunta X de 4» (antes 5).
+2. Bajo la altura, el tramo de tarifa en vivo desde `HEDGE_BAND_LABELS` (sin cambiar datos).
+3. Una sola frase de apoyo; el método de medida en «¿Cómo lo mido?» (sin comparaciones, D-03); fuera
+   la ayuda que repetía la descripción.
+4. Pictograma sencillo (vista desde arriba) para «Solo una cara» / «Las dos caras».
+Infraestructura: la capa de presentación admite título, apoyo y ayuda de medida por pantalla, y
+línea de contexto por campo; el conductor del E2E salta los «siguiente» que caen dentro de una
+misma pantalla agrupada (las respuestas no cambian).
+
+### 2026-10-01 — F5 Setos (cierre)
+- Hecho lo previsto: medidas en una pantalla, tramo de tarifa en vivo, método de medida, dibujo de
+  las caras. Precio, horas, huella y declaraciones de setos idénticos a la línea base.
+- Incidencias de herramientas resueltas (H-N-16: Maps lento, eventos simultáneos).
+- Decisión abierta para el usuario: H-N-15.
+- Siguiente: F6 (árboles), pendiente del visto bueno.

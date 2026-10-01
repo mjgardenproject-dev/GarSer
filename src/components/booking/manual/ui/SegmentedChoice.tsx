@@ -9,6 +9,8 @@ interface Props {
   onSelect: (value: string) => void;
   /** Una ayuda común debajo (las opciones del segmentado no llevan ayuda propia). */
   help?: string;
+  /** Línea de contexto según lo elegido (p. ej. el aviso del tramo más alto de palmera). */
+  feedback?: string | null;
   error?: string | null;
 }
 
@@ -19,9 +21,10 @@ interface Props {
  * precio (F6, acceso de árboles).
  * Lo usan los servicios que lo declaran en su presentación (p. ej. altura de palmera, F7).
  */
-export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected, onSelect, help, error }) => {
+export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected, onSelect, help, feedback, error }) => {
   const errorId = `${id}-error`;
   const helpId = `${id}-help`;
+  const feedbackId = `${id}-feedback`;
   return (
     <div>
       <div
@@ -29,7 +32,7 @@ export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected,
         role="radiogroup"
         aria-label={label}
         aria-invalid={error ? true : undefined}
-        aria-describedby={[error ? errorId : null, help ? helpId : null].filter(Boolean).join(' ') || undefined}
+        aria-describedby={[error ? errorId : null, help ? helpId : null, feedback ? feedbackId : null].filter(Boolean).join(' ') || undefined}
         tabIndex={-1}
         className={`grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-gray-100 p-1 outline-none ${error ? 'ring-1 ring-red-300' : ''}`}
       >
@@ -54,6 +57,11 @@ export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected,
       {help ? (
         <p id={helpId} className="mt-2 text-sm text-gray-600">
           {help}
+        </p>
+      ) : null}
+      {feedback && !error ? (
+        <p id={feedbackId} className="mt-2 text-sm text-gray-600">
+          {feedback}
         </p>
       ) : null}
       <FieldError id={errorId} message={error} />

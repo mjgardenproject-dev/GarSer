@@ -72,7 +72,9 @@ for (const url of Object.values(TARGETS)) {
 /**
  * Acciones:
  *   { num: [etiqueta, 'valor'] }     escribe en el campo numérico con esa etiqueta
- *   { pick: [grupo, opción] }        elige la opción (por su primera línea de texto)
+ *   { pick: [grupo, opción] }        elige la opción (por su primera línea de texto); `opción`
+ *                                    puede ser una lista de nombres equivalentes (F7: en `main`
+ *                                    «Phoenix canariensis», en la rama «Palmera canaria»)
  *   { toggle: [etiqueta, bool] }     deja el interruptor/elección sí-no en ese valor
  *   { plus: [etiqueta, n] }          pulsa n veces «Aumentar …» (stepper)
  *   'next' | 'add' | 'continue' | 'review' | 'submit'
@@ -113,7 +115,7 @@ const SPECS = {
   palm: {
     service: 'Poda de palmeras',
     actions: [
-      { pick: ['Especie', 'Phoenix canariensis'] }, 'next',
+      { pick: ['Especie', ['Phoenix canariensis', 'Palmera canaria']] }, 'next',
       { pick: ['Altura del tronco', '4-10 m'] }, 'next',
       { pick: ['Estado', 'Normal'] }, 'next',
       { plus: ['Número de palmeras', 1] }, 'next',
@@ -254,9 +256,10 @@ async function drivePick(page, group, option) {
   const clicked = await page.evaluate(
     ({ group, option, skip }) => {
       const firstLine = (el) => (el.innerText || el.textContent || '').split('\n').map((s) => s.trim()).filter(Boolean)[0] || '';
+      const names = Array.isArray(option) ? option : [option];
       const matches = (el) => {
         const line = firstLine(el);
-        return line === option || line.startsWith(`${option} `) || line.startsWith(`${option}(`) || line.startsWith(`${option},`);
+        return names.some((name) => line === name || line.startsWith(`${name} `) || line.startsWith(`${name}(`) || line.startsWith(`${name},`));
       };
       const groups = [...document.querySelectorAll('[role=radiogroup]')].filter(
         (g) => g.getAttribute('aria-label') === group,

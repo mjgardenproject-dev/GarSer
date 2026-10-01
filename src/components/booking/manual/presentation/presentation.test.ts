@@ -6,13 +6,24 @@ import {
   type ManualAnswers,
 } from '../../../../shared/manualEntry/manualEntrySchema';
 import { MANUAL_PARITY_FIXTURES } from '../../../../pages/reserva/manualEntryParityFixtures';
+import { buildManualBookingPatch } from '../../../../pages/reserva/manualEntryBuilders';
 import { getManualPresentation } from './manualEntryPresentation';
 import { describePresentationMismatch, getQuestionProgress, getVisibleScreens } from './screens';
 import { formatManualValue, formatNumberEs } from './formatManualValue';
 
+type ServiceKey = keyof typeof MANUAL_ENTRY_SURVEYS;
+
+/**
+ * Campos que se preguntaban antes de la capa de presentación, menos los que la presentación oculta
+ * porque el constructor ya descarta su respuesta (P-04: acceso difícil de palmeras en el tramo
+ * más bajo). Es la única diferencia permitida y se prueba aparte que no cambia el `patch`.
+ */
+const legacyFields = (serviceKey: ServiceKey, step: (typeof MANUAL_ENTRY_SURVEYS)[ServiceKey]['steps'][number], answers: ManualAnswers) =>
+  getVisibleFields(step, answers).filter((field) => !getManualPresentation(serviceKey).fields[field.key]?.hiddenWhen?.(answers));
+
 /** Lo que el asistente hacía antes de la capa de presentación: un paso visible = una pantalla. */
-const legacyVisibleStepIds = (serviceKey: keyof typeof MANUAL_ENTRY_SURVEYS, answers: ManualAnswers) =>
-  MANUAL_ENTRY_SURVEYS[serviceKey].steps.filter((step) => getVisibleFields(step, answers).length > 0).map((s) => s.id);
+const legacyVisibleStepIds = (serviceKey: ServiceKey, answers: ManualAnswers) =>
+  MANUAL_ENTRY_SURVEYS[serviceKey].steps.filter((step) => legacyFields(serviceKey, step, answers).length > 0).map((s) => s.id);
 
 describe('presentación de los formularios manuales', () => {
   it.each(MANUAL_SERVICE_KEYS)('%s: cada paso del schema está en una sola pantalla y en el mismo orden', (key) => {
@@ -32,12 +43,41 @@ describe('presentación de los formularios manuales', () => {
         const legacy = legacyVisibleStepIds(fixture.serviceKey, answers);
         expect(screens.flatMap((s) => s.stepIds)).toEqual(legacy);
         expect(screens.flatMap((s) => s.fields.map((f) => f.key))).toEqual(
-          legacy.flatMap((id) => getVisibleFields(survey.steps.find((s) => s.id === id)!, answers).map((f) => f.key)),
+          legacy.flatMap((id) => legacyFields(fixture.serviceKey, survey.steps.find((s) => s.id === id)!, answers).map((f) => f.key)),
         );
         items += 1;
       }
     }
     expect(items).toBeGreaterThan(88);
+  });
+
+  it('lo único que oculta la presentación es el acceso difícil de palmeras en el tramo más bajo, y no cambia el precio', () => {
+    const hidden = new Set<string>();
+    let lowestBand = 0;
+    for (const fixture of MANUAL_PARITY_FIXTURES) {
+      const presentation = getManualPresentation(fixture.serviceKey);
+      for (const answers of fixture.items) {
+        for (const step of MANUAL_ENTRY_SURVEYS[fixture.serviceKey].steps) {
+          for (const field of getVisibleFields(step, answers)) {
+            if (presentation.fields[field.key]?.hiddenWhen?.(answers)) hidden.add(`${fixture.serviceKey}.${field.key}`);
+          }
+        }
+      }
+      if (fixture.serviceKey !== 'palm') continue;
+      // El constructor da lo mismo declare lo que declare el acceso en esos elementos.
+      const flip = fixture.items.map((answers) =>
+        presentation.fields.hasAccessDifficulty.hiddenWhen!(answers) ? { ...answers, hasAccessDifficulty: !answers.hasAccessDifficulty } : answers,
+      );
+      if (flip.some((answers, index) => answers !== fixture.items[index])) lowestBand += 1;
+      // Sin los `id` (llevan la hora), como en la prueba de paridad.
+      const strip = (patch: ReturnType<typeof buildManualBookingPatch>['patch']) =>
+        JSON.parse(JSON.stringify(patch, (key, value) => (key === 'id' ? undefined : value)));
+      expect(strip(buildManualBookingPatch({ serviceKey: 'palm', items: flip, wasteRemoval: fixture.wasteRemoval }).patch)).toEqual(
+        strip(buildManualBookingPatch({ serviceKey: 'palm', items: fixture.items, wasteRemoval: fixture.wasteRemoval }).patch),
+      );
+    }
+    expect([...hidden]).toEqual(['palm.hasAccessDifficulty']);
+    expect(lowestBand).toBe(6);
   });
 });
 

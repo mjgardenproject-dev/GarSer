@@ -22,10 +22,12 @@ import {
   getVisibleFields,
   isManualOnlyService,
   MANUAL_ENTRY_SURVEYS,
+  type ManualAnswers,
   type ManualServiceKey,
 } from '../../../src/shared/manualEntry/manualEntrySchema';
 import { buildManualBookingPatch } from '../../../src/pages/reserva/manualEntryBuilders';
 import { getManualPresentation, presentOption } from '../../../src/components/booking/manual/presentation/manualEntryPresentation';
+import { getVisibleScreens } from '../../../src/components/booking/manual/presentation/screens';
 import { MANUAL_PARITY_FIXTURES } from '../../../src/pages/reserva/manualEntryParityFixtures';
 
 const params = new URLSearchParams(window.location.search);
@@ -42,6 +44,17 @@ const qa = {
   // Etiqueta con la que se enseña cada opción (F6: «Muy grande (más de 9 m)»).
   shownOptionLabel: (key: ManualServiceKey, fieldKey: string, option: { value: string; label: string }) =>
     presentOption(option, getManualPresentation(key).fields[fieldKey]).label,
+  // Campos que la presentación oculta porque el constructor ya los descarta (P-04, F7).
+  hiddenKeys: (key: ManualServiceKey, answers: ManualAnswers) =>
+    MANUAL_ENTRY_SURVEYS[key].steps
+      .flatMap((step) => getVisibleFields(step, answers))
+      .filter((field) => getManualPresentation(key).fields[field.key]?.hiddenWhen?.(answers))
+      .map((field) => field.key),
+  // `stepId` que emite un elemento: antes de la capa de presentación y ahora.
+  legacyStepIds: (key: ManualServiceKey, answers: ManualAnswers) =>
+    MANUAL_ENTRY_SURVEYS[key].steps.filter((step) => getVisibleFields(step, answers).length > 0).map((step) => step.id),
+  presentedStepIds: (key: ManualServiceKey, answers: ManualAnswers) =>
+    getVisibleScreens(MANUAL_ENTRY_SURVEYS[key], getManualPresentation(key), answers).flatMap((screen) => screen.stepIds),
   buildManualBookingPatch,
   fixtures: MANUAL_PARITY_FIXTURES,
   submitted: null as ManualWizardSubmitPayload | null,

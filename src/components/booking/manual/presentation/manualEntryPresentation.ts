@@ -12,12 +12,16 @@
  * guardando la misma clave con el mismo valor.
  */
 import {
+  getFieldOptions,
+  MANUAL_ENTRY_SURVEYS,
   MANUAL_RANGES,
   type ManualAnswers,
   type ManualFieldDef,
   type ManualServiceKey,
 } from '../../../../shared/manualEntry/manualEntrySchema';
 import { HEDGE_BAND_LABELS, mapHedgeHeightToBand } from '../../../../domain/hedgeBusinessRules';
+import { isLowestRangeThresholdForSpecies } from '../../../../domain/speciesBusinessRules';
+import { PALM_SPECIES_PHOTOS } from './palmSpeciesPhotos';
 import type { ManualNumberFormat } from '../../../../utils/decimalText';
 
 export interface ManualScreenPresentation {
@@ -71,6 +75,15 @@ export interface ManualFieldPresentation {
   optionHelp?: Record<string, string | null>;
   /** Ayuda propia del campo, en lugar de la del schema. */
   helpText?: string;
+  /** Foto por valor de opción (ruta pública); `null` = hueco sin foto todavía (D-13). */
+  optionImages?: Record<string, string | null>;
+  /** Etiqueta corta junto al nombre de una fila sí/no («Recomendado»). */
+  badge?: string;
+  /**
+   * Ocultar el campo cuando su respuesta no cuenta: SOLO si el constructor ya la descarta con esas
+   * respuestas (P-04, REGLAS 3). No cambia lo que se envía de los campos visibles.
+   */
+  hiddenWhen?: (answers: ManualAnswers) => boolean;
 }
 
 /** Pictogramas propios (dibujos sencillos que dicen algo que un icono genérico no dice). */
@@ -86,6 +99,8 @@ export interface ManualServicePresentation {
 }
 
 /** Una pantalla por paso: la forma actual del asistente. */
+const PALM_HEIGHT_FIELD = MANUAL_ENTRY_SURVEYS.palm.steps.find((step) => step.id === 'height')!.fields[0];
+
 const onePerStep = (
   stepIds: string[],
   dependsOn: Record<string, string[]> = {},
@@ -171,9 +186,77 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
     },
   },
   palm: {
-    screens: onePerStep(['species', 'height', 'state', 'quantity', 'extras']),
+    screens: [
+      { id: 'species', stepIds: ['species'] },
+      { id: 'height', stepIds: ['height'] },
+      { id: 'state', stepIds: ['state'], title: '¿En qué estado está la palmera?' },
+      { id: 'quantity', stepIds: ['quantity'] },
+      {
+        id: 'extras',
+        stepIds: ['extras'],
+        // Qué extras hay depende de la especie (fitosanitario, pelado) y de la altura (acceso).
+        dependsOn: ['species', 'height'],
+        title: '¿Necesitas algo más?',
+        description: 'Cada opción puede tener un coste adicional según el profesional.',
+      },
+    ],
     itemNounPlural: 'grupos de palmeras',
-    fields: { quantity: { numberFormat: 'quantity', errorName: 'el número de palmeras' } },
+    fields: {
+      species: {
+        // Nombre común primero y latín debajo (D-10), con el rasgo para reconocerla. El `value`
+        // sigue siendo el nombre latino. Foto por especie cuando el usuario la aporte (D-13).
+        optionLabels: {
+          'Phoenix canariensis': 'Palmera canaria',
+          'Phoenix dactylifera': 'Palmera datilera',
+          'Washingtonia robusta/filifera': 'Washingtonia o palmera de abanico',
+          'Syagrus romanzoffiana': 'Pindó',
+          'Trachycarpus fortunei': 'Palmera de molino',
+          'Roystonea regia': 'Palmera real',
+        },
+        optionHelp: {
+          'Phoenix canariensis': 'Phoenix canariensis · Copa muy densa y redondeada.',
+          'Phoenix dactylifera': 'Phoenix dactylifera · Tronco esbelto y alto.',
+          'Washingtonia robusta/filifera': 'Washingtonia robusta o filifera · Tronco muy alto y fino, copa pequeña.',
+          'Syagrus romanzoffiana': 'Syagrus romanzoffiana · Hojas plumosas y arqueadas.',
+          'Trachycarpus fortunei': 'Trachycarpus fortunei · Baja y resistente.',
+          'Roystonea regia': 'Roystonea regia · Tronco liso y abultado.',
+        },
+        optionImages: PALM_SPECIES_PHOTOS,
+      },
+      height: {
+        // Dos a cuatro tramos cortos: segmentado. El aviso del tramo más alto (ayuda de la opción
+        // en el schema) pasa a la línea de debajo cuando se elige.
+        control: 'segmented',
+        feedback: (answers) => {
+          const height = answers.height;
+          if (typeof height !== 'string' || height === '') return null;
+          const option = getFieldOptions(PALM_HEIGHT_FIELD, answers).find((o) => o.value === height);
+          // Se volvió atrás y se cambió de especie: esa altura no existe en la nueva lista.
+          if (!option) return 'Los tramos de altura cambian con la especie: vuelve a elegir la altura del tronco.';
+          return option.help ?? null;
+        },
+      },
+      quantity: {
+        numberFormat: 'quantity',
+        errorName: 'el número de palmeras',
+        // Sin «ud»: la etiqueta ya dice «Número de palmeras».
+        unit: () => '',
+      },
+      hasPhytosanitary: {
+        badge: 'Recomendado',
+        helpText: 'Protege los cortes de la poda frente a plagas como el picudo rojo.',
+      },
+      hasTrunkPeeling: { helpText: 'Acabado estético del tronco.' },
+      hasAccessDifficulty: {
+        helpText: 'Cerca de cables, en pendiente o con obstáculos importantes.',
+        // En el tramo más bajo el constructor descarta el acceso difícil (`buildPalmGroups`, con
+        // la misma regla de dominio): preguntarlo hacía creer que contaba (P-04).
+        hiddenWhen: (answers) =>
+          typeof answers.species === 'string' &&
+          typeof answers.height === 'string' &&
+          isLowestRangeThresholdForSpecies(answers.species, answers.height),
+      },
+    },
   },
   shrub: {
     screens: onePerStep(['surface', 'size', 'state']),

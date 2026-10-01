@@ -3,7 +3,8 @@
  *
  * Traduce los pasos del schema a las pantallas que ve el cliente según la presentación del
  * servicio, y calcula el progreso honesto «Pregunta X de Y». No decide nada de datos: qué
- * campos son visibles lo sigue diciendo el schema (`getVisibleFields`).
+ * campos son visibles lo sigue diciendo el schema (`getVisibleFields`). La presentación solo puede
+ * ocultar además un campo cuya respuesta el constructor ya descarta (`hiddenWhen`, P-04).
  */
 import {
   getVisibleFields,
@@ -12,7 +13,11 @@ import {
   type ManualServiceSurvey,
   type ManualStep,
 } from '../../../../shared/manualEntry/manualEntrySchema';
-import type { ManualScreenPresentation, ManualServicePresentation } from './manualEntryPresentation';
+import type {
+  ManualFieldPresentation,
+  ManualScreenPresentation,
+  ManualServicePresentation,
+} from './manualEntryPresentation';
 
 export interface ManualScreen {
   id: string;
@@ -30,16 +35,21 @@ export interface ManualScreen {
 
 const stepById = (survey: ManualServiceSurvey) => new Map(survey.steps.map((step) => [step.id, step]));
 
-const isStepVisible = (step: ManualStep, answers: ManualAnswers) => getVisibleFields(step, answers).length > 0;
+type FieldsPresentation = Record<string, ManualFieldPresentation>;
+
+/** Campos que se enseñan de un paso: los visibles del schema menos los que la presentación oculta. */
+const shownFields = (step: ManualStep, answers: ManualAnswers, fields: FieldsPresentation) =>
+  getVisibleFields(step, answers).filter((field) => !fields[field.key]?.hiddenWhen?.(answers));
 
 const buildScreen = (
   screen: ManualScreenPresentation,
   steps: Map<string, ManualStep>,
   answers: ManualAnswers,
+  fields: FieldsPresentation,
 ): ManualScreen | null => {
   const visible = screen.stepIds
     .map((id) => steps.get(id))
-    .filter((step): step is ManualStep => Boolean(step) && isStepVisible(step as ManualStep, answers));
+    .filter((step): step is ManualStep => Boolean(step) && shownFields(step as ManualStep, answers, fields).length > 0);
   if (visible.length === 0) return null;
   return {
     id: screen.id,
@@ -48,7 +58,7 @@ const buildScreen = (
     measureHelp: screen.measureHelp,
     steps: visible,
     stepIds: visible.map((step) => step.id),
-    fields: visible.flatMap((step) => getVisibleFields(step, answers)),
+    fields: visible.flatMap((step) => shownFields(step, answers, fields)),
   };
 };
 
@@ -60,7 +70,7 @@ export function getVisibleScreens(
 ): ManualScreen[] {
   const steps = stepById(survey);
   return presentation.screens
-    .map((screen) => buildScreen(screen, steps, answers))
+    .map((screen) => buildScreen(screen, steps, answers, presentation.fields))
     .filter((screen): screen is ManualScreen => screen !== null);
 }
 
@@ -74,8 +84,9 @@ const mayBeShown = (
   screen: ManualScreenPresentation,
   steps: Map<string, ManualStep>,
   answers: ManualAnswers,
+  fields: FieldsPresentation,
 ) => {
-  if (buildScreen(screen, steps, answers)) return true;
+  if (buildScreen(screen, steps, answers, fields)) return true;
   return (screen.dependsOn || []).some((key) => isUnanswered(answers[key]));
 };
 
@@ -102,7 +113,7 @@ export function getQuestionProgress(
   options: { asksWaste: boolean },
 ): QuestionProgress {
   const steps = stepById(survey);
-  const counted = presentation.screens.filter((screen) => mayBeShown(screen, steps, answers)).map((screen) => screen.id);
+  const counted = presentation.screens.filter((screen) => mayBeShown(screen, steps, answers, presentation.fields)).map((screen) => screen.id);
   const total = counted.length + (options.asksWaste ? 1 : 0);
   if (screenId === 'waste') return { current: total, total };
   const index = counted.indexOf(screenId);

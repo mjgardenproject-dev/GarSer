@@ -138,7 +138,8 @@ async function planItemScreen(page, screen, item) {
       if (steps.length === 0) return { error: `Paso no reconocido: «${heading}»` };
       const step = steps[0];
       const actions = [];
-      for (const field of steps.flatMap((candidate) => qa.getVisibleFields(candidate, item))) {
+      const hidden = qa.hiddenKeys(qa.serviceKey, item);
+      for (const field of steps.flatMap((candidate) => qa.getVisibleFields(candidate, item)).filter((f) => !hidden.includes(f.key))) {
         const value = item[field.key];
         if (value === undefined) {
           if (field.type === 'boolean') continue;
@@ -346,7 +347,13 @@ async function driveFixture(browser, fixture, { width = 375, layout = false, gar
         patchDiff = { interfaz: a.slice(Math.max(0, index - 80), index + 80), referencia: b.slice(Math.max(0, index - 80), index + 80) };
       }
     }
-    return { payload, stepEvents: qa.stepEvents, consentEvents: qa.consentEvents, patchMatches, patchDiff };
+    // Para reconocer la diferencia prevista de P-04 (F7) frente a la línea base.
+    const p04 = {
+      hiddenKeys: fixture.items.map((item) => qa.hiddenKeys(fixture.serviceKey, item)),
+      legacyEvents: fixture.items.flatMap((item) => qa.legacyStepIds(fixture.serviceKey, item)),
+      presentedEvents: fixture.items.flatMap((item) => qa.presentedStepIds(fixture.serviceKey, item)),
+    };
+    return { payload, stepEvents: qa.stepEvents, consentEvents: qa.consentEvents, patchMatches, patchDiff, p04 };
   }, fixture);
 
   await context.close();
@@ -558,6 +565,7 @@ async function main() {
           stepEvents: run.stepEvents,
           consentEvents: run.consentEvents,
           consoleErrors: run.consoleErrors,
+          p04: run.p04,
         });
       }
       process.stdout.write(`paridad: ${report.payloads.length} respuestas recorridas\n`);
@@ -585,6 +593,7 @@ async function main() {
     .filter((row) => !row.error)
     .map(({ fixtureId, payload, stepEvents, consentEvents }) => ({ fixtureId, payload, stepEvents, consentEvents }));
   let baselineMismatches = null;
+  let expectedDifferences = [];
   if (flag('write-baseline')) {
     fs.mkdirSync(path.dirname(BASELINE_FILE), { recursive: true });
     fs.writeFileSync(BASELINE_FILE, `${JSON.stringify(baselineRows, null, 2)}\n`);
@@ -592,15 +601,31 @@ async function main() {
   } else if (fs.existsSync(BASELINE_FILE) && report.payloads.length) {
     const baseline = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
     const byId = new Map(baseline.map((row) => [row.fixtureId, row]));
-    baselineMismatches = baselineRows
-      .filter((row) => {
-        const expected = byId.get(row.fixtureId);
-        return !expected || JSON.stringify(expected) !== JSON.stringify(row);
-      })
-      .map((row) => row.fixtureId);
+    const p04ById = new Map(report.payloads.map((row) => [row.fixtureId, row.p04]));
+    const differing = baselineRows.filter((row) => {
+      const expected = byId.get(row.fixtureId);
+      return !expected || JSON.stringify(expected) !== JSON.stringify(row);
+    });
+    // Diferencia PREVISTA (F7, P-04): la presentación ya no pregunta el acceso difícil de palmeras
+    // en el tramo más bajo, donde el constructor lo descarta. Se acepta solo si, quitando de la
+    // línea base esas claves ocultas (y el `stepId` de una pantalla que se queda sin preguntas),
+    // lo enviado es idéntico. La línea base no se toca.
+    const isExpectedP04 = (row) => {
+      const expected = byId.get(row.fixtureId);
+      const p04 = p04ById.get(row.fixtureId);
+      if (!expected || !p04 || !expected.payload || !p04.hiddenKeys.some((keys) => keys.length > 0)) return false;
+      if (JSON.stringify(expected.stepEvents) !== JSON.stringify(p04.legacyEvents)) return false;
+      const adjusted = JSON.parse(JSON.stringify(expected));
+      adjusted.payload.items.forEach((item, index) => (p04.hiddenKeys[index] || []).forEach((key) => delete item[key]));
+      adjusted.stepEvents = p04.presentedEvents;
+      return JSON.stringify(adjusted) === JSON.stringify(row);
+    };
+    expectedDifferences = differing.filter(isExpectedP04).map((row) => row.fixtureId);
+    baselineMismatches = differing.filter((row) => !isExpectedP04(row)).map((row) => row.fixtureId);
   }
 
   const summary = summarize(report, baselineMismatches);
+  summary.expectedDifferences = expectedDifferences;
   report.summary = summary;
   fs.writeFileSync(path.join(OUT, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   fs.writeFileSync(path.join(OUT, 'REPORT.md'), renderMarkdown(report, summary));
@@ -667,6 +692,9 @@ function renderMarkdown(report, summary) {
   lines.push(
     `| Lo enviado = línea base (payload y telemetría) | ${summary.baselineMismatches === null ? '— (sin comparar)' : `${status(summary.baselineMismatches.length === 0)} ${summary.baselineMismatches.length} distintos`} |`,
   );
+  if (summary.expectedDifferences?.length) {
+    lines.push(`| Diferencias previstas con la línea base (P-04, F7) | ${summary.expectedDifferences.length}: solo falta el acceso difícil oculto en el tramo más bajo |`);
+  }
   lines.push(`| Escenarios de hallazgos | ${status(summary.scenarioFails.length === 0)} ${report.scenarios.length - summary.scenarioFails.length}/${report.scenarios.length} |`, '');
 
   lines.push('## Escenarios', '', '| ID | Qué | Observado | Esperado | |', '|---|---|---|---|---|');
@@ -684,6 +712,7 @@ function renderMarkdown(report, summary) {
   list('Errores del banco', summary.runErrors);
   list('Lo enviado no coincide con la referencia', summary.patchMismatches);
   list('Lo enviado no coincide con la línea base', summary.baselineMismatches || []);
+  list('Diferencias previstas con la línea base (P-04: acceso difícil de palmeras oculto en el tramo más bajo)', summary.expectedDifferences || []);
   lines.push('');
   return lines.join('\n');
 }

@@ -157,7 +157,16 @@ export const ManualFieldRenderer: React.FC<Props> = ({
   }
 
   if (control === 'toggle') {
-    return <ToggleRow id={id} label={field.label} help={help} checked={value === true} onChange={(checked) => onChange(checked)} />;
+    return (
+      <ToggleRow
+        id={id}
+        label={field.label}
+        help={help}
+        badge={fieldPresentation?.badge}
+        checked={value === true}
+        onChange={(checked) => onChange(checked)}
+      />
+    );
   }
 
   const options = field.type === 'boolean' ? field.options || [] : getFieldOptions(field, answers);
@@ -173,6 +182,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
         selected={selected}
         onSelect={select}
         help={help}
+        feedback={feedback}
         error={shownError}
       />
     );
@@ -185,8 +195,15 @@ export const ManualFieldRenderer: React.FC<Props> = ({
         label={field.label}
         options={options.map((option) => {
           const pictogram = fieldPresentation?.optionPictograms?.[option.value];
+          const image = fieldPresentation?.optionImages?.[option.value];
           const shown = presentOption(option, fieldPresentation);
-          return { value: option.value, label: shown.label, help: shown.help, media: pictogram ? <Pictogram name={pictogram} /> : undefined };
+          // Foto decorativa (`alt=""`): la etiqueta ya nombra la opción. Sin foto, sin hueco vacío.
+          const media = pictogram ? (
+            <Pictogram name={pictogram} />
+          ) : image ? (
+            <img src={image} alt="" width={56} height={56} loading="lazy" className="h-14 w-14 rounded-lg object-cover" />
+          ) : undefined;
+          return { value: option.value, label: shown.label, help: shown.help, media };
         })}
         selected={selected}
         onSelect={select}

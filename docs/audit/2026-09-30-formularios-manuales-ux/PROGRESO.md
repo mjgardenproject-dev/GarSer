@@ -10,6 +10,7 @@
 | F4 Repetibles y revisión | ✅ Terminada y aprobada | 2026-10-01 | 5fd2af9 | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
 | F5 Setos | ✅ Terminada y aprobada | 2026-10-01 | 8eacc7f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. H-N-15 decidido: el tramo se queda visible |
 | F6 Árboles | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | b1362fb | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Pendiente: aprobar las ayudas del tipo de poda; decidir H-N-17 |
+| F7 Palmeras | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | (ver commit F7) | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Pendiente: aprobar textos; fotos de especies cuando el usuario las tenga (D-13) |
 | F7 Palmeras | ⏳ Pendiente | | | | |
 | F8 Fitosanitarios | ⏳ Pendiente | | | | |
 | F9 Desbroce | ⏳ Pendiente | | | | |
@@ -142,3 +143,15 @@ cambia en F7:
    pantalla de extras desaparece (no se emite su `stepId`). Se documenta como diferencia prevista en
    el banco, no se toca la línea base.
 Textos para aprobar al cierre (REGLAS 14): nombres comunes, frase de coste de los extras.
+
+### 2026-10-01 — F7 Palmeras (cierre)
+- Hecho lo previsto: nombre común + latín, huecos de foto por especie (vacíos, D-13), altura en
+  segmentado con su aviso, aviso al cambiar de especie, estado y número, extras con el coste dicho
+  una vez y el fitosanitario «Recomendado», acceso oculto en el tramo más bajo (P-04).
+- Cambio respecto al plan: el fitosanitario lleva una línea con el porqué, sin plegado (cabía).
+- Diferencia prevista y acotada con la línea base: 6 respuestas del tramo más bajo (sin
+  `hasAccessDifficulty`, y sin `stepId` `extras` en pindó y palmera real); `patch` idéntico. El banco
+  la reconoce de forma explícita; la línea base no se toca.
+- Precio, horas, huella, telemetría y declaraciones del E2E idénticos a `main` en los 7 servicios.
+- Siguiente: F8 (fitosanitarios), pendiente del visto bueno; necesita tu decisión D-12 (tallas en metros como las del configurador del jardinero; pendiente).
+

@@ -17,7 +17,7 @@ describe('carcasa del asistente (F2)', () => {
     expect(eyebrow()).toBe('Corte de césped · Pregunta 1 de 3');
     expect(screen.queryByRole('progressbar')).toBeNull();
 
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Superficie de césped' }), { target: { value: '80' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Superficie de césped' }), { target: { value: '80' } });
     next();
     expect(eyebrow()).toBe('Corte de césped · Pregunta 2 de 3');
 
@@ -34,7 +34,7 @@ describe('carcasa del asistente (F2)', () => {
   it('sin «Atrás» en la primera pregunta (D-08); aparece en la segunda', () => {
     render(<ManualEntryWizard survey={MANUAL_ENTRY_SURVEYS.lawn} onSubmit={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Atrás' })).toBeNull();
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Superficie de césped' }), { target: { value: '80' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Superficie de césped' }), { target: { value: '80' } });
     next();
     expect(screen.getByRole('button', { name: 'Atrás' })).toBeTruthy();
   });
@@ -70,7 +70,7 @@ describe('carcasa del asistente (F2)', () => {
     fireEvent.click(screen.getByText('Árboles'));
     next();
     totals.push(total());
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Cantidad a tratar' }), { target: { value: '3' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad a tratar' }), { target: { value: '3' } });
     next();
     totals.push(total());
     fireEvent.click(screen.getByText('Grandes'));
@@ -86,7 +86,7 @@ describe('carcasa del asistente (F2)', () => {
   it('cada pantalla sigue emitiendo su stepId (telemetría)', () => {
     const onStepComplete = vi.fn();
     render(<ManualEntryWizard survey={MANUAL_ENTRY_SURVEYS.lawn} onSubmit={vi.fn()} onStepComplete={onStepComplete} />);
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Superficie de césped' }), { target: { value: '80' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Superficie de césped' }), { target: { value: '80' } });
     next();
     fireEvent.click(screen.getByText('Normal'));
     next();

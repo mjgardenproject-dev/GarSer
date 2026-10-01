@@ -5,8 +5,8 @@
 | Auditoría y plan | ✅ Aprobado (D-01…D-11 respondidas) | 2026-09-30 | 757d21c + siguiente | — | D-03 = quitar referencias; nuevas D-12 (antes de F8/F11) y D-13 (antes de F7) |
 | Pre-fase | ✅ Terminada y aprobada | 2026-09-30 | 1d157f1 | A ✅ · B línea base · C ✅ · D-precio ✅ | `qa/pre-fase.md`, `qa/linea-base.md`. BD local rehecha (copia previa), licencia del jardinero en local, Playwright aislado, `e2e-local.mjs` reconstruido |
 | F1 Cimientos | ✅ Terminada y aprobada | 2026-09-30 | c5704fa | A ✅ · B = línea base · C ✅ · D ✅ | `qa/fase-1.md`. Sin cambio visible ni de precio |
-| F2 Carcasa y navegación | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B envío = línea base · C ✅ · D ✅ (+ modal real) | `qa/fase-2.md`. CTA fuera: 242 → 1; desborde 16 → 0. Pendiente: prueba con teclado de iOS (H-N-14) |
-| F3 Controles | ⏳ Pendiente | | | | |
+| F2 Carcasa y navegación | ✅ Terminada y aprobada | 2026-10-01 | 90a7308 | A ✅ · B envío = línea base · C ✅ · D ✅ (+ modal real) | `qa/fase-2.md`. CTA fuera: 242 → 1; desborde 16 → 0. Pendiente: prueba con teclado de iOS (H-N-14) |
+| F3 Controles | ✅ Terminada, **esperando visto bueno** | 2026-10-01 | (este commit) | A ✅ · B envío = línea base · C ✅ · D ✅ | `qa/fase-3.md`. Controles < 44 px 43 → 7 (resumen, F4); escenarios 4/7 (fantasmas en F4) |
 | F4 Repetibles y revisión | ⏳ Pendiente | | | | |
 | F5 Setos | ⏳ Pendiente | | | | |
 | F6 Árboles | ⏳ Pendiente | | | | |
@@ -58,3 +58,12 @@
 - Nuevo `scripts/qa/manual-entry/gardener-local.mjs`: modal real del jardinero (45 €).
 - Puerta: envío y precio idénticos a la línea base en los 7; CTA fuera 242 → 1; desborde 16 → 0.
 - Siguiente: F3 (controles), pendiente del visto bueno del usuario.
+
+### 2026-10-01 — F3 Controles
+- Campo numérico (coma, miles, sin corrección silenciosa, Intro), stepper con rejilla, lista de
+  opciones de una columna sin iconos ni saltos, fila sí/no entera, errores con artículo junto al
+  campo y foco, «Siguiente» siempre activo. Sin ejemplos comparativos (D-03).
+- iOS: simulador arrancado con `simctl` y página vista en Safari de iOS 26; el control de la app
+  Simulator lo denegó el usuario → prueba de teclado pendiente (H-N-14).
+- Puerta: envío y precio idénticos a la línea base; desborde 0, CTA fuera 0, controles < 44 px 7.
+- Siguiente: F4 (repetibles, revisión y consentimiento), pendiente del visto bueno del usuario.

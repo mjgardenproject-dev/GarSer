@@ -10,7 +10,9 @@ import {
 import { validateManualField } from '../../../shared/manualEntry/manualEntryValidation';
 import { MANUAL_ENTRY_STRINGS } from '../../../shared/manualEntry/strings';
 import { ManualFieldRenderer } from './fields/ManualFieldRenderer';
+import { manualFieldId } from './ui/fieldIds';
 import { ManualEntrySummary } from './ManualEntrySummary';
+import { formatManualFieldError } from './presentation/fieldErrors';
 import { getManualPresentation } from './presentation/manualEntryPresentation';
 import { getQuestionProgress, getVisibleScreens } from './presentation/screens';
 import { ManualStepHeader } from './ui/ManualStepHeader';
@@ -100,9 +102,14 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const [phase, setPhase] = useState<WizardPhase>(initialPhase);
   const [consentChecked, setConsentChecked] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  // Campos que el cliente ya ha dejado: su error se enseña al salir de ellos, no mientras
+  // escribe ni dos pantallas después (Baymard). Se vacía al cambiar de pantalla.
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  // Campo al que llevar el foco tras pulsar «Siguiente» con errores.
+  const [focusErrorKey, setFocusErrorKey] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const activeItem = items[activeItemIndex] || {};
+  const activeItem = useMemo(() => items[activeItemIndex] || {}, [items, activeItemIndex]);
   const presentation = getManualPresentation(survey.serviceKey);
   // Pantallas visibles del elemento activo. La presentación decide qué pasos del schema
   // comparten pantalla; hoy es uno por pantalla, igual que antes de existir esta capa.
@@ -120,7 +127,23 @@ export const ManualEntryWizard: React.FC<Props> = ({
 
   useEffect(() => {
     headingRef.current?.focus();
+    setTouched(new Set());
   }, [phase, activeStepIndex, activeItemIndex]);
+
+  // Al fallar, el foco va al primer campo con error, centrado en pantalla: en el móvil el error
+  // podía quedar fuera de la vista y el cliente no sabía por qué no avanzaba (T-07).
+  useEffect(() => {
+    if (!focusErrorKey) return;
+    const element = document.getElementById(manualFieldId(focusErrorKey));
+    if (element) {
+      element.focus({ preventScroll: true });
+      element.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    }
+    setFocusErrorKey(null);
+  }, [focusErrorKey]);
+
+  const markTouched = (key: string) =>
+    setTouched((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
 
   const updateAnswer = (key: string, value: ManualAnswers[string]) => {
     setItems((prev) => {
@@ -130,13 +153,19 @@ export const ManualEntryWizard: React.FC<Props> = ({
     });
   };
 
+  // Qué falla lo decide la validación compartida (la misma del servidor); cómo se le dice al
+  // cliente, la capa de presentación: con artículo, unidad y números en español.
   const currentStepErrors = useMemo(() => {
     if (phase !== 'item' || !currentStep) return [] as Array<{ field: string; message: string }>;
     return currentStep.fields
-      .map((field) => validateManualField(field, activeItem[field.key], activeItem))
-      .filter((error): error is NonNullable<typeof error> => Boolean(error))
-      .map((error) => ({ field: error.field, message: error.message }));
-  }, [phase, currentStep, activeItem]);
+      .map((field) => {
+        const error = validateManualField(field, activeItem[field.key], activeItem);
+        return error
+          ? { field: error.field, message: formatManualFieldError(error, field, activeItem[field.key], presentation.fields[field.key]) }
+          : null;
+      })
+      .filter((error): error is { field: string; message: string } => Boolean(error));
+  }, [phase, currentStep, activeItem, presentation]);
 
   const errorByField = useMemo(() => {
     const map: Record<string, string> = {};
@@ -172,6 +201,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const goNextFromItem = () => {
     if (currentStepErrors.length > 0) {
       setShowErrors(true);
+      setFocusErrorKey(currentStepErrors[0].field);
       return;
     }
     setShowErrors(false);
@@ -259,7 +289,6 @@ export const ManualEntryWizard: React.FC<Props> = ({
           primary={{
             label: W.next,
             onClick: goNextFromItem,
-            disabled: showErrors && currentStepErrors.length > 0,
             forward: true,
           }}
         />
@@ -322,8 +351,13 @@ export const ManualEntryWizard: React.FC<Props> = ({
                 field={field}
                 value={activeItem[field.key]}
                 answers={activeItem}
-                error={showErrors ? errorByField[field.key] : null}
+                error={errorByField[field.key] ?? null}
+                showError={showErrors || touched.has(field.key)}
+                fieldPresentation={presentation.fields[field.key]}
                 onChange={(value) => updateAnswer(field.key, value)}
+                onBlur={() => markTouched(field.key)}
+                // Intro en una pantalla de un solo campo = «Siguiente» (P-16).
+                onEnter={currentStep.fields.length === 1 ? goNextFromItem : undefined}
               />
             ))}
           </div>

@@ -76,6 +76,34 @@ describe('árboles · acceso compacto', () => {
   });
 });
 
+describe('árboles · acceso obligatorio (H-N-17)', () => {
+  it('sin elegir no avanza: error y foco en el grupo; al elegir, sigue', () => {
+    render(<ManualEntryWizard survey={survey} onSubmit={vi.fn()} initialItems={[{ aiSizeBand: 'medium', pruningType: 'structural' }]} />);
+    click('Siguiente');
+    click('Siguiente');
+    click('Siguiente');
+    expect(heading()).toBe('¿El acceso al árbol es complicado?');
+    expect(screen.getByText('Elige una opción para continuar.')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole('radiogroup', { name: 'Dificultad de acceso' }));
+    pick('Acceso normal');
+    click('Siguiente');
+    expect(heading()).toBe('¿Quieres añadir más?');
+  });
+
+  it('un árbol sin el acceso contestado cuenta como incompleto y no deja confirmar', () => {
+    render(
+      <ManualEntryWizard
+        survey={survey}
+        onSubmit={vi.fn()}
+        initialItems={[{ aiSizeBand: 'medium', pruningType: 'structural' }]}
+        initialPhase="summary"
+      />,
+    );
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect((screen.getByRole('button', { name: 'Confirmar y continuar' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 describe('árboles · «Duplicar» (D-04)', () => {
   const TREE = { aiSizeBand: 'large', pruningType: 'shaping', difficultyHigh: true };
 

@@ -84,6 +84,12 @@ export interface ManualFieldPresentation {
    * respuestas (P-04, REGLAS 3). No cambia lo que se envía de los campos visibles.
    */
   hiddenWhen?: (answers: ManualAnswers) => boolean;
+  /**
+   * Booleano elegido con dos opciones que la interfaz exige contestar (H-N-17). La validación
+   * compartida no cambia (los booleanos siguen siendo opcionales para el servidor y el
+   * constructor): solo no se avanza sin elegir, para que la revisión no enseñe «—».
+   */
+  requireChoice?: boolean;
 }
 
 /** Pictogramas propios (dibujos sencillos que dicen algo que un icono genérico no dice). */
@@ -182,7 +188,8 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
         },
       },
       // Dos respuestas cortas: segmentado. Qué es «difícil» lo dice la frase de apoyo de la pantalla.
-      difficultyHigh: { control: 'segmented' },
+      // H-N-17: hay que elegir una de las dos (antes se podía saltar y contaba como normal).
+      difficultyHigh: { control: 'segmented', requireChoice: true },
     },
   },
   palm: {

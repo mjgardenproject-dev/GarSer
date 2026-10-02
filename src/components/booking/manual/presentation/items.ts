@@ -12,9 +12,13 @@ import {
   type ManualAnswers,
   type ManualServiceSurvey,
 } from '../../../../shared/manualEntry/manualEntrySchema';
-import { validateManualField } from '../../../../shared/manualEntry/manualEntryValidation';
+import {
+  validateManualField,
+  type ManualValidationError,
+} from '../../../../shared/manualEntry/manualEntryValidation';
+import type { ManualFieldDef } from '../../../../shared/manualEntry/manualEntrySchema';
 import { formatManualValue } from './formatManualValue';
-import type { ManualServicePresentation } from './manualEntryPresentation';
+import type { ManualFieldPresentation, ManualServicePresentation } from './manualEntryPresentation';
 import { getVisibleScreens } from './screens';
 
 /** Elemento recién creado: solo los valores por defecto del schema. */
@@ -34,6 +38,24 @@ export function isManualItemEmpty(survey: ManualServiceSurvey, item: ManualAnswe
   return Object.entries(item).every(([key, value]) => value === undefined || value === defaults[key]);
 }
 
+/**
+ * Lo que falla en un campo: la validación compartida (la del servidor) y, además, una elección
+ * sí/no que la interfaz exige (`requireChoice`, H-N-17). Nunca acepta algo que el servidor rechace.
+ */
+export function validatePresentedField(
+  field: ManualFieldDef,
+  value: unknown,
+  answers: ManualAnswers,
+  fieldPresentation?: ManualFieldPresentation,
+): Pick<ManualValidationError, 'field' | 'code'> | null {
+  const error = validateManualField(field, value, answers);
+  if (error) return error;
+  if (fieldPresentation?.requireChoice && field.type === 'boolean' && value !== true && value !== false) {
+    return { field: field.key, code: 'required' };
+  }
+  return null;
+}
+
 /** Índice de la primera pantalla con algún dato que falta o no vale (-1 si está completo). */
 export function firstIncompleteScreenIndex(
   survey: ManualServiceSurvey,
@@ -41,7 +63,7 @@ export function firstIncompleteScreenIndex(
   item: ManualAnswers,
 ): number {
   return getVisibleScreens(survey, presentation, item).findIndex((screen) =>
-    screen.fields.some((field) => validateManualField(field, item[field.key], item) !== null),
+    screen.fields.some((field) => validatePresentedField(field, item[field.key], item, presentation.fields[field.key]) !== null),
   );
 }
 

@@ -167,3 +167,12 @@ Textos para aprobar al cierre (REGLAS 14): nombres comunes, frase de coste de lo
 - Ya no queda ninguna decisión abierta para F8–F12, salvo las fotos de palmeras (D-13) y la prueba
   del teclado en iPhone (H-N-14), que son acciones del usuario.
 
+### 2026-10-02 — Complemento F6: H-N-17
+- `requireChoice` en la presentación (solo interfaz): el acceso del árbol hay que elegirlo; sin
+  elegir, «Elige una opción para continuar.» con el foco en el grupo, y un árbol sin él cuenta como
+  incompleto. La validación compartida y el constructor no cambian.
+- Nota: en el modal de corrección del jardinero, una declaración antigua sin el acceso pedirá
+  elegirlo antes de recalcular (es una confirmación, no cambia el precio).
+- Puerta: typecheck igual (128), vitest 828/828 (2 nuevas en `TreeForm.test.tsx`), banco de árboles
+  0 distintos con la línea base. El E2E completo va en la puerta de F8.
+

@@ -7,7 +7,6 @@ import {
   type ManualAnswers,
   type ManualServiceSurvey,
 } from '../../../shared/manualEntry/manualEntrySchema';
-import { validateManualField } from '../../../shared/manualEntry/manualEntryValidation';
 import { MANUAL_ENTRY_STRINGS } from '../../../shared/manualEntry/strings';
 import { useConfirmDialog } from '../../common/ConfirmDialog';
 import { ManualFieldRenderer } from './fields/ManualFieldRenderer';
@@ -21,6 +20,7 @@ import {
   manualItemCount,
   manualItemTitle,
   summarizeManualItem,
+  validatePresentedField,
 } from './presentation/items';
 import { getManualPresentation } from './presentation/manualEntryPresentation';
 import { getQuestionProgress, getVisibleScreens } from './presentation/screens';
@@ -172,7 +172,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
     if (phase !== 'item' || !currentStep) return [] as Array<{ field: string; message: string }>;
     return currentStep.fields
       .map((field) => {
-        const error = validateManualField(field, activeItem[field.key], activeItem);
+        const error = validatePresentedField(field, activeItem[field.key], activeItem, presentation.fields[field.key]);
         return error
           ? { field: error.field, message: formatManualFieldError(error, field, activeItem[field.key], presentation.fields[field.key]) }
           : null;

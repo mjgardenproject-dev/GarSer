@@ -11,8 +11,8 @@
 | F5 Setos | ✅ Terminada y aprobada | 2026-10-01 | 8eacc7f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. H-N-15 decidido: el tramo se queda visible |
 | F6 Árboles | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | b1362fb | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Ayudas de poda aprobadas (2026-10-02); H-N-17 decidido: obligar a elegir el acceso (complemento antes de F8) |
 | F7 Palmeras | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
-| F7 Palmeras | ⏳ Pendiente | | | | |
 | F8 Fitosanitarios | ⏳ Pendiente | | | | |
+| F7 Palmeras | ⏳ Pendiente | | | | |
 | F9 Desbroce | ⏳ Pendiente | | | | |
 | F10 Césped | ⏳ Pendiente | | | | |
 | F11 Arbustos | ⏳ Pendiente | | | | |
@@ -175,4 +175,18 @@ Textos para aprobar al cierre (REGLAS 14): nombres comunes, frase de coste de lo
   elegirlo antes de recalcular (es una confirmación, no cambia el precio).
 - Puerta: typecheck igual (128), vitest 828/828 (2 nuevas en `TreeForm.test.tsx`), banco de árboles
   0 distintos con la línea base. El E2E completo va en la puerta de F8.
+
+### 2026-10-02 — F8 Fitosanitarios (inicio)
+Ya resuelto en F2-F4: lista de una columna, cantidad con campo numérico, «Pregunta X de Y» que no
+crece, fantasma, sin retirada. Lo que cambia en F8:
+1. De hasta 7 pantallas a 4-5 (D-05): qué tratar → cuánto y de qué tamaño → tipo de tratamiento
+   (con «qué combatir» revelado si es curativo) → producto (segmentado + ayuda común) → setos altos o
+   endoterapia (solo setos y palmeras).
+2. Cantidad con nombre, título y unidad según lo que se trata (P-08): m² de césped/plantas, metros de
+   seto, número de árboles/palmeras; en la revisión «3 árboles», «120 m²».
+3. Tamaños con los tramos del jardinero (D-12) y sin comparaciones: árboles < 3 / 3-6 / > 6 m;
+   palmeras < 3,5 / 3,5-8 / > 8 m de tronco; plantas < 0,5 / 0,5-1,5 / 1,5-2 m. Setos: «Supera los
+   2,5 m de altura».
+4. Grupos con nombre visible cuando comparten pantalla.
+Desviación del plan por REGLAS 7 (H-N-19): «¿setos altos?» y endoterapia se quedan al final.
 

@@ -10,7 +10,7 @@
 | F4 Repetibles y revisión | ✅ Terminada y aprobada | 2026-10-01 | 5fd2af9 | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
 | F5 Setos | ✅ Terminada y aprobada | 2026-10-01 | 8eacc7f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. H-N-15 decidido: el tramo se queda visible |
 | F6 Árboles | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | b1362fb | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Pendiente: aprobar las ayudas del tipo de poda; decidir H-N-17 |
-| F7 Palmeras | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Pendiente: aprobar textos; fotos de especies cuando el usuario las tenga (D-13) |
+| F7 Palmeras | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
 | F7 Palmeras | ⏳ Pendiente | | | | |
 | F8 Fitosanitarios | ⏳ Pendiente | | | | |
 | F9 Desbroce | ⏳ Pendiente | | | | |
@@ -154,4 +154,10 @@ Textos para aprobar al cierre (REGLAS 14): nombres comunes, frase de coste de lo
   la reconoce de forma explícita; la línea base no se toca.
 - Precio, horas, huella, telemetría y declaraciones del E2E idénticos a `main` en los 7 servicios.
 - Siguiente: F8 (fitosanitarios), pendiente del visto bueno; necesita tu decisión D-12 (tallas en metros como las del configurador del jardinero; pendiente).
+
+### 2026-10-02 — Respuestas del usuario
+- F7: textos aprobados (nombres comunes, frase de coste de los extras, líneas del fitosanitario y
+  del acceso). Pendiente solo de las fotos (D-13).
+- D-12 (fitosanitarios) respondido: rangos del jardinero en palmeras (< 3,5 / 3,5–8 / > 8 m),
+  plantas (< 0,5 / 0,5–1,5 / 1,5–2 m) y setos («¿Supera los 2,5 m?»). F8 ya no tiene bloqueos.
 

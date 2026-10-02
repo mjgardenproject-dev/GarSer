@@ -12,6 +12,8 @@ interface Props {
   /** Línea de contexto según lo elegido (p. ej. el aviso del tramo más alto de palmera). */
   feedback?: string | null;
   error?: string | null;
+  /** Enseñar el nombre del grupo encima (pantallas con varias preguntas). */
+  showLabel?: boolean;
 }
 
 /**
@@ -21,12 +23,17 @@ interface Props {
  * precio (F6, acceso de árboles).
  * Lo usan los servicios que lo declaran en su presentación (p. ej. altura de palmera, F7).
  */
-export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected, onSelect, help, feedback, error }) => {
+export const SegmentedChoice: React.FC<Props> = ({ id, label, options, selected, onSelect, help, feedback, error, showLabel = false }) => {
   const errorId = `${id}-error`;
   const helpId = `${id}-help`;
   const feedbackId = `${id}-feedback`;
   return (
     <div>
+      {showLabel ? (
+        <p aria-hidden className="mb-2 text-[15px] font-medium text-gray-900">
+          {label}
+        </p>
+      ) : null}
       <div
         id={id}
         role="radiogroup"

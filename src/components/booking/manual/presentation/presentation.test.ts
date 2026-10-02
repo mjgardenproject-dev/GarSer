@@ -90,28 +90,31 @@ describe('«Pregunta X de Y»', () => {
     expect(getQuestionProgress(survey, p, {}, 'waste', { asksWaste: true })).toEqual({ current: 3, total: 3 });
   });
 
-  it('fitosanitarios: el total nunca crece mientras se responde (hoy pasaba de 4 a 5 y a 6)', () => {
+  it('fitosanitarios: el total nunca crece mientras se responde (antes pasaba de 4 a 5 y a 6)', () => {
     const survey = MANUAL_ENTRY_SURVEYS.phytosanitary;
     const p = getManualPresentation('phytosanitary');
+    // F8: cantidad + tamaño y tratamiento + objetivo comparten pantalla (D-05).
     const path: Array<[string, ManualAnswers]> = [
       ['affected', {}],
       ['area', { affectedType: 'Árboles' }],
-      ['size', { affectedType: 'Árboles', area: 3 }],
       ['intent', { affectedType: 'Árboles', area: 3, sizeBand: 'grandes' }],
-      ['target', { affectedType: 'Árboles', area: 3, sizeBand: 'grandes', intent: 'curative' }],
+      ['intent', { affectedType: 'Árboles', area: 3, sizeBand: 'grandes', intent: 'curative' }],
       ['product', { affectedType: 'Árboles', area: 3, sizeBand: 'grandes', intent: 'curative', curativeTarget: 'fungus' }],
     ];
     const totals = path.map(([id, answers]) => getQuestionProgress(survey, p, answers, id, { asksWaste: false }));
     for (let i = 1; i < totals.length; i += 1) expect(totals[i].total).toBeLessThanOrEqual(totals[i - 1].total);
-    expect(totals.map((t) => t.current)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(totals[totals.length - 1].total).toBe(6);
+    expect(totals.map((t) => t.current)).toEqual([1, 2, 3, 3, 4]);
+    expect(totals[0].total).toBe(5);
+    expect(totals[totals.length - 1].total).toBe(4);
   });
 
-  it('fitosanitarios preventivo sobre setos: sin tamaño, sin objetivo, con setos altos', () => {
+  it('fitosanitarios preventivo sobre setos: cantidad sola, tratamiento sin objetivo y setos altos al final', () => {
     const survey = MANUAL_ENTRY_SURVEYS.phytosanitary;
     const p = getManualPresentation('phytosanitary');
     const answers = { affectedType: 'Setos', area: 20, intent: 'preventive', productPreference: 'chemical' };
-    expect(getVisibleScreens(survey, p, answers).map((s) => s.id)).toEqual(['affected', 'area', 'intent', 'product', 'height']);
+    const screens = getVisibleScreens(survey, p, answers);
+    expect(screens.map((s) => s.id)).toEqual(['affected', 'area', 'intent', 'product', 'height']);
+    expect(screens.map((s) => s.stepIds)).toEqual([['affected'], ['area'], ['intent'], ['product'], ['height']]);
     expect(getQuestionProgress(survey, p, answers, 'height', { asksWaste: false })).toEqual({ current: 5, total: 5 });
   });
 });

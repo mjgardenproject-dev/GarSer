@@ -8,7 +8,11 @@ import {
 import { MANUAL_ENTRY_STRINGS } from '../../../shared/manualEntry/strings';
 import { formatManualValue } from './presentation/formatManualValue';
 import { firstIncompleteScreenIndex, manualItemTitle } from './presentation/items';
-import { getManualPresentation } from './presentation/manualEntryPresentation';
+import {
+  getManualPresentation,
+  presentFieldLabel,
+  resolveFieldPresentation,
+} from './presentation/manualEntryPresentation';
 import { getVisibleScreens } from './presentation/screens';
 import { ConsentRow } from './ui/ConsentRow';
 import { ReviewList, type ReviewSection } from './ui/ReviewList';
@@ -63,7 +67,7 @@ export const ManualEntrySummary: React.FC<Props> = ({
       rows: screens.flatMap((screen, screenIndex) =>
         screen.fields.map((field) => ({
           key: `${itemIndex}-${field.key}`,
-          label: field.label,
+          label: presentFieldLabel(field, resolveFieldPresentation(presentation.fields[field.key], item)),
           value: formatManualValue(field, item, presentation.fields[field.key]),
           onChange: () => onChangeAnswer(itemIndex, screenIndex),
         })),

@@ -71,17 +71,18 @@ describe('carcasa del asistente (F2)', () => {
     fireEvent.click(screen.getByText('Árboles'));
     next();
     totals.push(total());
-    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad a tratar' }), { target: { value: '3' } });
-    next();
-    totals.push(total());
-    fireEvent.click(screen.getByText('Grandes'));
+    // F8: cantidad y tamaño en una pantalla; tratamiento y objetivo en otra.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Número de árboles' }), { target: { value: '3' } });
+    fireEvent.click(screen.getByText('Grandes (más de 6 m)'));
     next();
     totals.push(total());
     fireEvent.click(screen.getByText('Curativo'));
+    totals.push(total());
+    fireEvent.click(screen.getByText('Hongos / enfermedad'));
     next();
     totals.push(total());
     for (let i = 1; i < totals.length; i += 1) expect(totals[i]).toBeLessThanOrEqual(totals[i - 1]);
-    expect(eyebrow()).toBe('Servicios fitosanitarios · Pregunta 5 de 6');
+    expect(eyebrow()).toBe('Servicios fitosanitarios · Pregunta 4 de 4');
   });
 
   it('cada pantalla sigue emitiendo su stepId (telemetría)', () => {

@@ -8,7 +8,7 @@ import {
   type ManualAnswers,
   type ManualFieldDef,
 } from '../../../../shared/manualEntry/manualEntrySchema';
-import { presentOption, type ManualFieldPresentation } from './manualEntryPresentation';
+import { presentOption, resolveFieldPresentation, type ManualFieldPresentation } from './manualEntryPresentation';
 
 export const EMPTY_VALUE = '—';
 
@@ -35,9 +35,10 @@ export function formatNumberEs(value: number, maxDecimals = 2): string {
 export function formatManualValue(
   field: ManualFieldDef,
   answers: ManualAnswers,
-  fieldPresentation?: ManualFieldPresentation,
+  rawFieldPresentation?: ManualFieldPresentation,
 ): string {
   const value = answers[field.key];
+  const fieldPresentation = resolveFieldPresentation(rawFieldPresentation, answers);
 
   if (field.type === 'boolean') {
     // Booleano que se elige con tarjetas («Acceso normal / Acceso difícil»): se enseña lo elegido.
@@ -56,6 +57,6 @@ export function formatManualValue(
   }
 
   if (typeof value !== 'number' || !Number.isFinite(value)) return EMPTY_VALUE;
-  const unit = fieldPresentation?.unit?.(answers) ?? field.unit;
+  const unit = fieldPresentation?.reviewUnit?.(answers) ?? fieldPresentation?.unit?.(answers) ?? field.unit;
   return `${formatNumberEs(value)}${unit ? ` ${unit}` : ''}`;
 }

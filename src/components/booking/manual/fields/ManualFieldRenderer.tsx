@@ -32,7 +32,13 @@ import {
   type ManualFieldDef,
   type ManualFieldValue,
 } from '../../../../shared/manualEntry/manualEntrySchema';
-import { presentOption, resolveFieldControl, type ManualFieldPresentation } from '../presentation/manualEntryPresentation';
+import {
+  presentFieldLabel,
+  presentOption,
+  resolveFieldControl,
+  resolveFieldPresentation,
+  type ManualFieldPresentation,
+} from '../presentation/manualEntryPresentation';
 import { HelpDisclosure } from '../ui/HelpDisclosure';
 import { NumberField } from '../ui/NumberField';
 import { OptionList } from '../ui/OptionList';
@@ -69,6 +75,8 @@ interface Props {
   onChange: (value: ManualFieldValue) => void;
   onBlur?: () => void;
   onEnter?: () => void;
+  /** Nombre del grupo visible encima de las opciones (pantallas con varias preguntas, F8). */
+  showLabel?: boolean;
 }
 
 /**
@@ -81,11 +89,14 @@ export const ManualFieldRenderer: React.FC<Props> = ({
   answers,
   error,
   showError = Boolean(error),
-  fieldPresentation,
+  fieldPresentation: rawFieldPresentation,
+  showLabel = false,
   onChange,
   onBlur,
   onEnter,
 }) => {
+  const fieldPresentation = resolveFieldPresentation(rawFieldPresentation, answers);
+  const label = presentFieldLabel(field, fieldPresentation);
   const id = manualFieldId(field.key);
   const control = resolveFieldControl(field, fieldPresentation);
   const shownError = showError ? error ?? null : null;
@@ -110,7 +121,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
       <div>
         <NumberField
           id={id}
-          label={field.label}
+          label={label}
           value={value}
           onChange={onChange}
           format={format}
@@ -134,7 +145,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
       <div>
         <Stepper
           id={id}
-          label={field.label}
+          label={label}
           value={value}
           onChange={onChange}
           min={field.min}
@@ -160,7 +171,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
     return (
       <ToggleRow
         id={id}
-        label={field.label}
+        label={label}
         help={help}
         badge={fieldPresentation?.badge}
         checked={value === true}
@@ -177,13 +188,14 @@ export const ManualFieldRenderer: React.FC<Props> = ({
     return (
       <SegmentedChoice
         id={id}
-        label={field.label}
+        label={label}
         options={options.map((option) => ({ value: option.value, label: presentOption(option, fieldPresentation).label }))}
         selected={selected}
         onSelect={select}
         help={help}
         feedback={feedback}
         error={shownError}
+        showLabel={showLabel}
       />
     );
   }
@@ -192,7 +204,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
     <div>
       <OptionList
         id={id}
-        label={field.label}
+        label={label}
         options={options.map((option) => {
           const pictogram = fieldPresentation?.optionPictograms?.[option.value];
           const image = fieldPresentation?.optionImages?.[option.value];
@@ -208,6 +220,7 @@ export const ManualFieldRenderer: React.FC<Props> = ({
         selected={selected}
         onSelect={select}
         error={shownError}
+        showLabel={showLabel}
       />
       {helpText}
     </div>

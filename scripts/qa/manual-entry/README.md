@@ -89,7 +89,8 @@ adaptan los conductores (`drive*`, `ACTION_BUTTONS`).
 Abre el modal real del panel del jardinero a 375 px, recalcula con 80 m², «Descuidado» y retirada,
 y comprueba que propone **45 €** (línea base), sin pie fijo dentro del modal y sin errores de
 consola. Necesita una solicitud manual `pending` de césped (la consulta para crearla está en la
-cabecera del script).
+cabecera del script). Las solicitudes `pending` **caducan** a los pocos días (pasan a `expired`):
+si el script no encuentra «Recalcular con las medidas reales del jardín», hay que crear otra (H-N-20).
 
 ```bash
 npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \

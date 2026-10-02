@@ -72,9 +72,11 @@ for (const url of Object.values(TARGETS)) {
 /**
  * Acciones:
  *   { num: [etiqueta, 'valor'] }     escribe en el campo numérico con esa etiqueta
- *   { pick: [grupo, opción] }        elige la opción (por su primera línea de texto); `opción`
- *                                    puede ser una lista de nombres equivalentes (F7: en `main`
- *                                    «Phoenix canariensis», en la rama «Palmera canaria»)
+ *   { pick: [grupo, opción] }        elige la opción (por su primera línea de texto). `grupo` y
+ *                                    `opción` pueden ser listas de nombres equivalentes (F7-F8: en
+ *                                    `main` «Phoenix canariensis» / «Cantidad a tratar», en la rama
+ *                                    «Palmera canaria» / «Número de árboles»)
+ *   { num: [etiqueta | [etiquetas], 'valor'] }
  *   { toggle: [etiqueta, bool] }     deja el interruptor/elección sí-no en ese valor
  *   { plus: [etiqueta, n] }          pulsa n veces «Aumentar …» (stepper)
  *   'next' | 'add' | 'continue' | 'review' | 'submit'
@@ -143,16 +145,16 @@ const SPECS = {
     service: 'Servicios fitosanitarios',
     actions: [
       { pick: ['Tipo de vegetación', 'Árboles'] }, 'next',
-      { num: ['Cantidad a tratar', '3'] }, 'next',
-      { pick: ['Tamaño dominante', 'Grandes'] }, 'next',
-      { pick: ['Intención del tratamiento', 'Curativo'] }, 'next',
-      { pick: ['Objetivo del tratamiento', 'Hongos / enfermedad'] }, 'next',
+      { num: [['Cantidad a tratar', 'Número de árboles'], '3'] }, 'next',
+      { pick: [['Tamaño dominante', 'Altura de los árboles'], 'Grandes'] }, 'next',
+      { pick: [['Intención del tratamiento', 'Tipo de tratamiento'], 'Curativo'] }, 'next',
+      { pick: [['Objetivo del tratamiento', 'Plaga o enfermedad a combatir'], 'Hongos / enfermedad'] }, 'next',
       { pick: ['Tipo de producto', 'Ecológico'] }, 'next',
       'add',
       { pick: ['Tipo de vegetación', 'Palmeras'] }, 'next',
-      { num: ['Cantidad a tratar', '2'] }, 'next',
-      { pick: ['Tamaño dominante', 'Medianas'] }, 'next',
-      { pick: ['Intención del tratamiento', 'Preventivo'] }, 'next',
+      { num: [['Cantidad a tratar', 'Número de palmeras'], '2'] }, 'next',
+      { pick: [['Tamaño dominante', 'Altura del tronco'], 'Medianas'] }, 'next',
+      { pick: [['Intención del tratamiento', 'Tipo de tratamiento'], 'Preventivo'] }, 'next',
       { pick: ['Tipo de producto', 'Convencional'] }, 'next',
       { toggle: ['Añadir endoterapia (inyección en tronco)', true] }, 'next',
       'continue', 'submit',
@@ -261,8 +263,9 @@ async function drivePick(page, group, option) {
         const line = firstLine(el);
         return names.some((name) => line === name || line.startsWith(`${name} `) || line.startsWith(`${name}(`) || line.startsWith(`${name},`));
       };
-      const groups = [...document.querySelectorAll('[role=radiogroup]')].filter(
-        (g) => g.getAttribute('aria-label') === group,
+      const groupNames = Array.isArray(group) ? group : [group];
+      const groups = [...document.querySelectorAll('[role=radiogroup]')].filter((g) =>
+        groupNames.includes(g.getAttribute('aria-label')),
       );
       const scopes = groups.length ? groups : [document];
       for (const scope of scopes) {
@@ -282,9 +285,14 @@ async function drivePick(page, group, option) {
 }
 
 async function driveNumber(page, label, value) {
-  const field = page.getByLabel(label, { exact: true });
-  await field.first().fill(value);
-  await field.first().blur();
+  for (const name of Array.isArray(label) ? label : [label]) {
+    const field = page.getByLabel(name, { exact: true });
+    if (!(await field.count())) continue;
+    await field.first().fill(value);
+    await field.first().blur();
+    return;
+  }
+  throw new Error(`No encuentro el campo «${label}»`);
 }
 
 async function driveToggle(page, label, wanted) {
@@ -321,11 +329,17 @@ const ACTION_BUTTONS = {
 /** ¿La respuesta `action` se contesta en la pantalla que hay ahora? */
 async function nextAnswerOnThisScreen(page, action) {
   if (!action || typeof action === 'string') return false;
-  if (action.num) return (await page.getByLabel(action.num[0], { exact: true }).count()) > 0;
+  if (action.num) {
+    for (const name of Array.isArray(action.num[0]) ? action.num[0] : [action.num[0]]) {
+      if ((await page.getByLabel(name, { exact: true }).count()) > 0) return true;
+    }
+    return false;
+  }
   if (action.plus) return (await page.getByRole('button', { name: `Aumentar ${action.plus[0].toLowerCase()}` }).count()) > 0;
   if (action.toggle) return (await page.getByRole('switch', { name: action.toggle[0], exact: true }).count()) > 0;
   if (action.pick) {
-    return page.evaluate((group) => [...document.querySelectorAll('[role=radiogroup]')].some((g) => g.getAttribute('aria-label') === group), action.pick[0]);
+    const names = Array.isArray(action.pick[0]) ? action.pick[0] : [action.pick[0]];
+    return page.evaluate((names) => [...document.querySelectorAll('[role=radiogroup]')].some((g) => names.includes(g.getAttribute('aria-label'))), names);
   }
   return false;
 }

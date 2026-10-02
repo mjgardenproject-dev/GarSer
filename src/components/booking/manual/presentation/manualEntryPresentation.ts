@@ -43,6 +43,8 @@ export interface ManualScreenPresentation {
   description?: string;
   /** Método de medida, en el desplegable «¿Cómo lo mido?» al final de la pantalla (sin comparaciones, D-03). */
   measureHelp?: string[];
+  /** Título y apoyo que dependen de lo ya contestado (fitosanitarios: «¿Cuántos árboles…?», F8). */
+  dynamic?: (answers: ManualAnswers) => { title?: string; description?: string };
 }
 
 /** Control con el que se contesta un campo (SISTEMA-UX §6.4-6.7). */
@@ -90,6 +92,18 @@ export interface ManualFieldPresentation {
    * constructor): solo no se avanza sin elegir, para que la revisión no enseñe «—».
    */
   requireChoice?: boolean;
+  /** Nombre visible del campo, en lugar del `label` del schema (también en la revisión). */
+  label?: string;
+  /** Unidad en la revisión cuando no es la del control («3 árboles»; en la casilla no cabe). */
+  reviewUnit?: (answers: ManualAnswers) => string | undefined;
+  /**
+   * Lo que depende de lo ya contestado: nombre, nombre en los errores, etiquetas y ayudas de las
+   * opciones (fitosanitarios: los tamaños son otros según lo que se trata, F8). Se resuelve con
+   * `resolveFieldPresentation`.
+   */
+  dynamic?: (answers: ManualAnswers) => Partial<
+    Pick<ManualFieldPresentation, 'label' | 'errorName' | 'helpText' | 'optionLabels' | 'optionHelp'>
+  >;
 }
 
 /** Pictogramas propios (dibujos sencillos que dicen algo que un icono genérico no dice). */
@@ -106,6 +120,63 @@ export interface ManualServicePresentation {
 
 /** Una pantalla por paso: la forma actual del asistente. */
 const PALM_HEIGHT_FIELD = MANUAL_ENTRY_SURVEYS.palm.steps.find((step) => step.id === 'height')!.fields[0];
+
+type PhytoType = 'Césped' | 'Plantas bajas' | 'Setos' | 'Árboles' | 'Palmeras' | 'none';
+
+const phytoType = (answers: ManualAnswers): PhytoType => {
+  const type = answers.affectedType;
+  return type === 'Césped' || type === 'Plantas bajas' || type === 'Setos' || type === 'Árboles' || type === 'Palmeras'
+    ? type
+    : 'none';
+};
+
+const APPROXIMATE = 'Una medida aproximada vale: el profesional la comprueba al llegar.';
+
+/** Pantalla «¿Cuánto hay que tratar?» de fitosanitarios según lo que se trata (F8). */
+const PHYTO_QUANTITY_SCREEN: Record<PhytoType, { title: string; description: string }> = {
+  Césped: { title: '¿Cuántos m² de césped hay que tratar?', description: APPROXIMATE },
+  'Plantas bajas': {
+    title: '¿Qué superficie de plantas hay que tratar?',
+    description: 'Si hay plantas de varias alturas, elige la más habitual.',
+  },
+  Setos: { title: '¿Cuántos metros de seto hay que tratar?', description: APPROXIMATE },
+  Árboles: { title: '¿Cuántos árboles hay que tratar?', description: 'Si son de varios tamaños, elige el más habitual.' },
+  Palmeras: {
+    title: '¿Cuántas palmeras hay que tratar?',
+    description: 'Mide solo el tronco, hasta donde empiezan las hojas. Si son de varias alturas, elige la más habitual.',
+  },
+  none: { title: '¿Qué cantidad hay que tratar?', description: APPROXIMATE },
+};
+
+/** El dato `area` según lo que se trata: m², metros de seto o ejemplares (P-08). */
+const PHYTO_AREA: Record<PhytoType, { label: string; errorName: string; unit: string; countNoun?: [string, string] }> = {
+  Césped: { label: 'Superficie de césped', errorName: 'la superficie de césped', unit: 'm²' },
+  'Plantas bajas': { label: 'Superficie de plantas', errorName: 'la superficie de plantas', unit: 'm²' },
+  Setos: { label: 'Longitud de seto', errorName: 'la longitud de seto', unit: 'm' },
+  // Sin unidad en la casilla («árboles» no cabe y la etiqueta ya lo dice); en la revisión, «3 árboles».
+  Árboles: { label: 'Número de árboles', errorName: 'el número de árboles', unit: '', countNoun: ['árbol', 'árboles'] },
+  Palmeras: { label: 'Número de palmeras', errorName: 'el número de palmeras', unit: '', countNoun: ['palmera', 'palmeras'] },
+  none: { label: 'Cantidad a tratar', errorName: 'la cantidad a tratar', unit: '' },
+};
+
+/** Tamaños de fitosanitarios con los tramos del configurador del jardinero (D-12). */
+const PHYTO_SIZE: Partial<Record<PhytoType, Pick<ManualFieldPresentation, 'label' | 'optionLabels' | 'optionHelp'>>> = {
+  Árboles: {
+    label: 'Altura de los árboles',
+    optionLabels: { pequenos: 'Pequeños (menos de 3 m)', medianos: 'Medianos (3-6 m)', grandes: 'Grandes (más de 6 m)' },
+    optionHelp: { pequenos: null, medianos: null, grandes: null },
+  },
+  Palmeras: {
+    label: 'Altura del tronco',
+    optionLabels: { pequenas: 'Pequeñas (menos de 3,5 m)', medianas: 'Medianas (3,5-8 m)', altas: 'Altas (más de 8 m)' },
+    optionHelp: { pequenas: null, medianas: null, altas: null },
+  },
+  'Plantas bajas': {
+    label: 'Altura de las plantas',
+    optionLabels: { pequenas: 'Pequeñas (menos de 0,5 m)', medianas: 'Medianas (0,5-1,5 m)', grandes: 'Grandes (1,5-2 m)' },
+    optionHelp: { pequenas: null, medianas: null, grandes: null },
+  },
+};
 
 const onePerStep = (
   stepIds: string[],
@@ -273,16 +344,61 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
     },
   },
   phytosanitary: {
-    screens: onePerStep(['affected', 'area', 'size', 'intent', 'target', 'product', 'height', 'endotherapy'], {
-      size: ['affectedType'],
-      target: ['intent'],
-      height: ['affectedType'],
-      endotherapy: ['affectedType'],
-    }),
+    // De hasta 7 pantallas a 4-5 sin quitar ninguna pregunta (D-05). Las pantallas siguen el orden
+    // del schema, para que los `stepId` lleguen en el mismo orden (REGLAS 7): por eso «¿setos
+    // altos?» y la endoterapia van al final y no junto a la cantidad o el tratamiento (H-N-19).
+    screens: [
+      { id: 'affected', stepIds: ['affected'] },
+      {
+        id: 'area',
+        stepIds: ['area', 'size'],
+        dynamic: (answers) => PHYTO_QUANTITY_SCREEN[phytoType(answers)],
+      },
+      { id: 'intent', stepIds: ['intent', 'target'], title: '¿Qué tipo de tratamiento necesitas?' },
+      { id: 'product', stepIds: ['product'] },
+      {
+        id: 'height',
+        stepIds: ['height', 'endotherapy'],
+        dependsOn: ['affectedType'],
+        // D-12: el corte de setos altos es el del jardinero (Bajos/Medios < 2,5 m · Altos 2,5–5 m).
+        dynamic: (answers) =>
+          answers.affectedType === 'Setos' ? { description: 'Los setos de más de 2,5 m llevan más producto y más tiempo.' } : {},
+      },
+    ],
     itemNounPlural: 'zonas de tratamiento',
-    // Un stepper para 1–5000 obligaba a cientos de toques (NN/g: los steppers no sirven para
-    // ajustes grandes): campo numérico.
-    fields: { area: { control: 'number', numberFormat: 'quantity', errorName: 'la cantidad a tratar' } },
+    fields: {
+      // Un stepper para 1–5000 obligaba a cientos de toques (NN/g: los steppers no sirven para
+      // ajustes grandes): campo numérico. Nombre y unidad según lo que se trata (P-08): el mismo
+      // `area` es m², metros de seto o ejemplares para el motor.
+      area: {
+        control: 'number',
+        numberFormat: 'quantity',
+        errorName: 'la cantidad a tratar',
+        unit: (answers) => PHYTO_AREA[phytoType(answers)].unit,
+        reviewUnit: (answers) => {
+          const area = PHYTO_AREA[phytoType(answers)];
+          if (!area.countNoun) return area.unit;
+          return answers.area === 1 ? area.countNoun[0] : area.countNoun[1];
+        },
+        dynamic: (answers) => {
+          const area = PHYTO_AREA[phytoType(answers)];
+          return { label: area.label, errorName: area.errorName };
+        },
+      },
+      sizeBand: {
+        // D-12: los tramos en metros del configurador del jardinero, sin comparaciones (D-03).
+        // Los valores (`pequenas`, `medianas`…) se repiten entre palmeras y plantas: por eso las
+        // etiquetas dependen de lo que se trata.
+        dynamic: (answers) => PHYTO_SIZE[phytoType(answers)] ?? {},
+      },
+      intent: { label: 'Tipo de tratamiento' },
+      curativeTarget: { label: 'Plaga o enfermedad a combatir' },
+      productPreference: {
+        control: 'segmented',
+        helpText: 'El ecológico puede tener un recargo según el profesional.',
+      },
+      aboveThreeMeters: { label: 'Supera los 2,5 m de altura' },
+    },
   },
   weeding: {
     screens: onePerStep(['area', 'state', 'herbicide']),
@@ -294,6 +410,25 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
 export function getManualPresentation(serviceKey: ManualServiceKey): ManualServicePresentation {
   return MANUAL_ENTRY_PRESENTATION[serviceKey];
 }
+
+/** La presentación del campo con lo que depende de las respuestas ya resuelto. */
+export function resolveFieldPresentation(
+  fieldPresentation: ManualFieldPresentation | undefined,
+  answers: ManualAnswers,
+): ManualFieldPresentation | undefined {
+  if (!fieldPresentation?.dynamic) return fieldPresentation;
+  const resolved = fieldPresentation.dynamic(answers);
+  return {
+    ...fieldPresentation,
+    ...resolved,
+    optionLabels: { ...fieldPresentation.optionLabels, ...resolved.optionLabels },
+    optionHelp: { ...fieldPresentation.optionHelp, ...resolved.optionHelp },
+  };
+}
+
+/** Nombre con el que se enseña un campo. */
+export const presentFieldLabel = (field: ManualFieldDef, fieldPresentation?: ManualFieldPresentation) =>
+  fieldPresentation?.label ?? field.label;
 
 /** Etiqueta y ayuda con las que se enseña una opción, según la presentación del campo. */
 export function presentOption(

@@ -22,7 +22,7 @@ import {
   summarizeManualItem,
   validatePresentedField,
 } from './presentation/items';
-import { getManualPresentation } from './presentation/manualEntryPresentation';
+import { getManualPresentation, resolveFieldPresentation } from './presentation/manualEntryPresentation';
 import { getQuestionProgress, getVisibleScreens } from './presentation/screens';
 import { HelpDisclosure } from './ui/HelpDisclosure';
 import { ItemList } from './ui/ItemList';
@@ -174,7 +174,15 @@ export const ManualEntryWizard: React.FC<Props> = ({
       .map((field) => {
         const error = validatePresentedField(field, activeItem[field.key], activeItem, presentation.fields[field.key]);
         return error
-          ? { field: error.field, message: formatManualFieldError(error, field, activeItem[field.key], presentation.fields[field.key]) }
+          ? {
+              field: error.field,
+              message: formatManualFieldError(
+                error,
+                field,
+                activeItem[field.key],
+                resolveFieldPresentation(presentation.fields[field.key], activeItem),
+              ),
+            }
           : null;
       })
       .filter((error): error is { field: string; message: string } => Boolean(error));
@@ -438,7 +446,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
             headingRef={headingRef}
           />
           <div className="space-y-5">
-            {currentStep.fields.map((field) => (
+            {currentStep.fields.map((field, fieldIndex) => (
               <ManualFieldRenderer
                 key={field.key}
                 field={field}
@@ -447,6 +455,10 @@ export const ManualEntryWizard: React.FC<Props> = ({
                 error={errorByField[field.key] ?? null}
                 showError={showErrors || touched.has(field.key)}
                 fieldPresentation={presentation.fields[field.key]}
+                // La primera pregunta la nombra el título de la pantalla; las siguientes (p. ej. «qué
+                // combatir», que aparece al elegir curativo) llevan su nombre encima. Así, al aparecer
+                // una pregunta, la de arriba no se mueve (REGLAS 18).
+                showLabel={fieldIndex > 0}
                 onChange={(value) => updateAnswer(field.key, value)}
                 onBlur={() => markTouched(field.key)}
                 // Intro en una pantalla de un solo campo = «Siguiente» (P-16).

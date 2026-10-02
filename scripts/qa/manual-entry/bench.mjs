@@ -145,15 +145,17 @@ async function planItemScreen(page, screen, item) {
           if (field.type === 'boolean') continue;
           return { error: `La respuesta no trae ${field.key} y el paso «${heading}» lo pide` };
         }
+        // Nombres tal como se enseñan (F8: dependen de lo contestado). Las respuestas no cambian.
+        const label = qa.shownFieldLabel(qa.serviceKey, field, item);
         if (field.ui === 'toggle') {
-          actions.push({ type: 'switch', label: field.label, value: value === true });
+          actions.push({ type: 'switch', label, value: value === true });
         } else if (field.ui === 'cards') {
           const options = field.type === 'boolean' ? field.options || [] : qa.getFieldOptions(field, item);
           const option = options.find((candidate) => candidate.value === String(value));
           if (!option) return { error: `Opción ${String(value)} no disponible en ${field.key}` };
-          actions.push({ type: 'radio', group: field.label, label: qa.shownOptionLabel(qa.serviceKey, field.key, option) });
+          actions.push({ type: 'radio', group: label, label: qa.shownOptionLabel(qa.serviceKey, field.key, option, item) });
         } else {
-          actions.push({ type: 'number', label: field.label, value });
+          actions.push({ type: 'number', label, value });
         }
       }
       return { stepId: steps.map((candidate) => candidate.id).join('+'), actions };

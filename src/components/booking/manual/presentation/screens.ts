@@ -51,10 +51,13 @@ const buildScreen = (
     .map((id) => steps.get(id))
     .filter((step): step is ManualStep => Boolean(step) && shownFields(step as ManualStep, answers, fields).length > 0);
   if (visible.length === 0) return null;
+  const dynamic = screen.dynamic?.(answers) ?? {};
+  const title = dynamic.title ?? screen.title;
+  const description = dynamic.description ?? screen.description;
   return {
     id: screen.id,
-    title: screen.title ?? visible[0].title,
-    description: screen.title || screen.description ? screen.description : visible[0].description,
+    title: title ?? visible[0].title,
+    description: title || description ? description : visible[0].description,
     measureHelp: screen.measureHelp,
     steps: visible,
     stepIds: visible.map((step) => step.id),

@@ -17,6 +17,8 @@ interface Props {
   selected: string;
   onSelect: (value: string) => void;
   error?: string | null;
+  /** Enseñar el nombre del grupo encima (pantallas con varias preguntas). */
+  showLabel?: boolean;
 }
 
 /**
@@ -28,7 +30,7 @@ interface Props {
  * aparece nada nuevo y nada se recoloca (T-06). Teclado como un grupo de radios: Tab entra en la
  * opción elegida y las flechas cambian de opción.
  */
-export const OptionList: React.FC<Props> = ({ id, label, options, selected, onSelect, error }) => {
+export const OptionList: React.FC<Props> = ({ id, label, options, selected, onSelect, error, showLabel = false }) => {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedIndex = options.findIndex((option) => option.value === selected);
   const focusIndex = selectedIndex >= 0 ? selectedIndex : 0;
@@ -42,6 +44,11 @@ export const OptionList: React.FC<Props> = ({ id, label, options, selected, onSe
 
   return (
     <div>
+      {showLabel ? (
+        <p aria-hidden className="mb-2 text-[15px] font-medium text-gray-900">
+          {label}
+        </p>
+      ) : null}
       <div
         id={id}
         role="radiogroup"

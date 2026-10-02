@@ -23,10 +23,16 @@ import {
   isManualOnlyService,
   MANUAL_ENTRY_SURVEYS,
   type ManualAnswers,
+  type ManualFieldDef,
   type ManualServiceKey,
 } from '../../../src/shared/manualEntry/manualEntrySchema';
 import { buildManualBookingPatch } from '../../../src/pages/reserva/manualEntryBuilders';
-import { getManualPresentation, presentOption } from '../../../src/components/booking/manual/presentation/manualEntryPresentation';
+import {
+  getManualPresentation,
+  presentFieldLabel,
+  presentOption,
+  resolveFieldPresentation,
+} from '../../../src/components/booking/manual/presentation/manualEntryPresentation';
 import { getVisibleScreens } from '../../../src/components/booking/manual/presentation/screens';
 import { MANUAL_PARITY_FIXTURES } from '../../../src/pages/reserva/manualEntryParityFixtures';
 
@@ -42,8 +48,12 @@ const qa = {
   getVisibleFields,
   getFieldOptions,
   // Etiqueta con la que se enseña cada opción (F6: «Muy grande (más de 9 m)»).
-  shownOptionLabel: (key: ManualServiceKey, fieldKey: string, option: { value: string; label: string }) =>
-    presentOption(option, getManualPresentation(key).fields[fieldKey]).label,
+  // F8: depende de lo contestado (los tamaños de fitosanitarios son otros según lo que se trata).
+  shownOptionLabel: (key: ManualServiceKey, fieldKey: string, option: { value: string; label: string }, answers: ManualAnswers = {}) =>
+    presentOption(option, resolveFieldPresentation(getManualPresentation(key).fields[fieldKey], answers)).label,
+  // Nombre del campo que se enseña (F8: «Número de árboles» en vez de «Cantidad a tratar»).
+  shownFieldLabel: (key: ManualServiceKey, field: ManualFieldDef, answers: ManualAnswers) =>
+    presentFieldLabel(field, resolveFieldPresentation(getManualPresentation(key).fields[field.key], answers)),
   // Campos que la presentación oculta porque el constructor ya los descarta (P-04, F7).
   hiddenKeys: (key: ManualServiceKey, answers: ManualAnswers) =>
     MANUAL_ENTRY_SURVEYS[key].steps

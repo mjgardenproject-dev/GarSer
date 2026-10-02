@@ -65,7 +65,8 @@ const result = {};
   await start(page, ['Servicios fitosanitarios', 'Desbroce de malas hierbas']);
   await manual(page);
   await pick(page, 'Césped'); await btn(page, 'Siguiente');
-  await page.getByLabel('Cantidad a tratar', { exact: true }).fill('50'); await btn(page, 'Siguiente');
+  // F8: el campo se llama según lo que se trata («Superficie de césped»).
+  await page.getByLabel('Superficie de césped', { exact: true }).fill('50'); await btn(page, 'Siguiente');
   await pick(page, 'Preventivo'); await btn(page, 'Siguiente');
   await pick(page, 'Convencional'); await btn(page, 'Siguiente');
   await btn(page, 'Continuar');

@@ -9,10 +9,9 @@
 | F3 Controles | ✅ Terminada y aprobada | 2026-10-01 | 7d1733a | A ✅ · B envío = línea base · C ✅ · D ✅ | `qa/fase-3.md`. Controles < 44 px 43 → 7 (resumen, F4); escenarios 4/7 (fantasmas en F4) |
 | F4 Repetibles y revisión | ✅ Terminada y aprobada | 2026-10-01 | 5fd2af9 | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-4.md`. Fantasma (P-01) y retirada heredada (P-02) corregidos y comprobados en la app real frente a `main` |
 | F5 Setos | ✅ Terminada y aprobada | 2026-10-01 | 8eacc7f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. H-N-15 decidido: el tramo se queda visible |
-| F6 Árboles | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | b1362fb | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Ayudas de poda aprobadas (2026-10-02); H-N-17 decidido: obligar a elegir el acceso (complemento antes de F8) |
-| F7 Palmeras | 🟡 Terminada, pendiente de aprobación | 2026-10-01 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
-| F8 Fitosanitarios | ⏳ Pendiente | | | | |
-| F7 Palmeras | ⏳ Pendiente | | | | |
+| F6 Árboles | ✅ Terminada y aprobada | 2026-10-02 | b1362fb + 2a9fd0f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Ayudas de poda aprobadas (2026-10-02); H-N-17 decidido: obligar a elegir el acceso (complemento antes de F8) |
+| F7 Palmeras | ✅ Terminada y aprobada | 2026-10-02 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
+| F8 Fitosanitarios | 🟡 Terminada, pendiente de aprobación | 2026-10-02 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Pendiente: aprobar textos; decidir H-N-19 |
 | F9 Desbroce | ⏳ Pendiente | | | | |
 | F10 Césped | ⏳ Pendiente | | | | |
 | F11 Arbustos | ⏳ Pendiente | | | | |
@@ -189,4 +188,14 @@ crece, fantasma, sin retirada. Lo que cambia en F8:
    2,5 m de altura».
 4. Grupos con nombre visible cuando comparten pantalla.
 Desviación del plan por REGLAS 7 (H-N-19): «¿setos altos?» y endoterapia se quedan al final.
+
+### 2026-10-02 — F8 Fitosanitarios (cierre)
+- Hecho lo previsto: 4-5 pantallas en vez de 7, cantidad con nombre y unidad según lo tratado,
+  tamaños y setos altos con los tramos del jardinero (D-12), producto en segmentado, nombres de los
+  grupos cuando comparten pantalla (solo a partir del segundo, para que nada salte).
+- Desviación del plan por REGLAS 7 (H-N-19): setos altos y endoterapia al final; pendiente del usuario.
+- Envío y telemetría de fitosanitarios idénticos a la línea base; E2E idéntico a `main`.
+- Herramientas: la solicitud de prueba del jardinero caduca (H-N-20, resuelto).
+- Corregida la tabla de estado (fila duplicada de F7 desde el 2026-10-01).
+- Siguiente: F9 (desbroce), pendiente del visto bueno.
 

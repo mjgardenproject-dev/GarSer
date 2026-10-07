@@ -232,6 +232,25 @@ Pantalla intermedia rediseñada:
 
 ---
 
+### 6.15 Patrón de referencia: césped (F10)
+
+El formulario de césped es el modelo con el que se compara cualquier formulario nuevo o cambiado:
+
+1. **Una pregunta por pantalla** salvo que dos datos describan lo mismo (medidas del seto,
+   cantidad + tamaño): entonces juntas, con el nombre visible desde la segunda.
+2. **Título = pregunta directa** («¿Cuántos metros cuadrados de césped hay?»); debajo, una sola frase
+   de apoyo. Para medidas, la común: «Una medida aproximada vale: el profesional la comprueba al
+   llegar.»
+3. **Campo numérico grande con la unidad dentro**, miles con punto y coma decimal; errores al salir
+   del campo o al pulsar «Siguiente», con el foco en el primero.
+4. **«¿Cómo lo mido?» plegado, solo con el método** (largo × ancho; varias zonas, sumarlas; formas
+   irregulares en rectángulos). Nunca comparaciones con objetos (D-03).
+5. **Clasificaciones en lista de una columna** con una línea de ayuda que describe, no compara.
+6. **Decisiones con efecto en precio a la vista** (retirada en dos opciones; extras con interruptor y
+   el coste dicho una vez).
+7. **«Pregunta X de Y» que solo baja**, pie fijo con «Atrás / Siguiente», revisión con «Cambiar» por
+   dato y la casilla de veracidad en la misma pantalla que el envío.
+
 ## 7. Componentes reutilizables propuestos y arquitectura
 
 ### 7.1 Capa de presentación solo de cliente (decisión de arquitectura)

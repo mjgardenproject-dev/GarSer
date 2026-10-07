@@ -44,10 +44,7 @@ describe('ManualEntryWizard', () => {
     fireEvent.click(screen.getByText('Dificultad media'));
     fireEvent.click(screen.getByText('Siguiente'));
 
-    // Step 3: herbicide toggle (optional) -> next
-    fireEvent.click(screen.getByText('Siguiente'));
-
-    // Global waste step -> review
+    // Step 3 (F9): «Opciones del servicio» — herbicida y retirada juntos -> revisión
     fireEvent.click(screen.getByText('Revisar mis datos'));
 
     // El resumen ya es la última pantalla: datos, casilla y botón de envío juntos.
@@ -83,8 +80,7 @@ describe('ManualEntryWizard', () => {
     renderWeeding({ initialItems: [{ area: 50, state: 'normal' }] });
     fireEvent.click(screen.getByText('Siguiente')); // area -> state
     fireEvent.click(screen.getByText('Siguiente')); // state -> herbicide
-    fireEvent.click(screen.getByText('Siguiente')); // herbicide -> waste
-    fireEvent.click(screen.getByText('Revisar mis datos')); // waste -> summary
+    fireEvent.click(screen.getByText('Revisar mis datos')); // opciones (herbicida + retirada) -> summary
     expect(screen.getByText(MANUAL_ENTRY_CONSENT_TEXT)).toBeTruthy();
     expect(screen.getByText('Leer el texto completo')).toBeTruthy();
   });

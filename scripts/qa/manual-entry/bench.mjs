@@ -119,7 +119,9 @@ async function detectScreen(page) {
     if (visibleButton('Confirmar y continuar') || visibleButton('Recalcular precio') || visibleButton('Guardando…')) {
       return { kind: 'summary', heading: 'Resumen' };
     }
-    if (visibleButton('Revisar mis datos')) return { kind: 'waste', heading };
+    // F9: «Revisar mis datos» también cierra la última pregunta de desbroce (opciones del
+    // servicio, con la retirada dentro); esa pantalla dice sus pasos, la de retirada no.
+    if (visibleButton('Revisar mis datos')) return stepIds.length ? { kind: 'item', heading, stepIds } : { kind: 'waste', heading };
     if (heading === '¿Quieres añadir más?') return { kind: 'interstitial', heading };
     if (visibleButton('Siguiente')) return { kind: 'item', heading, stepIds };
     return { kind: 'unknown', heading, primary: primaryLabels.filter((label) => visibleButton(label)) };
@@ -297,8 +299,15 @@ async function driveFixture(browser, fixture, { width = 375, layout = false, gar
         const plan = await planItemScreen(page, screen, fixture.items[itemIndex]);
         if (plan.error) throw new Error(plan.error);
         await applyActions(page, plan.actions);
+        // F9: en desbroce la retirada va en la pantalla de opciones, no en una pantalla aparte.
+        const wasteHere = await page.getByRole('radiogroup', { name: 'Retirada de restos', exact: true }).count();
+        if (wasteHere) {
+          await applyActions(page, [
+            { type: 'radio', group: 'Retirada de restos', label: fixture.wasteRemoval ? 'Sí, que se lleven los restos' : 'No, me encargo yo' },
+          ]);
+        }
         if (layout) await record(`elemento-${itemIndex + 1}-${plan.stepId}`);
-        await clickPrimary(page, 'Siguiente');
+        await clickPrimary(page, wasteHere ? 'Revisar mis datos' : 'Siguiente');
       } else if (screen.kind === 'interstitial') {
         if (layout) await record(`intersticial-${itemIndex + 1}`);
         if (itemIndex < fixture.items.length - 1) {

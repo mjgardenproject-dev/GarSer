@@ -336,7 +336,11 @@ async function nextAnswerOnThisScreen(page, action) {
     return false;
   }
   if (action.plus) return (await page.getByRole('button', { name: `Aumentar ${action.plus[0].toLowerCase()}` }).count()) > 0;
-  if (action.toggle) return (await page.getByRole('switch', { name: action.toggle[0], exact: true }).count()) > 0;
+  if (action.toggle) {
+    if ((await page.getByRole('switch', { name: action.toggle[0], exact: true }).count()) > 0) return true;
+    // F9: la retirada de desbroce se elige con dos opciones en la pantalla de opciones.
+    return page.evaluate((name) => [...document.querySelectorAll('[role=radiogroup]')].some((g) => g.getAttribute('aria-label') === name), action.toggle[0]);
+  }
   if (action.pick) {
     const names = Array.isArray(action.pick[0]) ? action.pick[0] : [action.pick[0]];
     return page.evaluate((names) => [...document.querySelectorAll('[role=radiogroup]')].some((g) => names.includes(g.getAttribute('aria-label'))), names);
@@ -372,6 +376,20 @@ async function runService({ browser, targetName, baseUrl, width, key, session })
   page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text().slice(0, 300)); });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${String(err).slice(0, 300)}`));
   page.on('response', (res) => { if (res.status() >= 400) httpErrors.push(`${res.status()} ${res.url().slice(0, 160)}`); });
+  // Telemetría de ESTA página: los `correlationId` que manda a `booking-telemetry`. Con la máquina
+  // lenta, los eventos de un recorrido llegaban a la base de datos durante el siguiente y se
+  // mezclaban si solo se filtraba por la hora (H-N-22).
+  const telemetryIds = [];
+  page.on('request', (req) => {
+    if (!req.url().includes('/functions/v1/booking-telemetry')) return;
+    try {
+      const body = JSON.parse(req.postData() || '{}');
+      const id = body.correlationId ?? body.context?.correlationId;
+      if (typeof id === 'string' && /^[0-9a-zA-Z_-]+$/.test(id)) telemetryIds.push(id);
+    } catch {
+      // cuerpo no JSON: se ignora
+    }
+  });
 
   const t0 = psql('select now()');
   const screens = [];
@@ -462,10 +480,18 @@ async function runService({ browser, targetName, baseUrl, width, key, session })
     return { serviceId, service: pickFrom(service), declaredVariables: service.manualConsent?.declaredVariables ?? null };
   }, COLLECTIONS).catch(() => null);
 
-  await sleep(1500); // la telemetría viaja por una Edge Function
+  // La telemetría viaja por una Edge Function: se espera a que estén en la base de datos todos
+  // los eventos que mandó esta página (hasta 30 s) y solo se leen esos.
+  const idList = telemetryIds.length ? telemetryIds.map((id) => `'${id}'`).join(',') : `''`;
+  const ownEvents = `created_at >= '${t0}' and context->>'correlationId' in (${idList})`;
+  const ownFilter = `${ownEvents} and event like 'booking.manual%'`;
+  for (let waited = 0; waited < 30000; waited += 1000) {
+    await sleep(1000);
+    if (Number(psql(`select count(distinct context->>'correlationId') from booking_funnel_events where ${ownEvents}`)) >= new Set(telemetryIds).size) break;
+  }
   const telemetry = psql(
     `select coalesce(json_agg(json_build_object('e', event, 's', context->>'stepId', 'k', context->>'serviceKey', 't', (extract(epoch from created_at) * 1000)::bigint) order by created_at, id), '[]') ` +
-      `from booking_funnel_events where created_at >= '${t0}' and event like 'booking.manual%'`,
+      `from booking_funnel_events where ${ownFilter}`,
   );
   let declarations = null;
   if (session) {

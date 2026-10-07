@@ -75,7 +75,7 @@ const result = {};
   await page.waitForTimeout(1500);
   await page.getByLabel('Superficie a desbrozar', { exact: true }).fill('300'); await btn(page, 'Siguiente');
   await pick(page, 'Dificultad normal'); await btn(page, 'Siguiente');
-  await btn(page, 'Siguiente');
+  // F9: la retirada está en «Opciones del servicio», junto al herbicida (no hay pantalla aparte).
   const waste = await page.evaluate(() => {
     const sw = document.querySelector('[role=switch][aria-label="Retirada de restos"]');
     if (sw) return `interruptor: ${sw.getAttribute('aria-checked') === 'true' ? 'Sí' : 'No'}`;

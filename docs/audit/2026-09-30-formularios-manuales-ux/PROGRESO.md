@@ -12,7 +12,7 @@
 | F6 Árboles | ✅ Terminada y aprobada | 2026-10-02 | b1362fb + 2a9fd0f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Ayudas de poda aprobadas (2026-10-02); H-N-17 decidido: obligar a elegir el acceso (complemento antes de F8) |
 | F7 Palmeras | ✅ Terminada y aprobada | 2026-10-02 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
-| F9 Desbroce | 🔧 En curso | 2026-10-07 | | | Ver registro |
+| F9 Desbroce | 🟡 Terminada, pendiente de aprobación | 2026-10-07 | (ver commit F9) | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Pendiente: aprobar textos |
 | F10 Césped | ⏳ Pendiente | | | | |
 | F11 Arbustos | ⏳ Pendiente | | | | |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
@@ -221,4 +221,12 @@ cambia en F9:
 2. Dificultad: las ayudas concretas se mantienen (altura de maleza, zarzas, escombros).
 3. «Opciones del servicio»: herbicida (interruptor, apagado) y retirada (dos opciones) en una sola
    pantalla, con el coste dicho; emite `herbicide` igual que hoy (la retirada no emite `stepId`).
+
+### 2026-10-07 — F9 Desbroce (cierre)
+- Hecho lo previsto: apoyo de la superficie (escritura o catastro), «Opciones del servicio» con
+  herbicida y retirada en una pantalla y el coste dicho una vez; 3 preguntas en vez de 4.
+- Envío y telemetría idénticos a la línea base; E2E idéntico a `main` en los 7 servicios.
+- Entorno: memoria de la máquina al límite (H-N-21), vitest con 2 procesos; telemetría del E2E
+  aislada por recorrido (H-N-22).
+- Siguiente: F10 (césped), pendiente del visto bueno.
 

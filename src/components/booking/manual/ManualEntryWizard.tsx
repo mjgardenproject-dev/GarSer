@@ -200,6 +200,11 @@ export const ManualEntryWizard: React.FC<Props> = ({
   // producto, no una poda). Preguntarla allí daba una respuesta que no cambiaba el precio
   // pero sí lo que el profesional leía en la solicitud.
   const asksWaste = serviceAsksForWasteRemoval(survey.serviceKey);
+  // Desbroce (F9): la retirada se pregunta en la última pantalla del servicio, junto al herbicida,
+  // y no en una pantalla aparte. Mismo booleano global; la retirada nunca emitió `stepId`.
+  const wasteScreenId = asksWaste && !survey.repeatable ? presentation.wasteOnScreen : undefined;
+  const wasteOnItemScreen = phase === 'item' && !!wasteScreenId && currentStep?.id === wasteScreenId;
+  const asksWasteApart = asksWaste && !wasteScreenId;
 
   // Primer elemento que no está completo (P-01): con él pendiente no se puede confirmar.
   const firstIncompleteItem = useMemo(
@@ -218,10 +223,10 @@ export const ManualEntryWizard: React.FC<Props> = ({
     if (phase === 'interstitial') return service || undefined;
     const answers = phase === 'waste' ? items[items.length - 1] || {} : activeItem;
     const screenId = phase === 'waste' ? 'waste' : currentStep?.id ?? '';
-    const progress = getQuestionProgress(survey, presentation, answers, screenId, { asksWaste });
+    const progress = getQuestionProgress(survey, presentation, answers, screenId, { asksWaste: asksWasteApart });
     const itemLabel = phase === 'item' && survey.repeatable && items.length > 1 ? manualItemTitle(survey, activeItemIndex) : '';
     return join(service, itemLabel, W.questionProgress(progress.current, progress.total));
-  }, [phase, showServiceName, survey, presentation, items, activeItem, activeItemIndex, currentStep, asksWaste]);
+  }, [phase, showServiceName, survey, presentation, items, activeItem, activeItemIndex, currentStep, asksWasteApart]);
 
   const lastScreenIndexOf = (itemIndex: number) =>
     Math.max(0, getVisibleScreens(survey, presentation, items[itemIndex] || {}).length - 1);
@@ -233,7 +238,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
     setPhase('item');
   };
 
-  const afterItem = () => setPhase(survey.repeatable ? 'interstitial' : asksWaste ? 'waste' : 'summary');
+  const afterItem = () => setPhase(survey.repeatable ? 'interstitial' : asksWasteApart ? 'waste' : 'summary');
 
   const goNextFromItem = () => {
     if (currentStepErrors.length > 0) {
@@ -278,7 +283,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
       return;
     }
     if (phase === 'summary') {
-      if (asksWaste) return setPhase('waste');
+      if (asksWasteApart) return setPhase('waste');
       if (survey.repeatable) return setPhase('interstitial');
       return goToItemScreen(items.length - 1, lastScreenIndexOf(items.length - 1));
     }
@@ -322,6 +327,12 @@ export const ManualEntryWizard: React.FC<Props> = ({
   };
 
   const changeWaste = () => {
+    if (wasteScreenId) {
+      // La retirada está en la pantalla de opciones: se va a ella y se vuelve a la revisión.
+      const screenIndex = getVisibleScreens(survey, presentation, items[0] || {}).findIndex((screen) => screen.id === wasteScreenId);
+      changeAnswer(0, Math.max(0, screenIndex));
+      return;
+    }
     setReturnToReview(true);
     setPhase('waste');
   };
@@ -374,7 +385,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
           sticky={stickyFooter}
           back={showBackInItem ? { label: W.back, onClick: goBack } : null}
           primary={{
-            label: returnToReview && activeItemComplete ? W.backToReview : W.next,
+            label: returnToReview && activeItemComplete ? W.backToReview : wasteOnItemScreen ? W.continueToSummary : W.next,
             onClick: goNextFromItem,
             forward: true,
           }}
@@ -386,7 +397,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
         <WizardFooter
           sticky={stickyFooter}
           back={{ label: W.back, onClick: goBack }}
-          primary={{ label: W.finishItems, onClick: () => setPhase(asksWaste ? 'waste' : 'summary'), forward: true }}
+          primary={{ label: W.finishItems, onClick: () => setPhase(asksWasteApart ? 'waste' : 'summary'), forward: true }}
         />
       );
     }
@@ -466,6 +477,22 @@ export const ManualEntryWizard: React.FC<Props> = ({
               />
             ))}
           </div>
+          {wasteOnItemScreen ? (
+            <div className="mt-5">
+              <OptionList
+                id={manualFieldId(MANUAL_GLOBAL_WASTE_FIELD.key)}
+                label={MANUAL_GLOBAL_WASTE_FIELD.label}
+                showLabel
+                // El coste ya lo dice la frase de apoyo de la pantalla: no se repite en la opción.
+                options={[
+                  { value: 'true', label: WASTE.yes.label },
+                  { value: 'false', label: WASTE.no.label, help: WASTE.no.help },
+                ]}
+                selected={wasteRemoval ? 'true' : 'false'}
+                onSelect={(value) => setWasteRemoval(value === 'true')}
+              />
+            </div>
+          ) : null}
           {currentStep.measureHelp?.length ? (
             <HelpDisclosure>
               <ul className="space-y-1">

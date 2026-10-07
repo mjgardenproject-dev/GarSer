@@ -115,6 +115,12 @@ export interface ManualServicePresentation {
   itemNounPlural: string;
   /** Ofrecer «Duplicar» en la lista de elementos (árboles iguales, D-04). */
   allowDuplicate?: boolean;
+  /**
+   * Pantalla (la última del servicio) que pregunta también la retirada de restos, en vez de una
+   * pantalla aparte (D-05, desbroce: «Opciones del servicio»). Solo en servicios no repetibles. La
+   * retirada sigue siendo el mismo booleano global y no emite `stepId`, como antes.
+   */
+  wasteOnScreen?: string;
   fields: Record<string, ManualFieldPresentation>;
 }
 
@@ -401,9 +407,29 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
     },
   },
   weeding: {
-    screens: onePerStep(['area', 'state', 'herbicide']),
+    screens: [
+      {
+        id: 'area',
+        stepIds: ['area'],
+        // Una fuente del dato, no una comparación (D-03): la superficie de la parcela suele estar
+        // en la escritura o en el catastro.
+        description: 'Si la conoces por la escritura o el catastro, usa esa cifra.',
+      },
+      { id: 'state', stepIds: ['state'] },
+      {
+        id: 'herbicide',
+        stepIds: ['herbicide'],
+        title: 'Opciones del servicio',
+        description: 'Cada opción puede tener un coste adicional según el profesional.',
+      },
+    ],
     itemNounPlural: 'parcelas',
-    fields: { area: { numberFormat: 'quantity', errorName: 'la superficie a desbrozar' } },
+    // Herbicida y retirada en una pantalla: eran dos pantallas seguidas de una sola elección.
+    wasteOnScreen: 'herbicide',
+    fields: {
+      area: { numberFormat: 'quantity', errorName: 'la superficie a desbrozar' },
+      applyHerbicide: { helpText: 'Se aplica sobre toda la superficie desbrozada.' },
+    },
   },
 };
 

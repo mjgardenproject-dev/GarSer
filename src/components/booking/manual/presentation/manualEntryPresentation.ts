@@ -191,8 +191,22 @@ const onePerStep = (
   stepIds.map((id) => ({ id, stepIds: [id], ...(dependsOn[id] ? { dependsOn: dependsOn[id] } : {}) }));
 
 export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePresentation> = {
+  // F10: patrón de referencia del sistema (SISTEMA-UX §6.15). Una pregunta por pantalla, campo grande
+  // con unidad, la frase de apoyo común y el método de medida plegado, sin comparaciones (D-03).
   lawn: {
-    screens: onePerStep(['surface', 'state']),
+    screens: [
+      {
+        id: 'surface',
+        stepIds: ['surface'],
+        description: APPROXIMATE,
+        measureHelp: [
+          'Mide el largo y el ancho de la zona de césped y multiplícalos.',
+          'Si hay varias zonas, calcula cada una y súmalas.',
+          'Si la forma es irregular, divídela en rectángulos aproximados.',
+        ],
+      },
+      { id: 'state', stepIds: ['state'] },
+    ],
     itemNounPlural: 'zonas de césped',
     fields: {
       superficie_m2: { numberFormat: 'quantity', errorName: 'la superficie de césped', hideHelp: true },
@@ -207,7 +221,7 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
         id: 'measures',
         stepIds: ['length', 'height'],
         title: '¿Cuánto mide el seto?',
-        description: 'Una medida aproximada vale: el profesional la comprueba al llegar.',
+        description: APPROXIMATE,
         measureHelp: [
           'Longitud: a lo largo del seto. Si hace esquinas o tiene varios tramos, súmalos.',
           'Altura: desde el suelo hasta lo más alto, incluidos los muros o estructuras sobre los que crece.',

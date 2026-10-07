@@ -13,7 +13,7 @@
 | F7 Palmeras | ✅ Terminada y aprobada | 2026-10-02 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
-| F10 Césped | 🔧 En curso | 2026-10-07 | | | Ver registro |
+| F10 Césped | 🟡 Terminada, pendiente de aprobación | 2026-10-07 | (ver commit F10) | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Pendiente: aprobar «¿Cómo lo mido?» |
 | F11 Arbustos | ⏳ Pendiente | | | | |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
 
@@ -241,4 +241,11 @@ columna, retirada en dos opciones. Lo que cambia en F10:
    ancho; varias zonas, sumarlas; forma irregular, en rectángulos).
 2. Estado: sin cambios de texto (las ayudas describen el césped, sin comparaciones).
 3. Césped queda documentado como patrón de referencia del sistema (`SISTEMA-UX.md`).
+
+### 2026-10-07 — F10 Césped (cierre)
+- Hecho lo previsto: frase de apoyo común, «¿Cómo lo mido?» con el método, césped como patrón del
+  sistema (SISTEMA-UX §6.15). Envío y telemetría idénticos; E2E idéntico a `main`.
+- Lección de método: no tocar archivos de `src/` (ni un comentario) con el banco en marcha; Vite
+  recarga la página del banco y provoca fallos falsos (ya estaba en REGLAS como «parar la puerta»).
+- Siguiente: F11 (arbustos), pendiente del visto bueno.
 

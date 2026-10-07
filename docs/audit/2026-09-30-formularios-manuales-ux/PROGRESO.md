@@ -13,7 +13,7 @@
 | F7 Palmeras | ✅ Terminada y aprobada | 2026-10-02 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
-| F10 Césped | ⏳ Pendiente | | | | |
+| F10 Césped | 🔧 En curso | 2026-10-07 | | | Ver registro |
 | F11 Arbustos | ⏳ Pendiente | | | | |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
 
@@ -230,4 +230,15 @@ cambia en F9:
   aislada por recorrido (H-N-22).
 - Siguiente: F10 (césped), pendiente del visto bueno.
 - 2026-10-07: textos de F9 aprobados por el usuario. F10 (césped) en espera de su aviso.
+
+### 2026-10-07 — F10 Césped (inicio)
+Entorno comprobado: rama limpia en `734f41c`, Docker sano, memoria algo más holgada (1,5 GB de
+intercambio libre). Ya resuelto en F2-F4 para césped: campo numérico con miles en vez del
+deslizador, sin la ayuda que repetía el título, referencias fuera (D-03), estado en lista de una
+columna, retirada en dos opciones. Lo que cambia en F10:
+1. Superficie: la frase de apoyo común del sistema («Una medida aproximada vale: el profesional la
+   comprueba al llegar.», la de setos y fitosanitarios) y «¿Cómo lo mido?» con el método (largo ×
+   ancho; varias zonas, sumarlas; forma irregular, en rectángulos).
+2. Estado: sin cambios de texto (las ayudas describen el césped, sin comparaciones).
+3. Césped queda documentado como patrón de referencia del sistema (`SISTEMA-UX.md`).
 

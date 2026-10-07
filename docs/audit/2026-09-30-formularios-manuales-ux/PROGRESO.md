@@ -11,8 +11,8 @@
 | F5 Setos | ✅ Terminada y aprobada | 2026-10-01 | 8eacc7f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-5.md`. H-N-15 decidido: el tramo se queda visible |
 | F6 Árboles | ✅ Terminada y aprobada | 2026-10-02 | b1362fb + 2a9fd0f | A ✅ · B 100 % verde · C ✅ · D ✅ | `qa/fase-6.md`. Ayudas de poda aprobadas (2026-10-02); H-N-17 decidido: obligar a elegir el acceso (complemento antes de F8) |
 | F7 Palmeras | ✅ Terminada y aprobada | 2026-10-02 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
-| F8 Fitosanitarios | 🟡 Terminada, pendiente de aprobación | 2026-10-02 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Pendiente: aprobar textos; decidir H-N-19 |
-| F9 Desbroce | ⏳ Pendiente | | | | |
+| F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
+| F9 Desbroce | 🔧 En curso | 2026-10-07 | | | Ver registro |
 | F10 Césped | ⏳ Pendiente | | | | |
 | F11 Arbustos | ⏳ Pendiente | | | | |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
@@ -198,4 +198,27 @@ Desviación del plan por REGLAS 7 (H-N-19): «¿setos altos?» y endoterapia se 
 - Herramientas: la solicitud de prueba del jardinero caduca (H-N-20, resuelto).
 - Corregida la tabla de estado (fila duplicada de F7 desde el 2026-10-01).
 - Siguiente: F9 (desbroce), pendiente del visto bueno.
+
+### 2026-10-07 — Reanudación tras 4 días parados
+Comprobado antes de seguir: rama `feat/formularios-manuales-ux-v2` limpia en `b0963f4`; `origin/main`
+sin cambios (81397be) y la copia de referencia limpia; Docker y Supabase local arriba, 139/139
+migraciones, licencia del jardinero vigente; REST y funciones responden; typecheck 128 errores
+previos, vitest 107/864, alcance vacío. La solicitud de prueba del jardinero vuelve a estar caducada
+(H-N-20): se recrea en la puerta. Un primer intento de typecheck + vitest a la vez se atascó por la
+carga de la máquina (carga 10, 350 MB libres); por separado, normal.
+
+### 2026-10-07 — Respuestas del usuario
+- F8: textos aprobados (cantidad por tipo, nombres de grupos, ayuda del producto, apoyos).
+- H-N-19: setos altos y endoterapia se quedan al final (se respeta el orden de la telemetría).
+- F9: el herbicida se elige con interruptor, junto a la retirada en «Opciones del servicio».
+
+### 2026-10-07 — F9 Desbroce (inicio)
+Ya resuelto en F2-F4: campo numérico en vez del deslizador de 1-10.000 m², miles con punto (D-07),
+dificultad en lista de una columna, retirada en dos opciones y sin heredarse (D-02, D-09). Lo que
+cambia en F9:
+1. Superficie: nota «Si la conoces por la escritura o el catastro, usa esa cifra.» (fuente del dato,
+   no comparación) y la revisión con miles («2.500 m²»).
+2. Dificultad: las ayudas concretas se mantienen (altura de maleza, zarzas, escombros).
+3. «Opciones del servicio»: herbicida (interruptor, apagado) y retirada (dos opciones) en una sola
+   pantalla, con el coste dicho; emite `herbicide` igual que hoy (la retirada no emite `stepId`).
 

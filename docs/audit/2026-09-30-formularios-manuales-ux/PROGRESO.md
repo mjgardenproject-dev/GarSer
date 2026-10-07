@@ -13,7 +13,7 @@
 | F7 Palmeras | ✅ Terminada y aprobada | 2026-10-02 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
-| F10 Césped | 🟡 Terminada, pendiente de aprobación | 2026-10-07 | (ver commit F10) | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Pendiente: aprobar «¿Cómo lo mido?» |
+| F10 Césped | 🟡 Terminada, pendiente de aprobación | 2026-10-07 | eff7bab | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Pendiente: aprobar «¿Cómo lo mido?» |
 | F11 Arbustos | ⏳ Pendiente | | | | |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
 

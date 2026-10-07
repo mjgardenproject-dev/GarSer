@@ -23,9 +23,10 @@ npm run typecheck
 Número de errores ≤ línea base (los preexistentes se anotan en la pre-fase, no se arreglan aquí).
 
 ```bash
-npx vitest run
+npx vitest run --maxWorkers=2
 ```
-Todo en verde. En particular:
+Todo en verde. (Desde 2026-10-07 con `--maxWorkers=2`: con la memoria de la máquina al límite, la
+ejecución con todos los procesos fallaba por tiempo, H-N-21. No cambia qué se prueba.) En particular:
 
 ```bash
 npx vitest run src/pages/reserva/manualEntryPricingParity.test.ts src/components/booking/manual src/shared/manualEntry

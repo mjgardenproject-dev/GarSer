@@ -136,6 +136,10 @@ Se descarta la rejilla de 2 columnas de tarjetas por debajo de `md:` (regla de
 - **Ocultar lo inerte** (`hiddenWhen`): solo si el constructor ya descarta la respuesta (P-04,
   acceso de palmeras en el tramo más bajo). Si una pantalla se queda sin preguntas, desaparece.
 
+- **F9 (desbroce):** «Opciones del servicio» reúne el herbicida (interruptor) y la retirada (dos
+  opciones, con su nombre encima) en la última pantalla (`wasteOnScreen`); el coste se dice una vez
+  arriba y no se repite en «Sí, que se lleven los restos». Solo en servicios no repetibles.
+
 **Fotos por opción** (`optionImages`, F7): 56 × 56 px a la izquierda de la fila, decorativas
 (`alt=""`). Sin foto no se pinta hueco vacío. Las de palmeras se registran en
 `presentation/palmSpeciesPhotos.ts` (D-13: las aporta el usuario más adelante).

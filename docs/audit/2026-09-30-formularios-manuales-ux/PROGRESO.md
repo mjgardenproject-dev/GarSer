@@ -14,7 +14,7 @@
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
 | F10 Césped | ✅ Terminada y aprobada | 2026-10-08 | eff7bab | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Textos aprobados |
-| F11 Arbustos | 🔧 En curso | 2026-10-08 | | | Ver registro |
+| F11 Arbustos | 🟡 Terminada, pendiente de aprobación | 2026-10-08 | (ver commit F11) | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-11.md`. Pendiente: aprobar textos |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
 
 ## Registro
@@ -261,4 +261,10 @@ listas de una columna, retirada en dos opciones. Lo que cambia en F11 (patrón d
 2. Tamaño: Pequeñas (0-1 m) · Medianas (1-2 m) · Grandes (2-3 m) (D-12), sin las ayudas corporales
    (rodilla, cintura, pecho, cabeza); apoyo «elige la altura de las plantas que más abundan».
 3. Estado: sin cambios de texto (describen las plantas, sin comparaciones).
+
+### 2026-10-08 — F11 Arbustos (cierre)
+- Hecho lo previsto: superficie con el patrón de césped; tamaño 0-1 / 1-2 / 2-3 m sin comparaciones
+  corporales. Envío y telemetría idénticos; E2E idéntico a `main`.
+- Con F11 terminan los 7 formularios. Siguiente: F12 (cohesión, accesibilidad, verificación final y
+  paso a producción), pendiente del visto bueno.
 

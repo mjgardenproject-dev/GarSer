@@ -356,11 +356,30 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
       },
     },
   },
+  // F11: mismo patrón que césped (SISTEMA-UX §6.15). El tamaño, con los tramos del configurador
+  // del jardinero (D-12), sin las comparaciones con el cuerpo (rodilla, cintura, cabeza; D-03).
   shrub: {
-    screens: onePerStep(['surface', 'size', 'state']),
+    screens: [
+      {
+        id: 'surface',
+        stepIds: ['surface'],
+        description: APPROXIMATE,
+        measureHelp: [
+          'Mide el largo y el ancho del macizo y multiplícalos.',
+          'Si hay varios macizos, calcula cada uno y súmalos.',
+          'Cuenta solo la superficie con plantas, sin caminos ni césped.',
+        ],
+      },
+      { id: 'size', stepIds: ['size'], description: 'Elige la altura de las plantas que más abundan.' },
+      { id: 'state', stepIds: ['state'] },
+    ],
     itemNounPlural: 'zonas de arbustos',
     fields: {
       superficie_m2: { numberFormat: 'quantity', errorName: 'la superficie de plantas y arbustos' },
+      tamano_dominante: {
+        optionLabels: { pequeñas: 'Pequeñas (0-1 m)', medianas: 'Medianas (1-2 m)', grandes: 'Grandes (2-3 m)' },
+        optionHelp: { pequeñas: null, medianas: null, grandes: null },
+      },
     },
   },
   phytosanitary: {

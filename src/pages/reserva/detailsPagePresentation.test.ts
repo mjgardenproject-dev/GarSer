@@ -4,6 +4,7 @@ import {
   getDetailsContinueDisabled,
   getDetailsContinueLabel,
   getDetailsServiceFlags,
+  resolveSelectedInputMode,
 } from './detailsPagePresentation'
 
 describe('detailsPagePresentation', () => {
@@ -118,5 +119,24 @@ describe('getDetailsContinueDisabled — repetición de servicio', () => {
         bookingData: { isRebooking: true, palmGroups: [{ quantity: 1 }], estimatedHours: 0 } as never,
       }),
     ).toBe(true)
+  })
+})
+
+describe('resolveSelectedInputMode', () => {
+  it('sin elección ni datos: null (el selector aparece sin marcar)', () => {
+    expect(resolveSelectedInputMode({})).toBeNull()
+    expect(resolveSelectedInputMode({ photos: [], lawnZones: [], bookingPhotoContract: { schemaVersion: 'booking_photo_v1', items: [] } } as never)).toBeNull()
+  })
+
+  it('la elección guardada manda', () => {
+    expect(resolveSelectedInputMode({ dataInputMode: 'manual', photos: ['a.jpg'] } as never)).toBe('manual')
+    expect(resolveSelectedInputMode({ dataInputMode: 'photos' })).toBe('photos')
+  })
+
+  it('borradores antiguos con fotos o zonas (o una repetición hecha con fotos) se reabren en fotos', () => {
+    expect(resolveSelectedInputMode({ photos: ['a.jpg'] } as never)).toBe('photos')
+    expect(resolveSelectedInputMode({ uploadedPhotoUrls: ['https://x/a.jpg'] })).toBe('photos')
+    expect(resolveSelectedInputMode({ palmGroups: [{ id: 'p1' }] } as never)).toBe('photos')
+    expect(resolveSelectedInputMode({ phytosanitaryZones: [{ id: 'z1' }] } as never)).toBe('photos')
   })
 })

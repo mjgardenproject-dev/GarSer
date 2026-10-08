@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createPortal } from 'react-dom';
 import { useBooking, type BookingData } from "../../contexts/BookingContext";
 import { ChevronLeft, Trash2, Image, Sprout, Sparkles, AlertTriangle, CheckCircle, XCircle, Info, Scissors, Trees, Flower2, Bug, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 import { estimateWorkWithAI, calculatePalmHours } from '../../utils/aiPricingEstimator';
 import { normalizePhytosanitaryTreatment } from '../../utils/serviceValidation';
 import { AnalysisLoadingAnimation } from '../../components/shared/AnalysisLoadingAnimation';
@@ -62,7 +61,10 @@ import {
   getDetailsContinueDisabled,
   getDetailsContinueLabel,
   getDetailsServiceFlags,
+  resolveSelectedInputMode,
 } from './detailsPagePresentation';
+import { useServiceName } from '../../hooks/useServiceName';
+import { DetailsServicePending } from './DetailsServicePending';
 import {
   buildHedgeDevZone,
   buildLawnDevZone,
@@ -711,7 +713,9 @@ const DetailsPage: React.FC = () => {
   const serviceCount = bookingData.serviceIds?.length || 0;
   const activeServiceIndex = Math.min(Math.max(bookingData.activeServiceIndex ?? 0, 0), Math.max(serviceCount - 1, 0));
   const activeServiceId = bookingData.serviceIds?.[activeServiceIndex] || '';
-  useEffect(() => {
+  // Antes de pintar: con `useEffect` el primer fotograma enseñaba los datos del servicio
+  // anterior (zonas, fotos) y al siguiente los de este.
+  useLayoutEffect(() => {
     if (activeServiceId) {
         switchToService(activeServiceId);
     }
@@ -791,7 +795,15 @@ const DetailsPage: React.FC = () => {
   }, [bookingData.description]);
   const [analyzing, setAnalyzing] = useState(false);
   const [aiModel] = useState<'gpt-4o-mini' | 'gemini-2.5-flash'>('gemini-2.5-flash');
-  const [debugService, setDebugService] = useState<string>('');
+  // El nombre decide qué pantalla se pinta. Viene al instante de «Servicios»; si hay que pedirlo
+  // (p. ej. al recargar aquí), la página espera con un estado de carga en vez de enseñar la
+  // pantalla genérica de fotos y cambiar después a la del servicio.
+  const {
+    name: debugService,
+    status: serviceNameStatus,
+    retry: retryServiceName,
+  } = useServiceName(activeServiceId);
+  const isServiceResolved = serviceNameStatus === 'ready';
   const serviceFlags = useMemo(() => getDetailsServiceFlags(debugService), [debugService]);
   const { user } = useAuth();
   // --- Manual entry (alternativa a fotos) ---
@@ -800,7 +812,8 @@ const DetailsPage: React.FC = () => {
   const manualSurvey = manualServiceKey ? MANUAL_ENTRY_SURVEYS[manualServiceKey] : null;
   // Desbroce (y futuros servicios manual-only) no usan fotos → sin selector foto/manual.
   const manualChoiceAvailable = manualFlowEnabled && !!manualServiceKey && !isManualOnlyService(manualServiceKey);
-  const dataInputMode: DataInputMode = bookingData.dataInputMode === 'manual' ? 'manual' : 'photos';
+  // `null` = aún no ha elegido: solo se enseña el selector, sin formulario debajo.
+  const selectedInputMode: DataInputMode | null = resolveSelectedInputMode(bookingData);
   // Un servicio manual-only no tiene alternativa de fotos, así que el asistente genérico
   // (ManualEntryWizard) debe estar SIEMPRE activo para él — independientemente de
   // `manualFlowEnabled` (VITE_ENABLE_MANUAL_BOOKING_INPUT, que por defecto es 'false' en
@@ -810,7 +823,11 @@ const DetailsPage: React.FC = () => {
   // de declarar datos (auditoría 2026-09-12, corrección del hallazgo #1 original — antes
   // existía un editor ad-hoc como único camino, ahora retirado en favor de este asistente).
   const isManualOnlyActive = !!manualServiceKey && isManualOnlyService(manualServiceKey);
-  const isManualActive = isManualOnlyActive || (manualChoiceAvailable && dataInputMode === 'manual');
+  const isManualActive = isManualOnlyActive || (manualChoiceAvailable && selectedInputMode === 'manual');
+  // Flujo de fotos: cuando lo ha elegido o cuando no hay elección que hacer (servicio sin
+  // asistente, o el asistente desactivado).
+  const isPhotoFlowActive =
+    isServiceResolved && !isManualActive && (!manualChoiceAvailable || selectedInputMode === 'photos');
 
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
@@ -1223,26 +1240,6 @@ const DetailsPage: React.FC = () => {
         runAIAnalysis();
     }
   }, []); // Run once on mount
-
-  useEffect(() => {
-    const fetchServiceName = async () => {
-      if (activeServiceId) {
-        const { data } = await supabase.from('services').select('name').eq('id', activeServiceId).single();
-        const serviceRecord = data as { name?: unknown } | null;
-        const serviceName = typeof serviceRecord?.name === 'string'
-          ? serviceRecord.name
-          : '';
-        if (serviceName) {
-          let sn = serviceName;
-          if (sn.toLowerCase().includes('fumigación') || sn.toLowerCase().includes('fumigacion') || sn.toLowerCase().includes('tratamientos fitosanitarios')) {
-            sn = 'Servicios fitosanitarios';
-          }
-          setDebugService(sn);
-        }
-      }
-    };
-    fetchServiceName();
-  }, [activeServiceId]);
 
   // El editor ad-hoc de desbroce (que necesitaba estos 3 efectos para mantener siempre una
   // única `weedingZones[0]` viva y su persistencia de herbicida en localStorage) se retiró
@@ -1729,6 +1726,8 @@ const DetailsPage: React.FC = () => {
   };
 
   const handleSelectInputMode = (mode: DataInputMode) => {
+    // Volver a tocar la opción ya elegida no cambia nada (ni repite la telemetría).
+    if (mode === selectedInputMode) return;
     commitDetailsPatch({ dataInputMode: mode }, { saveAfterCommit: true });
     reportBookingEvent('info', {
       event: 'booking.manual_input_mode_changed',
@@ -1847,7 +1846,7 @@ const DetailsPage: React.FC = () => {
     }
 
     // El bloque de validación de desbroce que vivía aquí se retiró (auditoría 2026-09-12):
-    // este botón "Continuar" está oculto en modo manual (`{!isManualActive && (...)}`, más
+    // este botón "Continuar" solo existe con el flujo de fotos (`{isPhotoFlowActive && (...)}`, más
     // abajo) y desbroce ahora es siempre manual-only-activo, así que `handleContinue` ya no
     // se invoca para este servicio — su validación vive en `ManualEntryWizard` y
     // `handleManualSubmit`.
@@ -4686,15 +4685,19 @@ const analyzeTreeGroup = async (id: string) => {
           </p>
         )}
 
-        {/* En modo manual el selector se pliega a una línea («Usar fotos», D-11): la decisión ya
-            está tomada y las dos tarjetas ocupaban medio primer pliegue en cada pregunta. Así
-            sirve también al repetir un servicio, donde antes se ocultaba por completo. En modo
-            fotos vuelve entero: es la única forma de regresar a la entrada manual. */}
-        {manualChoiceAvailable ? (
-          <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} compact={isManualActive} />
+        {serviceNameStatus !== 'ready' ? (
+          <DetailsServicePending status={serviceNameStatus} onRetry={retryServiceName} />
+        ) : null}
+
+        {/* Sin elegir, el selector va grande y solo; al elegir se pliega a una barra arriba con
+            las dos opciones (la elegida resaltada, la otra a un toque), igual en los dos modos.
+            También al repetir un servicio. */}
+        {isServiceResolved && manualChoiceAvailable ? (
+          <ManualEntryChoice mode={selectedInputMode} onSelect={handleSelectInputMode} />
         ) : null}
 
         {isManualActive && manualSurvey ? (
+          <div className="animate-reveal motion-reduce:animate-none">
           <ManualEntryWizard
             key={`manual-wizard-${activeServiceId}-${manualWizardSeed}`}
             survey={manualSurvey}
@@ -4726,16 +4729,22 @@ const analyzeTreeGroup = async (id: string) => {
             }
             onSubmit={handleManualSubmit}
             onSwitchToPhotos={() => handleSelectInputMode('photos')}
-            // «Usar fotos» ya está en el selector plegado de encima; el asistente no lo repite.
+            // «Con fotos» ya está en la barra del selector de encima; el asistente no lo repite.
             showSwitchToPhotos={false}
             // Pie fijo abajo, como el «Continuar» del modo fotos.
             stickyFooter
             // Con varios servicios, la página ya dice cuál es («Servicio 2 de 5: …»).
             showServiceName={serviceCount <= 1}
           />
+          </div>
         ) : null}
 
-        <div className={isManualActive ? 'hidden' : 'contents'}>
+        {/* No se monta hasta saber de qué servicio es (sería la pantalla genérica). Después se
+            queda montado aunque no se vea: al cambiar a mano y volver no se pierde nada de lo
+            que hay en pantalla. Aparece con un fundido (solo opacidad: un desplazamiento movería
+            los paneles fijos que hay dentro mientras dura). */}
+        {isServiceResolved ? (
+        <div className={isPhotoFlowActive ? 'animate-reveal motion-reduce:animate-none' : 'hidden'}>
 
         {/* Photo Upload */}
         <div className="mb-4">
@@ -6744,12 +6753,14 @@ const analyzeTreeGroup = async (id: string) => {
         document.body
       )}
 
-        </div>{/* end photos-mode gate */}
+        </div>
+        ) : null}{/* end photos-mode gate */}
 
       </div>
 
-      {/* Fixed CTA (hidden in manual mode; the wizard owns its own confirm) */}
-      {!isManualActive && (
+      {/* Fixed CTA: solo con el flujo de fotos (en modo manual el asistente tiene su propio pie, y
+          sin elegir modo no hay nada que continuar) */}
+      {isPhotoFlowActive && (
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
         <div className="mx-auto w-full sm:max-w-md">
           <button

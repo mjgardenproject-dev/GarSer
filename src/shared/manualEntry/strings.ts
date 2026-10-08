@@ -21,9 +21,6 @@ export const MANUAL_ENTRY_STRINGS = {
       title: 'Escribo los datos',
       description: 'Respondes unas preguntas sencillas.',
     },
-    /** Selector plegado a una línea mientras se rellena el asistente (D-11). */
-    compactLabel: 'Introduces los datos a mano',
-    compactSwitch: 'Usar fotos',
   },
   wizard: {
     stepProgress: (current: number, total: number) => `Paso ${current} de ${total}`,

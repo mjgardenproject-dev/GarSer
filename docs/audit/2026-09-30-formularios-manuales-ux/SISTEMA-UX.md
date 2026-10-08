@@ -16,7 +16,7 @@ prevención > corrección · reutilizar > duplicar.
 │ ←        Detalles                 Salir   │  cabecera de la página (no cambia)
 │ Paso 3 de 5  ▓▓▓▓▓▓▓▓▓░░░░░               │  progreso de la RESERVA (único con barra)
 ├───────────────────────────────────────────┤
-│ ✎ Datos a mano · Usar fotos               │  selector plegado (1 línea, 44 px)
+│ [ Con fotos ] [■ Escribo los datos ]      │  selector plegado (barra, 44 px; H-N-25)
 │                                           │
 │ PODA DE SETOS · Pregunta 1 de 4           │  cabecera del asistente (14 px, emerald-800)
 │ ¿Cuánto mide el seto?                     │  título-pregunta (20/28, semibold)
@@ -42,8 +42,10 @@ Reglas:
 - Una sola barra de progreso en pantalla: la de la reserva. Dentro del asistente, solo
   texto («Pregunta X de Y»).
 - El nombre del servicio siempre visible como «eyebrow» (resuelve T-02).
-- Selector de modo completo solo **antes** de elegir. En modo manual se pliega a una línea
-  «Datos a mano · Usar fotos» (resuelve T-03 y el objetivo táctil de «Cambiar a fotos»).
+- Selector de modo completo solo **antes** de elegir, sin ninguna opción marcada y sin nada
+  debajo. Al elegir (fotos o a mano) se pliega con una animación a una barra arriba con las dos
+  opciones: la elegida resaltada y la otra a un toque (H-N-25, 2026-10-08; sustituye a la línea
+  «Datos a mano · Usar fotos» de D-11, que solo existía en modo manual).
 - Nada de tarjeta alrededor del asistente: el asistente es la página (resuelve T-22).
   Una sola superficie: fondo `gray-50` de la página y controles blancos encima.
 

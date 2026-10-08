@@ -107,3 +107,28 @@ desbroce debe arrancar en «Sí»). Termina con código 1 si alguno vuelve.
 npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
   node scripts/qa/manual-entry/scenarios-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-escenarios
 ```
+
+## Accesibilidad: `a11y.mjs` (F12)
+
+Sobre el marco del banco, recorre los 7 servicios y el modal del jardinero y comprueba foco (título al
+cambiar de pantalla, primer campo con error al fallar), nombres de grupos/opciones/interruptores/campos,
+`aria-invalid` + `aria-describedby` y contraste ≥ 4,5:1; además hace dos recorridos completos solo con
+teclado (césped y dos árboles). Empieza con una autocomprobación (debe detectar un texto gris claro y
+un botón sin nombre inyectados).
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/a11y.mjs --out ~/Downloads/auditorias/formularios-qa/fase-N-a11y
+```
+
+## Pago de prueba en local: `payment-local.mjs` (Nivel E, solo con autorización)
+
+Reserva completa en la rama local con el cliente sembrado y la tarjeta pública de prueba de Stripe;
+se niega a ejecutarse si el Supabase no es local o las claves no son `pk_test_`/`sk_test_`.
+Devuelve el total y el «Pagas hoy» que muestra «Profesionales», el intento de pago y la reserva creada.
+`--tree` hace dos árboles en vez de césped.
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/payment-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-pago
+```

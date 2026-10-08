@@ -27,6 +27,19 @@ const start = (affectedType: string) => {
   return onStepComplete;
 };
 
+describe('fitosanitarios · qué tratar (F12, cohesión)', () => {
+  it('sin ayudas que repiten el nombre; solo «Plantas y arbustos» explica algo', () => {
+    render(<ManualEntryWizard survey={survey} onSubmit={vi.fn()} />);
+    expect(optionsOf('Tipo de vegetación')).toEqual([
+      'Césped',
+      'Plantas y arbustosMacizos de plantas bajas y arbustos.',
+      'Setos',
+      'Árboles',
+      'Palmeras',
+    ]);
+  });
+});
+
 describe('fitosanitarios · cantidad y tamaño en una pantalla (D-05, P-08, D-12)', () => {
   it.each([
     ['Césped', '¿Cuántos m² de césped hay que tratar?', 'Superficie de césped'],

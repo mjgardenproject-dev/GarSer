@@ -278,3 +278,21 @@ aparte):
 4. Batería de producción de la ronda en `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md`.
 5. Con permiso: pago de prueba (Nivel E), fusión y despliegue (frontend + `booking-manual-declaration`, H-N-10).
 
+### 2026-10-08 — Respuestas del usuario (F12)
+- Cohesión: quitar en fitosanitarios las cuatro ayudas que repiten el nombre de la opción.
+- Nivel E: autorizado el pago de prueba **en local** con la tarjeta de prueba de Stripe.
+- Pull request: «todavía no».
+- Despliegue: «despliega todas las funciones y todo lo necesario para cerrar la implementación y que
+  quede en producción; después prueba en vivo en garser.es». Contradice el «todavía no» del PR (el
+  frontend solo se publica fusionando en `main`) → se le pregunta antes de subir nada.
+
+### 2026-10-08 — F12, parte local (cerrada)
+- Cohesión: los 7 lado a lado; una corrección aprobada (ayudas redundantes de fitosanitarios).
+- Accesibilidad: nuevo `a11y.mjs` (con autocomprobación): 0 problemas en 7 servicios + jardinero;
+  recorridos solo con teclado de césped y dos árboles completos.
+- Tablet/escritorio revisados en la app real.
+- Nivel E en local: césped (5,63 € de 50,63 €) y árboles (32,13 € de 289,13 €): Stripe autoriza lo
+  mostrado y la reserva se crea. Nuevo `payment-local.mjs`.
+- Batería de producción: Sección 21 de `PRUEBAS-PRODUCCION.md`.
+- Pendiente: aclarar con el usuario PR/fusión/despliegue antes de tocar producción.
+

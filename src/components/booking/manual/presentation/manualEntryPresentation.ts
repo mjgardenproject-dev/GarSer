@@ -430,6 +430,10 @@ export const MANUAL_ENTRY_PRESENTATION: Record<ManualServiceKey, ManualServicePr
         // etiquetas dependen de lo que se trata.
         dynamic: (answers) => PHYTO_SIZE[phytoType(answers)] ?? {},
       },
+      // F12 (cohesión): fuera las ayudas que solo repetían el nombre («Setos lineales a tratar.»).
+      affectedType: {
+        optionHelp: { Césped: null, Setos: null, Árboles: null, Palmeras: null },
+      },
       intent: { label: 'Tipo de tratamiento' },
       curativeTarget: { label: 'Plaga o enfermedad a combatir' },
       productPreference: {

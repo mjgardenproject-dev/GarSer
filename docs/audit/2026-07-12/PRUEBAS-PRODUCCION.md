@@ -1030,10 +1030,10 @@ Rellena esto antes de empezar y ten la tabla a mano:
 > **Antes del despliegue (5 min):** con las mismas respuestas de 21.2, apunta el precio y las horas
 > de cada profesional en «Profesionales». Después del despliegue deben salir **iguales**.
 
-- [ ] **21.1 — Lo desplegado es lo nuevo.** En «Detalles», arriba sale una sola línea «Introduces los
+- [x] **21.1 — Lo desplegado es lo nuevo.** *(✅ 2026-10-08, Claude, en vivo)* En «Detalles», arriba sale una sola línea «Introduces los
   datos a mano · Usar fotos» y cada pregunta lleva encima «Servicio · Pregunta X de Y». ❌ Si sale la
   rejilla de tarjetas antigua: el despliegue no es el último (Vercel → Deployments).
-- [ ] **21.2 — Mismo precio que antes (los 7).** Césped 80 m² «Descuidado» con retirada · Setos 14 m,
+- [x] **21.2 — Mismo precio que antes (los 7).** *(✅ 2026-10-08: césped 56,25 € · 1 h antes y después; los otros 6 sin profesionales en esa dirección antes y después — repetir con una dirección donde haya profesionales de esos servicios)* Césped 80 m² «Descuidado» con retirada · Setos 14 m,
   2,1 m, dos caras, normal · Árboles 1 mediano estructural acceso normal + 1 grande formación acceso
   difícil · Palmeras 2 canarias 4-10 m normal + 1 Washingtonia 4-12 m descuidada con acceso difícil,
   sin retirada · Arbustos 30 m² medianas · Fitosanitarios 3 árboles grandes curativo hongos ecológico ·
@@ -1042,16 +1042,16 @@ Rellena esto antes de empezar y ten la tabla a mano:
 - [ ] **21.3 — Teclado del iPhone y pie fijo (H-N-14).** En setos, toca «Longitud del seto»: sale el
   teclado numérico con coma y los botones «Atrás / Siguiente» siguen a la vista o aparecen al cerrar
   el teclado, sin tapar el campo. Escribe «2,5» en la altura: se acepta (no se convierte en 25).
-- [ ] **21.4 — Tramo de setos.** Con «+» desde vacío la altura pasa por 2 m; con 2 m pone «Tramo de
+- [x] **21.4 — Tramo de setos.** *(✅ 2026-10-08, en vivo)* Con «+» desde vacío la altura pasa por 2 m; con 2 m pone «Tramo de
   tarifa: Bajo (hasta 2 m)» y con 2,5 m «Medio (2-4 m)».
 - [ ] **21.5 — Árboles: duplicar, fantasma y acceso.** (a) Tras el primer árbol, «Duplicar» crea
   «Árbol 2» igual. (b) «Añadir otro árbol» y luego «Atrás» sin contestar: la lista sigue con los
   árboles que tenías (no aparece uno vacío) y «Profesionales» cobra solo esos. (c) En «¿El acceso al
   árbol es complicado?», «Siguiente» sin elegir muestra «Elige una opción para continuar.».
-- [ ] **21.6 — Palmeras.** Nombres comunes con el latín debajo. Con «Palmera canaria» y tronco 0-4 m,
+- [x] **21.6 — Palmeras.** *(✅ 2026-10-08, en vivo: nombres comunes y sin acceso en 0-4 m; el aviso de cambio de especie, comprobado en local)* Nombres comunes con el latín debajo. Con «Palmera canaria» y tronco 0-4 m,
   en «¿Necesitas algo más?» no aparece «Acceso difícil». Vuelve atrás, cambia a «Palmera de molino»:
   en la altura sale «Los tramos de altura cambian con la especie…» y no deja seguir sin elegir.
-- [ ] **21.7 — Fitosanitarios.** «Árboles» → «¿Cuántos árboles hay que tratar?» con la altura en la
+- [x] **21.7 — Fitosanitarios.** *(✅ 2026-10-08, en vivo con árboles)* «Árboles» → «¿Cuántos árboles hay que tratar?» con la altura en la
   misma pantalla (menos de 3 / 3-6 / más de 6 m). «Curativo» hace aparecer «Plaga o enfermedad a
   combatir» debajo sin mover lo de arriba. En la revisión, «3 árboles». Con «Setos», la última
   pregunta dice «Supera los 2,5 m de altura».
@@ -1059,7 +1059,7 @@ Rellena esto antes de empezar y ten la tabla a mano:
   desbroce, al llegar a desbroce la retirada sale en «Sí» (no heredada del «no aplica» de
   fitosanitarios). La pantalla final es «Opciones del servicio» con herbicida y retirada juntos.
   Escribe «2.500» en la superficie: la revisión dice «2.500 m²».
-- [ ] **21.9 — Arbustos.** Tamaños «Pequeñas (0-1 m) · Medianas (1-2 m) · Grandes (2-3 m)», sin
+- [x] **21.9 — Arbustos.** *(✅ 2026-10-08, en vivo)* Tamaños «Pequeñas (0-1 m) · Medianas (1-2 m) · Grandes (2-3 m)», sin
   rodilla ni cintura.
 - [ ] **21.10 — Revisión y casilla.** «Cambiar» en cualquier dato lleva a esa pregunta y el botón
   vuelve a la revisión con el valor nuevo. «Confirmar y continuar» no se activa sin la casilla.

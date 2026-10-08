@@ -15,7 +15,7 @@
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
 | F10 Césped | ✅ Terminada y aprobada | 2026-10-08 | eff7bab | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Textos aprobados |
 | F11 Arbustos | ✅ Terminada y aprobada | 2026-10-08 | b3be6aa | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-11.md`. Textos aprobados |
-| F12 Cierre y producción | 🔧 En curso | 2026-10-08 | | | Ver registro |
+| F12 Cierre y producción | ✅ Terminada y en producción | 2026-10-08 | 2220c8a (#43) | A ✅ · B ✅ · C ✅ · D ✅ · E ✅ (local) · producción ✅ | `qa/fase-12.md`. Quedan pruebas del usuario: 21.3, 21.11-21.13 y fotos de palmeras (D-13) |
 
 ## Registro
 
@@ -295,4 +295,12 @@ aparte):
   mostrado y la reserva se crea. Nuevo `payment-local.mjs`.
 - Batería de producción: Sección 21 de `PRUEBAS-PRODUCCION.md`.
 - Pendiente: aclarar con el usuario PR/fusión/despliegue antes de tocar producción.
+
+### 2026-10-08 — F12 Cierre y producción (cierre)
+- PR #43 fusionado en `main` (`2220c8a`); Vercel publicó el frontend; 14 funciones desplegadas con
+  `verify_jwt=false` intacto.
+- Producción: césped 56,25 € · 1 h antes y después; los 7 formularios nuevos recorridos en vivo en
+  garser.es hasta «Profesionales».
+- **Ronda terminada.** Pendiente del usuario: 21.3 (iPhone), 21.11-21.13, fotos de especies (D-13),
+  reiniciar el Mac (H-N-21, opcional).
 

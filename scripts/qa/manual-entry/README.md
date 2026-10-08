@@ -108,6 +108,17 @@ npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Dow
   node scripts/qa/manual-entry/scenarios-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-escenarios
 ```
 
+## Entrada a «Detalles» sin parpadeo: `details-entry.mjs` (H-N-24)
+
+Anota, desde el primer fotograma, qué pantallas aparecen al pasar de «Servicios» a «Detalles» y al
+recargar en «Detalles». Correcto: `selector` al entrar, `carga → selector` al recargar y
+`genericShown: false` (nunca «Fotos de tu jardín» con un servicio del catálogo).
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/details-entry.mjs http://localhost:5191 "Poda de setos"
+```
+
 ## Accesibilidad: `a11y.mjs` (F12)
 
 Sobre el marco del banco, recorre los 7 servicios y el modal del jardinero y comprueba foco (título al

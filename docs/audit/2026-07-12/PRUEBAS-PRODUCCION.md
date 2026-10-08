@@ -1073,6 +1073,17 @@ Rellena esto antes de empezar y ten la tabla a mano:
 - [ ] **21.13 — Telemetría.** Tras un recorrido de árboles:
   `select context->>'stepId' from booking_funnel_events where event='booking.manual_entry_step_completed' order by created_at desc limit 3;`
   ✅ `access`, `pruning_type`, `size` (los mismos pasos que antes, en el mismo orden).
+- [ ] **21.14 — Entrada a «Detalles» sin parpadeo (H-N-24).** En el móvil, con una conexión
+  normal: dirección → marca un servicio → «Continuar». ✅ Lo primero que ves en «Detalles» es
+  «¿Cómo calculamos tu presupuesto?»; en ningún momento aparece «Fotos de tu jardín». Recarga la
+  página estando en «Detalles»: ✅ como mucho un esqueleto gris un instante, y después la pantalla
+  del servicio. Repite con 2 servicios distintos.
+- [ ] **21.15 — Selector fotos/manual (H-N-25).** ✅ Al entrar, las dos opciones grandes y ninguna
+  marcada, sin formulario ni «Continuar» debajo. Toca «Escribo los datos»: ✅ se pliegan con una
+  animación a una barra arriba, «Escribo los datos» resaltado, «Con fotos» visible; debajo, la
+  primera pregunta. Toca «Con fotos» en la barra: ✅ la misma barra con «Con fotos» resaltado y la
+  pantalla de fotos con «Continuar». Vuelve a «Escribo los datos»: ✅ sigue en la pregunta donde lo
+  dejaste. Con 2 servicios, al pasar al segundo: ✅ selector grande sin marcar otra vez.
 
 ## Criterio de GO definitivo
 

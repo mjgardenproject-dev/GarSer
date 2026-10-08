@@ -14,7 +14,7 @@
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
 | F10 Césped | ✅ Terminada y aprobada | 2026-10-08 | eff7bab | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Textos aprobados |
-| F11 Arbustos | 🟡 Terminada, pendiente de aprobación | 2026-10-08 | (ver commit F11) | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-11.md`. Pendiente: aprobar textos |
+| F11 Arbustos | 🟡 Terminada, pendiente de aprobación | 2026-10-08 | b3be6aa | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-11.md`. Pendiente: aprobar textos |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
 
 ## Registro

@@ -14,8 +14,8 @@
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
 | F10 Césped | ✅ Terminada y aprobada | 2026-10-08 | eff7bab | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Textos aprobados |
-| F11 Arbustos | 🟡 Terminada, pendiente de aprobación | 2026-10-08 | b3be6aa | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-11.md`. Pendiente: aprobar textos |
-| F12 Cierre y producción | ⏳ Pendiente | | | | |
+| F11 Arbustos | ✅ Terminada y aprobada | 2026-10-08 | b3be6aa | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-11.md`. Textos aprobados |
+| F12 Cierre y producción | 🔧 En curso | 2026-10-08 | | | Ver registro |
 
 ## Registro
 
@@ -267,4 +267,14 @@ listas de una columna, retirada en dos opciones. Lo que cambia en F11 (patrón d
   corporales. Envío y telemetría idénticos; E2E idéntico a `main`.
 - Con F11 terminan los 7 formularios. Siguiente: F12 (cohesión, accesibilidad, verificación final y
   paso a producción), pendiente del visto bueno.
+
+### 2026-10-08 — F12 Cierre y producción (inicio)
+F11 aprobada por el usuario. F12 en local, sin pagos, fusión ni despliegue (cada uno con permiso
+aparte):
+1. Revisión de los 7 lado a lado (capturas del banco a 375 px) y correcciones de cohesión.
+2. Accesibilidad: foco al título y al primer error, nombres de grupos e interruptores,
+   `aria-invalid`/`aria-describedby`, contraste ≥ 4,5:1, recorrido completo con teclado.
+3. Tablet (768) y escritorio (1280).
+4. Batería de producción de la ronda en `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md`.
+5. Con permiso: pago de prueba (Nivel E), fusión y despliegue (frontend + `booking-manual-declaration`, H-N-10).
 

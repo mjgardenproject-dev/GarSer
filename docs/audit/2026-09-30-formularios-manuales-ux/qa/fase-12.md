@@ -58,8 +58,17 @@ captura previa de precios (21.2, bloqueante) y la fila en el «Criterio de GO de
 Typecheck: los 128 previos · vitest 110 archivos / 904 · alcance vacío · lint 2 avisos de siempre ·
 banco de fitosanitarios 23/23 y 0 distintos.
 
-## Parte de producción (pendiente de aclaración del usuario)
+## Parte de producción
 
-El usuario pidió desplegar todo y probar en vivo en garser.es, y a la vez «todavía no» a subir la rama
-y abrir el PR. El frontend solo se publica fusionando en `main` (Vercel), así que se le pregunta antes
-de subir nada.
+Decisión del usuario (2026-10-08): subir la rama, abrir el PR y fusionarlo; desplegar todas las
+funciones; probar en vivo en garser.es como cliente anónimo hasta «Profesionales» (sin reservas ni
+pagos reales). La parte con sesión, el iPhone y el jardinero quedan para el usuario (Sección 21).
+
+### Precios en producción ANTES del despliegue (`prod-prices.mjs`, solo lectura)
+
+Mismas respuestas que el E2E local, dirección Avenida Ricardo Soriano 12, Marbella:
+
+| Servicio | Antes |
+|---|---|
+| Césped | Jardines prueba28 · 56,25 € · 1 h |
+| Setos, árboles, palmeras, arbustos, fitosanitarios, desbroce | El formulario llega a «Profesionales»; «No hay profesionales disponibles» en esa dirección |

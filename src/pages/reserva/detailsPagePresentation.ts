@@ -107,3 +107,46 @@ export function getDetailsContinueLabel(bookingData: BookingData, serviceFlags: 
   const validTreeCount = (bookingData.treeGroups || []).filter((group) => !((group as any).isFailed === true || group.analysisLevel === 3)).length
   return validTreeCount > 0 ? `Continuar con ${validTreeCount} árboles` : 'Continuar'
 }
+
+export type SelectedInputMode = 'photos' | 'manual'
+
+type InputModeSource = Partial<Pick<
+  BookingData,
+  | 'dataInputMode'
+  | 'photos'
+  | 'uploadedPhotoUrls'
+  | 'bookingPhotoContract'
+  | 'lawnZones'
+  | 'hedgeZones'
+  | 'treeGroups'
+  | 'palmGroups'
+  | 'shrubGroups'
+  | 'phytosanitaryZones'
+>>
+
+const hasEntries = (value: unknown) => Array.isArray(value) && value.length > 0
+
+/**
+ * Modo de entrada que el cliente YA ha elegido para el servicio activo, o `null` si aún no.
+ *
+ * «Detalles» abre con las dos opciones (fotos / a mano) sin ninguna marcada y no enseña ningún
+ * formulario hasta que el cliente elige. Los borradores anteriores a esta elección explícita no
+ * guardaban `dataInputMode` en el modo fotos (era el modo por defecto): si ya traen fotos o
+ * zonas, venían de ahí y se reabren en fotos, sin volver a preguntar. Las zonas cuentan también
+ * al repetir una reserva hecha con fotos (se conservan los resultados, no las fotos). El modo a
+ * mano siempre queda guardado explícitamente al elegirlo.
+ */
+export function resolveSelectedInputMode(data: InputModeSource): SelectedInputMode | null {
+  if (data.dataInputMode === 'manual' || data.dataInputMode === 'photos') return data.dataInputMode
+  const hasPhotoFlowProgress =
+    hasEntries(data.photos) ||
+    hasEntries(data.uploadedPhotoUrls) ||
+    hasEntries(data.bookingPhotoContract?.items) ||
+    hasEntries(data.lawnZones) ||
+    hasEntries(data.hedgeZones) ||
+    hasEntries(data.treeGroups) ||
+    hasEntries(data.palmGroups) ||
+    hasEntries(data.shrubGroups) ||
+    hasEntries(data.phytosanitaryZones)
+  return hasPhotoFlowProgress ? 'photos' : null
+}

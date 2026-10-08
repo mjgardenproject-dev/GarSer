@@ -5,6 +5,7 @@ import { ChevronLeft, Check, ImageOff, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Service } from '../../types';
 import { getServiceImageFallbackUrl, getServiceImageUrl } from '../../utils/serviceImages';
+import { normalizeServiceDisplayName, rememberServiceNames } from '../../utils/serviceNameCatalog';
 
 const MAX_MANUAL_RETRIES = 3;
 
@@ -59,22 +60,14 @@ const ServicesPage: React.FC = () => {
         });
       } catch {}
 
-      const merged = (data as any[]).map((serviceRow) => {
-        let updatedName = serviceRow.name;
-        if (
-          updatedName.toLowerCase().includes('fumigación') ||
-          updatedName.toLowerCase().includes('fumigacion') ||
-          updatedName.toLowerCase().includes('tratamientos fitosanitarios')
-        ) {
-          updatedName = 'Servicios fitosanitarios';
-        }
-        return {
-          ...serviceRow,
-          name: updatedName,
-          image_url: imageMap[serviceRow.id] || serviceRow.image_url,
-        };
-      });
+      const merged = (data as any[]).map((serviceRow) => ({
+        ...serviceRow,
+        name: normalizeServiceDisplayName(serviceRow.name),
+        image_url: imageMap[serviceRow.id] || serviceRow.image_url,
+      }));
 
+      // «Detalles» los lee al instante en vez de pedirlos otra vez (sin parpadeo al entrar).
+      rememberServiceNames(merged);
       setServices(merged as Service[]);
       setImageStates({});
       setManualRetryCount(0);
@@ -122,9 +115,18 @@ const ServicesPage: React.FC = () => {
       && selectedServices.every((id, index) => bookingData.serviceIds[index] === id);
     // Si cambia la selección, se empieza por el primero y se olvidan los datos ya guardados
     // de servicios que ya no están (los de los que siguen se conservan en servicesData).
+    // El modo de entrada (fotos o a mano) es de cada servicio: se olvida el del anterior para que
+    // «Detalles» pregunte de nuevo (al volver a un servicio, su modo sale de servicesData).
     setBookingData(sameSelection
       ? { serviceIds: selectedServices, activeServiceIndex: 0 }
-      : { serviceIds: selectedServices, activeServiceIndex: 0, serviceInputs: {} });
+      : {
+          serviceIds: selectedServices,
+          activeServiceIndex: 0,
+          serviceInputs: {},
+          dataInputMode: undefined,
+          manualDeclarationId: undefined,
+          manualConsent: undefined,
+        });
     saveProgress();
     setCurrentStep(2);
   };

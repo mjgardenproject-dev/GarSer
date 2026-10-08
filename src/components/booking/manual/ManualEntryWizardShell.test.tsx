@@ -96,17 +96,32 @@ describe('carcasa del asistente (F2)', () => {
   });
 });
 
-describe('selector fotos/manual plegado (D-11)', () => {
-  it('en modo manual es una línea con «Usar fotos»', () => {
-    const onSelect = vi.fn();
-    render(<ManualEntryChoice mode="manual" onSelect={onSelect} compact />);
-    expect(screen.queryByRole('radio')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Usar fotos' }));
-    expect(onSelect).toHaveBeenCalledWith('photos');
+describe('selector fotos/manual', () => {
+  const radio = (name: string) => screen.getByRole('radio', { name });
+
+  it('sin elegir: las dos opciones grandes con su explicación y ninguna marcada', () => {
+    render(<ManualEntryChoice mode={null} onSelect={vi.fn()} />);
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(radio('Con fotos').getAttribute('aria-checked')).toBe('false');
+    expect(radio('Escribo los datos').getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByRole('radiogroup', { name: '¿Cómo calculamos tu presupuesto?' })).toBeTruthy();
+    expect(radio('Escribo los datos').getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.getByText('Respondes unas preguntas sencillas.').closest('[aria-hidden="true"]')).toBeNull();
   });
 
-  it('en modo fotos sigue siendo el selector completo', () => {
-    render(<ManualEntryChoice mode="photos" onSelect={vi.fn()} compact />);
+  it.each([
+    ['manual', 'Escribo los datos', 'Con fotos', 'photos'],
+    ['photos', 'Con fotos', 'Escribo los datos', 'manual'],
+  ] as const)('elegido %s: barra compacta igual en los dos modos, la otra opción a un toque', (mode, chosen, other, otherMode) => {
+    const onSelect = vi.fn();
+    render(<ManualEntryChoice mode={mode} onSelect={onSelect} />);
     expect(screen.getAllByRole('radio')).toHaveLength(2);
+    expect(radio(chosen).getAttribute('aria-checked')).toBe('true');
+    expect(radio(other).getAttribute('aria-checked')).toBe('false');
+    // Las explicaciones se pliegan (y no se leen); el grupo sigue con su nombre.
+    expect(screen.getByText('Respondes unas preguntas sencillas.').closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByRole('radiogroup', { name: '¿Cómo calculamos tu presupuesto?' })).toBeTruthy();
+    fireEvent.click(radio(other));
+    expect(onSelect).toHaveBeenCalledWith(otherMode);
   });
 });

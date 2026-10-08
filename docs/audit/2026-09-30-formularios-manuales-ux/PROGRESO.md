@@ -13,8 +13,8 @@
 | F7 Palmeras | ✅ Terminada y aprobada | 2026-10-02 | bf8ceb3 | A ✅ · B 0 distintos + 6 previstas (P-04) · C ✅ · D ✅ | `qa/fase-7.md`. Textos aprobados (2026-10-02). Solo queda poner las fotos de especies cuando el usuario las tenga (D-13) |
 | F8 Fitosanitarios | ✅ Terminada y aprobada | 2026-10-07 | 98e4bed | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-8.md`. Textos aprobados; H-N-19: se quedan al final |
 | F9 Desbroce | ✅ Terminada y aprobada | 2026-10-07 | 4570931 | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-9.md`. Textos aprobados |
-| F10 Césped | 🟡 Terminada, pendiente de aprobación | 2026-10-07 | eff7bab | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Pendiente: aprobar «¿Cómo lo mido?» |
-| F11 Arbustos | ⏳ Pendiente | | | | |
+| F10 Césped | ✅ Terminada y aprobada | 2026-10-08 | eff7bab | A ✅ · B 0 distintos (+6 previstas F7) · C ✅ · D ✅ | `qa/fase-10.md`. Textos aprobados |
+| F11 Arbustos | 🔧 En curso | 2026-10-08 | | | Ver registro |
 | F12 Cierre y producción | ⏳ Pendiente | | | | |
 
 ## Registro
@@ -248,4 +248,17 @@ columna, retirada en dos opciones. Lo que cambia en F10:
 - Lección de método: no tocar archivos de `src/` (ni un comentario) con el banco en marcha; Vite
   recarga la página del banco y provoca fallos falsos (ya estaba en REGLAS como «parar la puerta»).
 - Siguiente: F11 (arbustos), pendiente del visto bueno.
+
+### 2026-10-08 — Respuestas del usuario
+- F10: textos de «¿Cómo lo mido?» aprobados. Adelante con F11.
+- F11: el tamaño grande de arbustos se etiqueta «Grandes (2-3 m)», igual que el configurador del
+  jardinero (opción elegida frente a «más de 2 m»).
+
+### 2026-10-08 — F11 Arbustos (inicio)
+Ya resuelto en F2-F4: campo numérico con miles en vez del deslizador, referencias fuera (D-03),
+listas de una columna, retirada en dos opciones. Lo que cambia en F11 (patrón de césped, §6.15):
+1. Superficie: frase de apoyo común y «¿Cómo lo mido?» con el método.
+2. Tamaño: Pequeñas (0-1 m) · Medianas (1-2 m) · Grandes (2-3 m) (D-12), sin las ayudas corporales
+   (rodilla, cintura, pecho, cabeza); apoyo «elige la altura de las plantas que más abundan».
+3. Estado: sin cambios de texto (describen las plantas, sin comparaciones).
 

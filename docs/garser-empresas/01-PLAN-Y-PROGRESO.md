@@ -907,6 +907,10 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 2e. **Pendientes consolidados (2026-09-29):** `05-HALLAZGOS-PENDIENTES.md` (PH-01…PH-13: lo que sigue
    abierto de `02-HALLAZGOS.md` y lo visto en la prueba real fuera de ella, con las decisiones del
    usuario) y `06-PRUEBA-REAL-PENDIENTE.md` (PR-01…PR-05 y la guía única de pruebas en garser.es).
+2f. **Cómo corregirlos (2026-10-08):** `07-PROCEDIMIENTO-CORRECCION.md`: arranque, ciclo de 5 pasos por
+   hallazgo (leer, comprobar que es cierto, casos parecidos, hallazgos nuevos y verificación en el
+   navegador y con pruebas reales), cierre de fase, fases A–H y trampas conocidas. No se toca código
+   hasta que el usuario lo diga.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

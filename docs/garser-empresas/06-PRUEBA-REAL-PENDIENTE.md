@@ -14,7 +14,7 @@
 
 | # | Qué falta | Gravedad | Origen | Decisión | Estado |
 |---|---|---|---|---|---|
-| PR-01 | La web de la corrección (PR #41) no está publicada: en garser.es aún se ve la anterior | **Alta** (lo corregido no se ve) | F8 | — | Pendiente de que el usuario la fusione |
+| PR-01 | La web de la corrección (PR #41) no estaba publicada | — | F8 | — | ✅ Resuelto: el usuario fusionó la #41 el 2026-09-29 |
 | PR-02 | Un proveedor suspendido no ve en su panel que lo está | Media | R-20 | Aviso en el panel y correo | Por corregir |
 | PR-03 | Las notificaciones al móvil no se han visto llegar a un móvil de verdad | Media (solo comprobable en garser.es) | F7 (R-08) | — | Pendiente de prueba |
 | PR-04 | 41 pruebas en garser.es sin hacer, varias duplicadas u obsoletas | Media | `03-PRUEBAS.md` §3 | Una guía única, ordenada | Guía en §3 |
@@ -192,3 +192,4 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | Fecha | Qué | Resultado |
 |---|---|---|
 | 2026-09-29 | Documento creado; decisiones PR-02, PR-04 y PR-05 | — |
+| 2026-10-08 | PR-01 cerrado (PR #41 fusionada el 2026-09-29). Procedimiento de corrección en `07-PROCEDIMIENTO-CORRECCION.md` | — |

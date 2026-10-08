@@ -72,3 +72,38 @@ Mismas respuestas que el E2E local, dirección Avenida Ricardo Soriano 12, Marbe
 |---|---|
 | Césped | Jardines prueba28 · 56,25 € · 1 h |
 | Setos, árboles, palmeras, arbustos, fitosanitarios, desbroce | El formulario llega a «Profesionales»; «No hay profesionales disponibles» en esa dirección |
+
+### Fusión y despliegue (2026-10-08)
+
+| Paso | Resultado |
+|---|---|
+| PR | [#43](https://github.com/mjgardenproject-dev/GarSer/pull/43); vista previa de Vercel en verde |
+| Fusión | Squash en `main` → `2220c8a` |
+| Frontend | Vercel publica `main` en producción: «Deployment has completed» |
+| Funciones | `supabase functions deploy --use-api` de las 14 del repositorio. Antes se comprobó que `config.toml` declara `verify_jwt = false` para las 14 (como en producción) y que el código local era idéntico a `main`. Después: las 14 `ACTIVE` y con `verify_jwt=false` (`booking-manual-declaration` v12 → v13, H-N-10). `email-otp` solo existe en producción y no se tocó |
+| Migraciones | Ninguna (la ronda no toca `supabase/`) |
+
+### Precios en producción DESPUÉS del despliegue (`prod-prices.mjs`)
+
+| Servicio | Antes | Después |
+|---|---|---|
+| Césped | Jardines prueba28 · 56,25 € · 1 h | Jardines prueba28 · 56,25 € · 1 h ✅ |
+| Setos, árboles, palmeras, arbustos, fitosanitarios, desbroce | Llega a «Profesionales»: sin profesionales en esa dirección | Igual ✅ |
+
+### Prueba en vivo en garser.es (navegador, 375 × 812, anónimo, sin reservas ni pagos)
+
+Una reserva con los 7 servicios, recorriendo los 7 formularios nuevos hasta «Profesionales»:
+
+- 21.1 ✅ selector en una línea, «Pregunta X de Y», frase de apoyo, «¿Cómo lo mido?».
+- Desbroce ✅ «2.500» → revisión «2.500 m²»; «Opciones del servicio» con herbicida y retirada.
+- Árboles ✅ sin elegir el acceso: «Elige una opción para continuar.»; «Duplicar» → «Añadido el árbol 2, igual que el árbol 1.».
+- Palmeras ✅ nombres comunes; canaria 0-4 m → sin «Acceso difícil».
+- Arbustos ✅ «Pequeñas (0-1 m) · Medianas (1-2 m) · Grandes (2-3 m)».
+- Setos ✅ con «+»: 2 m → «Tramo de tarifa: Bajo (hasta 2 m)»; 2,5 m → «Medio (2-4 m)».
+- Fitosanitarios ✅ sin ayudas redundantes; «¿Cuántos árboles hay que tratar?» con la altura; «Curativo» revela «Plaga o enfermedad a combatir»; revisión «3 árboles».
+- «Profesionales» ✅ se carga (con los 7 servicios juntos no hay ningún profesional que los haga todos en esa dirección).
+- Consola: solo `AuthApiError: refresh_token_not_found` al cargar, de una sesión antigua guardada en el navegador del panel; no está relacionado con los formularios (H-N-23).
+
+Queda para el usuario (Sección 21): 21.3 (teclado del iPhone), 21.11 (declaración con sesión), 21.12
+(corrección del jardinero), 21.13 (telemetría en la BD de producción).
+

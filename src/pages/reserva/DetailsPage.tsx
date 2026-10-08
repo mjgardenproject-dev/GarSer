@@ -4697,7 +4697,7 @@ const analyzeTreeGroup = async (id: string) => {
         ) : null}
 
         {isManualActive && manualSurvey ? (
-          <div className="animate-in fade-in duration-300 motion-reduce:animate-none">
+          <div className="animate-reveal motion-reduce:animate-none">
           <ManualEntryWizard
             key={`manual-wizard-${activeServiceId}-${manualWizardSeed}`}
             survey={manualSurvey}
@@ -4744,7 +4744,7 @@ const analyzeTreeGroup = async (id: string) => {
             que hay en pantalla. Aparece con un fundido (solo opacidad: un desplazamiento movería
             los paneles fijos que hay dentro mientras dura). */}
         {isServiceResolved ? (
-        <div className={isPhotoFlowActive ? 'animate-in fade-in duration-300 motion-reduce:animate-none' : 'hidden'}>
+        <div className={isPhotoFlowActive ? 'animate-reveal motion-reduce:animate-none' : 'hidden'}>
 
         {/* Photo Upload */}
         <div className="mb-4">

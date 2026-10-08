@@ -22,9 +22,18 @@ import {
   getVisibleFields,
   isManualOnlyService,
   MANUAL_ENTRY_SURVEYS,
+  type ManualAnswers,
+  type ManualFieldDef,
   type ManualServiceKey,
 } from '../../../src/shared/manualEntry/manualEntrySchema';
 import { buildManualBookingPatch } from '../../../src/pages/reserva/manualEntryBuilders';
+import {
+  getManualPresentation,
+  presentFieldLabel,
+  presentOption,
+  resolveFieldPresentation,
+} from '../../../src/components/booking/manual/presentation/manualEntryPresentation';
+import { getVisibleScreens } from '../../../src/components/booking/manual/presentation/screens';
 import { MANUAL_PARITY_FIXTURES } from '../../../src/pages/reserva/manualEntryParityFixtures';
 
 const params = new URLSearchParams(window.location.search);
@@ -38,6 +47,24 @@ const qa = {
   surveys: MANUAL_ENTRY_SURVEYS,
   getVisibleFields,
   getFieldOptions,
+  // Etiqueta con la que se enseña cada opción (F6: «Muy grande (más de 9 m)»).
+  // F8: depende de lo contestado (los tamaños de fitosanitarios son otros según lo que se trata).
+  shownOptionLabel: (key: ManualServiceKey, fieldKey: string, option: { value: string; label: string }, answers: ManualAnswers = {}) =>
+    presentOption(option, resolveFieldPresentation(getManualPresentation(key).fields[fieldKey], answers)).label,
+  // Nombre del campo que se enseña (F8: «Número de árboles» en vez de «Cantidad a tratar»).
+  shownFieldLabel: (key: ManualServiceKey, field: ManualFieldDef, answers: ManualAnswers) =>
+    presentFieldLabel(field, resolveFieldPresentation(getManualPresentation(key).fields[field.key], answers)),
+  // Campos que la presentación oculta porque el constructor ya los descarta (P-04, F7).
+  hiddenKeys: (key: ManualServiceKey, answers: ManualAnswers) =>
+    MANUAL_ENTRY_SURVEYS[key].steps
+      .flatMap((step) => getVisibleFields(step, answers))
+      .filter((field) => getManualPresentation(key).fields[field.key]?.hiddenWhen?.(answers))
+      .map((field) => field.key),
+  // `stepId` que emite un elemento: antes de la capa de presentación y ahora.
+  legacyStepIds: (key: ManualServiceKey, answers: ManualAnswers) =>
+    MANUAL_ENTRY_SURVEYS[key].steps.filter((step) => getVisibleFields(step, answers).length > 0).map((step) => step.id),
+  presentedStepIds: (key: ManualServiceKey, answers: ManualAnswers) =>
+    getVisibleScreens(MANUAL_ENTRY_SURVEYS[key], getManualPresentation(key), answers).flatMap((screen) => screen.stepIds),
   buildManualBookingPatch,
   fixtures: MANUAL_PARITY_FIXTURES,
   submitted: null as ManualWizardSubmitPayload | null,
@@ -82,12 +109,17 @@ function Page() {
         </div>
       </div>
       <div data-qa-form className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md">
-        {!gardenerMode && !manualOnly ? <ManualEntryChoice mode={mode} onSelect={selectMode} /> : null}
+        {!gardenerMode && !manualOnly ? (
+          <ManualEntryChoice mode={mode} onSelect={selectMode} compact={mode === 'manual'} />
+        ) : null}
         {mode === 'manual' ? (
           <ManualEntryWizard
             survey={survey}
             requireConsent={!gardenerMode}
-            showSwitchToPhotos={!gardenerMode && !manualOnly}
+            // Igual que `DetailsPage` (F2): «Usar fotos» vive en el selector plegado y el pie va
+            // fijo; en modo jardinero, como en el modal, el pie va en línea.
+            showSwitchToPhotos={false}
+            stickyFooter={!gardenerMode}
             submitLabel={gardenerMode ? 'Recalcular precio' : undefined}
             onDraftChange={() => {
               qa.drafts += 1;

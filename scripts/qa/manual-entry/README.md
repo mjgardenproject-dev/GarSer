@@ -1,7 +1,7 @@
 # Banco de pruebas de la entrada manual
 
 Herramienta de la ronda de rediseño de los formularios manuales
-([`docs/audit/2026-09-29-formularios-manuales/`](../../../docs/audit/2026-09-29-formularios-manuales/README.md)).
+([`docs/audit/2026-09-30-formularios-manuales-ux/`](../../../docs/audit/2026-09-30-formularios-manuales-ux/README.md); creado en la ronda del 2026-09-29, que se retiró).
 Es el **Nivel B** de la puerta de prueba local de cada fase. No forma parte de la aplicación:
 no entra en el `vite build` ni en el `tsc` del proyecto.
 
@@ -38,7 +38,7 @@ node scripts/qa/manual-entry/bench.mjs --out /tmp/garser-manual-entry-qa
 | `--skip-payloads` | Sin la paridad de lo enviado (rápido, solo maquetación y escenarios). |
 | `--no-shots` | Sin capturas. |
 | `--strict` | Termina con código 1 si algún criterio falla (para las fases posteriores). |
-| `--write-baseline` | Regenera `baseline/payloads.json`. **Solo** en un paso del plan que prevea el cambio (hoy, 4.3-D1), revisando el diff. |
+| `--write-baseline` | Regenera `baseline/payloads.json`. **Solo** en un paso del plan que prevea el cambio (ninguno en la ronda actual), revisando el diff. |
 | `--port 5199` | Puerto del servidor del banco. |
 
 Requisitos: Playwright (paquete `playwright` del proyecto o global) con su Chromium. El banco
@@ -50,3 +50,85 @@ La forma de conducir cada pantalla (textos de botones, `aria-label`, detección 
 vive en `detectScreen`, `planItemScreen` y `applyActions` de `bench.mjs`, y el marco de la
 página en `main.tsx`. Se actualizan con la fase. **Nunca** se tocan las respuestas de
 referencia ni la línea base para que un recorrido «pase».
+
+## App real en local: `e2e-local.mjs` (Nivel C y D)
+
+Recorre la reserva REAL (dirección → servicio → «Detalles» manual → «Profesionales») contra el
+Supabase local, en `main` (5192) y en la rama (5191), con las mismas respuestas por servicio,
+y compara: total y horas por profesional, huella de lo guardado, telemetría
+(`booking_funnel_events`), declaraciones (`--login`) y el precio de la corrección del
+jardinero (`recalculate_correction`, Nivel D).
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/e2e-local.mjs --out ~/Downloads/auditorias/formularios-qa/fase-N-e2e --widths 375,1280
+```
+
+| Opción | Efecto |
+|---|---|
+| `--targets main=URL,rama=URL` | Servidores a comparar (solo localhost). Por defecto 5192 y 5191. |
+| `--services lawn,hedge` | Solo esos servicios. |
+| `--widths 375,1280` | Anchos (por defecto 375). |
+| `--login` | Con el cliente de `supabase/seed.sql` (credenciales leídas de ese archivo en tiempo de ejecución). Añade la comparación de `booking_manual_declarations`. |
+| `--correction-from DIR` | Solo recalcula el Nivel D sobre una ejecución anterior. |
+| `--no-shots` | Sin capturas. |
+
+Requisitos del entorno local: tras cada `supabase db reset`, dar licencia vigente al jardinero
+sembrado (la siembra no fija `license_expires_at` y la puerta de licencia deja fitosanitarios y
+desbroce con herbicida sin profesionales):
+
+```bash
+docker exec supabase_db_GarSer-main_4 psql -U postgres -c "update gardener_profiles set license_expires_at = now() + interval '1 year', license_verified_at = now() where user_id = '11111111-aaaa-4aaa-8aaa-111111111111'"
+```
+
+Las respuestas (`SPECS`) no se cambian entre fases; cuando una fase cambie la interfaz, se
+adaptan los conductores (`drive*`, `ACTION_BUTTONS`).
+
+## Modal de corrección del jardinero: `gardener-local.mjs` (Nivel D, interfaz)
+
+Abre el modal real del panel del jardinero a 375 px, recalcula con 80 m², «Descuidado» y retirada,
+y comprueba que propone **45 €** (línea base), sin pie fijo dentro del modal y sin errores de
+consola. Necesita una solicitud manual `pending` de césped (la consulta para crearla está en la
+cabecera del script). Las solicitudes `pending` **caducan** a los pocos días (pasan a `expired`):
+si el script no encuentra «Recalcular con las medidas reales del jardín», hay que crear otra (H-N-20).
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/gardener-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-jardinero
+```
+
+## Escenarios de F4 en la app real: `scenarios-local.mjs`
+
+Repite en la app real dos fallos corregidos en F4: el elemento fantasma de árboles (debe quedar
+un solo árbol guardado y el total de un árbol) y la retirada heredada tras fitosanitarios (el
+desbroce debe arrancar en «Sí»). Termina con código 1 si alguno vuelve.
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/scenarios-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-escenarios
+```
+
+## Accesibilidad: `a11y.mjs` (F12)
+
+Sobre el marco del banco, recorre los 7 servicios y el modal del jardinero y comprueba foco (título al
+cambiar de pantalla, primer campo con error al fallar), nombres de grupos/opciones/interruptores/campos,
+`aria-invalid` + `aria-describedby` y contraste ≥ 4,5:1; además hace dos recorridos completos solo con
+teclado (césped y dos árboles). Empieza con una autocomprobación (debe detectar un texto gris claro y
+un botón sin nombre inyectados).
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/a11y.mjs --out ~/Downloads/auditorias/formularios-qa/fase-N-a11y
+```
+
+## Pago de prueba en local: `payment-local.mjs` (Nivel E, solo con autorización)
+
+Reserva completa en la rama local con el cliente sembrado y la tarjeta pública de prueba de Stripe;
+se niega a ejecutarse si el Supabase no es local o las claves no son `pk_test_`/`sk_test_`.
+Devuelve el total y el «Pagas hoy» que muestra «Profesionales», el intento de pago y la reserva creada.
+`--tree` hace dos árboles en vez de césped.
+
+```bash
+npm_config_prefix=~/Downloads/auditorias/qa-tools PLAYWRIGHT_BROWSERS_PATH=~/Downloads/auditorias/qa-tools/browsers \
+  node scripts/qa/manual-entry/payment-local.mjs http://localhost:5191 ~/Downloads/auditorias/formularios-qa/fase-N-pago
+```

@@ -1,13 +1,13 @@
-# Banco de pruebas · línea base (Fase 0, antes de cualquier cambio)
+# Banco de pruebas · entrada manual
 
-Commit `11a0dad` · 2026-09-29T19:24:58.603Z · anchos 320, 360, 375, 414, 768, 1280 px
+Commit `e763e86` · 2026-09-30T20:10:29.271Z · anchos 320, 360, 375, 414, 768, 1280 px
 
 | Criterio | Resultado |
 |---|---|
 | Pantallas medidas | 432 |
-| Sin desbordamiento horizontal | ❌ 30 pantallas desbordan |
-| CTA visible sin scroll desde arriba (≤ 414 px, alto 667) | ❌ 245 pantallas con el CTA fuera |
-| Controles ≥ 44 px | ❌ 44 controles distintos por debajo |
+| Sin desbordamiento horizontal | ❌ 16 pantallas desbordan |
+| CTA visible sin scroll desde arriba (≤ 414 px, alto 667) | ❌ 242 pantallas con el CTA fuera |
+| Controles ≥ 44 px | ❌ 43 controles distintos por debajo |
 | Errores de consola | ✅ 0 |
 | Recorridos sin error del banco | ✅ 0 con error |
 | Lo enviado = respuesta de referencia (patch) | ✅ 88/88 |
@@ -28,36 +28,22 @@ Commit `11a0dad` · 2026-09-29T19:24:58.603Z · anchos 320, 360, 375, 414, 768, 
 
 ## Desbordamiento horizontal
 
-- 320px · tree/tres-arboles-distintos · inicio · +22px
-- 320px · tree/tres-arboles-distintos · error-sin-rellenar · +22px
-- 320px · tree/tres-arboles-distintos · elemento-1-size · +22px
-- 320px · tree/tres-arboles-distintos · elemento-1-pruning_type · +30px
-- 320px · tree/tres-arboles-distintos · elemento-2-size · +54px
-- 320px · tree/tres-arboles-distintos · elemento-2-access · +15px
-- 320px · tree/tres-arboles-distintos · elemento-3-size · +22px
-- 320px · palm/dos-grupos-sin-retirada · inicio · +8px
-- 320px · palm/dos-grupos-sin-retirada · error-sin-rellenar · +8px
-- 320px · palm/dos-grupos-sin-retirada · elemento-1-species · +8px
-- 320px · palm/dos-grupos-sin-retirada · elemento-2-species · +8px
-- 320px · shrub/medianas-descuidado · elemento-1-size · +53px
-- 320px · shrub/medianas-descuidado · elemento-1-state · +27px
-- 320px · phytosanitary/Palmeras-curative-insects · elemento-1-size · +1px
-- 320px · phytosanitary/Palmeras-curative-insects · elemento-1-intent · +10px
-- 320px · phytosanitary/Palmeras-curative-insects · elemento-1-product · +1px
-- 320px · weeding/dificultad_media-con-herbicida · elemento-1-state · +1px
-- 360px · tree/tres-arboles-distintos · inicio · +2px
-- 360px · tree/tres-arboles-distintos · error-sin-rellenar · +2px
-- 360px · tree/tres-arboles-distintos · elemento-1-size · +2px
-- 360px · tree/tres-arboles-distintos · elemento-1-pruning_type · +10px
-- 360px · tree/tres-arboles-distintos · elemento-2-size · +34px
-- 360px · tree/tres-arboles-distintos · elemento-3-size · +2px
-- 360px · shrub/medianas-descuidado · elemento-1-size · +33px
-- 360px · shrub/medianas-descuidado · elemento-1-state · +7px
-- 375px · tree/tres-arboles-distintos · elemento-1-pruning_type · +3px
-- 375px · tree/tres-arboles-distintos · elemento-2-size · +27px
-- 375px · shrub/medianas-descuidado · elemento-1-size · +26px
-- 414px · tree/tres-arboles-distintos · elemento-2-size · +7px
-- 414px · shrub/medianas-descuidado · elemento-1-size · +6px
+- 320px · tree/tres-arboles-distintos · inicio · +10px
+- 320px · tree/tres-arboles-distintos · error-sin-rellenar · +10px
+- 320px · tree/tres-arboles-distintos · elemento-1-size · +10px
+- 320px · tree/tres-arboles-distintos · elemento-1-pruning_type · +21px
+- 320px · tree/tres-arboles-distintos · elemento-2-size · +42px
+- 320px · tree/tres-arboles-distintos · elemento-2-access · +7px
+- 320px · tree/tres-arboles-distintos · elemento-3-size · +10px
+- 320px · shrub/medianas-descuidado · elemento-1-size · +40px
+- 320px · shrub/medianas-descuidado · elemento-1-state · +21px
+- 320px · phytosanitary/Palmeras-curative-insects · elemento-1-intent · +3px
+- 360px · tree/tres-arboles-distintos · elemento-1-pruning_type · +1px
+- 360px · tree/tres-arboles-distintos · elemento-2-size · +22px
+- 360px · shrub/medianas-descuidado · elemento-1-size · +20px
+- 360px · shrub/medianas-descuidado · elemento-1-state · +1px
+- 375px · tree/tres-arboles-distintos · elemento-2-size · +16px
+- 375px · shrub/medianas-descuidado · elemento-1-size · +13px
 
 ## CTA fuera de la pantalla
 
@@ -120,7 +106,6 @@ Commit `11a0dad` · 2026-09-29T19:24:58.603Z · anchos 320, 360, 375, 414, 768, 
 - 320px · phytosanitary/Palmeras-curative-insects · elemento-1-target
 - 320px · phytosanitary/Palmeras-curative-insects · elemento-1-product
 - 320px · phytosanitary/Palmeras-curative-insects · elemento-1-endotherapy
-- 320px · phytosanitary/Palmeras-curative-insects · intersticial-1
 - 320px · phytosanitary/Palmeras-curative-insects · resumen
 - 320px · weeding/dificultad_media-con-herbicida · elemento-1-state
 - 320px · weeding/dificultad_media-con-herbicida · resumen
@@ -276,12 +261,10 @@ Commit `11a0dad` · 2026-09-29T19:24:58.603Z · anchos 320, 360, 375, 414, 768, 
 - 414px · palm/dos-grupos-sin-retirada · elemento-1-species
 - 414px · palm/dos-grupos-sin-retirada · elemento-1-height
 - 414px · palm/dos-grupos-sin-retirada · elemento-1-state
-- 414px · palm/dos-grupos-sin-retirada · elemento-1-quantity
 - 414px · palm/dos-grupos-sin-retirada · elemento-1-extras
 - 414px · palm/dos-grupos-sin-retirada · elemento-2-species
 - 414px · palm/dos-grupos-sin-retirada · elemento-2-height
 - 414px · palm/dos-grupos-sin-retirada · elemento-2-state
-- 414px · palm/dos-grupos-sin-retirada · elemento-2-quantity
 - 414px · palm/dos-grupos-sin-retirada · elemento-2-extras
 - 414px · palm/dos-grupos-sin-retirada · retirada
 - 414px · palm/dos-grupos-sin-retirada · resumen
@@ -309,11 +292,11 @@ Commit `11a0dad` · 2026-09-29T19:24:58.603Z · anchos 320, 360, 375, 414, 768, 
 
 ## Controles por debajo de 44 px
 
-- Cambiar a fotos (130×24) ×378
+- Cambiar a fotos (125×24) ×380
 - Superficie de césped (112×38) ×21
 - Superficie de césped (control deslizante) (246×8) ×3
 - Retirada de restos (48×28) ×37
-- Editar (77×28) ×61
+- Editar (75×28) ×61
 - Confirmo que la información proporcionada es real (16×16) ×42
 - Leer el texto completo (212×16) ×7
 - Longitud del seto (112×38) ×18
@@ -328,7 +311,7 @@ Commit `11a0dad` · 2026-09-29T19:24:58.603Z · anchos 320, 360, 375, 414, 768, 
 - Cambiar a fotos (111×40) ×2
 - Cantidad a tratar (96×36) ×6
 - Añadir endoterapia (inyección en tronco) (48×28) ×6
-- Cambiar a fotos (121×40) ×2
+- Cambiar a fotos (120×40) ×2
 - Superficie a desbrozar (112×38) ×18
 - Superficie a desbrozar (control deslizante) (246×8) ×3
 - Aplicar herbicida (48×28) ×6
@@ -336,7 +319,6 @@ Commit `11a0dad` · 2026-09-29T19:24:58.603Z · anchos 320, 360, 375, 414, 768, 
 - Leer el texto completo (252×16) ×7
 - Longitud del seto (control deslizante) (286×8) ×3
 - Superficie de plantas y arbustos (control deslizante) (286×8) ×3
-- Cambiar a fotos (127×40) ×2
 - Superficie a desbrozar (control deslizante) (286×8) ×3
 - Superficie de césped (control deslizante) (301×8) ×6
 - Leer el texto completo (267×16) ×7

@@ -836,6 +836,11 @@ const DetailsPage: React.FC = () => {
         manualConsent?: { declaredVariables?: { items?: Array<Record<string, unknown>> } };
       }).manualConsent?.declaredVariables?.items
     : undefined;
+  /** Retirada declarada en la reserva que se repite (es la del mismo servicio). */
+  const rebookManualWasteRemoval = isRebooking
+    ? (bookingData as { manualConsent?: { declaredVariables?: { wasteRemoval?: boolean } } }).manualConsent
+        ?.declaredVariables?.wasteRemoval
+    : undefined;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mainPhotoInputVersion, setMainPhotoInputVersion] = useState(0);
   const [showWasteModal, setShowWasteModal] = useState(false);
@@ -4681,12 +4686,12 @@ const analyzeTreeGroup = async (id: string) => {
           </p>
         )}
 
-        {/* El selector de modo se oculta al repetir con datos ya cargados: son dos tarjetas
-            grandes preguntando cómo calcular un presupuesto que ya está calculado, y el propio
-            asistente ofrece "Cambiar a fotos" en su cabecera. En cuanto se cambia a fotos, el
-            selector vuelve: es la única forma de regresar a la entrada manual. */}
-        {manualChoiceAvailable && !(startsOnRebookSummary && isManualActive) ? (
-          <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} />
+        {/* En modo manual el selector se pliega a una línea («Usar fotos», D-11): la decisión ya
+            está tomada y las dos tarjetas ocupaban medio primer pliegue en cada pregunta. Así
+            sirve también al repetir un servicio, donde antes se ocultaba por completo. En modo
+            fotos vuelve entero: es la única forma de regresar a la entrada manual. */}
+        {manualChoiceAvailable ? (
+          <ManualEntryChoice mode={dataInputMode} onSelect={handleSelectInputMode} compact={isManualActive} />
         ) : null}
 
         {isManualActive && manualSurvey ? (
@@ -4696,7 +4701,16 @@ const analyzeTreeGroup = async (id: string) => {
             submitting={manualSubmitting}
             initialItems={manualDraft?.items ?? persistedManualDraft?.items ?? rebookManualItems}
             initialPhase={startsOnRebookSummary ? 'summary' : 'item'}
-            initialWasteRemoval={manualDraft?.wasteRemoval ?? persistedManualDraft?.wasteRemoval ?? bookingData.wasteRemoval}
+            // D-02: la retirada sale del borrador de ESTE servicio (o, al repetir, de su reserva
+            // anterior) y si no hay, del valor por defecto del asistente (sí). Antes caía en
+            // `bookingData.wasteRemoval`, que es global: tras un servicio fitosanitario (que la pone
+            // en `false` porque no la factura) el siguiente servicio arrancaba en «No» sin que el
+            // cliente lo eligiera.
+            initialWasteRemoval={
+              manualDraft?.wasteRemoval ??
+              persistedManualDraft?.wasteRemoval ??
+              (isRebooking ? rebookManualWasteRemoval : undefined)
+            }
             onDraftChange={handleManualDraftChange}
             onStepComplete={(stepId) =>
               reportBookingEvent('info', {
@@ -4712,9 +4726,12 @@ const analyzeTreeGroup = async (id: string) => {
             }
             onSubmit={handleManualSubmit}
             onSwitchToPhotos={() => handleSelectInputMode('photos')}
-            // Un servicio manual-only (desbroce) no tiene flujo de fotos al que volver — el
-            // enlace "Cambiar a fotos" sería un no-op confuso, así que se oculta para él.
-            showSwitchToPhotos={!isManualOnlyActive}
+            // «Usar fotos» ya está en el selector plegado de encima; el asistente no lo repite.
+            showSwitchToPhotos={false}
+            // Pie fijo abajo, como el «Continuar» del modo fotos.
+            stickyFooter
+            // Con varios servicios, la página ya dice cuál es («Servicio 2 de 5: …»).
+            showServiceName={serviceCount <= 1}
           />
         ) : null}
 

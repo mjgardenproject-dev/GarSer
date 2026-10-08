@@ -21,9 +21,31 @@ export const MANUAL_ENTRY_STRINGS = {
       title: 'Escribo los datos',
       description: 'Respondes unas preguntas sencillas.',
     },
+    /** Selector plegado a una línea mientras se rellena el asistente (D-11). */
+    compactLabel: 'Introduces los datos a mano',
+    compactSwitch: 'Usar fotos',
   },
   wizard: {
     stepProgress: (current: number, total: number) => `Paso ${current} de ${total}`,
+    /** «Paso» es el de la reserva («Paso 3 de 5»); dentro del asistente se habla de preguntas. */
+    questionProgress: (current: number, total: number) => `Pregunta ${current} de ${total}`,
+    reviewLabel: 'Revisión',
+    addMoreTitle: '¿Quieres añadir más?',
+    addedCount: (countText: string) => `Has añadido ${countText}.`,
+    backToReview: 'Volver a la revisión',
+    remove: 'Eliminar',
+    duplicate: 'Duplicar',
+    duplicated: (newTitle: string, sourceTitle: string) =>
+      `Añadido el ${newTitle.toLowerCase()}, igual que el ${sourceTitle.toLowerCase()}.`,
+    change: 'Cambiar',
+    complete: 'Completar',
+    missingData: 'Faltan datos',
+    removeConfirmTitle: (title: string) => `¿Eliminar ${title.toLowerCase()}?`,
+    removeConfirmMessage: 'Se borran sus respuestas y no entra en la reserva.',
+    removeConfirmCta: 'Eliminar',
+    keepCta: 'Conservar',
+    incompleteNote: (title: string) => `Completa o elimina «${title}» para continuar.`,
+    incompleteSingleNote: 'Completa los datos que faltan para continuar.',
     back: 'Atrás',
     next: 'Siguiente',
     continueToSummary: 'Revisar mis datos',
@@ -33,6 +55,15 @@ export const MANUAL_ENTRY_STRINGS = {
     switchToPhotos: 'Cambiar a fotos',
     priceHint: 'Verás el precio con cada profesional en el siguiente paso.',
   },
+  /**
+   * Retirada de restos como elección explícita (D-09): el mismo booleano y el mismo valor por
+   * defecto (sí), pero se ve qué se elige y que puede tener coste. Mismo sentido que el
+   * interruptor «Incluir retirada de restos» del modo fotos.
+   */
+  waste: {
+    yes: { label: 'Sí, que se lleven los restos', help: 'Puede tener un coste adicional según el profesional.' },
+    no: { label: 'No, me encargo yo', help: 'Te haces cargo de los restos que deje el trabajo.' },
+  },
   summary: {
     title: 'Revisa tus datos antes de continuar',
     subtitle: 'Comprueba que todo es correcto. Puedes editar cualquier dato.',
@@ -41,7 +72,7 @@ export const MANUAL_ENTRY_STRINGS = {
   consent: {
     confirmCta: 'Confirmar y continuar',
     checkboxAriaLabel: 'Confirmo que la información proporcionada es real',
-    mustAccept: 'Debes confirmar que los datos son reales para continuar.',
+    mustAccept: 'Marca la casilla para poder continuar.',
     /**
      * Etiqueta corta de la casilla. El texto legal íntegro sigue siendo el que se registra y
      * se prueba (`MANUAL_ENTRY_CONSENT_TEXT`); esto es su resumen legible, con el texto

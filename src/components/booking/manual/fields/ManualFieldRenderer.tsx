@@ -10,9 +10,7 @@ import {
   Layers,
   Leaf,
   Microscope,
-  Minus,
   Palmtree,
-  Plus,
   Ruler,
   Scissors,
   Shield,
@@ -34,7 +32,28 @@ import {
   type ManualFieldDef,
   type ManualFieldValue,
 } from '../../../../shared/manualEntry/manualEntrySchema';
+import {
+  presentFieldLabel,
+  presentOption,
+  resolveFieldControl,
+  resolveFieldPresentation,
+  type ManualFieldPresentation,
+} from '../presentation/manualEntryPresentation';
+import { HelpDisclosure } from '../ui/HelpDisclosure';
+import { NumberField } from '../ui/NumberField';
+import { OptionList } from '../ui/OptionList';
+import { SegmentedChoice } from '../ui/SegmentedChoice';
+import { Stepper } from '../ui/Stepper';
+import { ToggleRow } from '../ui/ToggleRow';
+import { manualFieldId } from '../ui/fieldIds';
+import { Pictogram } from '../ui/Pictogram';
 
+/**
+ * Registro de los iconos Lucide que nombra el schema. Desde F3 la lista de opciones no pinta
+ * iconos (no distinguían nada: el mismo brote era «césped», «normal» y «pequeño»); el registro
+ * se mantiene para los servicios que añadan un pictograma con sentido en su fase y para el test
+ * que comprueba que el schema no nombra iconos inexistentes.
+ */
 const ICONS: Record<string, LucideIcon> = {
   Axe, Bug, Check, Columns2, Droplets, FlaskConical, Flower2, Layers, Leaf, Microscope,
   Palmtree, Ruler, Scissors, Shield, ShieldCheck, Shrub, SprayCan, Sprout, Square,
@@ -44,199 +63,166 @@ const ICONS: Record<string, LucideIcon> = {
 /** Names registered in the icon registry — exported for the schema↔registry guard test. */
 export const MANUAL_ICON_NAMES = Object.keys(ICONS);
 
-const resolveIcon = (name?: string): LucideIcon | null => (name && ICONS[name]) || null;
-
 interface Props {
   field: ManualFieldDef;
   value: ManualFieldValue;
   answers: ManualAnswers;
+  /** Mensaje de error ya redactado para el cliente (`formatManualFieldError`). */
   error?: string | null;
+  /** Mostrar los errores (tras salir del campo o tras pulsar «Siguiente»). */
+  showError?: boolean;
+  fieldPresentation?: ManualFieldPresentation;
   onChange: (value: ManualFieldValue) => void;
+  onBlur?: () => void;
+  onEnter?: () => void;
+  /** Nombre del grupo visible encima de las opciones (pantallas con varias preguntas, F8). */
+  showLabel?: boolean;
 }
 
-const clamp = (value: number, min?: number, max?: number) => {
-  let next = value;
-  if (typeof min === 'number') next = Math.max(min, next);
-  if (typeof max === 'number') next = Math.min(max, next);
-  return next;
-};
+/**
+ * Elige el control de cada campo según la presentación del servicio (SISTEMA-UX §6.4-6.7). Lo
+ * que se guarda es siempre el mismo dato del schema, con la misma clave y el mismo tipo.
+ */
+export const ManualFieldRenderer: React.FC<Props> = ({
+  field,
+  value,
+  answers,
+  error,
+  showError = Boolean(error),
+  fieldPresentation: rawFieldPresentation,
+  showLabel = false,
+  onChange,
+  onBlur,
+  onEnter,
+}) => {
+  const fieldPresentation = resolveFieldPresentation(rawFieldPresentation, answers);
+  const label = presentFieldLabel(field, fieldPresentation);
+  const id = manualFieldId(field.key);
+  const control = resolveFieldControl(field, fieldPresentation);
+  const shownError = showError ? error ?? null : null;
+  // D-03: el `example` del schema eran comparaciones (plaza de garaje, puerta, cama…) y ya no se
+  // enseña. La ayuda solo si no repite la frase de apoyo de la pantalla (T-18).
+  const help = !fieldPresentation?.hideHelp ? fieldPresentation?.helpText ?? field.help : undefined;
+  const helpId = help ? `${id}-help` : undefined;
+  const measureHelp = fieldPresentation?.measureHelp ? (
+    <HelpDisclosure>{fieldPresentation.measureHelp}</HelpDisclosure>
+  ) : null;
+  const helpText = help ? (
+    <p id={helpId} className="mt-2 text-sm leading-5 text-gray-600">
+      {help}
+    </p>
+  ) : null;
+  const unit = fieldPresentation?.unit?.(answers) ?? field.unit;
+  const format = fieldPresentation?.numberFormat ?? (field.type === 'integer' ? 'quantity' : 'decimal');
+  const feedback = fieldPresentation?.feedback?.(answers) ?? null;
 
-export const ManualFieldRenderer: React.FC<Props> = ({ field, value, answers, error, onChange }) => {
-  const helpId = `${field.key}-help`;
-  const describedBy = field.help || field.example || error ? helpId : undefined;
-
-  const HelpBlock = () => (
-    <div id={helpId} className="mt-2 space-y-1">
-      {field.help && <p className="text-sm text-gray-500 leading-relaxed">{field.help}</p>}
-      {field.example && (
-        <p className="text-xs text-gray-400 leading-relaxed flex items-start gap-1">
-          <Ruler aria-hidden className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          <span>{field.example}</span>
-        </p>
-      )}
-      {error && <p className="text-sm text-red-600 font-medium" role="alert">{error}</p>}
-    </div>
-  );
-
-  /* ----- Stepper (numbers / integers) ----- */
-  if (field.ui === 'stepper') {
-    const step = field.step || 1;
-    const current = typeof value === 'number' ? value : (typeof field.defaultValue === 'number' ? field.defaultValue : field.min ?? 0);
+  if (control === 'number') {
     return (
       <div>
-        <div className="flex items-center justify-center gap-4">
-          <button
-            type="button"
-            aria-label={`Disminuir ${field.label.toLowerCase()}`}
-            onClick={() => onChange(clamp(Number(current) - step, field.min, field.max))}
-            className="w-12 h-12 rounded-full border border-gray-200 bg-white text-gray-700 flex items-center justify-center hover:bg-gray-50 active:scale-95 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            <Minus className="w-5 h-5" />
-          </button>
-          <div className="min-w-[6rem] text-center">
-            <input
-              type="number"
-              inputMode="decimal"
-              aria-label={field.label}
-              aria-describedby={describedBy}
-              value={typeof value === 'number' ? value : ''}
-              min={field.min}
-              max={field.max}
-              step={step}
-              onChange={(event) => {
-                const raw = event.target.value;
-                onChange(raw === '' ? undefined : Number(raw));
-              }}
-              className="w-24 text-center text-3xl font-bold text-gray-900 bg-transparent focus:outline-none"
-            />
-            {field.unit && <div className="text-xs text-gray-500 mt-1">{field.unit}</div>}
-          </div>
-          <button
-            type="button"
-            aria-label={`Aumentar ${field.label.toLowerCase()}`}
-            onClick={() => onChange(clamp(Number(current) + step, field.min, field.max))}
-            className="w-12 h-12 rounded-full border border-gray-200 bg-white text-gray-700 flex items-center justify-center hover:bg-gray-50 active:scale-95 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </div>
-        <HelpBlock />
-      </div>
-    );
-  }
-
-  /* ----- Slider (numbers) ----- */
-  if (field.ui === 'slider') {
-    const step = field.step || 1;
-    const min = field.min ?? 0;
-    const max = field.max ?? 100;
-    const current = typeof value === 'number' ? value : min;
-    return (
-      <div>
-        <div className="flex items-baseline justify-center gap-2 mb-4">
-          <input
-            type="number"
-            inputMode="decimal"
-            aria-label={field.label}
-            aria-describedby={describedBy}
-            value={typeof value === 'number' ? value : ''}
-            min={min}
-            max={max}
-            step={step}
-            onChange={(event) => {
-              const raw = event.target.value;
-              onChange(raw === '' ? undefined : Number(raw));
-            }}
-            className="w-28 text-center text-3xl font-bold text-gray-900 border-b-2 border-green-500 bg-transparent focus:outline-none"
-          />
-          {field.unit && <span className="text-lg text-gray-500">{field.unit}</span>}
-        </div>
-        <input
-          type="range"
-          aria-label={`${field.label} (control deslizante)`}
-          min={min}
-          max={max}
-          step={step}
-          value={current}
-          onChange={(event) => onChange(Number(event.target.value))}
-          className="w-full h-2 accent-green-600 cursor-pointer"
+        <NumberField
+          id={id}
+          label={label}
+          value={value}
+          onChange={onChange}
+          format={format}
+          unit={unit}
+          integer={field.type === 'integer'}
+          error={error}
+          showError={showError}
+          helpId={helpId}
+          onBlur={onBlur}
+          onEnter={onEnter}
+          feedback={feedback}
         />
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>{min}{field.unit ? ` ${field.unit}` : ''}</span>
-          <span>{max}{field.unit ? ` ${field.unit}` : ''}</span>
-        </div>
-        <HelpBlock />
+        {helpText}
+        {measureHelp}
       </div>
     );
   }
 
-  /* ----- Toggle (boolean) ----- */
-  if (field.ui === 'toggle') {
-    const checked = value === true;
+  if (control === 'stepper') {
     return (
-      <div className="flex items-start justify-between gap-4 bg-white border border-gray-200 rounded-xl p-4">
-        <div>
-          <p className="font-medium text-gray-900">{field.label}</p>
-          {field.help && <p className="text-sm text-gray-500 mt-1 leading-relaxed">{field.help}</p>}
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={checked}
-          aria-label={field.label}
-          onClick={() => onChange(!checked)}
-          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${checked ? 'bg-green-600' : 'bg-gray-200'}`}
-        >
-          <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-        </button>
+      <div>
+        <Stepper
+          id={id}
+          label={label}
+          value={value}
+          onChange={onChange}
+          min={field.min}
+          max={field.max}
+          step={field.step || 1}
+          format={format}
+          unit={unit}
+          integer={field.type === 'integer'}
+          error={error}
+          showError={showError}
+          helpId={helpId}
+          onBlur={onBlur}
+          onEnter={onEnter}
+          feedback={feedback}
+        />
+        {helpText}
+        {measureHelp}
       </div>
     );
   }
 
-  /* ----- Cards (enum + boolean-as-cards) ----- */
-  const options = field.type === 'boolean'
-    ? (field.options || [])
-    : getFieldOptions(field, answers);
-  const selectedValue = field.type === 'boolean'
-    ? (value === true ? 'true' : value === false ? 'false' : '')
-    : (typeof value === 'string' ? value : '');
+  if (control === 'toggle') {
+    return (
+      <ToggleRow
+        id={id}
+        label={label}
+        help={help}
+        badge={fieldPresentation?.badge}
+        checked={value === true}
+        onChange={(checked) => onChange(checked)}
+      />
+    );
+  }
+
+  const options = field.type === 'boolean' ? field.options || [] : getFieldOptions(field, answers);
+  const selected = field.type === 'boolean' ? (value === true ? 'true' : value === false ? 'false' : '') : typeof value === 'string' ? value : '';
+  const select = (next: string) => onChange(field.type === 'boolean' ? next === 'true' : next);
+
+  if (control === 'segmented') {
+    return (
+      <SegmentedChoice
+        id={id}
+        label={label}
+        options={options.map((option) => ({ value: option.value, label: presentOption(option, fieldPresentation).label }))}
+        selected={selected}
+        onSelect={select}
+        help={help}
+        feedback={feedback}
+        error={shownError}
+        showLabel={showLabel}
+      />
+    );
+  }
 
   return (
-    <div role="radiogroup" aria-label={field.label}>
-      <div className="grid grid-cols-2 gap-2">
-        {options.map((option) => {
-          const Icon = resolveIcon(option.icon);
-          const isSelected = selectedValue === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={isSelected}
-              onClick={() => onChange(field.type === 'boolean' ? option.value === 'true' : option.value)}
-              className={`text-left p-4 rounded-xl border transition min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 ${
-                isSelected
-                  ? 'bg-green-50 border-green-500 ring-1 ring-green-500 shadow-sm'
-                  : 'bg-white border-gray-200 hover:border-green-300 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                {Icon && (
-                  <span className={`mt-0.5 ${isSelected ? 'text-green-600' : 'text-gray-400'}`}>
-                    <Icon className="w-5 h-5" aria-hidden />
-                  </span>
-                )}
-                <span className="flex-1">
-                  <span className={`block font-medium ${isSelected ? 'text-green-800' : 'text-gray-900'}`}>{option.label}</span>
-                  {option.help && <span className="block text-sm text-gray-500 mt-0.5 leading-relaxed">{option.help}</span>}
-                </span>
-                {isSelected && <Check className="w-5 h-5 text-green-600 shrink-0" aria-hidden />}
-              </div>
-            </button>
-          );
+    <div>
+      <OptionList
+        id={id}
+        label={label}
+        options={options.map((option) => {
+          const pictogram = fieldPresentation?.optionPictograms?.[option.value];
+          const image = fieldPresentation?.optionImages?.[option.value];
+          const shown = presentOption(option, fieldPresentation);
+          // Foto decorativa (`alt=""`): la etiqueta ya nombra la opción. Sin foto, sin hueco vacío.
+          const media = pictogram ? (
+            <Pictogram name={pictogram} />
+          ) : image ? (
+            <img src={image} alt="" width={56} height={56} loading="lazy" className="h-14 w-14 rounded-lg object-cover" />
+          ) : undefined;
+          return { value: option.value, label: shown.label, help: shown.help, media };
         })}
-      </div>
-      <HelpBlock />
+        selected={selected}
+        onSelect={select}
+        error={shownError}
+        showLabel={showLabel}
+      />
+      {helpText}
     </div>
   );
 };

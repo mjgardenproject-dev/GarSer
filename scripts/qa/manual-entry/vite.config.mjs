@@ -23,6 +23,9 @@ process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||= 'sb_publishable_qa_harness';
 export default defineConfig({
   root: HERE,
   envDir: HERE,
+  // Caché propia: con la de por defecto (`node_modules/.vite` del repo) el banco y el servidor de
+  // la rama (5191) se invalidaban la caché el uno al otro → 504 «Outdated Optimize Dep» (H-N-18).
+  cacheDir: path.join(REPO, 'node_modules/.vite-qa-bench'),
   plugins: [react()],
   css: {
     postcss: {

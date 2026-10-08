@@ -110,46 +110,59 @@ async function detectScreen(page) {
   return page.evaluate((primaryLabels) => {
     const visibleButton = (label) =>
       [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === label && button.offsetParent);
-    const heading = document.querySelector('h3[tabindex="-1"]')?.textContent?.trim() || '';
+    // F2: la cabecera de cada pantalla lleva `data-manual-heading` y la pantalla dice qué pasos
+    // del schema enseña (`data-manual-step-ids`), que es lo que se usa para rellenarla.
+    const heading = document.querySelector('[data-manual-heading]')?.textContent?.trim() || '';
+    const stepIds = (document.querySelector('[data-manual-step-ids]')?.getAttribute('data-manual-step-ids') || '')
+      .split(' ')
+      .filter(Boolean);
     if (visibleButton('Confirmar y continuar') || visibleButton('Recalcular precio') || visibleButton('Guardando…')) {
       return { kind: 'summary', heading: 'Resumen' };
     }
-    if (visibleButton('Revisar mis datos')) return { kind: 'waste', heading };
+    // F9: «Revisar mis datos» también cierra la última pregunta de desbroce (opciones del
+    // servicio, con la retirada dentro); esa pantalla dice sus pasos, la de retirada no.
+    if (visibleButton('Revisar mis datos')) return stepIds.length ? { kind: 'item', heading, stepIds } : { kind: 'waste', heading };
     if (heading === '¿Quieres añadir más?') return { kind: 'interstitial', heading };
-    if (visibleButton('Siguiente')) return { kind: 'item', heading };
+    if (visibleButton('Siguiente')) return { kind: 'item', heading, stepIds };
     return { kind: 'unknown', heading, primary: primaryLabels.filter((label) => visibleButton(label)) };
   }, PRIMARY_LABELS);
 }
 
 /** Acciones para rellenar la pantalla actual con las respuestas de `item`. */
-async function planItemScreen(page, heading, item) {
+async function planItemScreen(page, screen, item) {
   return page.evaluate(
-    ({ heading, item }) => {
+    ({ heading, stepIds, item }) => {
       const qa = window.__qa;
       const survey = qa.surveys[qa.serviceKey];
-      const step = survey.steps.find((candidate) => candidate.title === heading);
-      if (!step) return { error: `Paso no reconocido: «${heading}»` };
+      const steps = stepIds && stepIds.length
+        ? stepIds.map((id) => survey.steps.find((candidate) => candidate.id === id)).filter(Boolean)
+        : survey.steps.filter((candidate) => candidate.title === heading);
+      if (steps.length === 0) return { error: `Paso no reconocido: «${heading}»` };
+      const step = steps[0];
       const actions = [];
-      for (const field of qa.getVisibleFields(step, item)) {
+      const hidden = qa.hiddenKeys(qa.serviceKey, item);
+      for (const field of steps.flatMap((candidate) => qa.getVisibleFields(candidate, item)).filter((f) => !hidden.includes(f.key))) {
         const value = item[field.key];
         if (value === undefined) {
           if (field.type === 'boolean') continue;
           return { error: `La respuesta no trae ${field.key} y el paso «${heading}» lo pide` };
         }
+        // Nombres tal como se enseñan (F8: dependen de lo contestado). Las respuestas no cambian.
+        const label = qa.shownFieldLabel(qa.serviceKey, field, item);
         if (field.ui === 'toggle') {
-          actions.push({ type: 'switch', label: field.label, value: value === true });
+          actions.push({ type: 'switch', label, value: value === true });
         } else if (field.ui === 'cards') {
           const options = field.type === 'boolean' ? field.options || [] : qa.getFieldOptions(field, item);
           const option = options.find((candidate) => candidate.value === String(value));
           if (!option) return { error: `Opción ${String(value)} no disponible en ${field.key}` };
-          actions.push({ type: 'radio', group: field.label, label: option.label });
+          actions.push({ type: 'radio', group: label, label: qa.shownOptionLabel(qa.serviceKey, field.key, option, item) });
         } else {
-          actions.push({ type: 'number', label: field.label, value });
+          actions.push({ type: 'number', label, value });
         }
       }
-      return { stepId: step.id, actions };
+      return { stepId: steps.map((candidate) => candidate.id).join('+'), actions };
     },
-    { heading, item },
+    { heading: screen.heading, stepIds: screen.stepIds, item },
   );
 }
 
@@ -247,7 +260,7 @@ async function openService(browser, serviceKey, width, { gardener = false } = {}
   });
   page.on('pageerror', (error) => consoleErrors.push(String(error)));
   await page.goto(`http://127.0.0.1:${PORT}/?s=${serviceKey}${gardener ? '&gardener=1' : ''}`);
-  await page.waitForSelector('h3[tabindex="-1"]');
+  await page.waitForSelector('[data-manual-heading]');
   return { context, page, consoleErrors };
 }
 
@@ -283,11 +296,18 @@ async function driveFixture(browser, fixture, { width = 375, layout = false, gar
     for (let guard = 0; guard < 80; guard += 1) {
       const screen = await detectScreen(page);
       if (screen.kind === 'item') {
-        const plan = await planItemScreen(page, screen.heading, fixture.items[itemIndex]);
+        const plan = await planItemScreen(page, screen, fixture.items[itemIndex]);
         if (plan.error) throw new Error(plan.error);
         await applyActions(page, plan.actions);
+        // F9: en desbroce la retirada va en la pantalla de opciones, no en una pantalla aparte.
+        const wasteHere = await page.getByRole('radiogroup', { name: 'Retirada de restos', exact: true }).count();
+        if (wasteHere) {
+          await applyActions(page, [
+            { type: 'radio', group: 'Retirada de restos', label: fixture.wasteRemoval ? 'Sí, que se lleven los restos' : 'No, me encargo yo' },
+          ]);
+        }
         if (layout) await record(`elemento-${itemIndex + 1}-${plan.stepId}`);
-        await clickPrimary(page, 'Siguiente');
+        await clickPrimary(page, wasteHere ? 'Revisar mis datos' : 'Siguiente');
       } else if (screen.kind === 'interstitial') {
         if (layout) await record(`intersticial-${itemIndex + 1}`);
         if (itemIndex < fixture.items.length - 1) {
@@ -298,7 +318,10 @@ async function driveFixture(browser, fixture, { width = 375, layout = false, gar
           await clickPrimary(page, 'Continuar');
         }
       } else if (screen.kind === 'waste') {
-        await applyActions(page, [{ type: 'switch', label: 'Retirada de restos', value: fixture.wasteRemoval }]);
+        // F4 (D-09): la retirada es una elección explícita de dos opciones.
+        await applyActions(page, [
+          { type: 'radio', group: 'Retirada de restos', label: fixture.wasteRemoval ? 'Sí, que se lleven los restos' : 'No, me encargo yo' },
+        ]);
         if (layout) await record('retirada');
         await clickPrimary(page, 'Revisar mis datos');
       } else if (screen.kind === 'summary') {
@@ -335,7 +358,13 @@ async function driveFixture(browser, fixture, { width = 375, layout = false, gar
         patchDiff = { interfaz: a.slice(Math.max(0, index - 80), index + 80), referencia: b.slice(Math.max(0, index - 80), index + 80) };
       }
     }
-    return { payload, stepEvents: qa.stepEvents, consentEvents: qa.consentEvents, patchMatches, patchDiff };
+    // Para reconocer la diferencia prevista de P-04 (F7) frente a la línea base.
+    const p04 = {
+      hiddenKeys: fixture.items.map((item) => qa.hiddenKeys(fixture.serviceKey, item)),
+      legacyEvents: fixture.items.flatMap((item) => qa.legacyStepIds(fixture.serviceKey, item)),
+      presentedEvents: fixture.items.flatMap((item) => qa.presentedStepIds(fixture.serviceKey, item)),
+    };
+    return { payload, stepEvents: qa.stepEvents, consentEvents: qa.consentEvents, patchMatches, patchDiff, p04 };
   }, fixture);
 
   await context.close();
@@ -376,7 +405,7 @@ async function scenarioPhantom(browser, serviceKey, fixtureId) {
     for (let guard = 0; guard < 20; guard += 1) {
       const screen = await detectScreen(page);
       if (screen.kind !== 'item') break;
-      const plan = await planItemScreen(page, screen.heading, fixture.items[0]);
+      const plan = await planItemScreen(page, screen, fixture.items[0]);
       if (plan.error) throw new Error(plan.error);
       await applyActions(page, plan.actions);
       await clickPrimary(page, 'Siguiente');
@@ -393,7 +422,7 @@ async function scenarioPhantom(browser, serviceKey, fixtureId) {
       else if (screen.kind === 'waste') await clickPrimary(page, 'Revisar mis datos');
       else break;
     }
-    const itemsInSummary = await page.locator('h4').count();
+    const itemsInSummary = await page.locator('[data-manual-review-item]').count();
     const consent = page.locator('input[type="checkbox"]');
     if (await consent.count()) await consent.check();
     await clickPrimary(page, 'Confirmar y continuar');
@@ -547,6 +576,7 @@ async function main() {
           stepEvents: run.stepEvents,
           consentEvents: run.consentEvents,
           consoleErrors: run.consoleErrors,
+          p04: run.p04,
         });
       }
       process.stdout.write(`paridad: ${report.payloads.length} respuestas recorridas\n`);
@@ -574,6 +604,7 @@ async function main() {
     .filter((row) => !row.error)
     .map(({ fixtureId, payload, stepEvents, consentEvents }) => ({ fixtureId, payload, stepEvents, consentEvents }));
   let baselineMismatches = null;
+  let expectedDifferences = [];
   if (flag('write-baseline')) {
     fs.mkdirSync(path.dirname(BASELINE_FILE), { recursive: true });
     fs.writeFileSync(BASELINE_FILE, `${JSON.stringify(baselineRows, null, 2)}\n`);
@@ -581,15 +612,31 @@ async function main() {
   } else if (fs.existsSync(BASELINE_FILE) && report.payloads.length) {
     const baseline = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
     const byId = new Map(baseline.map((row) => [row.fixtureId, row]));
-    baselineMismatches = baselineRows
-      .filter((row) => {
-        const expected = byId.get(row.fixtureId);
-        return !expected || JSON.stringify(expected) !== JSON.stringify(row);
-      })
-      .map((row) => row.fixtureId);
+    const p04ById = new Map(report.payloads.map((row) => [row.fixtureId, row.p04]));
+    const differing = baselineRows.filter((row) => {
+      const expected = byId.get(row.fixtureId);
+      return !expected || JSON.stringify(expected) !== JSON.stringify(row);
+    });
+    // Diferencia PREVISTA (F7, P-04): la presentación ya no pregunta el acceso difícil de palmeras
+    // en el tramo más bajo, donde el constructor lo descarta. Se acepta solo si, quitando de la
+    // línea base esas claves ocultas (y el `stepId` de una pantalla que se queda sin preguntas),
+    // lo enviado es idéntico. La línea base no se toca.
+    const isExpectedP04 = (row) => {
+      const expected = byId.get(row.fixtureId);
+      const p04 = p04ById.get(row.fixtureId);
+      if (!expected || !p04 || !expected.payload || !p04.hiddenKeys.some((keys) => keys.length > 0)) return false;
+      if (JSON.stringify(expected.stepEvents) !== JSON.stringify(p04.legacyEvents)) return false;
+      const adjusted = JSON.parse(JSON.stringify(expected));
+      adjusted.payload.items.forEach((item, index) => (p04.hiddenKeys[index] || []).forEach((key) => delete item[key]));
+      adjusted.stepEvents = p04.presentedEvents;
+      return JSON.stringify(adjusted) === JSON.stringify(row);
+    };
+    expectedDifferences = differing.filter(isExpectedP04).map((row) => row.fixtureId);
+    baselineMismatches = differing.filter((row) => !isExpectedP04(row)).map((row) => row.fixtureId);
   }
 
   const summary = summarize(report, baselineMismatches);
+  summary.expectedDifferences = expectedDifferences;
   report.summary = summary;
   fs.writeFileSync(path.join(OUT, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
   fs.writeFileSync(path.join(OUT, 'REPORT.md'), renderMarkdown(report, summary));
@@ -656,6 +703,9 @@ function renderMarkdown(report, summary) {
   lines.push(
     `| Lo enviado = línea base (payload y telemetría) | ${summary.baselineMismatches === null ? '— (sin comparar)' : `${status(summary.baselineMismatches.length === 0)} ${summary.baselineMismatches.length} distintos`} |`,
   );
+  if (summary.expectedDifferences?.length) {
+    lines.push(`| Diferencias previstas con la línea base (P-04, F7) | ${summary.expectedDifferences.length}: solo falta el acceso difícil oculto en el tramo más bajo |`);
+  }
   lines.push(`| Escenarios de hallazgos | ${status(summary.scenarioFails.length === 0)} ${report.scenarios.length - summary.scenarioFails.length}/${report.scenarios.length} |`, '');
 
   lines.push('## Escenarios', '', '| ID | Qué | Observado | Esperado | |', '|---|---|---|---|---|');
@@ -673,6 +723,7 @@ function renderMarkdown(report, summary) {
   list('Errores del banco', summary.runErrors);
   list('Lo enviado no coincide con la referencia', summary.patchMismatches);
   list('Lo enviado no coincide con la línea base', summary.baselineMismatches || []);
+  list('Diferencias previstas con la línea base (P-04: acceso difícil de palmeras oculto en el tramo más bajo)', summary.expectedDifferences || []);
   lines.push('');
   return lines.join('\n');
 }

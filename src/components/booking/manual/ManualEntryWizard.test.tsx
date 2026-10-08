@@ -37,17 +37,14 @@ describe('ManualEntryWizard', () => {
     const { onSubmit } = renderWeeding();
 
     // Step 1: area
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Superficie a desbrozar' }), { target: { value: '120' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Superficie a desbrozar' }), { target: { value: '120' } });
     fireEvent.click(screen.getByText('Siguiente'));
 
     // Step 2: state (cards)
     fireEvent.click(screen.getByText('Dificultad media'));
     fireEvent.click(screen.getByText('Siguiente'));
 
-    // Step 3: herbicide toggle (optional) -> next
-    fireEvent.click(screen.getByText('Siguiente'));
-
-    // Global waste step -> review
+    // Step 3 (F9): «Opciones del servicio» — herbicida y retirada juntos -> revisión
     fireEvent.click(screen.getByText('Revisar mis datos'));
 
     // El resumen ya es la última pantalla: datos, casilla y botón de envío juntos.
@@ -68,11 +65,13 @@ describe('ManualEntryWizard', () => {
 
   it('blocks advancing when a required value is out of range (no silent truncation)', () => {
     renderWeeding();
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Superficie a desbrozar' }), { target: { value: '999999' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Superficie a desbrozar' }), { target: { value: '999999' } });
     fireEvent.click(screen.getByText('Siguiente'));
     // still on step 1 with an error, not advanced to the state step
     expect(screen.getByText('¿Qué superficie hay que desbrozar?')).toBeTruthy();
-    expect(screen.getByText(/no puede superar/i)).toBeTruthy();
+    // F3: el mensaje va con artículo, unidad y miles en español, y el valor no se corrige solo.
+    expect(screen.getByText('La superficie a desbrozar no puede pasar de 10.000 m².')).toBeTruthy();
+    expect((screen.getByRole('textbox', { name: 'Superficie a desbrozar' }) as HTMLInputElement).value).toBe('999999');
   });
 
   // El texto que se REGISTRA sigue siendo el íntegro, así que tiene que seguir estando en la
@@ -81,14 +80,13 @@ describe('ManualEntryWizard', () => {
     renderWeeding({ initialItems: [{ area: 50, state: 'normal' }] });
     fireEvent.click(screen.getByText('Siguiente')); // area -> state
     fireEvent.click(screen.getByText('Siguiente')); // state -> herbicide
-    fireEvent.click(screen.getByText('Siguiente')); // herbicide -> waste
-    fireEvent.click(screen.getByText('Revisar mis datos')); // waste -> summary
+    fireEvent.click(screen.getByText('Revisar mis datos')); // opciones (herbicida + retirada) -> summary
     expect(screen.getByText(MANUAL_ENTRY_CONSENT_TEXT)).toBeTruthy();
     expect(screen.getByText('Leer el texto completo')).toBeTruthy();
   });
 
   it('preserves provided initial draft (mode switch keeps progress)', () => {
     renderWeeding({ initialItems: [{ area: 333, state: 'normal' }], initialWasteRemoval: false });
-    expect((screen.getByRole('spinbutton', { name: 'Superficie a desbrozar' }) as HTMLInputElement).value).toBe('333');
+    expect((screen.getByRole('textbox', { name: 'Superficie a desbrozar' }) as HTMLInputElement).value).toBe('333');
   });
 });

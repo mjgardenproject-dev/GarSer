@@ -16,7 +16,7 @@ prevención > corrección · reutilizar > duplicar.
 │ ←        Detalles                 Salir   │  cabecera de la página (no cambia)
 │ Paso 3 de 5  ▓▓▓▓▓▓▓▓▓░░░░░               │  progreso de la RESERVA (único con barra)
 ├───────────────────────────────────────────┤
-│ [📷 Con fotos] [✎ Escribo los datos]      │  selector plegado (barra, 44 px; H-N-25)
+│ [ Con fotos ] [■ Escribo los datos ]      │  selector plegado (barra, 44 px; H-N-25)
 │                                           │
 │ PODA DE SETOS · Pregunta 1 de 4           │  cabecera del asistente (14 px, emerald-800)
 │ ¿Cuánto mide el seto?                     │  título-pregunta (20/28, semibold)

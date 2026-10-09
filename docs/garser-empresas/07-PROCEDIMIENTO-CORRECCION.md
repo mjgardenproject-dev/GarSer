@@ -45,7 +45,7 @@
    - Si se ha rehecho la base local (`db reset`), volver a ponerlos.
    - Aplicar las migraciones nuevas con `psql`
      (`docker exec -i supabase_db_GarSer-main_4 psql -U postgres -d postgres -v ON_ERROR_STOP=1 -1 < fichero.sql`)
-     hasta que PH-09 arregle `migration up`.
+     o, ya resuelto PH-09, con `npx supabase migration up`.
 5. **Producción:** cada acceso se pide antes con una pregunta (leer, desplegar o migrar). Las
    consultas de lectura van con `npx supabase db query --linked`.
 
@@ -388,7 +388,7 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 | El navegador del panel trae las notificaciones **bloqueadas** | La entrega real al móvil se prueba en garser.es (P-R08-1) |
 | GoTrue local responde 400 donde producción da 403 | Aceptar los dos códigos en las baterías (F1) |
 | `booking-authority` sin las coordenadas del cliente da `missing_coordinates` | Mandar siempre `addressCoordinates` al probar el catálogo (F8) |
-| `supabase migration up` local se niega (historial) | `psql` hasta que se arregle PH-09 |
+| `supabase migration up` local se negaba (historial) | Resuelto (PH-09, 2026-10-09): `migration up` funciona; si se vuelve a desalinear, registrar las versiones sin ejecutarlas |
 | En macOS no existe `timeout` | Bucle `until …; do sleep 5; done` o tareas en segundo plano |
 | PostgREST corta en 1000 filas, también las RPC | Paginar (H-32) |
 | `functions deploy` se cuelga | `--use-api` |
@@ -412,4 +412,5 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 | 2026-10-09 | B | PH-02 corregido (histórico de rechazos, reabrir por RPC, campos de revisión protegidos); PH-18 apuntado. Vitest 937/115, build ✅, `tsc` 128, 25 baterías 288/288 (`verify-gardener-reapply` nueva, 8/8), navegador local con jardinero y admin | ✅ Fase B cerrada | `4ef9d4c` + `0a93461` |
 | 2026-10-09 | C | PH-05 (gravedad subida: con una marca falsa se mandaba al cliente un «aceptada» falso) y PH-08 corregidos. Vitest 937/115, build ✅, `tsc` 128, 26 baterías 293/293 (`verify-idempotency-notices` nueva, 5/5; F6-35 reescrita), navegador local: el autónomo acepta desde «Solicitudes» | ✅ Fase C cerrada | `530c301` + `2ee2e4a` |
 | 2026-10-09 | D | PH-03 («profesional» para el cliente) y, a petición del usuario, PH-18 (alta validada en el servidor); de paso, el perfil público enseñaba identificadores de servicio. Vitest 951/117, build ✅, `tsc` 128, 26 baterías 294/294, navegador local con autónomo, empresa, perfil y alta | ✅ Fase D cerrada | `569c8d1` `1bf4b7e` + `921e294` |
-| 2026-10-09 | E | PR-02: aviso en el panel y correos al suspender y reactivar; sin avisos a empleados (decisión del usuario). Vitest 953/118, build ✅, `tsc` 128, 27 baterías 300/300 (`verify-provider-suspension` nueva, 6/6), navegador local con admin, empresa y autónomo | ✅ Fase E cerrada | `8c5f902` + (este commit) |
+| 2026-10-09 | E | PR-02: aviso en el panel y correos al suspender y reactivar; sin avisos a empleados (decisión del usuario). Vitest 953/118, build ✅, `tsc` 128, 27 baterías 300/300 (`verify-provider-suspension` nueva, 6/6), navegador local con admin, empresa y autónomo | ✅ Fase E cerrada | `8c5f902` + `8027829` |
+| 2026-10-09 | F | PH-09 cerrado (no se reproduce), PH-07 (7 baterías de servicios al día, 269/269) y PH-06 (`ARCHITECTURE.md` reescrito; lo revisa el usuario en la PR). Sin cambios que se vean en el navegador | ✅ Fase F cerrada | `bc04bdf` `5de4cd6` + (este commit) |

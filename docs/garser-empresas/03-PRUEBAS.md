@@ -565,6 +565,11 @@ lee su estado (PS-01); repetir no manda más (PS-02); reactivar manda 1 y repeti
 autónomo igual (PS-05); solo el admin, y el correo no se pide desde el navegador (PS-06). Unitaria:
 `SuspendedProviderNotice.test.tsx` (2). Navegador local: admin → empresa → autónomo, con capturas (`06`, PR-02).
 
+### Pendientes · fase F — baterías de servicios al día (PH-07) (2026-10-09)
+
+`scripts/readiness/<servicio>.mjs`, por HTTP y con `READINESS_ENGINE=local`: **7/7 en verde, 269 comprobaciones**
+(césped 33, setos 35, arbustos 18, árboles 15, palmeras 71, desbroce 19, fitosanitarios 78). Antes fallaban 9.
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que

@@ -21,10 +21,10 @@
 | PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | ✅ Hecho (2026-10-09), por desplegar |
 | PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | ✅ Hecho (2026-10-09), por desplegar |
 | PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | **Media** (subida en la fase C: con una marca falsa se manda al cliente un «reserva aceptada» falso) | Visto en F3 | Cerrarlo | ✅ Hecho (2026-10-09), por desplegar |
-| PH-06 | `ARCHITECTURE.md` describe un sistema que ya no existe | Media (despista) | H-07 | Reescribirlo | Por corregir |
-| PH-07 | 9 pruebas de preparación de servicios fallan porque están desactualizadas | Media (se pierde una red de seguridad) | H-27 | Ponerlas al día | Por corregir |
+| PH-06 | `ARCHITECTURE.md` describe un sistema que ya no existe | Media (despista) | H-07 | Reescribirlo | ✅ Hecho (2026-10-09) |
+| PH-07 | 9 pruebas de preparación de servicios fallan porque están desactualizadas | Media (se pierde una red de seguridad) | H-27 | Ponerlas al día | ✅ Hecho (2026-10-09) |
 | PH-08 | Al aceptar otra fecha con cambio de persona, a quien va le llegan dos correos | Baja | Visto en F4 | Técnica (ver punto) | ✅ Hecho (2026-10-09), por desplegar |
-| PH-09 | El historial de migraciones del Supabase **local** está desalineado | Baja (solo entorno) | Visto en F3 | Técnica | Por corregir |
+| PH-09 | El historial de migraciones del Supabase **local** está desalineado | Baja (solo entorno) | Visto en F3 | Técnica | ✅ Cerrado (2026-10-09): no se reproduce |
 | PH-10 | `02-HALLAZGOS.md` tiene hallazgos resueltos todavía marcados como abiertos | Baja (documentación) | `01-PLAN` §5c.6 | — | Por corregir |
 | PH-11 | `booking_items` no se actualiza tras un cambio de precio | Vigilado (sin efecto hoy) | H-36 | Sin acción (regla) | Vigilado |
 | PH-12 | Las solicitudes a varios jardineros siguen desactivadas | Informativo | H-20 | Sin acción | Informativo |
@@ -477,6 +477,22 @@ ningún fichero suyo en Storage.
 - Despliegue y operaciones: qué función redesplegar al tocar qué.
 - Cada afirmación, con su fichero.
 
+#### Seguimiento (2026-10-09) — fase F
+
+1. **Leído.** El documento de la raíz era un inventario de deuda de abril de 2026.
+2. **¿Es cierto?** Sí: describía problemas resueltos y no contaba nada de empresas, la cola, las
+   bajas ni el móvil.
+3. **Casos parecidos.** No hay otros documentos de arquitectura en la raíz. Los de
+   `docs/audit/` llevan su fecha y no se tocan.
+4. **Hallazgos nuevos:** ninguno.
+5. **Hecho.**
+   - Reescrito desde el código: piezas, recorrido de una reserva, proveedores, avisos,
+     seguridad, cuentas, despliegue y pruebas.
+   - Cada afirmación cita su fichero. Se comprobaron las que no venían ya de esta tanda: el
+     *service worker* y el manifiesto, `plan_booking_cells` y el *trigger* de suspensión.
+   - **Decisión (usuario): lo revisa en la PR.**
+   - **Commit:** `5de4cd6`.
+
 ### PH-07 — 9 pruebas de preparación de servicios desactualizadas (H-27)
 
 **Qué pasa.** Las baterías de `scripts/readiness/` fallan en 9 pruebas (césped 2, arbustos 2,
@@ -494,6 +510,33 @@ que están desactualizadas**, no la web:
 - Ajustar cada prueba al contrato actual (códigos o textos) sin rebajar lo que comprueba.
 - Dar a la semilla un carnet válido y un horario, o elegir días con horas libres.
 - Confirmar las 7 baterías en verde.
+
+#### Seguimiento (2026-10-09) — fase F
+
+1. **Leído.** Las 7 baterías de `scripts/readiness/`.
+2. **¿Es cierto?** Sí: fallaban 9, igual que antes (césped 2, arbustos 2, palmeras 2,
+   desbroce 1 y fitosanitarios 2). Dos causas, las dos de la prueba y no del motor:
+   - **Códigos de aviso (5):** por HTTP, `booking-authority` devuelve los avisos solo como
+     texto, a propósito (`booking-authority/index.ts`, `warnings.map((item) => item.message)`),
+     y la prueba buscaba el código.
+     - El fallo «500 palmeras no dispara ningún aviso» era también esto: el aviso sí salía.
+   - **Fechas fijas de septiembre (4):** «un domingo», «un martes laborable» y «un sábado»
+     escritos como `2026-09-…`. Al pasar esas fechas no quedaban huecos.
+   - El carnet del jardinero de la semilla ya era válido: no hizo falta tocarlo.
+3. **Casos parecidos.** Ningún otro script de `scripts/` tiene fechas fijas. `arboles.mjs`
+   también las tenía y pasaba por casualidad: corregido igual.
+4. **Hallazgos nuevos:** ninguno en el motor.
+5. **Comprobado.**
+   - **El arnés** (`_harness.mjs`) recupera el código a partir del texto exacto que escribe el
+     motor (`WARNING_PATTERNS`, uno por cada `pushWarning`), así que se comprueba lo mismo,
+     aviso a aviso.
+   - **`nextWeekdayIso(día)`** da siempre el próximo día de la semana pedido.
+   - **Resultado:** las 7 en verde, **269 comprobaciones** en modo HTTP y también con
+     `READINESS_ENGINE=local`, y 0 fallos.
+     - Por batería: césped 33, setos 35, arbustos 18, árboles 15, palmeras 71, desbroce 19 y
+       fitosanitarios 78.
+     - Las «no probadas» (9) son las de siempre, que se revisan a mano.
+   - **Commit:** `bc04bdf`.
 
 ### PH-08 — Dos correos al trabajador al aceptar otra fecha con cambio de persona
 
@@ -556,6 +599,16 @@ a quien ya iba y sigue yendo. Se anota en `02-HALLAZGOS.md` al hacerlo.
 **Decisión técnica:** registrar en local las versiones que faltan (`insert … on conflict do
 nothing`), sin volver a ejecutarlas. Así `migration up` vuelve a funcionar para la próxima
 migración. Solo afecta al entorno local.
+
+#### Seguimiento (2026-10-09) — fase F
+
+- **No se reproduce.** Otra sesión rehízo la base local desde cero (`db reset`) antes del
+  2026-10-09.
+- Ahora `supabase_migrations.schema_migrations` tiene las 144 versiones, igual que la carpeta (se
+  compararon una a una), y `npx supabase migration up` responde «Migrations applied», sin nada
+  pendiente.
+- **Decisión (usuario): cerrarlo.** Desde ahora las migraciones locales se aplican con
+  `migration up`.
 
 ### PH-10 — Documentación con hallazgos resueltos todavía abiertos
 

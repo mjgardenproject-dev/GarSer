@@ -814,6 +814,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-10-09 | Pendientes C | **Fase C cerrada** (`07` §4): marcas de idempotencia solo del servidor y aviso por estado real (PH-05, A-51); «Tu trabajo cambia de fecha» solo a quien ya iba (PH-08, A-52). | 937 ✅ · build ✅ · tsc 128 · 26 baterías 293/293 | `530c301` |
 | 2026-10-09 | Pendientes D | **Fase D cerrada** (`07` §4): «profesional» para el cliente (PH-03, A-53); servicios del perfil público por su nombre; alta de jardinero validada en el servidor (PH-18, A-54, D29). | 951 ✅ · build ✅ · tsc 128 · 26 baterías 294/294 | `569c8d1` `1bf4b7e` |
 | 2026-10-09 | Pendientes E | **Fase E cerrada** (`07` §4): aviso en el panel y correos al suspender y reactivar (PR-02, A-55, D30). | 953 ✅ · build ✅ · tsc 128 · 27 baterías 300/300 | `8c5f902` |
+| 2026-10-09 | Pendientes F | **Fase F cerrada**: PH-09 cerrado, PH-07 (readiness 7/7, 269), PH-06 (`ARCHITECTURE.md`). | readiness 269 ✅ | `bc04bdf` `5de4cd6` |
 
 ---
 
@@ -938,6 +939,9 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 2k. **Fase E hecha (2026-10-09):** el profesional o la empresa suspendidos lo ven en su panel y reciben un correo al
    suspender y al reactivar (PR-02); a los empleados no se les avisa (D30). Por desplegar en la fase H: migración
    `20261009140000`, `send-email-notification` y la web.
+2l. **Fase F hecha (2026-10-09):** PH-09 cerrado (no se reproduce), las 7 baterías de servicios al día (PH-07, 269
+   comprobaciones) y `ARCHITECTURE.md` reescrito a partir del código (PH-06; lo revisa el usuario en la PR). Nada que
+   desplegar.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

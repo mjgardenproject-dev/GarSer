@@ -30,7 +30,7 @@
  * Los Escenarios 3 y 4 ahora predicen (y obtienen) las HORAS correctas. Ver
  * docs/audit/2026-09-12-arbustos-NOTAS-INTERNAS.md y docs/audit/2026-09-12-arbustos/REPORT.md.
  */
-import { quote, expectQuote, sweep, previewProviders, validHours, report, pass, fail, untested, PROVIDER_ID, sql } from './_harness.mjs';
+import { nextWeekdayIso, quote, expectQuote, sweep, previewProviders, validHours, report, pass, fail, untested, PROVIDER_ID, sql } from './_harness.mjs';
 
 /**
  * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
@@ -191,7 +191,7 @@ async function main() {
   // --- 4. Disponibilidad -----------------------------------------------------
   console.log('--- Disponibilidad ---');
   const smallJob = { id: 'a', area: 20, size: 'medianas', state: 'normal' };
-  const sunday = await validHours(SERVICE_ID, '2026-09-06', shrubInput([smallJob], false)); // domingo
+  const sunday = await validHours(SERVICE_ID, nextWeekdayIso(0), shrubInput([smallJob], false)); // domingo
   const sundayHours = sunday.body?.validHours || [];
   if (sundayHours.length === 0) {
     pass('Disponibilidad: domingo sin huecos');
@@ -202,7 +202,7 @@ async function main() {
   const inside = await previewProviders(
     SERVICE_ID,
     { ...shrubInput([smallJob], false), address: 'Avenida Ricardo Soriano 12, Marbella', addressCoordinates: { lat: 36.5099, lng: -4.8858 } },
-    { selectedDate: '2026-09-08' },
+    { selectedDate: nextWeekdayIso(2) },
   );
   if (inside.body?.eligibleProviderIds?.includes(PROVIDER_ID)) {
     pass('Cobertura: Marbella (dentro del radio) incluye al jardinero', JSON.stringify(inside.body?.quotes?.[PROVIDER_ID]).slice(0, 200));
@@ -213,7 +213,7 @@ async function main() {
   const outside = await previewProviders(
     SERVICE_ID,
     { ...shrubInput([smallJob], false), address: 'Gran Via 1, Madrid', addressCoordinates: { lat: 40.4168, lng: -3.7038 } },
-    { selectedDate: '2026-09-08' },
+    { selectedDate: nextWeekdayIso(2) },
   );
   const outsideCode = outside.body?.exclusions?.[PROVIDER_ID]?.code;
   if (outsideCode === 'outside_coverage') {

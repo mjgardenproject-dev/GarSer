@@ -19,7 +19,7 @@
  *     READINESS_ENGINE=local node scripts/readiness/fitosanitarios.mjs
  */
 
-import {
+import { nextWeekdayIso,
   quote, expectQuote, validHours, previewProviders, bundleModule,
   pass, fail, untested, report, sql,
 } from './_harness.mjs';
@@ -99,8 +99,8 @@ const photos = (o) => ({
   }],
 });
 
-const TUESDAY_DATE = '2026-09-15';
-const SUNDAY_DATE = '2026-09-13';
+const TUESDAY_DATE = nextWeekdayIso(2);
+const SUNDAY_DATE = nextWeekdayIso(0);
 
 // Sin dirección, `valid_hours` y `preview_providers` responden `missing_coordinates` y no
 // llegan a mirar el calendario: la prueba del domingo pasaría por la razón equivocada.

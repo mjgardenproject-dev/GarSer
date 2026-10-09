@@ -7,7 +7,7 @@
  *
  * Uso: node scripts/readiness/desbroce.mjs
  */
-import { quote, authority, sweep, expectQuote, expectError, pass, fail, untested, previewProviders, validHours, report, sql } from './_harness.mjs';
+import { nextWeekdayIso, quote, authority, sweep, expectQuote, expectError, pass, fail, untested, previewProviders, validHours, report, sql } from './_harness.mjs';
 
 // El id heredado del runner anterior (e2bb35b1-...) es fantasma: no existe en este entorno
 // (confirmado contra `select id, name from public.services`). El real es este.
@@ -184,7 +184,7 @@ async function main() {
   // min_notice_hours=12 del jardinero sembrado, no por lo que se quería probar. Domingo y
   // sábado futuros con margen de sobra: 2026-09-20 (domingo) y 2026-09-19 (sábado).
   const MARBELLA = { address: 'Avenida Ricardo Soriano 10, Marbella, Málaga', addressCoordinates: { lat: 36.5099, lng: -4.8858 } };
-  const sunday = await validHours(SERVICE_ID, '2026-09-20', { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }], wasteRemoval: true, ...MARBELLA });
+  const sunday = await validHours(SERVICE_ID, nextWeekdayIso(0), { weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }], wasteRemoval: true, ...MARBELLA });
   const hoursOnSunday = sunday.body?.validHours || [];
   const sundayExclusionCode = sunday.body?.exclusion?.code;
   if (sunday.ok && hoursOnSunday.length === 0 && sundayExclusionCode !== 'missing_coordinates') {
@@ -193,7 +193,7 @@ async function main() {
     fail('7a. Domingo 2026-09-20 sin huecos (con coordenadas reales)', `esperado [] por cierre dominical, obtenido ${JSON.stringify(sunday.body)} (status ${sunday.status})`);
   }
   // Sábado con un trabajo corto (cabe en la ventana 09:00-14:00) → SÍ debe haber huecos.
-  const saturdayShort = await validHours(SERVICE_ID, '2026-09-19', { weedingZones: [{ area: 50, state: 'normal', applyHerbicide: false }], wasteRemoval: false, ...MARBELLA });
+  const saturdayShort = await validHours(SERVICE_ID, nextWeekdayIso(6), { weedingZones: [{ area: 50, state: 'normal', applyHerbicide: false }], wasteRemoval: false, ...MARBELLA });
   const hoursOnSaturdayShort = saturdayShort.body?.validHours || [];
   if (saturdayShort.ok && hoursOnSaturdayShort.length > 0) pass('7a-bis. Sábado con trabajo corto (1h) → sí hay huecos', JSON.stringify(hoursOnSaturdayShort));
   else fail('7a-bis. Sábado con trabajo corto (1h) → sí hay huecos', `obtenido ${JSON.stringify(saturdayShort.body)}`);
@@ -203,7 +203,7 @@ async function main() {
     addressCoordinates: { lat: 40.4168, lng: -3.7038 },
     weedingZones: [{ area: 1000, state: 'normal', applyHerbicide: false }],
     wasteRemoval: true,
-  }, { selectedDate: '2026-09-19' });
+  }, { selectedDate: nextWeekdayIso(6) });
   const exclusions = outsideCoverage.body?.exclusions || {};
   const providerExclusion = exclusions['11111111-aaaa-4aaa-8aaa-111111111111'];
   if (providerExclusion?.code === 'outside_coverage') pass('7b. Dirección fuera de cobertura (Madrid) → excluido', JSON.stringify(providerExclusion));

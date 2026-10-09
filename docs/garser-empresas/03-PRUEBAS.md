@@ -516,6 +516,24 @@ Navegador local (375 px, dos orígenes): bloqueada con «Tienes una reserva de C
 cuenta se borra entera. Sin scroll lateral. Únicos errores de consola: dos 403 `user_not_found` del cierre de sesión de
 una cuenta que ya no existe (esperado).
 
+### Pendientes · fase B — jardinero rechazado que vuelve a solicitar (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-gardener-reapply.mjs` (local), **8/8**:
+
+| # | Qué comprueba | Resultado |
+|---|---|---|
+| GR-01 | Rechazado (correo enviado) → reabrir: la misma solicitud vuelve a borrador con sus datos, sin la revisión ni las declaraciones; el rechazo queda en el histórico | ✅ |
+| GR-02 | Reabrir dos veces no duplica el histórico | ✅ |
+| GR-03 | El jardinero lee el motivo de su rechazo | ✅ |
+| GR-04 | Corrige y envía: el admin la tiene en pendientes y ve el rechazo anterior | ✅ |
+| GR-05 | Segundo rechazo con su correo y su histórico; al final se aprueba: ficha y correo de alta | ✅ |
+| GR-06 | Pendiente o aprobada no se puede reabrir | ✅ |
+| GR-07 | Nadie reabre la de otro ni lee su histórico | ✅ |
+| GR-08 | El solicitante no escribe los campos de revisión, no se aprueba y no se inventa un histórico | ✅ |
+
+Unitarias: `src/utils/gardenerApplicationRetry.test.ts` (5) y `src/components/gardener/GardenerStatusPage.test.tsx` (2).
+Navegador local (375 px, dos orígenes): recorrido completo del jardinero y del admin, descrito en `05` (PH-02).
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que
@@ -583,6 +601,7 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-PH01-2 | Fase A: una cuenta de prueba sin reservas cierra su cuenta desde «Mi cuenta» | Vuelve a la entrada con «Tu cuenta se ha cerrado»; no puede volver a entrar; en Storage no queda ningún fichero suyo (lo mira el chat) | ⬜ |
 | P-PH14-1 | Fase A: el chat comprueba con una cuenta de prueba que no puede listar `booking-photos` ni `applications` de otros, y que una foto de perfil se sigue viendo | Listas vacías; la foto se ve | ⬜ |
 | P-PH15-1 | Fase A: en la primera reserva aceptada de las pruebas, mirar el correo al cliente | «¡Buenas noticias, <nombre>!» y «<nombre de la empresa> ha aceptado tu reserva» | ⬜ |
+| P-PH02-1 | Fase B: el admin rechaza la solicitud de jardinero de prueba con un motivo; el jardinero pulsa «Corregir y volver a enviar» | Le llega el correo con el motivo; el formulario sale relleno y con el motivo arriba; al reenviar, el admin la ve «Reenviada tras 1 rechazo» con el rechazo anterior | ⬜ |
 
 ---
 

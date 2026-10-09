@@ -17,7 +17,7 @@
 | # | Qué pasa | Gravedad | Origen | Decisión | Estado |
 |---|---|---|---|---|---|
 | PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | ✅ Hecho (2026-10-09), por desplegar |
-| PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | Por corregir |
+| PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | ✅ Hecho (2026-10-09), por desplegar |
 | PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | Por corregir |
 | PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | ✅ Hecho (2026-10-09), por desplegar |
 | PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | Baja (seguridad, solo le afecta a él) | Visto en F3 | Cerrarlo | Por corregir |
@@ -33,6 +33,7 @@
 | PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
 | PH-16 | `booking-photos` es público en producción y privado en local; las imágenes del chat se enseñan con URL pública | Media (datos personales; el enlace es la única llave) | Fase A, paso 3 | — | Apuntado |
 | PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | Apuntado (fase H) |
+| PH-18 | El alta de jardinero se envía desde el navegador sin comprobar en el servidor que está completa (las empresas sí, con `submit_company_application`) | Baja (el admin revisa a mano) | Fase B, paso 3 | — | Apuntado |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -205,6 +206,69 @@ volver a enviar, y el rechazo queda en un histórico (como hacen las empresas).
   - Un jardinero pendiente o aprobado no puede reintentar.
   - Nadie puede reintentar la solicitud de otro.
 - Navegador local, de principio a fin.
+
+#### Seguimiento (2026-10-09) — fase B
+
+1. **Leído.**
+   - Las citas siguen ahí: `GardenerStatusPage.tsx:24-60` hace el `update` a `draft` y el
+     `delete`.
+   - Reglas vivas: `applications_own_update` solo deja tocar borradores y no hay regla de
+     borrado.
+   - Hay `UNIQUE (user_id)`.
+   - `admin_review_gardener_application` solo revisa solicitudes `submitted`.
+   - El aviso de rechazo lleva en su clave la fecha de la revisión, así que un segundo rechazo
+     manda su correo.
+   - El formulario (`GardenerApplicationWizard`) solo restauraba el progreso local, que se borra
+     al enviar: una solicitud reabierta habría salido vacía.
+   - Decisión: reabrir al momento, con histórico.
+2. **¿Es cierto?** Sí (`repro-ph02.mjs`):
+   - Las dos llamadas de la web responden 200 con 0 filas y la solicitud sigue `rejected`.
+   - Crear otra choca con la clave única (409).
+3. **Casos parecidos.**
+   - **Permisos de la misma tabla:**
+     - El solicitante **podía escribir** `reviewer_id`, `reviewed_at` y `review_comment` al
+       enviar (comprobado: quedaban con sus valores).
+     - No puede aprobarse: 0 filas.
+   - **Las empresas** ya guardan cada rechazo como una fila y crean un borrador nuevo
+     (`CompanyApplicationPage.tsx:67-80`). Para jardineros no se puede por la clave única: por
+     eso se reabre la misma fila.
+   - **Escrituras del navegador sin mirar las filas:** inventario de 27 `update`, `delete` y
+     `upsert` en `src/`.
+     - Fallan en silencio para su usuario legítimo solo estas: las de `gardener_applications` (el
+       envío del formulario también decía «enviada» sin comprobar) y, ya arreglada en la fase A,
+       la foto de «Mi cuenta».
+     - Las demás (horarios, precios, ficha, chat, ajustes del admin) van con reglas «lo suyo» que
+       sí coinciden con quien las usa. A los empleados se les bloquea a propósito, y no ven esas
+       pantallas.
+   - **Envío sin comprobar en el servidor** que el alta está completa: pasa a **PH-18**.
+4. **Hallazgos nuevos.**
+   - Los campos de revisión escribibles: claro y del mismo tema, corregido (trigger).
+   - El envío que decía «enviada» sin guardar: corregido.
+   - PH-18: apuntado.
+5. **Comprobado.**
+   - **Migración** `20261009110000_gardener_application_restart.sql`:
+     - Tabla `gardener_application_reviews`, que leen el admin y el propio jardinero.
+     - `restart_gardener_application()`: solo la propia, solo si está rechazada, y no duplica el
+       histórico.
+     - El trigger `trg_guard_gardener_application_review`.
+   - **Web:**
+     - `GardenerStatusPage` reabre por RPC y, si falla, lo dice.
+     - El formulario se rellena con lo guardado y enseña el motivo.
+     - El envío comprueba que se ha guardado.
+     - El admin ve «Reenviada tras N rechazos» y «Rechazos anteriores».
+   - **Pruebas:**
+     - Unitarias 937/115 (7 nuevas), build ✅ y `tsc` 128.
+     - `verify-gardener-reapply` 8/8 y **25 baterías, 288/288**.
+     - Navegador local a 375 px con dos orígenes: el jardinero rechazado pulsa «Corregir y volver
+       a enviar», el formulario sale relleno con el motivo del rechazo, vuelve a aceptar las
+       declaraciones y envía («Solicitud en revisión»). El admin ve «Reenviada tras 1 rechazo» y
+       «Rechazos anteriores» con el motivo, y la aprueba: se crea la ficha y salen de la cola
+       los correos de rechazo y de alta.
+     - Sin scroll lateral y sin peticiones fallidas en la página.
+   - **Pendiente en garser.es:** P-PH02-1 (`06` §3, paso 2.7).
+   - **Commit:** `4ef9d4c` y el de la documentación.
+   - **Vuelta atrás:** la de la cabecera de la migración (borrar la función, el trigger y la
+     tabla); la web anterior no usa nada de esto.
 
 ### PH-03 — «Jardinero» y «Confirmar jardinero» con empresas (H-28, punto 1)
 
@@ -444,6 +508,17 @@ añadir la fila final del registro.
   públicos.
 - **Propuesta:** en la fase H, tras la copia de seguridad, borrarlos con un script que solo toque
   carpetas cuyo usuario no exista. **Es un borrado permanente: se pide permiso antes.**
+
+### PH-18 — El alta de jardinero no se valida en el servidor (fase B, paso 3)
+
+- El formulario envía la solicitud con un `update` a `submitted` desde el navegador. Las reglas
+  dejan enviar un borrador aunque le falten datos (el formulario los exige, pero se puede saltar
+  con una llamada directa).
+- Las empresas usan `submit_company_application`, que comprueba en el servidor lo obligatorio.
+- Impacto bajo: el admin revisa cada solicitud a mano.
+- **Propuesta:** `submit_gardener_application()` con las mismas comprobaciones que el formulario
+  (nombre, teléfono, zona, foto, servicios, herramientas, experiencia y declaraciones), y quitar
+  `submitted` de lo que el navegador puede escribir. **Pendiente de decisión.**
 
 ---
 

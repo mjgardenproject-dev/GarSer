@@ -138,6 +138,7 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 2.4 | P-H38-1 | Ese jardinero pone 0,5 €/m² en césped y guarda | En la base de datos, `0.5` |
 | 2.5 | P-F3-3 → P-F3-4 (+P-F3-10) | Registrar una empresa desde el móvil y enviar la encuesta; el admin la aprueba | Entra en su panel; le llega «Tu empresa ya está dada de alta» |
 | 2.6 | P-F3-5 (+P-F3-11) | Otra empresa: el admin la rechaza con un motivo | Le llega el correo con el motivo; puede corregir y reenviar |
+| 2.7 | P-PH02-1 | Con otro jardinero nuevo: el admin lo rechaza con un motivo; el jardinero pulsa «Corregir y volver a enviar», corrige y reenvía | El formulario sale relleno y con el motivo; el admin la ve «Reenviada tras 1 rechazo» y puede aprobarla |
 
 ### Sesión 3 — Equipo (empresa aprobada y empleados)
 
@@ -196,3 +197,4 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 2026-09-29 | Documento creado; decisiones PR-02, PR-04 y PR-05 | — |
 | 2026-10-08 | PR-01 cerrado (PR #41 fusionada el 2026-09-29). Procedimiento de corrección en `07-PROCEDIMIENTO-CORRECCION.md` | — |
 | 2026-10-09 | Fase A: pasos 4.9 y 7.3 añadidos (baja desde «Mi cuenta», ficheros y nombres en los correos) | — |
+| 2026-10-09 | Fase B: paso 2.7 añadido (jardinero rechazado que vuelve a solicitar) | — |

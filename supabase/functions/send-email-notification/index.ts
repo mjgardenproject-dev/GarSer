@@ -82,7 +82,10 @@ type EmailType =
   // Prueba real (F5): al dueño, cuando alguien acepta unirse a su equipo (R-04); al empleado,
   // cuando el dueño le publica un horario nuevo (R-05). Solo desde la cola del servidor.
   | 'company_member_joined'
-  | 'member_schedule_published';
+  | 'member_schedule_published'
+  // Fase E (PR-02): la suspensión de un profesional o una empresa, y su reactivación.
+  | 'provider_suspended'
+  | 'provider_reactivated';
 
 interface EmailPayload {
   /**
@@ -154,6 +157,7 @@ export const SERVER_MANAGED_TYPES = new Set<string>([
   // F4 (R-07): quién va a cada trabajo lo compara el servidor al final de cada cambio.
   'job_assigned', 'job_unassigned',
   'company_member_joined', 'member_schedule_published',
+  'provider_suspended', 'provider_reactivated',
 ]);
 
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -395,6 +399,33 @@ Deno.serve(async (req) => {
           console.error('Error fetching user email:', userError);
         }
       }
+    } else if (type === 'provider_suspended' || type === 'provider_reactivated') {
+      // Fase E (PR-02): solo desde la cola (lo apunta admin_set_provider_suspended), y solo si la
+      // cuenta sigue en ese estado al enviarlo (suspender y reactivar seguidos no manda un aviso falso).
+      if (!admin || !isInternalServiceCaller(req)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: card } = await admin.from('gardener_profiles').select('full_name, suspended_at').eq('user_id', user_id || '').maybeSingle();
+      const suspendedNow = Boolean(card?.suspended_at);
+      if (!card || suspendedNow !== (type === 'provider_suspended')) {
+        return new Response(JSON.stringify({ success: true, skipped: 'state_changed' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: userData } = await admin.auth.admin.getUserById(user_id || '');
+      const email = userData?.user?.email || '';
+      // Una cuenta dada de baja tiene un correo anónimo: no se le escribe.
+      if (!email || email.endsWith('@garser.invalid')) {
+        return new Response(JSON.stringify({ success: true, skipped: 'no_email' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      to = email;
+      name = String(card.full_name || '').trim() || 'hola';
+      const { data: ownCompany } = await admin.from('companies').select('id').eq('provider_user_id', user_id || '').maybeSingle();
+      confirmUrl = `${BRAND.site}${ownCompany ? '/empresa' : '/dashboard'}`;
     } else if (type === 'company_approved' || type === 'company_rejected') {
       // Estado de la solicitud de empresa: solo administradores (o un servicio interno). El
       // correo tiene que decir lo mismo que la base de datos: si la solicitud no está en ese
@@ -932,6 +963,24 @@ Deno.serve(async (req) => {
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Volver a solicitar', url: data?.applyUrl || `${BRAND.site}/apply` },
         footerNote: 'Este rechazo no es definitivo: puedes corregir la información y volver a enviar tu solicitud.',
+      };
+    } else if (type === 'provider_suspended') {
+      subject = 'Tu cuenta de GarSer está suspendida';
+      opts = {
+        title: subject,
+        heading: `Hola ${name}`,
+        intro: 'Hemos suspendido tu cuenta: mientras tanto no recibirás reservas nuevas. Las reservas que ya tienes citadas siguen su curso: hazlas, cóbralas y valóralas como siempre.',
+        cta: { label: 'Ver mi panel', url: confirmUrl || `${BRAND.site}/dashboard` },
+        footerNote: 'Si crees que es un error, responde a este correo y lo revisamos.',
+      };
+    } else if (type === 'provider_reactivated') {
+      subject = 'Tu cuenta de GarSer vuelve a estar activa';
+      opts = {
+        title: subject,
+        heading: `Hola ${name}`,
+        intro: 'Tu cuenta vuelve a estar activa: ya puedes recibir reservas nuevas. Revisa tu disponibilidad y tus precios para que los clientes te encuentren.',
+        cta: { label: 'Ver mi panel', url: confirmUrl || `${BRAND.site}/dashboard` },
+        footerNote: 'Gracias por tu paciencia.',
       };
     } else if (type === 'company_approved') {
       subject = 'Tu empresa ya está dada de alta en GarSer';

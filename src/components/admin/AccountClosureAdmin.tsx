@@ -88,7 +88,8 @@ const AccountClosureAdmin: React.FC = () => {
       toast.error(error.message || 'No se ha podido cambiar.');
       return;
     }
-    toast.success(plan.suspended ? 'Vuelve a recibir reservas' : 'Suspendida: no recibirá reservas nuevas');
+    // PR-02: el profesional lo ve en su panel y recibe un correo (lo apunta el servidor).
+    toast.success(plan.suspended ? 'Vuelve a recibir reservas. Le avisamos por correo.' : 'Suspendida: no recibirá reservas nuevas. Le avisamos por correo y lo verá en su panel.');
     await review(plan.email || email);
   };
 

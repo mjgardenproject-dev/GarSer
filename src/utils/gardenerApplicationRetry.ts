@@ -11,6 +11,16 @@ export async function restartRejectedApplication(): Promise<void> {
   if (error) throw new Error(error.message || 'No se ha podido reabrir tu solicitud.');
 }
 
+/**
+ * PH-18: enviar el alta lo hace el servidor (`submit_gardener_application`), que comprueba que
+ * está completa, como con las empresas. Antes era un UPDATE desde el navegador que dejaba enviar
+ * una solicitud vacía.
+ */
+export async function submitGardenerApplication(): Promise<void> {
+  const { error } = await supabase.rpc('submit_gardener_application');
+  if (error) throw new Error(error.message || 'No se pudo enviar la solicitud.');
+}
+
 /** El último motivo de rechazo, para enseñarlo mientras corrige. */
 export async function fetchLastRejection(userId: string): Promise<{ reason: string; reviewedAt: string | null } | null> {
   const { data, error } = await supabase

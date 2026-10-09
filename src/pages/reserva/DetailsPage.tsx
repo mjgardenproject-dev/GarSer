@@ -473,7 +473,7 @@ function TreeAccessDifficultyToggle({
 }
 
 /**
- * Nota para el jardinero, aislada en su propio componente con estado local.
+ * Nota para el profesional, aislada en su propio componente con estado local.
  * Teclear aquí solo re-renderiza este textarea, no toda la página de Detalles
  * (~5.900 líneas). El valor se publica al padre vía `onChange`, que únicamente
  * actualiza una ref, por lo que el padre no se re-renderiza en cada pulsación.
@@ -2569,7 +2569,7 @@ const DetailsPage: React.FC = () => {
   const getServiceContent = (): { title: string; description: string; tips?: string[] } => {
     const defaultContent = {
         title: 'Fotos de tu jardín',
-        description: 'Las fotos ayudan a los jardineros a entender mejor tu espacio.'
+        description: 'Las fotos ayudan a los profesionales a entender mejor tu espacio.'
     };
 
     if (!debugService) return defaultContent;
@@ -5049,7 +5049,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                                             </select>
                                                                             {lowHeightConfidence && (
                                                                                 <p className="text-[11px] text-amber-700 mt-1">
-                                                                                    Revisa la altura: influye en el precio y en qué jardineros pueden hacer el trabajo.
+                                                                                    Revisa la altura: influye en el precio y en qué profesionales pueden hacer el trabajo.
                                                                                 </p>
                                                                             )}
                                                                         </div>
@@ -5469,7 +5469,7 @@ const analyzeTreeGroup = async (id: string) => {
                                                                 )}
                                                                 {hasPositiveUnits(zone.quantity) && isHighestOpenRangeForSpecies(zone.species, zone.height) && (
                                                                     <p className="text-xs text-amber-700 mt-2">
-                                                                      Precio aproximado para este rango alto. El jardinero podrá proponer ajuste y requerirá tu aceptación en el chat.
+                                                                      Precio aproximado para este rango alto. El profesional podrá proponer ajuste y requerirá tu aceptación en el chat.
                                                                     </p>
                                                                 )}
                                                             </div>
@@ -6661,7 +6661,7 @@ const analyzeTreeGroup = async (id: string) => {
       {/* Gardener Note (Moved to bottom) */}
       <div className="mb-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Nota para el jardinero (opcional)</h2>
+              <h2 className="text-lg font-bold text-gray-900">Nota para el profesional (opcional)</h2>
               <span className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200">
                  No afecta al precio
               </span>

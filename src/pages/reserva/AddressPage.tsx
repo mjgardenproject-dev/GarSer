@@ -160,7 +160,7 @@ const AddressPage: React.FC = () => {
             ¿Dónde está tu jardín?
           </h2>
           <p className="text-gray-600 mb-6">
-            Necesitamos tu dirección para encontrar jardineros cerca de ti
+            Necesitamos tu dirección para encontrar profesionales cerca de ti
           </p>
 
           {/* Address Input */}
@@ -207,7 +207,7 @@ const AddressPage: React.FC = () => {
                 Consejo
               </h3>
               <p className="text-sm text-blue-700">
-                Incluye el número exacto de tu casa para que el jardinero te encuentre fácilmente
+                Incluye el número exacto de tu casa para que el profesional te encuentre fácilmente
               </p>
             </div>
           </div>

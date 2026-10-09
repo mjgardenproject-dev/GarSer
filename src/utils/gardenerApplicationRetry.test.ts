@@ -4,7 +4,7 @@ const rpc = vi.fn();
 const query = { select: vi.fn(), eq: vi.fn(), order: vi.fn(), limit: vi.fn() };
 vi.mock('../lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) => rpc(...a), from: () => query } }));
 
-import { applicationHasData, fetchLastRejection, restartRejectedApplication, wizardStateFromApplication } from './gardenerApplicationRetry';
+import { applicationHasData, fetchLastRejection, restartRejectedApplication, submitGardenerApplication, wizardStateFromApplication } from './gardenerApplicationRetry';
 
 describe('jardinero rechazado que vuelve a solicitar (PH-02)', () => {
   beforeEach(() => {
@@ -23,6 +23,14 @@ describe('jardinero rechazado que vuelve a solicitar (PH-02)', () => {
   it('si el servidor no lo deja, se ve su motivo', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'Solo se puede corregir una solicitud rechazada.' } });
     await expect(restartRejectedApplication()).rejects.toThrow('Solo se puede corregir una solicitud rechazada.');
+  });
+
+  it('enviar el alta lo hace el servidor y, si falta algo, se ve qué (PH-18)', async () => {
+    rpc.mockResolvedValueOnce({ data: { status: 'submitted' }, error: null });
+    await submitGardenerApplication();
+    expect(rpc).toHaveBeenCalledWith('submit_gardener_application');
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'Falta: foto de perfil.' } });
+    await expect(submitGardenerApplication()).rejects.toThrow('Falta: foto de perfil.');
   });
 
   it('el último motivo de rechazo, o nada', async () => {

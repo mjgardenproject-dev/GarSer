@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { applicationHasData, fetchLastRejection, wizardStateFromApplication } from '../../utils/gardenerApplicationRetry';
+import { applicationHasData, fetchLastRejection, submitGardenerApplication, wizardStateFromApplication } from '../../utils/gardenerApplicationRetry';
 import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-react';
 import GardenerStatusPage from './GardenerStatusPage';
 import { compressImage } from '../../utils/imageCompression';
@@ -290,18 +290,11 @@ const GardenerApplicationWizard: React.FC = () => {
     setLoading(true);
     try {
       await autosave();
-      const { data: sent, error } = await supabase
-        .from('gardener_applications')
-        .update({ status: 'submitted', submitted_at: new Date().toISOString() })
-        .eq('id', applicationId)
-        .select('id');
-      if (error) {
-        toast.error(error.message || 'No se pudo enviar la solicitud');
-        return;
-      }
-      // Si las reglas no la dejan tocar (ya enviada desde otra pestaña…), no decir «enviada».
-      if (!sent?.length) {
-        toast.error('No se ha podido enviar la solicitud. Recarga la página y vuelve a intentarlo.');
+      // El servidor comprueba que está completa y la envía (PH-18); si falta algo, lo dice.
+      try {
+        await submitGardenerApplication();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'No se pudo enviar la solicitud');
         return;
       }
       // Success: show local success state immediately without redirection

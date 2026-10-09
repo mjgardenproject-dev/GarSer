@@ -17,7 +17,7 @@ const GardenerPublicProfile: React.FC = () => {
       setError(null);
       try {
         if (!gardenerId) {
-          setError('Identificador de jardinero no válido');
+          setError('Identificador de profesional no válido');
           return;
         }
         const { data, error } = await supabase
@@ -30,7 +30,7 @@ const GardenerPublicProfile: React.FC = () => {
 
         if (error) throw error;
         if (!data) {
-          setError('No se ha encontrado este perfil de jardinero');
+          setError('No se ha encontrado este perfil de profesional');
           return;
         }
         setProfile(data);
@@ -67,16 +67,16 @@ const GardenerPublicProfile: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto p-4 sm:p-6">
       <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">Perfil Público del Jardinero</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">Perfil público del profesional</h1>
 
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
           <img
             src={profile?.avatar_url || ''}
-            alt={profile?.full_name || 'Foto del jardinero'}
+            alt={profile?.full_name || 'Foto del profesional'}
             className="w-32 h-32 sm:w-40 sm:h-40 rounded-full object-cover border-4 border-green-200"
           />
           <div className="flex-1">
-            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">{profile?.full_name || 'Jardinero GarSer'}</h2>
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">{profile?.full_name || 'Profesional de GarSer'}</h2>
             <div className="mt-2 flex items-center gap-3 text-sm text-gray-600">
               <span className="inline-flex items-center gap-1">
                 <Star className="w-4 h-4 text-yellow-500" />
@@ -108,7 +108,7 @@ const GardenerPublicProfile: React.FC = () => {
               </span>
             ))}
             {(!profile?.services || profile.services.length === 0) && (
-              <span className="text-gray-500 text-sm">Este jardinero aún no ha configurado sus servicios.</span>
+              <span className="text-gray-500 text-sm">Este profesional aún no ha configurado sus servicios.</span>
             )}
           </div>
         </div>
@@ -118,10 +118,10 @@ const GardenerPublicProfile: React.FC = () => {
             onClick={handleReserve}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 font-semibold"
           >
-            <Calendar className="w-5 h-5" /> Reservar con este jardinero
+            <Calendar className="w-5 h-5" /> Reservar con este profesional
           </button>
           {!profile?.is_available && (
-            <p className="mt-2 text-sm text-amber-700">Este jardinero actualmente no está disponible. Aun así, podrás ver fechas futuras si las configura.</p>
+            <p className="mt-2 text-sm text-amber-700">Este profesional actualmente no está disponible. Aun así, podrás ver fechas futuras si las configura.</p>
           )}
         </div>
 

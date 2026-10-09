@@ -990,7 +990,7 @@ Deno.serve(async (req) => {
         intro: `${counterpartName || 'El profesional'} no ha podido aceptar tu solicitud de reserva. No se te cobrará nada.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Buscar otro profesional', url: `${BRAND.site}/reserva` },
-        footerNote: 'Hay más jardineros disponibles en tu zona: puedes repetir la reserva en un minuto.',
+        footerNote: 'Hay más profesionales disponibles en tu zona: puedes repetir la reserva en un minuto.',
       };
     } else if (type === 'booking_cancelled') {
       subject = 'Reserva cancelada en GarSer';

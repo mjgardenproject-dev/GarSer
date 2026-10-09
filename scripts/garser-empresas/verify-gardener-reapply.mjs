@@ -30,8 +30,9 @@ async function applyAs(label) {
     professional_photo_url: 'https://example.com/foto.jpg', services: ['Corte de césped'], tools_available: ['Cortacésped'],
     experience_years: 4, experience_description: 'Comunidades y chalets', declaration_truth: true, accept_terms: true,
   });
-  const sent = await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${u.id}`, u.token, { status: 'submitted', submitted_at: new Date().toISOString() });
-  return { ...u, appId: draft.rows[0]?.id, sentRows: sent.rows.length };
+  // PH-18: se envía por el servidor, que comprueba que está completa.
+  const sent = await rpc('submit_gardener_application', {}, u.token);
+  return { ...u, appId: draft.rows[0]?.id, sentRows: sent.ok && sent.body?.status === 'submitted' ? 1 : 0 };
 }
 const review = (adminToken, appId, status, comment) =>
   rpc('admin_review_gardener_application', { p_application_id: appId, p_status: status, p_comment: comment }, adminToken);
@@ -59,19 +60,19 @@ async function main() {
   const fix = await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${juan.id}`, juan.token, {
     proof_photos: ['https://example.com/trabajo.jpg'], declaration_truth: true, accept_terms: true,
   });
-  const resend = await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${juan.id}`, juan.token, { status: 'submitted', submitted_at: new Date().toISOString() });
+  const resend = await rpc('submit_gardener_application', {}, juan.token);
   const queue = await rest('GET', `/rest/v1/gardener_applications?status=eq.submitted&user_id=eq.${juan.id}&select=id`, adminToken);
   const adminHistory = await rest('GET', `/rest/v1/gardener_application_reviews?application_id=eq.${juan.appId}&select=review_comment`, adminToken);
   record('GR-04', 'Corrige y envía: el admin la tiene en «pendientes» y ve el rechazo anterior',
-    fix.rows.length === 1 && resend.rows.length === 1 && queue.rows.length === 1 && adminHistory.rows.length === 1,
-    `corregir ${fix.rows.length}, enviar ${resend.rows.length}, cola del admin ${queue.rows.length}, histórico ${adminHistory.rows.length}`);
+    fix.rows.length === 1 && resend.ok && queue.rows.length === 1 && adminHistory.rows.length === 1,
+    `corregir ${fix.rows.length}, enviar ${resend.status}${why(resend)}, cola del admin ${queue.rows.length}, histórico ${adminHistory.rows.length}`);
 
   // ── Otro rechazo: segundo correo y segundo histórico; después se aprueba ───────────────────
   const r2 = await review(adminToken, juan.appId, 'rejected', 'El teléfono no responde');
   const mail2 = await waitOutbox('gardener_rejected', juan.id, 2);
   await rpc('restart_gardener_application', {}, juan.token);
   await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${juan.id}`, juan.token, { declaration_truth: true, accept_terms: true });
-  await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${juan.id}`, juan.token, { status: 'submitted' });
+  await rpc('submit_gardener_application', {}, juan.token);
   const ok = await review(adminToken, juan.appId, 'approved', null);
   const mail3 = await waitOutbox('gardener_approved', juan.id, 1);
   const card = sql(`select coalesce(full_name,'-') from public.gardener_profiles where user_id = '${juan.id}'`);
@@ -100,12 +101,27 @@ async function main() {
   // ── Paso 3: los campos de la revisión solo los cambia el servidor ──────────────────────────
   const eve = await acc.newUser('eve', 'gardener');
   await rest('POST', '/rest/v1/gardener_applications', eve.token, { user_id: eve.id, status: 'draft', full_name: 'Eve', review_comment: 'aprobada', reviewer_id: eve.id });
-  await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${eve.id}`, eve.token, { status: 'submitted', reviewed_at: new Date().toISOString(), review_comment: 'ok', reviewer_id: eve.id });
+  await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${eve.id}`, eve.token, { reviewed_at: new Date().toISOString(), review_comment: 'ok', reviewer_id: eve.id });
   const self = await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${eve.id}`, eve.token, { status: 'approved' });
   const forge = await rest('POST', '/rest/v1/gardener_application_reviews', eve.token, { application_id: ana.appId, user_id: eve.id, status: 'rejected', review_comment: 'x' });
   record('GR-08', 'El solicitante no puede escribir quién le revisó ni el comentario, ni aprobarse, ni inventarse un histórico',
-    appOf(eve.id).startsWith('submitted|Eve|-|-|') && self.rows.length === 0 && !forge.ok,
+    appOf(eve.id).startsWith('draft|Eve|-|-|') && self.rows.length === 0 && !forge.ok,
     `solicitud [${appOf(eve.id)}], aprobarse ${self.rows.length}, histórico falso ${forge.status}`);
+  // ── PH-18: el envío lo comprueba el servidor ───────────────────────────────────────────────
+  const half = await acc.newUser('a-medias', 'gardener');
+  await rest('POST', '/rest/v1/gardener_applications', half.token, { user_id: half.id, status: 'draft', full_name: 'A medias', phone: '123' });
+  const direct = await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${half.id}`, half.token, { status: 'submitted' });
+  const empty = await rpc('submit_gardener_application', {}, half.token);
+  await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${half.id}`, half.token, {
+    phone: '+34 600 12 34 56', city_zone: 'Mijas', professional_photo_url: 'https://example.com/f.jpg', services: ['Poda de setos'],
+    tools_available: ['Tijeras'], experience_years: 2, experience_description: 'Setos', declaration_truth: true, accept_terms: true,
+  });
+  const full = await rpc('submit_gardener_application', {}, half.token);
+  const twice = await rpc('submit_gardener_application', {}, half.token);
+  record('GR-09', 'Enviar el alta: ya no se puede desde el navegador a mano; el servidor dice qué falta; completa, se envía (y repetir no da error)',
+    direct.rows.length === 0 && !empty.ok && /Falta: .*teléfono válido.*foto de perfil.*servicios.*herramientas.*experiencia.*declaraciones/.test(empty.body?.message || '')
+      && full.ok && twice.ok && appOf(half.id).startsWith('submitted|A medias|'),
+    `a mano ${direct.rows.length} filas, incompleta «${empty.body?.message}», completa ${full.status}${why(full)}, otra vez ${twice.status}`);
 }
 
 await runVerification({ acc, results, main });

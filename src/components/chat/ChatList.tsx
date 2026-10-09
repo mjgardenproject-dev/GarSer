@@ -110,7 +110,7 @@ const ChatList: React.FC = () => {
         return {
           booking_id: booking.id,
           service_name: bookingServiceLabel(booking as never) || 'Servicio',
-          other_user_name: namesMap[otherUserId] || (isClient ? 'Jardinero' : 'Cliente'),
+          other_user_name: namesMap[otherUserId] || (isClient ? 'Profesional' : 'Cliente'),
           other_user_id: otherUserId,
           date: booking.date,
           start_time: booking.start_time,

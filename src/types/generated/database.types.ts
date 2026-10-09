@@ -3516,6 +3516,10 @@ export type Database = {
       }
       shares_booking_with: { Args: { target_user: string }; Returns: boolean }
       signup_role_from_metadata: { Args: { p_meta: Json }; Returns: string }
+      submit_gardener_application: {
+        Args: never
+        Returns: Json
+      }
       submit_company_application: {
         Args: { p_application_id: string }
         Returns: Json

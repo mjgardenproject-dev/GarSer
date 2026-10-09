@@ -25,7 +25,7 @@
 | PH-07 | 9 pruebas de preparación de servicios fallan porque están desactualizadas | Media (se pierde una red de seguridad) | H-27 | Ponerlas al día | ✅ Hecho (2026-10-09) |
 | PH-08 | Al aceptar otra fecha con cambio de persona, a quien va le llegan dos correos | Baja | Visto en F4 | Técnica (ver punto) | ✅ Hecho (2026-10-09), por desplegar |
 | PH-09 | El historial de migraciones del Supabase **local** está desalineado | Baja (solo entorno) | Visto en F3 | Técnica | ✅ Cerrado (2026-10-09): no se reproduce |
-| PH-10 | `02-HALLAZGOS.md` tiene hallazgos resueltos todavía marcados como abiertos | Baja (documentación) | `01-PLAN` §5c.6 | — | Por corregir |
+| PH-10 | `02-HALLAZGOS.md` tiene hallazgos resueltos todavía marcados como abiertos | Baja (documentación) | `01-PLAN` §5c.6 | — | ✅ Hecho (2026-10-09) |
 | PH-11 | `booking_items` no se actualiza tras un cambio de precio | Vigilado (sin efecto hoy) | H-36 | Sin acción (regla) | Vigilado |
 | PH-12 | Las solicitudes a varios jardineros siguen desactivadas | Informativo | H-20 | Sin acción | Informativo |
 | PH-13 | Tareas de cierre del proyecto (datos de prueba, Stripe real, encuesta) | Operativo | `01-PLAN` §5c | Encuesta: dada por buena | En parte |

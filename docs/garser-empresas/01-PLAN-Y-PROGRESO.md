@@ -5,10 +5,9 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **✅ FUSIONADO EN PRODUCCIÓN (2026-09-25): BD, funciones y web (#35); H-35 arreglado (#36, #37) · en curso: batería P- (03-PRUEBAS §3)** · ⏸ HITO tras F5 · D7 en borrador para validar
-**Última actualización:** 2026-09-24
-**Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
-
+**Estado global:** ✅ F0–F9 en producción desde la fusión (#35, 2026-09-25) · ✅ prueba real F1–F8 en producción (#41, 2026-09-29) · ✅ pendientes A–G (`07-PROCEDIMIENTO-CORRECCION.md`) hechos en local el 2026-10-09, rama `fix/pendientes-ph` · **en curso: fase H (despliegue y pruebas en garser.es)** · después: guía de pruebas de `06` §3, limpieza y Stripe en real
+**Última actualización:** 2026-10-09
+**Línea base de tests:** 953 en verde / 118 ficheros · `tsc` 128 · 27 baterías de Empresas (300) · 7 de servicios (269)
 ---
 
 ## 0. Cómo se entrega este proyecto
@@ -815,6 +814,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-10-09 | Pendientes D | **Fase D cerrada** (`07` §4): «profesional» para el cliente (PH-03, A-53); servicios del perfil público por su nombre; alta de jardinero validada en el servidor (PH-18, A-54, D29). | 951 ✅ · build ✅ · tsc 128 · 26 baterías 294/294 | `569c8d1` `1bf4b7e` |
 | 2026-10-09 | Pendientes E | **Fase E cerrada** (`07` §4): aviso en el panel y correos al suspender y reactivar (PR-02, A-55, D30). | 953 ✅ · build ✅ · tsc 128 · 27 baterías 300/300 | `8c5f902` |
 | 2026-10-09 | Pendientes F | **Fase F cerrada**: PH-09 cerrado, PH-07 (readiness 7/7, 269), PH-06 (`ARCHITECTURE.md`). | readiness 269 ✅ | `bc04bdf` `5de4cd6` |
+| 2026-10-09 | Pendientes G | **Fase G cerrada** (PH-10): estados de `02` (H-02, H-03, H-06, H-11, H-17, H-21, H-22) y §3 «Sospechas» al día; estado global actualizado. | — | (este commit) |
 
 ---
 
@@ -942,6 +942,7 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 2l. **Fase F hecha (2026-10-09):** PH-09 cerrado (no se reproduce), las 7 baterías de servicios al día (PH-07, 269
    comprobaciones) y `ARCHITECTURE.md` reescrito a partir del código (PH-06; lo revisa el usuario en la PR). Nada que
    desplegar.
+2m. **Fase G hecha (2026-10-09):** documentación al día (PH-10). Siguiente: fase H.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).
@@ -956,8 +957,9 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 5. **Antes de clientes reales (fuera del proyecto, pero bloquea «producción»):** Stripe de
    producción está en **modo prueba** (`pk_test_`): cambiar a claves `live` y al secreto del
    webhook de modo real, y repetir P-F1-1 con un pago real.
-6. **Documentos:** marcar como cerrados H-02, H-03 y H-06 (los resolvieron F7, F1 y F0), estado
-   global «Terminado» y la fila final del registro.
+6. ~~**Documentos:** marcar como cerrados H-02, H-03 y H-06 (los resolvieron F7, F1 y F0), estado
+   global «Terminado» y la fila final del registro.~~ **Hecho (2026-10-09, PH-10):** estados de `02` al día y estado
+   global actualizado; «Terminado» y la fila final, al acabar la fase H y la guía de pruebas.
 
 Fuera de alcance, anotado para después: H-13 («Mi cuenta» actualiza la columna equivocada), H-27
 (9 fallos antiguos en las baterías de preparación de servicios), H-07 (`ARCHITECTURE.md`

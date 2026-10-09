@@ -69,7 +69,7 @@ la lee `generate_recurring_slots`. Retirarla del todo queda para cuando se const
 
 ---
 
-### H-02 · El tope de 12 horas está replicado en siete funciones SQL — 🔴 Afecta a F7
+### H-02 · El tope de 12 horas está replicado en siete funciones SQL — 🟢 Resuelto en F7 (jornada y mano de obra separadas, A-40) · en producción
 
 **Evidencia.** `IF p_duration_hours IS NULL OR p_duration_hours < 1 OR p_duration_hours > 12`:
 
@@ -100,7 +100,7 @@ Levantar el tope habría obligado a revisar siete funciones críticas de dinero 
 
 ---
 
-### H-03 · `resize_booking_schedule()` es una tercera función que escribe la agenda — 🟠 Afecta a F1
+### H-03 · `resize_booking_schedule()` es una tercera función que escribe la agenda — 🟢 Resuelto en F1 (ver H-17) · en producción
 
 **Evidencia.** `supabase/migrations/20260913121000_price_change_duration_change.sql`.
 Es de **2026-09-13**, posterior a la auditoría de arquitectura.
@@ -154,7 +154,7 @@ un fichero, y ni siquiera lee la tabla. Reduce mucho el riesgo estimado de esa f
 
 ---
 
-### H-06 · El rol se resuelve desde cinco fuentes — 🔴 Bloquea todo · Es la F0
+### H-06 · El rol se resuelve desde cinco fuentes — 🟢 Resuelto en F0 (`profiles.role`) · en producción
 
 8 apariciones de `signup_role` / `user_metadata.role` / `requested_role` en `src/App.tsx`,
 más las de `src/components/auth/AuthForm.tsx`.
@@ -218,7 +218,7 @@ la F0 introduce uno solo en ese fichero, es regresión suya, no deuda heredada.
 
 ---
 
-### H-11 · Cualquier usuario nuevo puede darse el rol de administrador — 🔴🔴 CRÍTICO · Resuelto en local (F0), pendiente en producción hasta la fusión
+### H-11 · Cualquier usuario nuevo puede darse el rol de administrador — 🔴🔴 CRÍTICO · 🟢 Resuelto en F0 · en producción desde la fusión (#35)
 
 **Reproducido en local el 2026-09-23**, sobre una BD reconstruida con las mismas 113
 migraciones que producción:
@@ -341,7 +341,7 @@ errores de `tsc`. Con `useAccount()` queda resuelto (`tsc` 130 → 129) y probad
 
 ---
 
-### H-17 · No eran tres funciones las que escriben la agenda: eran cinco — 🟢 Resuelto en F1
+### H-17 · No eran tres funciones las que escriben la agenda: eran cinco — 🟢 Resuelto en F1 · en producción
 
 El plan decía «actualizar `reserve_`, `release_` y `resize_booking_schedule`». La consulta a
 las definiciones **vivas** de la BD (no a las migraciones) dio cinco escritoras de
@@ -393,7 +393,7 @@ Relevante para F5: la asignación de empleados probablemente reutilice `reserve`
 
 ---
 
-### H-21 · Cualquiera podía darse de alta como jardinero sin aprobación, y un jardinero podía aprobarse el carnet — 🔴🔴 CRÍTICO · Resuelto en F2 (local), pendiente en producción hasta la fusión
+### H-21 · Cualquiera podía darse de alta como jardinero sin aprobación, y un jardinero podía aprobarse el carnet — 🔴🔴 CRÍTICO · 🟢 Resuelto en F2 · en producción desde la fusión (#35)
 
 **Reproducido en local el 2026-09-24**, con las mismas migraciones que producción:
 
@@ -431,7 +431,7 @@ comprobar que nadie lo ha aprovechado (consulta en `01-PLAN-Y-PROGRESO.md` §6).
 
 ---
 
-### H-22 · Un jardinero podía crear su licencia fitosanitaria ya aprobada — 🔴 Resuelto en F3.1 (local), pendiente en producción hasta la fusión
+### H-22 · Un jardinero podía crear su licencia fitosanitaria ya aprobada — 🔴 🟢 Resuelto en F3.1 · en producción desde la fusión (#35)
 
 **Reproducido en local el 2026-09-24:** el jardinero de la semilla hizo `POST
 /rest/v1/gardener_licenses` con `status: 'approved'`, `expires_at: 2035-01-01` y `reviewed_at`
@@ -835,36 +835,30 @@ esta es la respuesta.
 ## 3. Sospechas sin verificar
 
 Cosas que parecen problemas pero **no se han comprobado**. No se citan como hechos.
+(Revisado el 2026-10-09, PH-10: las ya comprobadas se marcan y se dice dónde.)
 
-- **¿Hay solapes en `booking_blocks` en producción?** Si los hay, el índice único de F1 fallará
-  al crearse. **Hay que consultarlo antes de migrar.** El MCP de Supabase conecta, pero al **local**:
-  la consulta tiene que hacerse contra producción, desde su panel.
 - **¿Está `availability_blocks` realmente poblada y coherente con `availability`?** Si se elige
   la opción A de H-01, da igual. Si se elige la B, hay que auditarlo antes.
-- **¿Qué pasa con las reservas de difusión (`booking_requests`) cuando el que responde es una
-  empresa?** El flujo debería funcionar sin cambios, pero no se ha leído
-  `create_broadcast_booking_requests` con esa pregunta en mente.
-
----
-
-- **¿Funciona «volver a intentarlo» de un jardinero rechazado?** `GardenerStatusPage.tsx`
-  hace `update(status: 'draft')` sobre su solicitud **rechazada** y luego `delete`. Pero la
-  policy `applications_own_update` solo deja actualizar filas en `draft`, y no hay policy de
-  `DELETE`: ambas operaciones afectarían a 0 filas sin error. **No verificado** (fuera de
-  este proyecto). La empresa no copia ese patrón: al corregir abre un borrador nuevo.
 - **¿Sale el aviso «confirma tu correo» tras registrarse?** En local (donde el correo se confirma
   solo) el formulario se vació sin mostrar el aviso. No se ha comprobado en producción. Es
   código anterior a este proyecto (`AuthForm`); se mira en P-F3-6.
-- **El registro desde una invitación dice «Rol seleccionado: Cliente · Este rol será permanente
-  tras el registro»**, y en realidad pasará a empleado al aceptar. No es un fallo (se registra
-  como cliente a propósito, A-22), pero confunde. Pulir al tocar `AuthForm`.
-- **«Hace 1 hora» en una solicitud recién creada** (pantalla de solicitudes del profesional,
-  visto en el hito). Parece un desfase de zona horaria en el cálculo relativo; afectaría también
-  a autónomos. No verificado.
 - **Una prueba escrita como «foto» y no como regla (F2-01)** falló al existir la primera
   empresa: decía «todas las fichas son `solo`». Se reescribió como la regla permanente
   («toda ficha sin empresa es `solo` y toda `company` tiene su empresa»). Lección para las
   próximas pruebas: comprobar invariantes, no el estado del momento.
+
+**Ya comprobadas (2026-10-09):**
+
+- ~~¿Hay solapes en `booking_blocks` en producción?~~ El índice único de F1 se creó en producción
+  al fusionar (#35): no los había.
+- ~~¿Qué pasa con las reservas de difusión cuando responde una empresa?~~ El camino
+  (`create_broadcast_booking_requests`) está desactivado desde mayo: no se puede llegar. Ver PH-12.
+- ~~¿Funciona «volver a intentarlo» de un jardinero rechazado?~~ No funcionaba (verificado):
+  corregido en PH-02 (fase B, A-50).
+- ~~El registro desde una invitación dice «Rol seleccionado: Cliente»~~ Ya no aplica: desde D21 la
+  invitación tiene su propia alta (`company-invitation-signup`).
+- ~~«Hace 1 hora» en una solicitud recién creada~~ Era la zona horaria: corregido en R-06d
+  (`receivedAgo`).
 
 ## 4. Cómo añadir un hallazgo
 

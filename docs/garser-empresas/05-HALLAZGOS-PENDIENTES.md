@@ -16,10 +16,10 @@
 
 | # | Qué pasa | Gravedad | Origen | Decisión | Estado |
 |---|---|---|---|---|---|
-| PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | Por corregir |
+| PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | En curso (fase A) |
 | PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | Por corregir |
 | PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | Por corregir |
-| PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | Por corregir |
+| PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | En curso (fase A) |
 | PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | Baja (seguridad, solo le afecta a él) | Visto en F3 | Cerrarlo | Por corregir |
 | PH-06 | `ARCHITECTURE.md` describe un sistema que ya no existe | Media (despista) | H-07 | Reescribirlo | Por corregir |
 | PH-07 | 9 pruebas de preparación de servicios fallan porque están desactualizadas | Media (se pierde una red de seguridad) | H-27 | Ponerlas al día | Por corregir |
@@ -29,6 +29,10 @@
 | PH-11 | `booking_items` no se actualiza tras un cambio de precio | Vigilado (sin efecto hoy) | H-36 | Sin acción (regla) | Vigilado |
 | PH-12 | Las solicitudes a varios jardineros siguen desactivadas | Informativo | H-20 | Sin acción | Informativo |
 | PH-13 | Tareas de cierre del proyecto (datos de prueba, Stripe real, encuesta) | Operativo | `01-PLAN` §5c | Encuesta: dada por buena | En parte |
+| PH-14 | Storage: cualquiera con sesión lista y descarga fotos de reserva y de chat de otros; sin sesión se listan los ficheros de solicitud de todos | **Crítica** (datos personales, en producción) | Fase A, paso 3 | Corregir en la fase A (usuario, 2026-10-09) | En curso (fase A) |
+| PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | En curso (fase A) |
+| PH-16 | `booking-photos` es público en producción y privado en local; las imágenes del chat se enseñan con URL pública | Media (datos personales; el enlace es la única llave) | Fase A, paso 3 | — | Apuntado |
+| PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | Apuntado (fase H) |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -84,6 +88,66 @@ lógica segura del admin (F6, D23):
   - Otro usuario no puede dar de baja a nadie más que a sí mismo.
 - Unitaria: la foto se guarda.
 - Navegador local: los tres casos desde «Mi cuenta».
+
+#### Seguimiento (2026-10-09) — fase A, junto con PH-04
+
+1. **Leído.** Las citas siguen en su sitio: `MyAccount.tsx:69` (foto) y `:115` («Cerrar
+   cuenta») hacen `.eq('id', user.id)`. La carga del perfil (`:39`) ya busca por `id` o por
+   `user_id`. Decisión: baja real con comprobaciones, hecha por el propio usuario.
+2. **¿Es cierto?** Sí. Script con una cuenta desechable contra la base local
+   (`repro-ph01.mjs`, en la carpeta de borradores):
+   - La foto como la guarda la web: 200 con 0 filas y `avatar_url` sigue `NULL`.
+   - «Cerrar cuenta» como la web: 200 con 0 filas, y nombre, teléfono y dirección intactos.
+   - Después de «cerrar», la cuenta sigue entrando.
+   - Con `user_id` sí se toca la fila.
+   - De paso: el usuario **no** puede subirse el rol a admin, porque lo para un *trigger*
+     («No tienes permisos para modificar el rol»).
+3. **Casos parecidos.**
+   - **El mismo `.eq('id', …)` sobre `profiles`:**
+     - En la web solo estos dos. `ProfileSettings.tsx:697` y `EmployeeHomePage.tsx:83` ya usan
+       `user_id`.
+     - En las funciones: `_shared/bookingEmailDetails.ts:80` busca el nombre por `id`. Por eso
+       los correos de reserva nunca llevan nombre. Pasa a **PH-15**.
+     - En las reglas de Storage, las 4 de `marketing-assets` comparan `p.id = auth.uid()`: el
+       admin nunca pasa (en local y en producción). Hoy no hay pantalla que suba ahí, pero la
+       regla está mal: se corrige con `is_admin()`.
+   - **Ficheros (PH-04):**
+     - `applications` (público): `<user>/avatar`, `<user>/proof` y `<user>/certs`, que suben el
+       alta y «Mi cuenta».
+     - `private_licenses`: `<user>/…`, el carnet.
+     - `booking-photos`: `drafts/<user>/…` (fotos de la reserva) y `chat/<reserva>/<user>/…`.
+     - Hoy no se sube ningún logo ni foto de empresa.
+   - **Permisos de Storage, con dos cuentas desechables (`repro-storage.mjs`):**
+     - B lista y descarga la foto de borrador de A (200).
+     - B lista las carpetas de borradores de todos.
+     - Un anónimo lista los ficheros de solicitud de A.
+     - El carnet sí está protegido: B recibe 400.
+     - Pasa a **PH-14**.
+   - **Producción, solo lectura, con permiso del usuario:**
+     - Las mismas reglas.
+     - Además, `booking-photos` es **público** allí (en local no): pasa a **PH-16**.
+     - Quedan **273 de 281** ficheros de solicitud de **49 cuentas ya borradas**, y 10 de 11
+       fotos de reserva o chat de 7 cuentas borradas: pasa a **PH-17**.
+     - Solo hay 9 cuentas. Ningún dato personal se ha mostrado; solo recuentos.
+     - Lo confirma también la batería local: tras borrar las cuentas de prueba, sus 3 ficheros
+       siguen en Storage.
+   - **Datos personales que la baja con historial deja hoy** (columnas de `public`):
+     - Las coordenadas del cliente en `bookings`, `booking_quotes` y `maintenance_plans`. Se
+       borra la dirección escrita, pero no el punto en el mapa.
+     - `booking_requests.client_address` y `notes`.
+     - Su correo real en `company_invitations` (si le invitaron), y los correos de los
+       invitados pendientes de su empresa.
+     - `push_subscriptions`.
+     - Número y fichero del carnet en `gardener_licenses`.
+     - Los chats se conservan por decisión (PR-05).
+   - **Tipos de cuenta:** cliente, autónomo, dueño de empresa y empleado usan la misma «Mi
+     cuenta». El admin no se da de baja desde aquí (lo bloquea `account_closure_plan`).
+4. **Hallazgos nuevos.**
+   - PH-14 y PH-15: preguntados, se corrigen en esta fase (respuesta del 2026-10-09).
+   - PH-16 y PH-17: apuntados. PH-17 se limpia en la fase H, con permiso.
+   - Las reglas de `marketing-assets` y los restos de datos personales del punto 3: claros y
+     del mismo tema, se corrigen en esta fase.
+5. **Comprobado:** pendiente.
 
 ### PH-02 — Un jardinero rechazado no puede volver a solicitar
 
@@ -309,6 +373,55 @@ añadir la fila final del registro.
 | Limpiar los datos de prueba de producción (reservas y cuentas de prueba) | Pendiente, al terminar las pruebas en garser.es (ver `06`). Se hará con la herramienta de bajas de F6. |
 | **Stripe en claves reales** (`pk_live`, secreto del webhook de modo real) y repetir un pago real | Pendiente, **antes de tener clientes reales**. Lo hace el usuario en el panel de Stripe y en los secretos. |
 | Revisar los 128 errores de `tsc` (anteriores al proyecto) | Fuera de alcance. No son señal de regresión (H-10). |
+
+### PH-14 — Storage deja ver ficheros de otros (fase A, paso 3) · seguridad
+
+- `booking_photos_select_auth` deja **leer y listar todo** `booking-photos` a cualquier usuario
+  con sesión: fotos de los jardines (`drafts/<user>/…`) e imágenes de chat
+  (`chat/<reserva>/<user>/…`).
+- `Public Read Applications` deja **listar sin sesión** todo `applications`: fotos de perfil, de
+  prueba de trabajos y certificados de cada solicitante.
+- Comprobado en local con dos cuentas desechables y, en producción, leyendo las reglas: son las
+  mismas.
+- **Decisión (usuario, 2026-10-09): corregirlo en la fase A.** Cada fichero lo ven solo:
+  - su dueño;
+  - quien comparte esa reserva (cliente, proveedor y quien va);
+  - el admin.
+  Los enlaces públicos que ya existen (fotos de perfil y de la solicitud) siguen funcionando,
+  porque el depósito sigue siendo público. Lo que se cierra es poder listarlo todo.
+
+### PH-15 — Los correos de reserva no llevan nombres (fase A, paso 3)
+
+- `resolveRecipient` (`_shared/bookingEmailDetails.ts:80`) busca `profiles` por `id`. Como
+  nunca coincide, el nombre sale vacío y los correos dicen «¡Gracias, cliente!», «Hola
+  jardinero» y «El profesional ha aceptado tu reserva».
+- **Decisión (usuario, 2026-10-09): el nombre de la ficha.**
+  - El cliente, por su nombre (`profiles.full_name`).
+  - El profesional, por el de su ficha (`gardener_profiles.full_name`): para una empresa, su
+    nombre comercial, no el del dueño (H-31).
+- Toca `send-email-notification` y `booking-confirmation-email`: **hay que redesplegarlas**.
+
+### PH-16 — `booking-photos` público en producción (fase A, paso 3)
+
+- En producción `storage.buckets.public = true` para `booking-photos`; en local es `false`. Lo
+  hizo alguien a mano, porque ninguna migración lo cambia.
+- El chat enseña sus imágenes con `getPublicUrl` (`src/utils/chatService.ts:104`), así que
+  depende de que sea público. En local las imágenes del chat no se ven.
+- Con PH-14 ya nadie puede listar, pero quien tenga el enlace de una foto la ve sin sesión.
+- **Propuesta:** pasar el chat a enlaces firmados (como las fotos de reserva,
+  `bookingPhotoPipeline.ts:102`) y volver a hacer privado el depósito. Es un cambio aparte,
+  **pendiente de decisión**.
+
+### PH-17 — Ficheros de cuentas ya borradas en producción (fase A, paso 3)
+
+- Recuento del 2026-10-09, solo lectura:
+  - `applications`: 273 de 281 ficheros son de 49 cuentas que ya no existen.
+  - `booking-photos`: 10 de 11, de 7 cuentas.
+  - `private_licenses`: 2 marcadores vacíos de cuentas borradas.
+- Son de las bajas hechas desde el panel de Supabase antes de F6, y están en depósitos
+  públicos.
+- **Propuesta:** en la fase H, tras la copia de seguridad, borrarlos con un script que solo toque
+  carpetas cuyo usuario no exista. **Es un borrado permanente: se pide permiso antes.**
 
 ---
 

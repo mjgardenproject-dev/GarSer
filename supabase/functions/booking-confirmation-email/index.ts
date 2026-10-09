@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
         // Prueba real · F7: la misma noticia, al móvil (si la tiene activada).
         await pushForEmail(admin, recipient.email, subject, opts.intro || '', opts.cta?.url);
         if (mock) {
-          console.log(`MOCK EMAIL (${role}) -> ${recipient.email} | ${subject}`);
+          console.log(`MOCK EMAIL (${role}) -> ${recipient.email} | ${subject} | ${opts.heading}`);
           results.push({ bookingId, role, status: 'mock', to: recipient.email });
           return;
         }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { safeRedirectPath } from '../../utils/postLoginPath';
+import { ACCOUNT_CLOSED_MESSAGE, consumeAccountClosed } from '../../utils/selfAccountClosure';
 
 // R-06: la sesión se ha cerrado sin que el usuario lo pidiera en esta pestaña (desde otro
 // dispositivo o pestaña, o porque caducó). Antes la web le sacaba sin decir nada y parecía un
@@ -14,6 +15,11 @@ export const SESSION_ENDED_MESSAGE =
 const SessionEndedNotice: React.FC = () => {
   const { sessionEndedAt, clearSessionEnded } = useAuth();
   const navigate = useNavigate();
+
+  // PH-01: quien acaba de cerrar su cuenta llega aquí tras la recarga a /auth.
+  useEffect(() => {
+    if (consumeAccountClosed()) toast.success(ACCOUNT_CLOSED_MESSAGE, { id: 'account-closed', duration: 8000 });
+  }, []);
 
   useEffect(() => {
     if (!sessionEndedAt) return;

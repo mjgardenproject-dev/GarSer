@@ -71,14 +71,24 @@ const BOOKING_COLUMNS =
 // deno-lint-ignore no-explicit-any
 type AdminClient = any;
 
-async function resolveRecipient(admin: AdminClient, userId: string | null): Promise<BookingEmailRecipient> {
+// PH-15: el nombre se buscaba con `profiles.id`, que nunca es el usuario (la clave es `user_id`),
+// así que los correos salían siempre sin nombre («Hola jardinero»). Al cliente se le nombra por
+// su perfil; al profesional, por su ficha: para una empresa, su nombre comercial y no el del
+// dueño (H-31).
+async function resolveRecipient(admin: AdminClient, userId: string | null, kind: 'client' | 'provider'): Promise<BookingEmailRecipient> {
   if (!userId) return { email: null, name: '' };
   let email: string | null = null;
   const { data: userData } = await admin.auth.admin.getUserById(userId);
   if (userData?.user?.email) email = userData.user.email;
   let name = '';
-  const { data: profile } = await admin.from('profiles').select('full_name').eq('id', userId).single();
-  if (profile?.full_name) name = profile.full_name;
+  if (kind === 'provider') {
+    const { data: card } = await admin.from('gardener_profiles').select('full_name').eq('user_id', userId).maybeSingle();
+    name = String(card?.full_name || '').trim();
+  }
+  if (!name) {
+    const { data: profile } = await admin.from('profiles').select('full_name').eq('user_id', userId).maybeSingle();
+    name = String(profile?.full_name || '').trim();
+  }
   return { email, name };
 }
 
@@ -118,8 +128,8 @@ export async function buildBookingEmailDetails(
   const address = booking.client_address || 'Dirección indicada en la reserva';
   const amounts = getBookingAmounts(booking);
   const [client, gardener] = await Promise.all([
-    resolveRecipient(admin, booking.client_id),
-    resolveRecipient(admin, booking.gardener_id),
+    resolveRecipient(admin, booking.client_id, 'client'),
+    resolveRecipient(admin, booking.gardener_id, 'provider'),
   ]);
 
   const base: DetailPair[] = [

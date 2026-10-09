@@ -20,6 +20,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isInternalServiceCaller, resolveServiceRoleKey } from '../_shared/functionAuth.ts';
 import { cleanupBookingMedia } from '../_shared/bookingMediaCleanup.ts';
+import { retryPendingAccountStorageCleanup } from '../_shared/accountClosure.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -405,6 +406,8 @@ Deno.serve(async (req) => {
     ['stuckPayments', (a: unknown) => reconcileStuckPayments(a, stripeSecret)],
     ['phytosanitaryLicenses', (a: unknown) => expirePhytosanitaryLicenses(a)],
     ['maintenanceNotifications', (a: unknown) => sendMaintenanceNotifications(a, supabaseUrl, serviceKey)],
+    // PH-04: ficheros de cuentas dadas de baja que no se pudieron borrar al momento.
+    ['accountStorageCleanup', (a: unknown) => retryPendingAccountStorageCleanup(a)],
   ] as const) {
     try {
       result[name] = await job(admin);

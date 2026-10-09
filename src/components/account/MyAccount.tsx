@@ -9,6 +9,11 @@ import { Camera, Lock, Trash2, Copy, AlertTriangle, CheckCircle2, UploadCloud, L
 import { useNavigate } from 'react-router-dom';
 import AppHeader from '../common/AppHeader';
 import InstallAppPrompt from '../common/InstallAppPrompt';
+import { useConfirmDialog } from '../common/ConfirmDialog';
+import {
+  closeOwnAccount, describeClosureBlockers, describeClosureOutcome, fetchSelfClosurePlan, markAccountClosed,
+  type SelfClosurePlan,
+} from '../../utils/selfAccountClosure';
 
 function MyAccount() {
   const { user, signOut, signOutEverywhere } = useAuth();
@@ -23,6 +28,8 @@ function MyAccount() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [closurePlan, setClosurePlan] = useState<SelfClosurePlan | null>(null);
+  const { openConfirm, confirmDialog } = useConfirmDialog();
 
   useEffect(() => {
     setAvatarPreview(null);
@@ -63,11 +70,15 @@ function MyAccount() {
       if (uploadError) throw uploadError;
       const { data } = await supabase.storage.from('applications').getPublicUrl(path);
       const publicUrl = data.publicUrl;
-      const { error: updateError } = await supabase
+      // PH-01: la clave es `user_id` (con `id` no se tocaba ninguna fila y decía «actualizada»), y
+      // se comprueba que de verdad se ha guardado.
+      const { data: saved, error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
-        .eq('id', user.id);
+        .eq('user_id', user.id)
+        .select('user_id');
       if (updateError) throw updateError;
+      if (!saved?.length) throw new Error('No se ha podido guardar la foto. Vuelve a intentarlo.');
       setAvatarPreview(publicUrl);
       setMyProfile((prev: any) => ({ ...(prev || {}), avatar_url: publicUrl }));
       toast.success('Foto de perfil actualizada');
@@ -103,24 +114,44 @@ function MyAccount() {
     }
   };
 
-  const closeAccount = async () => {
+  // PH-01: baja real (la misma que la del admin, F6). Antes actualizaba una columna equivocada desde
+  // el navegador y decía «Cuenta cerrada» sin tocar nada. Primero el análisis del servidor: qué lo
+  // impide o qué pasará; después la confirmación, y al final fuera la sesión.
+  const reviewClosure = async () => {
     if (!user?.id) return;
-    const confirmed = window.confirm('¿Seguro que quieres cerrar tu cuenta? Esta acción elimina tus datos del perfil y te desconecta.');
-    if (!confirmed) return;
     setClosing(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: '', phone: '', address: '', avatar_url: null })
-        .eq('id', user.id);
-      if (error) throw error;
-      await signOut();
-      toast.success('Cuenta cerrada');
+      setClosurePlan(await fetchSelfClosurePlan());
     } catch (e: any) {
-      toast.error(e?.message || 'Error al cerrar la cuenta');
+      toast.error(e?.message || 'No se ha podido revisar tu cuenta.');
     } finally {
       setClosing(false);
     }
+  };
+
+  const confirmClosure = () => {
+    const mode = closurePlan?.mode;
+    if (mode !== 'delete' && mode !== 'deactivate') return;
+    openConfirm({
+      title: '¿Cerrar tu cuenta para siempre?',
+      message: describeClosureOutcome(closurePlan!).join(' '),
+      confirmLabel: 'Cerrar mi cuenta',
+      cancelLabel: 'No, mantenerla',
+      tone: 'danger',
+      onConfirm: async () => {
+        setClosing(true);
+        try {
+          await closeOwnAccount(mode);
+          markAccountClosed();
+          await signOut();
+        } catch (e: any) {
+          toast.error(e?.message || 'No se ha podido cerrar tu cuenta.');
+          await reviewClosure();
+        } finally {
+          setClosing(false);
+        }
+      },
+    });
   };
 
   // Tipo de cuenta desde profiles.role (F0 de GarSer Empresas), no desde user_metadata.
@@ -239,14 +270,58 @@ function MyAccount() {
             <Trash2 className="w-5 h-5 text-red-600 mr-2" />
             <div className="text-lg font-semibold text-gray-900">Cerrar cuenta</div>
           </div>
-          <p className="text-sm text-gray-700 mb-3">Elimina tus datos del perfil y te desconecta. Para borrado completo del usuario, se requiere validación administrativa.</p>
-          <button
-            onClick={closeAccount}
-            disabled={closing}
-            className="px-3 py-3 sm:py-2 bg-red-600 text-white rounded-lg text-sm font-medium"
-          >
-            Cerrar cuenta
-          </button>
+          {!closurePlan && (
+            <>
+              <p className="text-sm text-gray-700 mb-3">
+                Antes de cerrarla te diremos si tienes algo pendiente y qué se borra.
+              </p>
+              <button
+                onClick={reviewClosure}
+                disabled={closing}
+                aria-busy={closing}
+                className="min-h-11 px-3 py-3 sm:py-2 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                {closing ? 'Revisando…' : 'Cerrar cuenta'}
+              </button>
+            </>
+          )}
+          {closurePlan?.mode === 'blocked' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" aria-live="polite">
+              <p className="flex items-center gap-1.5 font-semibold"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" /> Aún no puedes cerrar tu cuenta</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
+                {describeClosureBlockers(closurePlan).map((line) => <li key={line}>{line}</li>)}
+              </ul>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button onClick={() => navigate('/bookings')} className="min-h-11 rounded-lg bg-white px-3 text-sm font-medium text-gray-800 ring-1 ring-gray-300">
+                  Ver mis reservas
+                </button>
+                <button onClick={() => setClosurePlan(null)} className="min-h-11 rounded-lg px-3 text-sm font-medium text-gray-700">
+                  Volver
+                </button>
+              </div>
+            </div>
+          )}
+          {(closurePlan?.mode === 'delete' || closurePlan?.mode === 'deactivate') && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900" aria-live="polite">
+              <p className="font-semibold">Esto es lo que pasará</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
+                {describeClosureOutcome(closurePlan).map((line) => <li key={line}>{line}</li>)}
+              </ul>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={confirmClosure}
+                  disabled={closing}
+                  aria-busy={closing}
+                  className="min-h-11 rounded-lg bg-red-600 px-3 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {closing ? 'Cerrando…' : 'Cerrar mi cuenta'}
+                </button>
+                <button onClick={() => setClosurePlan(null)} disabled={closing} className="min-h-11 rounded-lg bg-white px-3 text-sm font-medium text-gray-800 ring-1 ring-gray-300">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       {showPasswordResetModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -294,6 +369,7 @@ function MyAccount() {
         </div>,
         document.body
       )}
+      {confirmDialog}
       </div>
       </div>
     </div>

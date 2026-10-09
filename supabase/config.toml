@@ -76,3 +76,8 @@ verify_jwt = false
 # su rol por sí misma (como las demás con verify_jwt = false).
 [functions.admin-account-closure]
 verify_jwt = false
+
+# Pendientes (PH-01): el propio usuario cierra su cuenta. La función saca el usuario del token y
+# solo actúa sobre él.
+[functions.account-closure]
+verify_jwt = false

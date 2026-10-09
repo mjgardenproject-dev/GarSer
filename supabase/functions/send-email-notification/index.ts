@@ -18,7 +18,7 @@
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, escapeHtml, formatBookingDate, formatBookingWhen } from '../_shared/emailBrand.ts';
+import { BRAND, renderBrandedEmail, renderPlainText, detailRows, sendViaBrevo, formatBookingDate, formatBookingWhen } from '../_shared/emailBrand.ts';
 
 // GarSer Empresas (F8): «Corte de césped + Poda de setos» si la reserva lleva varios servicios;
 // si no, el nombre del servicio de siempre.
@@ -512,8 +512,8 @@ Deno.serve(async (req) => {
         pairs = [['Servicio', serviceName], ['Cuándo', when], ['Con', providerName], ['Precio', euros(plan.total_price)], ['Pagas ahora (gestión)', euros(fee)]];
         opts = {
           title: subject,
-          heading: `Hola ${escapeHtml(first)}`,
-          intro: `Toca la siguiente visita de tu plan de mantenimiento. Confírmala antes del ${escapeHtml(until)}: si no, esta visita se salta y el plan sigue.`,
+          heading: `Hola ${first}`,
+          intro: `Toca la siguiente visita de tu plan de mantenimiento. Confírmala antes del ${until}: si no, esta visita se salta y el plan sigue.`,
           bodyHtml: detailRows(pairs),
           cta: { label: 'Confirmar la visita', url: `${BRAND.site}/dashboard` },
           footerNote: 'El resto del precio se lo pagas al profesional al terminar, como siempre.',
@@ -524,8 +524,8 @@ Deno.serve(async (req) => {
         pairs = [['Servicio', serviceName], ['Tocaba', planned], ['Con', providerName]];
         opts = {
           title: subject,
-          heading: `Hola ${escapeHtml(first)}`,
-          intro: `${escapeHtml(providerName)} no tiene hueco cerca de esa fecha, así que esta visita se salta. Tu plan sigue activo: lo intentaremos de nuevo para la siguiente.`,
+          heading: `Hola ${first}`,
+          intro: `${providerName} no tiene hueco cerca de esa fecha, así que esta visita se salta. Tu plan sigue activo: lo intentaremos de nuevo para la siguiente.`,
           bodyHtml: detailRows(pairs),
           cta: { label: 'Ver mi plan', url: `${BRAND.site}/dashboard` },
           footerNote: 'Si lo necesitas antes, puedes reservar una visita suelta cuando quieras.',
@@ -589,8 +589,8 @@ Deno.serve(async (req) => {
         teamOpts = {
           title: teamSubject,
           heading: 'Tienes a alguien nuevo en tu equipo',
-          intro: `${escapeHtml(who)} ha aceptado tu solicitud de unirse a tu equipo. Configura su perfil para que pueda realizar servicios dentro de tu empresa: ponle su horario fijo y los servicios que hace.`,
-          cta: { label: `Configurar a ${escapeHtml(who)}`, url: `${BRAND.site}/empresa` },
+          intro: `${who} ha aceptado tu solicitud de unirse a tu equipo. Configura su perfil para que pueda realizar servicios dentro de tu empresa: ponle su horario fijo y los servicios que hace.`,
+          cta: { label: `Configurar a ${who}`, url: `${BRAND.site}/empresa` },
           footerNote: 'Hasta que tenga horario fijo y al menos un servicio, GarSer no le asignará trabajos.',
         };
       } else {
@@ -617,10 +617,10 @@ Deno.serve(async (req) => {
         teamSubject = 'Tienes un nuevo horario publicado';
         teamOpts = {
           title: teamSubject,
-          heading: `Hola ${escapeHtml(first)}`,
+          heading: `Hola ${first}`,
           intro: payload.kind === 'days'
-            ? `${escapeHtml(companyName)} ha cambiado tu horario de estos días:`
-            : `${escapeHtml(companyName)} ha publicado tu nuevo horario fijo:`,
+            ? `${companyName} ha cambiado tu horario de estos días:`
+            : `${companyName} ha publicado tu nuevo horario fijo:`,
           bodyHtml: detailRows(teamPairs),
           cta: { label: 'Ver mi horario', url: `${BRAND.site}/mi-trabajo/horario` },
           footerNote: 'Si algo no te cuadra, habla con tu empresa.',
@@ -737,12 +737,12 @@ Deno.serve(async (req) => {
             : `Ya no vas a este trabajo: ${serviceName}, ${when}`;
         const jobOpts: Parameters<typeof renderBrandedEmail>[0] = {
           title: jobSubject,
-          heading: `Hola ${escapeHtml(first)}`,
+          heading: `Hola ${first}`,
           intro: type === 'job_assigned'
-            ? `${escapeHtml(companyName)} te ha asignado un trabajo.`
+            ? `${companyName} te ha asignado un trabajo.`
             : cancelledJob
-              ? `Este trabajo de ${escapeHtml(companyName)} se ha cancelado. No tienes que ir.`
-              : `${escapeHtml(companyName)} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
+              ? `Este trabajo de ${companyName} se ha cancelado. No tienes que ir.`
+              : `${companyName} ha pasado este trabajo a otra persona del equipo. No tienes que ir.`,
           bodyHtml: detailRows(pairs),
           cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
           footerNote: type === 'job_assigned' ? 'Si no puedes ir, avisa a tu empresa cuanto antes.' : 'Tus horas de ese día vuelven a estar libres.',
@@ -809,7 +809,7 @@ Deno.serve(async (req) => {
         outbox.push({
           userId: b.client_id,
           subject: `${companyName} te propone otra fecha para tu ${serviceName.toLowerCase()}`,
-          intro: `${escapeHtml(companyName)} te propone cambiar la fecha de tu servicio. Puedes aceptarla o mantener la que tenías.`,
+          intro: `${companyName} te propone cambiar la fecha de tu servicio. Puedes aceptarla o mantener la que tenías.`,
           pairs: [
             ['Servicio', serviceName],
             ['Ahora', formatBookingWhen(b.date, b.start_time, b.end_date, b.duration_hours)],
@@ -835,7 +835,7 @@ Deno.serve(async (req) => {
           workers.forEach((workerId) => outbox.push({
             userId: workerId,
             subject: `Tu trabajo cambia de fecha: ${serviceName}, ${proposedWhen}`,
-            intro: `${escapeHtml(companyName)}: el cliente ha aceptado mover este trabajo. Ahora es en esta fecha.`,
+            intro: `${companyName}: el cliente ha aceptado mover este trabajo. Ahora es en esta fecha.`,
             pairs: [['Servicio', serviceName], ['Cuándo', proposedWhen]],
             cta: { label: 'Ver mis trabajos', url: `${BRAND.site}/mi-trabajo?tab=week` },
           }));
@@ -851,7 +851,7 @@ Deno.serve(async (req) => {
         const first = String(person?.full_name || '').split(' ')[0] || 'hola';
         const itemOpts: Parameters<typeof renderBrandedEmail>[0] = {
           title: item.subject,
-          heading: `Hola ${escapeHtml(first)}`,
+          heading: `Hola ${first}`,
           intro: item.intro,
           bodyHtml: detailRows(item.pairs),
           cta: item.cta,
@@ -902,7 +902,7 @@ Deno.serve(async (req) => {
       subject = '¡Bienvenido a GarSer! Tu solicitud ha sido aceptada';
       opts = {
         title: subject,
-        heading: `¡Enhorabuena, ${escapeHtml(name)}!`,
+        heading: `¡Enhorabuena, ${name}!`,
         intro: 'Tu solicitud para unirte a GarSer como jardinero ha sido aceptada. Ya puedes acceder a tu panel para configurar tus precios y tu disponibilidad y empezar a recibir reservas.',
         cta: { label: 'Acceder a mi panel', url: data?.loginUrl || `${BRAND.site}/dashboard` },
         footerNote: 'Si tienes cualquier duda, responde a este correo y te ayudamos.',
@@ -912,7 +912,7 @@ Deno.serve(async (req) => {
       detailPairs = data?.reason ? [['Motivo', data.reason]] : [];
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
+        heading: `Hola ${name}`,
         intro: 'Gracias por tu interés en unirte a GarSer. Hemos revisado tu solicitud y por ahora no podemos aceptarla por el siguiente motivo:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Volver a solicitar', url: data?.applyUrl || `${BRAND.site}/apply` },
@@ -922,7 +922,7 @@ Deno.serve(async (req) => {
       subject = 'Tu empresa ya está dada de alta en GarSer';
       opts = {
         title: subject,
-        heading: `¡Enhorabuena, ${escapeHtml(name)}!`,
+        heading: `¡Enhorabuena, ${name}!`,
         intro: 'Hemos revisado tu solicitud y tu empresa ya forma parte de GarSer. Entra en tu panel para configurar tus servicios y precios e invitar a tu equipo.',
         cta: { label: 'Ir a mi empresa', url: `${BRAND.site}/empresa` },
         footerNote: 'Si tienes cualquier duda, responde a este correo y te ayudamos.',
@@ -932,7 +932,7 @@ Deno.serve(async (req) => {
       detailPairs = companyReason ? [['Motivo', companyReason]] : [];
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
+        heading: `Hola ${name}`,
         intro: 'Gracias por tu interés en GarSer. Hemos revisado la solicitud de tu empresa y por ahora no podemos aceptarla por el siguiente motivo:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Corregir y enviar de nuevo', url: `${BRAND.site}/empresa/estado` },
@@ -960,8 +960,8 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `¡Buenas noticias, ${escapeHtml(name)}!`,
-        intro: `${escapeHtml(counterpartName || 'El profesional')} ha aceptado tu reserva. Todo listo:`,
+        heading: `¡Buenas noticias, ${name}!`,
+        intro: `${counterpartName || 'El profesional'} ha aceptado tu reserva. Todo listo:`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
         footerNote: bookingFeeNote || 'Puedes hablar con el profesional desde el chat de la reserva.',
@@ -971,8 +971,8 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(counterpartName || 'El profesional')} no ha podido aceptar tu solicitud de reserva. No se te cobrará nada.`,
+        heading: `Hola ${name}`,
+        intro: `${counterpartName || 'El profesional'} no ha podido aceptar tu solicitud de reserva. No se te cobrará nada.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Buscar otro profesional', url: `${BRAND.site}/reserva` },
         footerNote: 'Hay más jardineros disponibles en tu zona: puedes repetir la reserva en un minuto.',
@@ -982,7 +982,7 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
+        heading: `Hola ${name}`,
         intro: cancellation?.intro || 'Esta reserva ha quedado cancelada:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
@@ -993,8 +993,8 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(counterpartName || 'El profesional')} ha dado por finalizado el servicio. Tu valoración ayuda a otros clientes a elegir bien, y al profesional a que le encuentren.`,
+        heading: `Hola ${name}`,
+        intro: `${counterpartName || 'El profesional'} ha dado por finalizado el servicio. Tu valoración ayuda a otros clientes a elegir bien, y al profesional a que le encuentren.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         // Enlace profundo: abre el formulario sobre ESTA reserva en vez de dejar al cliente
         // en la lista buscandola.
@@ -1006,10 +1006,10 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
+        heading: `Hola ${name}`,
         intro: durationOnly
           ? `${counterpartName || 'El profesional'} ha propuesto cambiar la duración de tu servicio; el precio no cambia. Revísalo y decide si lo aceptas; hasta entonces la reserva sigue como está.`
-          : `${escapeHtml(counterpartName || 'El profesional')} ha propuesto un nuevo precio para tu reserva. Revísalo y decide si lo aceptas; hasta entonces la reserva mantiene el precio actual.`,
+          : `${counterpartName || 'El profesional'} ha propuesto un nuevo precio para tu reserva. Revísalo y decide si lo aceptas; hasta entonces la reserva mantiene el precio actual.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Revisar la propuesta', url: `${BRAND.site}/bookings` },
         footerNote: 'Los gastos de gestión que ya abonaste no cambian. Si no respondes, la propuesta caduca y la reserva sigue con el precio original.',
@@ -1020,7 +1020,7 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Buenas noticias, ${escapeHtml(name)}`,
+        heading: `Buenas noticias, ${name}`,
         intro: `${counterpartName || 'El cliente'} ha aceptado tu propuesta. La reserva queda confirmada así:`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver la reserva', url: `${BRAND.site}/bookings` },
@@ -1033,8 +1033,8 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
-        intro: `${escapeHtml(counterpartName || 'El cliente')} no ha aceptado tu propuesta de cambio, así que esta solicitud queda cancelada y sus horas vuelven a estar libres en tu agenda:`,
+        heading: `Hola ${name}`,
+        intro: `${counterpartName || 'El cliente'} no ha aceptado tu propuesta de cambio, así que esta solicitud queda cancelada y sus horas vuelven a estar libres en tu agenda:`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mis reservas', url: `${BRAND.site}/bookings` },
         footerNote: 'Al cliente no se le cobra nada. Si quiere, puede volver a reservar con las condiciones que acordéis.',
@@ -1044,7 +1044,7 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
+        heading: `Hola ${name}`,
         intro: 'Tu propuesta de cambio de precio o duración ha caducado sin respuesta del cliente. La solicitud sigue pendiente con su precio y su duración originales:',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver la solicitud', url: `${BRAND.site}/bookings` },
@@ -1062,8 +1062,8 @@ Deno.serve(async (req) => {
       detailPairs = [...bookingPairs, ['Puedes responder hasta', deadline]];
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
-        intro: `¿${escapeHtml(counterpartName || 'El profesional')} hizo el trabajo? Confírmalo y cerramos la reserva.`,
+        heading: `Hola ${name}`,
+        intro: `¿${counterpartName || 'El profesional'} hizo el trabajo? Confírmalo y cerramos la reserva.`,
         bodyHtml: detailRows(detailPairs),
         cta: confirmUrl
           ? { label: 'Sí, el trabajo se hizo', url: confirmUrl }
@@ -1076,7 +1076,7 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
+        heading: `Hola ${name}`,
         intro: 'Hemos recibido lo que nos cuentas y lo estamos revisando. Te escribiremos en cuanto tengamos una respuesta.',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mi incidencia', url: `${BRAND.site}/bookings` },
@@ -1087,7 +1087,7 @@ Deno.serve(async (req) => {
       detailPairs = bookingPairs;
       opts = {
         title: subject,
-        heading: `Hola ${escapeHtml(name)}`,
+        heading: `Hola ${name}`,
         intro: 'Hemos terminado de revisar tu incidencia. Puedes ver el detalle y lo que hemos decidido en la app.',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver el detalle', url: `${BRAND.site}/bookings` },
@@ -1101,7 +1101,9 @@ Deno.serve(async (req) => {
     const text = renderPlainText({ ...opts, detailPairs });
 
     if (!SMTP_USER || !SMTP_PASS) {
-      console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to, type, subject });
+      // Solo en local (sin credenciales): con el encabezado y la primera línea, para que las
+      // baterías comprueben el texto (PH-15: el nombre).
+      console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to, type, subject, heading: opts.heading, intro: opts.intro });
       await pushForEmail(admin, to, subject, opts.intro || '', opts.cta?.url);
       return new Response(JSON.stringify({ success: true, mock: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

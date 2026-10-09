@@ -18,7 +18,7 @@
 |---|---|---|---|---|---|
 | PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | ✅ Hecho (2026-10-09), por desplegar |
 | PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | ✅ Hecho (2026-10-09), por desplegar |
-| PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | Por corregir |
+| PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | ✅ Hecho (2026-10-09), por desplegar |
 | PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | ✅ Hecho (2026-10-09), por desplegar |
 | PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | **Media** (subida en la fase C: con una marca falsa se manda al cliente un «reserva aceptada» falso) | Visto en F3 | Cerrarlo | ✅ Hecho (2026-10-09), por desplegar |
 | PH-06 | `ARCHITECTURE.md` describe un sistema que ya no existe | Media (despista) | H-07 | Reescribirlo | Por corregir |
@@ -33,7 +33,7 @@
 | PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
 | PH-16 | `booking-photos` es público en producción y privado en local; las imágenes del chat se enseñan con URL pública | Media (datos personales; el enlace es la única llave) | Fase A, paso 3 | — | Apuntado |
 | PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | Apuntado (fase H) |
-| PH-18 | El alta de jardinero se envía desde el navegador sin comprobar en el servidor que está completa (las empresas sí, con `submit_company_application`) | Baja (el admin revisa a mano) | Fase B, paso 3 | — | Apuntado |
+| PH-18 | El alta de jardinero se envía desde el navegador sin comprobar en el servidor que está completa (las empresas sí, con `submit_company_application`) | Baja (el admin revisa a mano) | Fase B, paso 3 | Lo deja al chat (usuario, 2026-10-09): servidor | ✅ Hecho (2026-10-09), por desplegar |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -291,6 +291,62 @@ para autónomos como para empresas.
 
 - Unitarias de los textos.
 - Navegador local, reservando con un autónomo y con una empresa.
+
+#### Seguimiento (2026-10-09) — fase D
+
+1. **Leído.**
+   - Las citas siguen ahí: `ProvidersPage.tsx:1137-1138` («Confirmar jardinero» y «Selecciona un
+     jardinero») y el resumen de `ConfirmationPage.tsx:1829-1830`.
+   - Decisión: «Profesional» para todos.
+2. **¿Es cierto?** Sí, en el navegador local como cliente de la semilla: el primer paso decía
+   «encontrar jardineros cerca de ti» y «para que el jardinero te encuentre».
+3. **Casos parecidos.** Repasé con `grep` todos los textos visibles con «jardinero» fuera del
+   panel y del alta del jardinero, y las plantillas de correo.
+   - **Lo que lee el cliente, cambiado a «profesional»:**
+     - Dirección (2 textos).
+     - Detalles (4: la ayuda de las fotos, la altura de los árboles, el aviso del rango alto de
+       palmeras y «Nota para el profesional»).
+     - Profesionales (título por defecto, «No hay ningún profesional disponible…», «Confirmar
+       profesional» y «Selecciona un profesional»).
+     - Resumen (etiqueta, nombre por defecto y la etiqueta del botón de volver).
+     - «Mis reservas» (nombre por defecto).
+     - Lista de chats del cliente.
+     - Perfil público (8 textos).
+     - El aviso de palmeras del motor (`bookingQuoteCore.ts:1444`, y su instantánea de
+       paridad): **hay que redesplegar `booking-authority`**.
+     - El correo de solicitud no aceptada («Hay más profesionales disponibles en tu zona»).
+     - El script de pruebas de punta a punta `scripts/qa/manual-entry/payment-local.mjs` pulsaba
+       «Confirmar jardinero»: actualizado.
+   - **No se tocan:**
+     - Lo que ve el propio jardinero: su rol en el menú y en «Mi cuenta», su alta, su panel y
+       los correos que recibe él.
+     - La descripción que escribe cada profesional.
+     - Las páginas públicas de captación y de búsqueda («Jardineros en la Costa del Sol»,
+       «Portal para jardineros», «¿Eres jardinero?»): no están en el alcance de PH-03 y son las
+       palabras con las que se busca en Google.
+4. **Hallazgos nuevos.**
+   - **El perfil público enseñaba identificadores internos** en «Servicios que ofrece».
+     `gardener_profiles.services` mezcla nombres (los guarda el alta) e identificadores (los
+     guarda la configuración de precios, `ProfileSettings.tsx:329`).
+     - Claro y de la misma pantalla: corregido (`src/utils/serviceLabels.ts`).
+     - En producción pasa con todo profesional que haya activado un servicio.
+5. **Comprobado.**
+   - **Unitarias:** 951 en 117 ficheros, build ✅ y `tsc` 128.
+     - `clientWording.test.ts`: vigila que no vuelva «jardinero» a los textos del cliente.
+     - `serviceLabels.test.ts`.
+   - **Baterías:** 26, 294/294.
+   - **Navegador local a 375 px**, como cliente de la semilla, reserva de césped con datos a mano:
+     - Dirección y detalles dicen «profesional».
+     - Con el **autónomo** de la semilla: «Confirmar profesional» y, en el resumen,
+       «Profesional: Miguel Ángel Ruiz».
+     - Con una **empresa** de prueba: «Profesional: demo-empresa…».
+     - En «Mis reservas» no queda ningún «jardinero».
+     - El perfil público dice «Perfil público del profesional» y «Reservar con este
+       profesional», y lista los 7 servicios por su nombre.
+     - Sin scroll lateral.
+   - **Pendiente en garser.es:** P-PH03-1.
+   - **Commits:** `569c8d1` y `1bf4b7e`.
+   - **Vuelta atrás:** la versión anterior de la web y de las funciones.
 
 ### PH-04 — Los ficheros de una cuenta dada de baja se quedan guardados
 
@@ -602,6 +658,39 @@ añadir la fila final del registro.
 - **Propuesta:** `submit_gardener_application()` con las mismas comprobaciones que el formulario
   (nombre, teléfono, zona, foto, servicios, herramientas, experiencia y declaraciones), y quitar
   `submitted` de lo que el navegador puede escribir. **Pendiente de decisión.**
+
+#### Seguimiento (2026-10-09) — con la fase D
+
+1. **Leído.**
+   - El formulario enviaba con un `update` a `submitted`, y la regla `applications_own_update`
+     lo permitía con cualquier borrador.
+   - Las empresas usan `submit_company_application`.
+   - Decisión: el usuario lo dejó al chat («realiza las acciones que veas convenientes»). Se
+     aplica la propuesta.
+2. **¿Es cierto?** Sí: en la fase B, GR-09 enviaba a mano un borrador incompleto.
+3. **Casos parecidos.**
+   - El alta de empresas ya valida en el servidor.
+   - La invitación de empleados entra por su propia función.
+   - Ningún otro paso de alta se envía desde el navegador.
+4. **Hallazgos nuevos:** ninguno.
+5. **Comprobado.**
+   - **Migración** `20261009130000_submit_gardener_application.sql`:
+     - `submit_gardener_application()` comprueba lo mismo que el formulario (nombre, teléfono
+       español, zona, foto, servicios, herramientas, experiencia y las dos declaraciones) y no
+       da error si se repite.
+     - La regla deja al navegador solo editar su borrador.
+   - **Web:** el formulario envía por la función y enseña lo que falta.
+   - **`verify-gardener-reapply` 9/9.** GR-09:
+     - A mano: 0 filas.
+     - Incompleta: «Falta: un teléfono válido, zona de trabajo, foto de perfil, servicios,
+       herramientas, experiencia, aceptar las dos declaraciones».
+     - Completa: se envía.
+     - Las demás comprobaciones de la batería envían ya por la función.
+   - **Navegador local:** un jardinero con el borrador completo abre `/apply` (relleno desde la
+     base), marca las casillas y envía: «Solicitud en revisión», y en la base queda `submitted`
+     con su correo.
+   - **Commit:** `569c8d1`.
+   - **Vuelta atrás:** la de la cabecera de la migración.
 
 ---
 

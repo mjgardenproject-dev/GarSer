@@ -549,6 +549,15 @@ Batería `scripts/garser-empresas/verify-idempotency-notices.mjs` (local), **5/5
 `verify-f6-reschedule` F6-35 reescrita (correos por persona: empresa 1, quien entra 1 «Nuevo trabajo», quien sale
 1 «Ya no vas»), 9/9; con la función anterior daba 2 correos a quien entra.
 
+### Pendientes · fase D — «profesional» para el cliente (PH-03) y alta validada en el servidor (PH-18) (2026-10-09)
+
+- Unitarias: `src/pages/reserva/clientWording.test.ts` (10: ningún «jardinero» visible en los 8 ficheros del cliente,
+  botones, resumen y aviso de palmeras), `src/utils/serviceLabels.test.ts` (3) y `gardenerApplicationRetry.test.ts`
+  (+1, envío por el servidor).
+- `verify-gardener-reapply` **9/9** (GR-09: a mano no se envía; incompleta dice qué falta; completa se envía).
+- Navegador local (375 px): reserva con autónomo y con empresa («Confirmar profesional», «Profesional: …»), «Mis
+  reservas», perfil público (con los servicios por su nombre) y envío del alta de jardinero.
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que
@@ -619,6 +628,8 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-PH02-1 | Fase B: el admin rechaza la solicitud de jardinero de prueba con un motivo; el jardinero pulsa «Corregir y volver a enviar» | Le llega el correo con el motivo; el formulario sale relleno y con el motivo arriba; al reenviar, el admin la ve «Reenviada tras 1 rechazo» con el rechazo anterior | ⬜ |
 | P-PH05-1 | Fase C: el chat, con una cuenta de prueba de empresa, intenta escribir una marca en `booking_rpc_idempotency` y llamar a `register_booking_operation_once` | Los dos, 403; aceptar una solicitud desde la web sigue funcionando | ⬜ |
 | P-PH08-1 | Fase C: «Mover a otra fecha» a un día en que va otra persona; el cliente acepta | A quien entra le llega solo «Nuevo trabajo»; a quien deja de ir, «Ya no vas»; a la empresa, «acepta la nueva fecha» | ⬜ |
+| P-PH03-1 | Fase D: reservar como cliente con un autónomo y con una empresa; abrir el perfil público de un profesional | «Confirmar profesional», «Profesional: …» en el resumen, ningún «jardinero» en «Mis reservas»; el perfil lista los servicios por su nombre | ⬜ |
+| P-PH18-1 | Fase D: un jardinero nuevo envía su alta desde el formulario | «Solicitud en revisión»; el admin la ve en pendientes | ⬜ |
 
 ---
 

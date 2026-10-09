@@ -109,6 +109,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D25 | ¿Cómo llegan los avisos al móvil? (2026-09-28) | **Notificaciones web (PWA)** de todo lo que hoy va por correo. | R-08. | Prueba real |
 | D26 | ¿Reservas en tiempo real? (2026-09-28) | **No**: botón «Actualizar» y recarga al volver a la app. | R-03. | Prueba real |
 | D27 | Ficheros de Storage visibles para otros (PH-14, 2026-10-09) | **Corregirlo en la fase A**: cada fichero lo ven su dueño, quien comparte la reserva y el admin. | A-48. | Pendientes |
+| D29 | PH-18: ¿validar el alta de jardinero en el servidor? (2026-10-09) | **Lo deja al chat**: se valida en el servidor como las empresas (A-54). | A-54. | Pendientes |
 | D28 | ¿Qué nombre llevan los correos de reserva? (PH-15, 2026-10-09) | **El de la ficha**: el cliente por su nombre; el profesional por el de su ficha (nombre comercial de la empresa). | A-49. | Pendientes |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
@@ -810,6 +811,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-10-09 | Pendientes A | **Fase A cerrada** (`07` §4): baja real desde «Mi cuenta» con la lógica de F6 (PH-01), ficheros de las bajas con cola y reintento (PH-04), Storage cerrado a otros (PH-14, D27) y nombres en los correos (PH-15, D28). Apuntados PH-16 y PH-17. | 930 ✅ · build ✅ · tsc 128 · 24 baterías 280/280 | `3e40929` |
 | 2026-10-09 | Pendientes B | **Fase B cerrada** (`07` §4): «Corregir y volver a enviar» reabre la misma solicitud por RPC con histórico de rechazos (PH-02, A-50); campos de revisión solo del servidor; el envío comprueba que se guarda; el admin ve los rechazos anteriores. Apuntado PH-18. | 937 ✅ · build ✅ · tsc 128 · 25 baterías 288/288 | `4ef9d4c` |
 | 2026-10-09 | Pendientes C | **Fase C cerrada** (`07` §4): marcas de idempotencia solo del servidor y aviso por estado real (PH-05, A-51); «Tu trabajo cambia de fecha» solo a quien ya iba (PH-08, A-52). | 937 ✅ · build ✅ · tsc 128 · 26 baterías 293/293 | `530c301` |
+| 2026-10-09 | Pendientes D | **Fase D cerrada** (`07` §4): «profesional» para el cliente (PH-03, A-53); servicios del perfil público por su nombre; alta de jardinero validada en el servidor (PH-18, A-54, D29). | 951 ✅ · build ✅ · tsc 128 · 26 baterías 294/294 | `569c8d1` `1bf4b7e` |
 
 ---
 
@@ -927,6 +929,10 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 2i. **Fase C hecha (2026-10-09):** el navegador ya no escribe las marcas de idempotencia (PH-05: con una marca falsa se
    mandaba al cliente un «aceptada» falso) y quien entra al mover de fecha recibe un solo aviso (PH-08). Por desplegar
    en la fase H: migración `20261009120000` y la función `send-email-notification`.
+2j. **Fase D hecha (2026-10-09):** «profesional» en todo lo que lee el cliente (PH-03), el perfil público enseña los
+   servicios por su nombre (antes, identificadores) y el alta de jardinero se valida en el servidor (PH-18). Por
+   desplegar en la fase H: migración `20261009130000`, funciones `booking-authority` (toca `bookingQuoteCore.ts`) y
+   `send-email-notification`, y la web.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

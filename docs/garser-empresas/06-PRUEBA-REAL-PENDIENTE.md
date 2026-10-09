@@ -133,7 +133,7 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | Paso | Prueba | Qué se hace | Qué debe pasar |
 |---|---|---|---|
 | 2.1 | P-F0-1 | Registrarse como cliente con un correo nuevo | Tiene perfil de cliente (lo mira el chat) |
-| 2.2 | P-F0-2 → P-F2-3 | Registrarse como jardinero, enviar la solicitud; el admin la aprueba | Perfil de jardinero; tras aprobar, su ficha y sus precios; le llega el correo de alta |
+| 2.2 | P-F0-2 → P-F2-3 (+P-PH18-1) | Registrarse como jardinero, enviar la solicitud; el admin la aprueba | Perfil de jardinero; tras aprobar, su ficha y sus precios; le llega el correo de alta |
 | 2.3 | P-F3-1 | Ese jardinero sube un carnet | Queda pendiente y el admin lo ve |
 | 2.4 | P-H38-1 | Ese jardinero pone 0,5 €/m² en césped y guarda | En la base de datos, `0.5` |
 | 2.5 | P-F3-3 → P-F3-4 (+P-F3-10) | Registrar una empresa desde el móvil y enviar la encuesta; el admin la aprueba | Entra en su panel; le llega «Tu empresa ya está dada de alta» |
@@ -153,7 +153,7 @@ Pruebas que **se fusionan o dejan de aplicar**:
 
 | Paso | Prueba | Qué se hace | Qué debe pasar |
 |---|---|---|---|
-| 4.1 | P-F4-1 (+P-R07-1) | El cliente reserva y paga 2 h con la empresa | La reserva es de la empresa y las horas, del empleado; el empleado **no** la ve aún en «Mi trabajo» |
+| 4.1 | P-F4-1 (+P-R07-1, P-PH03-1) | El cliente reserva y paga 2 h con la empresa | La reserva es de la empresa y las horas, del empleado; el empleado **no** la ve aún en «Mi trabajo»; durante la reserva todo dice «profesional» («Confirmar profesional», «Profesional: …») |
 | 4.2 | P-R06-1 | Empresa abierta en el ordenador y en el móvil; cerrar sesión en el móvil; en el ordenador, proponer un precio | No se cierra la sesión del ordenador; al cliente le llega el correo; la solicitud dice «Hace X min» |
 | 4.3 | P-H40-1 (+P-R07-2) | Proponer solo +1 h; el cliente acepta | La hora de más, apartada al empleado; al confirmarse, al empleado le llega «Nuevo trabajo» y ya lo ve |
 | 4.4 | P-R03-1 | El cliente, con la app instalada, pulsa «Actualizar» o vuelve a la app | Ve «Confirmada» |
@@ -200,3 +200,4 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 2026-10-09 | Fase A: pasos 4.9 y 7.3 añadidos (baja desde «Mi cuenta», ficheros y nombres en los correos) | — |
 | 2026-10-09 | Fase B: paso 2.7 añadido (jardinero rechazado que vuelve a solicitar) | — |
 | 2026-10-09 | Fase C: paso 4.7 ampliado y 4.7b añadido (aviso único al mover y marcas cerradas) | — |
+| 2026-10-09 | Fase D: pasos 2.2 y 4.1 ampliados («profesional» y alta validada) | — |

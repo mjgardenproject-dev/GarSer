@@ -831,7 +831,22 @@ Deno.serve(async (req) => {
         });
         if (accepted) {
           const { data: blockRows } = await admin.from('booking_blocks').select('assignee_id').eq('booking_id', bookingId);
-          const workers = [...new Set(((blockRows || []) as { assignee_id: string }[]).map((r) => r.assignee_id))].filter((id) => id !== b.gardener_id);
+          // PH-08: quien ENTRA con el cambio (otra persona pasa a hacerlo) ya recibe «Nuevo trabajo»
+          // con la fecha nueva; este aviso es para quien ya iba y sigue yendo. Los dos se apuntan
+          // en la misma transacción que la aceptación, así que tienen la misma hora en la cola.
+          const { data: answeredRow } = await admin.from('notification_outbox')
+            .select('created_at').eq('booking_id', bookingId).eq('type', 'booking_reschedule_answered')
+            .order('created_at', { ascending: false }).limit(1).maybeSingle();
+          const newcomers = new Set<string>();
+          if (answeredRow?.created_at) {
+            const { data: assignedRows } = await admin.from('notification_outbox')
+              .select('payload').eq('booking_id', bookingId).eq('type', 'job_assigned').gte('created_at', answeredRow.created_at);
+            for (const row of (assignedRows || []) as { payload?: { workerId?: string } }[]) {
+              if (row.payload?.workerId) newcomers.add(String(row.payload.workerId));
+            }
+          }
+          const workers = [...new Set(((blockRows || []) as { assignee_id: string }[]).map((r) => r.assignee_id))]
+            .filter((id) => id !== b.gardener_id && !newcomers.has(id));
           workers.forEach((workerId) => outbox.push({
             userId: workerId,
             subject: `Tu trabajo cambia de fecha: ${serviceName}, ${proposedWhen}`,

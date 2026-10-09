@@ -160,6 +160,7 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 4.6 | P-F6-1 | La empresa reparte un trabajo de 3 h entre dos personas | A cada una, su aviso con «Tu parte» |
 | 4.7 | P-F6-2 (+P-H42-1, P-H44-1) | En el móvil, «Mover a otra fecha»; el cliente acepta | Pantalla fija sin scroll lateral; al cliente le llega el correo con inicio y fin; la reserva se mueve; aviso a quien va |
 | 4.8 | P-F5-4 | Reserva para mañana: el cliente mira su reserva | Ve «Irá …» con nombre y foto el día antes, y no antes |
+| 4.9 | P-PH15-1 | Mirar el correo «Tu reserva ha sido aceptada» que recibió el cliente en 4.1 | Le saluda por su nombre y dice el nombre de la empresa |
 
 ### Sesión 5 — Trabajos grandes, varios servicios y planes
 
@@ -183,7 +184,8 @@ Pruebas que **se fusionan o dejan de aplicar**:
 |---|---|---|---|
 | 7.1 | P-R09-1 | Suspender la empresa de prueba y buscarla como cliente; después reactivarla | Suspendida, no aparece para reservar y sus reservas siguen; reactivada, vuelve. Con PR-02 hecho, le llegan los correos |
 | 7.2 | P-R02-1 | «Dar de baja o suspender»: revisar la empresa (con reservas) y cada cuenta de prueba | La empresa, «Aún no se puede» con el motivo; las cuentas sin reservas se borran enteras |
-| 7.3 | Limpieza | Dar de baja o borrar todas las cuentas de prueba de estas sesiones, con la herramienta | Nada de prueba en producción (lo comprueba el chat) |
+| 7.3 | P-PH01-1 → P-PH01-2 (+P-PH14-1) | Con una cuenta de prueba que aún tenga una reserva: «Mi cuenta → Cerrar cuenta». Después, con una sin reservas | La primera: «Aún no puedes cerrar tu cuenta» con la fecha. La segunda: vuelve a la entrada con «Tu cuenta se ha cerrado» y no puede entrar; el chat comprueba que no queda ningún fichero suyo |
+| 7.4 | Limpieza | Dar de baja o borrar todas las cuentas de prueba de estas sesiones, con la herramienta | Nada de prueba en producción (lo comprueba el chat) |
 
 ---
 
@@ -193,3 +195,4 @@ Pruebas que **se fusionan o dejan de aplicar**:
 |---|---|---|
 | 2026-09-29 | Documento creado; decisiones PR-02, PR-04 y PR-05 | — |
 | 2026-10-08 | PR-01 cerrado (PR #41 fusionada el 2026-09-29). Procedimiento de corrección en `07-PROCEDIMIENTO-CORRECCION.md` | — |
+| 2026-10-09 | Fase A: pasos 4.9 y 7.3 añadidos (baja desde «Mi cuenta», ficheros y nombres en los correos) | — |

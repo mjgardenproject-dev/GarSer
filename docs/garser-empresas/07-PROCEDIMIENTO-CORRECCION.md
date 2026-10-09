@@ -393,6 +393,10 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 | PostgREST corta en 1000 filas, también las RPC | Paginar (H-32) |
 | `functions deploy` se cuelga | `--use-api` |
 | `gh pr merge` está bloqueado | La PR la fusiona el usuario |
+| Tras un `db reset` (lo hizo otra sesión antes del 2026-10-09) el Vault local queda vacío | Volver a poner `lifecycle_tick_url` y `lifecycle_tick_secret` (sin mostrar el secreto) antes de las baterías |
+| Si el Mac duerme (tapa cerrada), el reloj de Docker se queda atrás: «JWT issued at future» y `docker logs --since` vacío | Repetir la batería con el Mac despierto; en baterías nuevas, buscar en el registro por un dato único en vez de por hora |
+| `booking-photos` es público en producción y privado en local | No dar por buena una prueba de imágenes del chat solo en local (PH-16) |
+| `renderBrandedEmail` ya escapa encabezado, texto y botón | No volver a llamar a `escapeHtml` en las plantillas (A-49) |
 
 ---
 
@@ -400,4 +404,6 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 
 | Fecha | Fase | Qué | Resultado | Commit |
 |---|---|---|---|---|
-| 2026-10-08 | — | Procedimiento escrito sobre `main` `9c5306c`; línea base 921/111, `tsc` 128, 139 migraciones | Sin cambios de código | (este commit) |
+| 2026-10-08 | — | Procedimiento escrito sobre `main` `9c5306c`; línea base 921/111, `tsc` 128, 139 migraciones | Sin cambios de código | `77a175e` |
+| 2026-10-09 | — | Arranque: rama `fix/pendientes-ph` sobre `77a175e` (= `origin/main` `9c5306c` + docs). Línea base confirmada: 921/111, `tsc` 128, 139 migraciones; **23 baterías / 268 comprobaciones** en verde. Vault local vacío tras un `db reset` ajeno: repuesto | — | — |
+| 2026-10-09 | A | PH-01, PH-04, PH-14 y PH-15 corregidos; PH-16 y PH-17 apuntados. Vitest 930/113, build ✅, `tsc` 128, 24 baterías, 280/280 (`verify-self-closure` nueva, 12/12; 4 repetidas porque el Mac se durmió: «JWT issued at future»), navegador local con los tres casos | ✅ Fase A cerrada | `3e40929` + (este commit) |

@@ -3150,6 +3150,10 @@ export type Database = {
         Args: { p_member_id: string }
         Returns: Json
       }
+      my_account_closure_preview: {
+        Args: never
+        Returns: Json
+      }
       my_busy_hours: {
         Args: { p_end: string; p_start: string }
         Returns: {

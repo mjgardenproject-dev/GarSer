@@ -488,6 +488,34 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 
 ---
 
+### Pendientes · fase A — bajas desde «Mi cuenta», ficheros, Storage y nombres en los correos (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-self-closure.mjs` (local), **12/12**:
+
+| # | Qué comprueba | Resultado |
+|---|---|---|
+| SC-01 | Cliente sin reservas: el análisis dice «borrar», no devuelve su correo, y se borra entera con sus ficheros y suscripciones al móvil | ✅ |
+| SC-02 | Con una solicitud pendiente: bloqueada, con fecha, estado y servicio; cerrar igualmente no toca nada | ✅ |
+| SC-03 | Empleada con un trabajo asignado: bloqueada, con la fecha | ✅ |
+| SC-04 | El correo «aceptada» lleva el nombre del cliente (sin escapar dos veces «&») y el nombre comercial de la empresa | ✅ |
+| SC-05 | Fotos de reserva: un extraño no las lista ni las descarga; cliente, empresa y admin sí | ✅ |
+| SC-06 | Ficheros de solicitud: nadie lista los de otro (ni sin sesión); dueño y admin sí; el enlace público sigue abriendo | ✅ |
+| SC-07 | Cliente con historial: datos, punto del mapa, invitación, avisos al móvil y ficheros fuera; sin sesiones ni acceso; la reserva conserva importes | ✅ |
+| SC-08 | **Autónomo** con historial (Regla 2): suspendido, sin nombre, sin precios activos, sin número ni fichero del carnet; su reserva sigue | ✅ |
+| SC-09 | Sin sesión, no; la función interna, no; con el id de otro solo se cierra la propia cuenta | ✅ |
+| SC-10 | El admin no se cierra desde «Mi cuenta» | ✅ |
+| SC-11 | Una limpieza de ficheros que falló la termina el reloj | ✅ |
+| SC-12 | La baja del admin también borra los ficheros | ✅ |
+
+Unitarias: `src/utils/selfAccountClosure.test.ts` (7) y `src/components/account/MyAccount.test.tsx` (2: la foto se
+guarda en su fila y, si no se guarda, lo dice).
+
+Navegador local (375 px, dos orígenes): bloqueada con «Tienes una reserva de Corte de césped pendiente de aceptar el
+9 de diciembre…» y «Ver mis reservas»; con historial, «Esto es lo que pasará», el diálogo y, al confirmar, `/auth` con
+«Tu cuenta se ha cerrado»; sin reservas, la foto se guarda («Foto de perfil actualizada» y `avatar_url` en la base) y la
+cuenta se borra entera. Sin scroll lateral. Únicos errores de consola: dos 403 `user_not_found` del cierre de sesión de
+una cuenta que ya no existe (esperado).
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que
@@ -551,6 +579,10 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-R02-1 | Prueba real F6: Admin → Usuarios → «Dar de baja o suspender»: revisar la empresa (con reservas) y una cuenta de prueba sin reservas | La empresa sale «Aún no se puede dar de baja» con el motivo; la de prueba se borra entera | ⬜ |
 | P-R09-1 | Prueba real F6: suspender la empresa desde el admin y buscarla como cliente; reactivarla | Suspendida no aparece para reservar; sus reservas siguen; reactivada vuelve | ⬜ |
 | P-R08-1 | Prueba real F7: «Mi cuenta → Activar notificaciones» en Android (Chrome) y en iPhone con GarSer en la pantalla de inicio; provocar un aviso (p. ej. una propuesta) | Llega la notificación al móvil con el mismo aviso que el correo; al tocarla abre la pantalla | ⬜ |
+| P-PH01-1 | Fase A: una cuenta de prueba con una reserva sin terminar entra en «Mi cuenta → Cerrar cuenta» | Sale «Aún no puedes cerrar tu cuenta» con la fecha de la reserva; no cambia nada | ⬜ |
+| P-PH01-2 | Fase A: una cuenta de prueba sin reservas cierra su cuenta desde «Mi cuenta» | Vuelve a la entrada con «Tu cuenta se ha cerrado»; no puede volver a entrar; en Storage no queda ningún fichero suyo (lo mira el chat) | ⬜ |
+| P-PH14-1 | Fase A: el chat comprueba con una cuenta de prueba que no puede listar `booking-photos` ni `applications` de otros, y que una foto de perfil se sigue viendo | Listas vacías; la foto se ve | ⬜ |
+| P-PH15-1 | Fase A: en la primera reserva aceptada de las pruebas, mirar el correo al cliente | «¡Buenas noticias, <nombre>!» y «<nombre de la empresa> ha aceptado tu reserva» | ⬜ |
 
 ---
 

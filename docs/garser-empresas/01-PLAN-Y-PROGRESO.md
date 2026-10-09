@@ -108,6 +108,8 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D24 | ¿Quién envía los correos? (2026-09-28) | **El servidor**: cada acción apunta su aviso en `notification_outbox` en la misma transacción y `notification-dispatch` lo envía con reintentos. | R-06; A-40. | Prueba real |
 | D25 | ¿Cómo llegan los avisos al móvil? (2026-09-28) | **Notificaciones web (PWA)** de todo lo que hoy va por correo. | R-08. | Prueba real |
 | D26 | ¿Reservas en tiempo real? (2026-09-28) | **No**: botón «Actualizar» y recarga al volver a la app. | R-03. | Prueba real |
+| D27 | Ficheros de Storage visibles para otros (PH-14, 2026-10-09) | **Corregirlo en la fase A**: cada fichero lo ven su dueño, quien comparte la reserva y el admin. | A-48. | Pendientes |
+| D28 | ¿Qué nombre llevan los correos de reserva? (PH-15, 2026-10-09) | **El de la ficha**: el cliente por su nombre; el profesional por el de su ficha (nombre comercial de la empresa). | A-49. | Pendientes |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -805,6 +807,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `f7ec1d5` |
 | 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | `b0a6fbe` |
 | 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | `c506f1e` |
+| 2026-10-09 | Pendientes A | **Fase A cerrada** (`07` §4): baja real desde «Mi cuenta» con la lógica de F6 (PH-01), ficheros de las bajas con cola y reintento (PH-04), Storage cerrado a otros (PH-14, D27) y nombres en los correos (PH-15, D28). Apuntados PH-16 y PH-17. | 930 ✅ · build ✅ · tsc 128 · 24 baterías 280/280 | `3e40929` |
 
 ---
 
@@ -911,6 +914,11 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
    hallazgo (leer, comprobar que es cierto, casos parecidos, hallazgos nuevos y verificación en el
    navegador y con pruebas reales), cierre de fase, fases A–H y trampas conocidas. No se toca código
    hasta que el usuario lo diga.
+2g. **Fase A hecha (2026-10-09, rama `fix/pendientes-ph`):** baja real desde «Mi cuenta» (PH-01), ficheros de las
+   bajas (PH-04), Storage cerrado a otros (PH-14) y nombres en los correos (PH-15). Por desplegar en la fase H:
+   migración `20261009100000`, funciones `account-closure` (nueva), `admin-account-closure`, `booking-lifecycle-tick`,
+   `send-email-notification` y `booking-confirmation-email`, y la web. Nuevos apuntados: PH-16 (`booking-photos`
+   público en producción) y PH-17 (273 ficheros de cuentas borradas en producción, limpieza en la fase H).
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

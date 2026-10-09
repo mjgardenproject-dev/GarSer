@@ -16,10 +16,10 @@
 
 | # | Qué pasa | Gravedad | Origen | Decisión | Estado |
 |---|---|---|---|---|---|
-| PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | En curso (fase A) |
+| PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | ✅ Hecho (2026-10-09), por desplegar |
 | PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | Por corregir |
 | PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | Por corregir |
-| PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | En curso (fase A) |
+| PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | ✅ Hecho (2026-10-09), por desplegar |
 | PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | Baja (seguridad, solo le afecta a él) | Visto en F3 | Cerrarlo | Por corregir |
 | PH-06 | `ARCHITECTURE.md` describe un sistema que ya no existe | Media (despista) | H-07 | Reescribirlo | Por corregir |
 | PH-07 | 9 pruebas de preparación de servicios fallan porque están desactualizadas | Media (se pierde una red de seguridad) | H-27 | Ponerlas al día | Por corregir |
@@ -29,8 +29,8 @@
 | PH-11 | `booking_items` no se actualiza tras un cambio de precio | Vigilado (sin efecto hoy) | H-36 | Sin acción (regla) | Vigilado |
 | PH-12 | Las solicitudes a varios jardineros siguen desactivadas | Informativo | H-20 | Sin acción | Informativo |
 | PH-13 | Tareas de cierre del proyecto (datos de prueba, Stripe real, encuesta) | Operativo | `01-PLAN` §5c | Encuesta: dada por buena | En parte |
-| PH-14 | Storage: cualquiera con sesión lista y descarga fotos de reserva y de chat de otros; sin sesión se listan los ficheros de solicitud de todos | **Crítica** (datos personales, en producción) | Fase A, paso 3 | Corregir en la fase A (usuario, 2026-10-09) | En curso (fase A) |
-| PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | En curso (fase A) |
+| PH-14 | Storage: cualquiera con sesión lista y descarga fotos de reserva y de chat de otros; sin sesión se listan los ficheros de solicitud de todos | **Crítica** (datos personales, en producción) | Fase A, paso 3 | Corregir en la fase A (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
+| PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
 | PH-16 | `booking-photos` es público en producción y privado en local; las imágenes del chat se enseñan con URL pública | Media (datos personales; el enlace es la única llave) | Fase A, paso 3 | — | Apuntado |
 | PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | Apuntado (fase H) |
 
@@ -147,7 +147,29 @@ lógica segura del admin (F6, D23):
    - PH-16 y PH-17: apuntados. PH-17 se limpia en la fase H, con permiso.
    - Las reglas de `marketing-assets` y los restos de datos personales del punto 3: claros y
      del mismo tema, se corrigen en esta fase.
-5. **Comprobado:** pendiente.
+5. **Comprobado (2026-10-09).**
+   - **Qué se hizo:**
+     - Migración `20261009100000_self_account_closure_and_storage.sql`: reglas de Storage, cola
+       `account_storage_cleanup`, cuerpo común de la baja y `my_account_closure_preview`.
+     - Función nueva `account-closure` y `_shared/accountClosure.ts`.
+     - `admin-account-closure` borra los ficheros y `booking-lifecycle-tick` reintenta.
+     - «Mi cuenta»: la foto se guarda por `user_id` y se comprueba; «Cerrar cuenta» primero
+       revisa y después confirma.
+     - Correos: nombres (PH-15) y escapado único (A-49).
+     - El arnés de las baterías ya borra los ficheros de sus cuentas de prueba.
+   - **Pruebas:**
+     - Unitarias 930/113 (eran 921/111), build ✅ y `tsc` 128.
+     - `verify-self-closure` 12/12 y todas las baterías **24, 280/280**.
+     - Navegador local a 375 px con dos orígenes: bloqueada (con fecha y «Ver mis reservas»), con
+       historial (aviso, diálogo, `/auth` con «Tu cuenta se ha cerrado», sin acceso y la reserva
+       intacta en la base) y sin reservas (foto guardada y cuenta borrada).
+     - En consola, solo dos 403 `user_not_found` del cierre de sesión de una cuenta que ya no
+       existe.
+   - **Pendiente en garser.es:** P-PH01-1, P-PH01-2, P-PH14-1 y P-PH15-1 (`06` §3, pasos 4.9 y 7.3).
+   - **Commit:** `3e40929` (código) y el de la documentación.
+   - **Vuelta atrás:** la de la cabecera de la migración (restaurar las reglas de Storage
+     anteriores y `perform_account_closure` de `20260929130000`); las funciones, con la versión
+     anterior de `main`.
 
 ### PH-02 — Un jardinero rechazado no puede volver a solicitar
 

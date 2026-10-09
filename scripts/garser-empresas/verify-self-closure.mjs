@@ -20,7 +20,9 @@ const D = day(58);
 const D2 = day(59);
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 const count = (table, where) => Number(sql(`select count(*) from ${table} where ${where}`));
-const edgeLog = () => execFileSync('sh', ['-c', 'docker logs --since 4m supabase_edge_runtime_GarSer-main_4 2>&1'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+// Todo el registro, sin `--since`: si el Mac duerme, el reloj de Docker se queda atrás y el filtro por
+// hora no encuentra nada. Se busca por el correo del cliente, que es único en cada pasada.
+const edgeLog = () => execFileSync('sh', ['-c', 'docker logs supabase_edge_runtime_GarSer-main_4 2>&1'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 const selfClose = async (token, body) => {
   const res = await fetch(`${apiUrl}/functions/v1/account-closure`, {
@@ -120,7 +122,7 @@ async function main() {
   const line = log.split('MOCK EMAIL SEND').find((chunk) => chunk.includes(client.email) && chunk.includes('booking_accepted')) || '';
   record('SC-04', 'El correo «aceptada» saluda al cliente por su nombre (sin escaparlo dos veces) y nombra a la empresa por su nombre comercial',
     accepted === 'sent' && line.includes('Buenas noticias, Clara Pérez & Hijos') && line.includes(`${commercial} ha aceptado tu reserva`) && !line.includes('&amp;'),
-    `cola [${accepted}] ${line.replace(/\s+/g, ' ').slice(0, 260)}`);
+    `cola [${accepted}], correo en el registro ${line ? 'sí' : `no (${log.split('MOCK EMAIL SEND').length - 1} simulados, el cliente aparece ${log.includes(client.email) ? 'sí' : 'no'})`} ${line.replace(/\s+/g, ' ').slice(0, 260)}`);
 
   // ── PH-14: quién ve las fotos de la reserva ────────────────────────────────────────────────
   // La ruta definitiva de una foto de reserva (la sube el servidor; booking_media no admite borradores).

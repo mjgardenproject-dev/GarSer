@@ -397,6 +397,7 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 | Si el Mac duerme (tapa cerrada), el reloj de Docker se queda atrás: «JWT issued at future» y `docker logs --since` vacío | Repetir la batería con el Mac despierto; en baterías nuevas, buscar en el registro por un dato único en vez de por hora |
 | `booking-photos` es público en producción y privado en local | No dar por buena una prueba de imágenes del chat solo en local (PH-16) |
 | `renderBrandedEmail` ya escapa encabezado, texto y botón | No volver a llamar a `escapeHtml` en las plantillas (A-49) |
+| Datos de demostración en el jardinero de la semilla (horas libres o reservas a 2-3 meses) cambian lo que ofrece el planificador de varios días, que busca hasta 21 días | Borrar los datos de demostración al acabar la prueba en el navegador (F7-26 falló por eso) |
 
 ---
 
@@ -407,4 +408,5 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 | 2026-10-08 | — | Procedimiento escrito sobre `main` `9c5306c`; línea base 921/111, `tsc` 128, 139 migraciones | Sin cambios de código | `77a175e` |
 | 2026-10-09 | — | Arranque: rama `fix/pendientes-ph` sobre `77a175e` (= `origin/main` `9c5306c` + docs). Línea base confirmada: 921/111, `tsc` 128, 139 migraciones; **23 baterías / 268 comprobaciones** en verde. Vault local vacío tras un `db reset` ajeno: repuesto | — | — |
 | 2026-10-09 | A | PH-01, PH-04, PH-14 y PH-15 corregidos; PH-16 y PH-17 apuntados. Vitest 930/113, build ✅, `tsc` 128, 24 baterías, 280/280 (`verify-self-closure` nueva, 12/12; 4 repetidas porque el Mac se durmió: «JWT issued at future»), navegador local con los tres casos | ✅ Fase A cerrada | `3e40929` + `d0dc28a` |
-| 2026-10-09 | B | PH-02 corregido (histórico de rechazos, reabrir por RPC, campos de revisión protegidos); PH-18 apuntado. Vitest 937/115, build ✅, `tsc` 128, 25 baterías 288/288 (`verify-gardener-reapply` nueva, 8/8), navegador local con jardinero y admin | ✅ Fase B cerrada | `4ef9d4c` + (este commit) |
+| 2026-10-09 | B | PH-02 corregido (histórico de rechazos, reabrir por RPC, campos de revisión protegidos); PH-18 apuntado. Vitest 937/115, build ✅, `tsc` 128, 25 baterías 288/288 (`verify-gardener-reapply` nueva, 8/8), navegador local con jardinero y admin | ✅ Fase B cerrada | `4ef9d4c` + `0a93461` |
+| 2026-10-09 | C | PH-05 (gravedad subida: con una marca falsa se mandaba al cliente un «aceptada» falso) y PH-08 corregidos. Vitest 937/115, build ✅, `tsc` 128, 26 baterías 293/293 (`verify-idempotency-notices` nueva, 5/5; F6-35 reescrita), navegador local: el autónomo acepta desde «Solicitudes» | ✅ Fase C cerrada | `530c301` + (este commit) |

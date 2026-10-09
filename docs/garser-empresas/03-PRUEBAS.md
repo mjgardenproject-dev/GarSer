@@ -534,6 +534,21 @@ Batería `scripts/garser-empresas/verify-gardener-reapply.mjs` (local), **8/8**:
 Unitarias: `src/utils/gardenerApplicationRetry.test.ts` (5) y `src/components/gardener/GardenerStatusPage.test.tsx` (2).
 Navegador local (375 px, dos orígenes): recorrido completo del jardinero y del admin, descrito en `05` (PH-02).
 
+### Pendientes · fase C — marcas de idempotencia y aviso único al mover de fecha (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-idempotency-notices.mjs` (local), **5/5**:
+
+| # | Qué comprueba | Resultado |
+|---|---|---|
+| IC-01 | Escribir una marca (o de lotes) o llamar a los ayudantes desde el navegador: 403 | ✅ |
+| IC-02 | Aceptar dos veces con la misma operación: una confirmación, respuestas iguales, 1 correo; la empresa lee su marca | ✅ |
+| IC-03 | Proponer un precio y rechazarlo, repetidos con la misma operación: funcionan | ✅ |
+| IC-04 | Mover de fecha con la misma persona: 1 «Tu trabajo cambia de fecha» y 1 aviso a la empresa | ✅ |
+| IC-05 | Autónomo (Regla 2): acepta repitiendo la operación, 1 correo, sin avisos de equipo | ✅ |
+
+`verify-f6-reschedule` F6-35 reescrita (correos por persona: empresa 1, quien entra 1 «Nuevo trabajo», quien sale
+1 «Ya no vas»), 9/9; con la función anterior daba 2 correos a quien entra.
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que
@@ -602,6 +617,8 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-PH14-1 | Fase A: el chat comprueba con una cuenta de prueba que no puede listar `booking-photos` ni `applications` de otros, y que una foto de perfil se sigue viendo | Listas vacías; la foto se ve | ⬜ |
 | P-PH15-1 | Fase A: en la primera reserva aceptada de las pruebas, mirar el correo al cliente | «¡Buenas noticias, <nombre>!» y «<nombre de la empresa> ha aceptado tu reserva» | ⬜ |
 | P-PH02-1 | Fase B: el admin rechaza la solicitud de jardinero de prueba con un motivo; el jardinero pulsa «Corregir y volver a enviar» | Le llega el correo con el motivo; el formulario sale relleno y con el motivo arriba; al reenviar, el admin la ve «Reenviada tras 1 rechazo» con el rechazo anterior | ⬜ |
+| P-PH05-1 | Fase C: el chat, con una cuenta de prueba de empresa, intenta escribir una marca en `booking_rpc_idempotency` y llamar a `register_booking_operation_once` | Los dos, 403; aceptar una solicitud desde la web sigue funcionando | ⬜ |
+| P-PH08-1 | Fase C: «Mover a otra fecha» a un día en que va otra persona; el cliente acepta | A quien entra le llega solo «Nuevo trabajo»; a quien deja de ir, «Ya no vas»; a la empresa, «acepta la nueva fecha» | ⬜ |
 
 ---
 

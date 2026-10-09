@@ -20,10 +20,10 @@
 | PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | ✅ Hecho (2026-10-09), por desplegar |
 | PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | Por corregir |
 | PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | ✅ Hecho (2026-10-09), por desplegar |
-| PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | Baja (seguridad, solo le afecta a él) | Visto en F3 | Cerrarlo | Por corregir |
+| PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | **Media** (subida en la fase C: con una marca falsa se manda al cliente un «reserva aceptada» falso) | Visto en F3 | Cerrarlo | ✅ Hecho (2026-10-09), por desplegar |
 | PH-06 | `ARCHITECTURE.md` describe un sistema que ya no existe | Media (despista) | H-07 | Reescribirlo | Por corregir |
 | PH-07 | 9 pruebas de preparación de servicios fallan porque están desactualizadas | Media (se pierde una red de seguridad) | H-27 | Ponerlas al día | Por corregir |
-| PH-08 | Al aceptar otra fecha con cambio de persona, a quien va le llegan dos correos | Baja | Visto en F4 | Técnica (ver punto) | Por corregir |
+| PH-08 | Al aceptar otra fecha con cambio de persona, a quien va le llegan dos correos | Baja | Visto en F4 | Técnica (ver punto) | ✅ Hecho (2026-10-09), por desplegar |
 | PH-09 | El historial de migraciones del Supabase **local** está desalineado | Baja (solo entorno) | Visto en F3 | Técnica | Por corregir |
 | PH-10 | `02-HALLAZGOS.md` tiene hallazgos resueltos todavía marcados como abiertos | Baja (documentación) | `01-PLAN` §5c.6 | — | Por corregir |
 | PH-11 | `booking_items` no se actualiza tras un cambio de precio | Vigilado (sin efecto hoy) | H-36 | Sin acción (regla) | Vigilado |
@@ -347,6 +347,58 @@ ningún fichero suyo en Storage.
   - Aceptar una solicitud dos veces con la misma operación sigue devolviendo lo mismo.
   - Las 23 baterías, en verde.
 
+#### Seguimiento (2026-10-09) — fase C
+
+1. **Leído.**
+   - **Permisos vivos:** `authenticated` tiene INSERT, UPDATE y DELETE sobre
+     `booking_rpc_idempotency`, con reglas de insertar y actualizar las suyas.
+   - **Los ayudantes** `register_booking_operation_once` y `complete_booking_operation` son
+     `SECURITY INVOKER` y tienen EXECUTE para PUBLIC.
+   - **Sus gemelos de lotes** ya no tenían permisos.
+   - **Quién usa las marcas:** `respond_booking_request_core`, `create_atomic_booking`,
+     `create_broadcast_booking_requests` (desactivada, PH-12), `propose_booking_price_change` y
+     `respond_booking_price_change`, todas `SECURITY DEFINER`. Ni la web ni las funciones las
+     escriben.
+   - Decisión: cerrarlo.
+2. **¿Es cierto?** Sí, y **peor de lo apuntado** (`repro-ph05.mjs`):
+   - El proveedor escribe la marca de «aceptar» con una respuesta inventada (201).
+   - Al llamar a `respond_booking_request` con esa operación recibe «confirmed» sin que se ejecute
+     nada: la reserva sigue `pending`.
+   - Además, la envoltura de F3 apunta `booking_accepted`, porque mira la respuesta y no la
+     reserva. **El cliente recibiría «Tu reserva ha sido aceptada» siendo falso.** El verdadero
+     ya no saldría después, porque usa la misma clave contra duplicados.
+   - Los ayudantes también se podían llamar desde el navegador.
+   - **Gravedad subida a Media.**
+3. **Casos parecidos.**
+   - Inventario de las 27 tablas a las que `authenticated` puede escribir, con sus reglas.
+   - Del mismo tipo (marcas técnicas que el servidor da por buenas) solo hay esta y la de lotes,
+     que ya estaba cerrada.
+   - Las de registro (`booking_manual_declarations`, `booking_variable_revisions`, `role_logs`)
+     guardan lo que escribe el propio usuario y no se usan como prueba de nada hecho por el
+     servidor.
+   - Las de solicitudes a varios (`booking_requests`, `booking_responses`) son del camino
+     desactivado (PH-12).
+4. **Hallazgos nuevos.** El aviso falso al cliente: mismo tema, corregido; la envoltura ahora mira
+   el estado real.
+5. **Comprobado.**
+   - **Migración** `20261009120000_close_booking_idempotency_writes.sql`: sin escritura desde el
+     navegador (también se quitan las reglas inertes de lotes), ayudantes solo del servidor y
+     aviso según el estado real.
+   - **Batería** `verify-idempotency-notices`, 5/5:
+     - Marca, lotes y ayudantes dan 403.
+     - Aceptar dos veces con la misma operación confirma una vez, con 1 solo correo, y la
+       empresa sigue leyendo su marca.
+     - Proponer y rechazar un precio repetidos siguen funcionando.
+     - Un autónomo acepta igual (Regla 2).
+   - **Todas las baterías:** 26, 293/293. Unitarias 937/115, build ✅ y `tsc` 128.
+   - **El mismo script de antes:** ahora la marca da 403 y la aceptación real funciona.
+   - **Navegador local:** el jardinero autónomo de la semilla acepta una solicitud desde
+     «Solicitudes»; la reserva queda confirmada, la marca la escribe el servidor, sale el correo y
+     no hay errores de permisos en la consola.
+   - **Pendiente en garser.es:** P-PH05-1.
+   - **Commit:** `530c301`.
+   - **Vuelta atrás:** la de la cabecera de la migración.
+
 ### PH-06 — `ARCHITECTURE.md` está desactualizado (H-07)
 
 **Qué pasa.**
@@ -403,6 +455,37 @@ a quien ya iba y sigue yendo. Se anota en `02-HALLAZGOS.md` al hacerlo.
 
 **Pruebas.** `verify-f6-reschedule`: al aceptar con cambio de persona, a Luis 1 correo
 («Nuevo trabajo»), a la empresa 1, y a Ana «Ya no vas».
+
+#### Seguimiento (2026-10-09) — fase C
+
+1. **Leído.**
+   - `send-email-notification`, rama `booking_reschedule_answered`: avisaba a todos los
+     asignados del trabajo.
+   - `private.sync_job_notices` (diferido, F4) apunta `job_assigned` a quien entra, en la misma
+     transacción que la aceptación.
+   - Decisión técnica (reversible): quien entra recibe solo «Nuevo trabajo».
+2. **¿Es cierto?** Sí. `verify-f6-reschedule` con la función anterior: a Luis, que entra, le
+   llegan «Nuevo trabajo» **y** «Tu trabajo cambia de fecha» (`luisMoved: 1`).
+3. **Casos parecidos.**
+   - Cuando sigue la misma persona, tiene que seguir recibiendo «Tu trabajo cambia de fecha» y
+     ningún «Nuevo trabajo» de más.
+   - En los cambios de quién va sin cambiar de fecha («cambiar quién va», F5) solo salen
+     `job_assigned` y `job_unassigned`: no hay solape.
+   - Una propuesta de precio aceptada no manda avisos de equipo, salvo `job_assigned` si se
+     confirma; no hay solape.
+4. **Hallazgos nuevos.**
+   - Las baterías con `docker logs --since` fallan si el Mac duerme: `verify-f6-reschedule` y la
+     nueva ya buscan por el correo de cada cuenta, en todo el registro.
+5. **Comprobado.**
+   - **El cambio:** `send-email-notification` excluye a quien tiene un `job_assigned` apuntado en
+     la misma transacción que la aceptación (misma hora en `notification_outbox`).
+   - **`verify-f6-reschedule`:** F6-35 reescrita para contar los correos de cada persona: empresa
+     1, Luis 1 («Nuevo trabajo») y Ana 1 («Ya no vas»); 9/9.
+   - **IC-04, quien sigue:** a Ana 1 «Tu trabajo cambia de fecha».
+   - **Pendiente en garser.es:** P-PH08-1 (`06`, paso 4.7). **Hay que redesplegar
+     `send-email-notification`.**
+   - **Commit:** `530c301`.
+   - **Vuelta atrás:** la versión anterior de la función.
 
 ### PH-09 — Historial de migraciones local desalineado
 

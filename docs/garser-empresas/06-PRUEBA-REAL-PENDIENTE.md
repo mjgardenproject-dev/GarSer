@@ -159,7 +159,8 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 4.4 | P-R03-1 | El cliente, con la app instalada, pulsa «Actualizar» o vuelve a la app | Ve «Confirmada» |
 | 4.5 | P-F5-3 | La empresa cambia quién va (a un segundo empleado) | Correo «Ya no vas» al primero y «Nuevo trabajo» al segundo |
 | 4.6 | P-F6-1 | La empresa reparte un trabajo de 3 h entre dos personas | A cada una, su aviso con «Tu parte» |
-| 4.7 | P-F6-2 (+P-H42-1, P-H44-1) | En el móvil, «Mover a otra fecha»; el cliente acepta | Pantalla fija sin scroll lateral; al cliente le llega el correo con inicio y fin; la reserva se mueve; aviso a quien va |
+| 4.7 | P-F6-2 (+P-H42-1, P-H44-1, P-PH08-1) | En el móvil, «Mover a otra fecha» (a un día en que va otra persona); el cliente acepta | Pantalla fija sin scroll lateral; al cliente le llega el correo con inicio y fin; la reserva se mueve; quien entra recibe **solo** «Nuevo trabajo» y quien sale «Ya no vas» |
+| 4.7b | P-PH05-1 | El chat prueba, con la cuenta de la empresa de prueba, a escribir una marca de idempotencia | 403; aceptar desde la web sigue funcionando |
 | 4.8 | P-F5-4 | Reserva para mañana: el cliente mira su reserva | Ve «Irá …» con nombre y foto el día antes, y no antes |
 | 4.9 | P-PH15-1 | Mirar el correo «Tu reserva ha sido aceptada» que recibió el cliente en 4.1 | Le saluda por su nombre y dice el nombre de la empresa |
 
@@ -198,3 +199,4 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 2026-10-08 | PR-01 cerrado (PR #41 fusionada el 2026-09-29). Procedimiento de corrección en `07-PROCEDIMIENTO-CORRECCION.md` | — |
 | 2026-10-09 | Fase A: pasos 4.9 y 7.3 añadidos (baja desde «Mi cuenta», ficheros y nombres en los correos) | — |
 | 2026-10-09 | Fase B: paso 2.7 añadido (jardinero rechazado que vuelve a solicitar) | — |
+| 2026-10-09 | Fase C: paso 4.7 ampliado y 4.7b añadido (aviso único al mover y marcas cerradas) | — |

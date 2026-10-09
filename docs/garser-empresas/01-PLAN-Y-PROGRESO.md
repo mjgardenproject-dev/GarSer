@@ -809,6 +809,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | `c506f1e` |
 | 2026-10-09 | Pendientes A | **Fase A cerrada** (`07` §4): baja real desde «Mi cuenta» con la lógica de F6 (PH-01), ficheros de las bajas con cola y reintento (PH-04), Storage cerrado a otros (PH-14, D27) y nombres en los correos (PH-15, D28). Apuntados PH-16 y PH-17. | 930 ✅ · build ✅ · tsc 128 · 24 baterías 280/280 | `3e40929` |
 | 2026-10-09 | Pendientes B | **Fase B cerrada** (`07` §4): «Corregir y volver a enviar» reabre la misma solicitud por RPC con histórico de rechazos (PH-02, A-50); campos de revisión solo del servidor; el envío comprueba que se guarda; el admin ve los rechazos anteriores. Apuntado PH-18. | 937 ✅ · build ✅ · tsc 128 · 25 baterías 288/288 | `4ef9d4c` |
+| 2026-10-09 | Pendientes C | **Fase C cerrada** (`07` §4): marcas de idempotencia solo del servidor y aviso por estado real (PH-05, A-51); «Tu trabajo cambia de fecha» solo a quien ya iba (PH-08, A-52). | 937 ✅ · build ✅ · tsc 128 · 26 baterías 293/293 | `530c301` |
 
 ---
 
@@ -923,6 +924,9 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 2h. **Fase B hecha (2026-10-09):** el jardinero rechazado corrige y vuelve a enviar (PH-02), con histórico de rechazos
    y los campos de revisión protegidos. Por desplegar en la fase H: migración `20261009110000` y la web. Apuntado
    PH-18 (validar el alta de jardinero en el servidor).
+2i. **Fase C hecha (2026-10-09):** el navegador ya no escribe las marcas de idempotencia (PH-05: con una marca falsa se
+   mandaba al cliente un «aceptada» falso) y quien entra al mover de fecha recibe un solo aviso (PH-08). Por desplegar
+   en la fase H: migración `20261009120000` y la función `send-email-notification`.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).

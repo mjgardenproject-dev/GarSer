@@ -15,7 +15,7 @@
 | # | Qué falta | Gravedad | Origen | Decisión | Estado |
 |---|---|---|---|---|---|
 | PR-01 | La web de la corrección (PR #41) no estaba publicada | — | F8 | — | ✅ Resuelto: el usuario fusionó la #41 el 2026-09-29 |
-| PR-02 | Un proveedor suspendido no ve en su panel que lo está | Media | R-20 | Aviso en el panel y correo | Por corregir |
+| PR-02 | Un proveedor suspendido no ve en su panel que lo está | Media | R-20 | Aviso en el panel y correo | ✅ Hecho (2026-10-09), por desplegar |
 | PR-03 | Las notificaciones al móvil no se han visto llegar a un móvil de verdad | Media (solo comprobable en garser.es) | F7 (R-08) | — | Pendiente de prueba |
 | PR-04 | 41 pruebas en garser.es sin hacer, varias duplicadas u obsoletas | Media | `03-PRUEBAS.md` §3 | Una guía única, ordenada | Guía en §3 |
 | PR-05 | Al dar de baja una cuenta, sus mensajes de chat se conservan | Decisión tomada | Visto en F6 | Conservarlos | Cerrado (sin cambios) |
@@ -75,6 +75,46 @@ ningún aviso en su panel. Solo nota que no le llega nada.
 - Batería: suspender apunta 1 aviso y reactivar, otro; repetir no duplica.
 - Unitaria: el aviso del panel con `suspended_at`.
 - Navegador local, en los dos paneles.
+
+#### Seguimiento (2026-10-09) — fase E
+
+1. **Leído.**
+   - `admin_set_provider_suspended` no apuntaba nada.
+   - Ninguna pantalla del profesional mira `suspended_at`; solo el admin.
+   - El profesional puede leer su propia ficha.
+   - Decisión: aviso en el panel y correo.
+2. **¿Es cierto?** Sí (`repro-pr02.mjs`): al suspender, 0 avisos en la cola. La empresa sí lee
+   su `suspended_at` y el estado de su empresa.
+3. **Casos parecidos.**
+   - **Empleados de una empresa suspendida:** pregunta al usuario. **Decisión (usuario,
+     2026-10-09): solo a la empresa.**
+   - **La baja (F6)** pone `suspended_at` por su cuenta y no pasa por esta función, así que no
+     manda el correo a una cuenta que se va. Además, el correo se salta los `@garser.invalid`.
+   - **Suspender y reactivar seguidos:** el correo solo sale si la cuenta sigue en ese estado al
+     enviarlo.
+   - **El autónomo** (Regla 2) recibe lo mismo.
+4. **Hallazgos nuevos.** Ninguno de código. Una trampa de pruebas: suspender al jardinero de la
+   semilla mientras corren las baterías hace fallar las que reservan con él (se repitieron en
+   verde). Apuntada en el `07`.
+5. **Comprobado.**
+   - **Migración** `20261009140000_provider_suspension_notices.sql`: apunta `provider_suspended`
+     o `provider_reactivated` solo si cambia el estado.
+   - **`send-email-notification`:** dos correos nuevos, solo desde la cola.
+   - **Web:** `SuspendedProviderNotice` en `/empresa` y en la portada del panel del autónomo
+     (vuelve a mirar al volver a la app). El admin dice «Le avisamos por correo».
+   - **Pruebas:**
+     - Unitarias 953/118.
+     - `verify-provider-suspension` 6/6 y **27 baterías, 300/300**.
+     - Build ✅ y `tsc` 128.
+   - **Navegador local a 375 px:**
+     - El admin suspende la empresa de prueba: sale el aviso del admin y el correo sale de la
+       cola. La empresa ve «Tu cuenta está suspendida» en `/empresa` (captura).
+     - Al reactivar, el aviso desaparece y sale el segundo correo.
+     - Lo mismo con el autónomo de la semilla en su panel (captura), y se deja reactivado.
+     - Consola sin errores.
+   - **Pendiente en garser.es:** P-R09-1 ampliada (paso 7.1 de la guía).
+   - **Commit:** `8c5f902`.
+   - **Vuelta atrás:** la función de `20260929130000`.
 
 ### PR-03 — Notificaciones al móvil en un móvil real (R-08)
 
@@ -184,7 +224,7 @@ Pruebas que **se fusionan o dejan de aplicar**:
 
 | Paso | Prueba | Qué se hace | Qué debe pasar |
 |---|---|---|---|
-| 7.1 | P-R09-1 | Suspender la empresa de prueba y buscarla como cliente; después reactivarla | Suspendida, no aparece para reservar y sus reservas siguen; reactivada, vuelve. Con PR-02 hecho, le llegan los correos |
+| 7.1 | P-R09-1 (+PR-02) | Suspender la empresa de prueba y buscarla como cliente; después reactivarla | Suspendida, no aparece para reservar y sus reservas siguen; la empresa ve «Tu cuenta está suspendida» en su panel y recibe el correo; reactivada, vuelve, el aviso desaparece y le llega «vuelve a estar activa»; a sus empleados no les llega nada |
 | 7.2 | P-R02-1 | «Dar de baja o suspender»: revisar la empresa (con reservas) y cada cuenta de prueba | La empresa, «Aún no se puede» con el motivo; las cuentas sin reservas se borran enteras |
 | 7.3 | P-PH01-1 → P-PH01-2 (+P-PH14-1) | Con una cuenta de prueba que aún tenga una reserva: «Mi cuenta → Cerrar cuenta». Después, con una sin reservas | La primera: «Aún no puedes cerrar tu cuenta» con la fecha. La segunda: vuelve a la entrada con «Tu cuenta se ha cerrado» y no puede entrar; el chat comprueba que no queda ningún fichero suyo |
 | 7.4 | Limpieza | Dar de baja o borrar todas las cuentas de prueba de estas sesiones, con la herramienta | Nada de prueba en producción (lo comprueba el chat) |
@@ -201,3 +241,4 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 2026-10-09 | Fase B: paso 2.7 añadido (jardinero rechazado que vuelve a solicitar) | — |
 | 2026-10-09 | Fase C: paso 4.7 ampliado y 4.7b añadido (aviso único al mover y marcas cerradas) | — |
 | 2026-10-09 | Fase D: pasos 2.2 y 4.1 ampliados («profesional» y alta validada) | — |
+| 2026-10-09 | Fase E: PR-02 hecho (aviso en el panel y correos); paso 7.1 ampliado | — |

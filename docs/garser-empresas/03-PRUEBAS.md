@@ -558,6 +558,13 @@ Batería `scripts/garser-empresas/verify-idempotency-notices.mjs` (local), **5/5
 - Navegador local (375 px): reserva con autónomo y con empresa («Confirmar profesional», «Profesional: …»), «Mis
   reservas», perfil público (con los servicios por su nombre) y envío del alta de jardinero.
 
+### Pendientes · fase E — aviso al proveedor suspendido (PR-02) (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-provider-suspension.mjs` (local), **6/6**: suspender manda 1 correo y el dueño
+lee su estado (PS-01); repetir no manda más (PS-02); reactivar manda 1 y repetir no (PS-03); a la empleada nada (PS-04);
+autónomo igual (PS-05); solo el admin, y el correo no se pide desde el navegador (PS-06). Unitaria:
+`SuspendedProviderNotice.test.tsx` (2). Navegador local: admin → empresa → autónomo, con capturas (`06`, PR-02).
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que

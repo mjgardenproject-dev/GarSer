@@ -398,6 +398,7 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 | `booking-photos` es público en producción y privado en local | No dar por buena una prueba de imágenes del chat solo en local (PH-16) |
 | `renderBrandedEmail` ya escapa encabezado, texto y botón | No volver a llamar a `escapeHtml` en las plantillas (A-49) |
 | Datos de demostración en el jardinero de la semilla (horas libres o reservas a 2-3 meses) cambian lo que ofrece el planificador de varios días, que busca hasta 21 días | Borrar los datos de demostración al acabar la prueba en el navegador (F7-26 falló por eso) |
+| Suspender al jardinero de la semilla (o tocarlo) en el navegador mientras corren las baterías | Las que reservan con él, o copian su ficha para crear autónomos, fallan. No probar con él mientras corren, y dejarlo como estaba |
 
 ---
 
@@ -410,4 +411,5 @@ Commit: <hash>. Vuelta atrás: <cómo>.
 | 2026-10-09 | A | PH-01, PH-04, PH-14 y PH-15 corregidos; PH-16 y PH-17 apuntados. Vitest 930/113, build ✅, `tsc` 128, 24 baterías, 280/280 (`verify-self-closure` nueva, 12/12; 4 repetidas porque el Mac se durmió: «JWT issued at future»), navegador local con los tres casos | ✅ Fase A cerrada | `3e40929` + `d0dc28a` |
 | 2026-10-09 | B | PH-02 corregido (histórico de rechazos, reabrir por RPC, campos de revisión protegidos); PH-18 apuntado. Vitest 937/115, build ✅, `tsc` 128, 25 baterías 288/288 (`verify-gardener-reapply` nueva, 8/8), navegador local con jardinero y admin | ✅ Fase B cerrada | `4ef9d4c` + `0a93461` |
 | 2026-10-09 | C | PH-05 (gravedad subida: con una marca falsa se mandaba al cliente un «aceptada» falso) y PH-08 corregidos. Vitest 937/115, build ✅, `tsc` 128, 26 baterías 293/293 (`verify-idempotency-notices` nueva, 5/5; F6-35 reescrita), navegador local: el autónomo acepta desde «Solicitudes» | ✅ Fase C cerrada | `530c301` + `2ee2e4a` |
-| 2026-10-09 | D | PH-03 («profesional» para el cliente) y, a petición del usuario, PH-18 (alta validada en el servidor); de paso, el perfil público enseñaba identificadores de servicio. Vitest 951/117, build ✅, `tsc` 128, 26 baterías 294/294, navegador local con autónomo, empresa, perfil y alta | ✅ Fase D cerrada | `569c8d1` `1bf4b7e` + (este commit) |
+| 2026-10-09 | D | PH-03 («profesional» para el cliente) y, a petición del usuario, PH-18 (alta validada en el servidor); de paso, el perfil público enseñaba identificadores de servicio. Vitest 951/117, build ✅, `tsc` 128, 26 baterías 294/294, navegador local con autónomo, empresa, perfil y alta | ✅ Fase D cerrada | `569c8d1` `1bf4b7e` + `921e294` |
+| 2026-10-09 | E | PR-02: aviso en el panel y correos al suspender y reactivar; sin avisos a empleados (decisión del usuario). Vitest 953/118, build ✅, `tsc` 128, 27 baterías 300/300 (`verify-provider-suspension` nueva, 6/6), navegador local con admin, empresa y autónomo | ✅ Fase E cerrada | `8c5f902` + (este commit) |

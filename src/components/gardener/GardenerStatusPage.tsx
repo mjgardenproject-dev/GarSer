@@ -3,7 +3,7 @@ import { Clock, AlertTriangle, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-import { supabase } from '../../lib/supabase';
+import { restartRejectedApplication } from '../../utils/gardenerApplicationRetry';
 
 interface GardenerStatusPageProps {
   status: 'pending' | 'denied';
@@ -20,45 +20,27 @@ const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialR
     navigate('/auth');
   };
 
+  // PH-02: reabrir la solicitud lo hace el servidor (antes el navegador intentaba un UPDATE y un
+  // DELETE que las reglas no dejan: respondía bien, no hacía nada y el jardinero quedaba bloqueado).
+  const [retryError, setRetryError] = React.useState('');
   const handleRetry = async () => {
     if (!user) return;
-    
+    setIsResetting(true);
+    setRetryError('');
     try {
-      setIsResetting(true);
-      
-      // 1. Primero pasamos a 'draft' para asegurarnos de que tenemos permisos de edición/borrado
-      // según las políticas RLS (que suelen permitir gestión sobre 'draft')
-      const { error: updateError } = await supabase
-        .from('gardener_applications')
-        .update({ status: 'draft' })
-        .eq('user_id', user.id)
-        .eq('status', 'rejected');
-
-      if (updateError) throw updateError;
-
-      // 2. Eliminamos completamente el registro de la base de datos
-      const { error: deleteError } = await supabase
-        .from('gardener_applications')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (deleteError) throw deleteError;
-
-      // 3. Limpiamos todos los datos locales relacionados con el formulario
+      await restartRejectedApplication();
+      // Se rellena con lo que ya tenía en la base de datos, no con un borrador local viejo.
       try {
-        const wizardKey = `gardener_wizard_progress_${user.id}`;
-        localStorage.removeItem(wizardKey);
+        localStorage.removeItem(`gardener_wizard_progress_${user.id}`);
         localStorage.removeItem('gardenerApplicationStatus');
         localStorage.removeItem('gardenerApplicationJustSubmitted');
       } catch (e) {
         console.error('Error clearing local storage:', e);
       }
-
-      // 4. Forzamos una recarga para reiniciar la app limpia
-      window.location.reload();
+      window.location.assign('/apply');
     } catch (error) {
       console.error('Error resetting application:', error);
-      alert('Hubo un error al reiniciar tu solicitud. Por favor intenta de nuevo.');
+      setRetryError(error instanceof Error ? error.message : 'No se ha podido reabrir tu solicitud. Inténtalo de nuevo.');
       setIsResetting(false);
     }
   };
@@ -113,10 +95,12 @@ const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialR
             <button
               onClick={handleRetry}
               disabled={isResetting}
-              className="w-full px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-busy={isResetting}
+              className="w-full min-h-11 px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isResetting ? 'Procesando...' : 'Corregir y volver a enviar'}
+              {isResetting ? 'Abriendo tu solicitud…' : 'Corregir y volver a enviar'}
             </button>
+            {retryError && <p role="alert" className="text-sm text-red-700">{retryError}</p>}
             <button
               onClick={handleSignOut}
               className="flex items-center justify-center gap-2 w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"

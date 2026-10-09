@@ -1744,6 +1744,42 @@ export type Database = {
           },
         ]
       }
+      gardener_application_reviews: {
+        Row: {
+          application_id: string
+          created_at: string
+          id: string
+          review_comment: string | null
+          reviewed_at: string | null
+          reviewer_id: string | null
+          status: string
+          submitted_at: string | null
+          user_id: string
+        }
+        Insert: {
+          application_id: string
+          created_at?: string
+          id?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          status: string
+          submitted_at?: string | null
+          user_id: string
+        }
+        Update: {
+          application_id?: string
+          created_at?: string
+          id?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          status?: string
+          submitted_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       gardener_applications: {
         Row: {
           accept_terms: boolean | null
@@ -3405,6 +3441,10 @@ export type Database = {
           p_booking_id: string
           p_operation_id?: string
         }
+        Returns: Json
+      }
+      restart_gardener_application: {
+        Args: never
         Returns: Json
       }
       respond_booking_request: {

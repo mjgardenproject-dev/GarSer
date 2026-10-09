@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Star, MapPin, Leaf, Calendar } from 'lucide-react';
 import ReviewList from '../reviews/ReviewList';
+import { isServiceId, serviceLabels } from '../../utils/serviceLabels';
 
 const GardenerPublicProfile: React.FC = () => {
   const { gardenerId } = useParams();
@@ -10,6 +11,7 @@ const GardenerPublicProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [serviceNames, setServiceNames] = useState<string[]>([]);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -34,6 +36,15 @@ const GardenerPublicProfile: React.FC = () => {
           return;
         }
         setProfile(data);
+        // Los servicios pueden venir como identificadores: se enseñan por su nombre.
+        const raw: string[] = (data as { services?: string[] | null }).services || [];
+        const ids = raw.filter(isServiceId);
+        let nameById: Record<string, string> = {};
+        if (ids.length) {
+          const { data: rows } = await supabase.from('services').select('id, name').in('id', ids);
+          nameById = Object.fromEntries(((rows || []) as { id: string; name: string }[]).map((r) => [r.id, r.name]));
+        }
+        setServiceNames(serviceLabels(raw, nameById));
       } catch (e: any) {
         setError(e?.message || 'Error cargando el perfil público');
       } finally {
@@ -102,12 +113,12 @@ const GardenerPublicProfile: React.FC = () => {
         <div className="mt-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-3">Servicios que ofrece</h3>
           <div className="flex flex-wrap gap-2">
-            {(profile?.services || []).map((svc: string) => (
+            {serviceNames.map((svc) => (
               <span key={svc} className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full text-sm">
                 <Leaf className="w-4 h-4" /> {svc}
               </span>
             ))}
-            {(!profile?.services || profile.services.length === 0) && (
+            {serviceNames.length === 0 && (
               <span className="text-gray-500 text-sm">Este profesional aún no ha configurado sus servicios.</span>
             )}
           </div>

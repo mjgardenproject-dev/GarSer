@@ -226,8 +226,35 @@ export async function quote(serviceId, bookingInput, { providerId = PROVIDER_ID 
     estimatedHours: res.body?.estimatedHours,
     code: res.body?.code,
     economics: res.body?.economics,
-    warnings: res.body?.warnings || [],
+    warnings: normalizeWarnings(res.body?.warnings || []),
   };
+}
+
+/**
+ * Pendientes · fase F (PH-07): por HTTP, `booking-authority` devuelve los avisos SOLO como texto
+ * (`booking-authority/index.ts`, `warnings.map((item) => item.message)`, a propósito: es lo que
+ * enseña la web). El motor en proceso (READINESS_ENGINE=local) los da como `{ code, message }`.
+ * Las pruebas comparan códigos, así que por HTTP fallaban aunque el aviso estuviera. Aquí se
+ * recupera el código a partir del texto exacto que escribe el motor (`bookingQuoteCore.ts`,
+ * `pushWarning`): la comprobación sigue siendo la misma, aviso a aviso.
+ */
+export const WARNING_PATTERNS = [
+  ['lawn_area_implausible', /^La superficie declarada \(.+ m²\) supera lo habitual para un jardín residencial/],
+  ['hedge_length_implausible', /^La longitud declarada \(.+ ml\) supera lo habitual para un seto residencial/],
+  ['palm_terminal_range', /^Precio aproximado: en el rango más alto de palmera/],
+  ['palm_quantity_implausible', /^La cantidad declarada \(.+ palmeras\) supera lo habitual para un encargo residencial/],
+  ['weeding_area_implausible', /^La superficie declarada \(.+ m²\) supera lo habitual para una parcela residencial/],
+  ['shrub_area_implausible', /^La superficie declarada \(.+ m²\) supera lo habitual para un macizo residencial/],
+  ['phytosanitary_area_implausible', /^La cantidad declarada \(.+\) supera lo habitual para una sola zona de tratamiento/],
+];
+
+export function normalizeWarnings(warnings) {
+  return (warnings || []).map((w) => {
+    if (w && typeof w === 'object') return w;
+    const message = String(w || '');
+    const match = WARNING_PATTERNS.find(([, re]) => re.test(message));
+    return { code: match ? match[0] : 'unknown', message };
+  });
 }
 
 export async function previewProviders(serviceId, bookingInput, opts = {}) {
@@ -440,6 +467,20 @@ export function nextOpenWeekdayIso(minBlocks = 10, gardenerId = PROVIDER_ID) {
     );
   }
   return row.trim();
+}
+
+/**
+ * Pendientes · fase F (PH-07): el próximo día de la semana pedido (0 = domingo … 6 = sábado), a
+ * partir de pasado mañana. Varios runners tenían fechas fijas de septiembre de 2026 («un
+ * domingo», «un martes laborable», «un sábado»): en cuanto pasaron, fallaban sin que el motor
+ * tuviera culpa (no hay huecos en el pasado). Mismo día de la semana, siempre en el futuro.
+ */
+export function nextWeekdayIso(dow) {
+  return sql(`
+    select (current_date + i)::text from generate_series(2, 8) as i
+    where extract(dow from current_date + i) = ${Number(dow)}
+    order by i limit 1;
+  `).trim();
 }
 
 if (process.argv[2] === 'services') {

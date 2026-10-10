@@ -2185,7 +2185,7 @@ exports[`paridad de precio de la entrada manual > palm/Phoenix canariensis->10m 
     "warnings": [
       {
         "code": "palm_terminal_range",
-        "message": "Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.",
+        "message": "Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.",
       },
     ],
   },
@@ -2684,7 +2684,7 @@ exports[`paridad de precio de la entrada manual > palm/Phoenix dactylifera->15m 
     "warnings": [
       {
         "code": "palm_terminal_range",
-        "message": "Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.",
+        "message": "Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.",
       },
     ],
   },
@@ -3344,7 +3344,7 @@ exports[`paridad de precio de la entrada manual > palm/Roystonea regia->6m 1`] =
     "warnings": [
       {
         "code": "palm_terminal_range",
-        "message": "Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.",
+        "message": "Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.",
       },
     ],
   },
@@ -3682,7 +3682,7 @@ exports[`paridad de precio de la entrada manual > palm/Syagrus romanzoffiana->10
     "warnings": [
       {
         "code": "palm_terminal_range",
-        "message": "Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.",
+        "message": "Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.",
       },
     ],
   },
@@ -4181,7 +4181,7 @@ exports[`paridad de precio de la entrada manual > palm/Trachycarpus fortunei->6m
     "warnings": [
       {
         "code": "palm_terminal_range",
-        "message": "Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.",
+        "message": "Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.",
       },
     ],
   },
@@ -4680,7 +4680,7 @@ exports[`paridad de precio de la entrada manual > palm/Washingtonia robusta/fili
     "warnings": [
       {
         "code": "palm_terminal_range",
-        "message": "Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.",
+        "message": "Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.",
       },
     ],
   },
@@ -5589,7 +5589,7 @@ exports[`paridad de precio de la entrada manual > palm/dos-grupos-sin-retirada 1
     "warnings": [
       {
         "code": "palm_terminal_range",
-        "message": "Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.",
+        "message": "Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.",
       },
     ],
   },

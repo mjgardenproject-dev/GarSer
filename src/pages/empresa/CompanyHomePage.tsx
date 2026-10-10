@@ -9,6 +9,7 @@ import MaxCrewCard from '../../components/empresa/MaxCrewCard';
 import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
 import MemberSetupNotices from '../../components/empresa/MemberSetupNotices';
+import SuspendedProviderNotice from '../../components/common/SuspendedProviderNotice';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
@@ -137,6 +138,7 @@ const CompanyPanel: React.FC = () => {
       </AppHeader>
 
       <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
+        <SuspendedProviderNotice />
         {tab !== 'company' && (
           <MemberSetupNotices
             members={data.members}

@@ -1667,7 +1667,7 @@ const ConfirmationPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setCurrentStep(3)}
-              aria-label="Volver al paso de selección de jardinero"
+              aria-label="Volver al paso de selección de profesional"
               className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
             >
               Cambiar horario
@@ -1734,7 +1734,7 @@ const ConfirmationPage: React.FC = () => {
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm text-gray-500">Profesional</span>
-                  <span className="max-w-[14rem] text-right text-sm font-medium text-gray-900">{gardenerName || 'Jardinero'}</span>
+                  <span className="max-w-[14rem] text-right text-sm font-medium text-gray-900">{gardenerName || 'Profesional'}</span>
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm text-gray-500">Gastos de gestión</span>
@@ -1826,8 +1826,8 @@ const ConfirmationPage: React.FC = () => {
           <div className="flex items-start space-x-3 mb-3">
             <User aria-hidden="true" className="w-5 h-5 text-gray-400 mt-0.5" />
             <div>
-              <p className="font-medium text-gray-900">Jardinero</p>
-              <p className="text-sm text-gray-600">{gardenerName || 'Jardinero'}</p>
+              <p className="font-medium text-gray-900">Profesional</p>
+              <p className="text-sm text-gray-600">{gardenerName || 'Profesional'}</p>
             </div>
           </div>
 

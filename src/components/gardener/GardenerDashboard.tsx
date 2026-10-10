@@ -22,6 +22,7 @@ import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
+import SuspendedProviderNotice from '../common/SuspendedProviderNotice';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -311,6 +312,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                 <p className="text-gray-600">Gestiona tus servicios y reservas</p>
               </div>
             </div>
+
+            {!pending && <SuspendedProviderNotice className="mt-4" />}
 
             {pending && (
               <div className="mt-4 p-4 border border-yellow-200 bg-yellow-50 rounded-xl text-yellow-800">

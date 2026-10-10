@@ -5,10 +5,9 @@
 >
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
-**Estado global:** ✅ F0, F1 y F2 cerradas · ✅ F0–F6 cerradas · ✅ F5 cerrada · ✅ HITO hecho · ✅ F6 cerrada (planificación, repartir, trabajos partidos, mover de fecha) · ✅ F7 cerrada (equipos y trabajos de varios días) · ✅ F8 cerrada (varios servicios en una reserva) · ✅ F9 cerrada (planes de mantenimiento) · **✅ FUSIONADO EN PRODUCCIÓN (2026-09-25): BD, funciones y web (#35); H-35 arreglado (#36, #37) · en curso: batería P- (03-PRUEBAS §3)** · ⏸ HITO tras F5 · D7 en borrador para validar
-**Última actualización:** 2026-09-24
-**Línea base de tests:** 473 en verde / 71 ficheros (tras F0) · `tsc` 129
-
+**Estado global:** ✅ F0–F9 en producción desde la fusión (#35, 2026-09-25) · ✅ prueba real F1–F8 en producción (#41, 2026-09-29) · ✅ pendientes A–G (`07-PROCEDIMIENTO-CORRECCION.md`) hechos en local el 2026-10-09, rama `fix/pendientes-ph` · **en curso: fase H (despliegue y pruebas en garser.es)** · después: guía de pruebas de `06` §3, limpieza y Stripe en real
+**Última actualización:** 2026-10-09
+**Línea base de tests:** 953 en verde / 118 ficheros · `tsc` 128 · 27 baterías de Empresas (300) · 7 de servicios (269)
 ---
 
 ## 0. Cómo se entrega este proyecto
@@ -108,6 +107,10 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D24 | ¿Quién envía los correos? (2026-09-28) | **El servidor**: cada acción apunta su aviso en `notification_outbox` en la misma transacción y `notification-dispatch` lo envía con reintentos. | R-06; A-40. | Prueba real |
 | D25 | ¿Cómo llegan los avisos al móvil? (2026-09-28) | **Notificaciones web (PWA)** de todo lo que hoy va por correo. | R-08. | Prueba real |
 | D26 | ¿Reservas en tiempo real? (2026-09-28) | **No**: botón «Actualizar» y recarga al volver a la app. | R-03. | Prueba real |
+| D27 | Ficheros de Storage visibles para otros (PH-14, 2026-10-09) | **Corregirlo en la fase A**: cada fichero lo ven su dueño, quien comparte la reserva y el admin. | A-48. | Pendientes |
+| D30 | ¿Se avisa a los empleados de una empresa suspendida? (2026-10-09) | **No, solo a la empresa**: sus trabajos ya citados siguen. | A-55. | Pendientes |
+| D29 | PH-18: ¿validar el alta de jardinero en el servidor? (2026-10-09) | **Lo deja al chat**: se valida en el servidor como las empresas (A-54). | A-54. | Pendientes |
+| D28 | ¿Qué nombre llevan los correos de reserva? (PH-15, 2026-10-09) | **El de la ficha**: el cliente por su nombre; el profesional por el de su ficha (nombre comercial de la empresa). | A-49. | Pendientes |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -805,6 +808,13 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-09-24 | F3.1 | **Servidor del alta de empresas y empleados.** Solicitud y revisión, invitaciones atadas a correo con token hasheado, equipo, carnet por persona. **H-22 descubierto y cerrado** (licencias creadas ya aprobadas). | 473 ✅ · build ✅ · tsc 129 · F3 31/31 · F2 18/18 · F1 13/13 · F0 7/7 | `f7ec1d5` |
 | 2026-09-24 | F2 | **F2 cerrada.** Modelo de proveedor y empresas con RLS de solo lectura e integridad en la BD. **H-21 (crítico) descubierto y cerrado:** cualquiera se daba de alta como jardinero reservable con carnet falso, y un jardinero se aprobaba el carnet. | 473 ✅ · build ✅ · tsc 129 · F2 18/18 · F1 13/13 · F0 7/7 | `b0a6fbe` |
 | 2026-09-23 | F1 | **F1 cerrada.** Registro de capacidad con `assignee_id` + índice único. Descubiertos y resueltos H-17 (cinco escritoras, no tres), H-18 (`ON CONFLICT` sin destino), H-19 (doble venta posible hoy) y H-01 (dos fuentes de disponibilidad, fallo real). Migración probada sobre datos existentes y desde cero. | 473 ✅ · build ✅ · tsc 129 · F1 13/13 · F0 7/7 | `c506f1e` |
+| 2026-10-09 | Pendientes A | **Fase A cerrada** (`07` §4): baja real desde «Mi cuenta» con la lógica de F6 (PH-01), ficheros de las bajas con cola y reintento (PH-04), Storage cerrado a otros (PH-14, D27) y nombres en los correos (PH-15, D28). Apuntados PH-16 y PH-17. | 930 ✅ · build ✅ · tsc 128 · 24 baterías 280/280 | `3e40929` |
+| 2026-10-09 | Pendientes B | **Fase B cerrada** (`07` §4): «Corregir y volver a enviar» reabre la misma solicitud por RPC con histórico de rechazos (PH-02, A-50); campos de revisión solo del servidor; el envío comprueba que se guarda; el admin ve los rechazos anteriores. Apuntado PH-18. | 937 ✅ · build ✅ · tsc 128 · 25 baterías 288/288 | `4ef9d4c` |
+| 2026-10-09 | Pendientes C | **Fase C cerrada** (`07` §4): marcas de idempotencia solo del servidor y aviso por estado real (PH-05, A-51); «Tu trabajo cambia de fecha» solo a quien ya iba (PH-08, A-52). | 937 ✅ · build ✅ · tsc 128 · 26 baterías 293/293 | `530c301` |
+| 2026-10-09 | Pendientes D | **Fase D cerrada** (`07` §4): «profesional» para el cliente (PH-03, A-53); servicios del perfil público por su nombre; alta de jardinero validada en el servidor (PH-18, A-54, D29). | 951 ✅ · build ✅ · tsc 128 · 26 baterías 294/294 | `569c8d1` `1bf4b7e` |
+| 2026-10-09 | Pendientes E | **Fase E cerrada** (`07` §4): aviso en el panel y correos al suspender y reactivar (PR-02, A-55, D30). | 953 ✅ · build ✅ · tsc 128 · 27 baterías 300/300 | `8c5f902` |
+| 2026-10-09 | Pendientes F | **Fase F cerrada**: PH-09 cerrado, PH-07 (readiness 7/7, 269), PH-06 (`ARCHITECTURE.md`). | readiness 269 ✅ | `bc04bdf` `5de4cd6` |
+| 2026-10-09 | Pendientes G | **Fase G cerrada** (PH-10): estados de `02` (H-02, H-03, H-06, H-11, H-17, H-21, H-22) y §3 «Sospechas» al día; estado global actualizado. | — | (este commit) |
 
 ---
 
@@ -907,6 +917,32 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 2e. **Pendientes consolidados (2026-09-29):** `05-HALLAZGOS-PENDIENTES.md` (PH-01…PH-13: lo que sigue
    abierto de `02-HALLAZGOS.md` y lo visto en la prueba real fuera de ella, con las decisiones del
    usuario) y `06-PRUEBA-REAL-PENDIENTE.md` (PR-01…PR-05 y la guía única de pruebas en garser.es).
+2f. **Cómo corregirlos (2026-10-08):** `07-PROCEDIMIENTO-CORRECCION.md`: arranque, ciclo de 5 pasos por
+   hallazgo (leer, comprobar que es cierto, casos parecidos, hallazgos nuevos y verificación en el
+   navegador y con pruebas reales), cierre de fase, fases A–H y trampas conocidas. No se toca código
+   hasta que el usuario lo diga.
+2g. **Fase A hecha (2026-10-09, rama `fix/pendientes-ph`):** baja real desde «Mi cuenta» (PH-01), ficheros de las
+   bajas (PH-04), Storage cerrado a otros (PH-14) y nombres en los correos (PH-15). Por desplegar en la fase H:
+   migración `20261009100000`, funciones `account-closure` (nueva), `admin-account-closure`, `booking-lifecycle-tick`,
+   `send-email-notification` y `booking-confirmation-email`, y la web. Nuevos apuntados: PH-16 (`booking-photos`
+   público en producción) y PH-17 (273 ficheros de cuentas borradas en producción, limpieza en la fase H).
+2h. **Fase B hecha (2026-10-09):** el jardinero rechazado corrige y vuelve a enviar (PH-02), con histórico de rechazos
+   y los campos de revisión protegidos. Por desplegar en la fase H: migración `20261009110000` y la web. Apuntado
+   PH-18 (validar el alta de jardinero en el servidor).
+2i. **Fase C hecha (2026-10-09):** el navegador ya no escribe las marcas de idempotencia (PH-05: con una marca falsa se
+   mandaba al cliente un «aceptada» falso) y quien entra al mover de fecha recibe un solo aviso (PH-08). Por desplegar
+   en la fase H: migración `20261009120000` y la función `send-email-notification`.
+2j. **Fase D hecha (2026-10-09):** «profesional» en todo lo que lee el cliente (PH-03), el perfil público enseña los
+   servicios por su nombre (antes, identificadores) y el alta de jardinero se valida en el servidor (PH-18). Por
+   desplegar en la fase H: migración `20261009130000`, funciones `booking-authority` (toca `bookingQuoteCore.ts`) y
+   `send-email-notification`, y la web.
+2k. **Fase E hecha (2026-10-09):** el profesional o la empresa suspendidos lo ven en su panel y reciben un correo al
+   suspender y al reactivar (PR-02); a los empleados no se les avisa (D30). Por desplegar en la fase H: migración
+   `20261009140000`, `send-email-notification` y la web.
+2l. **Fase F hecha (2026-10-09):** PH-09 cerrado (no se reproduce), las 7 baterías de servicios al día (PH-07, 269
+   comprobaciones) y `ARCHITECTURE.md` reescrito a partir del código (PH-06; lo revisa el usuario en la PR). Nada que
+   desplegar.
+2m. **Fase G hecha (2026-10-09):** documentación al día (PH-10). Siguiente: fase H.
 3. **Terminar la batería P-** (`03-PRUEBAS.md` §3): 17 en verde, faltan 20. Todas necesitan
    cuentas nuevas o correos reales, que crea el usuario; el chat hace el resto en el navegador:
    - **Registro:** P-F0-1, P-F0-2 (cuenta de cliente y de jardinero nuevas).
@@ -921,8 +957,9 @@ Fusionado y publicado (§5). Para dar GarSer Empresas por **terminado y listo pa
 5. **Antes de clientes reales (fuera del proyecto, pero bloquea «producción»):** Stripe de
    producción está en **modo prueba** (`pk_test_`): cambiar a claves `live` y al secreto del
    webhook de modo real, y repetir P-F1-1 con un pago real.
-6. **Documentos:** marcar como cerrados H-02, H-03 y H-06 (los resolvieron F7, F1 y F0), estado
-   global «Terminado» y la fila final del registro.
+6. ~~**Documentos:** marcar como cerrados H-02, H-03 y H-06 (los resolvieron F7, F1 y F0), estado
+   global «Terminado» y la fila final del registro.~~ **Hecho (2026-10-09, PH-10):** estados de `02` al día y estado
+   global actualizado; «Terminado» y la fila final, al acabar la fase H y la guía de pruebas.
 
 Fuera de alcance, anotado para después: H-13 («Mi cuenta» actualiza la columna equivocada), H-27
 (9 fallos antiguos en las baterías de preparación de servicios), H-07 (`ARCHITECTURE.md`

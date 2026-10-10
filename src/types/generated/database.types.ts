@@ -1744,6 +1744,42 @@ export type Database = {
           },
         ]
       }
+      gardener_application_reviews: {
+        Row: {
+          application_id: string
+          created_at: string
+          id: string
+          review_comment: string | null
+          reviewed_at: string | null
+          reviewer_id: string | null
+          status: string
+          submitted_at: string | null
+          user_id: string
+        }
+        Insert: {
+          application_id: string
+          created_at?: string
+          id?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          status: string
+          submitted_at?: string | null
+          user_id: string
+        }
+        Update: {
+          application_id?: string
+          created_at?: string
+          id?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          status?: string
+          submitted_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       gardener_applications: {
         Row: {
           accept_terms: boolean | null
@@ -3150,6 +3186,10 @@ export type Database = {
         Args: { p_member_id: string }
         Returns: Json
       }
+      my_account_closure_preview: {
+        Args: never
+        Returns: Json
+      }
       my_busy_hours: {
         Args: { p_end: string; p_start: string }
         Returns: {
@@ -3403,6 +3443,10 @@ export type Database = {
         }
         Returns: Json
       }
+      restart_gardener_application: {
+        Args: never
+        Returns: Json
+      }
       respond_booking_request: {
         Args: {
           p_booking_id: string
@@ -3472,6 +3516,10 @@ export type Database = {
       }
       shares_booking_with: { Args: { target_user: string }; Returns: boolean }
       signup_role_from_metadata: { Args: { p_meta: Json }; Returns: string }
+      submit_gardener_application: {
+        Args: never
+        Returns: Json
+      }
       submit_company_application: {
         Args: { p_application_id: string }
         Returns: Json

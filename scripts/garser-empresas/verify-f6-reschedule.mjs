@@ -30,7 +30,11 @@ const mail = async (token, body) => {
 // Prueba real · F3 (D24): los avisos del cambio de fecha los apunta el servidor al proponer y al
 // responder (notification_outbox) y los envía notification-dispatch. Una llamada desde el
 // navegador ya no envía nada.
-const edgeLog = () => execFileSync('sh', ['-c', 'docker logs --since 2m supabase_edge_runtime_GarSer-main_4 2>&1'], { encoding: 'utf8' });
+// Todo el registro, sin `--since` (si el Mac duerme, el reloj de Docker se retrasa); las cuentas
+// son nuevas en cada pasada, así que se busca por su correo.
+const edgeLog = () => execFileSync('sh', ['-c', 'docker logs supabase_edge_runtime_GarSer-main_4 2>&1'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+/** Cuántos correos simulados ha recibido `email` cuyo asunto contiene `subject`. */
+const mailsTo = (email, subject) => edgeLog().split('MOCK EMAIL SEND').filter((c) => c.includes(email) && c.includes(subject)).length;
 const outboxOf = (bookingId, type) => sql(`select coalesce(string_agg(status, ',' order by created_at), '') from public.notification_outbox where booking_id='${bookingId}' and type='${type}'`);
 const waitOutbox = async (bookingId, type, count) => {
   for (let i = 0; i < 30; i++) {
@@ -98,7 +102,16 @@ async function main() {
       freeHoursOf(ana.id, D1) === '9,10' && freeHoursOf(luis.id, D2) === '',
       `HTTP ${accept.status}${why(accept)} ${JSON.stringify(accept.body)} → ${state()} [${agenda()}], Ana D1 libre [${freeHoursOf(ana.id, D1)}]`);
     const rows = await waitOutbox(B, 'booking_reschedule_answered', 2);
-    record('F6-35', 'Al aceptar se avisa a la empresa y a quien va (Luis), desde el servidor', rows === 'sent,sent' && edgeLog().includes(luis.email), `cola [${rows}]`);
+    await waitOutbox(B, 'job_assigned', 2);
+    await waitOutbox(B, 'job_unassigned', 1);
+    // PH-08: quien entra (Luis) recibe solo «Nuevo trabajo», que ya trae la fecha nueva; antes le
+    // llegaba también «Tu trabajo cambia de fecha». La empresa, «acepta la nueva fecha»; Ana, «Ya no vas».
+    const m = {
+      luisNew: mailsTo(luis.email, 'Nuevo trabajo:'), luisMoved: mailsTo(luis.email, 'Tu trabajo cambia de fecha'),
+      owner: mailsTo(owner.email, 'El cliente acepta la nueva fecha'), anaOut: mailsTo(ana.email, 'Ya no vas a este trabajo'),
+    };
+    record('F6-35', 'Al aceptar: la empresa recibe «acepta la nueva fecha», Luis (entra) solo «Nuevo trabajo» y Ana «Ya no vas»; desde el servidor',
+      rows === 'sent,sent' && m.luisNew === 1 && m.luisMoved === 0 && m.owner === 1 && m.anaOut === 1, `cola [${rows}] ${JSON.stringify(m)}`);
   }
   {
     await rpc('propose_booking_reschedule', { p_booking_id: B, p_date: D2, p_start_hour: 10, p_reason: null }, owner.token);

@@ -488,6 +488,88 @@ No regresión: F1 13/13, F4 21/21, F5 29/29 y las 7 baterías de servicios igual
 
 ---
 
+### Pendientes · fase A — bajas desde «Mi cuenta», ficheros, Storage y nombres en los correos (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-self-closure.mjs` (local), **12/12**:
+
+| # | Qué comprueba | Resultado |
+|---|---|---|
+| SC-01 | Cliente sin reservas: el análisis dice «borrar», no devuelve su correo, y se borra entera con sus ficheros y suscripciones al móvil | ✅ |
+| SC-02 | Con una solicitud pendiente: bloqueada, con fecha, estado y servicio; cerrar igualmente no toca nada | ✅ |
+| SC-03 | Empleada con un trabajo asignado: bloqueada, con la fecha | ✅ |
+| SC-04 | El correo «aceptada» lleva el nombre del cliente (sin escapar dos veces «&») y el nombre comercial de la empresa | ✅ |
+| SC-05 | Fotos de reserva: un extraño no las lista ni las descarga; cliente, empresa y admin sí | ✅ |
+| SC-06 | Ficheros de solicitud: nadie lista los de otro (ni sin sesión); dueño y admin sí; el enlace público sigue abriendo | ✅ |
+| SC-07 | Cliente con historial: datos, punto del mapa, invitación, avisos al móvil y ficheros fuera; sin sesiones ni acceso; la reserva conserva importes | ✅ |
+| SC-08 | **Autónomo** con historial (Regla 2): suspendido, sin nombre, sin precios activos, sin número ni fichero del carnet; su reserva sigue | ✅ |
+| SC-09 | Sin sesión, no; la función interna, no; con el id de otro solo se cierra la propia cuenta | ✅ |
+| SC-10 | El admin no se cierra desde «Mi cuenta» | ✅ |
+| SC-11 | Una limpieza de ficheros que falló la termina el reloj | ✅ |
+| SC-12 | La baja del admin también borra los ficheros | ✅ |
+
+Unitarias: `src/utils/selfAccountClosure.test.ts` (7) y `src/components/account/MyAccount.test.tsx` (2: la foto se
+guarda en su fila y, si no se guarda, lo dice).
+
+Navegador local (375 px, dos orígenes): bloqueada con «Tienes una reserva de Corte de césped pendiente de aceptar el
+9 de diciembre…» y «Ver mis reservas»; con historial, «Esto es lo que pasará», el diálogo y, al confirmar, `/auth` con
+«Tu cuenta se ha cerrado»; sin reservas, la foto se guarda («Foto de perfil actualizada» y `avatar_url` en la base) y la
+cuenta se borra entera. Sin scroll lateral. Únicos errores de consola: dos 403 `user_not_found` del cierre de sesión de
+una cuenta que ya no existe (esperado).
+
+### Pendientes · fase B — jardinero rechazado que vuelve a solicitar (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-gardener-reapply.mjs` (local), **8/8**:
+
+| # | Qué comprueba | Resultado |
+|---|---|---|
+| GR-01 | Rechazado (correo enviado) → reabrir: la misma solicitud vuelve a borrador con sus datos, sin la revisión ni las declaraciones; el rechazo queda en el histórico | ✅ |
+| GR-02 | Reabrir dos veces no duplica el histórico | ✅ |
+| GR-03 | El jardinero lee el motivo de su rechazo | ✅ |
+| GR-04 | Corrige y envía: el admin la tiene en pendientes y ve el rechazo anterior | ✅ |
+| GR-05 | Segundo rechazo con su correo y su histórico; al final se aprueba: ficha y correo de alta | ✅ |
+| GR-06 | Pendiente o aprobada no se puede reabrir | ✅ |
+| GR-07 | Nadie reabre la de otro ni lee su histórico | ✅ |
+| GR-08 | El solicitante no escribe los campos de revisión, no se aprueba y no se inventa un histórico | ✅ |
+
+Unitarias: `src/utils/gardenerApplicationRetry.test.ts` (5) y `src/components/gardener/GardenerStatusPage.test.tsx` (2).
+Navegador local (375 px, dos orígenes): recorrido completo del jardinero y del admin, descrito en `05` (PH-02).
+
+### Pendientes · fase C — marcas de idempotencia y aviso único al mover de fecha (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-idempotency-notices.mjs` (local), **5/5**:
+
+| # | Qué comprueba | Resultado |
+|---|---|---|
+| IC-01 | Escribir una marca (o de lotes) o llamar a los ayudantes desde el navegador: 403 | ✅ |
+| IC-02 | Aceptar dos veces con la misma operación: una confirmación, respuestas iguales, 1 correo; la empresa lee su marca | ✅ |
+| IC-03 | Proponer un precio y rechazarlo, repetidos con la misma operación: funcionan | ✅ |
+| IC-04 | Mover de fecha con la misma persona: 1 «Tu trabajo cambia de fecha» y 1 aviso a la empresa | ✅ |
+| IC-05 | Autónomo (Regla 2): acepta repitiendo la operación, 1 correo, sin avisos de equipo | ✅ |
+
+`verify-f6-reschedule` F6-35 reescrita (correos por persona: empresa 1, quien entra 1 «Nuevo trabajo», quien sale
+1 «Ya no vas»), 9/9; con la función anterior daba 2 correos a quien entra.
+
+### Pendientes · fase D — «profesional» para el cliente (PH-03) y alta validada en el servidor (PH-18) (2026-10-09)
+
+- Unitarias: `src/pages/reserva/clientWording.test.ts` (10: ningún «jardinero» visible en los 8 ficheros del cliente,
+  botones, resumen y aviso de palmeras), `src/utils/serviceLabels.test.ts` (3) y `gardenerApplicationRetry.test.ts`
+  (+1, envío por el servidor).
+- `verify-gardener-reapply` **9/9** (GR-09: a mano no se envía; incompleta dice qué falta; completa se envía).
+- Navegador local (375 px): reserva con autónomo y con empresa («Confirmar profesional», «Profesional: …»), «Mis
+  reservas», perfil público (con los servicios por su nombre) y envío del alta de jardinero.
+
+### Pendientes · fase E — aviso al proveedor suspendido (PR-02) (2026-10-09)
+
+Batería `scripts/garser-empresas/verify-provider-suspension.mjs` (local), **6/6**: suspender manda 1 correo y el dueño
+lee su estado (PS-01); repetir no manda más (PS-02); reactivar manda 1 y repetir no (PS-03); a la empleada nada (PS-04);
+autónomo igual (PS-05); solo el admin, y el correo no se pide desde el navegador (PS-06). Unitaria:
+`SuspendedProviderNotice.test.tsx` (2). Navegador local: admin → empresa → autónomo, con capturas (`06`, PR-02).
+
+### Pendientes · fase F — baterías de servicios al día (PH-07) (2026-10-09)
+
+`scripts/readiness/<servicio>.mjs`, por HTTP y con `READINESS_ENGINE=local`: **7/7 en verde, 269 comprobaciones**
+(césped 33, setos 35, arbustos 18, árboles 15, palmeras 71, desbroce 19, fitosanitarios 78). Antes fallaban 9.
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que
@@ -551,6 +633,15 @@ no sale a producción antes (ver `01-PLAN-Y-PROGRESO.md` §0).
 | P-R02-1 | Prueba real F6: Admin → Usuarios → «Dar de baja o suspender»: revisar la empresa (con reservas) y una cuenta de prueba sin reservas | La empresa sale «Aún no se puede dar de baja» con el motivo; la de prueba se borra entera | ⬜ |
 | P-R09-1 | Prueba real F6: suspender la empresa desde el admin y buscarla como cliente; reactivarla | Suspendida no aparece para reservar; sus reservas siguen; reactivada vuelve | ⬜ |
 | P-R08-1 | Prueba real F7: «Mi cuenta → Activar notificaciones» en Android (Chrome) y en iPhone con GarSer en la pantalla de inicio; provocar un aviso (p. ej. una propuesta) | Llega la notificación al móvil con el mismo aviso que el correo; al tocarla abre la pantalla | ⬜ |
+| P-PH01-1 | Fase A: una cuenta de prueba con una reserva sin terminar entra en «Mi cuenta → Cerrar cuenta» | Sale «Aún no puedes cerrar tu cuenta» con la fecha de la reserva; no cambia nada | ⬜ |
+| P-PH01-2 | Fase A: una cuenta de prueba sin reservas cierra su cuenta desde «Mi cuenta» | Vuelve a la entrada con «Tu cuenta se ha cerrado»; no puede volver a entrar; en Storage no queda ningún fichero suyo (lo mira el chat) | ⬜ |
+| P-PH14-1 | Fase A: el chat comprueba con una cuenta de prueba que no puede listar `booking-photos` ni `applications` de otros, y que una foto de perfil se sigue viendo | Listas vacías; la foto se ve | ⬜ |
+| P-PH15-1 | Fase A: en la primera reserva aceptada de las pruebas, mirar el correo al cliente | «¡Buenas noticias, <nombre>!» y «<nombre de la empresa> ha aceptado tu reserva» | ⬜ |
+| P-PH02-1 | Fase B: el admin rechaza la solicitud de jardinero de prueba con un motivo; el jardinero pulsa «Corregir y volver a enviar» | Le llega el correo con el motivo; el formulario sale relleno y con el motivo arriba; al reenviar, el admin la ve «Reenviada tras 1 rechazo» con el rechazo anterior | ⬜ |
+| P-PH05-1 | Fase C: el chat, con una cuenta de prueba de empresa, intenta escribir una marca en `booking_rpc_idempotency` y llamar a `register_booking_operation_once` | Los dos, 403; aceptar una solicitud desde la web sigue funcionando | ⬜ |
+| P-PH08-1 | Fase C: «Mover a otra fecha» a un día en que va otra persona; el cliente acepta | A quien entra le llega solo «Nuevo trabajo»; a quien deja de ir, «Ya no vas»; a la empresa, «acepta la nueva fecha» | ⬜ |
+| P-PH03-1 | Fase D: reservar como cliente con un autónomo y con una empresa; abrir el perfil público de un profesional | «Confirmar profesional», «Profesional: …» en el resumen, ningún «jardinero» en «Mis reservas»; el perfil lista los servicios por su nombre | ⬜ |
+| P-PH18-1 | Fase D: un jardinero nuevo envía su alta desde el formulario | «Solicitud en revisión»; el admin la ve en pendientes | ⬜ |
 
 ---
 

@@ -321,7 +321,7 @@ const BookingsList = () => {
               onOpenChat={() =>
                 setSelectedChat({
                   bookingId: booking.id,
-                  gardenerName: booking.gardener_profile?.full_name || 'Jardinero',
+                  gardenerName: booking.gardener_profile?.full_name || 'Profesional',
                 })
               }
               onCancel={() => handleCancel(booking)}

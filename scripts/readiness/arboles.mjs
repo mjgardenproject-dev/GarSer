@@ -29,7 +29,7 @@
  * node scripts/readiness/arboles.mjs                       # HTTP contra booking-authority
  * READINESS_ENGINE=local node scripts/readiness/arboles.mjs # motor en proceso (este worktree)
  */
-import { quote, expectQuote, sweep, previewProviders, validHours, report, PROVIDER_ID, sql } from './_harness.mjs';
+import { nextWeekdayIso, quote, expectQuote, sweep, previewProviders, validHours, report, PROVIDER_ID, sql } from './_harness.mjs';
 
 /**
  * El id se resuelve por NOMBRE, no se escribe a mano (mismo patrón que fitosanitarios.mjs).
@@ -212,7 +212,7 @@ async function availability() {
   const input = { treeGroups: [tree({ pruningType: 'structural', aiSizeBand: 'medium' })], wasteRemoval: false, address: 'Marbella', addressCoordinates: { lat: 36.5108, lng: -4.8850 } };
 
   // Domingo sin huecos (el fixture no siembra domingo).
-  const sunday = await validHours(SERVICE_ID, '2026-09-13', input);
+  const sunday = await validHours(SERVICE_ID, nextWeekdayIso(0), input);
   const hoursOnSunday = sunday.body?.validHours || [];
   if (Array.isArray(hoursOnSunday) && hoursOnSunday.length === 0) {
     console.log('✓ PASA       Domingo sin huecos:', JSON.stringify(sunday.body));
@@ -225,7 +225,7 @@ async function availability() {
     ...input,
     address: 'Madrid centro',
     addressCoordinates: { lat: 40.4168, lng: -3.7038 },
-  }, { selectedDate: '2026-09-16' });
+  }, { selectedDate: nextWeekdayIso(3) });
   const excluded = farAway.body?.exclusions?.[PROVIDER_ID];
   if (excluded) {
     console.log('✓ PASA       Fuera de cobertura excluye al jardinero:', JSON.stringify(excluded));

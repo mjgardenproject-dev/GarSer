@@ -183,20 +183,46 @@ export function cleanupUsers(userIds) {
   sql(`delete from public.gardener_service_prices where gardener_id in (${ids})`);
   sql(`delete from public.gardener_profiles where user_id in (${ids})`);
   sql(`delete from public.profiles where user_id in (${ids})`);
+  sql(`delete from public.push_subscriptions where user_id in (${ids})`);
+  sql(`delete from public.account_storage_cleanup where user_id in (${ids})`);
   sql(`delete from auth.users where id in (${ids})`);
+}
+
+/** Borra de Storage los ficheros de esas cuentas (fase A: antes se quedaban tras cada batería). */
+export async function removeStorageOf(userIds) {
+  if (!userIds.length) return 0;
+  const ids = userIds.map((id) => `'${id}'`).join(',');
+  const rows = sql(`select bucket_id || '|' || name from storage.objects
+    where (bucket_id in ('applications','private_licenses') and split_part(name,'/',1) in (${ids}))
+       or (bucket_id = 'booking-photos' and ((split_part(name,'/',1) in ('drafts','bookings') and split_part(name,'/',2) in (${ids}))
+                                          or (split_part(name,'/',1) = 'chat' and split_part(name,'/',3) in (${ids}))))`);
+  const byBucket = new Map();
+  for (const line of rows ? rows.split('\n') : []) {
+    const [bucket, ...rest] = line.split('|');
+    byBucket.set(bucket, [...(byBucket.get(bucket) || []), rest.join('|')]);
+  }
+  let removed = 0;
+  for (const [bucket, prefixes] of byBucket) {
+    const res = await fetch(`${apiUrl}/storage/v1/object/${bucket}`, {
+      method: 'DELETE', headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefixes }),
+    });
+    if (res.ok) removed += prefixes.length;
+  }
+  return removed;
 }
 
 /** Ejecuta `main` limpiando restos anteriores antes y todo lo creado después. */
 export async function runVerification({ acc, results, main }) {
   const stale = acc.stale();
-  if (stale.length) cleanupUsers(stale);
+  if (stale.length) { await removeStorageOf(stale); cleanupUsers(stale); }
   try {
     await main();
   } catch (error) {
     console.error('Error ejecutando la verificación:', error.message);
     results.push({ id: 'error', ok: false });
   } finally {
-    try { cleanupUsers(acc.created); } catch (error) { console.error('Error limpiando:', error.message); results.push({ id: 'cleanup', ok: false }); }
+    try { await removeStorageOf(acc.created); cleanupUsers(acc.created); } catch (error) { console.error('Error limpiando:', error.message); results.push({ id: 'cleanup', ok: false }); }
   }
   const failed = results.filter((r) => !r.ok).length;
   console.log(`\n${results.length - failed}/${results.length} en verde. Cuentas de prueba borradas: ${acc.created.length}.`);

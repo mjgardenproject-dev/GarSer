@@ -69,7 +69,7 @@ la lee `generate_recurring_slots`. Retirarla del todo queda para cuando se const
 
 ---
 
-### H-02 · El tope de 12 horas está replicado en siete funciones SQL — 🔴 Afecta a F7
+### H-02 · El tope de 12 horas está replicado en siete funciones SQL — 🟢 Resuelto en F7 (jornada y mano de obra separadas, A-40) · en producción
 
 **Evidencia.** `IF p_duration_hours IS NULL OR p_duration_hours < 1 OR p_duration_hours > 12`:
 
@@ -100,7 +100,7 @@ Levantar el tope habría obligado a revisar siete funciones críticas de dinero 
 
 ---
 
-### H-03 · `resize_booking_schedule()` es una tercera función que escribe la agenda — 🟠 Afecta a F1
+### H-03 · `resize_booking_schedule()` es una tercera función que escribe la agenda — 🟢 Resuelto en F1 (ver H-17) · en producción
 
 **Evidencia.** `supabase/migrations/20260913121000_price_change_duration_change.sql`.
 Es de **2026-09-13**, posterior a la auditoría de arquitectura.
@@ -154,7 +154,7 @@ un fichero, y ni siquiera lee la tabla. Reduce mucho el riesgo estimado de esa f
 
 ---
 
-### H-06 · El rol se resuelve desde cinco fuentes — 🔴 Bloquea todo · Es la F0
+### H-06 · El rol se resuelve desde cinco fuentes — 🟢 Resuelto en F0 (`profiles.role`) · en producción
 
 8 apariciones de `signup_role` / `user_metadata.role` / `requested_role` en `src/App.tsx`,
 más las de `src/components/auth/AuthForm.tsx`.
@@ -218,7 +218,7 @@ la F0 introduce uno solo en ese fichero, es regresión suya, no deuda heredada.
 
 ---
 
-### H-11 · Cualquier usuario nuevo puede darse el rol de administrador — 🔴🔴 CRÍTICO · Resuelto en local (F0), pendiente en producción hasta la fusión
+### H-11 · Cualquier usuario nuevo puede darse el rol de administrador — 🔴🔴 CRÍTICO · 🟢 Resuelto en F0 · en producción desde la fusión (#35)
 
 **Reproducido en local el 2026-09-23**, sobre una BD reconstruida con las mismas 113
 migraciones que producción:
@@ -341,7 +341,7 @@ errores de `tsc`. Con `useAccount()` queda resuelto (`tsc` 130 → 129) y probad
 
 ---
 
-### H-17 · No eran tres funciones las que escriben la agenda: eran cinco — 🟢 Resuelto en F1
+### H-17 · No eran tres funciones las que escriben la agenda: eran cinco — 🟢 Resuelto en F1 · en producción
 
 El plan decía «actualizar `reserve_`, `release_` y `resize_booking_schedule`». La consulta a
 las definiciones **vivas** de la BD (no a las migraciones) dio cinco escritoras de
@@ -393,7 +393,7 @@ Relevante para F5: la asignación de empleados probablemente reutilice `reserve`
 
 ---
 
-### H-21 · Cualquiera podía darse de alta como jardinero sin aprobación, y un jardinero podía aprobarse el carnet — 🔴🔴 CRÍTICO · Resuelto en F2 (local), pendiente en producción hasta la fusión
+### H-21 · Cualquiera podía darse de alta como jardinero sin aprobación, y un jardinero podía aprobarse el carnet — 🔴🔴 CRÍTICO · 🟢 Resuelto en F2 · en producción desde la fusión (#35)
 
 **Reproducido en local el 2026-09-24**, con las mismas migraciones que producción:
 
@@ -431,7 +431,7 @@ comprobar que nadie lo ha aprovechado (consulta en `01-PLAN-Y-PROGRESO.md` §6).
 
 ---
 
-### H-22 · Un jardinero podía crear su licencia fitosanitaria ya aprobada — 🔴 Resuelto en F3.1 (local), pendiente en producción hasta la fusión
+### H-22 · Un jardinero podía crear su licencia fitosanitaria ya aprobada — 🔴 🟢 Resuelto en F3.1 · en producción desde la fusión (#35)
 
 **Reproducido en local el 2026-09-24:** el jardinero de la semilla hizo `POST
 /rest/v1/gardener_licenses` con `status: 'approved'`, `expires_at: 2035-01-01` y `reviewed_at`
@@ -818,6 +818,15 @@ esta es la respuesta.
 | A-44 | **Plan de mantenimiento = propuestas que son presupuestos normales.** Cada visita nace como un `booking_quotes` con el precio fijo del plan (D19) y se paga por el camino de siempre (prepare/confirm, Stripe sin tarjeta guardada, D17). El pago no recalcula su precio: `maintenance_quote_is_intact` comprueba que coincide con el plan. Las propuestas las genera el reloj de cada 15 minutos (SQL), 7 días antes, porque los horarios solo existen unas semanas por delante. | Cero caminos nuevos de reserva o de pago (§3 de la guía). Observado de paso: las policies de cliente sobre `booking_quotes` (leer/insertar/actualizar las suyas) no tienen permisos de tabla detrás; son inertes. |
 | A-45 | **Los avisos los envía el servidor (D24, prueba real 2026-09-28).** Cada acción apunta su aviso en `notification_outbox` en la misma transacción (clave única `dedupe_key` contra duplicados): *triggers* para los cambios inequívocos (propuestas de precio y fecha y sus desenlaces, incluida la caducidad; incidencias; revisión de solicitudes de alta) y una envoltura de `respond_booking_request` (la de siempre, movida a `private.respond_booking_request_core` sin tocarla) para aceptar o rechazar. `notification-dispatch` los reclama (`FOR UPDATE SKIP LOCKED`), los pide a `send-email-notification` como servicio interno y reintenta a 1, 5, 15 y 60 min (5 intentos; los 4xx son definitivos). El timbre es `pg_net` al apuntar y un reloj cada minuto, con el secreto y la URL del reloj del ciclo de vida. Excepción: la invitación de empleados sigue saliendo del navegador (lleva el código en claro, que la base solo guarda cifrado). | **Desviación del diseño decidida por el usuario (D24):** antes 16 correos los pedía el navegador después de la acción y se perdían si la pestaña se cerraba o la sesión estaba revocada (visto en producción). Sin plantillas nuevas: el único que redacta sigue siendo `send-email-notification`, que ignora las peticiones del navegador a estos tipos para que la web vieja en caché no los duplique. |
 | A-46 | **El navegador ya no puede escribir `bookings` (R-16).** Se retiran la regla «Participants can update bookings» y el `GRANT UPDATE (status)` que dejó `20260713000001`. Todas las transiciones van por RPC o por funciones del servidor. | Con ese permiso, una de las partes podía confirmar, completar o cancelar su reserva por PostgREST, saltándose la aceptación del cliente, el cobro o la política de cancelación (comprobado en local). La única escritura directa del front era un camino muerto. |
+| A-47 | **El usuario se da de baja él mismo con la misma baja que el admin** (pendientes PH-01 y PH-04, 2026-10-09). Cuerpo común `private.execute_account_closure`; `perform_account_closure` (admin) y `perform_self_account_closure` (solo `service_role`, para la función `account-closure`, con el usuario sacado del token) solo cambian quién puede. El análisis para «Mi cuenta» es `my_account_closure_preview` (sin el correo y con las reservas que bloquean). Cada baja apunta en la misma transacción `account_storage_cleanup`; la función borra los ficheros de la cuenta (`applications/<user>`, `private_licenses/<user>`, `booking-photos/{drafts,bookings}/<user>`; los del chat se conservan, PR-05) y `booking-lifecycle-tick` reintenta. Con historial se borran también las coordenadas, la dirección de sus solicitudes, su correo en invitaciones, las suscripciones al móvil y el número y fichero del carnet. | Antes «Cerrar cuenta» decía «hecho» sin tocar nada y los ficheros de las cuentas borradas se quedaban, públicos (PH-17). Un fallo de Storage no puede deshacer una baja: por eso cola y reintento, no transacción. |
+| A-48 | **Storage: cada fichero lo lista o descarga solo su dueño, quien comparte esa reserva y el admin** (PH-14, decisión del usuario 2026-10-09). `booking-photos` por `public.can_read_booking_photo(name)` (dueño de `drafts/`/`bookings/`, participantes del chat de esa reserva o de la reserva de `booking_media`, admin); `applications` solo dueño y admin. Los depósitos públicos siguen públicos: los enlaces guardados se siguen abriendo; lo que se cierra es enumerar. Las reglas de `marketing-assets` pasan a `is_admin()` (comparaban `profiles.id`). | Antes cualquiera con sesión listaba y descargaba las fotos de jardines y chats de todos, y sin sesión se listaban los ficheros de solicitud de todos. Hacer privado `booking-photos` (público en producción, PH-16) exige pasar el chat a enlaces firmados: aparte. |
+| A-49 | **Los correos se escapan una sola vez, en `renderBrandedEmail`** (PH-15). El encabezado, el texto y las etiquetas los escapa la plantilla; las llamadas ya no aplican `escapeHtml` (salía «&amp;amp;»). El nombre del profesional sale de su ficha (`gardener_profiles.full_name`: el nombre comercial de una empresa, H-31) y el del cliente de `profiles` por `user_id`. | Hasta ahora no se notaba porque el nombre llegaba siempre vacío. |
+| A-50 | **Un jardinero rechazado reabre su MISMA solicitud** (PH-02): `restart_gardener_application()` guarda el rechazo en `gardener_application_reviews` y la pasa a borrador con sus datos (las declaraciones se vuelven a aceptar). Los campos de la revisión (`reviewer_id`, `reviewed_at`, `review_comment`) solo los escribe el servidor: un trigger `SECURITY INVOKER` los repone si la sentencia viene del navegador. | `UNIQUE (user_id)` impide el modelo de las empresas (fila nueva por intento), y el alta y el resto de la web leen la solicitud por `user_id`: reabrir la misma fila no cambia nada de lo existente. |
+| A-51 | **Las marcas de idempotencia (`booking_rpc_idempotency`) solo las escribe el servidor** (PH-05). Los ayudantes `register_booking_operation_once` y `complete_booking_operation` no se pueden llamar desde el navegador; la envoltura de `respond_booking_request` apunta el aviso por el estado real de la reserva, no por la respuesta. | Con una marca escrita a mano, «aceptar» devolvía «confirmed» sin hacer nada y se apuntaba al cliente un «reserva aceptada» falso. |
+| A-52 | **Al aceptar otra fecha, quien entra recibe solo «Nuevo trabajo»** (PH-08, decisión técnica); «Tu trabajo cambia de fecha» va a quien ya iba y sigue. Se distingue por la cola: el `job_assigned` de quien entra se apunta en la misma transacción que la respuesta (misma `created_at`). | «Nuevo trabajo» ya trae la fecha nueva; dos correos por lo mismo confundían. |
+| A-53 | **Lo que lee el cliente dice «profesional»** (PH-03, decisión del usuario): embudo de reserva, «Mis reservas», chat del cliente, perfil público, avisos del motor que ve el cliente y correos al cliente. «Jardinero» se queda en lo que ve el propio jardinero y en las páginas de captación (SEO). `src/pages/reserva/clientWording.test.ts` lo vigila. | Quien hace el trabajo puede ser un autónomo o una empresa. |
+| A-54 | **El alta de jardinero se envía por el servidor** (`submit_gardener_application`, PH-18), con las mismas comprobaciones que el formulario, como las empresas. El navegador solo edita su borrador. | Antes se podía enviar un borrador vacío con una llamada directa. |
+| A-55 | **Suspender o reactivar avisa al profesional** (PR-02): `admin_set_provider_suspended` apunta `provider_suspended` / `provider_reactivated` en la cola solo si cambia el estado; el correo solo sale si la cuenta sigue así al enviarlo. Su panel (autónomo y `/empresa`) enseña el aviso mientras `suspended_at` esté puesto. A los empleados no se les avisa (decisión del usuario, D30). | Antes solo notaba que no le llegaban reservas. |
 | A-24 | **La solicitud de empresa copia el patrón de la de jardinero:** el usuario crea su borrador y lo envía; aprobar o rechazar solo lo hace el admin por RPC, que es quien crea la ficha de proveedor, la empresa y el dueño. | Patrón existente y comprobado seguro (el usuario no puede pasar a `approved`). |
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 
@@ -826,36 +835,30 @@ esta es la respuesta.
 ## 3. Sospechas sin verificar
 
 Cosas que parecen problemas pero **no se han comprobado**. No se citan como hechos.
+(Revisado el 2026-10-09, PH-10: las ya comprobadas se marcan y se dice dónde.)
 
-- **¿Hay solapes en `booking_blocks` en producción?** Si los hay, el índice único de F1 fallará
-  al crearse. **Hay que consultarlo antes de migrar.** El MCP de Supabase conecta, pero al **local**:
-  la consulta tiene que hacerse contra producción, desde su panel.
 - **¿Está `availability_blocks` realmente poblada y coherente con `availability`?** Si se elige
   la opción A de H-01, da igual. Si se elige la B, hay que auditarlo antes.
-- **¿Qué pasa con las reservas de difusión (`booking_requests`) cuando el que responde es una
-  empresa?** El flujo debería funcionar sin cambios, pero no se ha leído
-  `create_broadcast_booking_requests` con esa pregunta en mente.
-
----
-
-- **¿Funciona «volver a intentarlo» de un jardinero rechazado?** `GardenerStatusPage.tsx`
-  hace `update(status: 'draft')` sobre su solicitud **rechazada** y luego `delete`. Pero la
-  policy `applications_own_update` solo deja actualizar filas en `draft`, y no hay policy de
-  `DELETE`: ambas operaciones afectarían a 0 filas sin error. **No verificado** (fuera de
-  este proyecto). La empresa no copia ese patrón: al corregir abre un borrador nuevo.
 - **¿Sale el aviso «confirma tu correo» tras registrarse?** En local (donde el correo se confirma
   solo) el formulario se vació sin mostrar el aviso. No se ha comprobado en producción. Es
   código anterior a este proyecto (`AuthForm`); se mira en P-F3-6.
-- **El registro desde una invitación dice «Rol seleccionado: Cliente · Este rol será permanente
-  tras el registro»**, y en realidad pasará a empleado al aceptar. No es un fallo (se registra
-  como cliente a propósito, A-22), pero confunde. Pulir al tocar `AuthForm`.
-- **«Hace 1 hora» en una solicitud recién creada** (pantalla de solicitudes del profesional,
-  visto en el hito). Parece un desfase de zona horaria en el cálculo relativo; afectaría también
-  a autónomos. No verificado.
 - **Una prueba escrita como «foto» y no como regla (F2-01)** falló al existir la primera
   empresa: decía «todas las fichas son `solo`». Se reescribió como la regla permanente
   («toda ficha sin empresa es `solo` y toda `company` tiene su empresa»). Lección para las
   próximas pruebas: comprobar invariantes, no el estado del momento.
+
+**Ya comprobadas (2026-10-09):**
+
+- ~~¿Hay solapes en `booking_blocks` en producción?~~ El índice único de F1 se creó en producción
+  al fusionar (#35): no los había.
+- ~~¿Qué pasa con las reservas de difusión cuando responde una empresa?~~ El camino
+  (`create_broadcast_booking_requests`) está desactivado desde mayo: no se puede llegar. Ver PH-12.
+- ~~¿Funciona «volver a intentarlo» de un jardinero rechazado?~~ No funcionaba (verificado):
+  corregido en PH-02 (fase B, A-50).
+- ~~El registro desde una invitación dice «Rol seleccionado: Cliente»~~ Ya no aplica: desde D21 la
+  invitación tiene su propia alta (`company-invitation-signup`).
+- ~~«Hace 1 hora» en una solicitud recién creada~~ Era la zona horaria: corregido en R-06d
+  (`receivedAgo`).
 
 ## 4. Cómo añadir un hallazgo
 

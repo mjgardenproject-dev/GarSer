@@ -30,8 +30,16 @@ interface Application {
   submitted_at?: string;
 }
 
+// PH-02: rechazos anteriores de una solicitud que el jardinero corrigió y volvió a enviar.
+interface PastReview {
+  application_id: string;
+  review_comment?: string | null;
+  reviewed_at?: string | null;
+}
+
 const ApplicationsAdmin: React.FC = () => {
   const [apps, setApps] = useState<Application[]>([]);
+  const [pastReviews, setPastReviews] = useState<Record<string, PastReview[]>>({});
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -65,6 +73,19 @@ const ApplicationsAdmin: React.FC = () => {
         setApps([]);
       } else {
         setApps(data || []);
+        const ids = (data || []).map((a) => a.id);
+        if (ids.length) {
+          const { data: reviews } = await supabase
+            .from('gardener_application_reviews')
+            .select('application_id, review_comment, reviewed_at')
+            .in('application_id', ids)
+            .order('reviewed_at', { ascending: false });
+          const byApp: Record<string, PastReview[]> = {};
+          for (const r of (reviews || []) as PastReview[]) (byApp[r.application_id] ||= []).push(r);
+          setPastReviews(byApp);
+        } else {
+          setPastReviews({});
+        }
       }
     } finally {
       setLoading(false);
@@ -197,6 +218,11 @@ const ApplicationsAdmin: React.FC = () => {
               <div className="min-w-0 flex-1 pr-4">
                 <h3 className="font-semibold text-gray-900 truncate" title={app.full_name}>{app.full_name}</h3>
                 <p className="text-sm text-gray-500 truncate" title={app.city_zone}>{app.city_zone}</p>
+                {(pastReviews[app.id] || []).length > 0 && (
+                  <p className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                    Reenviada tras {pastReviews[app.id].length} rechazo{pastReviews[app.id].length > 1 ? 's' : ''}
+                  </p>
+                )}
               </div>
               {app.professional_photo_url && (
                 <img 
@@ -423,6 +449,19 @@ const ApplicationsAdmin: React.FC = () => {
                   )}
                 </section>
                 
+                {(pastReviews[selected.id] || []).length > 0 && (
+                  <section className="bg-amber-50 rounded-xl p-5 border border-amber-200 md:col-span-2">
+                    <h3 className="font-semibold text-amber-900 mb-3">Rechazos anteriores</h3>
+                    <ul className="space-y-2 text-sm text-amber-900">
+                      {pastReviews[selected.id].map((r, i) => (
+                        <li key={`${r.reviewed_at}-${i}`} className="break-words">
+                          <span className="font-medium">{formatDate(r.reviewed_at || undefined)}:</span> {r.review_comment || 'Sin motivo'}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
                 <section className="bg-gray-50 rounded-xl p-5 border border-gray-100 md:col-span-2">
                   <h3 className="font-semibold text-gray-900 mb-3">Declaraciones</h3>
                   <div className="flex flex-wrap gap-4 text-sm">

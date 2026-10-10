@@ -137,7 +137,7 @@ try {
   await day.click();
   await sleep(1500);
   await page.getByRole('button', { name: /^\d{2}:00$/ }).and(page.locator(':not([disabled])')).first().click();
-  await button(page, 'Confirmar jardinero').click();
+  await button(page, 'Confirmar profesional').click();
   await sleep(4000);
   await snap(page, 'confirmacion');
   result.steps.push({ at: 'confirmacion', url: page.url(), buttons: await dumpButtons(page), frames: page.frames().map((f) => f.url().slice(0, 80)) });

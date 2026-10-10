@@ -709,7 +709,7 @@ const ProvidersPage: React.FC = () => {
             <ChevronLeft aria-hidden="true" className="w-5 h-5 text-gray-600" />
           </button>
           <h1 className="min-w-0 text-center text-base font-semibold text-gray-900 truncate">
-            {serviceName ? (bookingData.palmSpecies && serviceName.toLowerCase().includes('palmera') ? `${serviceName}: ${bookingData.palmSpecies}` : serviceName) : 'Jardineros'}
+            {serviceName ? (bookingData.palmSpecies && serviceName.toLowerCase().includes('palmera') ? `${serviceName}: ${bookingData.palmSpecies}` : serviceName) : 'Profesionales'}
           </h1>
           <div aria-hidden="true" className="h-9 w-9" />
         </div>
@@ -753,7 +753,7 @@ const ProvidersPage: React.FC = () => {
                     <AlertTriangle className="w-4 h-4" />
                 </div>
                 <div className="text-sm text-amber-800">
-                    <p className="font-medium">No hay ningún jardinero disponible para realizar el trabajo completo.</p>
+                    <p className="font-medium">No hay ningún profesional disponible para realizar el trabajo completo.</p>
                     <p className="text-amber-700 mt-1">A continuación mostramos profesionales que pueden realizar parte del servicio (se cobrará solo la parte realizada).</p>
                 </div>
             </div>
@@ -1134,8 +1134,8 @@ const ProvidersPage: React.FC = () => {
             className="w-full bg-emerald-700 text-white py-4 px-6 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] motion-reduce:transform-none transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
           >
             {selectedProvider 
-              ? 'Confirmar jardinero'
-              : 'Selecciona un jardinero'
+              ? 'Confirmar profesional'
+              : 'Selecciona un profesional'
             }
           </button>
         </div>

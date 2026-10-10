@@ -8,10 +8,12 @@
 //   · con historial → se da de baja: datos personales fuera, proveedor suspendido, reservas e
 //     importes intactos; y aquí, con la API de administración de Auth, se veta el acceso y se
 //     cambia el correo por uno anónimo (el correo real queda libre).
+//   · en los dos casos, sus ficheros de Storage (PH-04, `_shared/accountClosure.ts`).
 // Si algo bloquea (reservas sin terminar, pagos, incidencias, planes), no se toca nada.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { presentedToken, resolveServiceRoleKey } from '../_shared/functionAuth.ts';
+import { cleanupAccountStorage, closeAuthAccess } from '../_shared/accountClosure.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -59,16 +61,15 @@ Deno.serve(async (req) => {
   if (result?.mode === 'deactivate') {
     // Veto de acceso permanente y correo anónimo (libera el real). Idempotente: si falla, volver a
     // pedir la baja lo reintenta (la parte de la base de datos ya está hecha y no cambia).
-    const { error: authError } = await admin.auth.admin.updateUserById(userId, {
-      email: `baja+${userId}@garser.invalid`,
-      email_confirm: true,
-      ban_duration: '876000h',
-      user_metadata: {},
-    });
+    const authError = await closeAuthAccess(admin, userId);
     if (authError) {
-      console.error('[admin-account-closure] Auth:', authError.message);
+      console.error('[admin-account-closure] Auth:', authError);
       return json({ error: 'Los datos ya se han dado de baja, pero no se ha podido cerrar el acceso. Vuelve a intentarlo.', partial: true }, 502);
     }
   }
-  return json({ success: true, mode: result?.mode, userId });
+
+  // PH-04: sus ficheros. Si falla, queda apuntado y lo reintenta el reloj.
+  const files = await cleanupAccountStorage(admin, userId);
+  if (files.status === 'failed') console.error('[admin-account-closure] Storage:', files.message);
+  return json({ success: true, mode: result?.mode, userId, filesDeleted: files.deleted, filesPending: files.status === 'failed' });
 });

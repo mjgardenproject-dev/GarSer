@@ -14,8 +14,8 @@
 
 | # | Qué falta | Gravedad | Origen | Decisión | Estado |
 |---|---|---|---|---|---|
-| PR-01 | La web de la corrección (PR #41) no está publicada: en garser.es aún se ve la anterior | **Alta** (lo corregido no se ve) | F8 | — | Pendiente de que el usuario la fusione |
-| PR-02 | Un proveedor suspendido no ve en su panel que lo está | Media | R-20 | Aviso en el panel y correo | Por corregir |
+| PR-01 | La web de la corrección (PR #41) no estaba publicada | — | F8 | — | ✅ Resuelto: el usuario fusionó la #41 el 2026-09-29 |
+| PR-02 | Un proveedor suspendido no ve en su panel que lo está | Media | R-20 | Aviso en el panel y correo | ✅ Hecho (2026-10-09), por desplegar |
 | PR-03 | Las notificaciones al móvil no se han visto llegar a un móvil de verdad | Media (solo comprobable en garser.es) | F7 (R-08) | — | Pendiente de prueba |
 | PR-04 | 41 pruebas en garser.es sin hacer, varias duplicadas u obsoletas | Media | `03-PRUEBAS.md` §3 | Una guía única, ordenada | Guía en §3 |
 | PR-05 | Al dar de baja una cuenta, sus mensajes de chat se conservan | Decisión tomada | Visto en F6 | Conservarlos | Cerrado (sin cambios) |
@@ -76,6 +76,46 @@ ningún aviso en su panel. Solo nota que no le llega nada.
 - Unitaria: el aviso del panel con `suspended_at`.
 - Navegador local, en los dos paneles.
 
+#### Seguimiento (2026-10-09) — fase E
+
+1. **Leído.**
+   - `admin_set_provider_suspended` no apuntaba nada.
+   - Ninguna pantalla del profesional mira `suspended_at`; solo el admin.
+   - El profesional puede leer su propia ficha.
+   - Decisión: aviso en el panel y correo.
+2. **¿Es cierto?** Sí (`repro-pr02.mjs`): al suspender, 0 avisos en la cola. La empresa sí lee
+   su `suspended_at` y el estado de su empresa.
+3. **Casos parecidos.**
+   - **Empleados de una empresa suspendida:** pregunta al usuario. **Decisión (usuario,
+     2026-10-09): solo a la empresa.**
+   - **La baja (F6)** pone `suspended_at` por su cuenta y no pasa por esta función, así que no
+     manda el correo a una cuenta que se va. Además, el correo se salta los `@garser.invalid`.
+   - **Suspender y reactivar seguidos:** el correo solo sale si la cuenta sigue en ese estado al
+     enviarlo.
+   - **El autónomo** (Regla 2) recibe lo mismo.
+4. **Hallazgos nuevos.** Ninguno de código. Una trampa de pruebas: suspender al jardinero de la
+   semilla mientras corren las baterías hace fallar las que reservan con él (se repitieron en
+   verde). Apuntada en el `07`.
+5. **Comprobado.**
+   - **Migración** `20261009140000_provider_suspension_notices.sql`: apunta `provider_suspended`
+     o `provider_reactivated` solo si cambia el estado.
+   - **`send-email-notification`:** dos correos nuevos, solo desde la cola.
+   - **Web:** `SuspendedProviderNotice` en `/empresa` y en la portada del panel del autónomo
+     (vuelve a mirar al volver a la app). El admin dice «Le avisamos por correo».
+   - **Pruebas:**
+     - Unitarias 953/118.
+     - `verify-provider-suspension` 6/6 y **27 baterías, 300/300**.
+     - Build ✅ y `tsc` 128.
+   - **Navegador local a 375 px:**
+     - El admin suspende la empresa de prueba: sale el aviso del admin y el correo sale de la
+       cola. La empresa ve «Tu cuenta está suspendida» en `/empresa` (captura).
+     - Al reactivar, el aviso desaparece y sale el segundo correo.
+     - Lo mismo con el autónomo de la semilla en su panel (captura), y se deja reactivado.
+     - Consola sin errores.
+   - **Pendiente en garser.es:** P-R09-1 ampliada (paso 7.1 de la guía).
+   - **Commit:** `8c5f902`.
+   - **Vuelta atrás:** la función de `20260929130000`.
+
 ### PR-03 — Notificaciones al móvil en un móvil real (R-08)
 
 - En local se comprobaron el cifrado, la firma y el camino completo hasta el servicio de push
@@ -133,11 +173,12 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | Paso | Prueba | Qué se hace | Qué debe pasar |
 |---|---|---|---|
 | 2.1 | P-F0-1 | Registrarse como cliente con un correo nuevo | Tiene perfil de cliente (lo mira el chat) |
-| 2.2 | P-F0-2 → P-F2-3 | Registrarse como jardinero, enviar la solicitud; el admin la aprueba | Perfil de jardinero; tras aprobar, su ficha y sus precios; le llega el correo de alta |
+| 2.2 | P-F0-2 → P-F2-3 (+P-PH18-1) | Registrarse como jardinero, enviar la solicitud; el admin la aprueba | Perfil de jardinero; tras aprobar, su ficha y sus precios; le llega el correo de alta |
 | 2.3 | P-F3-1 | Ese jardinero sube un carnet | Queda pendiente y el admin lo ve |
 | 2.4 | P-H38-1 | Ese jardinero pone 0,5 €/m² en césped y guarda | En la base de datos, `0.5` |
 | 2.5 | P-F3-3 → P-F3-4 (+P-F3-10) | Registrar una empresa desde el móvil y enviar la encuesta; el admin la aprueba | Entra en su panel; le llega «Tu empresa ya está dada de alta» |
 | 2.6 | P-F3-5 (+P-F3-11) | Otra empresa: el admin la rechaza con un motivo | Le llega el correo con el motivo; puede corregir y reenviar |
+| 2.7 | P-PH02-1 | Con otro jardinero nuevo: el admin lo rechaza con un motivo; el jardinero pulsa «Corregir y volver a enviar», corrige y reenvía | El formulario sale relleno y con el motivo; el admin la ve «Reenviada tras 1 rechazo» y puede aprobarla |
 
 ### Sesión 3 — Equipo (empresa aprobada y empleados)
 
@@ -152,14 +193,16 @@ Pruebas que **se fusionan o dejan de aplicar**:
 
 | Paso | Prueba | Qué se hace | Qué debe pasar |
 |---|---|---|---|
-| 4.1 | P-F4-1 (+P-R07-1) | El cliente reserva y paga 2 h con la empresa | La reserva es de la empresa y las horas, del empleado; el empleado **no** la ve aún en «Mi trabajo» |
+| 4.1 | P-F4-1 (+P-R07-1, P-PH03-1) | El cliente reserva y paga 2 h con la empresa | La reserva es de la empresa y las horas, del empleado; el empleado **no** la ve aún en «Mi trabajo»; durante la reserva todo dice «profesional» («Confirmar profesional», «Profesional: …») |
 | 4.2 | P-R06-1 | Empresa abierta en el ordenador y en el móvil; cerrar sesión en el móvil; en el ordenador, proponer un precio | No se cierra la sesión del ordenador; al cliente le llega el correo; la solicitud dice «Hace X min» |
 | 4.3 | P-H40-1 (+P-R07-2) | Proponer solo +1 h; el cliente acepta | La hora de más, apartada al empleado; al confirmarse, al empleado le llega «Nuevo trabajo» y ya lo ve |
 | 4.4 | P-R03-1 | El cliente, con la app instalada, pulsa «Actualizar» o vuelve a la app | Ve «Confirmada» |
 | 4.5 | P-F5-3 | La empresa cambia quién va (a un segundo empleado) | Correo «Ya no vas» al primero y «Nuevo trabajo» al segundo |
 | 4.6 | P-F6-1 | La empresa reparte un trabajo de 3 h entre dos personas | A cada una, su aviso con «Tu parte» |
-| 4.7 | P-F6-2 (+P-H42-1, P-H44-1) | En el móvil, «Mover a otra fecha»; el cliente acepta | Pantalla fija sin scroll lateral; al cliente le llega el correo con inicio y fin; la reserva se mueve; aviso a quien va |
+| 4.7 | P-F6-2 (+P-H42-1, P-H44-1, P-PH08-1) | En el móvil, «Mover a otra fecha» (a un día en que va otra persona); el cliente acepta | Pantalla fija sin scroll lateral; al cliente le llega el correo con inicio y fin; la reserva se mueve; quien entra recibe **solo** «Nuevo trabajo» y quien sale «Ya no vas» |
+| 4.7b | P-PH05-1 | El chat prueba, con la cuenta de la empresa de prueba, a escribir una marca de idempotencia | 403; aceptar desde la web sigue funcionando |
 | 4.8 | P-F5-4 | Reserva para mañana: el cliente mira su reserva | Ve «Irá …» con nombre y foto el día antes, y no antes |
+| 4.9 | P-PH15-1 | Mirar el correo «Tu reserva ha sido aceptada» que recibió el cliente en 4.1 | Le saluda por su nombre y dice el nombre de la empresa |
 
 ### Sesión 5 — Trabajos grandes, varios servicios y planes
 
@@ -181,9 +224,10 @@ Pruebas que **se fusionan o dejan de aplicar**:
 
 | Paso | Prueba | Qué se hace | Qué debe pasar |
 |---|---|---|---|
-| 7.1 | P-R09-1 | Suspender la empresa de prueba y buscarla como cliente; después reactivarla | Suspendida, no aparece para reservar y sus reservas siguen; reactivada, vuelve. Con PR-02 hecho, le llegan los correos |
+| 7.1 | P-R09-1 (+PR-02) | Suspender la empresa de prueba y buscarla como cliente; después reactivarla | Suspendida, no aparece para reservar y sus reservas siguen; la empresa ve «Tu cuenta está suspendida» en su panel y recibe el correo; reactivada, vuelve, el aviso desaparece y le llega «vuelve a estar activa»; a sus empleados no les llega nada |
 | 7.2 | P-R02-1 | «Dar de baja o suspender»: revisar la empresa (con reservas) y cada cuenta de prueba | La empresa, «Aún no se puede» con el motivo; las cuentas sin reservas se borran enteras |
-| 7.3 | Limpieza | Dar de baja o borrar todas las cuentas de prueba de estas sesiones, con la herramienta | Nada de prueba en producción (lo comprueba el chat) |
+| 7.3 | P-PH01-1 → P-PH01-2 (+P-PH14-1) | Con una cuenta de prueba que aún tenga una reserva: «Mi cuenta → Cerrar cuenta». Después, con una sin reservas | La primera: «Aún no puedes cerrar tu cuenta» con la fecha. La segunda: vuelve a la entrada con «Tu cuenta se ha cerrado» y no puede entrar; el chat comprueba que no queda ningún fichero suyo |
+| 7.4 | Limpieza | Dar de baja o borrar todas las cuentas de prueba de estas sesiones, con la herramienta | Nada de prueba en producción (lo comprueba el chat) |
 
 ---
 
@@ -192,3 +236,9 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | Fecha | Qué | Resultado |
 |---|---|---|
 | 2026-09-29 | Documento creado; decisiones PR-02, PR-04 y PR-05 | — |
+| 2026-10-08 | PR-01 cerrado (PR #41 fusionada el 2026-09-29). Procedimiento de corrección en `07-PROCEDIMIENTO-CORRECCION.md` | — |
+| 2026-10-09 | Fase A: pasos 4.9 y 7.3 añadidos (baja desde «Mi cuenta», ficheros y nombres en los correos) | — |
+| 2026-10-09 | Fase B: paso 2.7 añadido (jardinero rechazado que vuelve a solicitar) | — |
+| 2026-10-09 | Fase C: paso 4.7 ampliado y 4.7b añadido (aviso único al mover y marcas cerradas) | — |
+| 2026-10-09 | Fase D: pasos 2.2 y 4.1 ampliados («profesional» y alta validada) | — |
+| 2026-10-09 | Fase E: PR-02 hecho (aviso en el panel y correos); paso 7.1 ampliado | — |

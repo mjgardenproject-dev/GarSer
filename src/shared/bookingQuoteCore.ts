@@ -1441,7 +1441,7 @@ export function buildAuthoritativeBookingQuote(params: {
 
     metadata.pricingContext.palmGroups.forEach((group) => {
       if (group.isPriced && group.quantity > 0 && group.isTerminalOpenRange) {
-        pushWarning('palm_terminal_range', 'Precio aproximado: en el rango más alto de palmera el jardinero puede ajustar el importe y requerirá tu aceptación en el chat.');
+        pushWarning('palm_terminal_range', 'Precio aproximado: en el rango más alto de palmera el profesional puede ajustar el importe y requerirá tu aceptación en el chat.');
       }
       // Anti-alucinación / declaración manual absurda: mismo patrón que lawn_area_implausible
       // y hedge_length_implausible (auditoría de palmeras 2026-09-11/12, hallazgo #2).

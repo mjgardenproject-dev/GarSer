@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
+import { applicationHasData, fetchLastRejection, submitGardenerApplication, wizardStateFromApplication } from '../../utils/gardenerApplicationRetry';
 import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-react';
 import GardenerStatusPage from './GardenerStatusPage';
 import { compressImage } from '../../utils/imageCompression';
@@ -44,6 +45,10 @@ const GardenerApplicationWizard: React.FC = () => {
     const [loading, setLoading] = useState(false);
   const [applicationId, setApplicationId] = useState<string | null>(null);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
+  // PH-02: si la solicitud se reabrió tras un rechazo, el motivo, para saber qué corregir.
+  const [lastRejection, setLastRejection] = useState<string>('');
+  // ¿Había progreso local al abrir? (el guardado local empieza a escribir al segundo).
+  const hadLocalProgress = useRef(false);
   
   // Upload loading states
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
@@ -114,6 +119,7 @@ const GardenerApplicationWizard: React.FC = () => {
     const key = `gardener_wizard_progress_${user.id}`;
     try {
       const saved = localStorage.getItem(key);
+      hadLocalProgress.current = !!saved;
       if (saved) {
         const data = JSON.parse(saved);
         if (data.step) setStep(data.step);
@@ -187,7 +193,7 @@ const GardenerApplicationWizard: React.FC = () => {
     try {
       const { data: existing, error } = await supabase
         .from('gardener_applications')
-        .select('id,status')
+        .select('*')
         .eq('user_id', user!.id)
         .order('created_at', { ascending: false })
         .limit(1);
@@ -196,6 +202,18 @@ const GardenerApplicationWizard: React.FC = () => {
         const latest = existing[0];
         if (latest.status === 'draft') {
           setApplicationId(latest.id);
+          // PH-02: una solicitud reabierta tras un rechazo trae sus datos de la base de datos (el
+          // borrador local se borró al enviarla). Si hay progreso local, manda el local.
+          if (!hadLocalProgress.current && applicationHasData(latest)) {
+            const restored = wizardStateFromApplication(latest);
+            setFullName(restored.fullName); setPhone(restored.phone); setCityZone(restored.cityZone); setPhotoUrl(restored.photoUrl);
+            setServices(restored.services); setOtherServices(restored.otherServices); setTools(restored.tools);
+            setExpYears(restored.expYears); setExpYearsInput(restored.expYearsInput); setExperienceText(restored.experienceText);
+            setWorkedForCompanies(restored.workedForCompanies); setCanProve(restored.canProve); setProofPhotos(restored.proofPhotos);
+            setEducationText(restored.educationText); setCertPhotos(restored.certPhotos);
+          }
+          const rejection = await fetchLastRejection(user!.id);
+          if (rejection?.reason) setLastRejection(rejection.reason);
           return;
         }
         if (latest.status === 'submitted' || latest.status === 'approved' || latest.status === 'rejected') {
@@ -272,12 +290,11 @@ const GardenerApplicationWizard: React.FC = () => {
     setLoading(true);
     try {
       await autosave();
-      const { error } = await supabase
-        .from('gardener_applications')
-        .update({ status: 'submitted', submitted_at: new Date().toISOString() })
-        .eq('id', applicationId);
-      if (error) {
-        toast.error(error.message || 'No se pudo enviar la solicitud');
+      // El servidor comprueba que está completa y la envía (PH-18); si falta algo, lo dice.
+      try {
+        await submitGardenerApplication();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'No se pudo enviar la solicitud');
         return;
       }
       // Success: show local success state immediately without redirection
@@ -309,6 +326,13 @@ const GardenerApplicationWizard: React.FC = () => {
     <div className="max-w-3xl mx-auto p-4 sm:p-6">
       <div className="space-y-6">
         
+        {lastRejection && step === 1 && (
+          <div role="note" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Corrige tu solicitud y vuelve a enviarla</p>
+            <p className="mt-1 break-words"><span className="font-medium">Motivo del rechazo:</span> {lastRejection}</p>
+          </div>
+        )}
+
         {/* Header Re-layout */}
         <div className="w-full">
           {/* Progress Row */}

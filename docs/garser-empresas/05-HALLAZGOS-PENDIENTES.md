@@ -32,7 +32,7 @@
 | PH-14 | Storage: cualquiera con sesión lista y descarga fotos de reserva y de chat de otros; sin sesión se listan los ficheros de solicitud de todos | **Crítica** (datos personales, en producción) | Fase A, paso 3 | Corregir en la fase A (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
 | PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
 | PH-16 | `booking-photos` es público en producción y privado en local; las imágenes del chat se enseñan con URL pública | Media (datos personales; el enlace es la única llave) | Fase A, paso 3 | — | Apuntado |
-| PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | Apuntado (fase H) |
+| PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | En curso (2026-10-10, con permiso del usuario) |
 | PH-18 | El alta de jardinero se envía desde el navegador sin comprobar en el servidor que está completa (las empresas sí, con `submit_company_application`) | Baja (el admin revisa a mano) | Fase B, paso 3 | Lo deja al chat (usuario, 2026-10-09): servidor | ✅ Hecho (2026-10-09), por desplegar |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o

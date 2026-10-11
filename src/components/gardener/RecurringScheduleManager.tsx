@@ -180,9 +180,11 @@ export default function RecurringScheduleManager({
           .from('recurring_availability_settings')
           .select('*')
           .eq('gardener_id', user?.id)
-          .single();
+          // `maybeSingle`: un profesional nuevo aún no tiene ajustes y `single()` daba un 406 en la
+          // consola (pruebas en garser.es, 2026-10-11).
+          .maybeSingle();
 
-        if (settError && settError.code !== 'PGRST116') throw settError;
+        if (settError) throw settError;
         settData = ownSettings;
       }
 

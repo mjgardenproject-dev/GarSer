@@ -182,7 +182,7 @@ const ClientBookingLauncher = () => {
         event: 'booking.price_discrepancy_resolved',
         context: { bookingId: booking.id, resolution: accept ? 'accepted' : 'rejected' },
       });
-      toast.success(accept ? 'Nuevo precio aceptado.' : 'Propuesta rechazada.');
+      toast.success(accept ? 'Propuesta aceptada.' : 'Propuesta rechazada.');
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo responder a la propuesta.');

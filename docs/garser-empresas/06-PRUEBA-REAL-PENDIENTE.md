@@ -242,3 +242,4 @@ Pruebas que **se fusionan o dejan de aplicar**:
 | 2026-10-09 | Fase C: paso 4.7 ampliado y 4.7b añadido (aviso único al mover y marcas cerradas) | — |
 | 2026-10-09 | Fase D: pasos 2.2 y 4.1 ampliados («profesional» y alta validada) | — |
 | 2026-10-09 | Fase E: PR-02 hecho (aviso en el panel y correos); paso 7.1 ampliado | — |
+| 2026-10-10/12 | Prueba en vivo tras la fusión de #46 (fase H): sesiones 2 (jardinero rechazado y aprobado, 0,5 €/m²), 4 (4.1–4.9 menos 4.2) y 7.1/7.3 en parte. Hallazgos PH-19…PH-30 en `05`; PH-19…PH-21 corregidos en la rama `fix/pruebas-garser` | En curso |

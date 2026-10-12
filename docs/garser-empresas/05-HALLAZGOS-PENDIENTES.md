@@ -34,9 +34,9 @@
 | PH-16 | `booking-photos` es público en producción y privado en local; las imágenes del chat se enseñan con URL pública | Media (datos personales; el enlace es la única llave) | Fase A, paso 3 | — | Apuntado |
 | PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | ✅ Hecho (2026-10-10): 282 ficheros de 50 cuentas y 3 del chat borrados; 0 huérfanos |
 | PH-18 | El alta de jardinero se envía desde el navegador sin comprobar en el servidor que está completa (las empresas sí, con `submit_company_application`) | Baja (el admin revisa a mano) | Fase B, paso 3 | Lo deja al chat (usuario, 2026-10-09): servidor | ✅ En producción (2026-10-10) y probado en garser.es |
-| PH-19 | Perfil del jardinero: sin coordenadas dice «Cobertura validada» y, al guardar sin tocar la dirección, guarda (0, 0); `booking-payment` daba por buenas las mismas coordenadas vacías | Media (el servidor lo compensa geocodificando en `booking-authority`) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ Hecho (`64f5519`), por desplegar (web + `booking-payment`) |
-| PH-20 | Horario fijo de un profesional nuevo: 406 en la consola al abrirlo | Baja (consola) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ Hecho (`b3db793`), por desplegar (web) |
-| PH-21 | Al aceptar una propuesta que solo cambia la duración, el aviso dice «Nuevo precio aceptado» | Baja (texto) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ Hecho (`7d2cc44`), por desplegar (web) |
+| PH-19 | Perfil del jardinero: sin coordenadas dice «Cobertura validada» y, al guardar sin tocar la dirección, guarda (0, 0); `booking-payment` daba por buenas las mismas coordenadas vacías | Media (el servidor lo compensa geocodificando en `booking-authority`) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ En producción (PR #47; `booking-payment` desplegado por el usuario) |
+| PH-20 | Horario fijo de un profesional nuevo: 406 en la consola al abrirlo | Baja (consola) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ En producción (PR #47; `booking-payment` desplegado por el usuario) |
+| PH-21 | Al aceptar una propuesta que solo cambia la duración, el aviso dice «Nuevo precio aceptado» | Baja (texto) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ En producción (PR #47; `booking-payment` desplegado por el usuario) |
 | PH-22 | Al cambiar de sesión, la consola muestra «WebSocket connection … failed» del tiempo real | Baja (consola) | Prueba en vivo | — | Apuntado |
 | PH-23 | Una contraseña mal puesta deja en la consola «❌ Error en registro» (el usuario ve el mensaje correcto) | Baja (consola) | Prueba en vivo | — | Apuntado |
 | PH-24 | El panel del profesional recuerda la última pestaña por navegador, no por usuario: otra cuenta en el mismo navegador abre en esa pestaña | Baja | Prueba en vivo | — | Apuntado |
@@ -46,10 +46,12 @@
 | PH-28 | Al repartir un trabajo, a quien se le recorta su parte (11–14 → 11–13) no le llega ningún aviso | Media (puede ir a horas que ya no son suyas) | P-F6-1, 2026-10-11 | — | Apuntado |
 | PH-29 | La cuenta del admin tiene una fila de borrador en `gardener_applications` | Baja (datos) | Prueba en vivo | — | Apuntado |
 | PH-30 | La agenda de la empresa (Día y Lista) solo enseña la primera palabra del nombre: «Jardinero 28» sale «Jardinero» y el dueño «Jardines»; dos «Juan» no se distinguen | Baja (confuso con nombres repetidos) | P-F6-2, 2026-10-12 | — | Apuntado |
-| PH-31 | El panel de admin no lleva a «Mi cuenta» (foto, contraseña, «Cerrar todas»): solo escribiendo /account | Media (el admin no encuentra su cuenta) | El usuario, 2026-10-12 | Corregir y fusionar antes de seguir (usuario) | ✅ Hecho, por desplegar (web) |
-| PH-32 | Un jardinero con la solicitud pendiente, rechazada o sin enviar no puede entrar en «Mi cuenta» ni escribiendo la URL (se le devuelve a /status o /apply): no puede cerrar su cuenta | **Alta** (PH-01 no le llega) | Caso parecido a PH-31 | Corregir con PH-31 (chat) | ✅ Hecho, por desplegar (web) |
+| PH-31 | El panel de admin no lleva a «Mi cuenta» (foto, contraseña, «Cerrar todas»): solo escribiendo /account | Media (el admin no encuentra su cuenta) | El usuario, 2026-10-12 | Corregir y fusionar antes de seguir (usuario) | ✅ En producción (PR #47) y probado en garser.es |
+| PH-32 | Un jardinero con la solicitud pendiente, rechazada o sin enviar no puede entrar en «Mi cuenta» ni escribiendo la URL (se le devuelve a /status o /apply): no puede cerrar su cuenta | **Alta** (PH-01 no le llega) | Caso parecido a PH-31 | Corregir con PH-31 (chat) | ✅ En producción (PR #47) y probado en garser.es |
 | PH-33 | Detalles vistos al arreglar PH-31/PH-32: en /account el admin ve la barra inferior del cliente (Inicio, Reservas, Chat); el solicitante ve «Panel, Reservas, Chat» y el «Enlace de reserva directo» sin estar aprobado; «Cerrar todas» pregunta con la ventana nativa del navegador | Baja | PH-31 | — | Apuntado |
 | PH-34 | En local, `booking-lifecycle-tick` acaba cada 15 min con «wall clock duration warning / early termination» (tarda más de lo que deja el servidor de funciones) | Baja (local; en producción el reloj dice «succeeded», pero eso solo mide la llamada) | Registro de funciones local, 2026-10-12 | — | Apuntado: mirar el registro de producción |
+| PH-35 | Tras «Cerrar todas», los demás dispositivos siguen dentro (leen y escriben) hasta que caduca su token, hasta 1 hora: la web solo se enteraba al renovarlo | **Alta** (un móvil perdido sigue dentro) | P-R06-2, 2026-10-12 | Arreglar en la web (usuario) | ✅ Hecho, por desplegar (web) |
+| PH-36 | Al cerrarse la sesión desde fuera estando en el panel de admin, al volver a entrar no se vuelve a la misma página (el guardia del admin no la recordaba) | Baja | Caso parecido a PH-35 | Con PH-35 (chat) | ✅ Hecho, por desplegar (web) |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -811,6 +813,35 @@ añadir la fila final del registro.
      «Salir» le devuelve a su panel. Un solicitante desechable (`estado.local@test.local`) entra
      desde «Solicitud en revisión», revisa y cierra su cuenta: «Tu cuenta se ha cerrado», y en la
      base no queda ni la cuenta, ni la solicitud, ni ficheros.
+
+
+### PH-35 y PH-36 — «Cerrar todas» no saca a los otros dispositivos hasta que caduca su token
+
+1. **Leído.** «Cerrar todas» (`signOut({ scope: 'global' })`) revoca las sesiones en el servidor,
+   pero el token que ya tiene otra pestaña sigue valiendo hasta que caduca (1 h). La web solo se
+   enteraba al renovarlo (`SIGNED_OUT` → «Tu sesión se ha cerrado…», R-06).
+2. **¿Es cierto?** Sí, en garser.es: el usuario pulsó «Cerrar todas» en el iPhone (admin); el
+   admin quedó con 0 sesiones, pero la pestaña del chat siguió dentro, recargando y cargando
+   datos, con el token válido 23 min más. `/auth/v1/user` con ese token ya respondía 403
+   `session_not_found`.
+3. **Casos parecidos.**
+   - Todas las cuentas: la detección está en `AuthContext` y vale para todas.
+   - **PH-36:** el guardia del panel de admin (`AdminProtectedRoute`) mandaba a la entrada sin
+     recordar la página, y pisaba la vuelta que guarda R-06 (`ProtectedRoute` sí la recuerda).
+   - Lo que se puede hacer con un token aún válido en el servidor (leer y escribir) no se puede
+     cortar desde la web; con la detección, la pestaña sale en cuanto se usa.
+4. **Hallazgos nuevos:** PH-36.
+5. **Comprobado.**
+   - `src/utils/sessionLiveness.ts`: se pregunta al servidor de acceso si la sesión sigue
+     viva al volver a la app, al usarla (toque o tecla) y cada 5 min; como mucho una vez por
+     minuto y solo con sesión guardada; un fallo de red no saca a nadie. Si no existe, se sale
+     solo en esta pestaña y sale el aviso de siempre.
+   - `AdminProtectedRoute.tsx`: recuerda la página, como `ProtectedRoute`.
+   - Pruebas: `sessionLiveness.test.ts` (7), `AdminProtectedRoute.test.tsx` (1) y 1 caso en
+     `AuthContext.test.tsx`. Vitest 968/123 ✅, `tsc` 128 (igual), build ✅.
+   - **Navegador local:** con el admin en `/admin/users`, se borran sus sesiones en la base
+     (lo mismo que «Cerrar todas» en otro dispositivo); al primer toque sale «Tu sesión se ha
+     cerrado…» y, al entrar, vuelve a `/admin/users`. Repetido sin recargar la página: igual.
 
 ---
 

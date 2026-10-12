@@ -469,7 +469,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
         event: 'booking.price_discrepancy_resolved',
         context: { bookingId, resolution: accept ? 'accepted' : 'rejected' },
       });
-      toast.success(accept ? 'Nuevo precio aceptado' : 'Propuesta rechazada');
+      toast.success(accept ? 'Propuesta aceptada' : 'Propuesta rechazada');
       await refreshBookingMeta();
     } catch (error: any) {
       toast.error(error?.message || 'No se pudo responder a la propuesta');

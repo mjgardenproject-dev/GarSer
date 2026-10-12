@@ -16,24 +16,40 @@
 
 | # | Qué pasa | Gravedad | Origen | Decisión | Estado |
 |---|---|---|---|---|---|
-| PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | ✅ Hecho (2026-10-09), por desplegar |
-| PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | ✅ Hecho (2026-10-09), por desplegar |
-| PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | ✅ Hecho (2026-10-09), por desplegar |
-| PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | ✅ Hecho (2026-10-09), por desplegar |
-| PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | **Media** (subida en la fase C: con una marca falsa se manda al cliente un «reserva aceptada» falso) | Visto en F3 | Cerrarlo | ✅ Hecho (2026-10-09), por desplegar |
+| PH-01 | «Mi cuenta»: cambiar la foto y «Cerrar cuenta» dicen «hecho» y no guardan nada | **Alta** (el usuario cree que ha cerrado su cuenta) | H-13 | Baja real con comprobaciones | ✅ En producción (2026-10-10) y probado en garser.es |
+| PH-02 | Un jardinero rechazado no puede volver a solicitar: «volver a intentarlo» no hace nada | **Alta** (bloquea para siempre a un solicitante) | Sospecha de `02` §3, **verificada** | Reabrir al momento, con histórico | ✅ En producción (2026-10-10) y probado en garser.es |
+| PH-03 | Al reservar con una empresa, el cliente lee «Jardinero» y «Confirmar jardinero» | Media (texto) | H-28 (punto 1) | «Profesional» para todos | ✅ En producción (2026-10-10) y probado en garser.es |
+| PH-04 | Al dar de baja una cuenta, sus ficheros (fotos, carnet) se quedan guardados | Media (datos personales) | Visto en F6 | Borrarlos también | ✅ En producción (2026-10-10) y probado en garser.es |
+| PH-05 | El navegador puede escribir las marcas de idempotencia de sus operaciones | **Media** (subida en la fase C: con una marca falsa se manda al cliente un «reserva aceptada» falso) | Visto en F3 | Cerrarlo | ✅ En producción (2026-10-10) y probado en garser.es |
 | PH-06 | `ARCHITECTURE.md` describe un sistema que ya no existe | Media (despista) | H-07 | Reescribirlo | ✅ Hecho (2026-10-09) |
 | PH-07 | 9 pruebas de preparación de servicios fallan porque están desactualizadas | Media (se pierde una red de seguridad) | H-27 | Ponerlas al día | ✅ Hecho (2026-10-09) |
-| PH-08 | Al aceptar otra fecha con cambio de persona, a quien va le llegan dos correos | Baja | Visto en F4 | Técnica (ver punto) | ✅ Hecho (2026-10-09), por desplegar |
+| PH-08 | Al aceptar otra fecha con cambio de persona, a quien va le llegan dos correos | Baja | Visto en F4 | Técnica (ver punto) | ✅ En producción (2026-10-10) y probado en garser.es |
 | PH-09 | El historial de migraciones del Supabase **local** está desalineado | Baja (solo entorno) | Visto en F3 | Técnica | ✅ Cerrado (2026-10-09): no se reproduce |
 | PH-10 | `02-HALLAZGOS.md` tiene hallazgos resueltos todavía marcados como abiertos | Baja (documentación) | `01-PLAN` §5c.6 | — | ✅ Hecho (2026-10-09) |
 | PH-11 | `booking_items` no se actualiza tras un cambio de precio | Vigilado (sin efecto hoy) | H-36 | Sin acción (regla) | Vigilado |
 | PH-12 | Las solicitudes a varios jardineros siguen desactivadas | Informativo | H-20 | Sin acción | Informativo |
 | PH-13 | Tareas de cierre del proyecto (datos de prueba, Stripe real, encuesta) | Operativo | `01-PLAN` §5c | Encuesta: dada por buena | En parte |
-| PH-14 | Storage: cualquiera con sesión lista y descarga fotos de reserva y de chat de otros; sin sesión se listan los ficheros de solicitud de todos | **Crítica** (datos personales, en producción) | Fase A, paso 3 | Corregir en la fase A (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
-| PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | ✅ Hecho (2026-10-09), por desplegar |
+| PH-14 | Storage: cualquiera con sesión lista y descarga fotos de reserva y de chat de otros; sin sesión se listan los ficheros de solicitud de todos | **Crítica** (datos personales, en producción) | Fase A, paso 3 | Corregir en la fase A (usuario, 2026-10-09) | ✅ En producción (2026-10-10) y probado en garser.es |
+| PH-15 | Los correos de reserva no encuentran el nombre («Hola jardinero», «El profesional ha aceptado…») | Media (texto) | Fase A, paso 3 | Nombre de la ficha (usuario, 2026-10-09) | ✅ En producción (2026-10-10) y probado en garser.es |
 | PH-16 | `booking-photos` es público en producción y privado en local; las imágenes del chat se enseñan con URL pública | Media (datos personales; el enlace es la única llave) | Fase A, paso 3 | — | Apuntado |
-| PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | En curso (2026-10-10, con permiso del usuario) |
-| PH-18 | El alta de jardinero se envía desde el navegador sin comprobar en el servidor que está completa (las empresas sí, con `submit_company_application`) | Baja (el admin revisa a mano) | Fase B, paso 3 | Lo deja al chat (usuario, 2026-10-09): servidor | ✅ Hecho (2026-10-09), por desplegar |
+| PH-17 | En producción quedan 273 ficheros de solicitud (49 cuentas borradas) y 10 fotos de reserva o chat de cuentas que ya no existen | **Alta** (datos personales, públicos por enlace) | Fase A, paso 3 | Borrarlos en la fase H, con permiso | ✅ Hecho (2026-10-10): 282 ficheros de 50 cuentas y 3 del chat borrados; 0 huérfanos |
+| PH-18 | El alta de jardinero se envía desde el navegador sin comprobar en el servidor que está completa (las empresas sí, con `submit_company_application`) | Baja (el admin revisa a mano) | Fase B, paso 3 | Lo deja al chat (usuario, 2026-10-09): servidor | ✅ En producción (2026-10-10) y probado en garser.es |
+| PH-19 | Perfil del jardinero: sin coordenadas dice «Cobertura validada» y, al guardar sin tocar la dirección, guarda (0, 0); `booking-payment` daba por buenas las mismas coordenadas vacías | Media (el servidor lo compensa geocodificando en `booking-authority`) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ Hecho (`64f5519`), por desplegar (web + `booking-payment`) |
+| PH-20 | Horario fijo de un profesional nuevo: 406 en la consola al abrirlo | Baja (consola) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ Hecho (`b3db793`), por desplegar (web) |
+| PH-21 | Al aceptar una propuesta que solo cambia la duración, el aviso dice «Nuevo precio aceptado» | Baja (texto) | Prueba en vivo, 2026-10-11 | Corregir (chat) | ✅ Hecho (`7d2cc44`), por desplegar (web) |
+| PH-22 | Al cambiar de sesión, la consola muestra «WebSocket connection … failed» del tiempo real | Baja (consola) | Prueba en vivo | — | Apuntado |
+| PH-23 | Una contraseña mal puesta deja en la consola «❌ Error en registro» (el usuario ve el mensaje correcto) | Baja (consola) | Prueba en vivo | — | Apuntado |
+| PH-24 | El panel del profesional recuerda la última pestaña por navegador, no por usuario: otra cuenta en el mismo navegador abre en esa pestaña | Baja | Prueba en vivo | — | Apuntado |
+| PH-25 | Con el panel de configuración de un servicio abierto, el interruptor «Activar servicio» de detrás no hace nada ni avisa | Media (parece roto) | Prueba en vivo | — | Apuntado |
+| PH-26 | Al volver a la app tras un rato, el horario del jardinero pide datos con la sesión caducada: «Error fetching recurring data: JWT expired» (PGRST303) | Baja (se arregla al recargar) | Prueba en vivo | — | Apuntado |
+| PH-27 | Los desplegables de «Quién hace cada hora» no tienen nombre accesible | Baja (accesibilidad) | Prueba en vivo | — | Apuntado |
+| PH-28 | Al repartir un trabajo, a quien se le recorta su parte (11–14 → 11–13) no le llega ningún aviso | Media (puede ir a horas que ya no son suyas) | P-F6-1, 2026-10-11 | — | Apuntado |
+| PH-29 | La cuenta del admin tiene una fila de borrador en `gardener_applications` | Baja (datos) | Prueba en vivo | — | Apuntado |
+| PH-30 | La agenda de la empresa (Día y Lista) solo enseña la primera palabra del nombre: «Jardinero 28» sale «Jardinero» y el dueño «Jardines»; dos «Juan» no se distinguen | Baja (confuso con nombres repetidos) | P-F6-2, 2026-10-12 | — | Apuntado |
+| PH-31 | El panel de admin no lleva a «Mi cuenta» (foto, contraseña, «Cerrar todas»): solo escribiendo /account | Media (el admin no encuentra su cuenta) | El usuario, 2026-10-12 | Corregir y fusionar antes de seguir (usuario) | ✅ Hecho, por desplegar (web) |
+| PH-32 | Un jardinero con la solicitud pendiente, rechazada o sin enviar no puede entrar en «Mi cuenta» ni escribiendo la URL (se le devuelve a /status o /apply): no puede cerrar su cuenta | **Alta** (PH-01 no le llega) | Caso parecido a PH-31 | Corregir con PH-31 (chat) | ✅ Hecho, por desplegar (web) |
+| PH-33 | Detalles vistos al arreglar PH-31/PH-32: en /account el admin ve la barra inferior del cliente (Inicio, Reservas, Chat); el solicitante ve «Panel, Reservas, Chat» y el «Enlace de reserva directo» sin estar aprobado; «Cerrar todas» pregunta con la ventana nativa del navegador | Baja | PH-31 | — | Apuntado |
+| PH-34 | En local, `booking-lifecycle-tick` acaba cada 15 min con «wall clock duration warning / early termination» (tarda más de lo que deja el servidor de funciones) | Baja (local; en producción el reloj dice «succeeded», pero eso solo mide la llamada) | Registro de funciones local, 2026-10-12 | — | Apuntado: mirar el registro de producción |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -744,6 +760,57 @@ añadir la fila final del registro.
      con su correo.
    - **Commit:** `569c8d1`.
    - **Vuelta atrás:** la de la cabecera de la migración.
+
+
+### PH-19 a PH-21 — Corregidos durante la prueba en vivo (rama `fix/pruebas-garser`)
+
+- **PH-19 — coordenadas vacías.** `Number(null)` es 0, así que `ProfileSettings.tsx` daba por
+  buenas unas coordenadas vacías: decía «Cobertura validada» a un jardinero nuevo y, al guardar
+  sin cambiar la dirección, guardaba (0, 0). `booking-payment` tenía la misma comprobación.
+  - Casos parecidos: `booking-authority` ya usaba `getProviderCoordinates` (vacías y (0, 0)
+    cuentan como ninguna) y geocodifica al vuelo, por eso las reservas no fallaban.
+  - Arreglo: los dos usan `getProviderCoordinates` (`src/shared/bookingEligibilityCore.ts`); si
+    no hay coordenadas, se vuelven a pedir al guardar. Commit `64f5519`.
+  - **Hay que desplegar la web y `booking-payment`.**
+- **PH-20 — 406 del horario fijo.** `RecurringScheduleManager.tsx` pedía la configuración con
+  `.single()` y un profesional nuevo no tiene fila: ahora `.maybeSingle()` y los errores de
+  verdad se lanzan. Commit `b3db793`.
+- **PH-21 — texto.** «Nuevo precio aceptado» → «Propuesta aceptada» en `BookingsList.tsx`,
+  `ClientBookingLauncher.tsx` y `ChatWindow.tsx`: vale también si solo cambia la duración.
+  Commit `7d2cc44`.
+
+### PH-22 a PH-30 — Apuntados durante la prueba en vivo (pendientes de decisión)
+
+- **PH-28** es el único que puede tener efecto en el trabajo: `private.sync_job_notices` solo
+  avisa a quien entra o sale del trabajo, no a quien sigue con menos horas. Propuesta: un
+  aviso «Tu parte cambia» cuando cambian las horas de alguien que sigue.
+- **PH-30:** `CompanyAgenda.tsx:117` y `:139` cortan el nombre con `split(' ')[0]`.
+  Propuesta: nombre y la inicial del apellido, como ve el cliente, o el nombre entero si cabe.
+- Los demás son de consola, texto o accesibilidad; se pueden hacer juntos en una tanda pequeña.
+
+
+### PH-31 y PH-32 — «Mi cuenta» inalcanzable para el admin y para los solicitantes
+
+1. **Leído.** `AdminLayout.tsx` tiene su propio menú (lateral y del móvil) sin `/account`; la
+   barra general no se pinta en `/admin`.
+2. **¿Es cierto?** Sí: en garser.es el admin solo llegaba escribiendo la URL (lo vio el usuario).
+3. **Casos parecidos.**
+   - Cliente, profesional y empresa: la barra general lleva a «Mi Cuenta». El empleado: barra
+     inferior «Cuenta».
+   - **Solicitante de jardinero (PH-32):** en `/status` el menú sale vacío y la regla de
+     `App.tsx` le devolvía a `/status` (o a `/apply`) desde cualquier otra ruta, también desde
+     `/account`. No podía cerrar su cuenta.
+4. **Hallazgos nuevos:** PH-33 (detalles de barras y textos) y PH-34 (reloj en local).
+5. **Comprobado.**
+   - `AdminLayout.tsx`: «Mi cuenta» en los dos menús.
+   - `src/utils/applicantRedirect.ts`: la regla de `App.tsx`, igual que antes salvo que
+     `/account` queda siempre abierta; `GardenerStatusPage.tsx` enlaza a «Mi cuenta».
+   - Pruebas: `AdminLayout.test.tsx` (nueva), `applicantRedirect.test.ts` (nueva) y 2 casos en
+     `GardenerStatusPage.test.tsx`. Vitest 959/121 ✅, `tsc` 128 (igual), build ✅.
+   - **Navegador local:** el admin entra en «Mi cuenta» desde el menú, ve «Cerrar todas» y
+     «Salir» le devuelve a su panel. Un solicitante desechable (`estado.local@test.local`) entra
+     desde «Solicitud en revisión», revisa y cierra su cuenta: «Tu cuenta se ha cerrado», y en la
+     base no queda ni la cuenta, ni la solicitud, ni ficheros.
 
 ---
 

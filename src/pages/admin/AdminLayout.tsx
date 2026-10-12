@@ -9,6 +9,7 @@ import {
   LogOut,
   ShieldAlert,
   AlertTriangle,
+  UserCircle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -48,6 +49,9 @@ const AdminLayout: React.FC = () => {
     { to: '/admin/phytosanitary', icon: Leaf, label: 'Certificados Fito.' },
     { to: '/admin/users', icon: Users, label: 'Usuarios' },
     { to: '/admin/settings', icon: Settings, label: 'Configuración' },
+    // Pruebas en garser.es (2026-10-12): el panel no llevaba a «Mi cuenta» (foto, contraseña,
+    // «Cerrar todas»); solo se llegaba escribiendo /account.
+    { to: '/account', icon: UserCircle, label: 'Mi cuenta' },
   ];
 
   return (

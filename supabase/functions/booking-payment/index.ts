@@ -8,6 +8,7 @@ import {
   providerConfigVersionPayload,
   type ProviderFreeHourRow,
   type ProviderProfileLike,
+  getProviderCoordinates,
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import {
   BOOKING_PAYMENT_HOLD_MINUTES,
@@ -427,7 +428,9 @@ async function ensureProviderOperationalCoordinates(
   profile?: (ProviderProfileLike & { address?: string | null }) | null,
 ): Promise<(ProviderProfileLike & { address?: string | null }) | null> {
   if (!profile) return null;
-  if (Number.isFinite(Number(profile.operational_latitude)) && Number.isFinite(Number(profile.operational_longitude))) {
+  // Pruebas en garser.es (2026-10-11): `Number(null)` es 0 y es finito, así que unas coordenadas
+  // vacías pasaban por buenas y nunca se calculaban. La misma regla que booking-authority.
+  if (getProviderCoordinates(profile)) {
     return profile;
   }
 

@@ -35,6 +35,7 @@ import {
 // import { isTreePruningConfigValid } from '../../domain/treePruning';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
 import { getCoordinatesFromAddress } from '../../utils/geolocation';
+import { getProviderCoordinates } from '../../shared/bookingEligibilityCore';
 
 // Sólo permitir los servicios definidos en el estimador IA (coincidencia estricta de nombre)
 const ALLOWED_SERVICE_NAMES = [
@@ -651,17 +652,17 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     setLoading(true);
     try {
         const normalizedAddress = String(data.address || '').trim();
+        // Pruebas en garser.es (2026-10-11): antes se miraba con `Number.isFinite(Number(x))`, y
+        // `Number(null)` es 0: unas coordenadas vacías (las de todo profesional recién aprobado) se
+        // daban por buenas y, sin cambiar la dirección, se guardaban como (0, 0). Misma regla que
+        // el servidor (vacío o (0, 0) = sin coordenadas).
+        const storedCoordinates = getProviderCoordinates(gardenerProfile as never);
         const shouldRefreshCoordinates =
-          normalizedAddress !== String(gardenerProfile?.address || '').trim()
-          || !Number.isFinite(Number(gardenerProfile?.operational_latitude))
-          || !Number.isFinite(Number(gardenerProfile?.operational_longitude));
+          normalizedAddress !== String(gardenerProfile?.address || '').trim() || !storedCoordinates;
 
         const resolvedCoordinates = shouldRefreshCoordinates
           ? await getCoordinatesFromAddress(normalizedAddress)
-          : {
-              lat: Number(gardenerProfile?.operational_latitude),
-              lng: Number(gardenerProfile?.operational_longitude),
-            };
+          : storedCoordinates;
 
         if (!resolvedCoordinates) {
             toast.error('No se pudo validar la dirección base en el mapa. Selecciona una dirección sugerida válida antes de guardar.');
@@ -782,10 +783,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                 <CoverageTab
                   loading={loading}
                   initialData={coverageInitialData}
-                  hasOperationalCoordinates={
-                    Number.isFinite(Number(gardenerProfile?.operational_latitude))
-                    && Number.isFinite(Number(gardenerProfile?.operational_longitude))
-                  }
+                  hasOperationalCoordinates={Boolean(getProviderCoordinates(gardenerProfile as never))}
                   onSave={onSaveProfileInfo}
                 />
               )}

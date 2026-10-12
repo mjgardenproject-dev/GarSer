@@ -19,6 +19,7 @@ import PublicHomePage from './pages/public/PublicHomePage';
 import { supabase } from './lib/supabase';
 import { useAccount } from './contexts/AccountContext';
 import { hasWizardResume } from './utils/bookingResumeStorage';
+import { applicantRedirect } from './utils/applicantRedirect';
 import { invitationPath, readPendingInvitation } from './lib/pendingInvitation';
 
 import AdminProtectedRoute from './components/auth/AdminProtectedRoute';
@@ -221,32 +222,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
     if (!isGardenerAccount) return;
 
-    const currentPath = location.pathname;
-    
-    // Caso 1: Solicitud Pendiente o Rechazada -> Forzar /status
-    if (applicationStatus === 'pending' || applicationStatus === 'denied') {
-      if (currentPath !== '/status') {
-        navigate('/status', { replace: true });
-      }
-      return;
-    }
-
-    // Caso 2: Activo -> Permitir Dashboard (Redirigir si intenta ir a apply/status)
-    if (applicationStatus === 'active') {
-      if (currentPath === '/apply' || currentPath === '/status') {
-        navigate('/dashboard', { replace: true });
-      }
-      return;
-    }
-
-    // Caso 3: No enviado (Draft o Null) -> Forzar /apply
-    // Solo si no estamos ya en /apply y no estamos en auth
-    if (applicationStatus === null) {
-        if (currentPath !== '/apply' && currentPath !== '/auth') {
-            navigate('/apply', { replace: true });
-        }
-    }
-
+    // Pendiente o rechazada → /status; aprobado → su panel; sin enviar → /apply. «Mi cuenta»
+    // siempre abierta (src/utils/applicantRedirect.ts).
+    const target = applicantRedirect(applicationStatus, location.pathname);
+    if (target) navigate(target, { replace: true });
   }, [authLoading, accountLoading, accountRole, isGardenerAccount, statusLoaded, user, applicationStatus, location.pathname, navigate]);
 
   if (authLoading || (user && (accountLoading || !statusLoaded))) {

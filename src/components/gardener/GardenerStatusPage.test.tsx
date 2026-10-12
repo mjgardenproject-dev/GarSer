@@ -40,3 +40,12 @@ describe('«Corregir y volver a enviar» (PH-02)', () => {
     expect(localStorage.getItem('gardener_wizard_progress_u1')).toBe('{"step":3}');
   });
 });
+
+describe('«Mi cuenta» desde la espera o el rechazo (pruebas en garser.es)', () => {
+  afterEach(cleanup);
+
+  it.each(['pending', 'denied'] as const)('%s: enlace a /account, aunque el menú esté oculto', (status) => {
+    render(<MemoryRouter><GardenerStatusPage status={status} /></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'Mi cuenta' }).getAttribute('href')).toBe('/account');
+  });
+});

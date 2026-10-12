@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, AlertTriangle, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import { restartRejectedApplication } from '../../utils/gardenerApplicationRetry';
 
@@ -45,6 +45,14 @@ const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialR
     }
   };
 
+  // Pruebas en garser.es (2026-10-12): aquí el menú está oculto, así que sin este enlace quien
+  // espera respuesta (o fue rechazado) no llegaba a «Mi cuenta», ni a «Cerrar cuenta» (PH-01).
+  const accountLink = (
+    <Link to="/account" className="block min-h-11 py-3 text-sm font-medium text-emerald-700 hover:underline">
+      Mi cuenta
+    </Link>
+  );
+
   if (status === 'pending') {
     return (
       <div className="min-h-[80vh] flex flex-col items-center justify-center p-4">
@@ -67,6 +75,7 @@ const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialR
             <LogOut className="w-4 h-4" />
             <span>Cerrar sesión</span>
           </button>
+          {accountLink}
         </div>
       </div>
     );
@@ -108,6 +117,7 @@ const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialR
               <LogOut className="w-4 h-4" />
               <span>Cerrar sesión</span>
             </button>
+            {accountLink}
           </div>
         </div>
       </div>

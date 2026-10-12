@@ -46,6 +46,10 @@
 | PH-28 | Al repartir un trabajo, a quien se le recorta su parte (11–14 → 11–13) no le llega ningún aviso | Media (puede ir a horas que ya no son suyas) | P-F6-1, 2026-10-11 | — | Apuntado |
 | PH-29 | La cuenta del admin tiene una fila de borrador en `gardener_applications` | Baja (datos) | Prueba en vivo | — | Apuntado |
 | PH-30 | La agenda de la empresa (Día y Lista) solo enseña la primera palabra del nombre: «Jardinero 28» sale «Jardinero» y el dueño «Jardines»; dos «Juan» no se distinguen | Baja (confuso con nombres repetidos) | P-F6-2, 2026-10-12 | — | Apuntado |
+| PH-31 | El panel de admin no lleva a «Mi cuenta» (foto, contraseña, «Cerrar todas»): solo escribiendo /account | Media (el admin no encuentra su cuenta) | El usuario, 2026-10-12 | Corregir y fusionar antes de seguir (usuario) | ✅ Hecho, por desplegar (web) |
+| PH-32 | Un jardinero con la solicitud pendiente, rechazada o sin enviar no puede entrar en «Mi cuenta» ni escribiendo la URL (se le devuelve a /status o /apply): no puede cerrar su cuenta | **Alta** (PH-01 no le llega) | Caso parecido a PH-31 | Corregir con PH-31 (chat) | ✅ Hecho, por desplegar (web) |
+| PH-33 | Detalles vistos al arreglar PH-31/PH-32: en /account el admin ve la barra inferior del cliente (Inicio, Reservas, Chat); el solicitante ve «Panel, Reservas, Chat» y el «Enlace de reserva directo» sin estar aprobado; «Cerrar todas» pregunta con la ventana nativa del navegador | Baja | PH-31 | — | Apuntado |
+| PH-34 | En local, `booking-lifecycle-tick` acaba cada 15 min con «wall clock duration warning / early termination» (tarda más de lo que deja el servidor de funciones) | Baja (local; en producción el reloj dice «succeeded», pero eso solo mide la llamada) | Registro de funciones local, 2026-10-12 | — | Apuntado: mirar el registro de producción |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -783,6 +787,30 @@ añadir la fila final del registro.
 - **PH-30:** `CompanyAgenda.tsx:117` y `:139` cortan el nombre con `split(' ')[0]`.
   Propuesta: nombre y la inicial del apellido, como ve el cliente, o el nombre entero si cabe.
 - Los demás son de consola, texto o accesibilidad; se pueden hacer juntos en una tanda pequeña.
+
+
+### PH-31 y PH-32 — «Mi cuenta» inalcanzable para el admin y para los solicitantes
+
+1. **Leído.** `AdminLayout.tsx` tiene su propio menú (lateral y del móvil) sin `/account`; la
+   barra general no se pinta en `/admin`.
+2. **¿Es cierto?** Sí: en garser.es el admin solo llegaba escribiendo la URL (lo vio el usuario).
+3. **Casos parecidos.**
+   - Cliente, profesional y empresa: la barra general lleva a «Mi Cuenta». El empleado: barra
+     inferior «Cuenta».
+   - **Solicitante de jardinero (PH-32):** en `/status` el menú sale vacío y la regla de
+     `App.tsx` le devolvía a `/status` (o a `/apply`) desde cualquier otra ruta, también desde
+     `/account`. No podía cerrar su cuenta.
+4. **Hallazgos nuevos:** PH-33 (detalles de barras y textos) y PH-34 (reloj en local).
+5. **Comprobado.**
+   - `AdminLayout.tsx`: «Mi cuenta» en los dos menús.
+   - `src/utils/applicantRedirect.ts`: la regla de `App.tsx`, igual que antes salvo que
+     `/account` queda siempre abierta; `GardenerStatusPage.tsx` enlaza a «Mi cuenta».
+   - Pruebas: `AdminLayout.test.tsx` (nueva), `applicantRedirect.test.ts` (nueva) y 2 casos en
+     `GardenerStatusPage.test.tsx`. Vitest 959/121 ✅, `tsc` 128 (igual), build ✅.
+   - **Navegador local:** el admin entra en «Mi cuenta» desde el menú, ve «Cerrar todas» y
+     «Salir» le devuelve a su panel. Un solicitante desechable (`estado.local@test.local`) entra
+     desde «Solicitud en revisión», revisa y cierra su cuenta: «Tu cuenta se ha cerrado», y en la
+     base no queda ni la cuenta, ni la solicitud, ni ficheros.
 
 ---
 

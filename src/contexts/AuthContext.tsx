@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { clearBookingResumeStorage } from '../utils/bookingResumeStorage';
 import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
 import { forgetThisDevicePush } from '../utils/pushNotifications';
+import { startSessionLiveness } from '../utils/sessionLiveness';
 
 interface AuthContextType {
   user: User | null;
@@ -188,9 +189,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
+    // PH-35: si «Cerrar todas» se pulsó en otro dispositivo, esta pestaña se entera al usarla (y no
+    // al caducar su token). Se sale solo aquí y sin marcarlo como pedido: el SIGNED_OUT de arriba
+    // enseña «Tu sesión se ha cerrado…».
+    const stopLiveness = startSessionLiveness(supabase.auth, () => {
+      void supabase.auth.signOut(SIGN_OUT_LOCAL);
+    });
+
     return () => {
       mounted = false;
       subscription?.unsubscribe();
+      stopLiveness();
     };
   }, []);
 

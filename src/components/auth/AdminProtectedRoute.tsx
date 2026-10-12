@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ShieldAlert } from 'lucide-react';
 import { fetchCurrentUserProfileRole, isAdminRole } from '../../lib/adminAccess';
@@ -10,6 +10,7 @@ interface AdminProtectedRouteProps {
 
 const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(true);
 
@@ -57,7 +58,15 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    // Como ProtectedRoute (R-06): al volver a entrar, a la misma página. Sin esto, una sesión
+    // cerrada desde otro dispositivo (PH-35) dejaba al admin en su panel de inicio.
+    return (
+      <Navigate
+        to="/auth"
+        replace
+        state={{ initialMode: 'login', redirectTo: `${location.pathname}${location.search}` }}
+      />
+    );
   }
 
   if (isAdmin === false) {

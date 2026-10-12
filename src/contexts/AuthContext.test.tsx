@@ -6,12 +6,14 @@ const mocks = vi.hoisted(() => ({
   listener: null as null | ((event: string, session: { user: { id: string } } | null) => void),
   signOut: vi.fn(async () => ({ error: null })),
   getSession: vi.fn(async () => ({ data: { session: { user: { id: 'u1' } } }, error: null })),
+  getUser: vi.fn(async () => ({ data: { user: { id: 'u1' } }, error: null as null | { code: string; status: number } })),
 }));
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: mocks.getSession,
+      getUser: mocks.getUser,
       refreshSession: vi.fn(async () => ({ data: { session: null } })),
       onAuthStateChange: (cb: typeof mocks.listener) => {
         mocks.listener = cb;
@@ -64,5 +66,15 @@ describe('AuthContext: cierre de sesión (R-06)', () => {
     render(<AuthProvider><Probe /></AuthProvider>);
     await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
     expect(ctx.sessionEndedAt).toBeNull();
+  });
+
+  it('PH-35: si la sesión se cerró en otro dispositivo, al volver a la app sale solo aquí y avisa', async () => {
+    mocks.getUser.mockResolvedValueOnce({ data: { user: null } as never, error: { code: 'session_not_found', status: 403 } });
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+    await act(async () => { window.dispatchEvent(new Event('focus')); await new Promise((r) => setTimeout(r, 0)); });
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+    expect(ctx.sessionEndedAt).toBe('/empresa/solicitudes?x=1');
   });
 });

@@ -52,6 +52,7 @@
 | PH-34 | En local, `booking-lifecycle-tick` acaba cada 15 min con «wall clock duration warning / early termination» (tarda más de lo que deja el servidor de funciones) | Baja (local; en producción el reloj dice «succeeded», pero eso solo mide la llamada) | Registro de funciones local, 2026-10-12 | — | Apuntado: mirar el registro de producción |
 | PH-35 | Tras «Cerrar todas», los demás dispositivos siguen dentro (leen y escriben) hasta que caduca su token, hasta 1 hora: la web solo se enteraba al renovarlo | **Alta** (un móvil perdido sigue dentro) | P-R06-2, 2026-10-12 | Arreglar en la web (usuario) | ✅ En producción (PR #48) y probado en garser.es |
 | PH-36 | Al cerrarse la sesión desde fuera estando en el panel de admin, al volver a entrar no se vuelve a la misma página (el guardia del admin no la recordaba) | Baja | Caso parecido a PH-35 | Con PH-35 (chat) | ✅ En producción (PR #48) y probado en garser.es |
+| PH-37 | Si el horario apartado para pagar (30 min) caduca con la pantalla abierta, la web no avisa: el formulario de pago sigue ahí y el cliente tiene que intuir que debe recalcular precio y disponibilidad. Además, al caducar no se anula el cobro de Stripe: pagar desde ese formulario autoriza la tarjeta sin reserva (`reconciliation_required`) | Media (confuso; retención de la tarjeta en el caso límite) | El usuario, 2026-10-13 | El usuario lo deja para más adelante | Apuntado |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -786,6 +787,15 @@ añadir la fila final del registro.
 - **PH-28** es el único que puede tener efecto en el trabajo: `private.sync_job_notices` solo
   avisa a quien entra o sale del trabajo, no a quien sigue con menos horas. Propuesta: un
   aviso «Tu parte cambia» cuando cambian las horas de alguien que sigue.
+- **PH-37 (caducidad del pago):** `ConfirmationPage.tsx` ya tiene el estado «Tiempo agotado · El
+  horario ya no está retenido · Actualizar reserva», pero `holdExpired` se calcula con `Date.now()`
+  solo al pintar: sin reloj, nunca salta solo. En el servidor, `get_attempt_status` marca el intento
+  `expired` sin anular el `PaymentIntent`; un pago tardío acaba en `hold_unavailable_after_payment`
+  → `reconciliation_required` con la tarjeta retenida (unos 7 días). Propuesta: reloj en la
+  página, no dejar pagar con el tiempo agotado, anular el cobro al caducar y soltar la retención
+  del caso límite.
+- Los textos «Nuevo precio / Nueva duración» de «Solicitudes» no están unidos a su campo
+  (`<label>` sin `for`): se suma a PH-27 (accesibilidad).
 - **PH-30:** `CompanyAgenda.tsx:117` y `:139` cortan el nombre con `split(' ')[0]`.
   Propuesta: nombre y la inicial del apellido, como ve el cliente, o el nombre entero si cabe.
 - Los demás son de consola, texto o accesibilidad; se pueden hacer juntos en una tanda pequeña.

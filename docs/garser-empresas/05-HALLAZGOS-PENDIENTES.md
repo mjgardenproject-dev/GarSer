@@ -50,8 +50,12 @@
 | PH-32 | Un jardinero con la solicitud pendiente, rechazada o sin enviar no puede entrar en «Mi cuenta» ni escribiendo la URL (se le devuelve a /status o /apply): no puede cerrar su cuenta | **Alta** (PH-01 no le llega) | Caso parecido a PH-31 | Corregir con PH-31 (chat) | ✅ En producción (PR #47) y probado en garser.es |
 | PH-33 | Detalles vistos al arreglar PH-31/PH-32: en /account el admin ve la barra inferior del cliente (Inicio, Reservas, Chat); el solicitante ve «Panel, Reservas, Chat» y el «Enlace de reserva directo» sin estar aprobado; «Cerrar todas» pregunta con la ventana nativa del navegador | Baja | PH-31 | — | Apuntado |
 | PH-34 | En local, `booking-lifecycle-tick` acaba cada 15 min con «wall clock duration warning / early termination» (tarda más de lo que deja el servidor de funciones) | Baja (local; en producción el reloj dice «succeeded», pero eso solo mide la llamada) | Registro de funciones local, 2026-10-12 | — | Apuntado: mirar el registro de producción |
-| PH-35 | Tras «Cerrar todas», los demás dispositivos siguen dentro (leen y escriben) hasta que caduca su token, hasta 1 hora: la web solo se enteraba al renovarlo | **Alta** (un móvil perdido sigue dentro) | P-R06-2, 2026-10-12 | Arreglar en la web (usuario) | ✅ Hecho, por desplegar (web) |
-| PH-36 | Al cerrarse la sesión desde fuera estando en el panel de admin, al volver a entrar no se vuelve a la misma página (el guardia del admin no la recordaba) | Baja | Caso parecido a PH-35 | Con PH-35 (chat) | ✅ Hecho, por desplegar (web) |
+| PH-35 | Tras «Cerrar todas», los demás dispositivos siguen dentro (leen y escriben) hasta que caduca su token, hasta 1 hora: la web solo se enteraba al renovarlo | **Alta** (un móvil perdido sigue dentro) | P-R06-2, 2026-10-12 | Arreglar en la web (usuario) | ✅ En producción (PR #48) y probado en garser.es |
+| PH-36 | Al cerrarse la sesión desde fuera estando en el panel de admin, al volver a entrar no se vuelve a la misma página (el guardia del admin no la recordaba) | Baja | Caso parecido a PH-35 | Con PH-35 (chat) | ✅ En producción (PR #48) y probado en garser.es |
+| PH-37 | Si el horario apartado para pagar (30 min) caduca con la pantalla abierta, la web no avisa: el formulario de pago sigue ahí y el cliente tiene que intuir que debe recalcular precio y disponibilidad. Además, al caducar no se anula el cobro de Stripe: pagar desde ese formulario autoriza la tarjeta sin reserva (`reconciliation_required`) | Media (confuso; retención de la tarjeta en el caso límite) | El usuario, 2026-10-13 | El usuario lo deja para más adelante | Apuntado |
+| PH-38 | Con jornadas de 8 h (autónomo 9–17), un trabajo de 9 a 12 h no se ofrece a nadie: no cabe en un día y la regla de F7 no parte en varios días lo de 12 h o menos. Césped de ~1350 a ~2050 m² con ese autónomo: «sin profesionales»; más grande, sí (varios días) | Media (el cliente no puede reservar) | P-F7-2, 2026-10-13 | Decisión de diseño (D11–D13) | Apuntado: decidir |
+| PH-39 | Detalles de trabajos de varios días o de equipo: en «Solicitudes» y «Reservas» del profesional, «Duración estimada: 8h» en uno de 15 h y horas con segundos («09:00:00»); en el inicio del panel la tarjeta solo dice «21 octubre · 09:00 (8h)», sin «del 21 al 22» ni las 15 h; «Cliente:» vacío si el cliente no tiene nombre; en un trabajo de equipo el texto habla de cambiar «la duración» aunque solo hay campo de precio | Baja (texto) | P-F7-1/P-F7-2, 2026-10-13 | — | Apuntado |
+| PH-40 | El plan de mantenimiento copia el presupuesto original de la reserva, no el cambio que aceptó el cliente: la reserva pasó a 3 h (mismo precio) y el plan sigue con 1,5 h. Si hubiera sido una subida de precio, las visitas seguirían al precio viejo | Media (el profesional cobraría menos o tendría menos horas) | P-F9-1, 2026-10-13 | — | Apuntado: decidir |
 
 Gravedad: **Crítica** (dinero, datos o seguridad) · **Alta** (un usuario no puede completar algo o
 se le engaña) · **Media** (lo completa, pero mal o confuso) · **Baja** (menor o solo interno).
@@ -786,6 +790,15 @@ añadir la fila final del registro.
 - **PH-28** es el único que puede tener efecto en el trabajo: `private.sync_job_notices` solo
   avisa a quien entra o sale del trabajo, no a quien sigue con menos horas. Propuesta: un
   aviso «Tu parte cambia» cuando cambian las horas de alguien que sigue.
+- **PH-37 (caducidad del pago):** `ConfirmationPage.tsx` ya tiene el estado «Tiempo agotado · El
+  horario ya no está retenido · Actualizar reserva», pero `holdExpired` se calcula con `Date.now()`
+  solo al pintar: sin reloj, nunca salta solo. En el servidor, `get_attempt_status` marca el intento
+  `expired` sin anular el `PaymentIntent`; un pago tardío acaba en `hold_unavailable_after_payment`
+  → `reconciliation_required` con la tarjeta retenida (unos 7 días). Propuesta: reloj en la
+  página, no dejar pagar con el tiempo agotado, anular el cobro al caducar y soltar la retención
+  del caso límite.
+- Los textos «Nuevo precio / Nueva duración» de «Solicitudes» no están unidos a su campo
+  (`<label>` sin `for`): se suma a PH-27 (accesibilidad).
 - **PH-30:** `CompanyAgenda.tsx:117` y `:139` cortan el nombre con `split(' ')[0]`.
   Propuesta: nombre y la inicial del apellido, como ve el cliente, o el nombre entero si cabe.
 - Los demás son de consola, texto o accesibilidad; se pueden hacer juntos en una tanda pequeña.

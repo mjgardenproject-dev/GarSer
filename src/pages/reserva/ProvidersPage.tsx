@@ -25,6 +25,14 @@ import {
 } from '../../utils/bookingAuthorityService';
 import { describeJobShape } from '../../utils/jobShape';
 import toast from 'react-hot-toast';
+import { useProviderLinkProfile } from '../../hooks/useProviderLinkProfile';
+import {
+  addDaysIso,
+  classifyProviderLinkBlock,
+  describeProviderLinkBlock,
+  type ProviderLinkBlockReason,
+} from '../../utils/providerLink';
+import ProviderLinkBlockedState from './ProviderLinkBlockedState';
 
 // provider_kind (GarSer Empresas F4): 'company' pinta el distintivo «Empresa».
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number; provider_kind?: string | null }
@@ -84,6 +92,18 @@ const ProvidersPage: React.FC = () => {
   const [availabilityError, setAvailabilityError] = useState('');
   const [providersReloadToken, setProvidersReloadToken] = useState(0);
   const [emptyStateHint, setEmptyStateHint] = useState('');
+  /**
+   * Reserva desde el enlace de un profesional: solo se mira a ese profesional. Si no sale, aquí
+   * va el porqué (y los días que se han mirado), para no dejar al cliente ante un «No hay
+   * profesionales disponibles» sin explicación.
+   */
+  const linkedProviderId = bookingData.restrictedGardenerId || '';
+  const { profile: linkedProfile, status: linkedProfileStatus } = useProviderLinkProfile(linkedProviderId);
+  const [linkBlock, setLinkBlock] = useState<{ reason: ProviderLinkBlockReason; windowStart: string; windowEnd: string } | null>(null);
+  // Si ya no está en el directorio (cuenta cerrada o suspendida), no es que «no haga el servicio».
+  const linkBlockReason: ProviderLinkBlockReason | null = linkBlock
+    ? linkedProfileStatus === 'ready' && !linkedProfile ? 'unavailable' : linkBlock.reason
+    : null;
   const reqIdRef = useRef<number>(0);
   /** Contador propio para las horas: `reqIdRef` es del calendario y ambos vuelos ocurren
    * a la vez al elegir jardinero, así que compartir contador haría que uno invalidara la
@@ -434,6 +454,7 @@ const ProvidersPage: React.FC = () => {
       setLoading(true);
       setLoadError('');
       setEmptyStateHint('');
+      setLinkBlock(null);
       try {
         const primaryServiceId = bookingData.serviceIds[0];
         
@@ -453,9 +474,13 @@ const ProvidersPage: React.FC = () => {
         const { data: priceRows } = await query;
 
         let gardenerIds = Array.from(new Set((priceRows || []).map((p: any) => p.gardener_id)));
-        if (bookingData.restrictedGardenerId) {
-          gardenerIds = gardenerIds.filter((id) => id === bookingData.restrictedGardenerId);
+        const linkedOffersService = !linkedProviderId || gardenerIds.includes(linkedProviderId);
+        if (linkedProviderId) {
+          gardenerIds = gardenerIds.filter((id) => id === linkedProviderId);
         }
+        // Con un solo profesional se mira un mes entero (el máximo del servidor) en vez de dos
+        // semanas: si está muy ocupado, su primer hueco puede caer más allá.
+        const windowDays = linkedProviderId ? 31 : 14;
         
         // Determinar si se requiere licencia (Fitosanitarios químicos)
         const { data: serviceInfoData } = await supabase
@@ -481,7 +506,7 @@ const ProvidersPage: React.FC = () => {
               serviceId: primaryServiceId,
               providerIds: gardenerIds,
               selectedDate,
-              windowDays: 14,
+              windowDays,
             })
           : { quotes: {}, earliestByProvider: {}, eligibleProviderIds: [] };
 
@@ -539,6 +564,17 @@ const ProvidersPage: React.FC = () => {
         setProviders(list);
         setPreviewQuotes(nextPreviewQuotes);
         setEarliestByProvider(nextEarliestByProvider);
+        if (linkedProviderId && eligibleProviderIds.length === 0) {
+          setLinkBlock({
+            reason: classifyProviderLinkBlock({
+              offersService: linkedOffersService,
+              exclusionCode: preview.exclusions?.[linkedProviderId]?.code,
+              hasClientCoordinates: Boolean(bookingData.addressCoordinates),
+            }),
+            windowStart: selectedDate,
+            windowEnd: addDaysIso(selectedDate, windowDays - 1),
+          });
+        }
         setEmptyStateHint(
           // T1 (transversal, 2026-09-13): antes esto SIEMPRE mostraba el mensaje de licencia
           // cuando el trabajo era químico, sin mirar la exclusión real — mentía en los dos
@@ -613,6 +649,7 @@ const ProvidersPage: React.FC = () => {
     bookingData.lawnZones ? JSON.stringify(bookingData.lawnZones.map(z => ({s: z.species, q: z.quantity, st: z.state}))) : '',
     selectedDate,
     providersReloadToken,
+    linkedProviderId,
   ]);
 
 
@@ -680,6 +717,31 @@ const ProvidersPage: React.FC = () => {
     if (!selectedProvider) return;
     void rebuildMonth(selectedProvider, calendarMonthDate);
     void loadValidHours(selectedProvider, selectedDate);
+  };
+
+  // Solo se ofrece cuando el profesional del enlace no puede hacer el trabajo (ver
+  // describeProviderLinkBlock): la reserva deja de estar ligada a él y se cargan todos.
+  const handleShowOtherProviders = () => {
+    setBookingData({ restrictedGardenerId: undefined });
+  };
+
+  const handleLinkBlockPrimary = () => {
+    if (!linkBlock || !linkBlockReason) return;
+    const { primaryAction } = describeProviderLinkBlock(linkBlockReason, {
+      providerName: '',
+      windowStart: linkBlock.windowStart,
+      windowEnd: linkBlock.windowEnd,
+    });
+    if (primaryAction === 'change_address') setCurrentStep(0);
+    else if (primaryAction === 'change_services') setCurrentStep(1);
+    else if (primaryAction === 'review_details') setCurrentStep(2);
+    else if (primaryAction === 'retry') handleRetryProviders();
+    else if (primaryAction === 'search_later') {
+      const nextDate = addDaysIso(linkBlock.windowEnd, 1);
+      const [y, m, d] = nextDate.split('-').map(Number);
+      setSelectedDate(nextDate);
+      setCalendarMonthDate(new Date(y, m - 1, d));
+    }
   };
 
   /**
@@ -787,6 +849,20 @@ const ProvidersPage: React.FC = () => {
               </div>
             ))}
           </div>
+        ) : !loading && providers.length === 0 && linkBlock && linkBlockReason ? (
+          <ProviderLinkBlockedState
+            reason={linkBlockReason}
+            copy={describeProviderLinkBlock(linkBlockReason, {
+              providerName: linkedProfile?.fullName || '',
+              serviceName,
+              multiService: bookingData.serviceIds.length > 1,
+              maxDistanceKm: linkedProfile?.maxDistanceKm,
+              windowStart: linkBlock.windowStart,
+              windowEnd: linkBlock.windowEnd,
+            })}
+            onPrimary={handleLinkBlockPrimary}
+            onShowOtherProviders={handleShowOtherProviders}
+          />
         ) : !loading && providers.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center max-w-sm mx-auto mt-8">
             <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">

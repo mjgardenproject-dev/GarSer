@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { Star, MapPin, Leaf, Calendar } from 'lucide-react';
 import ReviewList from '../reviews/ReviewList';
 import { isServiceId, serviceLabels } from '../../utils/serviceLabels';
+import { rememberProviderLinkProfile } from '../../utils/providerLinkProfile';
 
 const GardenerPublicProfile: React.FC = () => {
   const { gardenerId } = useParams();
@@ -36,6 +37,8 @@ const GardenerPublicProfile: React.FC = () => {
           return;
         }
         setProfile(data);
+        // La reserva que se abre desde aquí lo necesita (nombre y servicios): así no lo pide otra vez.
+        rememberProviderLinkProfile(data);
         // Los servicios pueden venir como identificadores: se enseñan por su nombre.
         const raw: string[] = (data as { services?: string[] | null }).services || [];
         const ids = raw.filter(isServiceId);

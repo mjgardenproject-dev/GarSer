@@ -1120,6 +1120,45 @@ Rellena esto antes de empezar y ten la tabla a mano:
   ti.» `/costa-del-sol`, pregunta «¿Puedo reservar si no estoy en la vivienda?»: ✅ «…El servicio se
   lo pagas directamente a él, de la manera que acordéis.»
 
+## Sección 23 — Enlace de reserva de un profesional: casos límite (2026-10-17)
+
+> La reserva que se abre desde `garser.es/reservar/<id>` → «Reservar con este profesional» queda
+> ligada a ESE profesional aunque hubiera otra reserva a medias en el navegador. Si no puede hacer
+> el trabajo, se dice por qué. Decisión del dueño: «Ver otros profesionales» solo cuando no cubre la
+> zona o no hace el servicio; si solo le faltan huecos, se ofrecen fechas más adelante. Solo cambia
+> el front (sin migraciones ni funciones). Hazlo **desde el móvil, en una ventana privada**. Hacen
+> falta **dos profesionales aprobados** que cubran tu dirección de prueba (B = el del enlace, A = otro)
+> y **no hace falta pagar**: todo se comprueba antes del botón de pago.
+
+- [ ] **23.1 — Lo desplegado es lo nuevo.** Abre el enlace de B y toca «Reservar con este
+  profesional». ✅ En «Dirección» sale el recuadro verde «Reserva con B» y el texto «Necesitamos tu
+  dirección para comprobar que B trabaja en tu zona». ❌ Si dice «…para encontrar profesionales
+  cerca de ti»: el despliegue no es el último.
+- [ ] **23.2 — Una reserva a medias con otro profesional no gana al enlace.** Desde la portada (sin
+  enlace) haz una reserva hasta la **confirmación** con **A** y para ahí. Abre el enlace de B →
+  «Reservar con este profesional». ✅ Aviso «Tu reserva ahora es con B. Hemos guardado la dirección
+  y los servicios…»; estás en «Profesionales» (paso 4) y **solo sale B**, con tu dirección y tu
+  servicio. Elige hora → ✅ la confirmación dice **Profesional: B**. ❌ Si vuelves a la confirmación
+  con A, o si en «Profesionales» sale A: bloqueante para la estrategia del enlace.
+- [ ] **23.3 — Recargar no deshace nada.** Tras 23.2, recarga la página. ✅ Sigues con B y el aviso
+  **no** vuelve a salir.
+- [ ] **23.4 — Solo los servicios del profesional.** Con el enlace de un profesional que **no** tenga
+  los 7 servicios: ✅ en «Servicios» solo salen los suyos, con «Solo ves los servicios que hace este
+  profesional». Abajo, «Ver todos los servicios» → ✅ salen los 7 y desaparece «Reserva con B».
+- [ ] **23.5 — Un servicio elegido que no hace.** Desde la portada (sin enlace) elige un servicio que
+  B **no** hace y llega a «Detalles». Abre el enlace de B → reservar. ✅ Vuelves a «Servicios» con
+  «No hace «…»: lo hemos quitado de tu selección».
+- [ ] **23.6 — No trabaja en tu zona.** Enlace de B con una dirección fuera de su radio (otra
+  provincia). ✅ En «Profesionales»: «B no trabaja en tu zona», con su radio en km, y los botones
+  «Cambiar la dirección» (te lleva al paso 1) y «Ver otros profesionales» (carga la lista de todos).
+- [ ] **23.7 — Sin huecos no enseña a la competencia.** Usa como B una cuenta de profesional **de
+  prueba** (no la de un jardinero real) y deja su horario semanal sin ninguna hora libre (guárdalo
+  vacío y comprueba en su calendario que no le quedan horas). Enlace de B, hasta «Profesionales». ✅ «B no tiene huecos para este trabajo», con las
+  fechas miradas (un mes), el botón «Buscar a partir del …» y **sin** «Ver otros profesionales». Al
+  tocarlo ✅ mira el mes siguiente. **Vuelve a poner el horario de B** al terminar.
+- [ ] **23.8 — La reserva normal no cambia.** Desde la portada, sin enlace, hasta «Profesionales». ✅
+  Salen todos los que cubren tu dirección y ningún recuadro «Reserva con…».
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

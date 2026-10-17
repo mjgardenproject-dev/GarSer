@@ -6,6 +6,9 @@ import { supabase } from '../../lib/supabase';
 import type { Service } from '../../types';
 import { getServiceImageFallbackUrl, getServiceImageUrl } from '../../utils/serviceImages';
 import { normalizeServiceDisplayName, rememberServiceNames } from '../../utils/serviceNameCatalog';
+import { useProviderLinkProfile } from '../../hooks/useProviderLinkProfile';
+import { splitServicesByOffer } from '../../utils/providerLink';
+import ProviderLinkBanner from './ProviderLinkBanner';
 
 const MAX_MANUAL_RETRIES = 3;
 
@@ -18,10 +21,44 @@ const ServicesPage: React.FC = () => {
   const [selectedServices, setSelectedServices] = useState<string[]>(bookingData.serviceIds);
   const [manualRetryCount, setManualRetryCount] = useState(0);
   const [imageStates, setImageStates] = useState<Record<string, 'fallback' | 'unavailable'>>({});
+  /**
+   * Reserva desde el enlace de un profesional: solo se enseñan los servicios que él ofrece.
+   * Antes salía el catálogo entero y el cliente podía elegir uno que ese profesional no hace,
+   * rellenar los detalles y acabar en «No hay profesionales disponibles».
+   */
+  const linkedProviderId = bookingData.restrictedGardenerId || '';
+  const { profile: linkedProfile, status: linkedProfileStatus } = useProviderLinkProfile(linkedProviderId);
+  const offeredServiceIds = linkedProfile ? linkedProfile.serviceIds : null;
+  const offeredKey = offeredServiceIds ? offeredServiceIds.join(',') : '';
+  const linkedName = linkedProfile?.fullName || 'Este profesional';
+  const [removedServiceNames, setRemovedServiceNames] = useState<string[]>([]);
+  const visibleServices = offeredServiceIds ? services.filter((service) => offeredServiceIds.includes(service.id)) : services;
+  // Mientras llega el perfil no se pinta el catálogo entero para luego quitarle servicios.
+  const isLoadingCatalog = loading || (Boolean(linkedProviderId) && linkedProfileStatus === 'loading');
 
   useEffect(() => {
     fetchServices();
   }, []);
+
+  // Servicios ya elegidos (de una reserva a medias) que este profesional no hace: se quitan y
+  // se dice cuáles, en vez de dejarlos marcados y ocultos.
+  useEffect(() => {
+    if (!offeredServiceIds || loading) return;
+    const { kept, removed } = splitServicesByOffer(selectedServices, offeredServiceIds);
+    if (removed.length === 0) return;
+    setSelectedServices(kept);
+    setRemovedServiceNames(
+      removed.map((id) => services.find((service) => service.id === id)?.name).filter((name): name is string => Boolean(name)),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offeredKey, loading]);
+
+  // Solo cuando este profesional no hace lo que el cliente busca (decisión del dueño): la
+  // reserva deja de estar ligada a él y se ve el catálogo entero.
+  const handleShowAllServices = () => {
+    setRemovedServiceNames([]);
+    setBookingData({ restrictedGardenerId: undefined });
+  };
 
   useEffect(() => {
     const preselectedServiceId = (location.state as { selectedServiceId?: string } | null)?.selectedServiceId;
@@ -162,14 +199,24 @@ const ServicesPage: React.FC = () => {
       </div>
 
       <main className="mx-auto w-full px-3 py-3 pb-24 sm:max-w-md" id="services-main">
+        {linkedProfile?.fullName && <ProviderLinkBanner providerName={linkedProfile.fullName} />}
         <div className="mb-3">
           <p className="text-sm font-medium text-gray-900">
             Selecciona lo que quieres reservar
           </p>
           <p className="mt-0.5 text-xs text-gray-600">
-            Puedes elegir varios: los hará el mismo profesional en la misma visita.
+            {offeredServiceIds
+              ? 'Solo ves los servicios que hace este profesional. Puedes elegir varios: los hará en la misma visita.'
+              : 'Puedes elegir varios: los hará el mismo profesional en la misma visita.'}
           </p>
         </div>
+
+        {removedServiceNames.length > 0 && (
+          <div aria-live="polite" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            No hace {removedServiceNames.map((name) => `«${name}»`).join(', ')}:{' '}
+            {removedServiceNames.length === 1 ? 'lo hemos quitado' : 'los hemos quitado'} de tu selección.
+          </div>
+        )}
 
         {loadError && (
           <div aria-live="polite" className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
@@ -194,7 +241,7 @@ const ServicesPage: React.FC = () => {
           </div>
         )}
 
-        {loading ? (
+        {isLoadingCatalog ? (
           <div className="grid grid-cols-2 gap-2 mb-4" aria-live="polite" aria-busy="true">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="h-[104px] w-full animate-pulse rounded-xl border border-gray-200 bg-white p-3">
@@ -204,7 +251,7 @@ const ServicesPage: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2 mb-4">
-            {services.map((service) => {
+            {visibleServices.map((service) => {
               const isSelected = selectedServices.includes(service.id);
               const imageState = imageStates[service.id];
               const fallbackUrl = getServiceImageFallbackUrl(service.name);
@@ -262,6 +309,35 @@ const ServicesPage: React.FC = () => {
               );
             })}
           </div>
+        )}
+
+        {!isLoadingCatalog && !loadError && services.length > 0 && offeredServiceIds && visibleServices.length === 0 && (
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
+            <p className="text-base font-semibold text-gray-900">{linkedName} todavía no tiene servicios para reservar.</p>
+            <p className="mt-2 text-sm text-gray-600">
+              Cuando configure sus servicios podrás reservar con este profesional desde su enlace.
+            </p>
+            <button
+              type="button"
+              onClick={handleShowAllServices}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+            >
+              Ver otros profesionales
+            </button>
+          </div>
+        )}
+
+        {!isLoadingCatalog && offeredServiceIds && visibleServices.length > 0 && (
+          <p className="mt-1 text-center text-sm text-gray-600">
+            ¿Necesitas un servicio que no está aquí?{' '}
+            <button
+              type="button"
+              onClick={handleShowAllServices}
+              className="font-medium text-green-700 underline underline-offset-2 hover:text-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded [touch-action:manipulation]"
+            >
+              Ver todos los servicios
+            </button>
+          </p>
         )}
 
         {!loading && !loadError && services.length === 0 && (

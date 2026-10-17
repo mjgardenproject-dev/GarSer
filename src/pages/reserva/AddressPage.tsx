@@ -4,6 +4,8 @@ import { useBooking } from "../../contexts/BookingContext";
 import { ChevronLeft, MapPin, Navigation } from 'lucide-react';
 import AddressAutocomplete from '../../components/common/AddressAutocomplete';
 import { getAddressFromCoordinates, getCoordinatesFromAddress } from '../../utils/geolocation';
+import { useProviderLinkProfile } from '../../hooks/useProviderLinkProfile';
+import ProviderLinkBanner from './ProviderLinkBanner';
 
 const AddressPage: React.FC = () => {
   const navigate = useNavigate();
@@ -13,6 +15,8 @@ const AddressPage: React.FC = () => {
   const [isLocating, setIsLocating] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [addressError, setAddressError] = useState('');
+  // Reserva desde el enlace de un profesional: se le recuerda al cliente con quién reserva.
+  const { profile: linkedProfile } = useProviderLinkProfile(bookingData.restrictedGardenerId);
 
   // Guardado de progreso con debounce: antes se escribía en cada pulsación de tecla
   useEffect(() => {
@@ -155,12 +159,15 @@ const AddressPage: React.FC = () => {
 
       {/* Main Content */}
       <div className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md">
+        {linkedProfile?.fullName && <ProviderLinkBanner providerName={linkedProfile.fullName} />}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-4">
           <h2 className="text-xl font-bold text-gray-900 mb-2">
             ¿Dónde está tu jardín?
           </h2>
           <p className="text-gray-600 mb-6">
-            Necesitamos tu dirección para encontrar profesionales cerca de ti
+            {linkedProfile?.fullName
+              ? `Necesitamos tu dirección para comprobar que ${linkedProfile.fullName} trabaja en tu zona`
+              : 'Necesitamos tu dirección para encontrar profesionales cerca de ti'}
           </p>
 
           {/* Address Input */}

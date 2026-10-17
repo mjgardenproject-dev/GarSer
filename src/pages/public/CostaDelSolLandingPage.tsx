@@ -5,7 +5,7 @@ import SeoHead from '../../components/common/SeoHead';
 import CustomerExperienceSections from '../../components/public/CustomerExperienceSections';
 import PublicFooter from '../../components/public/PublicFooter';
 import PublicHeader from '../../components/public/PublicHeader';
-import { SITE_URL, costaDelSolFaqs, costaDelSolZones, pageSeo } from '../../config/publicSiteContent';
+import { SITE_URL, costaDelSolFaqs, pageSeo } from '../../config/publicSiteContent';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { clearBookingResumeStorage, hasWizardResume } from '../../utils/bookingResumeStorage';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
@@ -29,7 +29,6 @@ const CostaDelSolLandingPage: React.FC = () => {
           '@type': 'Organization',
           name: 'GarSer',
           email: settings.contactEmail || undefined,
-          areaServed: costaDelSolZones,
         },
       },
       {
@@ -94,7 +93,7 @@ const CostaDelSolLandingPage: React.FC = () => {
         />
       </main>
 
-      <PublicFooter showCoverageZones />
+      <PublicFooter />
     </div>
   );
 };

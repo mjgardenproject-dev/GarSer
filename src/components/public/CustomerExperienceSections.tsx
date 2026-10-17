@@ -1,12 +1,11 @@
 import React from 'react';
-import { ArrowRight, Briefcase, CheckCircle2, ClipboardList, MapPin, RefreshCcw } from 'lucide-react';
+import { ArrowRight, Briefcase, CheckCircle2, ClipboardList, RefreshCcw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import MarketingImageSlot from './MarketingImageSlot';
 import {
   costaDelSolContent,
   costaDelSolFaqs,
-  costaDelSolZones,
   generalHomeContent,
   generalHomeFaqs,
   marbellaContent,
@@ -134,66 +133,22 @@ const CustomerExperienceSections: React.FC<CustomerExperienceSectionsProps> = ({
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[0.9fr,1.1fr]">
-        <div className="rounded-[2rem] border border-slate-200 bg-slate-950 p-6 text-white sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">Como funciona</p>
-          <div className="mt-6 space-y-6">
-            {generalHomeContent.howItWorks.map((step, index) => (
-              <div key={step.title} className="flex gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold">
-                  {index + 1}
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold">{step.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{step.description}</p>
-                </div>
+      {/* El bloque de cobertura que iba al lado (municipios, «Encuentra jardineros en tu zona»)
+          se quitó el 2026-10-17: afirmaba una cobertura que GarSer todavía no tiene. */}
+      <section className="rounded-[2rem] border border-slate-200 bg-slate-950 p-6 text-white sm:p-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">Cómo funciona</p>
+        <div className="mt-6 grid gap-6 lg:grid-cols-3">
+          {generalHomeContent.howItWorks.map((step, index) => (
+            <div key={step.title} className="flex gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold">
+                {index + 1}
               </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-[2rem] border border-emerald-100 bg-white">
-          <div className="grid gap-0 lg:grid-cols-[0.85fr,1.15fr]">
-            <MarketingImageSlot
-              slot="home.coverage"
-              alt={isLocalPage ? 'Cobertura de jardinería en Costa del Sol' : 'Jardinero profesional de GarSer trabajando'}
-              placeholderLabel={isLocalPage ? 'Foto de cobertura Costa del Sol' : 'Foto de jardineros GarSer'}
-              className="h-full rounded-none"
-              imageClassName="min-h-[260px] lg:min-h-full"
-            />
-            <div className="p-6 sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">{hero.coverageTitle}</p>
-              <p className="mt-4 text-base leading-7 text-slate-600">{hero.coverageDescription}</p>
-              {isLocalPage ? (
-                <div className="mt-6 flex flex-wrap gap-2">
-                  {costaDelSolZones.map((zone) => (
-                    <span key={zone} className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-                      <MapPin className="mr-2 h-3.5 w-3.5" />
-                      {zone}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              {!isMarbella ? (
-                <button
-                  type="button"
-                  onClick={onPrimaryCta}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-700/20 transition-transform hover:scale-[1.01]"
-                >
-                  <MapPin className="h-4 w-4" />
-                  {generalHomeContent.findGardenersCtaLabel}
-                </button>
-              ) : null}
-              {pageVariant === 'general' ? (
-                <p className="mt-4 text-sm text-slate-500">
-                  ¿Tu jardín está en la Costa del Sol?{' '}
-                  <Link to="/costa-del-sol" className="font-semibold text-emerald-700 underline-offset-2 hover:underline">
-                    Ver cobertura y servicios en la zona
-                  </Link>
-                </p>
-              ) : null}
+              <div>
+                <h3 className="text-lg font-semibold">{step.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-300">{step.description}</p>
+              </div>
             </div>
-          </div>
+          ))}
         </div>
       </section>
 

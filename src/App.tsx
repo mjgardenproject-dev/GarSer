@@ -265,9 +265,13 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
       ) : (
         <main
           className={
-            isBookingPage || isMarketingPage || isAuthPage
-              ? 'w-full pb-16 sm:pb-0'
-              : 'mx-auto max-w-full px-3 pb-16 sm:max-w-7xl sm:px-6 sm:pb-0 lg:px-8'
+            // Las páginas públicas no tienen menú inferior: sin el pb-16, que dejaba una franja
+            // blanca bajo el pie en el móvil.
+            isMarketingPage
+              ? 'w-full'
+              : isBookingPage || isAuthPage
+                ? 'w-full pb-16 sm:pb-0'
+                : 'mx-auto max-w-full px-3 pb-16 sm:max-w-7xl sm:px-6 sm:pb-0 lg:px-8'
           }
         >
           <Suspense fallback={<RouteFallback />}>

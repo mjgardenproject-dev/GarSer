@@ -1,20 +1,15 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Mail, MessageCircle, Phone } from 'lucide-react';
 
-import { costaDelSolZones } from '../../config/publicSiteContent';
+import { PUBLIC_CONTACT_ANCHOR, PUBLIC_WHATSAPP_NUMBER, PUBLIC_WHATSAPP_URL } from '../../config/publicSiteContent';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { clearBookingResumeStorage } from '../../utils/bookingResumeStorage';
 
-interface PublicFooterProps {
-  /** Muestra las chips de cobertura de Costa del Sol. Solo tiene sentido en páginas
-   * cuyo enfoque local es intencionado (Marbella, Costa del Sol) — no en Home ni en
-   * la landing de jardineros, que no están limitadas a una zona. */
-  showCoverageZones?: boolean;
-}
-
-const PublicFooter: React.FC<PublicFooterProps> = ({ showCoverageZones = false }) => {
+const PublicFooter: React.FC = () => {
   const { settings } = useAppSettings();
   const navigate = useNavigate();
+  // Por defecto info@garser.es (PUBLIC_CONTACT_EMAIL); el admin puede cambiarlo en Ajustes.
   const contactEmail = settings.contactEmail;
   const contactPhone = settings.contactPhone;
   const phoneHref = contactPhone ? `tel:${contactPhone.replace(/\s+/g, '')}` : '';
@@ -26,33 +21,52 @@ const PublicFooter: React.FC<PublicFooterProps> = ({ showCoverageZones = false }
 
   return (
     <footer className="border-t border-slate-200 bg-slate-950 text-slate-200">
-      <div
-        className={`mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:px-8 ${
-          showCoverageZones ? 'lg:grid-cols-[1.2fr,1fr,1fr]' : 'lg:grid-cols-[1.4fr,1fr]'
-        }`}
-      >
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.3fr,1fr,0.8fr] lg:gap-8 lg:px-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">GarSer</p>
           <h2 className="mt-3 text-2xl font-semibold text-white">Reserva servicios de jardinería con una web pensada para clientes reales.</h2>
           <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">
             La portada pública y la zona de cliente comparten una misma idea: empezar una reserva rápido, retomarla si ya la dejaste abierta y no perderte entre pantallas técnicas.
           </p>
-          <div className="mt-5 flex flex-col gap-2">
+        </div>
+
+        {/* scroll-mt: que la cabecera fija (hasta ~150 px en el móvil) no tape el título al llegar desde «Ayuda». */}
+        <section id={PUBLIC_CONTACT_ANCHOR} aria-labelledby="contacto-title" className="scroll-mt-40">
+          <h2 id="contacto-title" className="text-sm font-semibold text-white">Contacto y ayuda</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-400">¿Dudas con una reserva o con tu cuenta? Escríbenos.</p>
+          <div className="mt-4 flex flex-col gap-3">
+            <a
+              href={PUBLIC_WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-h-[44px] w-fit items-center gap-2 rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            >
+              <MessageCircle className="h-4 w-4" aria-hidden="true" />
+              WhatsApp {PUBLIC_WHATSAPP_NUMBER}
+            </a>
             {contactEmail ? (
-              <a className="inline-flex w-fit text-sm font-medium text-emerald-300 hover:text-emerald-200" href={`mailto:${contactEmail}`}>
+              <a
+                href={`mailto:${contactEmail}`}
+                className="inline-flex min-h-[44px] w-fit items-center gap-2 text-sm font-medium text-emerald-300 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded"
+              >
+                <Mail className="h-4 w-4" aria-hidden="true" />
                 {contactEmail}
               </a>
             ) : null}
             {contactPhone ? (
-              <a className="inline-flex w-fit text-sm font-medium text-emerald-300 hover:text-emerald-200" href={phoneHref}>
+              <a
+                href={phoneHref}
+                className="inline-flex min-h-[44px] w-fit items-center gap-2 text-sm font-medium text-emerald-300 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded"
+              >
+                <Phone className="h-4 w-4" aria-hidden="true" />
                 {contactPhone}
               </a>
             ) : null}
           </div>
-        </div>
+        </section>
 
         <div>
-          <p className="text-sm font-semibold text-white">Enlaces utiles</p>
+          <p className="text-sm font-semibold text-white">Enlaces útiles</p>
           <div className="mt-4 flex flex-col gap-3 text-sm text-slate-300">
             <button type="button" onClick={handleReservar} className="text-left hover:text-white">
               Empezar reserva
@@ -64,26 +78,13 @@ const PublicFooter: React.FC<PublicFooterProps> = ({ showCoverageZones = false }
               Jardinería en Marbella
             </Link>
             <Link to="/para-jardineros" className="hover:text-white">
-              Para jardineros
+              Soy jardinero
             </Link>
             <Link to="/auth" className="hover:text-white">
               Acceder
             </Link>
           </div>
         </div>
-
-        {showCoverageZones ? (
-          <div>
-            <p className="text-sm font-semibold text-white">Cobertura orientativa</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {costaDelSolZones.map((zone) => (
-                <span key={zone} className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1 text-xs text-slate-300">
-                  {zone}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </footer>
   );

@@ -10,30 +10,99 @@ import { hasRebookBreakdown } from '../../utils/rebookService';
 import ProvidersPage from './ProvidersPage';
 import ConfirmationPage from './ConfirmationPage';
 import { LogOut, AlertTriangle } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { reconcileProviderLink, resolveProviderLinkEntry } from '../../utils/providerLink';
+import { loadProviderLinkProfile } from '../../utils/providerLinkProfile';
+
+type BookingFlowLocationState = {
+  selectedServiceId?: string;
+  /** Viene del perfil público de un profesional (su enlace garser.es/reservar/<id>). */
+  restrictedGardenerId?: string;
+};
 
 const BookingFlow: React.FC = () => {
-  const { bookingData, currentStep, resetBooking, isLoading, setBookingData } = useBooking();
+  const { bookingData, currentStep, resetBooking, isLoading, setBookingData, setCurrentStep } = useBooking();
   const navigate = useNavigate();
   const location = useLocation();
   const [showAbandonModal, setShowAbandonModal] = useState(false);
   const stayButtonRef = useRef<HTMLButtonElement>(null);
+  const locationState = (location.state || {}) as BookingFlowLocationState;
+  const linkGardenerId = locationState.restrictedGardenerId || '';
+  // Mientras se decide qué hacer con el borrador anterior no se pinta ningún paso: si no, se
+  // vería un instante la reserva vieja (con su profesional) antes de cambiar a la nueva.
+  const [linkEntryPending, setLinkEntryPending] = useState(Boolean(linkGardenerId));
+  const handledLinkKeyRef = useRef<string | null>(null);
+  const reconciledRef = useRef(false);
+  const bookingDataRef = useRef(bookingData);
+  const currentStepRef = useRef(currentStep);
+  bookingDataRef.current = bookingData;
+  currentStepRef.current = currentStep;
 
   useEffect(() => {
-    const state = (location.state || {}) as {
-      selectedServiceId?: string;
-      restrictedGardenerId?: string;
-    };
-    const updates: Record<string, unknown> = {};
-    if (state.selectedServiceId && bookingData.serviceIds.length === 0) {
-      updates.serviceIds = [state.selectedServiceId];
+    if (locationState.selectedServiceId && bookingData.serviceIds.length === 0) {
+      setBookingData({ serviceIds: [locationState.selectedServiceId] });
     }
-    if (state.restrictedGardenerId && !bookingData.restrictedGardenerId) {
-      updates.restrictedGardenerId = state.restrictedGardenerId;
+  }, [bookingData.serviceIds.length, locationState.selectedServiceId, setBookingData]);
+
+  // Entrada por el enlace de un profesional. Antes solo se fijaba si el borrador no tenía ya
+  // uno, así que una reserva a medias con otro profesional ganaba al enlace nuevo, y si estaba
+  // en la confirmación seguía con el profesional anterior. Ahora la reserva queda ligada al del
+  // enlace (ver resolveProviderLinkEntry). Se espera a que cargue el borrador guardado: decidir
+  // antes sería decidir sobre una reserva vacía que el borrador pisa al llegar.
+  useEffect(() => {
+    if (isLoading || !linkGardenerId) return;
+    if (handledLinkKeyRef.current === location.key) return;
+    handledLinkKeyRef.current = location.key;
+    setLinkEntryPending(true);
+
+    void (async () => {
+      const profile = await loadProviderLinkProfile(linkGardenerId).catch(() => null);
+      const entry = resolveProviderLinkEntry({
+        bookingData: bookingDataRef.current,
+        currentStep: currentStepRef.current,
+        gardenerId: linkGardenerId,
+        offeredServiceIds: profile ? profile.serviceIds : null,
+      });
+      const providerName = profile?.fullName || 'este profesional';
+
+      if (entry.kind === 'fresh') {
+        resetBooking();
+        setBookingData({ restrictedGardenerId: linkGardenerId });
+      } else if (entry.kind === 'rebound') {
+        setBookingData(entry.updates);
+        setCurrentStep(entry.step);
+        toast(
+          entry.missingServiceIds.length > 0
+            ? `Tu reserva ahora es con ${providerName}. No hace alguno de los servicios que habías elegido: revisa la selección.`
+            : `Tu reserva ahora es con ${providerName}. Hemos guardado la dirección y los servicios que ya habías indicado.`,
+          { icon: 'ℹ️', id: 'provider-link-rebound' },
+        );
+      }
+
+      // El enlace ya está aplicado: se quita del historial para que recargar, volver atrás o
+      // pulsar «Ver otros profesionales» no lo vuelva a aplicar.
+      const { restrictedGardenerId: _applied, ...rest } = locationState;
+      void _applied;
+      navigate(
+        { pathname: location.pathname, search: location.search },
+        { replace: true, state: Object.keys(rest).length > 0 ? rest : null },
+      );
+      setLinkEntryPending(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, linkGardenerId, location.key]);
+
+  // Borradores guardados antes del arreglo de arriba: ligados a un profesional pero con otro ya
+  // elegido. Se mira una vez, al cargar.
+  useEffect(() => {
+    if (isLoading || linkEntryPending || reconciledRef.current) return;
+    reconciledRef.current = true;
+    const fix = reconcileProviderLink(bookingDataRef.current, currentStepRef.current);
+    if (fix) {
+      setBookingData(fix.updates);
+      setCurrentStep(fix.step);
     }
-    if (Object.keys(updates).length > 0) {
-      setBookingData(updates);
-    }
-  }, [bookingData.restrictedGardenerId, bookingData.serviceIds.length, location.state, setBookingData]);
+  }, [isLoading, linkEntryPending, setBookingData, setCurrentStep]);
 
   useEffect(() => {
     if (!showAbandonModal) {
@@ -59,7 +128,7 @@ const BookingFlow: React.FC = () => {
   };
 
   const renderCurrentStep = () => {
-    if (isLoading) {
+    if (isLoading || linkEntryPending) {
       return (
         <div className="flex items-center justify-center min-h-[50vh]">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" aria-hidden="true"></div>

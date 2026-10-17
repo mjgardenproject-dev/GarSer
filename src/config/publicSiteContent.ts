@@ -13,8 +13,6 @@ export type MarketingImageSlotKey =
   | 'marbella.hero'
   | 'marbella.highlight'
   | 'costaDelSol.hero'
-  | 'gardeners.hero'
-  | 'gardeners.process'
   | 'shared.og.home'
   | 'shared.og.marbella'
   | 'shared.og.costaDelSol'
@@ -57,8 +55,6 @@ export const marketingImageSlots: Record<MarketingImageSlotKey, string> = {
   'marbella.hero': 'marbella/hero.webp',
   'marbella.highlight': 'marbella/highlight.webp',
   'costaDelSol.hero': 'costa-del-sol/hero.webp',
-  'gardeners.hero': 'gardeners/hero.webp',
-  'gardeners.process': 'gardeners/process.webp',
   'shared.og.home': 'shared/og/home.webp',
   'shared.og.marbella': 'shared/og/marbella.webp',
   'shared.og.costaDelSol': 'shared/og/costa-del-sol.webp',
@@ -171,30 +167,38 @@ export const costaDelSolFaqs: FaqItem[] = [
   },
   {
     question: '¿Puedo reservar si no estoy en la vivienda?',
-    answer: 'Sí. La reserva, el seguimiento y el pago se gestionan online, así que puedes contratar el servicio sin estar presente el día del trabajo.',
+    answer: 'Sí. La reserva y el seguimiento se hacen online y hablas con el profesional por el chat. El servicio se lo pagas directamente a él, de la manera que acordéis.',
   },
 ];
 
 export const gardenersFaqs: FaqItem[] = [
   {
-    question: '¿Qué es GarSer para un jardinero?',
-    answer: 'Es un portal para jardineros donde el cliente describe su jardín con fotos y medidas, GarSer calcula el precio con las tarifas que tú configuras, y tú decides si aceptas el trabajo. No pagas por darte de alta: GarSer se queda una comisión de gestión del 12,5% sobre las reservas que completas.',
+    question: '¿Cuánto me cuesta?',
+    answer: 'Nada. No hay cuota ni comisión: cobras el 100 % de tu precio.',
   },
   {
-    question: '¿Cómo consigo clientes de jardinería con GarSer?',
-    answer: 'No tienes que buscarlos. Los clientes entran a reservar un servicio concreto, y GarSer les muestra los jardineros disponibles en su zona según tu radio de trabajo y tu disponibilidad. Cuantas más reseñas acumulas, más peso tiene tu perfil.',
+    question: '¿Mis clientes pagan algo por reservar conmigo?',
+    answer: 'No. Si reservan desde tu enlace o vuelven a reservar contigo, pagan tu precio y nada más.',
   },
   {
-    question: '¿Quién puede registrarse como jardinero?',
-    answer: 'La página está pensada para autónomos y empresas de jardinería que quieran recibir nuevas reservas a través de GarSer.',
+    question: '¿Y los clientes nuevos que me mande GarSer?',
+    answer: 'Esos pagan unos gastos de gestión a GarSer al reservar. Los paga el cliente, aparte: a ti no se te descuenta nada.',
   },
   {
-    question: '¿Cómo funciona el alta profesional?',
-    answer: 'Creas tu cuenta, completas la información solicitada y el equipo revisa la solicitud antes de activar el perfil.',
+    question: '¿Cómo me pagan mis clientes?',
+    answer: 'Directamente a ti al terminar el trabajo, de la manera que acordéis. GarSer no toca tu dinero.',
   },
   {
-    question: '¿Qué servicios puede ofrecer un jardinero en GarSer?',
-    answer: 'La plataforma está orientada a servicios habituales de jardinería residencial, poda, mantenimiento, palmeras y otros trabajos relacionados.',
+    question: '¿Mis clientes tienen que registrarse?',
+    answer: 'Solo para confirmar. Ven tu precio y tus huecos sin cuenta, y en el último paso crean una con su correo. Así siguen la reserva y hablan contigo por el chat.',
+  },
+  {
+    question: '¿Sirve para empresas con empleados?',
+    answer: 'Sí. Das de alta tu empresa, añades a tu equipo y cada empleado ve sus trabajos en su app. GarSer reparte los trabajos o eliges tú quién va.',
+  },
+  {
+    question: '¿Necesito instalar algo?',
+    answer: 'No. Funciona en el navegador del móvil o del ordenador. Si quieres, la añades a tu pantalla de inicio desde Safari o Chrome y activas los avisos en el móvil.',
   },
 ];
 
@@ -221,9 +225,9 @@ export const pageSeo = {
     ogImageSlot: 'shared.og.costaDelSol',
   } satisfies SeoPageData,
   gardeners: {
-    title: 'Portal para jardineros | Consigue clientes con GarSer',
+    title: 'Portal para jardineros gratis: reservas y clientes | GarSer',
     description:
-      'GarSer es el portal para jardineros autónomos y empresas de jardinería: presupuesta sin desplazarte, cobra online con tus tarifas y llena tu agenda con clientes que ya quieren reservar.',
+      'Portal y app gratis para jardineros y empresas: tus clientes reservan con tu enlace, tus precios y tu agenda, sin comisión. Y GarSer te trae clientes nuevos.',
     path: '/para-jardineros',
     ogImageSlot: 'shared.og.gardeners',
   } satisfies SeoPageData,
@@ -257,7 +261,7 @@ export const generalHomeContent = {
   gardenerCtaBadge: '¿Eres jardinero?',
   gardenerCtaTitle: 'Descubre las ventajas de trabajar con GarSer',
   gardenerCtaDescription:
-    'Recibe clientes reales en tu zona, gestiona tu agenda y cobra de forma segura, sin tener que buscar trabajo uno a uno.',
+    'Tus clientes te reservan con tu enlace, sin comisión, y GarSer te trae clientes nuevos. Gratis para ti.',
   gardenerCtaButtonLabel: 'Ver ventajas para jardineros',
 };
 
@@ -290,64 +294,103 @@ export const costaDelSolContent = {
     'Sin visitas comerciales ni llamadas para pedir presupuesto: describes el jardín, ves el precio y la disponibilidad real, y reservas si te encaja.',
 };
 
+/** Captura de la app que acompaña a cada paso de «Así funciona» (la pinta GardenersLandingPage). */
+export type GardenersStepMockup = 'agenda' | 'link' | 'client';
+/** Icono de cada línea de «Y además» (la página la traduce a un icono de Lucide). */
+export type GardenersExtraIcon = 'chat' | 'reviews' | 'repeat' | 'price' | 'multiday' | 'done' | 'alerts';
+
+/**
+ * Textos de /para-jardineros. Modelo que se explica (decisión del dueño, 2026-10-16): el
+ * profesional no paga nada; sus clientes (los de su enlace y los que vuelven con él) tampoco;
+ * los clientes que trae GarSer pagan ellos los gastos de gestión. Ojo: hoy el código aún cobra
+ * gastos de gestión a todos los clientes; el cambio económico va en otra implementación.
+ */
 export const gardenersContent = {
-  eyebrow: 'Portal para jardineros y empresas',
-  title: 'El portal para jardineros que te ahorra tiempo y dinero en cada presupuesto',
-  description:
-    'Deja de perder mañanas enteras visitando jardines solo para dar un precio. En GarSer el cliente sube las fotos, el trabajo te llega ya valorado en euros y horas, y cobras por la plataforma sin perseguir a nadie.',
-  benefits: [
+  hero: {
+    eyebrow: 'Para jardineros y empresas de jardinería',
+    title: 'La app gratis para gestionar las reservas de tus clientes',
+    description:
+      'Mandas tu enlace y tus clientes te reservan solos, con tus precios y en tus huecos libres. Además, GarSer te trae clientes nuevos.',
+    highlights: [
+      'Gratis para ti: sin cuota ni comisión',
+      'Tus clientes reservan sin pagar comisión',
+      'Cobras el 100 % de tu precio',
+    ],
+    primaryCtaLabel: 'Crear mi cuenta gratis',
+    primaryCtaNote: 'Sin tarjeta ni permanencia. Revisamos tu alta antes de activarla.',
+    companiesLinkLabel: '¿Tienes una empresa con empleados? Mira cómo funciona para equipos',
+  },
+  feeSplit: {
+    title: 'Para ti es gratis. Para tus clientes, sin comisión.',
+    intro: 'Nunca pagas nada a GarSer. Lo único que cambia es quién trae al cliente:',
+    rows: [
+      {
+        id: 'own',
+        label: 'Tus clientes',
+        who: 'Reservan con tu enlace o vuelven a reservar contigo.',
+        badge: 'Sin comisión',
+        result: 'Pagan tu precio y nada más.',
+      },
+      {
+        id: 'garser',
+        label: 'Clientes nuevos de GarSer',
+        who: 'Te encuentran buscando jardinero en garser.es.',
+        badge: 'Gastos de gestión',
+        result: 'Esos gastos los paga el cliente, aparte. Tú cobras tu precio entero.',
+      },
+    ],
+    loyaltyNote:
+      'Y si un cliente que te trajo GarSer vuelve a reservar contigo, pasa a ser tuyo: deja de pagar gastos de gestión.',
+  },
+  stepsTitle: 'Así funciona',
+  steps: [
     {
-      icon: 'camera',
-      title: 'Presupuesta sin desplazarte',
+      title: 'Crea tu cuenta y pon tus precios',
       description:
-        'El cliente sube fotos y medidas de su jardín y GarSer calcula el precio y las horas con tus propias tarifas. Tú ves el trabajo ya valorado antes de aceptarlo.',
+        'Para cada servicio: por m², por metro o por hora, con precio mínimo y recargos. Y tu horario y hasta dónde te desplazas.',
+      mockup: 'agenda',
+      caption: 'Tu horario de la semana',
     },
     {
-      icon: 'shield-check',
-      title: 'Cobra siempre, sin perseguir pagos',
+      title: 'Manda tu enlace a tus clientes',
       description:
-        'El pago se gestiona online dentro de la plataforma. Se acabó el "ya te haré una transferencia", el efectivo y las facturas que nadie paga.',
+        'Lo tienes en «Mi cuenta». Pégalo en WhatsApp o en tu Instagram: quien reserve desde ahí, reserva contigo.',
+      mockup: 'link',
+      caption: 'Tu enlace, en «Mi cuenta»',
     },
     {
-      icon: 'calendar-check',
-      title: 'Tu agenda se llena sola',
+      title: 'Ellos reservan, tú aceptas',
       description:
-        'Configuras tus días, horarios y radio de trabajo una vez. GarSer solo te ofrece trabajos que encajan en tus huecos libres, sin llamadas para cuadrar horarios.',
+        'Eligen servicios, mandan fotos o responden unas preguntas y ven tu precio y tus huecos libres. Te llega la solicitud y la aceptas.',
+      mockup: 'client',
+      caption: 'Tu cliente, reservando desde el móvil',
     },
-    {
-      icon: 'star',
-      title: 'Tu reputación, por escrito',
-      description:
-        'Cada trabajo terminado suma reseñas reales a tu perfil público. Lo que en el boca a boca se pierde, aquí queda y te trae al siguiente cliente.',
-    },
-    {
-      icon: 'message-circle',
-      title: 'Habla con el cliente sin dar tu número',
-      description:
-        'Chat integrado para resolver dudas antes y durante el trabajo. Tu teléfono personal sigue siendo tuyo.',
-    },
-    {
-      icon: 'percent',
-      title: 'Comisión clara desde el minuto uno',
-      description:
-        'GarSer se queda un 12,5% de gestión, ya contemplado en lo que ve el cliente. Sabes exactamente cuánto cobras antes de aceptar cada trabajo.',
-    },
-  ],
-  process: [
-    {
-      title: 'Crea tu cuenta',
-      description: 'Empiezas el alta desde la web y eliges el perfil de jardinero.',
-    },
-    {
-      title: 'Completa la solicitud',
-      description: 'Aportas los datos necesarios para que el equipo pueda revisar tu perfil con criterio.',
-    },
-    {
-      title: 'Activa tu perfil',
-      description: 'Cuando la cuenta queda validada, puedes operar dentro de GarSer como profesional.',
-    },
-  ],
-  finalCtaTitle: 'Si ofreces servicios de jardinería, entra por la vía profesional',
-  finalCtaDescription:
-    'La página para jardineros está separada de la portada de cliente para que el mensaje, el alta y la conversión tengan sentido.',
+  ] satisfies { title: string; description: string; mockup: GardenersStepMockup; caption: string }[],
+  extrasTitle: 'Y además, en la misma app',
+  extras: [
+    { icon: 'chat', text: 'Chat con el cliente sin dar tu teléfono' },
+    { icon: 'reviews', text: 'Reseñas reales en tu perfil público' },
+    { icon: 'repeat', text: 'Mantenimientos cada semana, cada 2 semanas o cada mes' },
+    { icon: 'price', text: '¿No es como en las fotos? Antes de aceptar, propones otro precio' },
+    { icon: 'multiday', text: 'Trabajos grandes repartidos en varios días' },
+    { icon: 'done', text: 'Pulsas «He terminado» y el cliente lo confirma' },
+    { icon: 'alerts', text: 'Avisos por correo y en el móvil' },
+  ] satisfies { icon: GardenersExtraIcon; text: string }[],
+  companies: {
+    eyebrow: 'Empresas de jardinería',
+    title: '¿Tienes equipo? GarSer reparte el trabajo',
+    intro: 'Lo mismo que para un autónomo, con tu enlace incluido, y además:',
+    points: [
+      'Cada empleado tiene su horario y su app, «Mi trabajo», con sus trabajos del día.',
+      'GarSer asigna cada trabajo a quien está libre, o eliges tú quién va. Si hace falta, van varios a la vez.',
+      'Ves la agenda de todo el equipo, cambias quién va o propones otra fecha al cliente.',
+    ],
+    ctaLabel: 'Dar de alta mi empresa',
+    ctaNote: 'También gratis. Revisamos la solicitud antes de activarla.',
+  },
+  faqTitle: 'Preguntas frecuentes',
+  finalCta: {
+    title: 'Empieza con los clientes que ya tienes',
+    description: 'Crea tu cuenta, pon tus precios y manda tu enlace.',
+  },
 };

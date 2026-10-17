@@ -196,7 +196,9 @@ function MyAccount() {
           </div>
         </div>
 
-        {effectiveRole === 'gardener' && (
+        {/* Autónomos y empresas: la empresa también reparte su enlace a sus clientes
+            (/reservar/<id de la cuenta de empresa> abre su perfil y fija la reserva a ella). */}
+        {(effectiveRole === 'gardener' || effectiveRole === 'company') && (
           <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
             <div className="flex items-center mb-3">
               <LinkIcon className="w-5 h-5 text-green-600 mr-2" />

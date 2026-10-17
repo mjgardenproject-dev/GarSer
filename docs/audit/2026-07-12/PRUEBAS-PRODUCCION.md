@@ -1085,6 +1085,41 @@ Rellena esto antes de empezar y ten la tabla a mano:
   pantalla de fotos con «Continuar». Vuelve a «Escribo los datos»: ✅ sigue en la pregunta donde lo
   dejaste. Con 2 servicios, al pasar al segundo: ✅ selector grande sin marcar otra vez.
 
+## Sección 22 — Página para jardineros y empresas (`/para-jardineros`, rediseño 2026-10-17)
+
+> Rediseño de la landing de captación (rama `feat/para-jardineros-rediseno`). Mensaje: app gratis
+> para gestionar las reservas de tus clientes; tus clientes sin comisión; los clientes nuevos de
+> GarSer pagan ellos los gastos de gestión. **Aviso aceptado por el dueño:** hasta que se implemente
+> el cambio económico, el código sigue cobrando gastos de gestión a todos los clientes (también a los
+> del enlace). Hazlo **desde el móvil**, en una ventana privada, en https://garser.es/para-jardineros.
+
+- [ ] **22.1 — Lo desplegado es lo nuevo.** ✅ Titular «La app gratis para gestionar las reservas
+  de tus clientes», tres frases con ✓ y el botón «Crear mi cuenta gratis» **sin hacer scroll**. ❌ Si
+  sale «El portal para jardineros que te ahorra tiempo…»: el despliegue no es el último.
+- [ ] **22.2 — Sin fotos ni huecos vacíos.** ✅ Ningún recuadro con degradado vacío; en su lugar, 5
+  capturas de la app (Solicitudes, Horario, Mi cuenta, Reserva del cliente, Agenda del equipo). Al
+  tocarlas no pasa nada.
+- [ ] **22.3 — La tira de «Así funciona».** ✅ Las tres capturas se deslizan en horizontal con el
+  dedo, cada una con su pie «1. Tu horario de la semana», «2. Tu enlace…», «3. Tu cliente…». En el
+  ordenador salen las tres en fila, una bajo cada paso.
+- [ ] **22.4 — Alta de jardinero.** Toca «Crear mi cuenta gratis» (hero, tras «Para ti es gratis…» y
+  al final). ✅ Los tres abren «Crea tu cuenta» con la tarjeta **Jardinero** ya marcada.
+- [ ] **22.5 — Alta de empresa.** Toca «¿Tienes una empresa con empleados?…»: ✅ baja a la banda
+  oscura de empresas con el antetítulo visible (no tapado por la cabecera). Toca «Dar de alta mi
+  empresa»: ✅ «Crea tu cuenta» con la tarjeta **Empresa** marcada.
+- [ ] **22.6 — Preguntas frecuentes.** ✅ 7 preguntas cerradas; al tocar una se abre su respuesta y la
+  flecha gira; al tocarla otra vez se cierra.
+- [ ] **22.7 — SEO.** Pestaña del navegador: ✅ «Portal para jardineros gratis: reservas y clientes |
+  GarSer». Ver código fuente no sirve (no hay prerender): usa DevTools → Elements → `<head>`.
+- [ ] **22.8 — Enlace de las empresas.** Entra con una cuenta de **empresa aprobada** → «Mi cuenta»:
+  ✅ sale la tarjeta «Enlace de reserva directo» con `garser.es/reservar/<id>` y «Copiar». Abre ese
+  enlace en una ventana privada: ✅ perfil público de la empresa; «Reservar con este profesional» →
+  en el paso «Profesional» ✅ solo sale esa empresa. (Con un empleado: ✅ la tarjeta **no** sale.)
+- [ ] **22.9 — Textos corregidos fuera de la página.** Portada, bloque «¿Eres jardinero?»: ✅ «Tus
+  clientes te reservan con tu enlace, sin comisión, y GarSer te trae clientes nuevos. Gratis para
+  ti.» `/costa-del-sol`, pregunta «¿Puedo reservar si no estoy en la vivienda?»: ✅ «…El servicio se
+  lo pagas directamente a él, de la manera que acordéis.»
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

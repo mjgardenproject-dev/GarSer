@@ -17,11 +17,11 @@ layout, pero deja el hueco vacío.
 
 | Prioridad | Archivo a subir | Dónde se ve | Especificación |
 |---|---|---|---|
-| **Alta** | `gardeners/hero.webp` | Primera foto de `/para-jardineros` | Vertical/cuadrada, contenedor `min-h-[320px]`. Es la primera impresión de la página cuyo único objetivo es captar jardineros — hoy se ve el degradado vacío |
+| ~~Alta~~ | ~~`gardeners/hero.webp`~~ | **Ya no hace falta** (2026-10-17): `/para-jardineros` se rediseñó sin fotos, con capturas de la app en HTML | — |
 | **Alta** | `costa-del-sol/hero.webp` | Página nueva `/costa-del-sol` (Fase 10) | Horizontal, foto de jardín residencial de la zona |
 | **Media** | `shared/og/costa-del-sol.webp` | Vista previa al compartir `/costa-del-sol` | 1200×630 px (formato Open Graph) |
 | **Media** | `home/coverage/costa-del-sol.webp` | Bloque de cobertura de `/marbella` y `/costa-del-sol` | Horizontal. Tras la Fase 8 ya **no** se usa en la Home |
-| **Media** | `gardeners/process.webp` | Bloque "Cómo funciona" de `/para-jardineros` | Vertical/cuadrada |
+| ~~Media~~ | ~~`gardeners/process.webp`~~ | **Ya no hace falta** (2026-10-17): mismo motivo | — |
 
 > Nota (hallazgo H-03): estas imágenes devolvían HTTP 400 en producción porque el
 > objeto no existe en el bucket. No es un bug de código.

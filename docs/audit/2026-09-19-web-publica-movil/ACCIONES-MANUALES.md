@@ -20,7 +20,7 @@ layout, pero deja el hueco vacío.
 | ~~Alta~~ | ~~`gardeners/hero.webp`~~ | **Ya no hace falta** (2026-10-17): `/para-jardineros` se rediseñó sin fotos, con capturas de la app en HTML | — |
 | **Alta** | `costa-del-sol/hero.webp` | Página nueva `/costa-del-sol` (Fase 10) | Horizontal, foto de jardín residencial de la zona |
 | **Media** | `shared/og/costa-del-sol.webp` | Vista previa al compartir `/costa-del-sol` | 1200×630 px (formato Open Graph) |
-| **Media** | `home/coverage/costa-del-sol.webp` | Bloque de cobertura de `/marbella` y `/costa-del-sol` | Horizontal. Tras la Fase 8 ya **no** se usa en la Home |
+| ~~Media~~ | ~~`home/coverage/costa-del-sol.webp`~~ | **Ya no hace falta** (2026-10-17): el bloque de cobertura se quitó de todas las páginas | — |
 | ~~Media~~ | ~~`gardeners/process.webp`~~ | **Ya no hace falta** (2026-10-17): mismo motivo | — |
 
 > Nota (hallazgo H-03): estas imágenes devolvían HTTP 400 en producción porque el

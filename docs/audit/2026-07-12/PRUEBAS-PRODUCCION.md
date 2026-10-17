@@ -1119,6 +1119,19 @@ Rellena esto antes de empezar y ten la tabla a mano:
   clientes te reservan con tu enlace, sin comisión, y GarSer te trae clientes nuevos. Gratis para
   ti.» `/costa-del-sol`, pregunta «¿Puedo reservar si no estoy en la vivienda?»: ✅ «…El servicio se
   lo pagas directamente a él, de la manera que acordéis.»
+- [ ] **22.10 — Cabecera: se ve en qué página estás.** En el móvil, la fila «RESERVAR → · MARBELLA ·
+  SOY JARDINERO» va en **una sola línea** (también en un móvil pequeño), con la misma letra en los
+  tres. En `/marbella` ✅ MARBELLA va rellena en verde; en `/para-jardineros` ✅ SOY JARDINERO; en la
+  portada ✅ ninguna. «RESERVAR» va siempre con borde y nunca rellena. En el ordenador, la página
+  actual sale subrayada.
+- [ ] **22.11 — Contacto y ayuda.** Toca el botón de ayuda (bocadillo junto a «Acceder»; en el
+  ordenador, «Ayuda»): ✅ baja al bloque «Contacto y ayuda» del pie. «WhatsApp +34 694 26 86 53» ✅
+  abre WhatsApp con ese número; «info@garser.es» ✅ abre el correo. Mismo bloque en las 4 páginas
+  públicas.
+- [ ] **22.12 — Sin cobertura inventada.** En la portada, `/marbella` y `/costa-del-sol`: ✅ no sale
+  ningún bloque de cobertura (ni «Cobertura orientada a la Costa del Sol», ni «Encuentra jardineros
+  en tu zona», ni «Municipios… donde ya trabajamos», ni etiquetas de municipios). En el pie ✅ no sale
+  «Cobertura orientativa». Bajo el pie, en el móvil, ✅ no queda una franja blanca.
 
 ## Criterio de GO definitivo
 

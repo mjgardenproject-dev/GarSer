@@ -92,7 +92,7 @@ const MarbellaLandingPage: React.FC = () => {
         />
       </main>
 
-      <PublicFooter showCoverageZones />
+      <PublicFooter />
     </div>
   );
 };

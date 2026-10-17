@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 const updateCalls: Array<{ values: unknown; column: string; value: string }> = [];
 let updatedRows: Array<{ user_id: string }> = [{ user_id: USER_ID }];
+let profileRole = 'client';
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 
@@ -20,7 +21,7 @@ vi.mock('../common/AppHeader', () => ({ default: () => null }));
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({
-      select: () => ({ or: () => ({ limit: async () => ({ data: [{ user_id: USER_ID, full_name: 'Yo', role: 'client' }] }) }) }),
+      select: () => ({ or: () => ({ limit: async () => ({ data: [{ user_id: USER_ID, full_name: 'Yo', role: profileRole }] }) }) }),
       update: (values: unknown) => ({
         eq: (column: string, value: string) => {
           updateCalls.push({ values, column, value });
@@ -67,5 +68,26 @@ describe('«Mi cuenta»: la foto (PH-01)', () => {
     await pickPhotoAndSave();
     await waitFor(() => expect(toastError).toHaveBeenCalledWith('No se ha podido guardar la foto. Vuelve a intentarlo.'));
     expect(toastSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe('«Mi cuenta»: el enlace de reserva directo', () => {
+  afterEach(() => {
+    cleanup();
+    profileRole = 'client';
+  });
+
+  it.each(['gardener', 'company'])('lo ve una cuenta %s, con su propio enlace', async (role) => {
+    profileRole = role;
+    render(<MemoryRouter><MyAccount /></MemoryRouter>);
+    expect(await screen.findByText('Enlace de reserva directo')).toBeTruthy();
+    expect(screen.getByDisplayValue(`${window.location.origin}/reservar/${USER_ID}`)).toBeTruthy();
+  });
+
+  it.each(['client', 'employee'])('no lo ve una cuenta %s', async (role) => {
+    profileRole = role;
+    render(<MemoryRouter><MyAccount /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText(new RegExp(role === 'client' ? 'Cliente' : 'Empleado'))).toBeTruthy());
+    expect(screen.queryByText('Enlace de reserva directo')).toBeNull();
   });
 });

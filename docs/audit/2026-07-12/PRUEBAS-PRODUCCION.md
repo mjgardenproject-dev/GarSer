@@ -1093,23 +1093,23 @@ Rellena esto antes de empezar y ten la tabla a mano:
 > el cambio económico, el código sigue cobrando gastos de gestión a todos los clientes (también a los
 > del enlace). Hazlo **desde el móvil**, en una ventana privada, en https://garser.es/para-jardineros.
 
-- [ ] **22.1 — Lo desplegado es lo nuevo.** ✅ Titular «La app gratis para gestionar las reservas
+- [x] **22.1 — Lo desplegado es lo nuevo.** *(✅ 2026-10-17, Claude, en vivo a 375 px tras fusionar el #50)* ✅ Titular «La app gratis para gestionar las reservas
   de tus clientes», tres frases con ✓ y el botón «Crear mi cuenta gratis» **sin hacer scroll**. ❌ Si
   sale «El portal para jardineros que te ahorra tiempo…»: el despliegue no es el último.
-- [ ] **22.2 — Sin fotos ni huecos vacíos.** ✅ Ningún recuadro con degradado vacío; en su lugar, 5
+- [x] **22.2 — Sin fotos ni huecos vacíos.** *(✅ 2026-10-17, Claude, en vivo: 5 capturas, ningún hueco)* ✅ Ningún recuadro con degradado vacío; en su lugar, 5
   capturas de la app (Solicitudes, Horario, Mi cuenta, Reserva del cliente, Agenda del equipo). Al
   tocarlas no pasa nada.
 - [ ] **22.3 — La tira de «Así funciona».** ✅ Las tres capturas se deslizan en horizontal con el
   dedo, cada una con su pie «1. Tu horario de la semana», «2. Tu enlace…», «3. Tu cliente…». En el
   ordenador salen las tres en fila, una bajo cada paso.
-- [ ] **22.4 — Alta de jardinero.** Toca «Crear mi cuenta gratis» (hero, tras «Para ti es gratis…» y
+- [ ] **22.4 — Alta de jardinero.** *(2026-10-17, Claude, en vivo: el del hero ✅ abre «Crea tu cuenta» con Jardinero; faltan los otros dos)* Toca «Crear mi cuenta gratis» (hero, tras «Para ti es gratis…» y
   al final). ✅ Los tres abren «Crea tu cuenta» con la tarjeta **Jardinero** ya marcada.
-- [ ] **22.5 — Alta de empresa.** Toca «¿Tienes una empresa con empleados?…»: ✅ baja a la banda
+- [ ] **22.5 — Alta de empresa.** *(2026-10-17, Claude, en vivo: «Dar de alta mi empresa» ✅ abre «Crea tu cuenta» con Empresa; falta el enlace que baja a la sección)* Toca «¿Tienes una empresa con empleados?…»: ✅ baja a la banda
   oscura de empresas con el antetítulo visible (no tapado por la cabecera). Toca «Dar de alta mi
   empresa»: ✅ «Crea tu cuenta» con la tarjeta **Empresa** marcada.
 - [ ] **22.6 — Preguntas frecuentes.** ✅ 7 preguntas cerradas; al tocar una se abre su respuesta y la
   flecha gira; al tocarla otra vez se cierra.
-- [ ] **22.7 — SEO.** Pestaña del navegador: ✅ «Portal para jardineros gratis: reservas y clientes |
+- [x] **22.7 — SEO.** *(✅ 2026-10-17, Claude, en vivo: título correcto y JSON-LD con las 7 preguntas)* Pestaña del navegador: ✅ «Portal para jardineros gratis: reservas y clientes |
   GarSer». Ver código fuente no sirve (no hay prerender): usa DevTools → Elements → `<head>`.
 - [ ] **22.8 — Enlace de las empresas.** Entra con una cuenta de **empresa aprobada** → «Mi cuenta»:
   ✅ sale la tarjeta «Enlace de reserva directo» con `garser.es/reservar/<id>` y «Copiar». Abre ese

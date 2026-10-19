@@ -160,6 +160,12 @@ async function main() {
       if (conf.bookingId) created.bookings.add(conf.bookingId);
       const row = conf.bookingId ? bookingRow(conf.bookingId) : null;
       record('A3', 'Cliente nuevo: tras el pago, la reserva lleva su comisión y la pasarela de Stripe', Boolean(row) && row.fee === aFee && row.source === 'payment_attempt' && row.gateway === 'stripe_elements', JSON.stringify(row));
+      if (conf.bookingId) {
+        const price = Number(sql(`select total_price from public.bookings where id='${conf.bookingId}'`));
+        await rpc('propose_booking_price_change', { p_booking_id: conf.bookingId, p_proposed_total_price: price + 10, p_reason: 'Prueba con gastos', p_operation_id: randomUUID(), p_expires_in_minutes: 60 }, gardenerToken);
+        const chat = sql(`select coalesce(string_agg(message, ' | '), '') from public.chat_messages where booking_id='${conf.bookingId}'`);
+        record('A4', 'Con gastos pagados, el chat del cambio de precio sigue diciendo que no cambian', chat.includes('ya abonados no cambian'), chat.slice(0, 160));
+      }
     } else if (aAttempt?.attemptId) {
       await payment({ action: 'cancel_attempt', attemptId: aAttempt.attemptId }, client.token);
     }
@@ -212,6 +218,8 @@ async function main() {
       const afterPc = bookingRow(gBooking);
       record('H1', 'Cambio de precio aceptado en una exenta: sin Stripe y la comisión sigue en 0', prop.ok && resp.ok && finPc.body?.status === 'no_payment' && afterPc.fee === 0 && afterPc.source === 'waived_provider_link',
         `${prop.ok ? '' : `propuesta ${JSON.stringify(prop.body).slice(0, 100)}`} finalize ${JSON.stringify(finPc.body).slice(0, 80)}`);
+      const chat = sql(`select coalesce(string_agg(message, ' | '), '') from public.chat_messages where booking_id='${gBooking}'`);
+      record('H2', 'El chat de una reserva exenta no habla de gastos «ya abonados»', chat.includes('nuevo precio') && !chat.includes('ya abonados'), chat.slice(0, 160));
       const cancel = await payment({ action: 'cancel_booking', bookingId: gBooking, reason: 'Prueba sin gastos' }, client.token);
       record('G1', 'Cancelar una reserva exenta no toca Stripe', cancel.ok && bookingRow(gBooking).status === 'cancelled' && JSON.stringify(cancel.body).includes('no_payment'),
         JSON.stringify(cancel.body).slice(0, 140));

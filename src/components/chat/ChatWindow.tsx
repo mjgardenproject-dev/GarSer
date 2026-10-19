@@ -563,7 +563,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ bookingId, isOpen, onClose, oth
                 {formatEuro(
                   getBookingAmounts({ ...bookingMeta, total_price: bookingMeta.proposed_total_price }).clientTotal,
                 )}
-                . Los gastos de gestión ya abonados no cambian.
+                .{getBookingAmounts(bookingMeta).feeIsKnown ? ' Los gastos de gestión ya abonados no cambian.' : ''}
               </p>
             )}
             {bookingMeta.proposed_price_reason && (

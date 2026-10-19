@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 import { ClientBookingAmounts } from './BookingAmounts';
-import { formatEuro } from '../../shared/bookingAmounts';
+import { formatEuro, getBookingAmounts } from '../../shared/bookingAmounts';
 import WhoIsComing from './WhoIsComing';
 import { formatDateRange, isMultiDay } from '../../utils/jobShape';
 import {
@@ -308,9 +308,12 @@ const ClientBookingCard = ({
               <span className="font-medium">Motivo:</span> {booking.proposed_price_reason}
             </p>
           )}
-          <p className="mt-1 text-xs text-amber-800">
-            Los gastos de gestión que ya abonaste no cambian.
-          </p>
+          {/* Sin gastos de gestión (lanzamiento) no hay nada abonado que mencionar. */}
+          {getBookingAmounts(booking).feeIsKnown && (
+            <p className="mt-1 text-xs text-amber-800">
+              Los gastos de gestión que ya abonaste no cambian.
+            </p>
+          )}
           <div className="mt-3 flex flex-col sm:flex-row gap-2">
             <button
               type="button"
@@ -354,8 +357,8 @@ const ClientBookingCard = ({
           <p className="text-sm font-semibold text-amber-900">¿Se hizo el trabajo?</p>
           {deadlineText && (
             <p className="mt-1 text-sm text-amber-800">
-              Si no nos dices nada antes del {deadlineText}, lo daremos por completado y los
-              gastos de gestión quedarán cobrados.
+              Si no nos dices nada antes del {deadlineText}, lo daremos por completado
+              {getBookingAmounts(booking).feeIsKnown ? ' y los gastos de gestión quedarán cobrados' : ''}.
             </p>
           )}
           <div className="mt-3 flex flex-col sm:flex-row gap-2">

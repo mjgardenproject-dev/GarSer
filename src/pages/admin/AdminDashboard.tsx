@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Briefcase, Leaf, TrendingUp, Wallet } from 'lucide-react';
+import { Users, Briefcase, Leaf, TrendingUp, Wallet, BadgePercent } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { formatEuro } from '../../shared/bookingAmounts';
@@ -11,6 +11,7 @@ const AdminDashboard: React.FC = () => {
     pendingCertificates: 0,
     grossVolume: 0,
     platformRevenue: 0,
+    feeWaivedBookings: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -46,7 +47,7 @@ const AdminDashboard: React.FC = () => {
         // total_price lo cobra integro el jardinero en mano; GarSer solo ingresa management_fee.
         const { data: bookingsData, error: bookingsError } = await supabase
           .from('bookings')
-          .select('total_price, management_fee')
+          .select('total_price, management_fee, management_fee_source')
           .in('status', ['confirmed', 'completed']);
 
         if (bookingsError) throw bookingsError;
@@ -60,12 +61,19 @@ const AdminDashboard: React.FC = () => {
           0,
         );
 
+        // Lanzamiento (2026-10): reservas que fueron sin gastos de gestión (cliente del enlace,
+        // cliente que repite o visita de un plan), para vigilar el alcance de la exención.
+        const feeWaivedBookings = (bookingsData || []).filter(
+          (booking: any) => String(booking.management_fee_source || '').startsWith('waived_'),
+        ).length;
+
         setData({
           totalUsers: usersCount || 0,
           activeServices: servicesCount || 0,
           pendingCertificates: certsCount || 0,
           grossVolume,
           platformRevenue,
+          feeWaivedBookings,
         });
 
       } catch (error: any) {
@@ -87,6 +95,7 @@ const AdminDashboard: React.FC = () => {
     { title: 'Certificados Pendientes', value: formatNumber(data.pendingCertificates), icon: Leaf, color: 'text-green-500' },
     { title: 'Volumen transaccionado', value: formatEuro(data.grossVolume), icon: TrendingUp, color: 'text-emerald-500' },
     { title: 'Ingresos GarSer', value: formatEuro(data.platformRevenue), icon: Wallet, color: 'text-amber-500' },
+    { title: 'Reservas sin gastos de gestión', value: formatNumber(data.feeWaivedBookings), icon: BadgePercent, color: 'text-emerald-600' },
   ];
 
   return (

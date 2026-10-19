@@ -19,6 +19,7 @@ import { markGardenerFinished } from '../../utils/bookingIncidentService';
 import { respondBookingRequest } from '../../utils/bookingRequestService';
 import { cancelBooking, canMarkGardenerFinished, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
+import { getBookingAmounts } from '../../shared/bookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
@@ -233,13 +234,14 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   // Cancelar una reserva YA ACEPTADA tiene consecuencias para el jardinero (se devuelve el
   // dinero al cliente y se registra una penalización de 1★). Se avisa ANTES de ejecutarla:
   // una sanción que aparece por sorpresa es una sanción injusta.
-  const handleCancelConfirmedBooking = (bookingId: string) => {
+  const handleCancelConfirmedBooking = (bookingId: string, clientPaidFee: boolean) => {
     // Con el diálogo de la app y no con `window.confirm`: en móvil el nativo recorta el texto y
     // parece un aviso del navegador, justo donde hay que explicar una penalización.
     openConfirm({
       title: 'Vas a cancelar una reserva aceptada',
       message:
-        '· Se devolverán al cliente los gastos de gestión.\n' +
+        // Sin gastos de gestión (lanzamiento) no hay nada que devolver al cliente.
+        (clientPaidFee ? '· Se devolverán al cliente los gastos de gestión.\n' : '') +
         '· Se registrará una valoración de 1 estrella a nombre de GarSer con la observación ' +
         '"Servicio no completado".',
       confirmLabel: 'Sí, cancelar',
@@ -491,7 +493,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                           el jardinero solo podía rechazar solicitudes pendientes. */}
                       {booking.status === 'confirmed' && (
                         <button
-                          onClick={() => handleCancelConfirmedBooking(booking.id)}
+                          onClick={() => handleCancelConfirmedBooking(booking.id, getBookingAmounts(booking).feeIsKnown)}
                           className="px-4 py-3 sm:py-2 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
                         >
                           Cancelar reserva

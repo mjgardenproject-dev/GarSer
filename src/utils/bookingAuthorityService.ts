@@ -117,6 +117,23 @@ export function buildServicesPayload(bookingData: BookingData): { bookingInput: 
   return { bookingInput: items[0].bookingInput, items };
 }
 
+/**
+ * Lanzamiento (2026-10): lo que la web le dice al servidor para la exención de gastos de gestión.
+ *  · `clientCapabilities.feeWaiver`: esta web sabe confirmar una reserva sin pago. Sin esto (una app
+ *    instalada sin actualizar) el servidor nunca firma un presupuesto sin gastos.
+ *  · `bookingOrigin`/`originProviderId`: la reserva empezó en el enlace de ese profesional. El
+ *    servidor solo lo tiene en cuenta para ese mismo profesional.
+ */
+export const BOOKING_CLIENT_CAPABILITIES = { feeWaiver: 1 } as const;
+
+export function buildBookingOriginPayload(bookingData: Pick<BookingData, 'restrictedGardenerId'>): Record<string, unknown> {
+  const linkedProviderId = String(bookingData.restrictedGardenerId || '').trim();
+  return {
+    clientCapabilities: BOOKING_CLIENT_CAPABILITIES,
+    ...(linkedProviderId ? { bookingOrigin: 'provider_link', originProviderId: linkedProviderId } : {}),
+  };
+}
+
 async function readFunctionErrorBody(context?: Response) {
   if (!context) return null;
 
@@ -236,6 +253,7 @@ export async function previewProviderQuotes(params: {
       selectedDate: params.selectedDate,
       windowDays: params.windowDays ?? 14,
       ...buildServicesPayload(params.bookingData),
+      ...buildBookingOriginPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.quote_preview_loaded',
@@ -384,6 +402,7 @@ export async function createAuthoritativeQuote(params: {
       startTime: params.startTime,
       ttlMinutes: params.ttlMinutes ?? 120,
       ...buildServicesPayload(params.bookingData),
+      ...buildBookingOriginPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.quote_created',

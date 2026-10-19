@@ -857,6 +857,32 @@ export function clearBookingResumeStorage(options: ClearBookingResumeOptions = {
   } catch {}
 }
 
+/**
+ * «Empezar una reserva nueva» desde la web pública: borra el borrador del asistente de reserva de
+ * ESTE dispositivo, sea de un visitante o de cualquier cuenta con sesión.
+ *
+ * Antes solo se borraba el borrador anónimo, y a un cliente con sesión le reaparecía el de una
+ * reserva hecha desde el enlace de un profesional (con `restrictedGardenerId`): esa reserva
+ * «normal» seguía ligada al profesional y, desde el lanzamiento (2026-10), habría ido sin gastos de
+ * gestión. Las páginas públicas no tienen acceso a la sesión (no están dentro de AuthProvider en
+ * los tests), así que se borra por patrón de clave en vez de por usuario.
+ */
+export function clearWizardDraftsForFreshStart() {
+  try {
+    const prefixes = [BOOKING_RESUME_KEY_PREFIX, ...LEGACY_CANONICAL_KEY_PREFIXES];
+    for (const kind of ['localStorage', 'sessionStorage'] as const) {
+      const storage = getStorageByKind(kind);
+      Object.keys(storage)
+        .filter((key) => prefixes.some((prefix) => key.startsWith(`${prefix}:`)) && key.endsWith(':wizard'))
+        .forEach((key) => storage.removeItem(key));
+    }
+    LEGACY_KEYS.forEach((key) => {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    });
+  } catch {}
+}
+
 export function hasWizardResume(options: BookingResumeReadOptions = {}): boolean {
   const record = readAnyBookingResume({
     ...options,

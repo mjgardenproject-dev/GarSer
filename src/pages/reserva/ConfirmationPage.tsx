@@ -38,7 +38,7 @@ import type {
   BookingQuoteEconomicBreakdown,
   BookingQuoteSlotSelection,
 } from '../../shared/bookingQuoteCore';
-import { formatEuro, getQuoteAmounts } from '../../shared/bookingAmounts';
+import { BOOKING_AMOUNT_LABELS, feeWaiverReasonText, formatEuro, getQuoteAmounts } from '../../shared/bookingAmounts';
 import {
   buildAuthoritativeQuoteSnapshot,
   hasAuthoritativeQuoteSnapshot,
@@ -367,7 +367,7 @@ const ConfirmationPage: React.FC = () => {
 
     bookingCreatedHandledRef.current = dedupeKey;
     clearBookingResumeStorage({ userId: user?.id, includeAnonFallback: true, includeLegacy: true });
-    toast.success('Pago confirmado y reserva creada correctamente');
+    toast.success(feeWaivedRef.current ? 'Reserva enviada al profesional' : 'Pago confirmado y reserva creada correctamente');
   };
 
   const resolvePreCheckoutFailure = (error: unknown): PreCheckoutFailureState | null => {
@@ -662,6 +662,12 @@ const ConfirmationPage: React.FC = () => {
       }
 
       setPaymentAttempt(payment.attempt);
+      // La reserva ya puede venir creada al preparar: sin gastos de gestión (lanzamiento) no hay
+      // Stripe y el servidor la crea en ese momento. Se cierra igual que tras un pago (aviso y
+      // borrador borrado); finalizeBookingCreated no se repite si luego llega por otra vía.
+      if (payment.attempt.status === 'booking_created') {
+        finalizeBookingCreated(payment.attempt);
+      }
       setPaymentClientSecret(payment.attempt.status === 'payment_pending' ? payment.clientSecret || null : null);
       setPaymentPublishableKey(payment.publishableKey || null);
       reportBookingEvent('info', {
@@ -1134,6 +1140,12 @@ const ConfirmationPage: React.FC = () => {
     () => getQuoteAmounts(quoteEconomics),
     [quoteEconomics]
   );
+  // Lanzamiento (2026-10): el presupuesto firmado va SIN gastos de gestión (cliente del enlace del
+  // profesional, cliente que repite o visita de un plan). No hay nada que pagar: la reserva se
+  // envía sin abrir Stripe (el servidor la crea al preparar el intento de 0 €).
+  const feeWaived = Boolean(customerPaymentSummary?.feeWaived);
+  const feeWaivedRef = useRef(feeWaived);
+  feeWaivedRef.current = feeWaived;
   const showInlinePaymentForm =
     Boolean(user) &&
     Boolean(paymentClientSecret) &&
@@ -1173,6 +1185,11 @@ const ConfirmationPage: React.FC = () => {
   };
 
   const openPaymentSheet = async () => {
+    if (feeWaived) {
+      // Sin gastos de gestión: no hay formulario de pago. Preparar el intento crea la reserva.
+      await handlePreparePayment();
+      return;
+    }
     if (showInlinePaymentForm) {
       setIsPaymentSheetOpen(true);
       return;
@@ -1285,10 +1302,14 @@ const ConfirmationPage: React.FC = () => {
       return {
         tone: 'blue',
         eyebrow: 'Acceso seguro',
-        title: 'Inicia sesión para pagar',
-        detail: 'Primero confirma tu cuenta. Después abriremos aquí mismo el formulario seguro de Stripe.',
+        title: feeWaived ? 'Inicia sesión para enviar la reserva' : 'Inicia sesión para pagar',
+        detail: feeWaived
+          ? 'Primero confirma tu cuenta. Esta reserva no tiene gastos de gestión: no tendrás que pagar nada online.'
+          : 'Primero confirma tu cuenta. Después abriremos aquí mismo el formulario seguro de Stripe.',
         instructions: [
-          'No se realiza ningún cargo hasta que confirmes el pago.',
+          feeWaived
+            ? 'El servicio se lo pagas directamente al profesional.'
+            : 'No se realiza ningún cargo hasta que confirmes el pago.',
         ],
         actions: [],
       };
@@ -1369,7 +1390,7 @@ const ConfirmationPage: React.FC = () => {
       return {
         tone: 'green',
         eyebrow: 'Reserva confirmada',
-        title: 'Pago completado correctamente',
+        title: feeWaived ? 'Reserva enviada correctamente' : 'Pago completado correctamente',
         detail: 'Tu reserva ya está creada y no depende de esta pantalla.',
         instructions: [
           'Puedes revisar el detalle cuando quieras en tus reservas.',
@@ -1519,6 +1540,27 @@ const ConfirmationPage: React.FC = () => {
       };
     }
 
+    if (feeWaived) {
+      return {
+        tone: 'blue',
+        eyebrow: BOOKING_AMOUNT_LABELS.managementFeeWaived,
+        title: 'Todo listo para enviar tu reserva',
+        detail: 'Esta reserva no tiene gastos de gestión: no pagas nada online. El servicio se lo pagas directamente al profesional.',
+        instructions: [
+          'Revisa servicio, horario e importe antes de confirmar.',
+          'Al confirmar, la reserva le llega al profesional para que la acepte.',
+        ],
+        actions: [
+          {
+            label: 'Confirmar reserva',
+            onClick: () => void openPaymentSheet(),
+            variant: 'primary',
+            disabled: isPreparingPayment,
+          },
+        ],
+      };
+    }
+
     return {
       tone: 'blue',
       eyebrow: 'Pago seguro con Stripe',
@@ -1561,6 +1603,7 @@ const ConfirmationPage: React.FC = () => {
     user,
     preCheckoutFailure,
     openPaymentSheet,
+    feeWaived,
   ]);
 
   const paymentExperienceStyles = {
@@ -1636,6 +1679,8 @@ const ConfirmationPage: React.FC = () => {
           : 'Acción no disponible');
   const footerActionLabel = isPaymentSheetSuccess
     ? 'Reserva completada'
+    : feeWaived && isPreparingPayment
+      ? 'Enviando reserva…'
     : showPaymentSheetPayAction
       ? `Pagar ${payableNowLabel}`
       : isPreparingPayment && isPaymentSheetOpen
@@ -1707,13 +1752,16 @@ const ConfirmationPage: React.FC = () => {
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
                 <CheckCircle2 aria-hidden="true" className="h-9 w-9 text-emerald-600" />
               </div>
-              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Pago confirmado</p>
+              <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
+                {feeWaived ? 'Reserva enviada' : 'Pago confirmado'}
+              </p>
               <h1 id="booking-success-title" className="mt-3 text-2xl font-semibold text-gray-950 text-balance">
                 Hemos enviado tu reserva al profesional
               </h1>
               <p className="mt-3 text-sm leading-6 text-gray-600">
-                Los gastos de gestión quedan retenidos y solo se cobran cuando el profesional acepte. Puedes
-                seguir la reserva desde tu panel.
+                {feeWaived
+                  ? 'Esta reserva no tiene gastos de gestión: el servicio se lo pagas directamente al profesional. Puedes seguir la reserva desde tu panel.'
+                  : 'Los gastos de gestión quedan retenidos y solo se cobran cuando el profesional acepte. Puedes seguir la reserva desde tu panel.'}
               </p>
             </div>
 
@@ -1738,7 +1786,9 @@ const ConfirmationPage: React.FC = () => {
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm text-gray-500">Gastos de gestión</span>
-                  <span className="text-sm font-semibold text-emerald-700 tabular-nums">{payableNowLabel}</span>
+                  <span className="text-sm font-semibold text-emerald-700 tabular-nums">
+                    {feeWaived ? BOOKING_AMOUNT_LABELS.managementFeeWaived : payableNowLabel}
+                  </span>
                 </div>
                 {/* Justo después de pagar es cuando el cliente necesita saber que lo abonado no
                     sustituye al precio del servicio, sino que se suma. */}
@@ -1892,7 +1942,9 @@ const ConfirmationPage: React.FC = () => {
                       Pendiente de pagar al profesional
                     </p>
                     <p className="mt-2 max-w-[22rem] text-xs leading-5 text-gray-500">
-                      {customerPaymentSummary
+                      {customerPaymentSummary?.feeWaived
+                        ? `${feeWaiverReasonText(customerPaymentSummary.feeWaiverReason, gardenerName)} Se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
+                        : customerPaymentSummary
                         ? `Ahora pagas ${formatEuro(customerPaymentSummary.managementFee)} de gastos de gestión. El resto se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
                         : 'El profesional cobrará este importe al completar el servicio de la manera que acordéis.'}
                     </p>
@@ -1912,7 +1964,9 @@ const ConfirmationPage: React.FC = () => {
             <div className="mb-3">
               <h2 className="text-base font-semibold text-gray-900">Accede para continuar</h2>
               <p className="mt-1 text-sm text-gray-600">
-                Usa tu cuenta para abrir el pago seguro y guardar la reserva correctamente.
+                {feeWaived
+                  ? 'Usa tu cuenta para enviar la reserva y seguirla desde tu panel.'
+                  : 'Usa tu cuenta para abrir el pago seguro y guardar la reserva correctamente.'}
               </p>
             </div>
             <div className="space-y-3">
@@ -2014,10 +2068,14 @@ const ConfirmationPage: React.FC = () => {
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Gastos de gestión</p>
-                <p className="text-2xl font-semibold text-gray-900 tabular-nums">{payableNowLabel}</p>
+                {feeWaived ? (
+                  <p className="text-lg font-semibold text-green-700">{BOOKING_AMOUNT_LABELS.managementFeeWaived}</p>
+                ) : (
+                  <p className="text-2xl font-semibold text-gray-900 tabular-nums">{payableNowLabel}</p>
+                )}
               </div>
               <p className="max-w-[12rem] text-right text-xs text-gray-500">
-                Pago seguro con Stripe dentro de GarSer
+                {feeWaived ? 'No pagas nada online' : 'Pago seguro con Stripe dentro de GarSer'}
               </p>
             </div>
             <button

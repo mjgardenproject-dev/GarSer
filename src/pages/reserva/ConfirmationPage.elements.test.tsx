@@ -476,6 +476,54 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(mocks.toast.success).toHaveBeenCalledWith('Pago confirmado y reserva creada correctamente')
   })
 
+  // Lanzamiento (2026-10): presupuesto firmado SIN gastos de gestión (cliente del enlace, cliente
+  // que repite o visita de un plan). No hay nada que pagar: se confirma sin abrir Stripe.
+  it('sin gastos de gestión: confirma la reserva sin Stripe', async () => {
+    bookingData.quoteEconomics = {
+      ...bookingData.quoteEconomics,
+      managementFee: 0,
+      payableNow: 0,
+      stripeLineItems: [],
+      feeWaiver: { reason: 'provider_link', waivedFee: 19.75 },
+    } as typeof bookingData.quoteEconomics
+    mocks.createAuthoritativeQuote.mockResolvedValue(buildAuthoritativeQuote(bookingData))
+    mocks.prepareBookingPayment.mockResolvedValue({
+      attempt: buildAttempt({
+        status: 'booking_created',
+        bookingId: 'booking-1',
+        payableNowAmountCents: 0,
+        payableNowAmount: 0,
+        paymentIntentId: undefined,
+        terminal: true,
+      }),
+    })
+
+    render(<ConfirmationPage />)
+
+    expect(screen.queryByRole('button', { name: 'Continuar al pago' })).toBeNull()
+    expect(screen.queryByText(/Ahora pagas/)).toBeNull()
+    expect(screen.getAllByText(/sin gastos de gestión/i).length).toBeGreaterThanOrEqual(1)
+    // El total es el precio del servicio: ni 177,75 € ni «0,00 € de gastos de gestión».
+    expect(screen.queryByText('177,75 €')).toBeNull()
+    expect(screen.queryByText(/0,00 €/)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }))
+
+    await waitFor(() => expect(mocks.prepareBookingPayment).toHaveBeenCalledTimes(1))
+    expect(mocks.getStripePromise).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Pago seguro' })).toBeNull()
+    expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
+    expect(screen.getByText('Reserva enviada')).toBeTruthy()
+    expect(screen.queryByText(/quedan retenidos/)).toBeNull()
+    expect(mocks.toast.success).toHaveBeenCalledWith('Reserva enviada al profesional')
+  })
+
+  it('con gastos de gestión el camino de pago no cambia', () => {
+    render(<ConfirmationPage />)
+    expect(screen.getByRole('button', { name: 'Continuar al pago' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Confirmar reserva' })).toBeNull()
+  })
+
   it('rehidrata `payment_return` sin duplicar la sincronización al rerenderizar', async () => {
     mocks.locationSearch = '?payment_return=1&attempt_id=attempt-1'
     const { rerender } = render(<ConfirmationPage />)

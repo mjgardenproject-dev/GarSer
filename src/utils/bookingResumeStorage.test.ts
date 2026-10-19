@@ -6,6 +6,7 @@ import {
   claimBookingResumeForUser,
   clearLegacyCheckoutArtifacts,
   clearBookingResumeStorage,
+  clearWizardDraftsForFreshStart,
   collectNonSerializablePaths,
   hasWizardResume,
   migrateLegacyBookingResume,
@@ -392,5 +393,22 @@ describe('bookingResumeStorage', () => {
     expect(localStorage.getItem('pending_checkout')).toBeNull();
     expect(localStorage.getItem('bookingDraft')).toBeNull();
     expect(sessionStorage.getItem('pending_checkout')).toBeNull();
+  });
+});
+
+describe('clearWizardDraftsForFreshStart (lanzamiento: reserva nueva desde la web pública)', () => {
+  it('borra el borrador del asistente del visitante Y del usuario con sesión, y nada más', () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    const data = (address: string) => ({ bookingData: { address, serviceIds: ['svc-1'], restrictedGardenerId: 'prov-1' }, currentStep: 3 });
+    writeBookingResume('draft', 'wizard', data('anónimo'));
+    writeBookingResume('draft', 'wizard', data('con sesión'), { userId: 'user-9' });
+    localStorage.setItem('otra-clave', 'se queda');
+
+    clearWizardDraftsForFreshStart();
+
+    expect(readAnyBookingResume({ flow: 'wizard', allowAnonFallback: true })).toBeNull();
+    expect(readAnyBookingResume({ userId: 'user-9', flow: 'wizard', allowAnonFallback: false })).toBeNull();
+    expect(localStorage.getItem('otra-clave')).toBe('se queda');
   });
 });

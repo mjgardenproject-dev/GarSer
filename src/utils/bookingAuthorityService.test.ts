@@ -16,7 +16,7 @@ vi.mock('../lib/supabase', () => ({
   },
 }));
 
-import { BookingAuthorityError, createAuthoritativeQuote } from './bookingAuthorityService';
+import { BookingAuthorityError, buildBookingOriginPayload, createAuthoritativeQuote } from './bookingAuthorityService';
 
 function createFunctionsHttpError(status: number, body: Record<string, unknown> | string) {
   const payload = typeof body === 'string' ? body : JSON.stringify(body);
@@ -133,5 +133,34 @@ describe('bookingAuthorityService', () => {
         message: 'apikey no autorizada.',
       }),
     );
+  });
+});
+
+// Lanzamiento (2026-10): la web declara que sabe confirmar sin pago y, si viene del enlace de un
+// profesional, de cuál. El servidor decide la exención.
+describe('buildBookingOriginPayload', () => {
+  it('siempre declara la capacidad de confirmar sin pago', () => {
+    expect(buildBookingOriginPayload({})).toEqual({ clientCapabilities: { feeWaiver: 1 } });
+  });
+
+  it('con el enlace de un profesional, manda el origen y de qué profesional', () => {
+    expect(buildBookingOriginPayload({ restrictedGardenerId: ' prov-1 ' })).toEqual({
+      clientCapabilities: { feeWaiver: 1 },
+      bookingOrigin: 'provider_link',
+      originProviderId: 'prov-1',
+    });
+  });
+
+  it('create_quote lleva el origen del enlace', async () => {
+    invokeMock.mockResolvedValueOnce({ data: { quoteId: 'q-1' }, error: null });
+    await createAuthoritativeQuote({
+      bookingData: { address: 'Calle Mayor 1', serviceIds: ['svc-1'], photos: [], restrictedGardenerId: 'prov-1' } as any,
+      serviceId: 'svc-1',
+      providerId: 'prov-1',
+      selectedDate: '2026-05-20',
+      startTime: '09:00',
+    });
+    const body = invokeMock.mock.calls[invokeMock.mock.calls.length - 1][1].body;
+    expect(body).toMatchObject({ action: 'create_quote', bookingOrigin: 'provider_link', originProviderId: 'prov-1', clientCapabilities: { feeWaiver: 1 } });
   });
 });

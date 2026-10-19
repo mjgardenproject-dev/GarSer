@@ -84,7 +84,7 @@ const MaintenancePlansSection: React.FC<Props> = ({ plans, onPayVisit, onChanged
                       disabled={busyPlanId === plan.id}
                       className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
                     >
-                      {busyPlanId === plan.id && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar y pagar la visita
+                      {busyPlanId === plan.id && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar la visita
                     </button>
                   )}
                 </div>

@@ -254,7 +254,7 @@ describe('reservas sin gastos de gestión (lanzamiento)', () => {
       feeWaived: true,
       feeWaiverReason: 'returning_client',
     });
-    expect(clientAmountsNote(amounts)).toBe('Sin gastos de gestión: el servicio se lo pagas directamente al profesional.');
+    expect(clientAmountsNote(amounts)).toBe('El servicio se lo pagas directamente al profesional.');
     expect(gardenerAmountNote(amounts)).toBe('Íntegro para ti. Tu cliente no paga gastos de gestión.');
   });
 

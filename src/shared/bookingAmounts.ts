@@ -236,7 +236,8 @@ export function feeWaiverReasonText(
  */
 export function clientAmountsNote(amounts: BookingAmounts): string {
   if (amounts.feeWaived) {
-    return 'Sin gastos de gestión: el servicio se lo pagas directamente al profesional.';
+    // La fila «Gastos de gestión: Sin gastos de gestión» ya lo dice; la nota no lo repite.
+    return 'El servicio se lo pagas directamente al profesional.';
   }
   if (!amounts.feeIsKnown) return '';
   const fee = formatEuro(amounts.managementFee);

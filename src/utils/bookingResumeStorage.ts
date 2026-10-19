@@ -880,7 +880,9 @@ export function clearWizardDraftsForFreshStart() {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     });
-  } catch {}
+  } catch {
+    // Almacenamiento no disponible (modo privado estricto): no hay borrador que borrar.
+  }
 }
 
 export function hasWizardResume(options: BookingResumeReadOptions = {}): boolean {

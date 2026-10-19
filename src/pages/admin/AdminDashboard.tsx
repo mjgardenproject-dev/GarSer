@@ -64,7 +64,7 @@ const AdminDashboard: React.FC = () => {
         // Lanzamiento (2026-10): reservas que fueron sin gastos de gestión (cliente del enlace,
         // cliente que repite o visita de un plan), para vigilar el alcance de la exención.
         const feeWaivedBookings = (bookingsData || []).filter(
-          (booking: any) => String(booking.management_fee_source || '').startsWith('waived_'),
+          (booking: { management_fee_source?: string | null }) => String(booking.management_fee_source || '').startsWith('waived_'),
         ).length;
 
         setData({

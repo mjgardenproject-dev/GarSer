@@ -24,7 +24,7 @@ import {
   detailRows,
   sendViaBrevo,
 } from '../_shared/emailBrand.ts';
-import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE, type DetailPair } from '../_shared/bookingEmailDetails.ts';
+import { buildBookingEmailDetails, type DetailPair } from '../_shared/bookingEmailDetails.ts';
 import { isInternalServiceCaller, resolveServiceRoleKey } from '../_shared/functionAuth.ts';
 import { shouldSendGardenerConfirmation } from '../_shared/bookingEmailCopy.ts';
 import { pushForEmail } from '../_shared/pushDelivery.ts';
@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const { booking, client, gardener, clientPairs, gardenerPairs, clientFeeNote } = details;
+      const { booking, client, gardener, clientPairs, gardenerPairs, clientFeeNote, feeWaived, gardenerFeeNote } = details;
       const isPendingAcceptance = booking.status === 'pending';
 
       // Cada audiencia recibe SU bloque de importes: el cliente ve el total de la reserva y lo
@@ -149,7 +149,10 @@ Deno.serve(async (req) => {
           // El cargo es una AUTORIZACION con captura diferida: hasta que el profesional acepta
           // no se cobra nada. Decir "tu pago esta confirmado" y a la vez "no se te cobrara
           // nada" era contradictorio; ahora se nombra el estado real.
-          intro: 'Hemos retenido los gastos de gestión y enviado la solicitud al profesional. Te avisaremos en cuanto la acepte.',
+          intro: feeWaived
+            // Lanzamiento: reserva sin gastos de gestión, no se ha retenido nada.
+            ? 'Hemos enviado la solicitud al profesional. Esta reserva no tiene gastos de gestión. Te avisaremos en cuanto la acepte.'
+            : 'Hemos retenido los gastos de gestión y enviado la solicitud al profesional. Te avisaremos en cuanto la acepte.',
           bodyHtml: detailRows(clientPairs),
           cta: { label: 'Ver mi reserva', url: `${BRAND.site}/bookings` },
           footerNote: clientFeeNote || 'Si el profesional no puede aceptarla, te lo notificaremos y no se te cobrará nada.',
@@ -160,7 +163,7 @@ Deno.serve(async (req) => {
           intro: 'Un cliente ha solicitado una reserva contigo. Revisa el detalle y acéptala o recházala desde tu panel.',
           bodyHtml: detailRows(gardenerPairs),
           cta: { label: 'Revisar solicitud', url: `${BRAND.site}/dashboard` },
-          footerNote: `${GARDENER_AMOUNT_NOTE} Las solicitudes sin respuesta caducan automáticamente: responde cuanto antes.`,
+          footerNote: `${gardenerFeeNote} Las solicitudes sin respuesta caducan automáticamente: responde cuanto antes.`,
         });
       } else {
         await dispatch('client', client, 'Tu reserva en GarSer está confirmada', clientPairs, {
@@ -179,7 +182,7 @@ Deno.serve(async (req) => {
           intro: 'Tienes una nueva reserva confirmada:',
           bodyHtml: detailRows(gardenerPairs),
           cta: { label: 'Gestionar reserva', url: `${BRAND.site}/dashboard` },
-          footerNote: GARDENER_AMOUNT_NOTE,
+          footerNote: gardenerFeeNote,
         });
       }
     }

@@ -100,6 +100,27 @@ function normalizeStripeLineItemQuantity(value: number | string | null | undefin
   return normalized;
 }
 
+/**
+ * ¿Este intento de pago tiene que pasar por Stripe?
+ *
+ * Lanzamiento (2026-10): una reserva sin gastos de gestión (cliente del enlace, cliente que repite,
+ * visita de un plan) se prepara por 0 € y se confirma SIN pasarela. La base de datos solo admite un
+ * intento de 0 € si su presupuesto firmado lleva una exención válida, así que aquí basta con el
+ * importe. Estricto a propósito: un importe que no sea un entero ≥ 0 es un error, nunca «gratis».
+ */
+export function attemptRequiresStripePayment(payableNowAmountCents: unknown): boolean {
+  const cents = Number(payableNowAmountCents);
+  if (!Number.isInteger(cents) || cents < 0) {
+    throw new Error('El intento de pago no tiene un importe autoritativo valido.');
+  }
+  return cents > 0;
+}
+
+/** Identificador del «evento» con el que se confirma un intento sin pago (idempotente por intento). */
+export function buildBookingNoPaymentEventId(attemptId: string): string {
+  return `no_payment:${attemptId}`;
+}
+
 export function buildAuthoritativeBookingStripeLineItems(params: {
   stripeLineItems?: BookingStripeLineItemInput[] | null;
   payableNowAmountCents: number;

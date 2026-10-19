@@ -31,7 +31,7 @@ function serviceLabelOf(row: any): string {
   }
   return String(row?.services?.name || '').trim();
 }
-import { buildBookingEmailDetails, GARDENER_AMOUNT_NOTE } from '../_shared/bookingEmailDetails.ts';
+import { buildBookingEmailDetails } from '../_shared/bookingEmailDetails.ts';
 import { cancellationCopy } from '../_shared/bookingEmailCopy.ts';
 import { invitationEmailCopy } from '../_shared/companyEmailCopy.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
@@ -282,6 +282,9 @@ Deno.serve(async (req) => {
     let counterpartName = data?.counterpartName || '';
     let bookingPairs: Array<[string, string]> = [];
     let bookingFeeNote = '';
+    // Lanzamiento (2026-10): reserva sin gastos de gestión. Las frases sobre gastos «abonados»,
+    // «cobrados» o «devueltos» no aplican y se omiten.
+    let bookingFeeWaived = false;
     let cancellation: { intro: string; footerNote: string } | null = null;
     // H-40: propuesta que solo cambia la duración (mismo precio).
     let durationOnly = false;
@@ -297,6 +300,7 @@ Deno.serve(async (req) => {
       }
 
       const details = await buildBookingEmailDetails(admin, bookingId);
+      bookingFeeWaived = Boolean(details?.feeWaived);
       if (!details) {
         return new Response(JSON.stringify({ error: 'booking_not_found' }), {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -333,7 +337,7 @@ Deno.serve(async (req) => {
         name = details.gardener.name || 'jardinero';
         counterpartName = details.client.name || '';
         bookingPairs = isPriceChange ? details.priceChangeGardenerPairs : details.gardenerPairs;
-        bookingFeeNote = GARDENER_AMOUNT_NOTE;
+        bookingFeeNote = details.gardenerFeeNote;
       } else {
         // El resto informan al cliente de lo que hace el profesional.
         to = details.client.email ?? undefined;
@@ -534,13 +538,20 @@ Deno.serve(async (req) => {
       let pairs: Array<[string, string]>;
       if (type === 'maintenance_visit_proposed') {
         const when = formatBookingDate(v.date, `${String(v.start_hour).padStart(2, '0')}:00:00`, Math.ceil(Number(plan.estimated_hours || 0)) || null);
-        const { data: quoteRow } = await admin.from('booking_quotes').select('expires_at').eq('id', v.quote_id).maybeSingle();
+        const { data: quoteRow } = await admin.from('booking_quotes').select('expires_at, economic_snapshot').eq('id', v.quote_id).maybeSingle();
         const until = quoteRow?.expires_at
           ? new Date(quoteRow.expires_at).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' })
           : 'un día antes';
-        const fee = Number(plan.economic_snapshot?.payableNow || 0);
+        // Lo que se cobra es lo del presupuesto de ESTA visita (con el interruptor del lanzamiento,
+        // sin gastos de gestión), no lo del plan.
+        const visitEconomics = (quoteRow?.economic_snapshot || plan.economic_snapshot || {}) as { payableNow?: number; feeWaiver?: unknown };
+        const visitFeeWaived = Boolean(visitEconomics.feeWaiver);
+        const fee = Number(visitEconomics.payableNow || 0);
         subject = `Tu próxima visita: ${serviceName}, ${when}`;
-        pairs = [['Servicio', serviceName], ['Cuándo', when], ['Con', providerName], ['Precio', euros(plan.total_price)], ['Pagas ahora (gestión)', euros(fee)]];
+        pairs = [
+          ['Servicio', serviceName], ['Cuándo', when], ['Con', providerName], ['Precio', euros(plan.total_price)],
+          visitFeeWaived ? ['Gastos de gestión', 'Sin gastos de gestión'] : ['Pagas ahora (gestión)', euros(fee)],
+        ];
         opts = {
           title: subject,
           heading: `Hola ${first}`,
@@ -1076,7 +1087,9 @@ Deno.serve(async (req) => {
           : `${counterpartName || 'El profesional'} ha propuesto un nuevo precio para tu reserva. Revísalo y decide si lo aceptas; hasta entonces la reserva mantiene el precio actual.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Revisar la propuesta', url: `${BRAND.site}/bookings` },
-        footerNote: 'Los gastos de gestión que ya abonaste no cambian. Si no respondes, la propuesta caduca y la reserva sigue con el precio original.',
+        footerNote: bookingFeeWaived
+          ? 'Si no respondes, la propuesta caduca y la reserva sigue con el precio original.'
+          : 'Los gastos de gestión que ya abonaste no cambian. Si no respondes, la propuesta caduca y la reserva sigue con el precio original.',
       };
     } else if (type === 'booking_price_change_accepted') {
       // H-40: vale para precio, duración o las dos (tras aceptar ya no consta qué cambió).
@@ -1133,7 +1146,7 @@ Deno.serve(async (req) => {
           ? { label: 'Sí, el trabajo se hizo', url: confirmUrl }
           : { label: 'Confirmar en la app', url: `${BRAND.site}/bookings` },
         secondaryCta: { label: 'Ver la reserva en la app', url: `${BRAND.site}/bookings` },
-        footerNote: `Si no nos dices nada antes del ${deadline}, daremos el servicio por completado y los gastos de gestión quedarán cobrados. ¿Algo no fue bien? Abre una incidencia desde la app y lo revisamos.`,
+        footerNote: `Si no nos dices nada antes del ${deadline}, daremos el servicio por completado${bookingFeeWaived ? '' : ' y los gastos de gestión quedarán cobrados'}. ¿Algo no fue bien? Abre una incidencia desde la app y lo revisamos.`,
       };
     } else if (type === 'booking_incident_received') {
       subject = 'Hemos recibido tu incidencia';
@@ -1144,7 +1157,9 @@ Deno.serve(async (req) => {
         intro: 'Hemos recibido lo que nos cuentas y lo estamos revisando. Te escribiremos en cuanto tengamos una respuesta.',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver mi incidencia', url: `${BRAND.site}/bookings` },
-        footerNote: 'Mientras la revisamos, esta reserva no se cerrará ni se cobrará de forma automática.',
+        footerNote: bookingFeeWaived
+          ? 'Mientras la revisamos, esta reserva no se cerrará de forma automática.'
+          : 'Mientras la revisamos, esta reserva no se cerrará ni se cobrará de forma automática.',
       };
     } else if (type === 'booking_incident_resolved') {
       subject = 'Ya hemos revisado tu incidencia';
@@ -1155,7 +1170,9 @@ Deno.serve(async (req) => {
         intro: 'Hemos terminado de revisar tu incidencia. Puedes ver el detalle y lo que hemos decidido en la app.',
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Ver el detalle', url: `${BRAND.site}/bookings` },
-        footerNote: 'Si hemos devuelto los gastos de gestión, tu banco puede tardar entre 3 y 5 días hábiles en reflejarlo.',
+        footerNote: bookingFeeWaived
+          ? 'Si necesitas algo más, escríbenos desde la app.'
+          : 'Si hemos devuelto los gastos de gestión, tu banco puede tardar entre 3 y 5 días hábiles en reflejarlo.',
       };
     } else {
       throw new Error('Invalid email type');

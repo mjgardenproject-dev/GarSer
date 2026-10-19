@@ -13,6 +13,7 @@ import {
   GARDENER_AMOUNT_NOTE,
   clientAmountsNote,
   formatEuro,
+  gardenerAmountNote,
   getBookingAmounts,
 } from '../../../src/shared/bookingAmounts.ts';
 import { formatBookingWhen } from './emailBrand.ts';
@@ -63,6 +64,10 @@ export interface BookingEmailDetails {
   gardenerPairs: DetailPair[];
   /** Aclaracion sobre el estado de los gastos de gestion (retenidos / cobrados / liberados). */
   clientFeeNote: string;
+  /** Lanzamiento (2026-10): la reserva va sin gastos de gestión (cliente propio o visita de plan). */
+  feeWaived: boolean;
+  /** Nota del importe para el JARDINERO (sin mención a los gastos si la reserva no los tiene). */
+  gardenerFeeNote: string;
 }
 
 const BOOKING_COLUMNS =
@@ -141,7 +146,20 @@ export async function buildBookingEmailDetails(
   // Cliente: las dos cifras que necesita para no confundirse. Si no consta una comision
   // fiable (reservas anteriores a la columna) se muestra solo el precio del servicio: es
   // preferible dar menos informacion que dar una cifra inventada.
-  const clientPairs: DetailPair[] = amounts.feeIsKnown
+  const clientPairs: DetailPair[] = amounts.feeWaived
+    ? [
+        // Lanzamiento: sin gastos de gestión, el total es el precio del servicio y se dice.
+        ...base,
+        [BOOKING_AMOUNT_LABELS.clientTotal, formatEuro(amounts.clientTotal)],
+        [BOOKING_AMOUNT_LABELS.managementFee, BOOKING_AMOUNT_LABELS.managementFeeWaived],
+        [
+          booking.status === 'completed'
+            ? BOOKING_AMOUNT_LABELS.paidToGardener
+            : BOOKING_AMOUNT_LABELS.pendingToGardener,
+          formatEuro(amounts.pendingToGardener),
+        ],
+      ]
+    : amounts.feeIsKnown
     ? [
         ...base,
         [BOOKING_AMOUNT_LABELS.clientTotal, formatEuro(amounts.clientTotal)],
@@ -208,6 +226,8 @@ export async function buildBookingEmailDetails(
     priceChangeClientPairs,
     priceChangeGardenerPairs,
     clientFeeNote: clientAmountsNote(amounts),
+    feeWaived: amounts.feeWaived,
+    gardenerFeeNote: gardenerAmountNote(amounts),
   };
 }
 

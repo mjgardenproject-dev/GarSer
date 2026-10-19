@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  applyManagementFeeWaiver,
   buildAuthoritativeBookingQuote,
   type BookingAvailabilityCalendarDay,
   type BookingQuoteAvailability,
@@ -25,6 +26,7 @@ import {
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
 import { validateManualSerializableInput } from '../../../src/shared/manualEntry/manualEntryValidation.ts';
+import { isManagementFeeWaiverReason, type ManagementFeeWaiverReason } from '../../../src/shared/bookingAmounts.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -93,6 +95,48 @@ interface AuthorityPayload {
    * primero tiene que ser `serviceId` / `bookingInput`. Sin esto (o con uno), lo de siempre.
    */
   items?: Array<{ serviceId?: string; bookingInput?: SerializableBookingData }>;
+  /**
+   * Lanzamiento (2026-10): la reserva empezó en el enlace del profesional `originProviderId`
+   * (/reservar/<id>). Lo declara la web; solo cuenta para ese mismo profesional.
+   */
+  bookingOrigin?: string;
+  originProviderId?: string;
+  /**
+   * Qué sabe hacer la web que llama. `feeWaiver: 1` = sabe confirmar una reserva sin pago. Una web
+   * antigua (app instalada sin actualizar) no lo manda y nunca recibe un presupuesto sin gastos.
+   */
+  clientCapabilities?: { feeWaiver?: number };
+}
+
+const FEE_WAIVER_CAPABILITY = 1;
+
+/**
+ * Lanzamiento (2026-10): ¿este presupuesto va SIN gastos de gestión, y por qué? La regla vive en
+ * SQL (`management_fee_waiver_reason`: interruptor del admin + enlace del profesional o cliente con
+ * una reserva completada con él). Ante cualquier fallo se cobra la comisión, como siempre: nunca se
+ * exime por error.
+ */
+async function resolveFeeWaiverReason(
+  admin: ReturnType<typeof createClient>,
+  params: { payload: AuthorityPayload; clientId: string | null; providerId: string },
+): Promise<ManagementFeeWaiverReason | null> {
+  if (Number(params.payload.clientCapabilities?.feeWaiver || 0) < FEE_WAIVER_CAPABILITY) return null;
+  const claimedOrigin = params.payload.bookingOrigin === 'provider_link'
+    && String(params.payload.originProviderId || '').trim() === params.providerId
+    ? 'provider_link'
+    : null;
+  // Sin cliente (paso «Profesionales», sin sesión) solo puede contar el enlace.
+  if (!params.clientId && !claimedOrigin) return null;
+  const { data, error } = await admin.rpc('management_fee_waiver_reason', {
+    p_client_id: params.clientId,
+    p_provider_id: params.providerId,
+    p_claimed_origin: claimedOrigin,
+  });
+  if (error) {
+    console.error('management_fee_waiver_reason falló: se cobra la comisión', error);
+    return null;
+  }
+  return isManagementFeeWaiverReason(data) ? data : null;
 }
 
 // F8: un servicio más de la visita, con la tarifa de un profesional para él.
@@ -722,7 +766,12 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        quotes[providerId] = evaluation.quote;
+        // Lanzamiento: por el enlace del profesional, su tarjeta ya sale sin gastos de gestión (el
+        // cliente que repite se reconoce al firmar, con sesión).
+        const waiverReason = await resolveFeeWaiverReason(admin, { payload, clientId: null, providerId });
+        quotes[providerId] = waiverReason
+          ? { ...evaluation.quote, economics: applyManagementFeeWaiver(evaluation.quote.economics, waiverReason) }
+          : evaluation.quote;
         eligibleProviderIds.push(providerId);
         earliestByProvider[providerId] = {
           date: evaluation.earliestSlot.date,
@@ -953,6 +1002,13 @@ Deno.serve(async (req: Request) => {
         earliestSlot: validHours.length > 0 ? plannedSlot(validHours[0]) : null,
       });
 
+      // Lanzamiento: la exención se aplica ANTES de firmar. La firma cubre la economía, y todo lo que
+      // viene después (intento de pago, reserva, emails) lee esta economía firmada.
+      const feeWaiverReason = await resolveFeeWaiverReason(admin, { payload, clientId: user.id, providerId });
+      const economics = feeWaiverReason
+        ? applyManagementFeeWaiver(evaluation.quote.economics, feeWaiverReason)
+        : evaluation.quote.economics;
+
       const ttlMinutes = Math.max(15, Math.min(24 * 60, Number(payload.ttlMinutes || 120)));
       const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
       const signature = await sha256(JSON.stringify({
@@ -970,7 +1026,7 @@ Deno.serve(async (req: Request) => {
           estimatedHours: evaluation.quote.estimatedHours,
           breakdown: evaluation.quote.breakdown,
           warnings: evaluation.quote.warnings,
-          economics: evaluation.quote.economics,
+          economics,
         },
       }));
 
@@ -997,7 +1053,7 @@ Deno.serve(async (req: Request) => {
         breakdown: evaluation.quote.breakdown,
         warnings: evaluation.quote.warnings,
         metadata: evaluation.quote.metadata,
-        economics: evaluation.quote.economics,
+        economics,
         eligibility: evaluation.quote.eligibility,
         availability,
         providerId,
@@ -1023,7 +1079,7 @@ Deno.serve(async (req: Request) => {
           pricing_snapshot: snapshot,
           items: quoteItems,
           availability_snapshot: availability,
-          economic_snapshot: evaluation.quote.economics,
+          economic_snapshot: economics,
           total_price: evaluation.quote.totalPrice,
           estimated_hours: evaluation.quote.estimatedHours,
           status: 'active',
@@ -1045,6 +1101,7 @@ Deno.serve(async (req: Request) => {
 
       return new Response(JSON.stringify({
         ...evaluation.quote,
+        economics,
         availability,
         quoteId: data.id,
         signature,

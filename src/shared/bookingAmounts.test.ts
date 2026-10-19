@@ -4,10 +4,15 @@ import {
   BOOKING_MANAGEMENT_FEE_RATE,
   cancellationConfirmMessage,
   clientAmountsNote,
+  feeWaiverReasonFromSource,
+  feeWaiverReasonText,
   formatEuro,
+  gardenerAmountNote,
+  GARDENER_AMOUNT_NOTE,
   getBookingAmounts,
   getCancellationRefundPreview,
   getQuoteAmounts,
+  isManagementFeeWaiverReason,
 } from './bookingAmounts';
 
 const euro = formatEuro;
@@ -29,6 +34,8 @@ describe('getBookingAmounts', () => {
       gardenerReceives: 158,
       feeIsKnown: true,
       feeState: 'charged',
+      feeWaived: false,
+      feeWaiverReason: null,
     });
   });
 
@@ -214,5 +221,79 @@ describe('formatEuro', () => {
     expect(euro(null)).toBe('0,00 €');
     expect(euro(undefined)).toBe('0,00 €');
     expect(euro('abc')).toBe('0,00 €');
+  });
+});
+
+// Lanzamiento (2026-10): sin gastos de gestión para los clientes propios y las visitas de los planes.
+describe('reservas sin gastos de gestión (lanzamiento)', () => {
+  it('reconoce solo los tres motivos válidos', () => {
+    expect(isManagementFeeWaiverReason('provider_link')).toBe(true);
+    expect(isManagementFeeWaiverReason('returning_client')).toBe(true);
+    expect(isManagementFeeWaiverReason('maintenance_plan')).toBe(true);
+    expect(isManagementFeeWaiverReason('waived')).toBe(false);
+    expect(isManagementFeeWaiverReason(undefined)).toBe(false);
+    expect(feeWaiverReasonFromSource('waived_provider_link')).toBe('provider_link');
+    expect(feeWaiverReasonFromSource('waived_otra_cosa')).toBeNull();
+    expect(feeWaiverReasonFromSource('payment_attempt')).toBeNull();
+  });
+
+  it('una reserva exenta no muestra «0,00 € de gastos de gestión»: la marca como exenta', () => {
+    const amounts = getBookingAmounts({
+      total_price: 158,
+      management_fee: 0,
+      management_fee_source: 'waived_returning_client',
+      status: 'confirmed',
+    });
+    expect(amounts).toMatchObject({
+      servicePrice: 158,
+      managementFee: 0,
+      clientTotal: 158,
+      pendingToGardener: 158,
+      gardenerReceives: 158,
+      feeIsKnown: false,
+      feeWaived: true,
+      feeWaiverReason: 'returning_client',
+    });
+    expect(clientAmountsNote(amounts)).toBe('Sin gastos de gestión: el servicio se lo pagas directamente al profesional.');
+    expect(gardenerAmountNote(amounts)).toBe('Íntegro para ti. Tu cliente no paga gastos de gestión.');
+  });
+
+  it('una reserva con gastos no cambia: misma nota del jardinero de siempre', () => {
+    const amounts = getBookingAmounts({ total_price: 158, management_fee: 19.75, management_fee_source: 'payment_attempt', status: 'pending' });
+    expect(amounts.feeWaived).toBe(false);
+    expect(gardenerAmountNote(amounts)).toBe(GARDENER_AMOUNT_NOTE);
+  });
+
+  it('una comisión antigua desconocida NO se confunde con una exención', () => {
+    const amounts = getBookingAmounts({ total_price: 158, management_fee: 0, management_fee_source: 'unknown', status: 'confirmed' });
+    expect(amounts.feeWaived).toBe(false);
+    expect(amounts.feeIsKnown).toBe(false);
+    expect(clientAmountsNote(amounts)).toBe('');
+  });
+
+  it('el presupuesto firmado sin gastos da importes sin comisión', () => {
+    const amounts = getQuoteAmounts({ serviceGrossTotal: 158, managementFee: 0, feeWaiver: { reason: 'provider_link' } });
+    expect(amounts).toMatchObject({ managementFee: 0, clientTotal: 158, feeIsKnown: false, feeWaived: true, feeWaiverReason: 'provider_link' });
+  });
+
+  it('una exención con motivo desconocido no se aplica (se queda la comisión)', () => {
+    const amounts = getQuoteAmounts({ serviceGrossTotal: 158, managementFee: 19.75, feeWaiver: { reason: 'por_la_cara' } });
+    expect(amounts).toMatchObject({ managementFee: 19.75, clientTotal: 177.75, feeWaived: false });
+  });
+
+  it('cancelar una reserva exenta no promete devolver nada', () => {
+    const preview = getCancellationRefundPreview(
+      { total_price: 158, management_fee: 0, management_fee_source: 'waived_provider_link', status: 'confirmed' },
+      '2030-01-10T10:00:00',
+      new Date('2030-01-01T10:00:00'),
+    );
+    expect(cancellationConfirmMessage(preview)).toBe('Se cancelará la reserva y se liberará el hueco del profesional.');
+  });
+
+  it('explica el motivo al cliente, con o sin el nombre del profesional', () => {
+    expect(feeWaiverReasonText('provider_link', 'Miguel')).toBe('Reservas con Miguel desde su enlace: sin gastos de gestión.');
+    expect(feeWaiverReasonText('returning_client', '')).toBe('Ya has trabajado con este profesional: sin gastos de gestión.');
+    expect(feeWaiverReasonText('maintenance_plan')).toBe('Visita de tu plan de mantenimiento: sin gastos de gestión.');
+    expect(feeWaiverReasonText(null)).toBe('');
   });
 });

@@ -32,13 +32,33 @@ export const BOOKING_MANAGEMENT_FEE_RATE = 0.125;
  */
 export type BookingFeeState = 'held' | 'charged' | 'void';
 
+/**
+ * Lanzamiento (2026-10): por qué una reserva va SIN gastos de gestión. Lo decide el servidor al
+ * firmar el presupuesto (`management_fee_waiver_reason` en SQL) y queda en la economía firmada
+ * (`feeWaiver.reason`) y en la reserva (`management_fee_source = 'waived_<motivo>'`).
+ */
+export const MANAGEMENT_FEE_WAIVER_REASONS = ['provider_link', 'returning_client', 'maintenance_plan'] as const;
+export type ManagementFeeWaiverReason = (typeof MANAGEMENT_FEE_WAIVER_REASONS)[number];
+
+export const isManagementFeeWaiverReason = (value: unknown): value is ManagementFeeWaiverReason =>
+  typeof value === 'string' && (MANAGEMENT_FEE_WAIVER_REASONS as readonly string[]).includes(value);
+
 /** Procedencia del importe de comision, para poder degradar honestamente en filas antiguas. */
 export type BookingFeeSource =
   | 'payment_attempt'
   | 'pricing_context_cents'
   | 'quote_snapshot_payable_now'
   | 'quote_snapshot_management_fee'
-  | 'unknown';
+  | 'unknown'
+  | `waived_${ManagementFeeWaiverReason}`;
+
+/** El motivo de la exención a partir de `management_fee_source`, o null si la reserva no va exenta. */
+export function feeWaiverReasonFromSource(source?: string | null): ManagementFeeWaiverReason | null {
+  const value = String(source || '');
+  if (!value.startsWith('waived_')) return null;
+  const reason = value.slice('waived_'.length);
+  return isManagementFeeWaiverReason(reason) ? reason : null;
+}
 
 export interface BookingAmounts {
   /** Precio del servicio. Lo cobra el jardinero integro. */
@@ -58,6 +78,14 @@ export interface BookingAmounts {
    */
   feeIsKnown: boolean;
   feeState: BookingFeeState;
+  /**
+   * Lanzamiento: la reserva va SIN gastos de gestión (cliente del enlace, cliente que repite o
+   * visita de un plan). En ese caso `feeIsKnown` es false y `managementFee` 0, igual que si no
+   * constara comisión, para que ninguna pantalla pinte «0,00 € de gastos de gestión»; las que
+   * quieran decirlo usan este campo y `feeWaiverReason`.
+   */
+  feeWaived: boolean;
+  feeWaiverReason: ManagementFeeWaiverReason | null;
 }
 
 /** Fila de `bookings` tal y como la devuelve PostgREST (numeric puede llegar como string). */
@@ -95,7 +123,8 @@ export function getBookingAmounts(row: BookingAmountsRow | null | undefined): Bo
   const servicePrice = toAmount(row?.total_price);
   const managementFee = toAmount(row?.management_fee);
   const sourceIsReliable = String(row?.management_fee_source || 'unknown') !== 'unknown';
-  const feeIsKnown = sourceIsReliable && managementFee > 0;
+  const feeWaiverReason = feeWaiverReasonFromSource(row?.management_fee_source);
+  const feeIsKnown = sourceIsReliable && !feeWaiverReason && managementFee > 0;
 
   return {
     servicePrice,
@@ -105,6 +134,8 @@ export function getBookingAmounts(row: BookingAmountsRow | null | undefined): Bo
     gardenerReceives: servicePrice,
     feeIsKnown,
     feeState: resolveFeeState(row?.status),
+    feeWaived: feeWaiverReason !== null,
+    feeWaiverReason,
   };
 }
 
@@ -113,11 +144,16 @@ export function getBookingAmounts(row: BookingAmountsRow | null | undefined): Bo
  * `getBookingAmounts` para que el checkout, la tarjeta y el email no puedan divergir.
  */
 export function getQuoteAmounts(
-  economics: { serviceGrossTotal: number; managementFee: number } | null | undefined,
+  economics:
+    | { serviceGrossTotal: number; managementFee: number; feeWaiver?: { reason?: unknown } | null }
+    | null
+    | undefined,
 ): BookingAmounts | null {
   if (!economics) return null;
   const servicePrice = toAmount(economics.serviceGrossTotal);
-  const managementFee = toAmount(economics.managementFee);
+  const waiverReason = economics.feeWaiver?.reason;
+  const feeWaiverReason = isManagementFeeWaiverReason(waiverReason) ? waiverReason : null;
+  const managementFee = feeWaiverReason ? 0 : toAmount(economics.managementFee);
 
   return {
     servicePrice,
@@ -128,6 +164,8 @@ export function getQuoteAmounts(
     feeIsKnown: managementFee > 0,
     // Antes de reservar el cargo todavia no existe: se retendra al confirmar el pago.
     feeState: 'held',
+    feeWaived: feeWaiverReason !== null,
+    feeWaiverReason,
   };
 }
 
@@ -164,13 +202,42 @@ export const BOOKING_AMOUNT_LABELS = {
   managementFee: 'Gastos de gestión',
   servicePrice: 'Precio del servicio',
   gardenerReceives: 'Cobrarás',
+  managementFeeWaived: 'Sin gastos de gestión',
 } as const;
+
+/**
+ * Por qué no hay gastos de gestión, dicho al CLIENTE. `providerName` es opcional: sin él la frase
+ * sigue siendo correcta.
+ */
+export function feeWaiverReasonText(
+  reason: ManagementFeeWaiverReason | null | undefined,
+  providerName?: string | null,
+): string {
+  const who = String(providerName || '').trim();
+  switch (reason) {
+    case 'provider_link':
+      return who
+        ? `Reservas con ${who} desde su enlace: sin gastos de gestión.`
+        : 'Reservas desde el enlace de tu profesional: sin gastos de gestión.';
+    case 'returning_client':
+      return who
+        ? `Ya has trabajado con ${who}: sin gastos de gestión.`
+        : 'Ya has trabajado con este profesional: sin gastos de gestión.';
+    case 'maintenance_plan':
+      return 'Visita de tu plan de mantenimiento: sin gastos de gestión.';
+    default:
+      return '';
+  }
+}
 
 /**
  * Nota que acompaña a las cifras del cliente. Explica donde fueron los gastos de gestion,
  * que es exactamente la duda que genera el desglose sin contexto.
  */
 export function clientAmountsNote(amounts: BookingAmounts): string {
+  if (amounts.feeWaived) {
+    return 'Sin gastos de gestión: el servicio se lo pagas directamente al profesional.';
+  }
   if (!amounts.feeIsKnown) return '';
   const fee = formatEuro(amounts.managementFee);
   switch (amounts.feeState) {
@@ -186,6 +253,11 @@ export function clientAmountsNote(amounts: BookingAmounts): string {
 /** Nota fija para el jardinero: su importe es integro. */
 export const GARDENER_AMOUNT_NOTE =
   'Íntegro para ti. GarSer cobra sus gastos de gestión aparte, al cliente.';
+
+/** Nota del jardinero según la reserva: si va sin gastos de gestión, no se le habla de ellos. */
+export function gardenerAmountNote(amounts: Pick<BookingAmounts, 'feeWaived'>): string {
+  return amounts.feeWaived ? 'Íntegro para ti. Tu cliente no paga gastos de gestión.' : GARDENER_AMOUNT_NOTE;
+}
 
 /* ------------------------------------------------------------------------------------- *
  * Política de reembolso al cancelar (lado CLIENTE).

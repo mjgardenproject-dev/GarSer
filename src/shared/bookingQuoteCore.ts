@@ -12,7 +12,7 @@ import { HEDGE_MAX_PLAUSIBLE_LENGTH_M } from '../domain/hedgeBusinessRules.ts';
 import type { PhytosanitaryYields } from '../types/index.ts';
 import type { TreePruningServiceConfig } from '../types/treePruning.ts';
 import { getPrecioPorHora, getPricingMethod } from '../utils/hourlyPricing.ts';
-import { BOOKING_MANAGEMENT_FEE_RATE } from './bookingAmounts.ts';
+import { BOOKING_MANAGEMENT_FEE_RATE, type ManagementFeeWaiverReason } from './bookingAmounts.ts';
 
 export interface BookingQuoteLine {
   desc: string;
@@ -121,6 +121,15 @@ export interface BookingQuoteEconomicBreakdown {
   payableLater: number;
   lines: BookingQuoteEconomicLine[];
   stripeLineItems: BookingStripeLineItem[];
+  /**
+   * Lanzamiento (2026-10): presente cuando este presupuesto va SIN gastos de gestión. Lo pone el
+   * servidor al firmar (ver `applyManagementFeeWaiver`). `waivedFee` es la comisión perdonada, para
+   * poder deshacer la exención (los planes guardan siempre la economía completa).
+   */
+  feeWaiver?: {
+    reason: ManagementFeeWaiverReason;
+    waivedFee: number;
+  };
 }
 
 
@@ -641,6 +650,30 @@ const buildQuoteEconomics = (
       : [],
   };
 };
+
+/**
+ * Quita los gastos de gestión de una economía ya calculada: comisión y pago ahora a 0, sin línea
+ * de comisión ni cargo de Stripe, y `feeWaiver` con el motivo y la comisión perdonada.
+ *
+ * Es el espejo EXACTO de `public.waive_quote_economics` (migración 20261019120000): la misma forma,
+ * campo a campo, porque la comprobación de las visitas de los planes compara las dos versiones en
+ * SQL. Idempotente: si ya iba exenta, conserva la comisión perdonada original.
+ * Solo la usa el servidor (booking-authority) al firmar el presupuesto.
+ */
+export const applyManagementFeeWaiver = (
+  economics: BookingQuoteEconomicBreakdown,
+  reason: ManagementFeeWaiverReason,
+): BookingQuoteEconomicBreakdown => ({
+  ...economics,
+  managementFee: 0,
+  payableNow: 0,
+  stripeLineItems: [],
+  lines: economics.lines.filter((line) => line.code !== 'management_fee'),
+  feeWaiver: {
+    reason,
+    waivedFee: economics.feeWaiver?.waivedFee ?? economics.managementFee,
+  },
+});
 
 const getPalmBaseUnitPrice = (config: any, group: Pick<PalmPricingGroup, 'species' | 'height'>): number => {
   const precioPorHora = getPrecioPorHora(config);

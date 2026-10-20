@@ -139,6 +139,25 @@ async function resolveFeeWaiverReason(
   return isManagementFeeWaiverReason(data) ? data : null;
 }
 
+/**
+ * Lanzamiento (2026-10): quién mira la vista previa («Profesionales», calendario). Con sesión, el
+ * cliente que repite ya ve «Sin gastos de gestión» ahí, igual que se firmará después. Sin sesión
+ * (o una web que no sabe reservar sin pago), nadie: solo cuenta el enlace del profesional.
+ */
+async function resolvePreviewClientId(
+  admin: ReturnType<typeof createClient>,
+  req: Request,
+  payload: AuthorityPayload,
+): Promise<string | null> {
+  if (Number(payload.clientCapabilities?.feeWaiver || 0) < FEE_WAIVER_CAPABILITY) return null;
+  return (await resolveUser(admin, req))?.id ?? null;
+}
+
+const withFeeWaiver = <T extends { economics: QuotePreview['economics'] }>(
+  quote: T,
+  reason: ManagementFeeWaiverReason | null,
+): T => (reason ? { ...quote, economics: applyManagementFeeWaiver(quote.economics, reason) } : quote);
+
 // F8: un servicio más de la visita, con la tarifa de un profesional para él.
 type ExtraService = { serviceId: string; serviceName?: string; bookingInput: SerializableBookingData; priceRow?: PriceRow };
 
@@ -733,6 +752,7 @@ Deno.serve(async (req: Request) => {
       });
       const planning = await fetchProviderPlanning(admin, providerIds);
       const noticeSettings = await fetchMinNoticeSettings(admin, providerIds);
+      const previewClientId = await resolvePreviewClientId(admin, req, payload);
       const nowMs = Date.now();
 
       const quotes: Record<string, QuotePreview> = {};
@@ -766,18 +786,21 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
-        // Lanzamiento: por el enlace del profesional, su tarjeta ya sale sin gastos de gestión (el
-        // cliente que repite se reconoce al firmar, con sesión).
-        const waiverReason = await resolveFeeWaiverReason(admin, { payload, clientId: null, providerId });
-        quotes[providerId] = waiverReason
-          ? { ...evaluation.quote, economics: applyManagementFeeWaiver(evaluation.quote.economics, waiverReason) }
-          : evaluation.quote;
+        quotes[providerId] = evaluation.quote;
         eligibleProviderIds.push(providerId);
         earliestByProvider[providerId] = {
           date: evaluation.earliestSlot.date,
           startHour: evaluation.earliestSlot.startHour,
         };
       }
+
+      // Lanzamiento: cada tarjeta sale como se firmará. Sin gastos de gestión por el enlace del
+      // profesional o, con sesión, por ser cliente que repite con él.
+      const waiverReasons = await Promise.all(eligibleProviderIds.map((providerId) =>
+        resolveFeeWaiverReason(admin, { payload, clientId: previewClientId, providerId })));
+      eligibleProviderIds.forEach((providerId, index) => {
+        quotes[providerId] = withFeeWaiver(quotes[providerId], waiverReasons[index]);
+      });
 
       return new Response(JSON.stringify({ quotes, earliestByProvider, eligibleProviderIds, exclusions }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -836,8 +859,13 @@ Deno.serve(async (req: Request) => {
         if (plan) slotPlans[hour] = buildPlannedSlot(date, hour, plan);
       });
 
+      // Lanzamiento: este presupuesto sustituye al de la tarjeta; sale igual que se firmará.
+      const waiverReason = await resolveFeeWaiverReason(admin, {
+        payload, clientId: await resolvePreviewClientId(admin, req, payload), providerId,
+      });
+
       return new Response(JSON.stringify({
-        quote: evaluation.quote,
+        quote: withFeeWaiver(evaluation.quote, waiverReason),
         validHours: evaluation.validHoursForRequestedDate,
         slotPlans,
       }), {
@@ -915,9 +943,14 @@ Deno.serve(async (req: Request) => {
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
 
+      // Lanzamiento: este presupuesto sustituye al de la tarjeta; sale igual que se firmará.
+      const waiverReason = await resolveFeeWaiverReason(admin, {
+        payload, clientId: await resolvePreviewClientId(admin, req, payload), providerId,
+      });
+
       return new Response(JSON.stringify({
         quote: {
-          ...evaluation.quote,
+          ...withFeeWaiver(evaluation.quote, waiverReason),
           availability: buildAvailabilityContract({
             requestedDate: monthDate,
             windowEndDate: end,

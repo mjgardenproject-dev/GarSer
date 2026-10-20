@@ -1207,10 +1207,18 @@ Rellena esto antes de empezar y ten la tabla a mano:
   gastos de gestión.» Acepta: ✅ la reserva queda confirmada; en Stripe ✅ nada que capturar.
 - [ ] **24.7 — Cliente nuevo desde garser.es sigue pagando.** Con otra cuenta que no haya completado
   nada con ese jardinero, reserva desde garser.es: ✅ con gastos de gestión, como en 24.2.
-- [ ] **24.8 — Cliente que repite.** Con una cuenta que ya tenga una reserva **completada** con ese
-  jardinero, reserva desde garser.es (sin el enlace): en «Profesionales» ✅ todavía sale con gastos
-  (aún no hay sesión); en el resumen, tras iniciar sesión, ✅ «Ya has trabajado con <nombre>: sin
-  gastos de gestión» y «Confirmar reserva».
+- [ ] **24.8 — Cliente que repite, CON sesión desde el principio.** Con una cuenta que ya tenga una
+  reserva **completada** con ese jardinero, inicia sesión y reserva desde garser.es (sin el enlace).
+  Fallo de producción del 2026-10-20 (veía 12,50 € hasta que se abría Stripe):
+  - en «Profesionales» ✅ «Sin gastos de gestión · X € al profesional»;
+  - al elegir día y hora ✅ la tarjeta sigue igual (❌ «Pagas hoy … de gastos de gestión»);
+  - en el resumen ✅ «Ya has trabajado con <nombre>: sin gastos de gestión», pie «Sin gastos de
+    gestión · No pagas nada online» y **«Confirmar reserva»**;
+  - al pulsar ✅ NO se abre la hoja «Pago seguro» ni sale el formulario de Stripe: directo a
+    «Reserva enviada». En el panel de Stripe ✅ ningún pago nuevo.
+- [ ] **24.8b — Cliente que repite, SIN sesión hasta el resumen.** Igual que 24.8, pero sin sesión:
+  en «Profesionales» ✅ todavía sale con gastos (no se le puede reconocer); en el resumen, al
+  iniciar sesión, ✅ cambia solo a «Sin gastos de gestión» y «Confirmar reserva» antes de pulsar.
 - [ ] **24.9 — «Reservar» limpia el borrador del enlace.** Con sesión iniciada, entra por un enlace,
   avanza hasta «Servicios» y vuelve a garser.es → «RESERVAR»: ✅ empieza de cero (sin «Reserva con
   <nombre>»), y una reserva normal ✅ lleva gastos de gestión (si el cliente no repite).
@@ -1228,7 +1236,7 @@ Rellena esto antes de empezar y ten la tabla a mano:
   un presupuesto NUEVO: ✅ vuelve a llevar gastos de gestión. Las reservas ya hechas sin gastos ✅ no
   cambian. Vuelve a encenderlo al terminar.
 
-> En local esto mismo lo comprueba `node scripts/fee-waiver/verify-fee-waiver.mjs` (22 escenarios,
+> En local esto mismo lo comprueba `node scripts/fee-waiver/verify-fee-waiver.mjs` (29 escenarios,
 > con Stripe en modo test) y `supabase/tests/fee_waiver.test.sql`.
 
 ## Criterio de GO definitivo

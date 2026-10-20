@@ -16,6 +16,7 @@
 //   G  cancelar una reserva exenta → sin Stripe
 //   H  cambio de precio en una reserva exenta → sin Stripe
 //   I  doble envío → una sola reserva
+//   P  vista previa («Profesionales» y calendario): sale como se firmará (con sesión, quien repite)
 //
 // Deja el interruptor como estaba y borra todo lo que crea.
 
@@ -263,6 +264,31 @@ async function main() {
       } else {
         record('F0', 'Crear un plan desde la reserva completada', false, JSON.stringify(plan.body).slice(0, 160));
       }
+
+      // ── P · vista previa («Profesionales» y calendario) igual que lo que se firmará ──────────
+      // Fallo de producción (2026-10-20): con sesión, el cliente que repite veía los gastos en
+      // «Profesionales», en el calendario y en el resumen; solo el presupuesto firmado los quitaba.
+      const reason = (econ) => (econ?.managementFee === 0 && econ?.payableNow === 0 ? econ?.feeWaiver?.reason : null);
+      const base = { serviceId: LAWN, bookingInput: INPUT };
+      const pProv = await authority({ action: 'preview_providers', ...base, providerIds: [PROVIDER_ID], selectedDate: date, ...CAPS }, client.token);
+      record('P1', 'Con sesión, «Profesionales» ya sale sin gastos para el cliente que repite', reason(pProv.body?.quotes?.[PROVIDER_ID]?.economics) === 'returning_client');
+      const pMonth = await authority({ action: 'month_days', ...base, providerId: PROVIDER_ID, monthDate: date, ...CAPS }, client.token);
+      record('P3', 'Con sesión, los días del calendario salen sin gastos', reason(pMonth.body?.quote?.economics) === 'returning_client');
+      // El día de prueba ya está lleno con las reservas de arriba: las horas, de otro día libre.
+      const freeDay = (pMonth.body?.days ?? []).find((d) => d.count > 0 && d.date !== date)?.date ?? date;
+      const pHours = await authority({ action: 'valid_hours', ...base, providerId: PROVIDER_ID, date: freeDay, ...CAPS }, client.token);
+      record('P2', 'Con sesión, las horas del calendario salen sin gastos', reason(pHours.body?.quote?.economics) === 'returning_client', `día ${freeDay}`);
+      const pAnon = await authority({ action: 'preview_providers', ...base, providerIds: [PROVIDER_ID], selectedDate: date, ...CAPS });
+      record('P4', 'Sin sesión no se le puede reconocer: «Profesionales» lleva gastos', pAnon.body?.quotes?.[PROVIDER_ID]?.economics?.managementFee > 0);
+      const pOld = await authority({ action: 'valid_hours', ...base, providerId: PROVIDER_ID, date: freeDay }, client.token);
+      record('P5', 'Web antigua (sin la capacidad), con sesión: el calendario lleva gastos', pOld.body?.quote?.economics?.managementFee > 0);
+      const pLink = await authority({ action: 'valid_hours', ...base, providerId: PROVIDER_ID, date: freeDay, ...CAPS, ...LINK });
+      record('P6', 'Por el enlace, sin sesión: el calendario sale sin gastos (no pisa la tarjeta)', reason(pLink.body?.quote?.economics) === 'provider_link');
+      setFlag(false);
+      const pOff = await authority({ action: 'valid_hours', ...base, providerId: PROVIDER_ID, date: freeDay, ...CAPS }, client.token);
+      const pOffProv = await authority({ action: 'preview_providers', ...base, providerIds: [PROVIDER_ID], selectedDate: date, ...CAPS }, client.token);
+      record('P7', 'Interruptor apagado: el cliente que repite ve gastos en «Profesionales» y calendario',
+        pOff.body?.quote?.economics?.managementFee > 0 && pOffProv.body?.quotes?.[PROVIDER_ID]?.economics?.managementFee > 0);
     }
   } finally {
     cleanup(flagBefore);

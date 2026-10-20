@@ -642,15 +642,26 @@ const ConfirmationPage: React.FC = () => {
         return false;
       }
 
+      const shownFeeWaived = feeWaivedRef.current;
       const currentQuoteId = String(bookingData.quoteId || '').trim();
-      const authoritativeQuote = (
+      const synced = (
         !options?.attemptId &&
         authoritativeSnapshotReady &&
         !quoteExpired &&
         currentQuoteId
       )
-        ? { quoteId: currentQuoteId }
-        : (await syncAuthoritativeQuote()).authoritativeQuote;
+        ? null
+        : await syncAuthoritativeQuote();
+      const authoritativeQuote = synced ? synced.authoritativeQuote : { quoteId: currentQuoteId };
+      // Lanzamiento (2026-10): manda el presupuesto firmado, no lo que enseñaba el resumen. Sin gastos
+      // de gestión no hay hoja de pago (la reserva se crea al preparar); con gastos, se abre.
+      const signedFeeWaived = synced
+        ? Boolean(getQuoteAmounts(synced.authoritativeQuote.economics)?.feeWaived)
+        : shownFeeWaived;
+      setIsPaymentSheetOpen(!signedFeeWaived);
+      if (shownFeeWaived && !signedFeeWaived) {
+        toast('Esta reserva lleva gastos de gestión. Revisa el importe antes de pagar.');
+      }
 
       const payment = await prepareBookingPayment({
         quoteId: options?.attemptId ? undefined : authoritativeQuote.quoteId || '',
@@ -736,6 +747,38 @@ const ConfirmationPage: React.FC = () => {
       setIsRefreshingQuote(false);
     }
   };
+
+  // Lanzamiento (2026-10): con sesión, el resumen enseña el presupuesto FIRMADO (el que se cobrará),
+  // no la vista previa. El cliente que repite solo se reconoce con sesión: si la acaba de iniciar,
+  // aquí ve «Sin gastos de gestión» antes de pulsar. Si falla, no pasa nada: al pulsar se firma
+  // igualmente y ahí se enseña el error.
+  const backgroundQuoteKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || !authoritativeSnapshotReady || bookingData.quoteId || bookingData.maintenanceVisitId) return;
+    if (paymentAttempt || paymentReturnRequested || isPreparingPayment || isRefreshingQuote) return;
+    const key = [user.id, bookingData.providerId, selectedQuoteSlot?.date, selectedQuoteSlot?.startTime].join('|');
+    if (backgroundQuoteKeyRef.current === key) return;
+    backgroundQuoteKeyRef.current = key;
+    setIsRefreshingQuote(true);
+    syncAuthoritativeQuote()
+      .catch((error) => {
+        console.warn('No se pudo firmar el presupuesto al abrir el resumen:', error instanceof Error ? error.message : error);
+      })
+      .finally(() => setIsRefreshingQuote(false));
+    // syncAuthoritativeQuote se rehace en cada render; la clave de arriba evita repetir la firma.
+  }, [
+    authoritativeSnapshotReady,
+    bookingData.maintenanceVisitId,
+    bookingData.providerId,
+    bookingData.quoteId,
+    isPreparingPayment,
+    isRefreshingQuote,
+    paymentAttempt,
+    paymentReturnRequested,
+    selectedQuoteSlot?.date,
+    selectedQuoteSlot?.startTime,
+    user,
+  ]);
 
   const handleRefreshPaymentStatus = async () => {
     if (isResolvingPaymentReturn || isPreparingPayment || isSubmittingInlinePayment || isRefreshingQuote) {
@@ -1185,17 +1228,14 @@ const ConfirmationPage: React.FC = () => {
   };
 
   const openPaymentSheet = async () => {
-    if (feeWaived) {
-      // Sin gastos de gestión: no hay formulario de pago. Preparar el intento crea la reserva.
-      await handlePreparePayment();
-      return;
-    }
     if (showInlinePaymentForm) {
       setIsPaymentSheetOpen(true);
       return;
     }
 
-    setIsPaymentSheetOpen(true);
+    // Sin gastos de gestión no hay formulario de pago: preparar el intento crea la reserva. Si el
+    // presupuesto firmado dice otra cosa que el resumen, handlePreparePayment abre o cierra la hoja.
+    if (!feeWaived) setIsPaymentSheetOpen(true);
     const prepared = await handlePreparePayment();
     if (!prepared) {
       setIsPaymentSheetOpen(false);
@@ -1786,7 +1826,7 @@ const ConfirmationPage: React.FC = () => {
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm text-gray-500">Gastos de gestión</span>
-                  <span className="text-sm font-semibold text-emerald-700 tabular-nums">
+                  <span className="text-right text-sm font-semibold text-emerald-700 tabular-nums">
                     {feeWaived ? BOOKING_AMOUNT_LABELS.managementFeeWaived : payableNowLabel}
                   </span>
                 </div>
@@ -1796,13 +1836,13 @@ const ConfirmationPage: React.FC = () => {
                   <>
                     <div className="flex items-start justify-between gap-3 border-t border-gray-200 pt-3">
                       <span className="text-sm text-gray-500">Total de la reserva</span>
-                      <span className="text-sm font-medium text-gray-900 tabular-nums">
+                      <span className="shrink-0 whitespace-nowrap text-sm font-medium text-gray-900 tabular-nums">
                         {formatEuro(customerPaymentSummary.clientTotal)}
                       </span>
                     </div>
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-sm text-gray-500">Pendiente de pagar al profesional</span>
-                      <span className="text-sm font-semibold text-gray-900 tabular-nums">
+                      <span className="shrink-0 whitespace-nowrap text-sm font-semibold text-gray-900 tabular-nums">
                         {formatEuro(customerPaymentSummary.pendingToGardener)}
                       </span>
                     </div>
@@ -1949,7 +1989,7 @@ const ConfirmationPage: React.FC = () => {
                         : 'El profesional cobrará este importe al completar el servicio de la manera que acordéis.'}
                     </p>
                   </div>
-                  <p className="text-[1.75rem] font-bold leading-none text-green-600 tabular-nums">
+                  <p className="shrink-0 whitespace-nowrap text-[1.75rem] font-bold leading-none text-green-600 tabular-nums">
                     {customerPaymentSummary ? formatEuro(customerPaymentSummary.pendingToGardener) : 'Pendiente'}
                   </p>
                 </div>

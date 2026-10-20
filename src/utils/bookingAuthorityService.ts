@@ -295,6 +295,7 @@ export async function fetchProviderValidHours(params: {
       providerId: params.providerId,
       date: params.date,
       ...buildServicesPayload(params.bookingData),
+      ...buildBookingOriginPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.availability_hours_loaded',
@@ -334,6 +335,7 @@ export async function fetchProviderMonthDays(params: {
       providerId: params.providerId,
       monthDate: params.monthDate,
       ...buildServicesPayload(params.bookingData),
+      ...buildBookingOriginPayload(params.bookingData),
     });
     reportBookingEvent('info', {
       event: 'booking.availability_calendar_loaded',

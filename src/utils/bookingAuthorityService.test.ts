@@ -16,7 +16,13 @@ vi.mock('../lib/supabase', () => ({
   },
 }));
 
-import { BookingAuthorityError, buildBookingOriginPayload, createAuthoritativeQuote } from './bookingAuthorityService';
+import {
+  BookingAuthorityError,
+  buildBookingOriginPayload,
+  createAuthoritativeQuote,
+  fetchProviderMonthDays,
+  fetchProviderValidHours,
+} from './bookingAuthorityService';
 
 function createFunctionsHttpError(status: number, body: Record<string, unknown> | string) {
   const payload = typeof body === 'string' ? body : JSON.stringify(body);
@@ -162,5 +168,21 @@ describe('buildBookingOriginPayload', () => {
     });
     const body = invokeMock.mock.calls[invokeMock.mock.calls.length - 1][1].body;
     expect(body).toMatchObject({ action: 'create_quote', bookingOrigin: 'provider_link', originProviderId: 'prov-1', clientCapabilities: { feeWaiver: 1 } });
+  });
+
+  // El presupuesto del calendario sustituye al de la tarjeta: tiene que salir igual de exento.
+  it('el calendario (horas y días) también lleva el origen y la capacidad', async () => {
+    const bookingData = { address: 'Calle Mayor 1', serviceIds: ['svc-1'], photos: [], restrictedGardenerId: 'prov-1' } as any;
+    invokeMock.mockResolvedValueOnce({ data: { quote: null, validHours: [] }, error: null });
+    await fetchProviderValidHours({ bookingData, serviceId: 'svc-1', providerId: 'prov-1', date: '2026-05-20' });
+    expect(invokeMock.mock.calls[invokeMock.mock.calls.length - 1][1].body).toMatchObject({
+      action: 'valid_hours', bookingOrigin: 'provider_link', originProviderId: 'prov-1', clientCapabilities: { feeWaiver: 1 },
+    });
+
+    invokeMock.mockResolvedValueOnce({ data: { quote: null, days: [] }, error: null });
+    await fetchProviderMonthDays({ bookingData, serviceId: 'svc-1', providerId: 'prov-1', monthDate: '2026-05-01' });
+    expect(invokeMock.mock.calls[invokeMock.mock.calls.length - 1][1].body).toMatchObject({
+      action: 'month_days', bookingOrigin: 'provider_link', originProviderId: 'prov-1', clientCapabilities: { feeWaiver: 1 },
+    });
   });
 });

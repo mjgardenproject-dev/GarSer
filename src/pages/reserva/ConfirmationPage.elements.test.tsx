@@ -29,10 +29,10 @@ const mocks = vi.hoisted(() => ({
   parseBookingResumeRedirectParam: vi.fn(() => ({ record: null, error: null })),
   buildBookingResumeRedirectParam: vi.fn(() => 'encoded-resume'),
   claimBookingResumeForUser: vi.fn(({ record }) => record),
-  toast: {
+  toast: Object.assign(vi.fn(), {
     success: vi.fn(),
     error: vi.fn(),
-  },
+  }),
   unsubscribe: vi.fn(),
   stripeSubmit: vi.fn(),
   stripeConfirmPayment: vi.fn(),
@@ -145,6 +145,7 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 import ConfirmationPage from './ConfirmationPage'
+import { normalizeAuthoritativeQuoteState } from '../../shared/bookingAuthoritativeSnapshot'
 
 function futureIso(minutes = 60) {
   return new Date(Date.now() + minutes * 60_000).toISOString()
@@ -516,6 +517,126 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(screen.getByText('Reserva enviada')).toBeTruthy()
     expect(screen.queryByText(/quedan retenidos/)).toBeNull()
     expect(mocks.toast.success).toHaveBeenCalledWith('Reserva enviada al profesional')
+  })
+
+  // Lo que pasó en producción (2026-10-20): un cliente que repite, con sesión, veía 12,50 € de gastos
+  // en el resumen porque el presupuesto solo se firmaba al pulsar. Ahora el resumen se firma al
+  // abrirse y enseña lo que se cobrará; al pulsar, manda el presupuesto firmado.
+  describe('presupuesto sin firmar al llegar al resumen', () => {
+    const waivedEconomics = (reason: string) => ({
+      ...createBookingData().quoteEconomics,
+      managementFee: 0,
+      payableNow: 0,
+      stripeLineItems: [],
+      feeWaiver: { reason, waivedFee: 19.75 },
+    })
+    const bookingCreated = {
+      attempt: buildAttempt({
+        status: 'booking_created',
+        bookingId: 'booking-1',
+        payableNowAmountCents: 0,
+        payableNowAmount: 0,
+        paymentIntentId: undefined,
+        terminal: true,
+      }),
+    }
+
+    // Como el BookingContext real: setBookingData mezcla, normaliza (quoteId sale del presupuesto
+    // firmado) y vuelve a pintar.
+    const useStatefulBooking = (initial: Record<string, unknown>) => {
+      mocks.useBooking.mockImplementation(function useStatefulBookingMock() {
+        const [data, setData] = React.useState(() => normalizeAuthoritativeQuoteState(initial))
+        return {
+          bookingData: data,
+          resetBooking: mocks.resetBooking,
+          setCurrentStep: mocks.setCurrentStep,
+          setBookingData: (patch: Record<string, unknown>) => {
+            mocks.setBookingData(patch)
+            setData((prev) => normalizeAuthoritativeQuoteState({ ...prev, ...patch }))
+          },
+        }
+      })
+    }
+
+    const unsignedBookingData = (economics: Record<string, unknown>) => {
+      const { quoteId: _quoteId, quoteSignature: _quoteSignature, ...rest } = createBookingData()
+      return { ...rest, quoteEconomics: economics }
+    }
+
+    it('cliente que repite: el resumen ya enseña «Sin gastos» antes de pulsar', async () => {
+      const preview = unsignedBookingData(createBookingData().quoteEconomics)
+      useStatefulBooking(preview)
+      mocks.createAuthoritativeQuote.mockResolvedValue({
+        ...buildAuthoritativeQuote(createBookingData()),
+        economics: waivedEconomics('returning_client'),
+      })
+      mocks.prepareBookingPayment.mockResolvedValue(bookingCreated)
+
+      render(<ConfirmationPage />)
+
+      expect(await screen.findByRole('button', { name: 'Confirmar reserva' })).toBeTruthy()
+      expect(mocks.createAuthoritativeQuote).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('button', { name: 'Continuar al pago' })).toBeNull()
+      expect(screen.queryByText(/Ahora pagas/)).toBeNull()
+      expect(screen.getByText(/Ya has trabajado con/)).toBeTruthy()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }))
+
+      await waitFor(() => expect(mocks.prepareBookingPayment).toHaveBeenCalledWith({ quoteId: 'quote-1', attemptId: undefined }))
+      expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
+      expect(mocks.createAuthoritativeQuote).toHaveBeenCalledTimes(1)
+      expect(mocks.getStripePromise).not.toHaveBeenCalled()
+    })
+
+    it('si al pulsar el presupuesto firmado va sin gastos, no se abre Stripe', async () => {
+      useStatefulBooking(unsignedBookingData(createBookingData().quoteEconomics))
+      // La firma al abrir falla (sin red, por ejemplo): el resumen sigue enseñando los gastos.
+      mocks.createAuthoritativeQuote
+        .mockRejectedValueOnce(new Error('sin red'))
+        .mockResolvedValue({ ...buildAuthoritativeQuote(createBookingData()), economics: waivedEconomics('returning_client') })
+      mocks.prepareBookingPayment.mockResolvedValue(bookingCreated)
+
+      render(<ConfirmationPage />)
+      await waitFor(() => expect(mocks.createAuthoritativeQuote).toHaveBeenCalledTimes(1))
+      const pay = await screen.findByRole('button', { name: 'Continuar al pago' })
+      await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false))
+
+      fireEvent.click(pay)
+
+      expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
+      expect(screen.queryByRole('dialog', { name: 'Pago seguro' })).toBeNull()
+      expect(screen.queryByTestId('payment-element')).toBeNull()
+      expect(mocks.getStripePromise).not.toHaveBeenCalled()
+      expect(mocks.toast.success).toHaveBeenCalledWith('Reserva enviada al profesional')
+    })
+
+    it('si al pulsar el presupuesto firmado lleva gastos, avisa y abre el pago', async () => {
+      useStatefulBooking(unsignedBookingData(waivedEconomics('provider_link')))
+      mocks.createAuthoritativeQuote
+        .mockRejectedValueOnce(new Error('sin red'))
+        .mockResolvedValue(buildAuthoritativeQuote(createBookingData()))
+
+      render(<ConfirmationPage />)
+      await waitFor(() => expect(mocks.createAuthoritativeQuote).toHaveBeenCalledTimes(1))
+      const confirm = await screen.findByRole('button', { name: 'Confirmar reserva' })
+      await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false))
+
+      fireEvent.click(confirm)
+
+      expect(await screen.findByRole('dialog', { name: 'Pago seguro' })).toBeTruthy()
+      expect(await screen.findByTestId('payment-element')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Pagar 19,75 €' })).toBeTruthy()
+      expect(mocks.toast).toHaveBeenCalledWith('Esta reserva lleva gastos de gestión. Revisa el importe antes de pagar.')
+    })
+
+    it('sin sesión no firma nada al abrir', () => {
+      mocks.useAuth.mockReturnValue({ user: null })
+      useStatefulBooking(unsignedBookingData(createBookingData().quoteEconomics))
+
+      render(<ConfirmationPage />)
+
+      expect(mocks.createAuthoritativeQuote).not.toHaveBeenCalled()
+    })
   })
 
   it('con gastos de gestión el camino de pago no cambia', () => {

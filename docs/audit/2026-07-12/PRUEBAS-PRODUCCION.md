@@ -1439,7 +1439,7 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 **C. El admin**
 
-- [ ] **27.9 — La cola.** Admin → «Fitosanitarios». ✅ Cada carnet dice de quién es: «Autónomo», «Titular de…» o «Empleado de…». Y según el caso, ✅ «Lo envió su empresa», «Renovación · el actual vale hasta…» o «Rechazado N veces antes».
+- [ ] **27.9 — La cola.** Admin → «Certificados Fito.». ✅ Cada carnet dice de quién es: «Autónomo», «Titular de…» o «Empleado de…». Y según el caso, ✅ «Lo envió su empresa», «Renovación · el actual vale hasta…» o «Rechazado N veces antes».
 - [ ] **27.10 — Ver el documento.** «Revisar». ✅ Se ve la foto (las dos caras en una). En un PDF, ✅ «Abrir el documento en otra pestaña» lo abre también desde el móvil.
 - [ ] **27.11 — Rechazar con motivo.** Sin motivo, ✅ «Rechazar» está desactivado. Elige un motivo rápido y rechaza. ✅ Al empleado y a la empresa les llega el correo con el motivo. ✅ En «Mi trabajo» del empleado, «Hoy» dice «Tu carnet no se ha aprobado · Motivo: …».
 - [ ] **27.12 — Aprobar.** Con la fecha de caducidad puesta, aprueba. ✅ El empleado recibe «Tu carnet fitosanitario está aprobado» con «Válido hasta». ✅ La empresa recibe «El carnet fitosanitario de … está aprobado», y en su ficha ya puede marcar «Servicios fitosanitarios» y guardar.

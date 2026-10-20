@@ -13,6 +13,8 @@
 //   · company_invitation                     → a la persona invitada al equipo de una empresa
 //   · job_assigned / job_unassigned          → al empleado: le asignan o le quitan un trabajo
 //   · booking_reschedule_proposed / _answered → propuesta de nueva fecha (D9) y su respuesta
+//   · phyto_license_update / member_phyto_license_update / phyto_license_requested → carnet
+//     fitosanitario: al titular, al dueño de su empresa y «tu empresa te pide el carnet»
 //
 // Secretos (Supabase Secrets): SMTP_USER (remitente verificado en Brevo), SMTP_PASS (api-key),
 // SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
@@ -34,6 +36,7 @@ function serviceLabelOf(row: any): string {
 import { buildBookingEmailDetails } from '../_shared/bookingEmailDetails.ts';
 import { cancellationCopy } from '../_shared/bookingEmailCopy.ts';
 import { invitationEmailCopy } from '../_shared/companyEmailCopy.ts';
+import { companyLicenseEmailCopy, holderLicenseEmailCopy, licenseRequestEmailCopy, type LicenseEmailCopy, type LicenseEvent, type LicenseHolderKind } from '../_shared/licenseEmailCopy.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 import { pushForEmail } from '../_shared/pushDelivery.ts';
 
@@ -85,7 +88,12 @@ type EmailType =
   | 'member_schedule_published'
   // Fase E (PR-02): la suspensión de un profesional o una empresa, y su reactivación.
   | 'provider_suspended'
-  | 'provider_reactivated';
+  | 'provider_reactivated'
+  // Carnet fitosanitario (2026-10-20): revisión, caducidad y peticiones de la empresa. Solo desde
+  // la cola del servidor; el estado se comprueba otra vez al enviar.
+  | 'phyto_license_update'
+  | 'member_phyto_license_update'
+  | 'phyto_license_requested';
 
 interface EmailPayload {
   /**
@@ -114,6 +122,11 @@ interface EmailPayload {
   token?: string;
   /** job_unassigned: la persona que deja de ir (se comprueba que es del equipo y ya no va). */
   workerId?: string;
+  /** Avisos del equipo y del carnet: la persona del equipo (company_members.id). */
+  memberId?: string;
+  /** Carnet fitosanitario: el carnet y qué le ha pasado (approved, rejected, expiring, expired…). */
+  licenseId?: string;
+  event?: string;
   data?: {
     name?: string;
     reason?: string;
@@ -158,6 +171,7 @@ export const SERVER_MANAGED_TYPES = new Set<string>([
   'job_assigned', 'job_unassigned',
   'company_member_joined', 'member_schedule_published',
   'provider_suspended', 'provider_reactivated',
+  'phyto_license_update', 'member_phyto_license_update', 'phyto_license_requested',
 ]);
 
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -582,6 +596,134 @@ Deno.serve(async (req) => {
         if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
       }
       await pushForEmail(admin, clientEmail, subject, opts.intro || '', opts.cta?.url);
+      return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'phyto_license_update' || type === 'member_phyto_license_update' || type === 'phyto_license_requested') {
+      // Carnet fitosanitario: solo desde la cola del servidor, y solo si el estado sigue siendo el
+      // del aviso (un carnet aprobado y renovado enseguida no recibe un «caduca pronto» tardío).
+      if (!admin || !isInternalServiceCaller(req)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const skip = (why: string) => new Response(JSON.stringify({ success: true, skipped: why }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+      const dayLabel = (iso: unknown) => (iso
+        ? new Date(String(iso)).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid' })
+        : '');
+      const personName = async (userId: string) => {
+        const { data: p } = await admin.from('profiles').select('full_name').eq('user_id', userId).maybeSingle();
+        return String(p?.full_name || '').trim();
+      };
+      const companyNameOf = async (providerId: string) => {
+        const { data: gp } = await admin.from('gardener_profiles').select('full_name').eq('user_id', providerId).maybeSingle();
+        return String(gp?.full_name || '').trim();
+      };
+      // El equipo activo de una persona (empleado) y su empresa.
+      const employeeMembership = async (userId: string) => {
+        const { data: m } = await admin
+          .from('company_members')
+          .select('id, user_id, role, status, phyto_license_requested_at, companies!inner(provider_user_id)')
+          .eq('user_id', userId).eq('role', 'employee').eq('status', 'active')
+          .maybeSingle();
+        // deno-lint-ignore no-explicit-any
+        return m ? { ...m, providerId: String((m as any).companies?.provider_user_id || '') } : null;
+      };
+      const validLicenseUntil = async (userId: string, exceptId?: string) => {
+        let query = admin.from('gardener_licenses').select('id, expires_at').eq('gardener_id', userId).eq('status', 'approved')
+          .gt('expires_at', new Date().toISOString()).order('expires_at', { ascending: false }).limit(1);
+        if (exceptId) query = query.neq('id', exceptId);
+        const { data: rows } = await query;
+        return rows && rows[0] ? String(rows[0].expires_at) : null;
+      };
+
+      let recipientId = '';
+      let copy: LicenseEmailCopy;
+      if (type === 'phyto_license_requested') {
+        const { data: member } = await admin
+          .from('company_members')
+          .select('id, user_id, role, status, phyto_license_requested_at, companies!inner(provider_user_id)')
+          .eq('id', String(payload.memberId || ''))
+          .maybeSingle();
+        if (!member || member.role !== 'employee' || member.status !== 'active' || !member.phyto_license_requested_at) return skip('state_changed');
+        const { data: pending } = await admin.from('gardener_licenses').select('id').eq('gardener_id', member.user_id).eq('status', 'pending').limit(1);
+        if ((pending && pending.length > 0) || (await validLicenseUntil(member.user_id))) return skip('already_sent');
+        recipientId = member.user_id;
+        // deno-lint-ignore no-explicit-any
+        copy = licenseRequestEmailCopy({ name: await personName(member.user_id), companyName: await companyNameOf(String((member as any).companies?.provider_user_id || '')) });
+      } else {
+        const event = String(payload.event || '') as LicenseEvent;
+        const { data: license } = await admin
+          .from('gardener_licenses')
+          .select('id, gardener_id, status, expires_at, rejection_reason')
+          .eq('id', String(payload.licenseId || ''))
+          .maybeSingle();
+        if (!license) return skip('license_not_found');
+        const expiresMs = license.expires_at ? new Date(license.expires_at).getTime() : 0;
+        const otherValid = await validLicenseUntil(license.gardener_id, license.id);
+        const stillTrue =
+          (event === 'approved' && license.status === 'approved')
+          || (event === 'rejected' && license.status === 'rejected')
+          || (event === 'submitted_for_you' && license.status === 'pending')
+          || (event === 'expiring' && license.status === 'approved' && expiresMs > Date.now() && expiresMs <= Date.now() + 31 * 86_400_000)
+          || (event === 'expired' && license.status === 'expired' && !otherValid);
+        if (!stillTrue) return skip('state_changed');
+
+        const membership = await employeeMembership(license.gardener_id);
+        const holderName = await personName(license.gardener_id);
+        if (type === 'member_phyto_license_update') {
+          if (!membership || membership.id !== String(payload.memberId || '') || event === 'submitted_for_you') return skip('not_in_team');
+          recipientId = membership.providerId;
+          copy = companyLicenseEmailCopy({
+            event,
+            personName: holderName || (await admin.auth.admin.getUserById(license.gardener_id)).data?.user?.email || '',
+            expiresLabel: dayLabel(license.expires_at),
+            reason: license.rejection_reason,
+          });
+        } else {
+          const { data: ownCompany } = await admin.from('companies').select('id').eq('provider_user_id', license.gardener_id).maybeSingle();
+          const kind: LicenseHolderKind = membership ? 'employee' : ownCompany ? 'company_owner' : 'solo';
+          recipientId = license.gardener_id;
+          copy = holderLicenseEmailCopy({
+            event,
+            kind,
+            name: holderName,
+            companyName: membership ? await companyNameOf(membership.providerId) : '',
+            expiresLabel: dayLabel(license.expires_at),
+            reason: license.rejection_reason,
+            stillValidLabel: event === 'rejected' ? dayLabel(otherValid) : '',
+          });
+        }
+      }
+
+      const { data: recipientUser } = await admin.auth.admin.getUserById(recipientId);
+      const recipientEmail = recipientUser?.user?.email || '';
+      // Una cuenta dada de baja tiene un correo anónimo: no se le escribe.
+      if (!recipientEmail || recipientEmail.endsWith('@garser.invalid')) return skip('no_email');
+      const licenseOpts: Parameters<typeof renderBrandedEmail>[0] = {
+        title: copy.subject,
+        heading: copy.heading,
+        intro: copy.intro,
+        bodyHtml: copy.pairs.length ? detailRows(copy.pairs) : undefined,
+        cta: { label: copy.ctaLabel, url: `${BRAND.site}${copy.ctaPath}` },
+        footerNote: copy.footerNote,
+      };
+      if (!SMTP_USER || !SMTP_PASS) {
+        console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: recipientEmail, type, subject: copy.subject });
+      } else {
+        const sent = await sendViaBrevo({
+          to: recipientEmail,
+          subject: copy.subject,
+          html: renderBrandedEmail(licenseOpts),
+          text: renderPlainText({ ...licenseOpts, detailPairs: copy.pairs }),
+          smtpUser: SMTP_USER,
+          smtpPass: SMTP_PASS,
+        });
+        if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+      }
+      await pushForEmail(admin, recipientEmail, copy.subject, copy.intro, licenseOpts.cta?.url);
       return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

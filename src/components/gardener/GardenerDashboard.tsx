@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Calendar, MapPin, Clock, User, MessageCircle, Bell, Star } from 'lucide-react';
+import { Calendar, MapPin, Clock, User, MessageCircle, Bell, Star, Megaphone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -25,6 +25,7 @@ import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookin
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 import SuspendedProviderNotice from '../common/SuspendedProviderNotice';
 import ProviderSetupChecklist from '../provider/ProviderSetupChecklist';
+import MarketingHub from '../marketing/MarketingHub';
 import type { SetupTarget } from '../../shared/providerSetup';
 // Eliminado PromotionalFlyer
 
@@ -39,9 +40,9 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   // Evitar bloquear toda la UI: estado de carga sólo para reservas
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const isFetchingRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews'>(() => {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews' | 'marketing'>(() => {
     const savedTab = localStorage.getItem('gardener_active_tab');
-    return (savedTab as 'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews') || 'dashboard';
+    return (savedTab as 'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews' | 'marketing') || 'dashboard';
   });
 
   useEffect(() => {
@@ -287,6 +288,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       setActiveTab('availability');
     } else if (target.kind === 'account') {
       navigate('/account');
+    } else if (target.kind === 'marketing') {
+      setActiveTab('marketing');
     }
   };
 
@@ -308,6 +311,19 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   }
   if (!pending && activeTab === 'profile') {
     return <ProfileSettings onBack={() => setActiveTab('dashboard')} />;
+  }
+  if (!pending && activeTab === 'marketing') {
+    return (
+      <div className="max-w-full mx-auto px-2.5 py-4 sm:p-6">
+        <MarketingHub
+          onBack={() => setActiveTab('dashboard')}
+          onCompleteAccount={() => {
+            setActiveTab('dashboard');
+            window.scrollTo({ top: 0 });
+          }}
+        />
+      </div>
+    );
   }
   if (!pending && activeTab === 'reviews') {
     return (
@@ -402,7 +418,16 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                 <Star className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
                 <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Reseñas</span>
               </button>
-              {/* Botón de flyer eliminado */}
+              {/* Marketing (2026-10-20): flyer para redes, tarjetas, vinilo, carteles… con su QR. */}
+              <button
+                onClick={pending ? undefined : () => setActiveTab('marketing')}
+                className={`flex items-center justify-center gap-2 p-4 sm:p-5 rounded-xl border-2 border-gray-200 bg-white ${pending ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 hover:shadow'} transition-colors`}
+                aria-label="Ir a Marketing"
+                disabled={pending}
+              >
+                <Megaphone className="w-7 h-7 text-green-600 shrink-0" strokeWidth={2.25} />
+                <span className="text-sm sm:text-base font-semibold text-gray-800 whitespace-nowrap">Marketing</span>
+              </button>
               </div>
           </div>
 

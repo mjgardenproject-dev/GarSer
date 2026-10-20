@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Ban, CheckCircle2, ChevronDown, Circle, Clock, Lock, Share2, X } from 'lucide-react';
+import { AlertTriangle, Ban, CheckCircle2, ChevronDown, Circle, Clock, Lock, Megaphone, Share2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import {
@@ -109,7 +109,7 @@ export const SetupStepList: React.FC<{
   </ol>
 );
 
-const ShareLink: React.FC<{ providerId: string; feeWaiver: boolean }> = ({ providerId, feeWaiver }) => {
+const ShareLink: React.FC<{ providerId: string; feeWaiver: boolean; onMarketing: () => void }> = ({ providerId, feeWaiver, onMarketing }) => {
   const share = async () => {
     const url = providerBookingLink(window.location.origin, providerId);
     if (typeof navigator.share === 'function') {
@@ -134,13 +134,23 @@ const ShareLink: React.FC<{ providerId: string; feeWaiver: boolean }> = ({ provi
         <span className="font-semibold text-gray-900">Comparte tu enlace de reserva.</span>{' '}
         {feeWaiver ? 'Tus clientes reservan contigo sin gastos de gestión.' : 'Tus clientes reservan directamente contigo.'}
       </p>
-      <button
-        type="button"
-        onClick={() => void share()}
-        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
-      >
-        <Share2 className="h-4 w-4" aria-hidden="true" /> Compartir enlace
-      </button>
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+        <button
+          type="button"
+          onClick={() => void share()}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
+        >
+          <Share2 className="h-4 w-4" aria-hidden="true" /> Compartir enlace
+        </button>
+        {/* Marketing: el flyer, tarjetas, vinilo… todo con su QR. */}
+        <button
+          type="button"
+          onClick={onMarketing}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+        >
+          <Megaphone className="h-4 w-4" aria-hidden="true" /> Crear mi flyer
+        </button>
+      </div>
     </div>
   );
 };
@@ -244,7 +254,7 @@ const ProviderSetupChecklist: React.FC<{ onNavigate: (target: SetupTarget) => vo
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        {summary.share.show && <ShareLink providerId={status.provider_id} feeWaiver={summary.share.feeWaiver} />}
+        {summary.share.show && <ShareLink providerId={status.provider_id} feeWaiver={summary.share.feeWaiver} onMarketing={() => onNavigate({ kind: 'marketing' })} />}
         {recommendedPending > 0 && (
           <Extras steps={summary.recommended} open={extrasOpen} onToggle={() => setExtrasOpen((v) => !v)} onNavigate={onNavigate} pending={recommendedPending} />
         )}
@@ -290,7 +300,7 @@ const ProviderSetupChecklist: React.FC<{ onNavigate: (target: SetupTarget) => vo
         />
       </div>
 
-      {summary.share.show && <ShareLink providerId={status.provider_id} feeWaiver={summary.share.feeWaiver} />}
+      {summary.share.show && <ShareLink providerId={status.provider_id} feeWaiver={summary.share.feeWaiver} onMarketing={() => onNavigate({ kind: 'marketing' })} />}
 
       <Extras
         steps={summary.recommended}

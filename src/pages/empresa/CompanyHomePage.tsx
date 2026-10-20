@@ -14,6 +14,7 @@ import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import TeamMemberCard from '../../components/empresa/TeamMemberCard';
+import MarketingHub from '../../components/marketing/MarketingHub';
 import ProviderSetupChecklist from '../../components/provider/ProviderSetupChecklist';
 import type { SetupTarget } from '../../shared/providerSetup';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
@@ -26,7 +27,7 @@ import { useAuth } from '../../contexts/AuthContext';
 // sus datos. Servicios, precios y zona se editan con la misma pantalla que un autónomo
 // (/empresa/configuracion): un solo sistema de precios.
 
-type Tab = 'agenda' | 'team' | 'company';
+type Tab = 'agenda' | 'team' | 'marketing' | 'company';
 
 const noop = () => {};
 
@@ -139,6 +140,9 @@ const CompanyPanel: React.FC = () => {
       case 'account':
         navigate('/account');
         break;
+      case 'marketing':
+        setTab('marketing');
+        break;
     }
   };
 
@@ -147,8 +151,8 @@ const CompanyPanel: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <AppHeader title={c.commercial_name || 'Tu empresa'}>
-        <div role="tablist" aria-label="Secciones del panel" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
-          {([['agenda', 'Agenda'], ['team', 'Equipo'], ['company', 'Tu empresa']] as const).map(([key, label]) => (
+        <div role="tablist" aria-label="Secciones del panel" className="grid grid-cols-4 gap-1 rounded-xl bg-gray-100 p-1">
+          {([['agenda', 'Agenda'], ['team', 'Equipo'], ['marketing', 'Marketing'], ['company', 'Tu empresa']] as const).map(([key, label]) => (
             <button
               key={key}
               type="button"
@@ -170,7 +174,7 @@ const CompanyPanel: React.FC = () => {
         <SuspendedProviderNotice />
         {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
         {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} />}
-        {tab !== 'company' && (
+        {(tab === 'agenda' || tab === 'team') && (
           <MemberSetupNotices
             members={data.members}
             onConfigureServices={(memberId) => {
@@ -182,6 +186,13 @@ const CompanyPanel: React.FC = () => {
         )}
         {tab === 'agenda' ? (
           <CompanyAgenda pendingRequests={pendingRequests} onRefreshExtra={loadPendingRequests} />
+        ) : tab === 'marketing' ? (
+          <MarketingHub
+            onCompleteAccount={() => {
+              setTab('agenda');
+              window.scrollTo({ top: 0 });
+            }}
+          />
         ) : tab === 'team' ? (
           <>
             {data.offered_services.length === 0 && (

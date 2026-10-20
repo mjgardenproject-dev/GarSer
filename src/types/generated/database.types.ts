@@ -3225,6 +3225,10 @@ export type Database = {
           team_size: number
         }[]
       }
+      log_marketing_download: {
+        Args: { p_formats: string[]; p_material: string }
+        Returns: number
+      }
       my_maintenance_plans: { Args: never; Returns: Json }
       my_provider_setup_status: { Args: never; Returns: Json }
       perform_account_closure: {

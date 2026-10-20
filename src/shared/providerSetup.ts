@@ -86,7 +86,9 @@ export type SetupTarget =
   | { kind: 'member_schedule'; memberId: string; tab?: 'recurring' }
   | { kind: 'team' }
   | { kind: 'company_license' }
-  | { kind: 'account' };
+  | { kind: 'account' }
+  /** Apartado «Marketing»: flyer, tarjetas, vinilo… */
+  | { kind: 'marketing' };
 
 export interface SetupStep {
   id: SetupStepId;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
@@ -14,6 +14,8 @@ import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import TeamMemberCard from '../../components/empresa/TeamMemberCard';
+import ProviderSetupChecklist from '../../components/provider/ProviderSetupChecklist';
+import type { SetupTarget } from '../../shared/providerSetup';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
 import { PHYTO_SERVICE_NAME, useCompanyTeam, type TeamInvitation, type TeamMember } from '../../hooks/useCompanyTeam';
 import { supabase } from '../../lib/supabase';
@@ -43,6 +45,7 @@ const CompanyPanel: React.FC = () => {
   const [tab, setTab] = useState<Tab>('agenda');
   const [showFormer, setShowFormer] = useState(false);
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
   // Solicitudes de reserva por responder (F4): la empresa es el proveedor de sus reservas.
@@ -113,6 +116,32 @@ const CompanyPanel: React.FC = () => {
     });
   };
 
+  // Completar la cuenta profesional: cada paso lleva a la pantalla donde se arregla.
+  const handleSetupNavigate = (target: SetupTarget) => {
+    window.scrollTo({ top: 0 });
+    switch (target.kind) {
+      case 'profile':
+        navigate(`/empresa/configuracion?tab=${target.tab}`);
+        break;
+      case 'schedule':
+        navigate('/empresa/horario');
+        break;
+      case 'member_schedule':
+        navigate(`/empresa/equipo/${target.memberId}/horario`);
+        break;
+      case 'team':
+        setTab('team');
+        void refresh();
+        break;
+      case 'company_license':
+        setTab('company');
+        break;
+      case 'account':
+        navigate('/account');
+        break;
+    }
+  };
+
   const c = data.company;
 
   return (
@@ -139,6 +168,8 @@ const CompanyPanel: React.FC = () => {
 
       <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
         <SuspendedProviderNotice />
+        {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
+        {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} />}
         {tab !== 'company' && (
           <MemberSetupNotices
             members={data.members}

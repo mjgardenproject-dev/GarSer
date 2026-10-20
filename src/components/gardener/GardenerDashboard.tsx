@@ -24,6 +24,8 @@ import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 import SuspendedProviderNotice from '../common/SuspendedProviderNotice';
+import ProviderSetupChecklist from '../provider/ProviderSetupChecklist';
+import type { SetupTarget } from '../../shared/providerSetup';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -271,6 +273,20 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     setSelectedChat({ bookingId, clientName });
   };
 
+  // Completar la cuenta profesional: cada paso lleva a la pantalla donde se arregla. «Mi Perfil»
+  // abre en la pestaña que diga `?tab=` (ProfileSettings la lee de la URL).
+  const handleSetupNavigate = (target: SetupTarget) => {
+    window.scrollTo({ top: 0 });
+    if (target.kind === 'profile') {
+      navigate(`/dashboard?tab=${target.tab}`);
+      setActiveTab('profile');
+    } else if (target.kind === 'schedule') {
+      setActiveTab('availability');
+    } else if (target.kind === 'account') {
+      navigate('/account');
+    }
+  };
+
   // Barra de pestañas eliminada: mantenemos la lógica de activeTab y los botones del panel
 
   if (!pending && activeTab === 'requests') {
@@ -378,6 +394,9 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
               {/* Botón de flyer eliminado */}
               </div>
           </div>
+
+          {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
+          {!pending && <ProviderSetupChecklist className="mb-8" onNavigate={handleSetupNavigate} />}
 
           {/* Aviso de instalación (fallo 1, 2026-09-15): solo en móvil, entre el panel y
               las reservas — en Mi Cuenta pasaba desapercibido. Se oculta sola en cuanto

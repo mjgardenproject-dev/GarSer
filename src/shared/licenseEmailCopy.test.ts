@@ -64,5 +64,8 @@ describe('licenseEmailCopy', () => {
     expect(copy.heading).toBe('Hola Pepe');
     expect(copy.pairs.map(([, step]) => step).join(' ')).toContain('«Hacer foto»');
     expect(copy.ctaPath).toBe('/mi-trabajo?tab=profile');
+    const renewal = licenseRequestEmailCopy({ name: 'Pepe', companyName: 'Jardines Sol', renewalOf: '2 de diciembre de 2026' });
+    expect(renewal.subject).toBe('Jardines Sol te pide tu carnet fitosanitario renovado');
+    expect(renewal.intro).toContain('caduca el 2 de diciembre de 2026');
   });
 });

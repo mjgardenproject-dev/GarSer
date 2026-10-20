@@ -648,11 +648,19 @@ Deno.serve(async (req) => {
           .eq('id', String(payload.memberId || ''))
           .maybeSingle();
         if (!member || member.role !== 'employee' || member.status !== 'active' || !member.phyto_license_requested_at) return skip('state_changed');
+        // Lo mismo que comprueba request_member_phyto_license: nada en revisión y sin un carnet que
+        // valga más de 60 días (si caduca antes, se le pide el renovado).
         const { data: pending } = await admin.from('gardener_licenses').select('id').eq('gardener_id', member.user_id).eq('status', 'pending').limit(1);
-        if ((pending && pending.length > 0) || (await validLicenseUntil(member.user_id))) return skip('already_sent');
+        if (pending && pending.length > 0) return skip('already_sent');
+        const validUntil = await validLicenseUntil(member.user_id);
+        if (validUntil && new Date(validUntil).getTime() > Date.now() + 60 * 86_400_000) return skip('already_valid');
         recipientId = member.user_id;
-        // deno-lint-ignore no-explicit-any
-        copy = licenseRequestEmailCopy({ name: await personName(member.user_id), companyName: await companyNameOf(String((member as any).companies?.provider_user_id || '')) });
+        copy = licenseRequestEmailCopy({
+          name: await personName(member.user_id),
+          // deno-lint-ignore no-explicit-any
+          companyName: await companyNameOf(String((member as any).companies?.provider_user_id || '')),
+          renewalOf: dayLabel(validUntil),
+        });
       } else {
         const event = String(payload.event || '') as LicenseEvent;
         const { data: license } = await admin

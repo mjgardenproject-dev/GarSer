@@ -168,13 +168,21 @@ export function companyLicenseEmailCopy(params: {
   }
 }
 
-/** Al empleado, cuando su empresa le pide el carnet. */
-export function licenseRequestEmailCopy(params: { name?: string | null; companyName?: string | null }): LicenseEmailCopy {
+/** Al empleado, cuando su empresa le pide el carnet (o el renovado, si el suyo caduca pronto). */
+export function licenseRequestEmailCopy(params: {
+  name?: string | null;
+  companyName?: string | null;
+  /** Caducidad del carnet que tiene, si se le pide el renovado. */
+  renewalOf?: string | null;
+}): LicenseEmailCopy {
   const company = String(params.companyName || '').trim() || 'Tu empresa';
+  const renewalOf = String(params.renewalOf || '').trim();
   return {
-    subject: `${company} te pide tu carnet fitosanitario`,
+    subject: renewalOf ? `${company} te pide tu carnet fitosanitario renovado` : `${company} te pide tu carnet fitosanitario`,
     heading: greeting(params.name),
-    intro: `${company} necesita tu carnet fitosanitario para poder asignarte tratamientos. Súbelo desde tu móvil: es una foto o un PDF y tardas un minuto.`,
+    intro: renewalOf
+      ? `Tu carnet fitosanitario caduca el ${renewalOf}. ${company} te pide el renovado para seguir asignándote tratamientos. Súbelo desde tu móvil: es una foto o un PDF.`
+      : `${company} necesita tu carnet fitosanitario para poder asignarte tratamientos. Súbelo desde tu móvil: es una foto o un PDF y tardas un minuto.`,
     pairs: [
       ['1', 'Entra en «Mi trabajo» → «Perfil».'],
       ['2', 'Pulsa «Hacer foto» o elige el archivo.'],

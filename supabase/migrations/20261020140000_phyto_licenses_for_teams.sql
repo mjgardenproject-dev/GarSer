@@ -552,7 +552,7 @@ SET search_path = public
 AS $$
 DECLARE
   v_member public.company_members%ROWTYPE;
-  v_status text;
+  v_summary jsonb;
 BEGIN
   SELECT * INTO v_member FROM public.company_members WHERE id = p_member_id FOR UPDATE;
   IF NOT FOUND OR NOT public.is_company_owner(v_member.company_id) THEN
@@ -561,12 +561,15 @@ BEGIN
   IF v_member.status <> 'active' OR v_member.role <> 'employee' THEN
     RAISE EXCEPTION 'Esta persona ya no forma parte de tu equipo.' USING ERRCODE = '22023';
   END IF;
-  v_status := public.latest_phyto_license_status(v_member.user_id);
-  IF public.has_valid_phyto_license(v_member.user_id) THEN
-    RAISE EXCEPTION 'Ya tiene su carnet aprobado.' USING ERRCODE = '22023';
-  END IF;
-  IF v_status = 'pending' THEN
+  -- Se le puede pedir el carnet o, si el suyo caduca en menos de 60 días, el renovado.
+  v_summary := private.phyto_license_summary(v_member.user_id);
+  IF v_summary ->> 'status' = 'pending' OR v_summary #>> '{renewal,status}' = 'pending' THEN
     RAISE EXCEPTION 'Su carnet ya está en revisión.' USING ERRCODE = '22023';
+  END IF;
+  IF COALESCE((v_summary ->> 'active')::boolean, false)
+     AND (v_summary ->> 'expires_at')::timestamptz > now() + interval '60 days'
+     AND v_summary #>> '{renewal,status}' IS DISTINCT FROM 'rejected' THEN
+    RAISE EXCEPTION 'Ya tiene su carnet aprobado.' USING ERRCODE = '22023';
   END IF;
   IF v_member.phyto_license_requested_at > now() - interval '24 hours' THEN
     RAISE EXCEPTION 'Ya se lo has pedido hoy. Podrás volver a pedírselo mañana.' USING ERRCODE = '22023';
@@ -715,6 +718,24 @@ BEGIN
   );
 END;
 $$;
+
+-- El carnet propio, para el autónomo y el dueño (el empleado lo recibe en my_company_membership).
+CREATE OR REPLACE FUNCTION public.my_phyto_license()
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Necesitas iniciar sesión.' USING ERRCODE = '42501';
+  END IF;
+  RETURN private.phyto_license_summary(auth.uid());
+END;
+$$;
+REVOKE ALL ON FUNCTION public.my_phyto_license() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.my_phyto_license() TO authenticated, service_role;
 
 -- =============================================
 -- 12) Fichas al día

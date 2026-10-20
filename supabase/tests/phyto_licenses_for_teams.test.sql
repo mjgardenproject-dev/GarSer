@@ -333,17 +333,7 @@ BEGIN
      OR pg_temp.outbox('member_phyto_license_update:' || v_lic || ':expiring') <> 1 THEN
     RAISE EXCEPTION 'FALLO 8a: el aviso de caducidad no sale una vez a Ana y a la empresa';
   END IF;
-  UPDATE public.gardener_licenses SET expires_at = now() - interval '1 minute' WHERE id = v_lic;
-  v_n := public.expire_due_phytosanitary_licenses();
-  IF v_n < 1 OR (SELECT status FROM public.gardener_licenses WHERE id = v_lic) <> 'expired'
-     OR EXISTS (SELECT 1 FROM public.company_member_services WHERE member_id = v_ana_member AND service_id = v_phyto)
-     OR NOT EXISTS (SELECT 1 FROM public.company_member_services WHERE member_id = v_ana_member AND service_id = v_lawn)
-     OR pg_temp.outbox('phyto_license_update:' || v_lic || ':expired') <> 1
-     OR pg_temp.outbox('member_phyto_license_update:' || v_lic || ':expired') <> 1 THEN
-    RAISE EXCEPTION 'FALLO 8b: al caducar no se retiran los fitosanitarios o no se avisa';
-  END IF;
-
-  -- Caducado: ya se le puede pedir (una vez al día), y Ana lo ve.
+  -- Caduca en 10 días: ya se le puede pedir el renovado (una vez al día); otra empresa, no.
   PERFORM pg_temp.as_user(v_otra);
   v_ok := false;
   BEGIN PERFORM public.request_member_phyto_license(v_ana_member);
@@ -355,6 +345,18 @@ BEGIN
   BEGIN PERFORM public.request_member_phyto_license(v_ana_member);
   EXCEPTION WHEN invalid_parameter_value THEN v_ok := true; END;
   IF NOT v_ok THEN RAISE EXCEPTION 'FALLO 8d: se puede pedir el carnet varias veces el mismo día'; END IF;
+  PERFORM pg_temp.as_postgres();
+  UPDATE public.gardener_licenses SET expires_at = now() - interval '1 minute' WHERE id = v_lic;
+  v_n := public.expire_due_phytosanitary_licenses();
+  IF v_n < 1 OR (SELECT status FROM public.gardener_licenses WHERE id = v_lic) <> 'expired'
+     OR EXISTS (SELECT 1 FROM public.company_member_services WHERE member_id = v_ana_member AND service_id = v_phyto)
+     OR NOT EXISTS (SELECT 1 FROM public.company_member_services WHERE member_id = v_ana_member AND service_id = v_lawn)
+     OR pg_temp.outbox('phyto_license_update:' || v_lic || ':expired') <> 1
+     OR pg_temp.outbox('member_phyto_license_update:' || v_lic || ':expired') <> 1 THEN
+    RAISE EXCEPTION 'FALLO 8b: al caducar no se retiran los fitosanitarios o no se avisa';
+  END IF;
+
+  -- Caducado: Ana ve que caducó y que se lo han pedido.
   PERFORM pg_temp.as_user(v_ana);
   v_res := public.my_company_membership();
   IF v_res #>> '{license,status}' <> 'expired' OR v_res ->> 'license_requested_at' IS NULL THEN

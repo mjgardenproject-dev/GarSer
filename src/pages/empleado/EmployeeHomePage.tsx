@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { addDays, format } from 'date-fns';
-import { Building2, CalendarClock, CalendarDays, ChevronRight, Loader2, UserRound } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarClock, CalendarDays, ChevronRight, Loader2, UserRound } from 'lucide-react';
 import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
@@ -13,10 +13,12 @@ import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryL
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
 import { supabase } from '../../lib/supabase';
+import { employeeLicensePrompt, licenseView, needsUpload, type PhytoLicenseSummary } from '../../shared/phytoLicense';
 
 // Panel del empleado (/mi-trabajo, GarSer Empresas F3.3 y F5.3), en tres pestañas: Hoy (sus
 // trabajos de hoy), Semana (los de los próximos 7 días y su horario) y Perfil (empresa,
-// servicios, datos de contacto y, si la empresa hace fitosanitarios, su carnet — D4).
+// servicios, datos de contacto y su carnet fitosanitario — D4). Si tiene que hacer algo con el
+// carnet (la empresa hace tratamientos o se lo ha pedido, se lo rechazaron o caduca), «Hoy» lo dice.
 
 interface Membership {
   member_id: string;
@@ -24,10 +26,14 @@ interface Membership {
   company_name: string;
   joined_at: string;
   company_offers_phyto: boolean;
+  /** La empresa hace tratamientos químicos o le ha pedido el carnet. */
+  license_needed?: boolean;
+  license_requested_at?: string | null;
+  license?: PhytoLicenseSummary | null;
   services: string[];
 }
 
-const noop = () => {};
+const LICENSE_ANCHOR = 'mi-carnet';
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 type Tab = 'today' | 'week' | 'profile';
@@ -43,6 +49,7 @@ const EmployeeHomePage: React.FC = () => {
   const [savedContact, setSavedContact] = useState({ fullName: '', phone: '' });
   const [saving, setSaving] = useState(false);
   const [params, setParams] = useSearchParams();
+  const scrollToLicense = useRef(false);
   const tab: Tab = (['today', 'week', 'profile'] as const).includes(params.get('tab') as Tab) ? (params.get('tab') as Tab) : 'today';
   const today = format(new Date(), 'yyyy-MM-dd');
   const weekEnd = format(addDays(new Date(), 6), 'yyyy-MM-dd');
@@ -70,10 +77,41 @@ const EmployeeHomePage: React.FC = () => {
 
   useEffect(() => { void load(); }, [load]);
 
+  // «Subir mi carnet» desde «Hoy»: al abrir «Perfil», directo al carnet.
+  useEffect(() => {
+    if (tab !== 'profile' || !scrollToLicense.current) return;
+    scrollToLicense.current = false;
+    requestAnimationFrame(() => document.getElementById(LICENSE_ANCHOR)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [tab, loading]);
+
   if (roleLoading) return null;
   if (role !== 'employee') return <Navigate to="/dashboard" replace />;
 
   const dirty = fullName.trim() !== savedContact.fullName.trim() || phone.trim() !== savedContact.phone.trim();
+  const licensePrompt = membership
+    ? employeeLicensePrompt({
+        summary: membership.license,
+        needed: Boolean(membership.license_needed),
+        requestedAt: membership.license_requested_at,
+        companyName: membership.company_name,
+      })
+    : null;
+  // En «Perfil», el carnet va arriba si hay que subirlo.
+  const licenseFirst = Boolean(licensePrompt) || (needsUpload(licenseView(membership?.license)) && Boolean(membership?.license_needed));
+  const openLicense = () => {
+    scrollToLicense.current = true;
+    setParams({ tab: 'profile' }, { replace: true });
+  };
+  const licenseCard = membership ? (
+    <PhytosanitaryLicenseUpload
+      id={LICENSE_ANCHOR}
+      summary={membership.license ?? null}
+      intro={membership.license_needed
+        ? `${membership.company_name} hace tratamientos fitosanitarios: para que te los asigne, sube tu carnet de aplicador. GarSer lo revisa y te avisa.`
+        : 'Solo si vas a hacer tratamientos fitosanitarios (insecticidas, fungicidas o herbicidas). GarSer lo revisa y te avisa.'}
+      onSubmitted={() => void load()}
+    />
+  ) : null;
 
   const saveContact = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,6 +154,20 @@ const EmployeeHomePage: React.FC = () => {
         </main>
       ) : tab === 'today' ? (
         <main className="mx-auto w-full space-y-3 px-4 py-4 sm:max-w-xl">
+          {licensePrompt && (
+            <section className={`rounded-2xl border p-4 ${licensePrompt.tone === 'bad' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+              <div className="flex items-start gap-3">
+                <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${licensePrompt.tone === 'bad' ? 'text-red-700' : 'text-amber-700'}`} aria-hidden="true" />
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900">{licensePrompt.title}</p>
+                  <p className="mt-0.5 text-sm text-gray-700">{licensePrompt.detail}</p>
+                </div>
+              </div>
+              <button type="button" onClick={openLicense} className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500">
+                Subir mi carnet
+              </button>
+            </section>
+          )}
           <p className="px-1 text-sm font-semibold text-gray-600">{capitalize(format(new Date(), "EEEE d 'de' MMMM", { locale: es }))}</p>
           {jobsLoading && jobs.length === 0 ? (
             <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-700" />
@@ -155,6 +207,7 @@ const EmployeeHomePage: React.FC = () => {
         </main>
       ) : (
         <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
+          {licenseFirst && licenseCard}
           <section className="rounded-2xl border border-gray-200 bg-white p-4">
             <div className="flex items-center gap-3">
               <Building2 className="h-8 w-8 shrink-0 text-emerald-700" />
@@ -192,12 +245,7 @@ const EmployeeHomePage: React.FC = () => {
             </Link>
           </form>
 
-          {membership.company_offers_phyto && (
-            <section>
-              <p className="mb-2 px-1 text-sm text-gray-600">Solo si vas a hacer tratamientos fitosanitarios: sube tu carnet. GarSer lo revisa y, cuando esté aprobado, tu empresa podrá asignarte esos trabajos.</p>
-              <PhytosanitaryLicenseUpload onStatusChange={noop} />
-            </section>
-          )}
+          {!licenseFirst && licenseCard}
         </main>
       )}
     </div>

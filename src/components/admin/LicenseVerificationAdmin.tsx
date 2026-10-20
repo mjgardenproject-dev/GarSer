@@ -1,282 +1,220 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { CheckCircle, XCircle, Search, Shield, Eye, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle, Eye, RefreshCw, Shield, User, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { GardenerLicense } from '../../types';
+import { formatLicenseDate } from '../../shared/phytoLicense';
+import { holderKindLabel, REJECTION_PRESETS, type AdminLicenseRow } from './licenseReview';
 
-interface LicenseWithProfile extends GardenerLicense {
-  gardener_profiles: {
-    full_name: string;
-    phone: string;
-  };
-}
+// Revisión de carnets fitosanitarios (admin). La cola viene de `admin_phyto_license_queue`: de quién
+// es (autónomo, empresa o empleado de qué empresa), si es una renovación, si lo envió la empresa y
+// cuántas veces se rechazó antes. La decisión pasa por `review_gardener_license`, que exige la
+// caducidad para aprobar (D1) y el motivo para rechazar (lo ve quien lo envió).
+
+const isPdfPath = (path: string) => /\.pdf$/i.test(path);
 
 const LicenseVerificationAdmin: React.FC = () => {
-  const [licenses, setLicenses] = useState<LicenseWithProfile[]>([]);
+  const [licenses, setLicenses] = useState<AdminLicenseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [selectedLicense, setSelectedLicense] = useState<LicenseWithProfile | null>(null);
+  const [selected, setSelected] = useState<AdminLicenseRow | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [docError, setDocError] = useState(false);
   const [processing, setProcessing] = useState(false);
-  // D1 (decisión del usuario, 2026-09-13): la caducidad la escribe el admin ANTES de
-  // aprobar. Sin fecha (o con una ya pasada) no se puede aprobar — lo exige también la RPC
-  // `review_gardener_license`, esto es solo para no dejar pulsar "Aprobar" en vano.
+  // D1: la caducidad la escribe el admin ANTES de aprobar (también lo exige la RPC).
   const [expiresAt, setExpiresAt] = useState('');
+  const [reason, setReason] = useState('');
 
-  useEffect(() => {
-    fetchPendingLicenses();
-  }, []);
-
-  const fetchPendingLicenses = async () => {
+  const fetchPendingLicenses = useCallback(async () => {
     setLoading(true);
     setErrorMsg('');
-    try {
-      // 1. Obtener licencias pendientes (usando auth.admin o ignorando RLS si es necesario)
-      // Como el usuario actual es admin, deberia poder leer todo.
-      const { data: licensesData, error: licensesError } = await supabase
-        .from('gardener_licenses')
-        .select('*')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+    const { data, error } = await supabase.rpc('admin_phyto_license_queue');
+    if (error) setErrorMsg(error.message || 'No se han podido cargar los carnets.');
+    else setLicenses((data as unknown as AdminLicenseRow[]) ?? []);
+    setLoading(false);
+  }, []);
 
-      if (licensesError) throw licensesError;
+  useEffect(() => { void fetchPendingLicenses(); }, [fetchPendingLicenses]);
 
-      if (!licensesData || licensesData.length === 0) {
-        setLicenses([]);
-        return;
-      }
-
-      // 2. Obtener perfiles de jardineros correspondientes
-      const gardenerIds = licensesData.map((l: any) => l.gardener_id);
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('gardener_profiles')
-        .select('user_id, full_name, phone')
-        .in('user_id', gardenerIds);
-
-      if (profilesError) {
-        console.warn('Error fetching gardener profiles for licenses:', profilesError);
-      }
-
-      // 2b. GarSer Empresas (D4): el carnet también lo sube cada EMPLEADO de una empresa, que no
-      // tiene ficha de proveedor. Sin esto aparecía como «Usuario Desconocido» y el admin no
-      // sabía de quién ni de qué empresa era. Se completa con su perfil y su empresa.
-      const missingIds = gardenerIds.filter((id: string) => !profilesData?.some((p: any) => p.user_id === id));
-      const employeeLabels = new Map<string, { full_name: string; phone: string }>();
-      if (missingIds.length > 0) {
-        const [{ data: people }, { data: memberships }] = await Promise.all([
-          supabase.from('profiles').select('user_id, full_name, phone').in('user_id', missingIds),
-          supabase.from('company_members').select('user_id, company_id').in('user_id', missingIds).eq('status', 'active'),
-        ]);
-        const companyIds = [...new Set((memberships ?? []).map((m: any) => m.company_id))];
-        const { data: companies } = companyIds.length
-          ? await supabase.from('companies').select('id, provider_user_id').in('id', companyIds)
-          : { data: [] as any[] };
-        const providerIds = (companies ?? []).map((c: any) => c.provider_user_id);
-        const { data: providers } = providerIds.length
-          ? await supabase.from('gardener_profiles').select('user_id, full_name').in('user_id', providerIds)
-          : { data: [] as any[] };
-        for (const id of missingIds) {
-          const person = (people ?? []).find((p: any) => p.user_id === id);
-          const membership = (memberships ?? []).find((m: any) => m.user_id === id);
-          const company = (companies ?? []).find((c: any) => c.id === membership?.company_id);
-          const companyName = (providers ?? []).find((p: any) => p.user_id === company?.provider_user_id)?.full_name;
-          const name = person?.full_name?.trim() || 'Sin nombre';
-          employeeLabels.set(id, {
-            full_name: companyName ? `${name} · empleado de ${companyName}` : name,
-            phone: person?.phone?.trim() || '—',
-          });
-        }
-      }
-
-      // 3. Combinar datos
-      const mergedLicenses = licensesData.map((license: any) => {
-        const profile = profilesData?.find((p: any) => p.user_id === license.gardener_id);
-        const employee = employeeLabels.get(license.gardener_id);
-        return {
-          ...license,
-          gardener_profiles: {
-            full_name: profile?.full_name || employee?.full_name || 'Usuario Desconocido',
-            phone: profile?.phone || employee?.phone || '—'
-          }
-        };
-      });
-
-      setLicenses(mergedLicenses as LicenseWithProfile[]);
-    } catch (e: any) {
-      setErrorMsg(e.message || 'Error fetching licenses');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const viewDocument = async (license: LicenseWithProfile) => {
-    setSelectedLicense(license);
+  const viewDocument = async (license: AdminLicenseRow) => {
+    setSelected(license);
     setSignedUrl(null);
     setDocError(false);
     setExpiresAt('');
-    try {
-      const { data, error } = await supabase.storage
-        .from('private_licenses')
-        .createSignedUrl(license.document_url, 60); // 60 seconds expiry
-
-      if (error) throw error;
-      setSignedUrl(data.signedUrl);
-    } catch (e: any) {
-      console.error(e);
+    setReason('');
+    // Enlace firmado de 5 minutos: el documento nunca es público.
+    const { data, error } = await supabase.storage.from('private_licenses').createSignedUrl(license.document_url, 300);
+    if (error || !data?.signedUrl) {
       setDocError(true);
       toast.error('No se pudo cargar el documento de manera segura');
+      return;
     }
+    setSignedUrl(data.signedUrl);
+  };
+
+  const close = () => {
+    if (processing) return;
+    setSelected(null);
   };
 
   const handleAction = async (status: 'approved' | 'rejected') => {
-    if (!selectedLicense) return;
+    if (!selected) return;
     if (status === 'approved' && !expiresAt) {
-      toast.error('Indica la fecha de caducidad de la licencia antes de aprobarla.');
+      toast.error('Indica la fecha de caducidad del carnet antes de aprobarlo.');
+      return;
+    }
+    if (status === 'rejected' && reason.trim().length < 3) {
+      toast.error('Escribe el motivo del rechazo: lo verá quien lo envió.');
       return;
     }
     setProcessing(true);
     try {
-      // Una sola llamada, atómica en el servidor (review_gardener_license): antes esto eran
-      // dos UPDATE sueltos desde el navegador, uno por tabla y sin transacción entre ambos —
-      // si el segundo fallaba, la licencia quedaba aprobada en una tabla y sin reflejar en
-      // la otra. La RPC también exige la caducidad para aprobar, no solo esta pantalla.
       const { error } = await supabase.rpc('review_gardener_license', {
-        p_license_id: selectedLicense.id,
+        p_license_id: selected.id,
         p_status: status,
         p_expires_at: status === 'approved' ? new Date(`${expiresAt}T23:59:59`).toISOString() : undefined,
+        p_reason: status === 'rejected' ? reason.trim() : undefined,
       });
-
       if (error) throw error;
-
-      toast.success(`Licencia ${status === 'approved' ? 'aprobada' : 'rechazada'} correctamente`);
-      setSelectedLicense(null);
-      setExpiresAt('');
-      fetchPendingLicenses();
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e?.message || 'Error al actualizar la licencia');
+      toast.success(status === 'approved' ? 'Carnet aprobado. Le avisamos.' : 'Carnet rechazado. Le avisamos con el motivo.');
+      setSelected(null);
+      void fetchPendingLicenses();
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message || 'Error al guardar la revisión');
     } finally {
       setProcessing(false);
     }
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Shield className="w-8 h-8 text-blue-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Verificación de Licencias Fitosanitarias</h1>
+    <div className="mx-auto max-w-6xl p-4 sm:p-6">
+      <div className="mb-6 flex items-center gap-3">
+        <Shield className="h-8 w-8 text-emerald-700" aria-hidden="true" />
+        <h1 className="text-2xl font-bold text-gray-900">Carnets fitosanitarios</h1>
       </div>
 
       {errorMsg && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
           <p>{errorMsg}</p>
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-          <h2 className="font-semibold text-gray-800">Licencias pendientes ({licenses.length})</h2>
-          <button onClick={fetchPendingLicenses} className="text-sm text-blue-600 hover:text-blue-800">
-            Actualizar
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 p-4">
+          <h2 className="font-semibold text-gray-800">Pendientes de revisar ({licenses.length})</h2>
+          <button type="button" onClick={() => void fetchPendingLicenses()} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+            <RefreshCw className="h-4 w-4" aria-hidden="true" /> Actualizar
           </button>
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-gray-500">Cargando licencias...</div>
+          <div className="p-8 text-center text-gray-500">Cargando carnets…</div>
         ) : licenses.length === 0 ? (
-          <div className="p-8 text-center text-gray-500 flex flex-col items-center">
-            <CheckCircle className="w-12 h-12 text-green-300 mb-3" />
-            <p>No hay licencias pendientes de revisión.</p>
+          <div className="flex flex-col items-center p-8 text-center text-gray-500">
+            <CheckCircle className="mb-3 h-12 w-12 text-green-300" aria-hidden="true" />
+            <p>No hay carnets pendientes de revisión.</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {licenses.map(license => (
-              <div key={license.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50 transition-colors">
-                <div>
-                  <h3 className="font-bold text-gray-900">{license.gardener_profiles?.full_name || 'Usuario Desconocido'}</h3>
-                  <p className="text-sm text-gray-600">Tel: {license.gardener_profiles?.phone || '—'}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Subido: {new Date(license.created_at).toLocaleString()}
-                    {license.license_number && ` • Ref: ${license.license_number}`}
+          <ul className="divide-y divide-gray-100">
+            {licenses.map((license) => (
+              <li key={license.id} className="flex flex-col justify-between gap-4 p-4 hover:bg-gray-50 sm:flex-row sm:items-center">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-gray-900">{license.holder_name || 'Sin nombre'}</h3>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-sm text-gray-700">
+                    {license.holder_kind === 'solo' ? <User className="h-4 w-4 text-gray-500" aria-hidden="true" /> : <Building2 className="h-4 w-4 text-gray-500" aria-hidden="true" />}
+                    {holderKindLabel(license)}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {license.current_expires_at && (
+                      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800">Renovación · el actual vale hasta el {formatLicenseDate(license.current_expires_at)}</span>
+                    )}
+                    {license.submitted_by_company && (
+                      <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-800">Lo envió su empresa</span>
+                    )}
+                    {license.previous_rejections > 0 && (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        Rechazado {license.previous_rejections} {license.previous_rejections === 1 ? 'vez' : 'veces'} antes
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    Enviado el {new Date(license.created_at).toLocaleString('es-ES')}
+                    {license.license_number && ` · Nº ${license.license_number}`}
+                    {license.phone && ` · Tel. ${license.phone}`}
                   </p>
                 </div>
-                <button 
-                  onClick={() => viewDocument(license)}
-                  className="px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors font-medium text-sm whitespace-nowrap"
+                <button
+                  type="button"
+                  onClick={() => void viewDocument(license)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
                 >
-                  <Eye className="w-4 h-4" />
-                  Revisar documento
+                  <Eye className="h-4 w-4" aria-hidden="true" /> Revisar
                 </button>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 
-      {/* Modal de revisión */}
-      {selectedLicense && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="font-bold text-gray-900">
-                Revisión de Licencia: {selectedLicense.gardener_profiles?.full_name}
-              </h3>
-              <button 
-                onClick={() => setSelectedLicense(null)}
-                className="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
-              >
-                ✕
-              </button>
+      {selected && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 sm:items-center sm:p-4" role="presentation" onClick={close}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="license-review-title"
+            className="flex max-h-[94vh] w-full max-w-3xl flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 p-4">
+              <div className="min-w-0">
+                <h3 id="license-review-title" className="font-bold text-gray-900">Carnet de {selected.holder_name || 'sin nombre'}</h3>
+                <p className="text-sm text-gray-600">{holderKindLabel(selected)}{selected.email ? ` · ${selected.email}` : ''}</p>
+              </div>
+              <button type="button" onClick={close} aria-label="Cerrar" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">✕</button>
             </div>
-            
-            <div className="p-4 flex-1 overflow-y-auto bg-gray-50">
+
+            <div className="flex-1 space-y-4 overflow-y-auto bg-gray-50 p-4">
               {docError ? (
-                <div className="flex flex-col items-center justify-center h-48 bg-red-50 text-red-600 rounded-lg border border-red-100 p-6 text-center">
-                  <AlertTriangle className="w-10 h-10 mb-3 opacity-80" />
-                  <p className="font-semibold mb-1">No se pudo cargar el documento</p>
-                  <p className="text-sm opacity-90 max-w-sm">
-                    El archivo fue eliminado, la ruta es incorrecta o no cuentas con los permisos necesarios para visualizarlo.
-                  </p>
+                <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-red-100 bg-red-50 p-6 text-center text-red-600">
+                  <AlertTriangle className="mb-3 h-10 w-10 opacity-80" aria-hidden="true" />
+                  <p className="mb-1 font-semibold">No se pudo cargar el documento</p>
+                  <p className="max-w-sm text-sm opacity-90">El archivo no existe o no tienes permiso para verlo. Recházalo pidiendo que lo suban de nuevo.</p>
                 </div>
               ) : signedUrl ? (
-                <div className="bg-white rounded-lg border border-gray-200 shadow-inner overflow-hidden flex justify-center">
-                  {signedUrl.toLowerCase().includes('.pdf') ? (
-                    <iframe src={signedUrl} className="w-full h-[60vh] min-h-[400px]" title="Documento PDF" />
+                <div className="flex justify-center overflow-hidden rounded-lg border border-gray-200 bg-white">
+                  {isPdfPath(selected.document_url) ? (
+                    <iframe src={signedUrl} className="h-[60vh] min-h-[400px] w-full" title="Carnet en PDF" />
                   ) : (
-                    <img src={signedUrl} alt="Documento Fitosanitario" className="max-w-full max-h-[60vh] object-contain" />
+                    <a href={signedUrl} target="_blank" rel="noopener noreferrer" title="Abrir a tamaño completo">
+                      <img src={signedUrl} alt="Carnet fitosanitario enviado" className="max-h-[60vh] max-w-full object-contain" />
+                    </a>
                   )}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-48 gap-3 text-gray-500">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <p className="text-sm">Generando enlace seguro...</p>
+                <div className="flex h-48 flex-col items-center justify-center gap-3 text-gray-500">
+                  <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-emerald-700" />
+                  <p className="text-sm">Generando enlace seguro…</p>
                 </div>
               )}
-              
-              <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-lg">
-                <h4 className="font-semibold text-blue-900 mb-1">Declaración del Jardinero</h4>
-                <p className="text-sm text-blue-800">
-                  El jardinero ha marcado la casilla declarando bajo su responsabilidad que este documento es verídico, está en vigor y le habilita legalmente para la aplicación de productos fitosanitarios.
+
+              <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
+                <p className="font-semibold text-gray-900">Declaración responsable</p>
+                <p className="mt-1">
+                  {selected.submitted_by_company
+                    ? `Lo envió ${selected.company_name || 'su empresa'}, declarando que es el carnet de esta persona, que está en vigor y que tiene su permiso para enviarlo.`
+                    : 'Lo envió el titular, declarando que es su carnet, que está en vigor y que los datos son ciertos.'}
                 </p>
-                {selectedLicense.license_number && (
-                  <p className="mt-2 text-sm font-medium text-blue-900">
-                    Número proporcionado: {selectedLicense.license_number}
-                  </p>
+                {selected.license_number && <p className="mt-2 font-medium text-gray-900">Número indicado: {selected.license_number}</p>}
+                {selected.current_expires_at && (
+                  <p className="mt-2 text-sky-800">Es una renovación: el carnet actual vale hasta el {formatLicenseDate(selected.current_expires_at)}. Si rechazas este, el actual sigue valiendo.</p>
                 )}
               </div>
 
-              {/* D1: la caducidad se escribe ANTES de aprobar, no después. Sin fecha futura
-                  no se puede aprobar (aquí y también en la RPC). */}
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <label htmlFor="license-expires-at" className="block font-semibold text-amber-900 mb-1 text-sm">
-                  Fecha de caducidad de la licencia
-                </label>
-                <p className="text-xs text-amber-800 mb-2">
-                  Compruébala en el documento. Cuando pase esta fecha, la licencia caduca sola:
-                  el profesional dejará de aparecer para tratamientos químicos y tendrá que
-                  volver a subir el carnet y esperar tu aprobación.
+              {/* D1: la caducidad se escribe ANTES de aprobar. */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <label htmlFor="license-expires-at" className="mb-1 block text-sm font-semibold text-amber-900">Para aprobar: fecha de caducidad del carnet</label>
+                <p className="mb-2 text-xs text-amber-800">
+                  Compruébala en el documento. Ese día caduca solo: le avisaremos 30 días antes y, al caducar, deja de poder hacer tratamientos químicos hasta que se apruebe el renovado.
                 </p>
                 <input
                   id="license-expires-at"
@@ -284,28 +222,53 @@ const LicenseVerificationAdmin: React.FC = () => {
                   value={expiresAt}
                   onChange={(e) => setExpiresAt(e.target.value)}
                   min={new Date().toISOString().slice(0, 10)}
-                  className="px-3 py-2 border border-amber-300 rounded-lg text-sm"
+                  className="rounded-lg border border-amber-300 px-3 py-2 text-base"
+                />
+              </div>
+
+              <div className="rounded-lg border border-red-100 bg-white p-4">
+                <label htmlFor="license-reason" className="mb-1 block text-sm font-semibold text-gray-900">Para rechazar: motivo</label>
+                <p className="mb-2 text-xs text-gray-600">Lo verá quien lo envió (y su empresa, si es un empleado). Dile qué tiene que corregir.</p>
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {REJECTION_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setReason(preset)}
+                      className={`rounded-full border px-2.5 py-1 text-left text-xs ${reason === preset ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  id="license-reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value.slice(0, 300))}
+                  rows={2}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base"
                 />
               </div>
             </div>
 
-            <div className="p-4 border-t border-gray-200 bg-white flex gap-3 justify-end rounded-b-2xl">
+            <div className="flex gap-3 border-t border-gray-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:justify-end sm:rounded-b-2xl">
               <button
-                onClick={() => handleAction('rejected')}
-                disabled={processing || (!signedUrl && !docError)}
-                className="px-6 py-2.5 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50"
+                type="button"
+                onClick={() => void handleAction('rejected')}
+                disabled={processing || reason.trim().length < 3}
+                title={reason.trim().length < 3 ? 'Escribe antes el motivo' : undefined}
+                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-5 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50 sm:flex-none"
               >
-                <XCircle className="w-5 h-5" />
-                Rechazar
+                <XCircle className="h-5 w-5" aria-hidden="true" /> Rechazar
               </button>
               <button
-                onClick={() => handleAction('approved')}
-                disabled={processing || (!signedUrl && !docError) || !expiresAt}
+                type="button"
+                onClick={() => void handleAction('approved')}
+                disabled={processing || docError || !signedUrl || !expiresAt}
                 title={!expiresAt ? 'Indica antes la fecha de caducidad' : undefined}
-                className="px-6 py-2.5 bg-emerald-700 text-white hover:bg-emerald-800 rounded-xl font-medium flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-emerald-700/20"
+                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 sm:flex-none"
               >
-                <CheckCircle className="w-5 h-5" />
-                Aprobar Licencia
+                <CheckCircle className="h-5 w-5" aria-hidden="true" /> Aprobar
               </button>
             </div>
           </div>

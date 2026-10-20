@@ -695,6 +695,7 @@ BEGIN
         'license_expires_at', lic.summary -> 'expires_at',
         'license_rejection_reason', lic.summary -> 'rejection_reason',
         'license_renewal', lic.summary -> 'renewal',
+        'license_submitted_at', lic.summary -> 'submitted_at',
         'license_requested_at', m.phyto_license_requested_at,
         'has_valid_phyto_license', COALESCE((lic.summary ->> 'active')::boolean, false),
         -- R-04: lo que le falta para poder recibir trabajos (horario fijo y algún servicio).

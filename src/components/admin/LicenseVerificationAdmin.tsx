@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { AlertTriangle, Building2, CheckCircle, Eye, RefreshCw, Shield, User, XCircle } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle, ExternalLink, Eye, RefreshCw, Shield, User, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatLicenseDate } from '../../shared/phytoLicense';
 import { holderKindLabel, REJECTION_PRESETS, type AdminLicenseRow } from './licenseReview';
@@ -168,7 +168,7 @@ const LicenseVerificationAdmin: React.FC = () => {
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 p-4">
               <div className="min-w-0">
                 <h3 id="license-review-title" className="font-bold text-gray-900">Carnet de {selected.holder_name || 'sin nombre'}</h3>
-                <p className="text-sm text-gray-600">{holderKindLabel(selected)}{selected.email ? ` · ${selected.email}` : ''}</p>
+                <p className="text-sm text-gray-600">{holderKindLabel(selected)}{selected.email && selected.email !== selected.holder_name ? ` · ${selected.email}` : ''}</p>
               </div>
               <button type="button" onClick={close} aria-label="Cerrar" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100">✕</button>
             </div>
@@ -181,6 +181,10 @@ const LicenseVerificationAdmin: React.FC = () => {
                   <p className="max-w-sm text-sm opacity-90">El archivo no existe o no tienes permiso para verlo. Recházalo pidiendo que lo suban de nuevo.</p>
                 </div>
               ) : signedUrl ? (
+                <>
+                <a href={signedUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" /> Abrir el documento en otra pestaña
+                </a>
                 <div className="flex justify-center overflow-hidden rounded-lg border border-gray-200 bg-white">
                   {isPdfPath(selected.document_url) ? (
                     <iframe src={signedUrl} className="h-[60vh] min-h-[400px] w-full" title="Carnet en PDF" />
@@ -190,6 +194,7 @@ const LicenseVerificationAdmin: React.FC = () => {
                     </a>
                   )}
                 </div>
+                </>
               ) : (
                 <div className="flex h-48 flex-col items-center justify-center gap-3 text-gray-500">
                   <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-emerald-700" />

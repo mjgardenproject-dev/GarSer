@@ -152,7 +152,7 @@ const PhytosanitaryLicenseUpload: React.FC<Props> = ({ forMember, summary: summa
   const btn = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]';
 
   return (
-    <section id={id} aria-labelledby={`${uid}-title`} className={bare ? '' : 'scroll-mt-24 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5'}>
+    <section id={id} aria-labelledby={`${uid}-title`} className={bare ? '' : 'scroll-mt-40 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5'}>
       {!bare && (
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50">

@@ -32,6 +32,12 @@ export const RENEW_SOON_DAYS = 60;
 export const LICENSE_MAX_BYTES = 10 * 1024 * 1024;
 export const LICENSE_NUMBER_MAX = 40;
 
+/** «Motivo: …» siempre con un solo punto final, lo escriba como lo escriba el admin. */
+export function reasonSentence(reason: string | null | undefined): string {
+  const text = String(reason || '').trim().replace(/[.\s]+$/, '');
+  return `Motivo: ${text || 'sin indicar'}.`;
+}
+
 export function daysUntil(iso: string | null | undefined, now: Date = new Date()): number | null {
   if (!iso) return null;
   const ms = new Date(iso).getTime();
@@ -130,21 +136,24 @@ export function licenseStatusCopy(
       return {
         tone: 'warn',
         title: 'No pudimos aprobar el renovado',
-        detail: `Motivo: ${s.renewal?.rejection_reason || 'sin indicar'}. El actual vale hasta el ${until}.`,
+        detail: `${reasonSentence(s.renewal?.rejection_reason)} El actual vale hasta el ${until}.`,
       };
-    case 'pending':
+    case 'pending': {
+      const sent = formatLicenseDate(s.submitted_at);
+      const when = sent ? ` el ${sent}` : '';
       return {
         tone: 'info',
         title: 'En revisión',
         detail: s.submitted_by_company && self
-          ? `Tu empresa lo envió el ${formatLicenseDate(s.submitted_at)}. Te avisaremos cuando esté revisado.`
-          : `Enviado el ${formatLicenseDate(s.submitted_at)}. ${self ? 'Te avisaremos' : 'Os avisaremos'} cuando esté revisado.`,
+          ? `Tu empresa lo envió${when}. Te avisaremos cuando esté revisado.`
+          : `Enviado${when}. ${self ? 'Te avisaremos' : 'Os avisaremos'} cuando esté revisado.`,
       };
+    }
     case 'rejected':
       return {
         tone: 'bad',
         title: 'No lo hemos podido aprobar',
-        detail: `Motivo: ${s.rejection_reason || 'sin indicar'}. ${self ? 'Súbelo de nuevo corrigiéndolo.' : 'Puede subirlo de nuevo, o súbelo tú.'}`,
+        detail: `${reasonSentence(s.rejection_reason)} ${self ? 'Súbelo de nuevo corrigiéndolo.' : 'Puede subirlo de nuevo, o súbelo tú.'}`,
       };
     case 'expired':
       return {
@@ -188,11 +197,11 @@ export function employeeLicensePrompt(params: {
           : `Lo necesitas para que ${company} pueda asignarte tratamientos fitosanitarios.`,
       };
     case 'rejected':
-      return { tone: 'bad', title: 'Tu carnet no se ha aprobado', detail: `Motivo: ${s.rejection_reason || 'sin indicar'}. Súbelo de nuevo.` };
+      return { tone: 'bad', title: 'Tu carnet no se ha aprobado', detail: `${reasonSentence(s.rejection_reason)} Súbelo de nuevo.` };
     case 'expired':
       return { tone: 'bad', title: 'Tu carnet ha caducado', detail: 'Sube el renovado para volver a hacer tratamientos fitosanitarios.' };
     case 'renewal_rejected':
-      return { tone: 'warn', title: 'No pudimos aprobar tu carnet renovado', detail: `Motivo: ${s.renewal?.rejection_reason || 'sin indicar'}.` };
+      return { tone: 'warn', title: 'No pudimos aprobar tu carnet renovado', detail: reasonSentence(s.renewal?.rejection_reason) };
     case 'expiring': {
       const days = daysUntil(s.expires_at, now) ?? 0;
       if (days > 30 && !requestIsCurrent(s, params.requestedAt)) return null;
@@ -210,6 +219,7 @@ export function summaryFromTeamMember(member: {
   license_expires_at?: string | null;
   license_rejection_reason?: string | null;
   license_renewal?: PhytoLicenseRenewal | null;
+  license_submitted_at?: string | null;
 }): PhytoLicenseSummary {
   return {
     status: member.license_status,
@@ -217,6 +227,7 @@ export function summaryFromTeamMember(member: {
     expires_at: member.license_expires_at ?? null,
     rejection_reason: member.license_rejection_reason ?? null,
     renewal: member.license_renewal ?? null,
+    submitted_at: member.license_submitted_at ?? null,
   };
 }
 

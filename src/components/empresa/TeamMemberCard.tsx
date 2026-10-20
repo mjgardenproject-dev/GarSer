@@ -159,19 +159,20 @@ const TeamMemberCard: React.FC<Props> = ({ member, offeredServices, offersChemic
           <div className="flex items-start gap-2.5">
             {LICENSE_ICON[licenseCopy.tone]}
             <div className="min-w-0 text-sm">
-              <p className="font-semibold text-gray-900">Carnet fitosanitario: {licenseCopy.title.charAt(0).toLowerCase() + licenseCopy.title.slice(1)}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Carnet fitosanitario</p>
+              <p className="font-semibold text-gray-900">{licenseCopy.title}</p>
               <p className="mt-0.5 text-gray-600">{licenseCopy.detail}</p>
               {askable && requestedLabel && <p className="mt-1 text-xs text-gray-500">Se lo pediste {requestedLabel}.</p>}
             </div>
           </div>
           {(canSendForThem || askable) && (
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               {askable && (
                 <button
                   type="button"
                   onClick={() => void requestLicense()}
                   disabled={!requestAllowed || requesting}
-                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex min-h-11 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {requesting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
                   {requestAllowed ? 'Pedírselo' : 'Pedido'}
@@ -181,7 +182,7 @@ const TeamMemberCard: React.FC<Props> = ({ member, offeredServices, offersChemic
                 <button
                   type="button"
                   onClick={() => setUploadOpen(true)}
-                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800"
+                  className="inline-flex min-h-11 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white hover:bg-emerald-800"
                 >
                   <Upload className="h-4 w-4" aria-hidden="true" /> Subir su carnet
                 </button>

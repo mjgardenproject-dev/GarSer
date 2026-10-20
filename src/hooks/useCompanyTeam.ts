@@ -24,6 +24,7 @@ export interface TeamMember {
   license_expires_at?: string | null;
   license_rejection_reason?: string | null;
   license_renewal?: PhytoLicenseRenewal | null;
+  license_submitted_at?: string | null;
   /** Cuándo le pidió la empresa el carnet por última vez. */
   license_requested_at?: string | null;
   /** R-04: tiene horario fijo (al menos una franja semanal). */

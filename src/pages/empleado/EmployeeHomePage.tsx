@@ -13,7 +13,7 @@ import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryL
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
 import { supabase } from '../../lib/supabase';
-import { employeeLicensePrompt, licenseView, needsUpload, type PhytoLicenseSummary } from '../../shared/phytoLicense';
+import { employeeLicensePrompt, licenseView, type PhytoLicenseSummary } from '../../shared/phytoLicense';
 
 // Panel del empleado (/mi-trabajo, GarSer Empresas F3.3 y F5.3), en tres pestañas: Hoy (sus
 // trabajos de hoy), Semana (los de los próximos 7 días y su horario) y Perfil (empresa,
@@ -96,8 +96,10 @@ const EmployeeHomePage: React.FC = () => {
         companyName: membership.company_name,
       })
     : null;
-  // En «Perfil», el carnet va arriba si hay que subirlo.
-  const licenseFirst = Boolean(licensePrompt) || (needsUpload(licenseView(membership?.license)) && Boolean(membership?.license_needed));
+  // En «Perfil», el carnet va arriba mientras haya algo que hacer o esperar (tampoco salta al
+  // enviarlo: el «En revisión» se queda donde estaba).
+  const currentLicenseView = licenseView(membership?.license);
+  const licenseFirst = Boolean(licensePrompt) || (Boolean(membership?.license_needed) && currentLicenseView !== 'approved');
   const openLicense = () => {
     scrollToLicense.current = true;
     setParams({ tab: 'profile' }, { replace: true });
@@ -106,9 +108,11 @@ const EmployeeHomePage: React.FC = () => {
     <PhytosanitaryLicenseUpload
       id={LICENSE_ANCHOR}
       summary={membership.license ?? null}
-      intro={membership.license_needed
-        ? `${membership.company_name} hace tratamientos fitosanitarios: para que te los asigne, sube tu carnet de aplicador. GarSer lo revisa y te avisa.`
-        : 'Solo si vas a hacer tratamientos fitosanitarios (insecticidas, fungicidas o herbicidas). GarSer lo revisa y te avisa.'}
+      intro={membership.license?.active
+        ? `Con tu carnet aprobado, ${membership.company_name} puede asignarte tratamientos fitosanitarios.`
+        : membership.license_needed
+          ? `${membership.company_name} hace tratamientos fitosanitarios: para que te los asigne, sube tu carnet de aplicador. GarSer lo revisa y te avisa.`
+          : 'Solo si vas a hacer tratamientos fitosanitarios (insecticidas, fungicidas o herbicidas). GarSer lo revisa y te avisa.'}
       onSubmitted={() => void load()}
     />
   ) : null;

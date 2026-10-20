@@ -8,7 +8,7 @@ vi.mock('../../lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('react-hot-toast', () => ({ default: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 import ProviderSetupAdmin from './ProviderSetupAdmin';
-import { buildAdminProviderEntries, type AdminProviderRow } from './providerSetupEntries';
+import { buildAdminProviderEntries, marketingLine, type AdminProviderRow } from './providerSetupEntries';
 
 const lawn = {
   id: 'svc', name: 'Corte de césped', service_active: true, needs_license: false,
@@ -60,6 +60,15 @@ describe('buildAdminProviderEntries', () => {
 
   it('una cuenta suspendida no aparece aunque lo tenga todo', () => {
     expect(buildAdminProviderEntries([row({ status: status({ suspended: true }) })])[0].category).toBe('hidden');
+  });
+});
+
+describe('marketingLine', () => {
+  it('dice qué materiales ha usado y cuándo, o que todavía nada', () => {
+    expect(marketingLine(null)).toBe('Marketing: todavía no ha descargado nada');
+    expect(marketingLine({ downloads: 0, last_at: null, materials: [] })).toBe('Marketing: todavía no ha descargado nada');
+    const today = new Date().toISOString();
+    expect(marketingLine({ downloads: 3, last_at: today, materials: ['social', 'van_vinyl'] })).toBe('Marketing: Flyer para redes, Vinilo para la furgoneta · hoy');
   });
 });
 

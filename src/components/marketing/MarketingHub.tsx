@@ -6,7 +6,7 @@ import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import { useMarketingProfile } from '../../hooks/useMarketingProfile';
 import MaterialEditor from './MaterialEditor';
 import MaterialPreview from './MaterialPreview';
-import { getMaterial, PRINT_MATERIAL_IDS, type MaterialId } from '../../utils/marketing/materials';
+import { getMaterial, PRINT_MATERIAL_IDS, thumbnailSize, type MaterialId } from '../../utils/marketing/materials';
 import {
   bookingUrl,
   buildMarketingContent,
@@ -299,7 +299,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
                   {content && (
                     <MaterialPreview
                       material={id}
-                      size={material.sizes[0]}
+                      size={thumbnailSize(material)}
                       content={content}
                       avatar={avatar}
                       maxSide={360}

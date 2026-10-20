@@ -206,8 +206,9 @@ function drawServices(ctx: Ctx, b: Box, services: string[], palette: Palette, mo
     return;
   }
   if (mode === 'chips') {
-    // El tamaño más grande con el que todos los chips caben en la caja, en líneas centradas.
-    let size = b.h / 3;
+    // El tamaño más grande con el que todos los chips caben en la caja, en líneas centradas (con
+    // tope: con un solo servicio no sale un chip gigante).
+    let size = Math.min(b.h / 3, b.w * 0.05);
     for (;;) {
       ctx.font = fontOf(700, size);
       const padX = size * 0.75;
@@ -248,16 +249,24 @@ function drawServices(ctx: Ctx, b: Box, services: string[], palette: Palette, mo
       size *= 0.93;
     }
   }
-  // Lista: una o dos columnas según el hueco, con una marca verde delante de cada servicio.
-  const twoCols = services.length > 3 && b.w / b.h > 1.6;
+  // Lista con una marca verde delante de cada servicio, en una o dos columnas: la que deje la letra
+  // más grande (en un hueco estrecho, una; en uno ancho y bajo, dos).
+  const colGap = b.w * 0.04;
+  const sizeFor = (columns: number) => {
+    const perColumn = Math.ceil(services.length / columns);
+    const columnW = (b.w - colGap * (columns - 1)) / columns;
+    let s = Math.min((b.h / perColumn) * 0.62, b.h * 0.3);
+    ctx.font = fontOf(600, s);
+    const widestText = Math.max(...services.map((item) => ctx.measureText(item).width));
+    const room = columnW - s * 1.6;
+    if (widestText > room) s *= room / widestText;
+    return s;
+  };
+  const twoCols = services.length > 1 && sizeFor(2) > sizeFor(1) * 1.05;
   const perCol = twoCols ? Math.ceil(services.length / 2) : services.length;
-  const colW = twoCols ? (b.w - b.w * 0.04) / 2 : b.w;
+  const colW = twoCols ? (b.w - colGap) / 2 : b.w;
   const rowH = b.h / perCol;
-  let size = Math.min(rowH * 0.62, b.h * 0.3);
-  ctx.font = fontOf(600, size);
-  const widest = Math.max(...services.map((s) => ctx.measureText(s).width));
-  const textSpace = colW - size * 1.6;
-  if (widest > textSpace) size *= textSpace / widest;
+  const size = sizeFor(twoCols ? 2 : 1);
   ctx.font = fontOf(600, size);
   services.forEach((service, i) => {
     const col = twoCols ? Math.floor(i / perCol) : 0;
@@ -429,7 +438,9 @@ async function drawCell(ctx: Ctx, material: MaterialId, cell: CellLayout, conten
   }
   if (b.services) {
     const mode = material === 'social' ? 'chips' : material === 'van_vinyl' || material === 'fence_sign' ? 'line' : 'list';
-    drawServices(ctx, b.services, content.services, palette, mode, align);
+    // En una tarjeta de 85×55 mm, más de 4 servicios dejan la letra ilegible.
+    const services = material === 'business_card' ? content.services.slice(0, 4) : content.services;
+    drawServices(ctx, b.services, services, palette, mode, align);
   }
   if (b.steps) drawSteps(ctx, b.steps, content, palette);
   if (b.meta) drawMeta(ctx, b.meta, content, palette, align);

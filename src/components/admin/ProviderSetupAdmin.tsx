@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Mail, Phone, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { SetupStep } from '../../shared/providerSetup';
-import { buildAdminProviderEntries, type AdminProviderEntry, type AdminProviderRow } from './providerSetupEntries';
+import { buildAdminProviderEntries, marketingLine, type AdminProviderEntry, type AdminProviderRow } from './providerSetupEntries';
 import { SetupStepList } from '../provider/ProviderSetupChecklist';
 
 // Admin · Profesionales (2026-10-20): qué profesionales aprobados todavía no salen a los clientes y
@@ -64,6 +64,7 @@ const ProviderRow: React.FC<{ entry: AdminProviderEntry }> = ({ entry }) => {
       {extras.length > 0 && (
         <p className="mt-1 text-xs text-gray-500">Recomendado: {extras.map((s) => s.title).join(', ')}</p>
       )}
+      <p className="mt-1 text-xs text-gray-500">{marketingLine(entry.marketing)}</p>
 
       <div className="mt-3 flex flex-wrap gap-2">
         {entry.phone && (

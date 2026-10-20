@@ -88,7 +88,7 @@ const SOCIAL_SIZES: MaterialSize[] = [
 
 const CARD_SIZES: MaterialSize[] = [
   printSize('sheet', 'Hoja A4 con 10', 'para imprimir en casa y recortar', PRINT.a4.w, PRINT.a4.h, 300),
-  printSize('card', 'Tarjeta suelta', 'para la imprenta (8,5 × 5,5 cm)', PRINT.card.w, PRINT.card.h, 300),
+  printSize('card', 'Tarjeta suelta', 'para la imprenta', PRINT.card.w, PRINT.card.h, 300),
 ];
 
 export const MARKETING_MATERIALS: MarketingMaterial[] = [
@@ -192,6 +192,11 @@ export function getMaterial(id: MaterialId): MarketingMaterial {
   const material = MARKETING_MATERIALS.find((m) => m.id === id);
   if (!material) throw new Error(`Material desconocido: ${id}`);
   return material;
+}
+
+/** El tamaño que se enseña en la miniatura: en las tarjetas, la tarjeta suelta (se reconoce mejor que la hoja). */
+export function thumbnailSize(material: MarketingMaterial): MaterialSize {
+  return material.sizes.find((size) => size.id === 'card') ?? material.sizes[0];
 }
 
 /** Los materiales para imprimir, en el orden en que se enseñan. */

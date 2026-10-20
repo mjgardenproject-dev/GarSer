@@ -1396,6 +1396,82 @@ Rellena esto antes de empezar y ten la tabla a mano:
 > - En el navegador se leyó el QR de los 32 materiales y tamaños (y de cada tarjeta y pegatina de las
 >   hojas): todos llevan a `https://garser.es/reservar/<id>?utm_source=<material>`.
 
+## Sección 27 — Carnet fitosanitario de los empleados (2026-10-20)
+
+> **Qué es.** Rama `feat/carnet-empleados`. El carnet es de cada persona (D4).
+>
+> **Quién puede enviarlo:**
+> - el propio empleado, desde «Mi trabajo»;
+> - o, con su permiso, el dueño de la empresa desde la ficha del equipo (decisión del usuario).
+>
+> **Lo que cambia:**
+> - El envío pasa por el servidor, que comprueba quién lo envía y para quién, que el archivo es suyo, la declaración responsable y un máximo de 5 envíos al día.
+> - Renovar ya no quita el carnet vigente.
+> - El rechazo lleva motivo.
+> - Avisos por correo y en el móvil: revisión, «tu empresa te lo pide», «tu empresa lo ha enviado», 30 días antes de caducar y al caducar.
+>
+> **Despliegue, todo seguido:**
+> 1. Migración `20261020140000`.
+> 2. `supabase functions deploy send-email-notification --use-api`.
+> 3. Fusionar el PR.
+>
+> Entre el paso 1 y el 3, la web antigua no puede subir carnets ni rechazar sin motivo.
+>
+> **Antes de empezar:**
+> - la empresa de prueba, con «Servicios fitosanitarios» activo;
+> - un empleado sin carnet;
+> - el admin;
+> - el móvil del empleado con los avisos activados.
+
+**A. El empleado lo sube**
+
+- [ ] **27.1 — Aviso en «Hoy».** El empleado entra en «Mi trabajo». ✅ Arriba sale «Sube tu carnet fitosanitario» con el botón «Subir mi carnet». ✅ El botón lleva a «Perfil», directo al carnet.
+- [ ] **27.2 — Con la cámara.** «Hacer foto» abre la cámara trasera. Haz la foto de delante y, con «Foto de detrás», la de detrás. ✅ Se ven las dos con «Delante» y «Detrás».
+- [ ] **27.3 — Enviar.** Sin marcar la declaración, ✅ «Enviar a revisión» está desactivado. Márcala y envía. ✅ «Carnet enviado. Te avisaremos cuando esté revisado.» ✅ El carnet queda arriba con «En revisión» y el aviso de «Hoy» desaparece.
+- [ ] **27.4 — Un PDF.** Con otra cuenta, «Elegir archivo» y un PDF. ✅ Se envía igual. Un archivo que no sea foto ni PDF: ✅ «Ese archivo no vale…».
+
+**B. La empresa**
+
+- [ ] **27.5 — Lo ve sin ver el documento.** Empresa → «Equipo» → la persona. ✅ «Carnet fitosanitario · En revisión · Enviado el …». No hay forma de abrir el documento.
+- [ ] **27.6 — Pedírselo.** Con un empleado sin carnet, «Pedírselo». ✅ «Le hemos avisado…», el botón pasa a «Pedido» y sale «Se lo pediste hoy». ✅ Al empleado le llega el correo «… te pide tu carnet fitosanitario» y el aviso en el móvil.
+- [ ] **27.7 — Enviarlo por él.** «Subir su carnet» abre una hoja con «Carnet de …». Sube una foto y acepta la declaración («…tengo su permiso para enviarlo»). ✅ Queda «En revisión». ✅ Al empleado le llega «… ha enviado tu carnet fitosanitario a GarSer».
+- [ ] **27.8 — Sin carnet aprobado no hay fitosanitarios.** En «Servicios» de esa persona, ✅ «Servicios fitosanitarios» no se puede marcar y dice «pídeselo o súbelo tú».
+
+**C. El admin**
+
+- [ ] **27.9 — La cola.** Admin → «Fitosanitarios». ✅ Cada carnet dice de quién es: «Autónomo», «Titular de…» o «Empleado de…». Y según el caso, ✅ «Lo envió su empresa», «Renovación · el actual vale hasta…» o «Rechazado N veces antes».
+- [ ] **27.10 — Ver el documento.** «Revisar». ✅ Se ve la foto (las dos caras en una). En un PDF, ✅ «Abrir el documento en otra pestaña» lo abre también desde el móvil.
+- [ ] **27.11 — Rechazar con motivo.** Sin motivo, ✅ «Rechazar» está desactivado. Elige un motivo rápido y rechaza. ✅ Al empleado y a la empresa les llega el correo con el motivo. ✅ En «Mi trabajo» del empleado, «Hoy» dice «Tu carnet no se ha aprobado · Motivo: …».
+- [ ] **27.12 — Aprobar.** Con la fecha de caducidad puesta, aprueba. ✅ El empleado recibe «Tu carnet fitosanitario está aprobado» con «Válido hasta». ✅ La empresa recibe «El carnet fitosanitario de … está aprobado», y en su ficha ya puede marcar «Servicios fitosanitarios» y guardar.
+
+**D. Renovar sin perder el carnet (el fallo grave de antes)**
+
+- [ ] **27.13 — Autónomo con carnet aprobado.** Mi perfil → carnet → «¿Has renovado tu carnet? Súbelo» y envía uno nuevo. ✅ Sigue diciendo «Carnet aprobado · renovado en revisión». ✅ Una reserva de prueba de un tratamiento químico en su zona lo sigue enseñando en «Profesionales».
+- [ ] **27.14 — Rechazar el renovado.** El admin rechaza ese renovado. ✅ El autónomo sigue con el carnet aprobado (y sigue saliendo en los químicos). ✅ Su correo dice «Tu carnet actual sigue valiendo hasta el …».
+- [ ] **27.15 — Caducidad.** No hace falta esperar; lo cubren las pruebas SQL. Si quieres verlo, con permiso, pon en una cuenta de prueba la caducidad a 10 días:
+  ```sql
+  update gardener_licenses set expires_at = now() + interval '10 days' where id = '<id>';
+  ```
+  ✅ En el siguiente minuto llega «Tu carnet fitosanitario caduca el …» al titular y, si es empleado, a la empresa. Una sola vez.
+
+> En local lo comprueban:
+> - `supabase/tests/phyto_licenses_for_teams.test.sql`:
+>   - nadie escribe la tabla desde la web;
+>   - el almacén solo deja subir a quien toca;
+>   - el archivo tiene que ser suyo y estar en su carpeta;
+>   - límite de envíos, renovación, motivo, empresa, avisos y caducidad.
+>
+>   Se comprobó que falla con el comportamiento anterior.
+> - Los tests de `PhytosanitaryLicenseUpload`, `TeamMemberCard`, `LicenseVerificationAdmin`, `phytoLicense` y `licenseEmailCopy`.
+> - En el navegador, a 390 px, el recorrido completo:
+>   - el empleado sube dos fotos;
+>   - el admin rechaza;
+>   - la empresa se lo pide y lo envía por él;
+>   - el admin aprueba;
+>   - la empresa le asigna fitosanitarios.
+>
+>   Los correos salieron con su destinatario y su asunto.
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

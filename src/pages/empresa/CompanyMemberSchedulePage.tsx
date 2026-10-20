@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import AvailabilityManager from '../../components/gardener/AvailabilityManager';
 import { useCompanyTeam } from '../../hooks/useCompanyTeam';
@@ -13,6 +13,8 @@ const CompanyMemberSchedulePage: React.FC = () => {
   const navigate = useNavigate();
   const { memberId } = useParams<{ memberId: string }>();
   const { data, loading, error } = useCompanyTeam();
+  // «Completar la cuenta» lo abre en «Horario fijo» (?tab=recurring) para crearlo.
+  const [params] = useSearchParams();
 
   if (loading) {
     return (
@@ -32,6 +34,7 @@ const CompanyMemberSchedulePage: React.FC = () => {
       onBack={() => navigate('/empresa')}
       member={{ memberId: member.member_id, userId: member.user_id, name }}
       hideMinNotice
+      initialTab={params.get('tab') === 'recurring' ? 'recurring' : 'weekly'}
     />
   );
 };

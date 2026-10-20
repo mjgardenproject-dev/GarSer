@@ -124,10 +124,10 @@ const CompanyPanel: React.FC = () => {
         navigate(`/empresa/configuracion?tab=${target.tab}`);
         break;
       case 'schedule':
-        navigate('/empresa/horario');
+        navigate(`/empresa/horario${target.tab ? `?tab=${target.tab}` : ''}`);
         break;
       case 'member_schedule':
-        navigate(`/empresa/equipo/${target.memberId}/horario`);
+        navigate(`/empresa/equipo/${target.memberId}/horario${target.tab ? `?tab=${target.tab}` : ''}`);
         break;
       case 'team':
         setTab('team');

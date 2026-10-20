@@ -197,7 +197,7 @@ describe('buildProviderSetupSteps · empresa', () => {
     const schedule = stepById(summary, 'schedule');
     expect(schedule?.state).toBe('todo');
     expect(schedule?.detail).toContain('Ana (sin horario)');
-    expect(schedule?.cta).toEqual({ label: 'Horario de Ana', target: { kind: 'member_schedule', memberId: 'm-ana' } });
+    expect(schedule?.cta).toEqual({ label: 'Horario de Ana', target: { kind: 'member_schedule', memberId: 'm-ana', tab: 'recurring' } });
   });
 
   it('el dueño con la agenda llena: aviso y botón a su horario', () => {
@@ -214,6 +214,21 @@ describe('buildProviderSetupSteps · empresa', () => {
       [member({ service_ids: ['svc-lawn', 'svc-phyto'] })],
     ));
     expect(stepById(summary, 'license')).toMatchObject({ state: 'todo', title: 'Carnets fitosanitarios', cta: { target: { kind: 'company_license' } } });
+    expect(stepById(summary, 'license')?.detail).toContain('no sale en los tratamientos con producto químico');
+  });
+
+  it('fitosanitarios sin nadie que lo haga: sin carnet no se puede ofrecer, y dos servicios sin asignar en plural', () => {
+    const summary = buildProviderSetupSteps(company({
+      services: [
+        service(),
+        service({ id: 'svc-hedge', name: 'Poda de setos', workers: 0, workers_with_hours: 0, visible: false }),
+        phyto({ workers: 0, workers_with_hours: 0, licensed_workers_with_hours: 0, visible: false, visible_chemical: false }),
+      ],
+    }));
+    expect(stepById(summary, 'team_services')?.detail).toBe(
+      'Nadie de tu equipo hace Poda de setos y Servicios fitosanitarios. Asígnalos a alguien. Los fitosanitarios necesitan a alguien con el carnet aprobado.',
+    );
+    expect(stepById(summary, 'license')?.detail).toContain('para ofrecerlo, alguien de tu equipo necesita el carnet');
   });
 
   it('fitosanitarios con un carnet en revisión', () => {

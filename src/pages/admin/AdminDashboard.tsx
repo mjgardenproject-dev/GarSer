@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { formatEuro } from '../../shared/bookingAmounts';
-import { buildAdminProviderEntries, type AdminProviderRow } from '../../components/admin/ProviderSetupAdmin';
+import { buildAdminProviderEntries, type AdminProviderRow } from '../../components/admin/providerSetupEntries';
 
 const AdminDashboard: React.FC = () => {
   const [data, setData] = useState({

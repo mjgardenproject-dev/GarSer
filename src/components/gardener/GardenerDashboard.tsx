@@ -47,6 +47,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   useEffect(() => {
     localStorage.setItem('gardener_active_tab', activeTab);
   }, [activeTab]);
+  // «Completar la cuenta» abre el horario en «Horario fijo» para crearlo; el botón de siempre, no.
+  const [availabilityTab, setAvailabilityTab] = useState<'weekly' | 'recurring'>('weekly');
 
   const { openConfirm, confirmDialog } = useConfirmDialog();
   const [selectedChat, setSelectedChat] = useState<{
@@ -281,6 +283,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       navigate(`/dashboard?tab=${target.tab}`);
       setActiveTab('profile');
     } else if (target.kind === 'schedule') {
+      setAvailabilityTab(target.tab ?? 'weekly');
       setActiveTab('availability');
     } else if (target.kind === 'account') {
       navigate('/account');
@@ -293,7 +296,15 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     return <BookingRequestsManager onBack={() => setActiveTab('dashboard')} />;
   }
   if (!pending && activeTab === 'availability') {
-    return <AvailabilityManager onBack={() => setActiveTab('dashboard')} />;
+    return (
+      <AvailabilityManager
+        initialTab={availabilityTab}
+        onBack={() => {
+          setAvailabilityTab('weekly');
+          setActiveTab('dashboard');
+        }}
+      />
+    );
   }
   if (!pending && activeTab === 'profile') {
     return <ProfileSettings onBack={() => setActiveTab('dashboard')} />;

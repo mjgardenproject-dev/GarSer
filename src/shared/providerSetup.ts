@@ -81,8 +81,9 @@ export type SetupStepState = 'done' | 'todo' | 'review' | 'warning' | 'blocked';
 /** Adónde lleva cada botón. Cada panel lo traduce a su pantalla. */
 export type SetupTarget =
   | { kind: 'profile'; tab: 'services' | 'coverage' | 'personal' }
-  | { kind: 'schedule' }
-  | { kind: 'member_schedule'; memberId: string }
+  /** `recurring`: abre en «Horario fijo» (crear el horario semanal). */
+  | { kind: 'schedule'; tab?: 'recurring' }
+  | { kind: 'member_schedule'; memberId: string; tab?: 'recurring' }
   | { kind: 'team' }
   | { kind: 'company_license' }
   | { kind: 'account' };
@@ -196,7 +197,7 @@ function soloScheduleStep(status: ProviderSetupStatus): SetupStep {
       title: 'Horario',
       detail: 'Crea tu horario semanal: los clientes solo pueden reservarte en tus horas libres.',
       state: 'todo',
-      cta: { label: 'Crear horario', target: { kind: 'schedule' } },
+      cta: { label: 'Crear horario', target: { kind: 'schedule', tab: 'recurring' } },
     };
   }
   return {
@@ -272,7 +273,7 @@ function companyServicesStep(status: ProviderSetupStatus, team: ProviderSetupTea
   return {
     ...base,
     state: 'todo',
-    detail: `Nadie de tu equipo hace ${joinNames(uncovered.map((s) => s.name))}. Asígnalo a alguien.${
+    detail: `Nadie de tu equipo hace ${joinNames(uncovered.map((s) => s.name))}. ${uncovered.length === 1 ? 'Asígnalo' : 'Asígnalos'} a alguien.${
       phytoNeedsLicense ? ' Los fitosanitarios necesitan a alguien con el carnet aprobado.' : ''
     }`,
     cta: { label: 'Asignar servicios', target: { kind: 'team' } },
@@ -305,7 +306,9 @@ function companyScheduleStep(status: ProviderSetupStatus, team: ProviderSetupTea
   const cta = single
     ? {
         label: single.role === 'owner' ? 'Abrir mi horario' : `Horario de ${memberLabel(single)}`,
-        target: (single.role === 'owner' ? { kind: 'schedule' } : { kind: 'member_schedule', memberId: single.member_id }) as SetupTarget,
+        target: (single.role === 'owner'
+          ? { kind: 'schedule', ...(single.has_recurring_schedule ? {} : { tab: 'recurring' }) }
+          : { kind: 'member_schedule', memberId: single.member_id, ...(single.has_recurring_schedule ? {} : { tab: 'recurring' }) }) as SetupTarget,
       }
     : { label: 'Ver equipo', target: { kind: 'team' } as SetupTarget };
   return {
@@ -335,10 +338,15 @@ function companyLicenseStep(status: ProviderSetupStatus, team: ProviderSetupTeam
   const owner = team.members.find((m) => m.role === 'owner');
   const ownerCanUpload = Boolean(owner && !owner.has_valid_license);
   const expired = team.members.some((m) => m.license_status === 'expired');
+  // Fitosanitarios solo se puede asignar a quien tiene carnet: sin nadie, ni siquiera sale para
+  // los ecológicos. Con alguien que lo hace (o desbroce con herbicida), falta solo lo químico.
+  const consequence = missing.every((s) => s.workers === 0)
+    ? 'para ofrecerlo, alguien de tu equipo necesita el carnet'
+    : 'no sale en los tratamientos con producto químico';
   return {
     ...base,
     state: expired ? 'warning' : 'todo',
-    detail: `Nadie con el carnet aprobado hace ${joinNames(missing.map((s) => s.name))}: no sale en los tratamientos con producto químico. ${
+    detail: `Nadie con el carnet aprobado hace ${joinNames(missing.map((s) => s.name))}: ${consequence}. ${
       ownerCanUpload ? 'Sube el tuyo o pide a tu equipo que suba el suyo desde su panel.' : 'Cada persona sube su carnet desde su panel.'
     }`,
     cta: ownerCanUpload

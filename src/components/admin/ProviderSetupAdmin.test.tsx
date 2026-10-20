@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('../../lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('react-hot-toast', () => ({ default: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
-import ProviderSetupAdmin, { buildAdminProviderEntries, type AdminProviderRow } from './ProviderSetupAdmin';
+import ProviderSetupAdmin from './ProviderSetupAdmin';
+import { buildAdminProviderEntries, type AdminProviderRow } from './providerSetupEntries';
 
 const lawn = {
   id: 'svc', name: 'Corte de césped', service_active: true, needs_license: false,

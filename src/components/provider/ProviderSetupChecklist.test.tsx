@@ -61,7 +61,7 @@ describe('ProviderSetupChecklist', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Configurar servicios' }));
     expect(onNavigate).toHaveBeenCalledWith({ kind: 'profile', tab: 'services' });
     fireEvent.click(screen.getByRole('button', { name: 'Crear horario' }));
-    expect(onNavigate).toHaveBeenCalledWith({ kind: 'schedule' });
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'schedule', tab: 'recurring' });
     // Sin servicios visibles, no se ofrece compartir el enlace.
     expect(screen.queryByRole('button', { name: /Compartir enlace/ })).toBeNull();
   });

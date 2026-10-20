@@ -4,7 +4,7 @@ import { ArrowRight, MessageCircle } from 'lucide-react';
 
 import GarserLogo from '../common/GarserLogo';
 import { PUBLIC_CONTACT_ANCHOR } from '../../config/publicSiteContent';
-import { clearBookingResumeStorage } from '../../utils/bookingResumeStorage';
+import { clearWizardDraftsForFreshStart } from '../../utils/bookingResumeStorage';
 
 /** Páginas públicas de la navegación. «Reservar» no está aquí: no es una página, es la acción
  * de empezar una reserva, y por eso nunca se marca como «estás aquí». */
@@ -20,7 +20,7 @@ const PublicHeader: React.FC = () => {
   const { pathname } = useLocation();
 
   const handleReservar = () => {
-    clearBookingResumeStorage({ flow: 'wizard', includeAnonFallback: true });
+    clearWizardDraftsForFreshStart();
     navigate('/reservar?start=1');
   };
 

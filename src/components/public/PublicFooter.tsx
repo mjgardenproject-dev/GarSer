@@ -4,7 +4,7 @@ import { Mail, MessageCircle, Phone } from 'lucide-react';
 
 import { PUBLIC_CONTACT_ANCHOR, PUBLIC_WHATSAPP_NUMBER, PUBLIC_WHATSAPP_URL } from '../../config/publicSiteContent';
 import { useAppSettings } from '../../hooks/useAppSettings';
-import { clearBookingResumeStorage } from '../../utils/bookingResumeStorage';
+import { clearWizardDraftsForFreshStart } from '../../utils/bookingResumeStorage';
 
 const PublicFooter: React.FC = () => {
   const { settings } = useAppSettings();
@@ -15,7 +15,7 @@ const PublicFooter: React.FC = () => {
   const phoneHref = contactPhone ? `tel:${contactPhone.replace(/\s+/g, '')}` : '';
 
   const handleReservar = () => {
-    clearBookingResumeStorage({ flow: 'wizard', includeAnonFallback: true });
+    clearWizardDraftsForFreshStart();
     navigate('/reservar?start=1');
   };
 

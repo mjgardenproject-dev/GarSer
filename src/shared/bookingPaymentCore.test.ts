@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  attemptRequiresStripePayment,
   buildAuthoritativeBookingStripeLineItems,
+  buildBookingNoPaymentEventId,
   buildBookingPaymentGatewaySyncEventId,
   buildBookingStripeLineItemProductCode,
   getBookingPaymentStatusCopy,
@@ -166,5 +168,24 @@ describe('bookingPaymentCore Stripe integrity', () => {
       title: 'Pago pendiente',
       detail: 'La franja queda retenida durante 30 minutos mientras completas el pago.',
     })
+  })
+})
+
+// Lanzamiento (2026-10): reservas sin gastos de gestión, sin pasar por Stripe.
+describe('attemptRequiresStripePayment', () => {
+  it('0 € exactos no pasan por Stripe; un importe positivo sí', () => {
+    expect(attemptRequiresStripePayment(0)).toBe(false)
+    expect(attemptRequiresStripePayment(1975)).toBe(true)
+  })
+
+  it('un importe raro es un error, nunca «gratis»', () => {
+    expect(() => attemptRequiresStripePayment(-1)).toThrow()
+    expect(() => attemptRequiresStripePayment(12.5)).toThrow()
+    expect(() => attemptRequiresStripePayment(undefined)).toThrow()
+    expect(() => attemptRequiresStripePayment('abc')).toThrow()
+  })
+
+  it('el evento de confirmación sin pago es estable por intento (idempotente)', () => {
+    expect(buildBookingNoPaymentEventId('att-1')).toBe('no_payment:att-1')
   })
 })

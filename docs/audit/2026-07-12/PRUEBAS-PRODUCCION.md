@@ -1172,6 +1172,65 @@ Rellena esto antes de empezar y ten la tabla a mano:
 - [ ] **23.8 — La reserva normal no cambia.** Desde la portada, sin enlace, hasta «Profesionales». ✅
   Salen todos los que cubren tu dirección y ningún recuadro «Reserva con…».
 
+## Sección 24 — Lanzamiento: sin gastos de gestión para los clientes propios (2026-10-19)
+
+> Rama `feat/sin-gastos-clientes-propios`. Sin gastos de gestión: reservas desde el enlace del
+> profesional (`/reservar/<id>`), clientes con una reserva **completada** con ese profesional y las
+> visitas de los planes. Lo decide el servidor al firmar el presupuesto, y solo con el interruptor
+> de **Ajustes del admin** encendido. Se despliega **apagado**: con él apagado, nada cambia.
+> Orden de despliegue: migraciones `20261019120000` y `20261019130000` → funciones
+> `booking-authority`, `booking-payment`, `booking-confirmation-email`, `send-email-notification`
+> → fusionar el PR (web). Hazlo **desde el móvil**, en una ventana privada.
+
+**A. Con el interruptor APAGADO (justo después de desplegar)**
+
+- [ ] **24.1 — Lo desplegado es lo nuevo.** Admin → Ajustes: ✅ sale la tarjeta «Lanzamiento: sin
+  gastos de gestión para los clientes propios», con «Estado: Desactivado». ❌ Si sale «No se ha
+  podido leer este ajuste»: la migración no está aplicada.
+- [ ] **24.2 — Nada cambia.** Reserva desde garser.es (marketplace) hasta el resumen: ✅ en
+  «Profesionales», «Pagas hoy X € de gastos de gestión»; en el resumen, «Continuar al pago» y el
+  importe de Stripe. No hace falta pagar.
+- [ ] **24.3 — El enlace también paga con el interruptor apagado.** Abre `garser.es/reservar/<id>`
+  de un jardinero de prueba y llega al resumen: ✅ igual que 24.2, con gastos de gestión.
+
+**B. Enciende el interruptor** (Ajustes → «Activar» → «Sí, activar»; ✅ «Estado: Activado»)
+
+- [ ] **24.4 — Por el enlace, sin gastos.** `garser.es/reservar/<id>` → «Reservar con este
+  profesional» → hasta «Profesionales»: ✅ «Total de la reserva» = precio del servicio y «Sin gastos
+  de gestión · X € al profesional». Resumen: ✅ «Reservas con <nombre> desde su enlace: sin gastos
+  de gestión», pie «Sin gastos de gestión · No pagas nada online» y botón **«Confirmar reserva»**
+  (no «Continuar al pago»). Pulsa: ✅ sin formulario de Stripe, pantalla «Reserva enviada». En el
+  panel de Stripe ✅ no hay ningún pago nuevo.
+- [ ] **24.5 — El correo del cliente.** ✅ «Hemos enviado la solicitud al profesional. Esta reserva no
+  tiene gastos de gestión…» y la fila «Gastos de gestión: Sin gastos de gestión». ❌ «Hemos retenido».
+- [ ] **24.6 — El jardinero.** En «Solicitudes»: ✅ «Cobrarás X € · Íntegro para ti. Tu cliente no paga
+  gastos de gestión.» Acepta: ✅ la reserva queda confirmada; en Stripe ✅ nada que capturar.
+- [ ] **24.7 — Cliente nuevo desde garser.es sigue pagando.** Con otra cuenta que no haya completado
+  nada con ese jardinero, reserva desde garser.es: ✅ con gastos de gestión, como en 24.2.
+- [ ] **24.8 — Cliente que repite.** Con una cuenta que ya tenga una reserva **completada** con ese
+  jardinero, reserva desde garser.es (sin el enlace): en «Profesionales» ✅ todavía sale con gastos
+  (aún no hay sesión); en el resumen, tras iniciar sesión, ✅ «Ya has trabajado con <nombre>: sin
+  gastos de gestión» y «Confirmar reserva».
+- [ ] **24.9 — «Reservar» limpia el borrador del enlace.** Con sesión iniciada, entra por un enlace,
+  avanza hasta «Servicios» y vuelve a garser.es → «RESERVAR»: ✅ empieza de cero (sin «Reserva con
+  <nombre>»), y una reserva normal ✅ lleva gastos de gestión (si el cliente no repite).
+- [ ] **24.10 — Cancelar una reserva sin gastos.** «Cancelar reserva»: ✅ «Se cancelará la reserva y se
+  liberará el hueco del profesional» (sin importes). En Stripe ✅ nada.
+- [ ] **24.11 — Planes.** En un plan con próxima visita propuesta tras encender el interruptor: ✅ el
+  correo dice «Gastos de gestión: Sin gastos de gestión» y el botón es «Confirmar la visita»; al
+  confirmar, ✅ «Reserva enviada» sin Stripe.
+- [ ] **24.12 — Panel del admin.** Dashboard: ✅ «Reservas sin gastos de gestión» cuenta las reservas
+  exentas confirmadas o completadas; «Ingresos GarSer» no suma nada por ellas.
+
+**C. Vuelta atrás (comprobarla una vez)**
+
+- [ ] **24.13 — Apagar el interruptor.** Ajustes → «Desactivar» → «Sí, desactivar». Repite 24.4 con
+  un presupuesto NUEVO: ✅ vuelve a llevar gastos de gestión. Las reservas ya hechas sin gastos ✅ no
+  cambian. Vuelve a encenderlo al terminar.
+
+> En local esto mismo lo comprueba `node scripts/fee-waiver/verify-fee-waiver.mjs` (22 escenarios,
+> con Stripe en modo test) y `supabase/tests/fee_waiver.test.sql`.
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

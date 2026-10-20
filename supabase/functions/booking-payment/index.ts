@@ -11,14 +11,17 @@ import {
   getProviderCoordinates,
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import {
+  attemptRequiresStripePayment,
   BOOKING_PAYMENT_HOLD_MINUTES,
   buildAuthoritativeBookingStripeLineItems,
+  buildBookingNoPaymentEventId,
   buildBookingPaymentGatewaySyncEventId,
   buildBookingStripeLineItemProductCode,
   isInFlightPaymentAttemptStatus,
   validateBookingStripeMetadataIntegrity,
 } from '../../../src/shared/bookingPaymentCore.ts';
-import type { SerializableBookingData } from '../../../src/shared/bookingQuoteCore.ts';
+import { applyManagementFeeWaiver, type SerializableBookingData } from '../../../src/shared/bookingQuoteCore.ts';
+import { isManagementFeeWaiverReason } from '../../../src/shared/bookingAmounts.ts';
 import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
 import {
   BookingPaymentHttpError,
@@ -712,17 +715,67 @@ async function revalidateQuoteBeforePayment(
     });
   }
 
+  // Lanzamiento (2026-10): si el presupuesto se firmó SIN gastos de gestión, lo que se espera
+  // cobrar ahora es 0. El motivo sale del presupuesto firmado (solo lo escribe el servidor) y se
+  // aplica con la misma función que al firmar, así que precio y horas se siguen comprobando igual.
+  const signedWaiverReason = asRecord(asRecord(quote.economic_snapshot).feeWaiver).reason;
+  const expectedEconomics = isManagementFeeWaiverReason(signedWaiverReason)
+    ? applyManagementFeeWaiver(evaluation.quote.economics, signedWaiverReason)
+    : evaluation.quote.economics;
+
   assertQuoteEconomicsStillMatch({
     quote,
     totalPrice: evaluation.quote.totalPrice,
     estimatedHours: evaluation.quote.estimatedHours,
-    payableNow: Number(evaluation.quote.economics.payableNow || 0),
+    payableNow: Number(expectedEconomics.payableNow || 0),
   });
 
   return {
     quote,
     evaluation,
   };
+}
+
+/**
+ * Lanzamiento (2026-10): crea la reserva de un intento de 0 € (sin gastos de gestión) SIN pasar por
+ * Stripe. Usa la misma función que el webhook (`confirm_booking_payment_attempt`): mismas
+ * comprobaciones de hueco y de importe (0 = 0) y es idempotente, así que un doble clic no duplica
+ * la reserva. Después envía el email de confirmación, como hace el webhook tras un pago.
+ */
+async function confirmAttemptWithoutPayment(
+  admin: ReturnType<typeof createClient>,
+  attempt: AttemptRow,
+  serviceRoleKey: string,
+): Promise<AttemptSummary> {
+  const { data, error } = await admin.rpc('confirm_booking_payment_attempt', {
+    p_attempt_id: attempt.id,
+    p_stripe_event_id: buildBookingNoPaymentEventId(attempt.id),
+    p_stripe_payment_intent_id: null,
+    p_amount_total_cents: 0,
+    p_currency: attempt.currency || 'eur',
+    p_gateway_payload: {
+      mode: 'no_payment',
+      reason: 'management_fee_waived',
+      confirmedFrom: 'booking-payment:prepare_payment',
+    },
+  });
+  if (error) throw error;
+  const summary = data as AttemptSummary;
+
+  if (summary?.status === 'booking_created' && summary.bookingId) {
+    try {
+      // Cabecera explícita: ver el comentario T11 en `cancel_booking` más abajo.
+      const { error: emailError } = await admin.functions.invoke('booking-confirmation-email', {
+        body: { bookingId: summary.bookingId },
+        headers: { Authorization: `Bearer ${serviceRoleKey}` },
+      });
+      if (emailError) throw emailError;
+    } catch (emailError) {
+      // No bloquea la reserva (igual que en el webhook), pero queda registrado.
+      console.error('booking-confirmation-email (reserva sin pago) fallido (no bloqueante):', emailError);
+    }
+  }
+  return summary;
 }
 
 async function getOwnedAttemptRow(
@@ -1956,6 +2009,15 @@ Deno.serve(async (req: Request) => {
       }
       contextQuoteId = quoteId;
 
+      // Si este presupuesto ya acabó en una reserva (pago confirmado, o confirmada al momento por
+      // ir sin gastos de gestión), se devuelve esa reserva. Revalidar el hueco aquí lo daría por
+      // ocupado… por la propia reserva, y un segundo envío respondería «la franja ya no está
+      // disponible». Solo se miran los intentos de este mismo cliente.
+      const alreadyBooked = await getOwnedAttemptRow(dbAdmin, { userId: user.id, quoteId });
+      if (alreadyBooked?.status === 'booking_created') {
+        return jsonResponse({ attempt: await getAttemptSummary(dbAdmin, alreadyBooked.id) });
+      }
+
       await revalidateQuoteBeforePayment(dbAdmin, {
         quoteId,
         userId: user.id,
@@ -2025,6 +2087,28 @@ Deno.serve(async (req: Request) => {
 
     if (attempt.status === 'booking_created' || attempt.status === 'reconciliation_required') {
       return jsonResponse({ attempt: await getAttemptSummary(dbAdmin, attempt.id) });
+    }
+
+    // Lanzamiento (2026-10): sin gastos de gestión no hay nada que cobrar. La reserva se crea ya,
+    // sin PaymentIntent; la web recibe `booking_created` sin clientSecret (como cuando el webhook se
+    // adelanta). La base de datos solo deja preparar un intento de 0 € si el presupuesto firmado
+    // lleva una exención válida.
+    if (!attemptRequiresStripePayment(attempt.payable_now_amount_cents)) {
+      const summary = await confirmAttemptWithoutPayment(dbAdmin, attempt, serviceRoleKey);
+      await persistServerTelemetry(dbAdmin, {
+        level: 'info',
+        event: 'booking.confirmed_without_payment',
+        userId,
+        context: {
+          attemptId: attempt.id,
+          quoteId: attempt.quote_id,
+          providerId: attempt.gardener_id,
+          serviceId: attempt.service_id,
+          status: summary?.status || null,
+          bookingId: summary?.bookingId || null,
+        },
+      });
+      return jsonResponse({ attempt: summary });
     }
 
     const result = attempt.stripe_payment_intent_id

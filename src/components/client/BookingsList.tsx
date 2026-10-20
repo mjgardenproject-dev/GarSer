@@ -14,7 +14,7 @@ import { fetchProviderNames } from '../../utils/profileNames';
 import { fetchRebookPayload } from '../../utils/rebookService';
 import { cancelBooking, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { confirmBookingService } from '../../utils/bookingIncidentService';
-import { clearBookingResumeStorage, writeBookingResume } from '../../utils/bookingResumeStorage';
+import { clearBookingResumeStorage, clearWizardDraftsForFreshStart, writeBookingResume } from '../../utils/bookingResumeStorage';
 import { cancellationConfirmMessage, getCancellationRefundPreview } from '../../shared/bookingAmounts';
 import ChatWindow from '../chat/ChatWindow';
 import ClientBookingCard from '../booking/ClientBookingCard';
@@ -291,7 +291,7 @@ const BookingsList = () => {
           <p className="text-gray-700 font-medium">Todavía no tienes ninguna reserva</p>
           <button
             type="button"
-            onClick={() => navigate('/reservar?start=1')}
+            onClick={() => { clearWizardDraftsForFreshStart(); navigate('/reservar?start=1'); }}
             className="mt-4 text-sm font-semibold text-green-700 underline hover:text-green-800"
           >
             Empezar la primera

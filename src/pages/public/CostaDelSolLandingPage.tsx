@@ -7,7 +7,7 @@ import PublicFooter from '../../components/public/PublicFooter';
 import PublicHeader from '../../components/public/PublicHeader';
 import { SITE_URL, costaDelSolFaqs, pageSeo } from '../../config/publicSiteContent';
 import { useAppSettings } from '../../hooks/useAppSettings';
-import { clearBookingResumeStorage, hasWizardResume } from '../../utils/bookingResumeStorage';
+import { clearWizardDraftsForFreshStart, hasWizardResume } from '../../utils/bookingResumeStorage';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
 
 const CostaDelSolLandingPage: React.FC = () => {
@@ -66,7 +66,7 @@ const CostaDelSolLandingPage: React.FC = () => {
   );
 
   const handleNewBooking = () => {
-    clearBookingResumeStorage({ flow: 'wizard', includeAnonFallback: true });
+    clearWizardDraftsForFreshStart();
     navigate('/reservar?start=1');
   };
 

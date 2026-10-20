@@ -1,8 +1,8 @@
 import {
   BOOKING_AMOUNT_LABELS,
-  GARDENER_AMOUNT_NOTE,
   clientAmountsNote,
   formatEuro,
+  gardenerAmountNote,
   getBookingAmounts,
   type BookingAmounts,
   type BookingAmountsRow,
@@ -39,7 +39,7 @@ export function ClientBookingAmounts({ booking, variant = 'card', className = ''
     <div className={`rounded-xl border border-gray-200 bg-gray-50/60 p-3 sm:p-4 ${className}`}>
       <div className="flex items-baseline justify-between gap-3">
         <span className={`text-gray-600 ${isCheckout ? 'text-sm font-medium' : 'text-xs sm:text-sm'}`}>
-          {amounts.feeIsKnown ? BOOKING_AMOUNT_LABELS.clientTotal : BOOKING_AMOUNT_LABELS.servicePrice}
+          {amounts.feeIsKnown || amounts.feeWaived ? BOOKING_AMOUNT_LABELS.clientTotal : BOOKING_AMOUNT_LABELS.servicePrice}
         </span>
         <span
           className={`font-bold tabular-nums text-gray-900 ${isCheckout ? 'text-2xl sm:text-[2rem] leading-none' : 'text-lg'}`}
@@ -60,6 +60,19 @@ export function ClientBookingAmounts({ booking, variant = 'card', className = ''
             className={`font-semibold tabular-nums text-green-700 ${isCheckout ? 'text-xl sm:text-2xl leading-none' : 'text-base'}`}
           >
             {formatEuro(amounts.pendingToGardener)}
+          </span>
+        </div>
+      )}
+
+      {/* Lanzamiento: reserva sin gastos de gestión (cliente del profesional o visita de un plan).
+          Se dice expresamente en vez de pintar «0,00 € de gastos de gestión». */}
+      {amounts.feeWaived && (
+        <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-200 pt-2">
+          <span className={`text-gray-600 ${isCheckout ? 'text-sm font-medium' : 'text-xs sm:text-sm'}`}>
+            {BOOKING_AMOUNT_LABELS.managementFee}
+          </span>
+          <span className={`font-semibold text-green-700 ${isCheckout ? 'text-base' : 'text-sm'}`}>
+            {BOOKING_AMOUNT_LABELS.managementFeeWaived}
           </span>
         </div>
       )}
@@ -95,7 +108,7 @@ export function GardenerBookingAmount({ booking, variant = 'compact', className 
           {formatEuro(amounts.gardenerReceives)}
         </div>
         <div className="mt-1 max-w-[16rem] text-[11px] leading-4 text-gray-500 sm:ml-auto">
-          {GARDENER_AMOUNT_NOTE}
+          {gardenerAmountNote(amounts)}
         </div>
       </div>
     );
@@ -104,7 +117,7 @@ export function GardenerBookingAmount({ booking, variant = 'compact', className 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-md bg-green-50 px-2 py-1 font-semibold text-green-700 ${className}`}
-      title={GARDENER_AMOUNT_NOTE}
+      title={gardenerAmountNote(amounts)}
     >
       <span className="text-[11px] font-medium uppercase tracking-wide text-green-800/70">
         {BOOKING_AMOUNT_LABELS.gardenerReceives}

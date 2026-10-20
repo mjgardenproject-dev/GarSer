@@ -66,7 +66,9 @@ const MakePlanSheet: React.FC<Props> = ({ bookingId, serviceName, professionalNa
 
         <ul className="mt-4 space-y-1.5 text-sm text-gray-700">
           <li>• El mismo día de la semana y a la misma hora{price != null ? `, por ${formatEuro(price)} cada visita` : ''}.</li>
-          <li>• Unos días antes te proponemos la visita: la confirmas y pagas la gestión con un toque.</li>
+          {/* Sin «pagas la gestión»: durante el lanzamiento las visitas de los planes van sin gastos de
+              gestión, y si los llevan, el pago aparece en el resumen al confirmar. */}
+          <li>• Unos días antes te proponemos la visita: la confirmas con un toque.</li>
           <li>• Si una no te viene bien, no la confirmes: se salta y el plan sigue. Lo cancelas cuando quieras.</li>
         </ul>
 

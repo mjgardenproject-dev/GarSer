@@ -283,8 +283,9 @@ export type GardenersExtraIcon = 'chat' | 'reviews' | 'repeat' | 'price' | 'mult
 /**
  * Textos de /para-jardineros. Modelo que se explica (decisión del dueño, 2026-10-16): el
  * profesional no paga nada; sus clientes (los de su enlace y los que vuelven con él) tampoco;
- * los clientes que trae GarSer pagan ellos los gastos de gestión. Ojo: hoy el código aún cobra
- * gastos de gestión a todos los clientes; el cambio económico va en otra implementación.
+ * los clientes que trae GarSer pagan ellos los gastos de gestión. Lo aplica el servidor con el
+ * interruptor de Ajustes del admin (migración 20261019120000_own_clients_fee_waiver): mientras esté
+ * apagado, todos los clientes siguen pagando gastos de gestión.
  */
 export const gardenersContent = {
   hero: {

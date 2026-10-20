@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAuthoritativeBookingQuote } from './bookingQuoteCore';
+import { applyManagementFeeWaiver, buildAuthoritativeBookingQuote } from './bookingQuoteCore';
 
 describe('buildAuthoritativeBookingQuote', () => {
   it.each([
@@ -648,5 +648,47 @@ describe('buildAuthoritativeBookingQuote', () => {
     expect(result.eligibility).toEqual({ isEligible: true });
     expect(result.estimatedHours).toBe(1);
     expect(result.totalPrice).toBe(40);
+  });
+});
+
+// Lanzamiento (2026-10): espejo de public.waive_quote_economics (misma forma exacta).
+describe('applyManagementFeeWaiver', () => {
+  const economics = {
+    currency: 'EUR' as const,
+    taxRate: 0.21,
+    serviceGrossTotal: 100,
+    serviceNetSubtotal: 82.64,
+    serviceTaxAmount: 17.36,
+    managementFee: 12.5,
+    payableNow: 12.5,
+    payableLater: 100,
+    lines: [
+      { code: 'service_line_1', label: 'Corte', amount: 100, kind: 'service' as const },
+      { code: 'management_fee', label: 'Gastos de gestión', amount: 12.5, kind: 'fee' as const },
+    ],
+    stripeLineItems: [{ code: 'management_fee', label: 'Gastos de gestión', unitAmount: 12.5, quantity: 1 }],
+  };
+
+  it('quita la comisión, el cobro de Stripe y su línea, y guarda la comisión perdonada', () => {
+    const waived = applyManagementFeeWaiver(economics, 'provider_link');
+    expect(waived.managementFee).toBe(0);
+    expect(waived.payableNow).toBe(0);
+    expect(waived.stripeLineItems).toEqual([]);
+    expect(waived.lines.map((line) => line.code)).toEqual(['service_line_1']);
+    expect(waived.feeWaiver).toEqual({ reason: 'provider_link', waivedFee: 12.5 });
+    // El precio del servicio no se toca.
+    expect(waived.serviceGrossTotal).toBe(100);
+    expect(waived.payableLater).toBe(100);
+  });
+
+  it('no modifica la economía original', () => {
+    applyManagementFeeWaiver(economics, 'returning_client');
+    expect(economics.managementFee).toBe(12.5);
+    expect(economics.lines).toHaveLength(2);
+  });
+
+  it('es idempotente: conserva la comisión perdonada original', () => {
+    const twice = applyManagementFeeWaiver(applyManagementFeeWaiver(economics, 'provider_link'), 'maintenance_plan');
+    expect(twice.feeWaiver).toEqual({ reason: 'maintenance_plan', waivedFee: 12.5 });
   });
 });

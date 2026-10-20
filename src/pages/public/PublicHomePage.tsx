@@ -11,7 +11,7 @@ import {
   pageSeo,
 } from '../../config/publicSiteContent';
 import { useAppSettings } from '../../hooks/useAppSettings';
-import { clearBookingResumeStorage, hasWizardResume } from '../../utils/bookingResumeStorage';
+import { clearWizardDraftsForFreshStart, hasWizardResume } from '../../utils/bookingResumeStorage';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
 
 const PublicHomePage: React.FC = () => {
@@ -46,7 +46,7 @@ const PublicHomePage: React.FC = () => {
   );
 
   const handleNewBooking = () => {
-    clearBookingResumeStorage({ flow: 'wizard', includeAnonFallback: true });
+    clearWizardDraftsForFreshStart();
     navigate('/reservar?start=1');
   };
 

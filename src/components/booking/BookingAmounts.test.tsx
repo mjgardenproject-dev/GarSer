@@ -89,3 +89,22 @@ describe('GardenerBookingAmount', () => {
     expect(screen.getByText(/158,00 €/)).toBeTruthy();
   });
 });
+
+// Lanzamiento (2026-10): reservas sin gastos de gestión.
+describe('reservas sin gastos de gestión', () => {
+  const waived = { total_price: 158, management_fee: 0, management_fee_source: 'waived_provider_link', status: 'confirmed' };
+
+  it('el cliente ve el total (= precio del servicio) y «Sin gastos de gestión», nunca «0,00 €»', () => {
+    render(<ClientBookingAmounts booking={waived} />);
+    expect(screen.getByText('Total de la reserva')).toBeTruthy();
+    expect(screen.getAllByText('158,00 €').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Sin gastos de gestión')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('0,00 €');
+  });
+
+  it('al jardinero no se le habla de los gastos del cliente', () => {
+    render(<GardenerBookingAmount booking={waived} variant="hero" />);
+    expect(document.body.textContent).toContain('Íntegro para ti. Tu cliente no paga gastos de gestión.');
+    expect(document.body.textContent).not.toContain('GarSer cobra sus gastos de gestión');
+  });
+});

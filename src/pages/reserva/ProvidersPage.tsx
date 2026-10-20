@@ -959,7 +959,12 @@ const ProvidersPage: React.FC = () => {
                               <span className="text-lg font-semibold">{formatEuro(reservationTotal)}</span>
                               {isPartial ? <span className="text-xs text-amber-700 font-normal">(parcial)</span> : null}
                             </div>
-                            {paymentSummary ? (
+                            {paymentSummary?.feeWaived ? (
+                              // Lanzamiento: por el enlace del profesional, sin gastos de gestión.
+                              <div className="mt-1 text-xs font-medium text-green-700">
+                                Sin gastos de gestión · {formatEuro(paymentSummary.pendingToGardener)} al profesional
+                              </div>
+                            ) : paymentSummary ? (
                               <div className="mt-1 text-xs text-gray-500">
                                 Pagas hoy {formatEuro(paymentSummary.managementFee)} de gastos de gestión ·{' '}
                                 {formatEuro(paymentSummary.pendingToGardener)} al profesional

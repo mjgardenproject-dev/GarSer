@@ -48,6 +48,9 @@ interface BookingRequestWithDetails {
   notes?: string;
   status: 'pending' | 'confirmed' | 'cancelled' | 'expired' | 'accepted' | 'rejected';
   total_price?: number;
+  /** Para «Cobrarás»: si la reserva va sin gastos de gestión, la nota no habla de ellos. */
+  management_fee?: number | null;
+  management_fee_source?: string | null;
   data_input_mode?: 'photos' | 'manual' | null;
   manual_declaration_id?: string | null;
   price_change_status?: 'none' | 'pending_client_acceptance' | 'accepted' | 'rejected' | 'expired';
@@ -256,6 +259,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         notes: booking.notes,
         status: booking.status,
         total_price: booking.total_price,
+        // Lanzamiento: sin estos dos, la tarjeta no sabe si la reserva va sin gastos de gestión.
+        management_fee: booking.management_fee ?? null,
+        management_fee_source: booking.management_fee_source ?? null,
         data_input_mode: booking.data_input_mode,
         manual_declaration_id: booking.manual_declaration_id,
         price_change_status: booking.price_change_status,

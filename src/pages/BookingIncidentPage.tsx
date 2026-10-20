@@ -170,7 +170,9 @@ const BookingIncidentPage = () => {
         ))}
       </fieldset>
 
-      {selectedOption?.hint && (
+      {/* «Te devolvemos los gastos de gestión» solo si la reserva los tuvo (lanzamiento: hay
+          reservas sin gastos de gestión). */}
+      {selectedOption?.hint && Number(booking.management_fee || 0) > 0 && (
         <p className="mb-4 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5 text-xs text-amber-800">
           {selectedOption.hint}
           {isBlocking && booking.management_fee ? ` (${formatEuro(booking.management_fee)})` : ''}

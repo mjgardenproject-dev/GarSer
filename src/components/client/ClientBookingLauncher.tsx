@@ -6,7 +6,7 @@ import { toast } from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { clearBookingResumeStorage, hasWizardResume, writeBookingResume } from '../../utils/bookingResumeStorage';
 import { fetchRebookPayload } from '../../utils/rebookService';
-import { cancelBooking } from '../../utils/bookingLifecycleService';
+import { cancelBooking, getBookingServiceStart } from '../../utils/bookingLifecycleService';
 import { confirmBookingService } from '../../utils/bookingIncidentService';
 import { reportBookingEvent } from '../../utils/bookingTelemetry';
 import {
@@ -18,7 +18,7 @@ import ClientBookingCard from '../booking/ClientBookingCard';
 import ReviewModal from '../booking/ReviewModal';
 import ChatWindow from '../chat/ChatWindow';
 import { useConfirmDialog } from '../common/ConfirmDialog';
-import { formatEuro } from '../../shared/bookingAmounts';
+import { cancellationConfirmMessage, getCancellationRefundPreview } from '../../shared/bookingAmounts';
 import { RESCHEDULE_MESSAGES, respondBookingReschedule } from '../../utils/bookingRescheduleService';
 import MaintenancePlansSection from '../maintenance/MaintenancePlansSection';
 import MakePlanSheet from '../maintenance/MakePlanSheet';
@@ -106,10 +106,13 @@ const ClientBookingLauncher = () => {
   };
 
   const handleCancel = (booking: OverviewBooking) => {
-    const fee = formatEuro(booking.management_fee);
+    // Mismo aviso que «Mis reservas»: con el caso concreto (más o menos de 24 h, y sin gastos de
+    // gestión si la reserva no los tiene). Antes decía siempre «no se devuelven», también con más
+    // de 24 h, cuando la RPC sí los devuelve.
+    const refundPreview = getCancellationRefundPreview(booking, getBookingServiceStart(booking));
     openConfirm({
       title: '¿Cancelar esta reserva?',
-      message: `Se liberará el hueco del profesional. Los ${fee} de gastos de gestión que ya abonaste no se devuelven.`,
+      message: cancellationConfirmMessage(refundPreview),
       confirmLabel: 'Sí, cancelar',
       cancelLabel: 'No, mantenerla',
       tone: 'danger',

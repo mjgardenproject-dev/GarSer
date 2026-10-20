@@ -34,13 +34,15 @@ interface AvailabilityManagerProps {
   readOnly?: boolean;
   /** Texto del aviso en solo lectura (p. ej. «Tu horario lo pone Jardines Sol»). */
   readOnlyNote?: string;
+  /** Pestaña con la que se abre. «Completar la cuenta» lleva a crear el horario fijo. */
+  initialTab?: 'weekly' | 'recurring';
 }
 
-const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyFrom = 'provider', hideMinNotice = false, member, readOnly = false, readOnlyNote }) => {
+const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyFrom = 'provider', hideMinNotice = false, member, readOnly = false, readOnlyNote, initialTab = 'weekly' }) => {
   const { user, loading: authLoading } = useAuth();
   // De quién es el horario que se ve: el propio o (D22) el de un empleado del dueño.
   const ownerUserId = member?.userId ?? user?.id;
-  const [activeTab, setActiveTab] = useState<'weekly' | 'recurring'>('weekly');
+  const [activeTab, setActiveTab] = useState<'weekly' | 'recurring'>(initialTab);
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [weeklyAvailability, setWeeklyAvailability] = useState<{ [date: string]: { [hour: number]: boolean } }>({});
   const [loading, setLoading] = useState(false);

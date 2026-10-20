@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Briefcase, Leaf, TrendingUp, Wallet, BadgePercent } from 'lucide-react';
+import { Users, Briefcase, Leaf, TrendingUp, Wallet, BadgePercent, UserX } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { formatEuro } from '../../shared/bookingAmounts';
+import { buildAdminProviderEntries, type AdminProviderRow } from '../../components/admin/providerSetupEntries';
 
 const AdminDashboard: React.FC = () => {
   const [data, setData] = useState({
@@ -14,6 +16,20 @@ const AdminDashboard: React.FC = () => {
     feeWaivedBookings: 0,
   });
   const [loading, setLoading] = useState(true);
+  // Profesionales aprobados que todavía no salen a ningún cliente (completar la cuenta profesional).
+  // Aparte del resto: si falla, la tarjeta dice «—» y el dashboard sigue.
+  const [providersHidden, setProvidersHidden] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.rpc('admin_provider_setup_overview');
+      if (!alive || error) return;
+      const entries = buildAdminProviderEntries((data ?? []) as unknown as AdminProviderRow[]);
+      setProvidersHidden(entries.filter((entry) => entry.category === 'hidden').length);
+    })();
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -96,6 +112,7 @@ const AdminDashboard: React.FC = () => {
     { title: 'Volumen transaccionado', value: formatEuro(data.grossVolume), icon: TrendingUp, color: 'text-emerald-500' },
     { title: 'Ingresos GarSer', value: formatEuro(data.platformRevenue), icon: Wallet, color: 'text-amber-500' },
     { title: 'Reservas sin gastos de gestión', value: formatNumber(data.feeWaivedBookings), icon: BadgePercent, color: 'text-emerald-600' },
+    { title: 'Profesionales sin aparecer', value: providersHidden === null ? '—' : formatNumber(providersHidden), icon: UserX, color: 'text-amber-600', to: '/admin/providers' },
   ];
 
   return (
@@ -113,17 +130,24 @@ const AdminDashboard: React.FC = () => {
           </div>
         ) : (
           <section aria-label="Estadísticas generales" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-            {stats.map((stat, i) => (
-              <article key={i} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
-                <div>
-                  <h2 className="text-sm font-medium text-gray-500 mb-1">{stat.title}</h2>
-                  <p className="text-3xl font-bold text-gray-900" style={{ fontVariantNumeric: 'tabular-nums' }}>{stat.value}</p>
-                </div>
-                <div className={`p-4 bg-gray-50 rounded-full ${stat.color}`}>
-                  <stat.icon className="w-8 h-8" aria-hidden="true" />
-                </div>
-              </article>
-            ))}
+            {stats.map((stat, i) => {
+              const card = (
+                <article className="h-full bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
+                  <div>
+                    <h2 className="text-sm font-medium text-gray-500 mb-1">{stat.title}</h2>
+                    <p className="text-3xl font-bold text-gray-900" style={{ fontVariantNumeric: 'tabular-nums' }}>{stat.value}</p>
+                  </div>
+                  <div className={`p-4 bg-gray-50 rounded-full ${stat.color}`}>
+                    <stat.icon className="w-8 h-8" aria-hidden="true" />
+                  </div>
+                </article>
+              );
+              return 'to' in stat && stat.to ? (
+                <Link key={i} to={stat.to} className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500">{card}</Link>
+              ) : (
+                <React.Fragment key={i}>{card}</React.Fragment>
+              );
+            })}
           </section>
         )}
       </div>

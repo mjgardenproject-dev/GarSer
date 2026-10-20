@@ -1239,6 +1239,86 @@ Rellena esto antes de empezar y ten la tabla a mano:
 > En local esto mismo lo comprueba `node scripts/fee-waiver/verify-fee-waiver.mjs` (29 escenarios,
 > con Stripe en modo test) y `supabase/tests/fee_waiver.test.sql`.
 
+## Sección 25 — Completar la cuenta profesional (2026-10-20)
+
+> **Qué es.** Rama `feat/completar-cuenta-profesional`. En el inicio del panel, el jardinero y la
+> empresa ven qué les falta para aparecer a los clientes. Lo calcula el servidor
+> (`my_provider_setup_status`) con las mismas reglas que «Profesionales»:
+> - tarifa activa;
+> - zona con ubicación;
+> - horas libres en 14 días;
+> - carnet para los químicos;
+> - en empresa, además, quién trabaja, qué hace cada uno y su horario.
+>
+> El admin tiene la sección «Profesionales». La foto de «Mi cuenta» ya es la que ven los clientes.
+>
+> **Despliegue:** migración `20261020120000` → fusionar el PR. No toca funciones.
+>
+> **Antes de empezar:** cuentas de prueba, desde el móvil y en una ventana privada:
+> - un **jardinero recién aprobado**;
+> - una **empresa recién aprobada**.
+
+**A. Jardinero**
+
+- [ ] **25.1 — Recién aprobado.** En el inicio del panel, debajo de los botones, ✅ «Completa tu cuenta
+  profesional»:
+  - «Todavía no apareces a los clientes» y «0 de 3»;
+  - el primer paso, «Servicios y precios», con el botón «Configurar servicios».
+- [ ] **25.2 — Cada botón lleva a su sitio:**
+  - «Configurar servicios» → Mi Perfil, pestaña «Servicios»;
+  - «Configurar zona» → «Cobertura»;
+  - «Crear horario» → Horario, pestaña **«Horario fijo»**.
+- [ ] **25.3 — Avanza solo.** Activa un servicio con precios, guarda la zona y crea el horario. Al volver
+  al panel, cada paso sale ✅ con su resumen:
+  - «1 servicio activo: …»;
+  - «Hasta 25 km desde …»;
+  - «X horas libres en los próximos 14 días».
+- [ ] **25.4 — Sale de verdad.** Con todo hecho, ✅ la tarjeta pasa a verde «Ya apareces a los clientes». En
+  otra ventana privada, reserva ese servicio en su zona y ✅ sale en «Profesionales».
+- [ ] **25.5 — Compartir y cerrar.** «Compartir enlace» ✅ abre el menú del móvil (o copia el enlace
+  `garser.es/reservar/<id>`), con «sin gastos de gestión» si el interruptor está encendido. Pulsa la ✕:
+  - ✅ desaparece;
+  - ✅ al recargar sigue sin salir.
+- [ ] **25.6 — Vuelve si algo se rompe.** Deja el horario sin horas libres. Al volver al panel ✅ vuelve la
+  lista completa con «Horario: No tienes horas libres… Abrir más horas». **Vuelve a poner el horario.**
+- [ ] **25.7 — Carnet (solo si ofrece fitosanitarios).** Sin carnet:
+  - ✅ «Carnet fitosanitario: Súbelo… Sin él solo apareces en los ecológicos»;
+  - con el carnet subido, ✅ «GarSer lo está revisando».
+- [ ] **25.8 — Foto.** Sube una foto en «Mi cuenta»:
+  - ✅ el paso recomendado «Foto de perfil» sale hecho;
+  - ✅ un cliente la ve junto a su nombre en «Profesionales» (antes no la veía nunca).
+
+**B. Empresa**
+
+- [ ] **25.9 — Recién aprobada.** En «Agenda», arriba, ✅ el apartado, con sus pasos propios:
+  - «Quién hace los trabajos»;
+  - «Servicios de cada persona»;
+  - «Horario del equipo»;
+  - y «Carnets fitosanitarios», si ofrece fitosanitarios.
+  Los que dependen de otro ✅ salen con candado: «Primero…».
+- [ ] **25.10 — Equipo.** «Ir a Equipo» → pestaña «Equipo». Activa «Yo también trabajo» y asígnate un
+  servicio. Al volver a «Agenda» ✅ «Quién hace los trabajos: 1 persona trabaja: tú».
+- [ ] **25.11 — Horario del equipo.**
+  - ✅ «Sin horas libres: tú (sin horario)».
+  - «Abrir mi horario» → ✅ `/empresa/horario?tab=recurring`, en «Horario fijo».
+  - Si es un empleado: ✅ «Horario de Ana», que lleva a su horario.
+- [ ] **25.12 — Servicio sin nadie.** Ofrece un servicio que no hace nadie: ✅ «Nadie de tu equipo hace
+  X. Asígnalo a alguien.» y ✅ «Ya apareces en …» solo con los que sí se pueden reservar.
+
+**C. Admin**
+
+- [ ] **25.13 — Profesionales.** Admin → «Profesionales»:
+  - ✅ «N aprobados · X aparecen · Y todavía no»;
+  - con «No aparecen» seleccionado;
+  - el jardinero o la empresa de prueba, con «Le falta: …», «Llamar» y «Escribir»;
+  - en «Ver pasos», los mismos pasos que ve él.
+  En el Dashboard, ✅ la tarjeta «Profesionales sin aparecer» lleva aquí.
+
+> En local esto mismo lo comprueban:
+> - `node scripts/provider-setup/verify-provider-setup.mjs` (26 escenarios): en cada uno, lo que dice el
+>   apartado coincide con lo que de verdad enseña «Profesionales»;
+> - `supabase/tests/provider_setup_status.test.sql`.
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

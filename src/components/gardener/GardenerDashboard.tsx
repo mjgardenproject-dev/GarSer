@@ -24,6 +24,8 @@ import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 import SuspendedProviderNotice from '../common/SuspendedProviderNotice';
+import ProviderSetupChecklist from '../provider/ProviderSetupChecklist';
+import type { SetupTarget } from '../../shared/providerSetup';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -45,6 +47,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   useEffect(() => {
     localStorage.setItem('gardener_active_tab', activeTab);
   }, [activeTab]);
+  // «Completar la cuenta» abre el horario en «Horario fijo» para crearlo; el botón de siempre, no.
+  const [availabilityTab, setAvailabilityTab] = useState<'weekly' | 'recurring'>('weekly');
 
   const { openConfirm, confirmDialog } = useConfirmDialog();
   const [selectedChat, setSelectedChat] = useState<{
@@ -271,13 +275,36 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     setSelectedChat({ bookingId, clientName });
   };
 
+  // Completar la cuenta profesional: cada paso lleva a la pantalla donde se arregla. «Mi Perfil»
+  // abre en la pestaña que diga `?tab=` (ProfileSettings la lee de la URL).
+  const handleSetupNavigate = (target: SetupTarget) => {
+    window.scrollTo({ top: 0 });
+    if (target.kind === 'profile') {
+      navigate(`/dashboard?tab=${target.tab}`);
+      setActiveTab('profile');
+    } else if (target.kind === 'schedule') {
+      setAvailabilityTab(target.tab ?? 'weekly');
+      setActiveTab('availability');
+    } else if (target.kind === 'account') {
+      navigate('/account');
+    }
+  };
+
   // Barra de pestañas eliminada: mantenemos la lógica de activeTab y los botones del panel
 
   if (!pending && activeTab === 'requests') {
     return <BookingRequestsManager onBack={() => setActiveTab('dashboard')} />;
   }
   if (!pending && activeTab === 'availability') {
-    return <AvailabilityManager onBack={() => setActiveTab('dashboard')} />;
+    return (
+      <AvailabilityManager
+        initialTab={availabilityTab}
+        onBack={() => {
+          setAvailabilityTab('weekly');
+          setActiveTab('dashboard');
+        }}
+      />
+    );
   }
   if (!pending && activeTab === 'profile') {
     return <ProfileSettings onBack={() => setActiveTab('dashboard')} />;
@@ -378,6 +405,9 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
               {/* Botón de flyer eliminado */}
               </div>
           </div>
+
+          {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
+          {!pending && <ProviderSetupChecklist className="mb-8" onNavigate={handleSetupNavigate} />}
 
           {/* Aviso de instalación (fallo 1, 2026-09-15): solo en móvil, entre el panel y
               las reservas — en Mi Cuenta pasaba desapercibido. Se oculta sola en cuanto

@@ -2836,6 +2836,7 @@ export type Database = {
         Args: { p_email: string }
         Returns: Json
       }
+      admin_provider_setup_overview: { Args: never; Returns: Json }
       admin_review_company_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: Json
@@ -3225,6 +3226,7 @@ export type Database = {
         }[]
       }
       my_maintenance_plans: { Args: never; Returns: Json }
+      my_provider_setup_status: { Args: never; Returns: Json }
       perform_account_closure: {
         Args: { p_admin_id: string; p_expected_mode: string; p_user_id: string }
         Returns: Json

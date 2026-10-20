@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   AlertTriangle,
   UserCircle,
+  UserCheck,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -45,6 +46,8 @@ const AdminLayout: React.FC = () => {
   const navItems = [
     { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/admin/incidents', icon: AlertTriangle, label: 'Incidencias', badge: openIncidents },
+    // Quién sale a los clientes y qué le falta a cada uno (completar la cuenta profesional).
+    { to: '/admin/providers', icon: UserCheck, label: 'Profesionales' },
     { to: '/admin/services', icon: Briefcase, label: 'Servicios' },
     { to: '/admin/phytosanitary', icon: Leaf, label: 'Certificados Fito.' },
     { to: '/admin/users', icon: Users, label: 'Usuarios' },

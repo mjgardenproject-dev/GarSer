@@ -1319,6 +1319,83 @@ Rellena esto antes de empezar y ten la tabla a mano:
 >   apartado coincide con lo que de verdad enseña «Profesionales»;
 > - `supabase/tests/provider_setup_status.test.sql`.
 
+## Sección 26 — Marketing del profesional (2026-10-20)
+
+> **Qué es.** Rama `feat/marketing-profesional`. En el panel del jardinero (botón «Marketing») y en el
+> de la empresa (pestaña «Marketing»), cada profesional se hace sus materiales con su QR y la marca de
+> GarSer:
+> - su QR y su enlace;
+> - el flyer para redes, en 4 tamaños;
+> - para imprimir: tarjetas de visita, tarjeta «Próxima visita», flyer para buzonear, vinilo para la
+>   furgoneta, cartel con pestañas, pegatinas con QR y cartel para la valla;
+> - mensajes para WhatsApp e ideas para promocionarse.
+>
+> Las imágenes se dibujan en el móvil y no se guardan en ningún sitio. Solo se apunta qué se descarga,
+> para el admin.
+>
+> **Despliegue:** migración `20261020130000` → fusionar el PR. No toca funciones.
+>
+> **Antes de empezar:**
+> - el jardinero y la empresa de prueba de la sección 25, ya apareciendo a los clientes;
+> - el móvil (iPhone y, si puedes, Android) con WhatsApp e Instagram instalados;
+> - una impresora.
+
+**A. Se ve y anima**
+
+- [ ] **26.1 — Jardinero.** Panel → botón «Marketing». ✅ Arriba, «Date a conocer y consigue más
+  reservas…». Si el interruptor de «Sin gastos de gestión» está encendido, además ✅ «Tus clientes
+  reservan sin gastos de gestión».
+- [ ] **26.2 — Empresa.** Pestaña «Marketing». ✅ Las 4 pestañas caben en una línea en el móvil. ✅ Los
+  textos dicen «con vosotros».
+- [ ] **26.3 — Sin aparecer a los clientes.** Con una cuenta que todavía no aparece (sin horario, por
+  ejemplo):
+  - ✅ se ven las vistas previas;
+  - ✅ «Descargar QR» y «Compartir o descargar» están desactivados;
+  - ✅ «Completar mi cuenta» lleva al inicio del panel, donde están los pasos que faltan.
+- [ ] **26.4 — Solo lo que ofrece.** En el flyer y en las tarjetas ✅ solo salen los servicios en los
+  que aparece a los clientes. ✅ Nunca salen precios, teléfono ni la dirección.
+
+**B. Compartir y descargar desde el móvil**
+
+- [ ] **26.5 — Flyer a Instagram.** «Flyer para redes» → «Compartir o descargar» → marca «Vertical» e
+  «Historia» → «Compartir». ✅ Se abre el menú del móvil con **las 2 imágenes**. Súbelas a Instagram
+  (publicación e historia). ✅ Se ven nítidas, sin cortes, con el logo de GarSer.
+- [ ] **26.6 — Texto de la publicación.** «Copiar texto para la publicación» y pégalo en Instagram. ✅
+  Lleva el enlace `https://garser.es/reservar/<id>?utm_source=instagram`.
+- [ ] **26.7 — Estado de WhatsApp.** Comparte la «Historia» a tu estado de WhatsApp. ✅ Ocupa toda la
+  pantalla sin bandas.
+- [ ] **26.8 — Mensajes para clientes.** En «Mensajes para tus clientes», «WhatsApp» en «Ya puedes
+  reservar online». ✅ WhatsApp se abre para elegir el contacto, con el texto y el enlace. Mándatelo y
+  ábrelo: ✅ lleva al perfil del profesional con la reserva ligada a él.
+- [ ] **26.9 — QR suelto.** «Descargar QR». ✅ Se guarda un PNG cuadrado con el QR, el nombre y
+  «Reserva en garser.es».
+
+**C. Imprimir y escanear**
+
+- [ ] **26.10 — Hoja de tarjetas.** «Tarjetas de visita» → «Hoja A4 con 10» → descargar. Imprime al
+  **100 % (tamaño real)**, no «ajustar a la página». ✅ Cada tarjeta mide 8,5 × 5,5 cm (con una regla).
+  ✅ Las marcas de corte quedan en los bordes.
+- [ ] **26.11 — Escanear el papel.** Con la cámara de otro móvil, escanea **3 tarjetas distintas** de la
+  hoja impresa. ✅ Todas abren `garser.es/reservar/<id>` del profesional y se puede reservar con él.
+- [ ] **26.12 — Pegatinas y pestañas.** Imprime la hoja de pegatinas y el cartel con pestañas. ✅ Los
+  QR pequeños (pegatina y pestaña) también se escanean desde el papel.
+- [ ] **26.13 — Vinilo.** Descarga el vinilo «Lateral». ✅ El PNG mide 3937 × 1969 (100 × 50 cm a 100
+  ppp) y el logo y el QR se ven nítidos al ampliar. No hace falta imprimirlo.
+
+**D. Admin**
+
+- [ ] **26.14 — Profesionales.** Admin → «Profesionales» → el jardinero de prueba. ✅ «Marketing: …»
+  con los materiales que ha descargado y «hoy». Un profesional que no ha descargado nada: ✅
+  «Marketing: todavía no ha descargado nada».
+
+> En local esto mismo lo comprueban:
+> - `supabase/tests/marketing_downloads.test.sql`: solo el profesional apunta lo suyo, nadie lee la
+>   tabla y el admin ve el resumen;
+> - los tests de `src/utils/marketing` y `src/components/marketing`: medidas, que nada se salga ni se
+>   pise en ningún material ni tamaño, y que los textos no lleven precios ni teléfono.
+> - En el navegador se leyó el QR de los 32 materiales y tamaños (y de cada tarjeta y pegatina de las
+>   hojas): todos llevan a `https://garser.es/reservar/<id>?utm_source=<material>`.
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

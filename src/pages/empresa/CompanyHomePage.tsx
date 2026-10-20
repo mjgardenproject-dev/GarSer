@@ -151,7 +151,7 @@ const CompanyPanel: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <AppHeader title={c.commercial_name || 'Tu empresa'}>
-        <div role="tablist" aria-label="Secciones del panel" className="grid grid-cols-4 gap-1 rounded-xl bg-gray-100 p-1">
+        <div role="tablist" aria-label="Secciones del panel" className="flex gap-1 rounded-xl bg-gray-100 p-1">
           {([['agenda', 'Agenda'], ['team', 'Equipo'], ['marketing', 'Marketing'], ['company', 'Tu empresa']] as const).map(([key, label]) => (
             <button
               key={key}
@@ -162,7 +162,7 @@ const CompanyPanel: React.FC = () => {
                 setTab(key);
                 if (key === 'team') void refresh();
               }}
-              className={`rounded-lg py-2 text-sm font-semibold transition-colors ${tab === key ? 'bg-white text-emerald-800 shadow-sm' : 'text-gray-600'}`}
+              className={`flex-auto rounded-lg px-1.5 py-2 text-sm font-semibold leading-tight transition-colors ${tab === key ? 'bg-white text-emerald-800 shadow-sm' : 'text-gray-600'}`}
             >
               {label}
             </button>
@@ -170,7 +170,8 @@ const CompanyPanel: React.FC = () => {
         </div>
       </AppHeader>
 
-      <main className="mx-auto w-full space-y-4 px-4 py-4 sm:max-w-xl">
+      {/* Marketing usa todo el ancho en escritorio (materiales y mensajes en columnas). */}
+      <main className={`mx-auto w-full space-y-4 px-4 py-4 ${tab === 'marketing' ? 'sm:max-w-5xl' : 'sm:max-w-xl'}`}>
         <SuspendedProviderNotice />
         {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
         {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} />}

@@ -175,6 +175,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
   const qrContent = contentFor('qr_code');
   const messages = clientMessages({ kind: profile.kind, feeWaiverEnabled, link: bookingUrl(profile.providerId, 'whatsapp'), date: new Date() });
   const sectionTitle = 'mb-3 text-lg font-bold text-gray-900';
+  const withYou = profile.kind === 'company' ? 'con vosotros' : 'contigo';
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8">
@@ -191,7 +192,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
       <header className="rounded-2xl bg-[#0E3A22] p-5 text-white sm:p-7">
         <h1 className="text-2xl font-bold sm:text-3xl">Marketing</h1>
         <p className="mt-2 max-w-2xl text-base text-white/90">
-          Date a conocer y consigue más reservas. Todo lo que descargues lleva tu QR: quien lo escanea ve tu perfil y reserva {profile.kind === 'company' ? 'con vosotros' : 'contigo'} en un minuto.
+          Date a conocer y consigue más reservas. Todo lo que descargues lleva tu QR: quien lo escanea ve tu perfil y reserva {withYou} en un minuto.
         </p>
         {feeWaiverEnabled && <p className="mt-2 text-sm font-semibold text-[#7BE36F]">Tus clientes reservan sin gastos de gestión.</p>}
       </header>
@@ -231,20 +232,20 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
             />
           )}
           <div className="min-w-0 flex-1 space-y-3">
-            <p className="text-sm text-gray-600">Quien lo escanee o abra el enlace verá tu perfil y podrá reservar contigo en un minuto.</p>
+            <p className="text-sm text-gray-600">Quien lo escanee o abra el enlace verá tu perfil y podrá reservar {withYou} en un minuto.</p>
             <p className="truncate rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-800" title={link}>{link}</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <button type="button" onClick={() => void copyLink()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void copyLink()} className="inline-flex min-h-11 flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
                 <Copy className="h-4 w-4" aria-hidden="true" /> Copiar enlace
               </button>
-              <button type="button" onClick={() => void shareLink()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
+              <button type="button" onClick={() => void shareLink()} className="inline-flex min-h-11 flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
                 <Share2 className="h-4 w-4" aria-hidden="true" /> Compartir enlace
               </button>
               <button
                 type="button"
                 onClick={() => void downloadQr()}
                 disabled={!canDownload || qrBusy}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-11 flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {qrBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />} Descargar QR
               </button>
@@ -324,18 +325,18 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
       {/* Mensajes para tus clientes */}
       <section aria-labelledby="messages-title">
         <h2 id="messages-title" className={sectionTitle}>Mensajes para tus clientes</h2>
-        <p className="mb-3 text-sm text-gray-600">Mándaselos por WhatsApp a tus clientes de siempre: con tu enlace reservan contigo en un minuto.</p>
+        <p className="mb-3 text-sm text-gray-600">Mándaselos por WhatsApp a tus clientes de siempre: con tu enlace reservan {withYou} en un minuto.</p>
         <ul className="grid gap-3 md:grid-cols-3">
           {messages.map((message) => (
-            <li key={message.id} className="flex flex-col rounded-2xl border border-gray-200 bg-white p-4">
+            <li key={message.id} className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white p-4">
               <p className="font-bold text-gray-900">{message.title}</p>
-              <p className="mt-2 flex-1 text-sm text-gray-700">{message.text}</p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <p className="mt-2 flex-1 text-sm text-gray-700 [overflow-wrap:anywhere]">{message.text}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
                 <a
                   href={whatsappUrl(message.text)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-3 text-sm font-bold text-white hover:bg-emerald-800"
+                  className="inline-flex min-h-11 flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-700 px-3 text-sm font-bold text-white hover:bg-emerald-800"
                 >
                   <MessageCircle className="h-4 w-4" aria-hidden="true" /> WhatsApp
                 </a>
@@ -347,7 +348,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
                       () => toast.error('No se ha podido copiar'),
                     );
                   }}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50"
+                  className="inline-flex min-h-11 flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50"
                 >
                   <Copy className="h-4 w-4" aria-hidden="true" /> Copiar
                 </button>

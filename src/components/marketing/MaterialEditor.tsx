@@ -315,7 +315,7 @@ const MaterialEditor: React.FC<Props> = ({
 
       {/* Hoja «Compartir o descargar»: uno o varios tamaños a la vez. */}
       {sheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="presentation">
+        <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center" role="presentation">
           <button type="button" aria-label="Cerrar" className="absolute inset-0 bg-black/40" onClick={() => !busy && setSheetOpen(false)} />
           <div
             ref={sheetRef}

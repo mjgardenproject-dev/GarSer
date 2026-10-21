@@ -47,20 +47,23 @@ export async function sha256Hex(blob: Blob): Promise<string | null> {
   }
 }
 
-async function decode(file: File): Promise<HTMLImageElement> {
+// Con `onload`, no con `img.decode()`: con la página en segundo plano (cambiar de app o bloquear el
+// móvil mientras se envía) `decode()` no termina hasta volver, y el envío se quedaba en «Enviando…».
+// `<img>` además respeta la orientación de la foto y abre las HEIC del iPhone en Safari.
+function decode(file: File): Promise<HTMLImageElement> {
   const url = URL.createObjectURL(file);
-  try {
+  return new Promise((resolve, reject) => {
     const img = new Image();
-    img.decoding = 'async';
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('No podemos abrir esa foto. Hazla otra vez con la cámara o súbela en JPG, PNG o PDF.'));
+    };
     img.src = url;
-    await img.decode();
-    return img;
-  } catch {
-    throw new Error('No podemos abrir esa foto. Hazla otra vez con la cámara o súbela en JPG, PNG o PDF.');
-  } finally {
-    // La imagen ya está decodificada: la URL no hace falta.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
+  });
 }
 
 function toJpeg(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {

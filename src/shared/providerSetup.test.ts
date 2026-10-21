@@ -235,7 +235,16 @@ describe('buildProviderSetupSteps · empresa', () => {
     const ana = member({ member_id: 'm-ana', role: 'employee', name: 'Ana Pérez', service_ids: ['svc-phyto'], license_status: 'pending' });
     const summary = buildProviderSetupSteps(company({ services: [phyto({ visible_chemical: false })] }, [ana]));
     expect(stepById(summary, 'license')).toMatchObject({ state: 'review' });
-    expect(stepById(summary, 'license')?.detail).toContain('Ana');
+    expect(stepById(summary, 'license')?.detail).toContain('GarSer está revisando el carnet de Ana.');
+  });
+
+  it('el carnet del titular en revisión se dice «tu carnet» (no «el carnet de tú»)', () => {
+    const owner = member({ license_status: 'pending', counts_as_labour: true } as Partial<ProviderSetupMember>);
+    const ana = member({ member_id: 'm-ana', role: 'employee', name: 'Ana Pérez', service_ids: ['svc-phyto'], license_status: 'pending' });
+    const onlyOwner = buildProviderSetupSteps(company({ services: [phyto({ visible_chemical: false })] }, [owner]));
+    expect(stepById(onlyOwner, 'license')?.detail).toContain('GarSer está revisando tu carnet.');
+    const both = buildProviderSetupSteps(company({ services: [phyto({ visible_chemical: false })] }, [owner, ana]));
+    expect(stepById(both, 'license')?.detail).toContain('GarSer está revisando tu carnet y el de Ana.');
   });
 
   it('fitosanitarios con alguien con carnet que lo hace: hecho', () => {

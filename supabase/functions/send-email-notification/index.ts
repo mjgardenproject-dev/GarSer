@@ -719,7 +719,7 @@ Deno.serve(async (req) => {
         footerNote: copy.footerNote,
       };
       if (!SMTP_USER || !SMTP_PASS) {
-        console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: recipientEmail, type, subject: copy.subject });
+        console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: recipientEmail, type, subject: copy.subject, intro: copy.intro, pairs: copy.pairs, cta: licenseOpts.cta?.url });
       } else {
         const sent = await sendViaBrevo({
           to: recipientEmail,

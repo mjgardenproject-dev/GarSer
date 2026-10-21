@@ -23,4 +23,11 @@ describe('a dónde va un jardinero según su solicitud', () => {
     expect(applicantRedirect(null, '/auth')).toBeNull();
     expect(applicantRedirect(null, '/account')).toBeNull();
   });
+
+  it('las páginas legales se pueden leer siempre', () => {
+    for (const status of ['pending', 'denied', 'active', null] as const) {
+      expect(applicantRedirect(status, '/privacidad')).toBeNull();
+      expect(applicantRedirect(status, '/terminos')).toBeNull();
+    }
+  });
 });

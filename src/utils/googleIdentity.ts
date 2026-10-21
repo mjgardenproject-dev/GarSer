@@ -80,7 +80,13 @@ export function loadGoogleIdentity(timeoutMs = 8000): Promise<GoogleAccountsId> 
       document.head.appendChild(script);
     }
     script.addEventListener('load', () => { window.clearTimeout(timer); done(); }, { once: true });
-    script.addEventListener('error', () => { window.clearTimeout(timer); reject(new Error('google_identity_blocked')); }, { once: true });
+    const tag = script;
+    tag.addEventListener('error', () => {
+      window.clearTimeout(timer);
+      // Fuera la etiqueta fallida: el siguiente intento añade una nueva en vez de esperar a esta.
+      tag.remove();
+      reject(new Error('google_identity_blocked'));
+    }, { once: true });
   }).catch((error) => {
     // Un fallo no se queda guardado: el siguiente intento vuelve a probar.
     loading = null;

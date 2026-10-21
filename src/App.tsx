@@ -85,6 +85,8 @@ const GardenerPublicProfile = lazy(() => import('./components/public/GardenerPub
 const MarbellaLandingPage = lazy(() => import('./pages/public/MarbellaLandingPage'));
 const CostaDelSolLandingPage = lazy(() => import('./pages/public/CostaDelSolLandingPage'));
 const GardenersLandingPage = lazy(() => import('./pages/public/GardenersLandingPage'));
+const PrivacyPage = lazy(() => import('./pages/public/legal/PrivacyPage'));
+const TermsPage = lazy(() => import('./pages/public/legal/TermsPage'));
 
 /** Placeholder mientras llega el trozo de código de la zona. */
 const RouteFallback = () => (
@@ -122,7 +124,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
       location.pathname === '/' ||
       location.pathname === '/marbella' ||
       location.pathname === '/costa-del-sol' ||
-      location.pathname === '/para-jardineros';
+      location.pathname === '/para-jardineros' ||
+      location.pathname === '/privacidad' ||
+      location.pathname === '/terminos';
   
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
@@ -306,6 +310,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             </ErrorBoundary>
           }
         />
+        <Route path="/privacidad" element={<PrivacyPage />} />
+        <Route path="/terminos" element={<TermsPage />} />
         <Route
           path="/para-jardineros"
           element={

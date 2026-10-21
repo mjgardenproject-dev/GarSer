@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, MessageCircle, Phone } from 'lucide-react';
 
 import { PUBLIC_CONTACT_ANCHOR, PUBLIC_WHATSAPP_NUMBER, PUBLIC_WHATSAPP_URL } from '../../config/publicSiteContent';
+import { PRIVACY_PATH, TERMS_PATH } from '../../config/legal';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { clearWizardDraftsForFreshStart } from '../../utils/bookingResumeStorage';
 
@@ -82,6 +83,12 @@ const PublicFooter: React.FC = () => {
             </Link>
             <Link to="/auth" className="hover:text-white">
               Acceder
+            </Link>
+            <Link to={PRIVACY_PATH} className="hover:text-white">
+              Privacidad
+            </Link>
+            <Link to={TERMS_PATH} className="hover:text-white">
+              Términos y condiciones
             </Link>
           </div>
         </div>

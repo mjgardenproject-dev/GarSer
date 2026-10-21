@@ -87,6 +87,7 @@ const CostaDelSolLandingPage = lazy(() => import('./pages/public/CostaDelSolLand
 const GardenersLandingPage = lazy(() => import('./pages/public/GardenersLandingPage'));
 const PrivacyPage = lazy(() => import('./pages/public/legal/PrivacyPage'));
 const TermsPage = lazy(() => import('./pages/public/legal/TermsPage'));
+const AuthCallbackPage = lazy(() => import('./pages/auth/AuthCallbackPage'));
 
 /** Placeholder mientras llega el trozo de código de la zona. */
 const RouteFallback = () => (
@@ -115,7 +116,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const isGardenerAccount = accountRole === 'gardener';
     const location = useLocation();
     const navigate = useNavigate();
-    const isAuthPage = location.pathname === '/auth' || location.pathname === '/confirmar-servicio' || location.pathname === '/invitacion';
+    const isAuthPage = location.pathname === '/auth' || location.pathname === '/auth/callback' || location.pathname === '/confirmar-servicio' || location.pathname === '/invitacion';
     const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
     // Páginas de alta (jardinero o empresa): sin menú inferior, como /apply.
     const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud' || location.pathname === '/empresa/estado';
@@ -568,6 +569,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             Además contradecía a aquella: esta mandaba siempre a /dashboard, mientras que la
             que sí manda distingue entre visitante y usuario con sesión. */}
         <Route path="/auth" element={<AuthForm />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         {/* Publica a proposito: es el enlace de un clic del correo de confirmacion, y tiene
             que funcionar aunque el cliente no tenga sesion abierta en el movil. */}

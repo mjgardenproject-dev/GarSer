@@ -2847,6 +2847,7 @@ export type Database = {
       }
       admin_phyto_license_queue: { Args: never; Returns: Json }
       admin_provider_setup_overview: { Args: never; Returns: Json }
+      admin_signup_methods: { Args: { p_days?: number }; Returns: Json }
       admin_review_company_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
         Returns: Json

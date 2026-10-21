@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Briefcase, Leaf, TrendingUp, Wallet, BadgePercent, UserX } from 'lucide-react';
+import { Users, Briefcase, Leaf, TrendingUp, Wallet, BadgePercent, UserX, LogIn } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
@@ -19,6 +19,19 @@ const AdminDashboard: React.FC = () => {
   // Profesionales aprobados que todavía no salen a ningún cliente (completar la cuenta profesional).
   // Aparte del resto: si falla, la tarjeta dice «—» y el dashboard sigue.
   const [providersHidden, setProvidersHidden] = useState<number | null>(null);
+  // Cuentas nuevas con Google frente al total (30 días), para ver si «Continuar con Google» convierte.
+  const [signups, setSignups] = useState<{ total: number; google: number } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.rpc('admin_signup_methods', { p_days: 30 });
+      if (!alive || error || !data) return;
+      const summary = data as unknown as { total?: number; google?: number };
+      setSignups({ total: Number(summary.total ?? 0), google: Number(summary.google ?? 0) });
+    })();
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -113,6 +126,7 @@ const AdminDashboard: React.FC = () => {
     { title: 'Ingresos GarSer', value: formatEuro(data.platformRevenue), icon: Wallet, color: 'text-amber-500' },
     { title: 'Reservas sin gastos de gestión', value: formatNumber(data.feeWaivedBookings), icon: BadgePercent, color: 'text-emerald-600' },
     { title: 'Profesionales sin aparecer', value: providersHidden === null ? '—' : formatNumber(providersHidden), icon: UserX, color: 'text-amber-600', to: '/admin/providers' },
+    { title: 'Altas con Google · 30 días', value: signups === null ? '—' : `${formatNumber(signups.google)} de ${formatNumber(signups.total)}`, icon: LogIn, color: 'text-blue-600' },
   ];
 
   return (

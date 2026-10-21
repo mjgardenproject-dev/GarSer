@@ -92,8 +92,12 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       <div className="max-w-full sm:max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center">
+        {/* Ancho repartido sin desbordar la página: logo y acciones no encogen; el email cede
+            primero (shrink-[100] + truncate) y después la fila de enlaces. El mx-auto de los
+            enlaces los centra igual que hacía justify-between. */}
+        <div className="flex items-center gap-3 h-16">
+          {/* Sin flex-shrink-0 este contenedor se encogía a 0 px y el logo pisaba «Dashboard». */}
+          <div className="flex flex-shrink-0 items-center">
             <button
               onClick={handleLogoClick}
               className={`flex-shrink-0 flex items-center focus:outline-none ${shouldHideNav ? 'cursor-default' : ''}`}
@@ -103,9 +107,11 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
             </button>
           </div>
 
-          {/* Navegación desktop */}
-          <div className="hidden md:block">
-            <div className="ml-10 flex items-baseline space-x-4">
+          {/* Navegación desktop. En tablet (md) los enlaces van sin icono y más juntos para
+              caber junto al logo; los iconos vuelven en lg. min-w-0 + overflow-x-auto: si aun
+              así no caben, la fila se desplaza dentro de la barra en vez de ensanchar la página. */}
+          <div className="hidden md:block min-w-0 mx-auto">
+            <div className="flex items-center gap-1 lg:gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
@@ -113,13 +119,13 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
                   <button
                     key={item.path}
                     onClick={() => navigate(item.path)}
-                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`flex flex-shrink-0 items-center whitespace-nowrap px-1.5 lg:px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive
                         ? 'bg-green-100 text-green-700'
                         : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
                     }`}
                   >
-                    <Icon className="w-4 h-4 mr-2" />
+                    <Icon className="hidden lg:block w-4 h-4 mr-2" />
                     {item.label}
                     {!!(item as { badge?: number }).badge && (
                       <span className="ml-1.5 min-w-[18px] h-[18px] px-1 bg-emerald-700 text-white text-[10px] font-bold rounded-full inline-flex items-center justify-center">
@@ -132,25 +138,31 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
             </div>
           </div>
 
+          {/* El email solo se muestra en pantallas anchas (xl) y se recorta con «…» (completo en
+              el title); por debajo se ve en el menú móvil. */}
+          <span
+            className="hidden xl:block min-w-0 max-w-[14rem] shrink-[100] truncate text-sm font-medium text-gray-600"
+            title={user?.email}
+          >
+            {user?.email}
+          </span>
+
           {/* Acciones derecha */}
-          <div className="flex items-center space-x-3">
-            <div className="hidden sm:block text-sm text-gray-600">
-              <span className="font-medium">{user?.email}</span>
-              {showRoleBadge && (
-                <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
-                  {roleBadgeLabel}
-                </span>
-              )}
-            </div>
+          <div className="ml-auto md:ml-0 flex flex-shrink-0 items-center gap-2 lg:gap-3">
+            {showRoleBadge && (
+              <span className="hidden sm:inline-block whitespace-nowrap px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                {roleBadgeLabel}
+              </span>
+            )}
             {user ? (
               <button
                 onClick={handleSignOut}
                 aria-label="Cerrar sesión"
                 title="Cerrar sesión"
-                className="flex items-center px-2 md:px-3 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                className="flex items-center px-2 lg:px-3 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
               >
-                <LogOut className="w-4 h-4 mr-2" />
-                <span className="hidden md:inline">Salir</span>
+                <LogOut className="w-4 h-4 lg:mr-2" />
+                <span className="hidden lg:inline">Salir</span>
               </button>
             ) : (
               <button
@@ -199,7 +211,8 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
                   </button>
                 );
               })}
-              <div className="mt-2 text-xs text-gray-500">
+              {/* break-words: un email largo sin guiones no cabía y ensanchaba la página. */}
+              <div className="mt-2 text-xs text-gray-500 break-words">
                 <span className="font-medium">{user?.email}</span>
                 {showRoleBadge && (
                   <span className="ml-2 px-2 py-1 bg-green-100 text-green-700 rounded-full">

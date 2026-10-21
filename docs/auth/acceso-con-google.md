@@ -13,8 +13,8 @@ Entra en <https://console.cloud.google.com> con la cuenta de Google de GarSer.
 2. **Pantalla de consentimiento.** Menú → «APIs y servicios» → «Pantalla de consentimiento de OAuth» («Google Auth Platform»). Si pregunta el tipo de usuario: **Externo**.
    - **Información de la aplicación:**
      - nombre: `GarSer`;
-     - correo de asistencia: `info@garser.es`;
-     - logotipo: opcional (el de GarSer). Si lo pones, Google lo revisa antes de enseñarlo.
+     - correo de asistencia: el tuyo. Google solo deja elegir el Gmail con el que has entrado.
+     - logotipo: mejor no por ahora. Si lo subes, Google tiene que verificar la marca antes de enseñarlo.
    - **Dominio de la aplicación:**
      - página principal: `https://garser.es`;
      - política de privacidad: `https://garser.es/privacidad`;
@@ -29,9 +29,11 @@ Entra en <https://console.cloud.google.com> con la cuenta de Google de GarSer.
    - **Orígenes de JavaScript autorizados:**
      - `https://garser.es`;
      - `https://www.garser.es` (si usas el «www»);
-     - `http://localhost:5190` (para probar en local).
+     - `http://localhost` y `http://localhost:5190` (para probar en local; el botón de Google pide los dos).
    - **URI de redirección autorizados:** `https://hleqspdnjfswrmozjkai.supabase.co/auth/v1/callback`.
    - Crear. **Copia el «ID de cliente»** (acaba en `.apps.googleusercontent.com`) y el **«Secreto del cliente»**.
+     ⚠️ Google solo enseña el secreto al crearlo: cópialo o pulsa «Descargar JSON». Si se pierde, en el cliente se crea otro («Añadir secreto»).
+     El ID de cliente es público (va en la web). El secreto, solo en Supabase.
 4. **Opcional, recomendado:** verifica `garser.es` en Google Search Console y pide la verificación de la marca. Así Google enseña el logo de GarSer en su ventanita.
 
 ## 2. Supabase (proyecto `hleqspdnjfswrmozjkai`)

@@ -1472,6 +1472,73 @@ Rellena esto antes de empezar y ten la tabla a mano:
 >
 >   Los correos salieron con su destinatario y su asunto.
 
+## Sección 28 — Continuar con Google y páginas legales (2026-10-21)
+
+> **Qué es.** Rama `feat/acceso-google`.
+> - Botón oficial de Google en la propia web:
+>   - en `/auth`, para entrar y para crear cuenta de cliente;
+>   - y en «Accede para continuar» de la reserva.
+> - Si el navegador bloquea a Google, se usa la redirección clásica.
+> - Dentro de Instagram, Facebook o TikTok se explica cómo abrir la web en el navegador.
+> - Páginas `/privacidad` y `/terminos`.
+> - En el admin, «Altas con Google · 30 días».
+>
+> **Despliegue:**
+> 1. Configurar Google, Supabase y Vercel según `docs/auth/acceso-con-google.md`.
+> 2. Completar los datos de `src/config/legal.ts`.
+> 3. Migración `20261021120000`.
+> 4. Fusionar.
+>
+> No toca funciones.
+>
+> **Antes de empezar:**
+> - un móvil con una cuenta de Google que NO tenga cuenta en GarSer;
+> - otra cuenta de Google cuyo Gmail SÍ tenga ya cuenta de cliente en GarSer;
+> - Instagram instalado.
+
+**A. Entrar y crear cuenta**
+
+- [ ] **28.1 — Cuenta nueva.** En `/auth`, «Continuar con Google» y elige la cuenta nueva.
+  - ✅ La ventanita de Google dice que vas a **garser.es**, no a «supabase.co».
+  - ✅ Vuelves con la sesión iniciada y «¡Bienvenido a GarSer, …!».
+  - ✅ En «Mi cuenta» están tu nombre y tu foto de Google.
+  - ✅ Es una cuenta de cliente.
+- [ ] **28.2 — Cuenta que ya existía.** Sal y entra con Google usando el Gmail que ya tenía cuenta. ✅ Es la misma cuenta: mismas reservas y «¡Hola de nuevo!». No se crea otra.
+- [ ] **28.3 — Jardinero y empresa.** `/auth` → «Regístrate gratis» → «Jardinero». ✅ No sale Google y dice «Las cuentas de jardinero y de empresa se crean con tu correo». Con «Cliente», ✅ vuelve «Registrarse con Google».
+- [ ] **28.4 — Cancelar.** Pulsa Google y cierra la ventanita sin elegir cuenta. ✅ Sigues en la misma pantalla, sin errores raros, y puedes volver a intentarlo.
+- [ ] **28.5 — Cerrar sesión.** Sal. ✅ Al volver a `/auth`, Google puede sugerirte la cuenta («One Tap»), pero **no entra solo**.
+
+**B. En la reserva (lo que más importa)**
+
+- [ ] **28.6 — Sin perder la reserva.** Sin sesión, haz una reserva hasta «Accede para continuar».
+  - ✅ «Continuar con Google» está arriba.
+  - Elige la cuenta. ✅ Vuelves a la **misma pantalla**, con la reserva intacta y «… Ya puedes confirmar la reserva». Sin correos de confirmación.
+  - Termina la reserva (pago de los gastos de gestión con tarjeta de prueba o real, según el entorno). ✅ Se crea a tu nombre.
+- [ ] **28.7 — Desde Instagram.** Abre un enlace a garser.es desde Instagram (bio o mensaje) y llega a «Accede para continuar» o a `/auth`. Pulsa Google.
+  - ✅ Sale «Google no deja iniciar sesión dentro de Instagram», con los pasos.
+  - En Android, ✅ «Abrir en Chrome» abre la página en Chrome.
+  - «Copiar enlace» y pégalo en Safari o Chrome: ✅ se abre la misma página y Google funciona.
+
+**C. Páginas legales y admin**
+
+- [ ] **28.8 — Legales.** En el pie de cualquier página pública, ✅ están «Privacidad» y «Términos y condiciones». ✅ Ya no queda ningún «[Completar: …]».
+- [ ] **28.9 — Nota legal.** En `/auth` y en «Accede para continuar», ✅ sale «Al continuar, aceptas los Términos y condiciones y la Política de privacidad de GarSer», con los dos enlaces (abren otra pestaña).
+- [ ] **28.10 — Admin.** Dashboard. ✅ «Altas con Google · 30 días» dice «X de N» y cuenta las cuentas de 28.1.
+
+> En local lo comprueban:
+> - los tests de `GoogleSignInButton`, `googleIdentity`, `oauthAccount`, `AuthForm`, las páginas legales, `PublicFooter` y `applicantRedirect`:
+>   - el nonce (SHA-256 a Google, el original a Supabase);
+>   - la redirección de respaldo y la vuelta solo a rutas internas;
+>   - la detección de Instagram, Facebook y TikTok;
+>   - que no se pisa el perfil ni se pone la foto de Google a un profesional.
+> - En el navegador:
+>   - el botón oficial de Google, de 358 px en el móvil;
+>   - el aviso dentro de Instagram (simulado);
+>   - la vuelta con error («Has cancelado…») y con sesión (lleva a la ruta pedida);
+>   - el bloque de la reserva y las páginas legales en móvil y escritorio.
+>
+> El paso real por Google necesita las credenciales del paso 1 de la guía: se prueba aquí.
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

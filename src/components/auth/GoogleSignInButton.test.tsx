@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { sha256Hex, type GoogleIdConfiguration } from '../../utils/googleIdentity';
+import { sha256Hex, type GoogleButtonConfiguration, type GoogleIdConfiguration } from '../../utils/googleIdentity';
 
 const mocks = vi.hoisted(() => ({
   signInWithIdToken: vi.fn(),
@@ -27,7 +27,7 @@ function fakeGoogle() {
   let config: GoogleIdConfiguration | null = null;
   const api = {
     initialize: vi.fn((c: GoogleIdConfiguration) => { config = c; }),
-    renderButton: vi.fn((el: HTMLElement) => { el.innerHTML = '<div role="button">Continuar con Google</div>'; }),
+    renderButton: vi.fn((el: HTMLElement, options: GoogleButtonConfiguration) => { el.innerHTML = `<div role="button">${options.text}</div>`; }),
     prompt: vi.fn(),
     cancel: vi.fn(),
     disableAutoSelect: vi.fn(),

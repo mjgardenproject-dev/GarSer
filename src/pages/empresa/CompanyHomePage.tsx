@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
@@ -28,8 +28,7 @@ import { useAuth } from '../../contexts/AuthContext';
 // (/empresa/configuracion): un solo sistema de precios.
 
 type Tab = 'agenda' | 'team' | 'marketing' | 'company';
-
-const noop = () => {};
+const TABS: Tab[] = ['agenda', 'team', 'marketing', 'company'];
 
 const dateFmt = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' });
 
@@ -42,8 +41,10 @@ const Spinner = () => (
 const CompanyPanel: React.FC = () => {
   const { data, loading, error, refresh } = useCompanyTeam();
   const { openConfirm, confirmDialog } = useConfirmDialog();
-  // El panel abre en la agenda (lo aprendido en el hito: «quién hace qué y cuándo» es lo diario).
-  const [tab, setTab] = useState<Tab>('agenda');
+  // El panel abre en la agenda (lo aprendido en el hito: «quién hace qué y cuándo» es lo diario),
+  // salvo que el enlace pida otra pestaña (los avisos del carnet llevan a «Equipo» o «Tu empresa»).
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => (TABS.includes(params.get('tab') as Tab) ? (params.get('tab') as Tab) : 'agenda'));
   const [showFormer, setShowFormer] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -75,10 +76,11 @@ const CompanyPanel: React.FC = () => {
 
   const active = data.members.filter((m) => m.status === 'active');
   const former = data.members.filter((m) => m.status !== 'active');
-  // El carnet es de cada persona (D4): si el titular trabaja y la empresa hace fitosanitarios,
-  // él también sube el suyo. La ficha de la empresa (/empresa/configuracion) no lo pide.
+  // El carnet es de cada persona (D4): si el titular trabaja y la empresa hace tratamientos
+  // químicos (fitosanitarios o desbroce con herbicida), él también sube el suyo.
   const ownerWorks = active.some((m) => m.role === 'owner' && m.counts_as_labour);
-  const offersPhyto = data.offered_services.some((s) => s.name === PHYTO_SERVICE_NAME);
+  const offersChemical = data.offers_chemical ?? data.offered_services.some((s) => s.name === PHYTO_SERVICE_NAME);
+  const owner = active.find((m) => m.role === 'owner');
 
   const askDeactivate = (member: TeamMember) => {
     const name = member.full_name || member.email || 'esta persona';
@@ -236,6 +238,7 @@ const CompanyPanel: React.FC = () => {
                     key={`${m.member_id}:${m.services.map((s) => s.id).join(',')}`}
                     member={m}
                     offeredServices={data.offered_services}
+                    offersChemical={offersChemical}
                     onChanged={() => void refresh()}
                     onAskDeactivate={askDeactivate}
                   />
@@ -279,11 +282,12 @@ const CompanyPanel: React.FC = () => {
 
             <MinNoticeCard />
 
-            {ownerWorks && offersPhyto && (
-              <section>
-                <p className="mb-2 px-1 text-sm text-gray-600">Tu carnet fitosanitario: solo si tú vas a hacer tratamientos. Cada persona del equipo sube el suyo.</p>
-                <PhytosanitaryLicenseUpload onStatusChange={noop} />
-              </section>
+            {ownerWorks && (offersChemical || Boolean(owner?.license_status)) && (
+              <PhytosanitaryLicenseUpload
+                id="tu-carnet"
+                intro="El tuyo, solo si tú vas a hacer tratamientos. Cada persona de tu equipo tiene el suyo: pídeselo o envíalo tú desde «Equipo»."
+                onSubmitted={() => void refresh()}
+              />
             )}
 
             <section className="rounded-2xl border border-gray-200 bg-white p-4">

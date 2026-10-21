@@ -1710,6 +1710,7 @@ export type Database = {
           id: string
           joined_at: string
           left_at: string | null
+          phyto_license_requested_at: string | null
           role: string
           status: string
           user_id: string
@@ -1720,6 +1721,7 @@ export type Database = {
           id?: string
           joined_at?: string
           left_at?: string | null
+          phyto_license_requested_at?: string | null
           role?: string
           status?: string
           user_id: string
@@ -1730,6 +1732,7 @@ export type Database = {
           id?: string
           joined_at?: string
           left_at?: string | null
+          phyto_license_requested_at?: string | null
           role?: string
           status?: string
           user_id?: string
@@ -1888,9 +1891,11 @@ export type Database = {
           gardener_id: string | null
           id: string
           license_number: string | null
+          rejection_reason: string | null
           reviewed_at: string | null
           reviewed_by: string | null
           status: string | null
+          submitted_by: string | null
           terms_accepted: boolean | null
           terms_accepted_at: string | null
         }
@@ -1902,9 +1907,11 @@ export type Database = {
           gardener_id?: string | null
           id?: string
           license_number?: string | null
+          rejection_reason?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string | null
+          submitted_by?: string | null
           terms_accepted?: boolean | null
           terms_accepted_at?: string | null
         }
@@ -1916,9 +1923,11 @@ export type Database = {
           gardener_id?: string | null
           id?: string
           license_number?: string | null
+          rejection_reason?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string | null
+          submitted_by?: string | null
           terms_accepted?: boolean | null
           terms_accepted_at?: string | null
         }
@@ -2836,6 +2845,7 @@ export type Database = {
         Args: { p_email: string }
         Returns: Json
       }
+      admin_phyto_license_queue: { Args: never; Returns: Json }
       admin_provider_setup_overview: { Args: never; Returns: Json }
       admin_review_company_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
@@ -3201,6 +3211,7 @@ export type Database = {
       }
       my_company_id: { Args: never; Returns: string }
       my_company_membership: { Args: never; Returns: Json }
+      my_phyto_license: { Args: never; Returns: Json }
       my_jobs: {
         Args: { p_from: string; p_to: string }
         Returns: {
@@ -3474,15 +3485,26 @@ export type Database = {
         Returns: Json
       }
       review_gardener_license: {
-        Args: { p_expires_at?: string; p_license_id: string; p_status: string }
+        Args: { p_expires_at?: string; p_license_id: string; p_reason?: string; p_status: string }
         Returns: Json
       }
+      request_member_phyto_license: { Args: { p_member_id: string }; Returns: Json }
       revoke_company_invitation: {
         Args: { p_invitation_id: string }
         Returns: Json
       }
       run_booking_lifecycle_maintenance: { Args: never; Returns: Json }
       safe_numeric: { Args: { p_value: string }; Returns: number }
+      submit_phyto_license: {
+        Args: {
+          p_declaration: boolean
+          p_document_hash?: string
+          p_document_path: string
+          p_license_number?: string
+          p_member_id?: string
+        }
+        Returns: Json
+      }
       save_push_subscription: {
         Args: {
           p_auth: string

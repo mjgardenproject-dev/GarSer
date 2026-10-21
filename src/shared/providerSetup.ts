@@ -138,6 +138,15 @@ function memberLabel(member: ProviderSetupMember): string {
   return (member.name || 'una persona de tu equipo').split(' ')[0];
 }
 
+/** «tu carnet», «el carnet de Ana» o «tu carnet y el de Ana y Luis». */
+function whoseLicense(members: ProviderSetupMember[]): string {
+  const others = members.filter((m) => m.role !== 'owner').map(memberLabel);
+  const own = members.some((m) => m.role === 'owner');
+  if (own && others.length === 0) return 'tu carnet';
+  if (own) return `tu carnet y el de ${joinNames(others)}`;
+  return `el carnet de ${joinNames(others)}`;
+}
+
 const isPending = (step: SetupStep) => step.state === 'todo' || step.state === 'warning';
 
 function servicesStep(status: ProviderSetupStatus): SetupStep {
@@ -334,7 +343,7 @@ function companyLicenseStep(status: ProviderSetupStatus, team: ProviderSetupTeam
     return {
       ...base,
       state: 'review',
-      detail: `GarSer está revisando el carnet de ${joinNames(inReview.map(memberLabel))}. Mientras, ${joinNames(missing.map((s) => s.name))} no sale en los tratamientos químicos.`,
+      detail: `GarSer está revisando ${whoseLicense(inReview)}. Mientras, ${joinNames(missing.map((s) => s.name))} no sale en los tratamientos químicos.`,
     };
   }
   const owner = team.members.find((m) => m.role === 'owner');

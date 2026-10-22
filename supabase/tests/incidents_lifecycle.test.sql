@@ -48,7 +48,8 @@ BEGIN
   VALUES (v_admin, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
     'admin.pruebas@test.local', 'x', now(), now(), now(),
     '{}'::jsonb, '{}'::jsonb, '', '', '', '', '', '', '', '');
-  INSERT INTO public.profiles (user_id, full_name, role) VALUES (v_admin, 'Admin Pruebas', 'admin');
+  -- El perfil lo crea el trigger de auth.users; solo se le pone el rol.
+  UPDATE public.profiles SET role = 'admin', full_name = 'Admin Pruebas' WHERE user_id = v_admin;
 
   -- Reserva confirmada cuyo servicio termino hace dos horas.
   v_reserva := gen_random_uuid();

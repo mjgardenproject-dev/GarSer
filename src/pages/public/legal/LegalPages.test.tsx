@@ -17,7 +17,7 @@ describe('páginas legales', () => {
   it('privacidad: cuenta lo que hace la web, incluido Google, y los derechos ante la AEPD', () => {
     renderPage(<PrivacyPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Política de privacidad' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: '7. Inicio de sesión con Google' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '6. Inicio de sesión con Google' })).toBeTruthy();
     expect(screen.getByText(/Google nos envía tu nombre, tu correo, tu foto de perfil/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'www.aepd.es' }).getAttribute('href')).toBe('https://www.aepd.es');
     expect(screen.getByText(/No usamos cookies de publicidad ni de analítica/)).toBeTruthy();
@@ -31,9 +31,14 @@ describe('páginas legales', () => {
     expect(screen.getByRole('link', { name: 'Política de privacidad' }).getAttribute('href')).toBe('/privacidad');
   });
 
-  it('con los datos del titular rellenos, ya no sale ningún hueco por completar', () => {
+  it('ya no se enseña el nombre, el NIF ni el domicilio del titular', () => {
     renderPage(<PrivacyPage />);
     expect(screen.queryByText(/\[Completar:/)).toBeNull();
+    expect(screen.queryByText(/Javier Rodríguez|79386773L|Calle Sicilia/)).toBeNull();
+    expect(screen.queryByRole('heading', { name: /Quién es el responsable/ })).toBeNull();
+
+    renderPage(<TermsPage />);
+    expect(screen.queryByRole('heading', { name: /Quiénes somos/ })).toBeNull();
   });
 
   it('missingLegalFields detecta los huecos de unos datos incompletos', () => {

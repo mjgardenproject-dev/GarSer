@@ -24,10 +24,14 @@ export interface LegalInfo {
   updatedAt: string;
 }
 
+// A petición del usuario (2026-10-22), las páginas legales ya no enseñan nombre, NIF ni domicilio:
+// se quitaron «Quiénes somos» (Términos) y «Quién es el responsable» (Privacidad). Estos tres campos
+// se quedan vacíos a propósito: si se rellenan aquí, no se mostrarán en ningún sitio hasta que esas
+// secciones se vuelvan a añadir a TermsPage.tsx / PrivacyPage.tsx.
 export const LEGAL_INFO: LegalInfo = {
-  ownerName: 'Javier Rodríguez',
-  taxId: '79386773L',
-  address: 'Calle Sicilia 32, Marbella, Málaga, Andalucía, España',
+  ownerName: '',
+  taxId: '',
+  address: '',
   registry: '',
   privacyEmail: PUBLIC_CONTACT_EMAIL,
   contactEmail: PUBLIC_CONTACT_EMAIL,

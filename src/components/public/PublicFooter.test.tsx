@@ -26,6 +26,16 @@ describe('PublicFooter', () => {
     expect(email.getAttribute('href')).toBe('mailto:info@garser.es');
   });
 
+  it('enlaza la Política de privacidad y los Términos', () => {
+    render(
+      <MemoryRouter>
+        <PublicFooter />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'Privacidad' }).getAttribute('href')).toBe('/privacidad');
+    expect(screen.getByRole('link', { name: 'Términos y condiciones' }).getAttribute('href')).toBe('/terminos');
+  });
+
   it('ya no muestra la «Cobertura orientativa» (GarSer aún no tiene esa cobertura)', () => {
     render(
       <MemoryRouter>

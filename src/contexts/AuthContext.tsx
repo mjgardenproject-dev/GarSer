@@ -5,6 +5,7 @@ import { clearBookingResumeStorage } from '../utils/bookingResumeStorage';
 import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
 import { forgetThisDevicePush } from '../utils/pushNotifications';
 import { startSessionLiveness } from '../utils/sessionLiveness';
+import { syncProfileFromGoogle } from '../lib/oauthAccount';
 
 interface AuthContextType {
   user: User | null;
@@ -134,6 +135,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         case 'TOKEN_REFRESHED': {
           debugLog('🕒', ts(), event);
           setUser(u);
+          // Entrar con Google (2026-10-21): completa nombre y foto de un cliente si están vacíos.
+          // Vale para el botón de la web y para la redirección; una vez por sesión.
+          if (event === 'SIGNED_IN' && u) void syncProfileFromGoogle(u);
           lastKnownUserId = u?.id ?? null;
           // Una marca de cierre que no llegó a consumirse (p. ej. el signOut falló) no puede
           // tapar un cierre inesperado posterior.
@@ -280,6 +284,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // F7: un dispositivo compartido no debe seguir recibiendo los avisos de esta cuenta. Como
       // mucho 1,5 s: cerrar sesión no espera a la red.
       await Promise.race([forgetThisDevicePush(), new Promise((resolve) => setTimeout(resolve, 1500))]);
+      // Que Google no vuelva a sugerir entrar solo con esta cuenta en este navegador.
+      try { window.google?.accounts?.id?.disableAutoSelect(); } catch { /* sin Google cargado */ }
       await supabase.auth.signOut({ scope });
       clearAuthStorage();
       clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });

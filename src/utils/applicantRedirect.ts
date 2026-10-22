@@ -8,7 +8,8 @@
 
 export type ApplicantStatus = 'pending' | 'denied' | 'active' | null;
 
-const ALWAYS_OPEN = ['/account'];
+// Las páginas legales también: tienen que poder leerse siempre (2026-10-21).
+const ALWAYS_OPEN = ['/account', '/privacidad', '/terminos'];
 
 /** La ruta a la que hay que llevarle, o `null` si puede quedarse donde está. */
 export function applicantRedirect(status: ApplicantStatus, path: string): string | null {

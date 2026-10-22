@@ -12,6 +12,10 @@ import { postLoginPath } from '../../utils/postLoginPath';
 import EmailConfirmationModal from './EmailConfirmationModal';
 import GarserLogo from '../common/GarserLogo';
 import { supabase } from '../../lib/supabase';
+import GoogleSignInButton from './GoogleSignInButton';
+import { LegalConsentNote, OrWithEmail } from './SocialAuthBits';
+import { welcomeMessage } from '../../lib/oauthAccount';
+import { getGoogleClientId } from '../../utils/googleIdentity';
 
 const schema = yup.object({
   email: yup.string().email('Email inválido').required('Email requerido'),
@@ -50,6 +54,10 @@ const AuthForm = () => {
   const [loading, setLoading] = useState(false);
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  // Google (2026-10-21): para entrar con cualquier cuenta y para crear cuentas de CLIENTE. Las de
+  // jardinero y empresa se crean con correo (eligen su tipo de cuenta y siguen su alta).
+  const googleAvailable = Boolean(getGoogleClientId());
+  const showGoogle = googleAvailable && (isLogin || selectedRole === 'client');
 
   useEffect(() => {
     const flag = localStorage.getItem('passwordChanged');
@@ -358,6 +366,24 @@ const AuthForm = () => {
             </div>
           )}
 
+          {showGoogle && (
+            <div className="space-y-4">
+              <GoogleSignInButton
+                context={isLogin ? 'signin' : 'signup'}
+                redirectPath={redirectTo || ''}
+                oneTap={isLogin}
+                onSignedIn={(result) => {
+                  toast.success(welcomeMessage(result));
+                  navigate(postLoginPath(result.role, redirectTo));
+                }}
+              />
+              <OrWithEmail />
+            </div>
+          )}
+          {googleAvailable && !isLogin && selectedRole !== 'client' && (
+            <p className="text-center text-sm text-gray-500">Las cuentas de jardinero y de empresa se crean con tu correo.</p>
+          )}
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Correo electrónico</label>
@@ -446,6 +472,7 @@ const AuthForm = () => {
               </span>
             ) : (isLogin ? 'Iniciar Sesión' : 'Crear Cuenta')}
           </button>
+          <LegalConsentNote className="text-center" />
         </form>
         )}
 

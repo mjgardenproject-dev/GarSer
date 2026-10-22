@@ -27,6 +27,10 @@ import {
   readBookingResumeState,
   writeBookingResumeResult,
 } from '../../utils/bookingResumeStorage';
+import GoogleSignInButton from '../../components/auth/GoogleSignInButton';
+import { LegalConsentNote, OrWithEmail } from '../../components/auth/SocialAuthBits';
+import { welcomeMessage } from '../../lib/oauthAccount';
+import { getGoogleClientId } from '../../utils/googleIdentity';
 import { createAuthoritativeQuote, isBookingAuthorityError } from '../../utils/bookingAuthorityService';
 import {
   getBookingPaymentAttemptStatus,
@@ -930,6 +934,9 @@ const ConfirmationPage: React.FC = () => {
     return buildBookingResumeRedirectParam('confirmation', 'wizard', snapshot, { userId: user?.id });
   };
   const redirectUrl = `${window.location.origin}/reserva/confirmacion?auth=1${bookingData.serviceIds?.length ? `&resume=${buildResume()}` : ''}`;
+  // Google (2026-10-21): entra sin salir de esta pantalla; con la redirección clásica vuelve aquí.
+  const googleAvailable = Boolean(getGoogleClientId());
+  const confirmationReturnPath = redirectUrl.slice(window.location.origin.length);
 
   const handleCreateAccount = async () => {
     try {
@@ -2010,6 +2017,22 @@ const ConfirmationPage: React.FC = () => {
               </p>
             </div>
             <div className="space-y-3">
+              {googleAvailable && (
+                <>
+                  <GoogleSignInButton
+                    context="use"
+                    redirectPath={confirmationReturnPath}
+                    shareUrl={redirectUrl}
+                    oneTap
+                    beforeRedirect={() => persistConfirmationResume(bookingData)}
+                    onSignedIn={(result) => {
+                      setAuthError('');
+                      setAuthInfo(`${welcomeMessage(result)} Ya puedes confirmar la reserva.`);
+                    }}
+                  />
+                  <OrWithEmail />
+                </>
+              )}
               <div>
                 <label htmlFor="booking-auth-email" className="mb-1 block text-sm font-medium text-gray-700">Correo electrónico</label>
                 <input
@@ -2069,6 +2092,7 @@ const ConfirmationPage: React.FC = () => {
                   </button>
                 </div>
               )}
+              <LegalConsentNote />
             </div>
           </div>
         )}

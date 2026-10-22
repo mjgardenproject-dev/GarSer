@@ -34,6 +34,7 @@ describe('PublicFooter', () => {
     );
     expect(screen.getByRole('link', { name: 'Privacidad' }).getAttribute('href')).toBe('/privacidad');
     expect(screen.getByRole('link', { name: 'Términos y condiciones' }).getAttribute('href')).toBe('/terminos');
+    expect(screen.getByRole('link', { name: 'Cookies' }).getAttribute('href')).toBe('/cookies');
   });
 
   it('ya no muestra la «Cobertura orientativa» (GarSer aún no tiene esa cobertura)', () => {

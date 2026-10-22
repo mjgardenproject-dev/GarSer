@@ -8,6 +8,7 @@ vi.mock('../../../hooks/useAppSettings', () => ({ useAppSettings: () => ({ setti
 
 import PrivacyPage from './PrivacyPage';
 import TermsPage from './TermsPage';
+import CookiesPage from './CookiesPage';
 
 const renderPage = (page: React.ReactElement) => render(<MemoryRouter>{page}</MemoryRouter>);
 
@@ -20,7 +21,9 @@ describe('páginas legales', () => {
     expect(screen.getByRole('heading', { name: '6. Inicio de sesión con Google' })).toBeTruthy();
     expect(screen.getByText(/Google nos envía tu nombre, tu correo, tu foto de perfil/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'www.aepd.es' }).getAttribute('href')).toBe('https://www.aepd.es');
-    expect(screen.getByText(/No usamos cookies de publicidad ni de analítica/)).toBeTruthy();
+    expect(screen.getByText(/Son cookies técnicas: no piden tu permiso/)).toBeTruthy();
+    expect(screen.getByText(/No se instalan si no aceptas/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Política de cookies' }).getAttribute('href')).toBe('/cookies');
   });
 
   it('términos: los gastos de gestión y la regla de las 24 horas, como hace la app', () => {
@@ -39,6 +42,15 @@ describe('páginas legales', () => {
 
     renderPage(<TermsPage />);
     expect(screen.queryByRole('heading', { name: /Quiénes somos/ })).toBeNull();
+  });
+
+  it('cookies: explica las dos categorías y enlaza a privacidad', () => {
+    renderPage(<CookiesPage />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Política de cookies' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '1. Cookies necesarias' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '2. Cookies de publicidad' })).toBeTruthy();
+    expect(screen.getByText(/Solo se instalan si aceptas/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Política de privacidad' }).getAttribute('href')).toBe('/privacidad');
   });
 
   it('missingLegalFields detecta los huecos de unos datos incompletos', () => {

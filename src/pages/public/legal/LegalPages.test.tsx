@@ -31,14 +31,18 @@ describe('páginas legales', () => {
     expect(screen.getByRole('link', { name: 'Política de privacidad' }).getAttribute('href')).toBe('/privacidad');
   });
 
-  it('los datos del titular que faltan salen resaltados para completarlos', () => {
+  it('con los datos del titular rellenos, ya no sale ningún hueco por completar', () => {
     renderPage(<PrivacyPage />);
-    expect(screen.getByText('[Completar: nombre o razón social]')).toBeTruthy();
+    expect(screen.queryByText(/\[Completar:/)).toBeNull();
+  });
+
+  it('missingLegalFields detecta los huecos de unos datos incompletos', () => {
     const complete: LegalInfo = {
       ownerName: 'GarSer SL', taxId: 'B00000000', address: 'Calle 1, Marbella', registry: '', privacyEmail: 'a@b.es',
       contactEmail: 'a@b.es', website: 'https://garser.es', updatedAt: 'hoy',
     };
     expect(missingLegalFields(complete)).toEqual([]);
     expect(missingLegalFields({ ...complete, taxId: ' ' })).toEqual(['taxId']);
+    expect(missingLegalFields({ ...complete, ownerName: '' })).toEqual(['ownerName']);
   });
 });

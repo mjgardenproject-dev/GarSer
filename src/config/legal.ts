@@ -25,14 +25,14 @@ export interface LegalInfo {
 }
 
 export const LEGAL_INFO: LegalInfo = {
-  ownerName: '',
-  taxId: '',
-  address: '',
+  ownerName: 'Javier Rodríguez',
+  taxId: '79386773L',
+  address: 'Calle Sicilia 32, Marbella, Málaga, Andalucía, España',
   registry: '',
   privacyEmail: PUBLIC_CONTACT_EMAIL,
   contactEmail: PUBLIC_CONTACT_EMAIL,
   website: SITE_URL,
-  updatedAt: '21 de octubre de 2026',
+  updatedAt: '22 de octubre de 2026',
 };
 
 /** Qué datos faltan por completar (para avisar en la propia página y en los tests). */

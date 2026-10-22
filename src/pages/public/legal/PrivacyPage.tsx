@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import LegalLayout, { Section } from './LegalLayout';
-import { LEGAL_INFO, TERMS_PATH } from '../../../config/legal';
+import { COOKIES_PATH, LEGAL_INFO, TERMS_PATH } from '../../../config/legal';
 
 // Política de privacidad (2026-10-22). Base para revisar con un abogado: describe lo que la web hace
 // de verdad (cuentas, inicio con Google, reservas, fotos con IA, pagos con Stripe, correos, avisos
@@ -47,7 +47,8 @@ const PrivacyPage: React.FC = () => {
           <li>Vercel: alojamiento de la web.</li>
           <li>Stripe: pagos.</li>
           <li>Brevo: envío de correos.</li>
-          <li>Google: inicio de sesión con Google, mapas y direcciones, y el análisis de las fotos para el presupuesto.</li>
+          <li>Google: inicio de sesión con Google, mapas y direcciones, el análisis de las fotos para el presupuesto y, si aceptas cookies de publicidad, Google Ads.</li>
+          <li>Meta (Instagram y Facebook): solo si aceptas cookies de publicidad.</li>
         </ul>
         <p>Algunos están fuera del Espacio Económico Europeo (por ejemplo, en Estados Unidos). En ese caso la transferencia se hace con las garantías del RGPD: cláusulas contractuales tipo de la Comisión Europea o el Marco de Privacidad de Datos UE-EE. UU.</p>
         <p>También podemos comunicar datos a las autoridades cuando una ley nos obligue.</p>
@@ -69,7 +70,8 @@ const PrivacyPage: React.FC = () => {
       </Section>
 
       <Section id="almacenamiento" title="7. Cookies y almacenamiento en tu navegador">
-        <p>GarSer guarda en tu navegador lo necesario para funcionar: tu sesión iniciada y la reserva que tienes a medias. No usamos cookies de publicidad ni de analítica.</p>
+        <p>GarSer guarda en tu navegador lo necesario para funcionar: tu sesión iniciada y la reserva que tienes a medias. Son cookies técnicas: no piden tu permiso porque sin ellas la web no funciona.</p>
+        <p>Si aceptas en el aviso de cookies que te enseñamos, usamos también cookies de publicidad (Meta y Google Ads) para medir y mejorar cómo te enseñamos GarSer. No se instalan si no aceptas. El detalle está en la <Link className="font-semibold text-emerald-700 underline" to={COOKIES_PATH}>Política de cookies</Link>.</p>
         <p>Si usas «Continuar con Google» o el mapa de direcciones, se cargan servicios de Google, que pueden usar sus propias cookies para que funcionen. Puedes consultar su política en <a className="font-semibold text-emerald-700 underline" href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">policies.google.com</a>.</p>
       </Section>
 

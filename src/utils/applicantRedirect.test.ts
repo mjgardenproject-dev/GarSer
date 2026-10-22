@@ -28,6 +28,7 @@ describe('a dónde va un jardinero según su solicitud', () => {
     for (const status of ['pending', 'denied', 'active', null] as const) {
       expect(applicantRedirect(status, '/privacidad')).toBeNull();
       expect(applicantRedirect(status, '/terminos')).toBeNull();
+      expect(applicantRedirect(status, '/cookies')).toBeNull();
     }
   });
 });

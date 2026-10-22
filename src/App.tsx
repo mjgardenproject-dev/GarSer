@@ -12,6 +12,7 @@ import BottomNav from './components/layout/BottomNav';
 import SessionEndedNotice from './components/auth/SessionEndedNotice';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ScrollToTop from './components/common/ScrollToTop';
+import CookieConsentBanner from './components/common/CookieConsentBanner';
 import LegacyBookingRedirect from './components/client/LegacyBookingRedirect';
 import LegacyCheckoutRedirect from './components/client/LegacyCheckoutRedirect';
 import NotFoundPage from './pages/public/NotFoundPage';
@@ -87,6 +88,7 @@ const CostaDelSolLandingPage = lazy(() => import('./pages/public/CostaDelSolLand
 const GardenersLandingPage = lazy(() => import('./pages/public/GardenersLandingPage'));
 const PrivacyPage = lazy(() => import('./pages/public/legal/PrivacyPage'));
 const TermsPage = lazy(() => import('./pages/public/legal/TermsPage'));
+const CookiesPage = lazy(() => import('./pages/public/legal/CookiesPage'));
 const AuthCallbackPage = lazy(() => import('./pages/auth/AuthCallbackPage'));
 
 /** Placeholder mientras llega el trozo de código de la zona. */
@@ -127,7 +129,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
       location.pathname === '/costa-del-sol' ||
       location.pathname === '/para-jardineros' ||
       location.pathname === '/privacidad' ||
-      location.pathname === '/terminos';
+      location.pathname === '/terminos' ||
+      location.pathname === '/cookies';
   
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
@@ -313,6 +316,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         />
         <Route path="/privacidad" element={<PrivacyPage />} />
         <Route path="/terminos" element={<TermsPage />} />
+        <Route path="/cookies" element={<CookiesPage />} />
         <Route
           path="/para-jardineros"
           element={
@@ -600,6 +604,7 @@ function App() {
       <AppContent />
       <SessionEndedNotice />
       <Toaster position="top-right" />
+      <CookieConsentBanner />
     </>
   );
 }

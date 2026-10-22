@@ -47,3 +47,4 @@ export function missingLegalFields(info: LegalInfo = LEGAL_INFO): Array<keyof Le
 
 export const PRIVACY_PATH = '/privacidad';
 export const TERMS_PATH = '/terminos';
+export const COOKIES_PATH = '/cookies';

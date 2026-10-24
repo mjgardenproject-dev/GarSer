@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applicationHasData, fetchLastRejection, submitGardenerApplication, wizardStateFromApplication } from '../../utils/gardenerApplicationRetry';
+import { trackMetaLead } from '../../utils/metaLead';
 import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-react';
 import GardenerStatusPage from './GardenerStatusPage';
 import { compressImage } from '../../utils/imageCompression';
@@ -300,6 +301,7 @@ const GardenerApplicationWizard: React.FC = () => {
       // Success: show local success state immediately without redirection
       toast.success('Solicitud enviada');
       setSubmittedSuccess(true);
+      trackMetaLead(user?.email);
       // El borrador local ya no sirve (la solicitud vive en la BD); si no se limpia,
       // una futura solicitud tras rechazo arrancaría con datos viejos a medias.
       try { localStorage.removeItem(`gardener_wizard_progress_${user!.id}`); } catch { /* noop */ }

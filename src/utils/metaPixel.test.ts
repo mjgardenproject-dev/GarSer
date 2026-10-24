@@ -52,4 +52,13 @@ describe('metaPixel', () => {
     trackMetaEvent('Lead', { value: 1 });
     expect(calls).toContainEqual(['track', 'Lead', { value: 1 }]);
   });
+
+  it('con eventId, lo manda como cuarto argumento para que Meta deduplique con el CAPI', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    loadMetaPixel();
+    const calls: unknown[][] = [];
+    window.fbq = (...args: unknown[]) => { calls.push(args); };
+    trackMetaEvent('Lead', undefined, 'evt-123');
+    expect(calls).toContainEqual(['track', 'Lead', {}, { eventID: 'evt-123' }]);
+  });
 });

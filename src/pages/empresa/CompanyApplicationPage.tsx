@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
+import { trackMetaLead } from '../../utils/metaLead';
 import {
   COMPANY_APPLICATION_STEPS,
   COMPANY_SERVICE_OPTIONS,
@@ -138,6 +139,7 @@ const CompanyApplicationPage: React.FC = () => {
       const { error } = await supabase.rpc('submit_company_application', { p_application_id: id });
       if (error) throw error;
       toast.success('Solicitud enviada. La revisaremos y te avisaremos por correo.');
+      trackMetaLead(user?.email);
       await onboarding.refresh();
       navigate('/empresa/estado', { replace: true });
     } catch (error: unknown) {

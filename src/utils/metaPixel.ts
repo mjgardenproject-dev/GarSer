@@ -59,10 +59,16 @@ export function isMetaPixelLoaded(): boolean {
 }
 
 /** Eventos estándar de Meta (ver la tabla de mapeo en el documento del plan). No hace nada si el píxel
- * todavía no se ha cargado (el visitante no ha aceptado, o no hay identificador configurado). */
-export function trackMetaEvent(eventName: string, params?: Record<string, unknown>): void {
+ * todavía no se ha cargado (el visitante no ha aceptado, o no hay identificador configurado).
+ * `eventId`, si se pasa, es el mismo identificador que se manda por el Conversions API
+ * (metaConversionsApi.ts) para que Meta deduplique las dos vías del mismo evento. */
+export function trackMetaEvent(eventName: string, params?: Record<string, unknown>, eventId?: string): void {
   if (!loaded) return;
-  window.fbq?.('track', eventName, params);
+  if (eventId) {
+    window.fbq?.('track', eventName, params || {}, { eventID: eventId });
+  } else {
+    window.fbq?.('track', eventName, params);
+  }
 }
 
 /** Solo para los tests: vuelve a dejar el módulo como si no se hubiera cargado nunca. */

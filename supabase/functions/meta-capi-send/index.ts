@@ -15,7 +15,11 @@ const corsHeaders = {
 
 // Mismo identificador público que VITE_META_PIXEL_ID en el cliente (no es secreto: ya viaja en
 // el código de cada página). Si cambia, se cambia aquí también.
-const META_DATASET_ID = '2034090553963036';
+//
+// 2026-10-26: cambiado de 2034090553963036 (píxel personal, sin Business Manager, con un fallo de
+// facturación en su cuenta que impedía generar un token de envío) a este, creado directamente
+// dentro del porfolio empresarial garser.es — con permisos de administrador desde el principio.
+const META_DATASET_ID = '1426366976278640';
 const META_GRAPH_VERSION = 'v21.0';
 
 interface CapiPayload {

@@ -10,6 +10,11 @@ verify_jwt = false
 [functions.booking-telemetry]
 verify_jwt = false
 
+# Invocada directamente desde el navegador (igual que booking-telemetry): valida la apikey
+# pública ella misma, nunca lleva un JWT de usuario.
+[functions.meta-capi-send]
+verify_jwt = false
+
 # Invocada internamente por booking-payment-webhook con la clave de servicio. Con
 # verify_jwt=true el gateway rechazaba la llamada con 401 ANTES de ejecutar la funcion
 # cuando el proyecto usa las claves modernas (sb_secret_...), que no son JWT: los emails

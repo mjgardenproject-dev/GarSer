@@ -5,16 +5,16 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const mocks = vi.hoisted(() => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
-  lastGoogleProps: null as null | { context: string; onSignedIn: (r: { role: string | null; isNew: boolean; firstName: string }) => void },
+  lastGoogleProps: null as null | { context: string; signupRole?: string; onSignedIn: (r: { role: string | null; isNew: boolean; firstName: string }) => void },
 }));
 
 vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ signIn: vi.fn(), signUp: vi.fn() }) }));
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }));
 vi.mock('../../lib/supabase', () => ({ supabase: { auth: {} } }));
 vi.mock('./GoogleSignInButton', () => ({
-  default: (props: { context: string; onSignedIn: (r: { role: string | null; isNew: boolean; firstName: string }) => void }) => {
+  default: (props: { context: string; signupRole?: string; onSignedIn: (r: { role: string | null; isNew: boolean; firstName: string }) => void }) => {
     mocks.lastGoogleProps = props;
-    return <button type="button">Google ({props.context})</button>;
+    return <button type="button">Google ({props.context}{props.signupRole ? `, ${props.signupRole}` : ''})</button>;
   },
 }));
 
@@ -47,14 +47,21 @@ describe('AuthForm · Continuar con Google', () => {
     expect(screen.getByRole('link', { name: 'Política de privacidad' }).getAttribute('href')).toBe('/privacidad');
   });
 
-  it('al registrarse: Google solo para cuentas de cliente', () => {
+  it('al registrarse: Google vale para los tres tipos de cuenta, con el rol elegido', () => {
     renderAuth('/auth?mode=signup');
     expect(screen.getByRole('button', { name: 'Google (signup)' })).toBeTruthy();
+    expect(mocks.lastGoogleProps!.signupRole).toBeUndefined();
+
     fireEvent.click(screen.getByRole('button', { name: /Jardinero/ }));
-    expect(screen.queryByRole('button', { name: /Google/ })).toBeNull();
-    expect(screen.getByText('Las cuentas de jardinero y de empresa se crean con tu correo.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Google (signup, gardener)' })).toBeTruthy();
+    expect(screen.queryByText(/se crean con tu correo/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Empresa/ }));
+    expect(screen.getByRole('button', { name: 'Google (signup, company)' })).toBeTruthy();
+
     fireEvent.click(screen.getByRole('button', { name: /Cliente/ }));
     expect(screen.getByRole('button', { name: 'Google (signup)' })).toBeTruthy();
+    expect(mocks.lastGoogleProps!.signupRole).toBeUndefined();
   });
 
   it('tras entrar con Google, saluda y lleva a su panel', async () => {

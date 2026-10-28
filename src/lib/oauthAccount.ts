@@ -57,6 +57,27 @@ export interface OAuthSignInResult {
   firstName: string;
 }
 
+/**
+ * Jardinero o empresa por Google (2026-10-28): la cuenta siempre nace 'client'
+ * (provision_profile_on_signup no ve el rol elegido en el selector, al contrario que el alta por
+ * correo). Si es una cuenta nueva y sigue en 'client', declara la intención real con
+ * self_declare_signup_role antes de que el resto del flujo navegue a su panel — se usa tanto
+ * desde el popup de Google (GoogleSignInButton) como desde la vuelta por redirección clásica
+ * (AuthCallbackPage), así que vive aquí, no duplicada en los dos sitios.
+ */
+export async function declareSignupRoleIfNeeded(
+  result: OAuthSignInResult,
+  signupRole: 'gardener' | 'company' | null | undefined,
+): Promise<OAuthSignInResult> {
+  if (!signupRole || !result.isNew || result.role !== 'client') return result;
+  const { error } = await supabase.rpc('self_declare_signup_role', { p_role: signupRole });
+  if (error) {
+    console.warn('No se ha podido declarar el rol tras el alta con Google:', error);
+    return result;
+  }
+  return { ...result, role: signupRole };
+}
+
 /** Tras entrar con Google: tipo de cuenta, si es nueva y su nombre de pila. */
 export async function describeOAuthSignIn(user: User, now: number = Date.now()): Promise<OAuthSignInResult> {
   await syncProfileFromGoogle(user);

@@ -4,7 +4,7 @@ import { AlertTriangle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
-import { describeOAuthSignIn, welcomeMessage } from '../../lib/oauthAccount';
+import { declareSignupRoleIfNeeded, describeOAuthSignIn, welcomeMessage } from '../../lib/oauthAccount';
 import { postLoginPath } from '../../utils/postLoginPath';
 import { callbackErrorMessage, readCallbackParams } from '../../utils/authCallback';
 
@@ -22,7 +22,7 @@ const AuthCallbackPage: React.FC = () => {
   const handled = useRef(false);
 
   useEffect(() => {
-    const { error, errorDescription, next } = params.current;
+    const { error, errorDescription, next, role } = params.current;
     if (error) {
       setProblem(callbackErrorMessage(error, errorDescription));
       return undefined;
@@ -31,7 +31,7 @@ const AuthCallbackPage: React.FC = () => {
     const finish = async (user: User) => {
       if (handled.current) return;
       handled.current = true;
-      const result = await describeOAuthSignIn(user);
+      const result = await declareSignupRoleIfNeeded(await describeOAuthSignIn(user), role);
       toast.success(welcomeMessage(result));
       navigate(postLoginPath(result.role, next), { replace: true });
     };

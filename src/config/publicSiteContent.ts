@@ -299,7 +299,7 @@ export const gardenersContent = {
       'Cobras el 100 % de tu precio',
     ],
     primaryCtaLabel: 'Crear mi cuenta gratis',
-    primaryCtaNote: 'Sin tarjeta ni permanencia. Revisamos tu alta antes de activarla.',
+    primaryCtaNote: 'Sin tarjeta ni permanencia. Revisamos tu alta en menos de 24 h.',
     companiesLinkLabel: '¿Tienes una empresa con empleados? Mira cómo funciona para equipos',
   },
   feeSplit: {
@@ -368,7 +368,7 @@ export const gardenersContent = {
       'Ves la agenda de todo el equipo, cambias quién va o propones otra fecha al cliente.',
     ],
     ctaLabel: 'Dar de alta mi empresa',
-    ctaNote: 'También gratis. Revisamos la solicitud antes de activarla.',
+    ctaNote: 'También gratis. Revisamos la solicitud en menos de 24 h.',
   },
   faqTitle: 'Preguntas frecuentes',
   finalCta: {

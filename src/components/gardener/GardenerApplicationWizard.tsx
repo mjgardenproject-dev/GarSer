@@ -9,7 +9,7 @@ import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-reac
 import GardenerStatusPage from './GardenerStatusPage';
 import { compressImage } from '../../utils/imageCompression';
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
+type Step = 1 | 2 | 3 | 4 | 5;
 
 // Debe coincidir EXACTAMENTE con los nombres canónicos de la tabla `services`
 // (ver enforce_canonical_services.js). Faltaba "Desbroce de malas hierbas": sin él, ningún
@@ -38,6 +38,8 @@ const TOOLS = [
 ];
 
 const UPLOAD_BOX_CLASS = "relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 cursor-pointer overflow-hidden flex flex-col items-center justify-center transition-colors";
+const TEXT_INPUT_CLASS = "w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-base sm:text-sm shadow-sm transition-all focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500";
+const SECONDARY_BUTTON_CLASS = "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]";
 
 const GardenerApplicationWizard: React.FC = () => {
   const { user } = useAuth();
@@ -80,7 +82,7 @@ const GardenerApplicationWizard: React.FC = () => {
   const [declTruth, setDeclTruth] = useState<boolean>(false);
   const [acceptTerms, setAcceptTerms] = useState<boolean>(false);
 
-  const totalSteps = 6;
+  const totalSteps = 5;
   // Progreso real del wizard: 0% en el paso 1 y 100% en el último paso.
   // Antes usaba (step-1)/totalSteps → en el paso 6 marcaba 83% y nunca llegaba al 100%.
   const progress = useMemo(() => Math.round(((step - 1) / (totalSteps - 1)) * 100), [step]);
@@ -91,11 +93,10 @@ const GardenerApplicationWizard: React.FC = () => {
 
   const isStepValid = (s: number) => {
     if (s === 1) return fullName.trim().length > 0 && isPhoneValid(phone) && cityZone.trim().length > 0 && !!photoUrl;
-    if (s === 2) return services.length > 0; // "Otros" es opcional
-    if (s === 3) return tools.length > 0;
-    if (s === 4) return (expYears >= 0) && (experienceText.trim().length > 0);
-    if (s === 5) return true; // Paso 5 (formación) es OPCIONAL por diseño: no debe frenar la solicitud
-    if (s === 6) return declTruth && acceptTerms;
+    if (s === 2) return services.length > 0 && tools.length > 0; // "Otros" es opcional
+    if (s === 3) return (expYears >= 0) && (experienceText.trim().length > 0);
+    if (s === 4) return true; // Paso 4 (formación) es OPCIONAL por diseño: no debe frenar la solicitud
+    if (s === 5) return declTruth && acceptTerms;
     return true;
   };
 
@@ -107,10 +108,12 @@ const GardenerApplicationWizard: React.FC = () => {
       if (!cityZone.trim()) return 'Indica tu ciudad o zona de trabajo.';
       if (!photoUrl) return 'Sube una foto de perfil profesional.';
     }
-    if (s === 2) return 'Marca al menos un servicio que ofrezcas.';
-    if (s === 3) return 'Marca al menos una herramienta de la que dispongas.';
-    if (s === 4) return 'Indica tus años de experiencia y descríbela brevemente.';
-    if (s === 6) return 'Marca las dos casillas para poder enviar la solicitud.';
+    if (s === 2) {
+      if (services.length === 0) return 'Marca al menos un servicio que ofrezcas.';
+      if (tools.length === 0) return 'Marca al menos una herramienta de la que dispongas.';
+    }
+    if (s === 3) return 'Indica tus años de experiencia y descríbela brevemente.';
+    if (s === 5) return 'Marca las dos casillas para poder enviar la solicitud.';
     return '';
   };
 
@@ -314,12 +317,11 @@ const GardenerApplicationWizard: React.FC = () => {
 
   const getStepTitle = (s: number) => {
     switch(s) {
-      case 1: return 'ENCUESTA DE SOLICITUD PARA JARDINEROS';
-      case 2: return 'Servicios';
-      case 3: return 'Herramientas';
-      case 4: return 'Experiencia';
-      case 5: return 'Formación';
-      case 6: return 'Confirmación';
+      case 1: return 'Tus datos';
+      case 2: return 'Servicios y herramientas';
+      case 3: return 'Experiencia';
+      case 4: return 'Formación';
+      case 5: return 'Confirmación';
       default: return '';
     }
   };
@@ -337,6 +339,9 @@ const GardenerApplicationWizard: React.FC = () => {
 
         {/* Header Re-layout */}
         <div className="w-full">
+          {step === 1 && (
+            <p className="mb-3 text-sm text-gray-500">{totalSteps} pasos, unos 3-4 minutos.</p>
+          )}
           {/* Progress Row */}
           <div className="w-full mb-4">
             <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
@@ -347,23 +352,27 @@ const GardenerApplicationWizard: React.FC = () => {
               <div className="h-2 bg-green-600 transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
           </div>
-          
+
           {/* Navigation & Title Row */}
           <div className="flex items-center justify-between gap-2">
-             <button 
-               onClick={prev} 
+             <button
+               type="button"
+               onClick={prev}
                disabled={step === 1}
-               className={`p-2 rounded-full hover:bg-gray-100 transition-colors ${step === 1 ? 'opacity-0 pointer-events-none' : ''}`}
+               aria-label="Paso anterior"
+               className={`flex min-h-11 min-w-11 items-center justify-center rounded-full hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation] ${step === 1 ? 'opacity-0 pointer-events-none' : ''}`}
              >
                <ChevronLeft className="w-6 h-6 text-gray-700" />
              </button>
-             
+
              <h1 className="text-xl font-bold text-center flex-1 leading-tight">{getStepTitle(step)}</h1>
-             
-             <button 
-               onClick={next} 
+
+             <button
+               type="button"
+               onClick={next}
                disabled={!isStepValid(step)}
-               className={`p-2 rounded-full hover:bg-gray-100 transition-colors ${step === 6 ? 'opacity-0 pointer-events-none' : ''} ${!isStepValid(step) ? 'opacity-30 cursor-not-allowed' : ''}`}
+               aria-label="Paso siguiente"
+               className={`flex min-h-11 min-w-11 items-center justify-center rounded-full hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation] ${step === totalSteps ? 'opacity-0 pointer-events-none' : ''} ${!isStepValid(step) ? 'opacity-30 cursor-not-allowed' : ''}`}
              >
                <ChevronRight className="w-6 h-6 text-gray-700" />
              </button>
@@ -372,26 +381,27 @@ const GardenerApplicationWizard: React.FC = () => {
 
         {step === 1 && (
           <div className="space-y-4">
-            <label className="block text-sm font-medium text-gray-700">Nombre completo</label>
-            <input value={fullName} onChange={(e)=>setFullName(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
-            <label className="block text-sm font-medium text-gray-700">Teléfono</label>
+            <label htmlFor="gw-full-name" className="block text-sm font-medium text-gray-700">Nombre completo</label>
+            <input id="gw-full-name" value={fullName} onChange={(e)=>setFullName(e.target.value)} className={TEXT_INPUT_CLASS} />
+            <label htmlFor="gw-phone" className="block text-sm font-medium text-gray-700">Teléfono</label>
             <input
+              id="gw-phone"
               type="tel"
               inputMode="tel"
               autoComplete="tel"
               placeholder="600 000 000"
               value={phone}
               onChange={(e)=>setPhone(e.target.value)}
-              className={`w-full p-3 border rounded text-base sm:text-sm ${phone.trim().length > 0 && !isPhoneValid(phone) ? 'border-red-400' : ''}`}
+              className={`${TEXT_INPUT_CLASS} ${phone.trim().length > 0 && !isPhoneValid(phone) ? 'border-red-400 focus:ring-red-400' : ''}`}
             />
             {phone.trim().length > 0 && !isPhoneValid(phone) && (
               <p className="text-xs text-red-600">Introduce un teléfono español válido: 9 dígitos empezando por 6, 7, 8 o 9 (+34 opcional).</p>
             )}
-            
+
             {/* Email removed */}
-            
-            <label className="block text-sm font-medium text-gray-700">Ciudad / zona de trabajo</label>
-            <input value={cityZone} onChange={(e)=>setCityZone(e.target.value)} className="w-full p-3 border rounded text-base sm:text-sm" />
+
+            <label htmlFor="gw-city-zone" className="block text-sm font-medium text-gray-700">Ciudad / zona de trabajo</label>
+            <input id="gw-city-zone" value={cityZone} onChange={(e)=>setCityZone(e.target.value)} className={TEXT_INPUT_CLASS} />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Foto de perfil profesional</label>
               <div className="flex items-center gap-4">
@@ -431,7 +441,7 @@ const GardenerApplicationWizard: React.FC = () => {
                   />
                 </label>
                 {photoUrl && (
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-gray-100 rounded hover:bg-gray-200 inline-flex items-center gap-2">
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className={SECONDARY_BUTTON_CLASS}>
                     <UploadCloud className="w-4 h-4" />
                     <span>Cambiar foto</span>
                   </button>
@@ -442,45 +452,46 @@ const GardenerApplicationWizard: React.FC = () => {
         )}
 
         {step === 2 && (
-          <div className="space-y-3">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">¿Qué servicios puedes ofrecer?</h2>
-            <div className="text-sm text-gray-600">Marca todos los que domines y para los que dispongas de herramientas</div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {SERVICES.map(s=> (
-                <label key={s} className="flex items-center gap-2 p-3 border rounded cursor-pointer hover:bg-gray-50">
-                  <input type="checkbox" checked={services.includes(s)} onChange={()=>toggleService(s)} className="w-4 h-4 text-green-600 focus:ring-green-500 rounded" />
-                  <span>{s}</span>
-                </label>
-              ))}
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <h2 className="text-xl font-bold text-gray-900">¿Qué servicios puedes ofrecer?</h2>
+              <div className="text-sm text-gray-600">Marca todos los que domines y para los que dispongas de herramientas</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {SERVICES.map(s=> (
+                  <label key={s} className="flex min-h-11 items-center gap-2 rounded-xl border border-gray-200 p-3 cursor-pointer hover:bg-gray-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-green-500">
+                    <input type="checkbox" checked={services.includes(s)} onChange={()=>toggleService(s)} className="w-4 h-4 text-green-600 focus-visible:ring-2 focus-visible:ring-green-500 rounded" />
+                    <span>{s}</span>
+                  </label>
+                ))}
+              </div>
+              <label htmlFor="gw-other-services" className="block text-sm font-medium text-gray-700 mt-4">Otros</label>
+              <textarea id="gw-other-services" value={otherServices} onChange={(e)=>setOtherServices(e.target.value)} rows={3} placeholder="¿Ofreces algún servicio que no esté en la lista?" className={TEXT_INPUT_CLASS} />
             </div>
-            <label className="block text-sm font-medium text-gray-700 mt-4">Otros</label>
-            <textarea value={otherServices} onChange={(e)=>setOtherServices(e.target.value)} rows={3} className="w-full p-3 border rounded text-base sm:text-sm" />
+
+            <div className="space-y-3 border-t border-gray-200 pt-6">
+              <h2 className="text-xl font-bold text-gray-900">¿De qué herramientas dispones?</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {TOOLS.map(t=> (
+                  <label key={t} className="flex min-h-11 items-center gap-2 rounded-xl border border-gray-200 p-3 cursor-pointer hover:bg-gray-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-green-500">
+                    <input type="checkbox" checked={tools.includes(t)} onChange={()=>toggleTool(t)} className="w-4 h-4 text-green-600 focus-visible:ring-2 focus-visible:ring-green-500 rounded" />
+                    <span>{t}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {step === 3 && (
-          <div className="space-y-3">
-            <label className="block text-xl font-bold text-gray-900 mb-4">¿De qué herramientas dispones?</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {TOOLS.map(t=> (
-                <label key={t} className="flex items-center gap-2 p-3 border rounded cursor-pointer hover:bg-gray-50">
-                  <input type="checkbox" checked={tools.includes(t)} onChange={()=>toggleTool(t)} className="w-4 h-4 text-green-600 focus:ring-green-500 rounded" />
-                  <span>{t}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold mb-2">Experiencia</h2>
             <div className="flex items-center gap-3">
-              <input type="number" min={0} value={expYearsInput} onFocus={()=>{ if (expYearsInput === '0') setExpYearsInput(''); }} onBlur={()=>{ if (expYearsInput.trim() === '') { setExpYearsInput('0'); setExpYears(0); } }} onChange={(e)=>{ const v=e.target.value; setExpYearsInput(v); const n=parseInt(v||'0',10); setExpYears(isNaN(n)?0:n); }} className="w-24 p-2 border rounded text-base sm:text-sm" />
+              <label htmlFor="gw-exp-years" className="sr-only">Años de experiencia</label>
+              <input id="gw-exp-years" type="number" min={0} value={expYearsInput} onFocus={()=>{ if (expYearsInput === '0') setExpYearsInput(''); }} onBlur={()=>{ if (expYearsInput.trim() === '') { setExpYearsInput('0'); setExpYears(0); } }} onChange={(e)=>{ const v=e.target.value; setExpYearsInput(v); const n=parseInt(v||'0',10); setExpYears(isNaN(n)?0:n); }} className={`w-24 ${TEXT_INPUT_CLASS}`} />
               <span className="text-sm text-gray-700">años de experiencia</span>
             </div>
-            <label className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
-            <textarea value={experienceText} onChange={(e)=>setExperienceText(e.target.value)} rows={4} className="w-full p-3 border rounded text-base sm:text-sm" />
+            <label htmlFor="gw-exp-text" className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
+            <textarea id="gw-exp-text" value={experienceText} onChange={(e)=>setExperienceText(e.target.value)} rows={4} className={TEXT_INPUT_CLASS} />
 
             {/* Experiencia laboral verificable (se persiste en worked_for_companies / can_prove) */}
             <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -569,12 +580,10 @@ const GardenerApplicationWizard: React.FC = () => {
           </div>
         )}
 
-        {/* Old Step 5 Deleted */}
-
-        {step === 5 && (
+        {step === 4 && (
           <div className="space-y-4">
-            <label className="block text-xl font-bold text-gray-900 mb-4">¿Tienes algún curso o formación en jardinería?</label>
-            <textarea value={educationText} onChange={(e)=>setEducationText(e.target.value)} rows={4} className="w-full p-3 border rounded text-base sm:text-sm" placeholder="Detalla aquí tus cursos, titulaciones, etc..." />
+            <label htmlFor="gw-education" className="block text-xl font-bold text-gray-900 mb-4">¿Tienes algún curso o formación en jardinería?</label>
+            <textarea id="gw-education" value={educationText} onChange={(e)=>setEducationText(e.target.value)} rows={4} className={TEXT_INPUT_CLASS} placeholder="Detalla aquí tus cursos, titulaciones, etc..." />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Adjunta fotos o documentos de tu titulación (opcional)</label>
               
@@ -637,20 +646,20 @@ const GardenerApplicationWizard: React.FC = () => {
           </div>
         )}
 
-        {step === 6 && (
+        {step === 5 && (
           <div className="space-y-3">
-            <label className="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={declTruth} onChange={()=>setDeclTruth(v=>!v)} className="w-4 h-4 text-green-600 rounded" /><span>Declaro que toda la información proporcionada es veraz y acepto ser verificado por el equipo de GarserHelp.</span></label>
-            <label className="flex items-center gap-2 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={acceptTerms} onChange={()=>setAcceptTerms(v=>!v)} className="w-4 h-4 text-green-600 rounded" /><span>Acepto que mis datos sean utilizados para gestionar mi perfil y solicitudes en la app de jardinería.</span></label>
+            <label className="flex items-center gap-2 cursor-pointer rounded-xl border border-gray-200 p-3 hover:bg-gray-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-green-500"><input type="checkbox" checked={declTruth} onChange={()=>setDeclTruth(v=>!v)} className="w-4 h-4 text-green-600 focus-visible:ring-2 focus-visible:ring-green-500 rounded" /><span>Declaro que toda la información proporcionada es veraz y acepto ser verificado por el equipo de GarserHelp.</span></label>
+            <label className="flex items-center gap-2 cursor-pointer rounded-xl border border-gray-200 p-3 hover:bg-gray-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-green-500"><input type="checkbox" checked={acceptTerms} onChange={()=>setAcceptTerms(v=>!v)} className="w-4 h-4 text-green-600 focus-visible:ring-2 focus-visible:ring-green-500 rounded" /><span>Acepto que mis datos sean utilizados para gestionar mi perfil y solicitudes en la app de jardinería.</span></label>
           </div>
         )}
 
         <div className="sticky bottom-0 mt-6 bg-white pt-3 border-t" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
           <div className="flex items-center justify-between">
-            <button onClick={prev} disabled={step===1} className="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200 inline-flex items-center gap-2 disabled:opacity-50"><ChevronLeft className="w-4 h-4" /><span>Anterior</span></button>
-            {step < 6 ? (
-              <button onClick={next} disabled={!isStepValid(step)} className="px-4 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-800 disabled:opacity-50 inline-flex items-center gap-2"><span>Siguiente</span><ChevronRight className="w-4 h-4" /></button>
+            <button type="button" onClick={prev} disabled={step===1} className={SECONDARY_BUTTON_CLASS}><ChevronLeft className="w-4 h-4" /><span>Anterior</span></button>
+            {step < totalSteps ? (
+              <button type="button" onClick={next} disabled={!isStepValid(step)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"><span>Siguiente</span><ChevronRight className="w-4 h-4" /></button>
             ) : (
-              <button onClick={submit} disabled={!declTruth || !acceptTerms || loading} className="px-4 py-2 bg-emerald-700 text-white rounded hover:bg-emerald-800 disabled:opacity-50 inline-flex items-center gap-2"><Check className="w-4 h-4" /><span>{loading ? 'Enviando...' : 'Enviar solicitud'}</span></button>
+              <button type="button" onClick={submit} disabled={!declTruth || !acceptTerms || loading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"><Check className="w-4 h-4" /><span>{loading ? 'Enviando...' : 'Enviar solicitud'}</span></button>
             )}
           </div>
           {/* Explicar qué falta en vez de solo deshabilitar el botón */}

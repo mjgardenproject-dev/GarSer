@@ -54,10 +54,12 @@ const AuthForm = () => {
   const [loading, setLoading] = useState(false);
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
-  // Google (2026-10-21): para entrar con cualquier cuenta y para crear cuentas de CLIENTE. Las de
-  // jardinero y empresa se crean con correo (eligen su tipo de cuenta y siguen su alta).
+  // Google (2026-10-21, ampliado a jardinero/empresa 2026-10-28): vale para entrar con cualquier
+  // cuenta y para crear cualquier tipo — GoogleSignInButton declara la intención del selector
+  // (self_declare_signup_role) en cuanto hay sesión nueva, porque Google no puede mandar el rol
+  // elegido como sí hace el alta por correo.
   const googleAvailable = Boolean(getGoogleClientId());
-  const showGoogle = googleAvailable && (isLogin || selectedRole === 'client');
+  const showGoogle = googleAvailable;
 
   useEffect(() => {
     const flag = localStorage.getItem('passwordChanged');
@@ -372,6 +374,7 @@ const AuthForm = () => {
                 context={isLogin ? 'signin' : 'signup'}
                 redirectPath={redirectTo || ''}
                 oneTap={isLogin}
+                signupRole={!isLogin && selectedRole !== 'client' ? selectedRole : undefined}
                 onSignedIn={(result) => {
                   toast.success(welcomeMessage(result));
                   navigate(postLoginPath(result.role, redirectTo));
@@ -379,9 +382,6 @@ const AuthForm = () => {
               />
               <OrWithEmail />
             </div>
-          )}
-          {googleAvailable && !isLogin && selectedRole !== 'client' && (
-            <p className="text-center text-sm text-gray-500">Las cuentas de jardinero y de empresa se crean con tu correo.</p>
           )}
 
           <div className="space-y-4">

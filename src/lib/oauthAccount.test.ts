@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   profile: null as Record<string, unknown> | null,
   update: vi.fn(),
   role: vi.fn(async () => 'client'),
+  rpc: vi.fn(async () => ({ error: null })),
 }));
 
 vi.mock('./supabase', () => ({
@@ -14,11 +15,12 @@ vi.mock('./supabase', () => ({
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: mocks.profile, error: null }) }) }),
       update: (patch: unknown) => ({ eq: async (_col: string, id: string) => { mocks.update(patch, id); return { error: null }; } }),
     }),
+    rpc: mocks.rpc,
   },
 }));
 vi.mock('./adminAccess', () => ({ fetchCurrentUserProfileRole: mocks.role }));
 
-import { describeOAuthSignIn, googleProfileOf, syncProfileFromGoogle, usesGoogle, welcomeMessage } from './oauthAccount';
+import { declareSignupRoleIfNeeded, describeOAuthSignIn, googleProfileOf, syncProfileFromGoogle, usesGoogle, welcomeMessage } from './oauthAccount';
 
 let n = 0;
 const googleUser = (overrides: Partial<User> = {}): User => ({
@@ -77,5 +79,39 @@ describe('oauthAccount', () => {
     const old = await describeOAuthSignIn(googleUser({ created_at: '2026-01-01T00:00:00Z' }), now);
     expect(old.isNew).toBe(false);
     expect(welcomeMessage({ isNew: false, firstName: '' })).toBe('¡Hola de nuevo!');
+  });
+
+  describe('declareSignupRoleIfNeeded', () => {
+    const client = { role: 'client', isNew: true, firstName: 'Ana' };
+
+    it('cuenta nueva, aún client, con rol de alta: llama a la RPC y devuelve el rol nuevo', async () => {
+      const result = await declareSignupRoleIfNeeded(client, 'gardener');
+      expect(mocks.rpc).toHaveBeenCalledWith('self_declare_signup_role', { p_role: 'gardener' });
+      expect(result).toEqual({ role: 'gardener', isNew: true, firstName: 'Ana' });
+    });
+
+    it('sin rol de alta (cliente normal, o solo entrando): no llama a la RPC', async () => {
+      const result = await declareSignupRoleIfNeeded(client, undefined);
+      expect(mocks.rpc).not.toHaveBeenCalled();
+      expect(result).toEqual(client);
+    });
+
+    it('cuenta que no es nueva: no llama a la RPC aunque haya rol de alta', async () => {
+      const result = await declareSignupRoleIfNeeded({ ...client, isNew: false }, 'company');
+      expect(mocks.rpc).not.toHaveBeenCalled();
+      expect(result.role).toBe('client');
+    });
+
+    it('la cuenta ya no es client (doble clic, reintento): no llama a la RPC', async () => {
+      const result = await declareSignupRoleIfNeeded({ ...client, role: 'gardener' }, 'company');
+      expect(mocks.rpc).not.toHaveBeenCalled();
+      expect(result.role).toBe('gardener');
+    });
+
+    it('si la RPC falla, no rompe el alta: devuelve el resultado original', async () => {
+      mocks.rpc.mockResolvedValueOnce({ error: { message: 'nope' } });
+      const result = await declareSignupRoleIfNeeded(client, 'gardener');
+      expect(result).toEqual(client);
+    });
   });
 });

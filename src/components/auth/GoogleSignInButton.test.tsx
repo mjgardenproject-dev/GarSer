@@ -8,13 +8,14 @@ const mocks = vi.hoisted(() => ({
   signInWithOAuth: vi.fn(async () => ({ data: {}, error: null })),
   load: vi.fn(),
   describe: vi.fn(async () => ({ role: 'client', isNew: true, firstName: 'Ana' })),
+  declareRole: vi.fn(async (result: unknown) => result),
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
 vi.mock('../../lib/supabase', () => ({
   supabase: { auth: { signInWithIdToken: mocks.signInWithIdToken, signInWithOAuth: mocks.signInWithOAuth } },
 }));
-vi.mock('../../lib/oauthAccount', () => ({ describeOAuthSignIn: mocks.describe }));
+vi.mock('../../lib/oauthAccount', () => ({ describeOAuthSignIn: mocks.describe, declareSignupRoleIfNeeded: mocks.declareRole }));
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }));
 vi.mock('../../utils/googleIdentity', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../utils/googleIdentity')>()),
@@ -80,6 +81,21 @@ describe('GoogleSignInButton', () => {
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana' }));
   });
 
+  it('con un rol de alta (jardinero/empresa), declara la intención antes de avisar a onSignedIn', async () => {
+    const google = fakeGoogle();
+    mocks.load.mockResolvedValue(google.api);
+    mocks.signInWithIdToken.mockResolvedValue({ data: { user: { id: 'u-1' } }, error: null });
+    mocks.declareRole.mockResolvedValue({ role: 'gardener', isNew: true, firstName: 'Ana' });
+    const onSignedIn = vi.fn();
+    render(<GoogleSignInButton context="signup" redirectPath="/x" signupRole="gardener" onSignedIn={onSignedIn} />);
+
+    await waitFor(() => expect(google.api.renderButton).toHaveBeenCalled());
+    await google.config().callback({ credential: 'id-token-de-google' });
+
+    expect(mocks.declareRole).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana' }, 'gardener');
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith({ role: 'gardener', isNew: true, firstName: 'Ana' }));
+  });
+
   it('si Supabase lo rechaza, lo explica y prepara otro intento con un nonce nuevo', async () => {
     const google = fakeGoogle();
     mocks.load.mockResolvedValue(google.api);
@@ -106,6 +122,20 @@ describe('GoogleSignInButton', () => {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/reserva/confirmacion?auth=1&resume=abc')}`,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+  });
+
+  it('con rol de alta, la redirección clásica lo manda en la URL de vuelta', async () => {
+    mocks.load.mockRejectedValue(new Error('google_identity_blocked'));
+    render(<GoogleSignInButton redirectPath="/empresa" signupRole="company" onSignedIn={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Continuar con Google/ }));
+    await waitFor(() => expect(mocks.signInWithOAuth).toHaveBeenCalled());
+    expect(mocks.signInWithOAuth).toHaveBeenCalledWith({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/empresa')}&role=company`,
         queryParams: { prompt: 'select_account' },
       },
     });

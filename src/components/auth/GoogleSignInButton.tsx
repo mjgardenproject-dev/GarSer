@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, ExternalLink, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
-import { describeOAuthSignIn, type OAuthSignInResult } from '../../lib/oauthAccount';
+import { declareSignupRoleIfNeeded, describeOAuthSignIn, type OAuthSignInResult } from '../../lib/oauthAccount';
 import {
   createNonce,
   detectEmbeddedBrowser,
@@ -30,6 +30,13 @@ interface Props {
   shareUrl?: string;
   /** Sugerir la cuenta de Google con «One Tap» al llegar. */
   oneTap?: boolean;
+  /**
+   * Rol elegido en el selector del alta, cuando no es cliente (2026-10-28). Google no puede
+   * mandar el rol como sí hace el alta por correo (supabase.auth.signUp con requested_role en
+   * los metadatos): la cuenta nace 'client' siempre. Con esto, en cuanto hay sesión nueva se
+   * declara la intención real vía self_declare_signup_role antes de avisar a onSignedIn.
+   */
+  signupRole?: 'gardener' | 'company';
   onSignedIn: (result: OAuthSignInResult) => void;
 }
 
@@ -46,7 +53,7 @@ export const GoogleLogo: React.FC<{ className?: string }> = ({ className = 'h-5 
 
 const OWN_BUTTON = 'flex min-h-11 w-full items-center justify-center gap-3 rounded-full border border-gray-300 bg-white px-4 py-2.5 text-base font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]';
 
-const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath, beforeRedirect, shareUrl, oneTap = false, onSignedIn }) => {
+const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath, beforeRedirect, shareUrl, oneTap = false, signupRole, onSignedIn }) => {
   const clientId = getGoogleClientId();
   const embedded = detectEmbeddedBrowser();
   const [mode, setMode] = useState<Mode>(embedded ? 'embedded' : 'loading');
@@ -81,7 +88,8 @@ const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath,
             nonce: nonceRef.current,
           });
           if (signInError || !data?.user) throw signInError ?? new Error('sin_usuario');
-          onSignedInRef.current(await describeOAuthSignIn(data.user));
+          const result = await declareSignupRoleIfNeeded(await describeOAuthSignIn(data.user), signupRole);
+          onSignedInRef.current(result);
         } catch (signInError) {
           setError(googleSignInErrorMessage(signInError));
           // Un nonce nuevo para el siguiente intento.
@@ -106,7 +114,7 @@ const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath,
       });
     }
     if (withPrompt) api.prompt();
-  }, [clientId, context]);
+  }, [clientId, context, signupRole]);
 
   useEffect(() => {
     if (!clientId || embedded) return undefined;
@@ -130,12 +138,18 @@ const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath,
     setError('');
     try {
       beforeRedirect?.();
-      // Sin ruta de vuelta, el callback lleva a cada cuenta a su panel (postLoginPath).
-      const next = redirectPath ? `?next=${encodeURIComponent(redirectPath)}` : '';
+      // Sin ruta de vuelta, el callback lleva a cada cuenta a su panel (postLoginPath). `role`
+      // viaja igual: AuthCallbackPage declara la intención con self_declare_signup_role antes de
+      // navegar, para la vuelta por redirección clásica (sin esto, el popup de arriba basta).
+      const queryParts = [
+        redirectPath ? `next=${encodeURIComponent(redirectPath)}` : '',
+        signupRole ? `role=${signupRole}` : '',
+      ].filter(Boolean);
+      const query = queryParts.length ? `?${queryParts.join('&')}` : '';
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback${next}`,
+          redirectTo: `${window.location.origin}/auth/callback${query}`,
           queryParams: { prompt: 'select_account' },
         },
       });

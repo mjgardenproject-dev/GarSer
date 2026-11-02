@@ -14,14 +14,21 @@ vi.mock('../lib/supabase', () => ({
 }));
 
 import { sendMetaCapiEvent } from './metaConversionsApi';
+import { CONSENT_STORAGE_KEY } from './cookieConsentStorage';
+
+const storeConsent = (advertising: boolean, decidedAt = new Date().toISOString()) =>
+  window.localStorage.setItem(CONSENT_STORAGE_KEY, JSON.stringify({ advertising, decidedAt }));
 
 describe('metaConversionsApi', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    storeConsent(true);
     mocks.invoke.mockResolvedValue({ data: null, error: null });
   });
   afterEach(() => {
     vi.unstubAllEnvs();
+    window.localStorage.clear();
   });
 
   it('sin VITE_META_PIXEL_ID no llama a la función', () => {
@@ -30,7 +37,39 @@ describe('metaConversionsApi', () => {
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 
-  it('con el identificador, manda el evento con el mismo event_id del píxel', () => {
+  it('sin decidir lo de las cookies, no manda nada a Meta', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    window.localStorage.clear();
+    sendMetaCapiEvent('Lead', 'evt-1', { email: 'a@b.com' });
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('si rechazó la publicidad, no manda nada a Meta', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    storeConsent(false);
+    sendMetaCapiEvent('Lead', 'evt-1', { email: 'a@b.com' });
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('si su decisión caducó (más de 24 meses), no manda nada a Meta', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    const old = new Date();
+    old.setMonth(old.getMonth() - 25);
+    storeConsent(true, old.toISOString());
+    sendMetaCapiEvent('Lead', 'evt-1', { email: 'a@b.com' });
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('retirar el consentimiento surte efecto en el acto, sin recargar', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    sendMetaCapiEvent('Lead', 'evt-1');
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    storeConsent(false);
+    sendMetaCapiEvent('Lead', 'evt-2');
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('con el identificador y el consentimiento, manda el evento con el mismo event_id del píxel', () => {
     vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
     sendMetaCapiEvent('Lead', 'evt-1', { email: 'a@b.com' }, { value: 1 });
     expect(mocks.invoke).toHaveBeenCalledWith('meta-capi-send', {

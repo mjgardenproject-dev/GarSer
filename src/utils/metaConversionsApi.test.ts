@@ -82,6 +82,28 @@ describe('metaConversionsApi', () => {
     });
   });
 
+  it('un evento «recorded» (el admin, por otra persona) sale aunque este navegador no tenga consentimiento, sin la página del admin', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    window.localStorage.clear();
+    sendMetaCapiEvent('ProviderApproved', 'evt-9', { email: 'a@b.com' }, undefined, { origin: 'recorded' });
+    expect(mocks.invoke).toHaveBeenCalledWith('meta-capi-send', {
+      body: expect.objectContaining({
+        event_name: 'ProviderApproved',
+        event_id: 'evt-9',
+        origin: 'recorded',
+        event_source_url: undefined,
+      }),
+    });
+  });
+
+  it('un evento normal lleva origen «visitor» y la página', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    sendMetaCapiEvent('Lead', 'evt-1', { email: 'a@b.com' });
+    expect(mocks.invoke).toHaveBeenCalledWith('meta-capi-send', {
+      body: expect.objectContaining({ origin: 'visitor', event_source_url: expect.any(String) }),
+    });
+  });
+
   it('si la función falla, no lanza (best-effort)', async () => {
     vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
     mocks.invoke.mockRejectedValue(new Error('network down'));

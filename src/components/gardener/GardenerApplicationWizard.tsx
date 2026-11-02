@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applicationHasData, fetchLastRejection, submitGardenerApplication, wizardStateFromApplication } from '../../utils/gardenerApplicationRetry';
 import { trackMetaLead } from '../../utils/metaLead';
+import { advertisingConsentColumns } from '../../utils/cookieConsentStorage';
 import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-react';
 import GardenerStatusPage from './GardenerStatusPage';
 import { compressImage } from '../../utils/imageCompression';
@@ -280,7 +281,9 @@ const GardenerApplicationWizard: React.FC = () => {
       certification_text: educationText || null,
       certification_photos: certPhotos, // Assuming this field exists
       declaration_truth: declTruth,
-      accept_terms: acceptTerms
+      accept_terms: acceptTerms,
+      // Lo que decidió con las cookies de publicidad en este navegador: permite mandar «ProviderApproved» a Meta al aprobar.
+      ...advertisingConsentColumns(),
     };
     await supabase.from('gardener_applications').update(payload).eq('id', applicationId);
   };

@@ -39,3 +39,11 @@ export function writeStoredConsent(advertising: boolean): void {
 export function advertisingConsentGranted(): boolean {
   return readStoredConsent()?.advertising === true;
 }
+
+/** Lo que se guarda en la solicitud de alta (columnas ads_consent y ads_consent_at, migración
+ * 20261102120000): la decisión de cookies de la persona en SU navegador, que es el único sitio donde
+ * existe. Sin decisión, o rechazada, `ads_consent` es false y nunca se manda nada a Meta por ella. */
+export function advertisingConsentColumns(): { ads_consent: boolean; ads_consent_at: string | null } {
+  const stored = readStoredConsent();
+  return { ads_consent: stored?.advertising === true, ads_consent_at: stored?.decidedAt ?? null };
+}

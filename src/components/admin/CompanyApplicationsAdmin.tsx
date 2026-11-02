@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useConfirmDialog } from '../common/ConfirmDialog';
 import { describeAnswers, TEAM_SIZE_OPTIONS, type CompanyApplicationAnswers } from '../../config/companyApplication';
+import { trackProviderApproved } from '../../utils/providerApproved';
 
 // Revisión de solicitudes de alta de empresas (GarSer Empresas F3.2, D2). Separada de las de
 // jardineros (F3-10). Aprobar o rechazar lo hace el servidor (admin_review_company_application),
@@ -27,6 +28,7 @@ interface CompanyApplication {
   submitted_at: string | null;
   reviewed_at: string | null;
   review_comment: string | null;
+  ads_consent?: boolean;
 }
 
 const formatDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
@@ -81,6 +83,7 @@ const CompanyApplicationsAdmin: React.FC = () => {
       toast.success(status === 'approved' ? `${app.commercial_name} ya está dada de alta.` : 'Solicitud rechazada.');
       // El correo a la empresa lo apunta el servidor al guardar la revisión (prueba real F3), con
       // reintentos: ya no depende de esta pestaña.
+      if (status === 'approved') trackProviderApproved(app);
       setRejectingId(null);
       setRejectReason('');
       setOpenId(null);

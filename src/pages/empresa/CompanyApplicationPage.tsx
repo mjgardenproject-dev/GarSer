@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
 import { trackMetaLead } from '../../utils/metaLead';
+import { advertisingConsentColumns } from '../../utils/cookieConsentStorage';
 import {
   COMPANY_APPLICATION_STEPS,
   COMPANY_SERVICE_OPTIONS,
@@ -106,7 +107,8 @@ const CompanyApplicationPage: React.FC = () => {
     setDraft((d) => ({ ...d, answers: { ...d.answers, [key]: value } }));
 
   const saveDraft = async (): Promise<string> => {
-    const row = toApplicationRow(draft);
+    // Con lo que decidió con las cookies de publicidad en este navegador (permite «ProviderApproved» al aprobar).
+    const row = { ...toApplicationRow(draft), ...advertisingConsentColumns() };
     if (draftId) {
       const { error } = await supabase.from('company_applications').update(row).eq('id', draftId);
       if (error) throw error;

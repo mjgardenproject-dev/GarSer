@@ -48,7 +48,7 @@ const PrivacyPage: React.FC = () => {
           <li>Stripe: pagos.</li>
           <li>Brevo: envío de correos.</li>
           <li>Google: inicio de sesión con Google, mapas y direcciones, el análisis de las fotos para el presupuesto y, si aceptas cookies de publicidad, Google Ads.</li>
-          <li>Meta (Instagram y Facebook): solo si aceptas cookies de publicidad.</li>
+          <li>Meta (Instagram y Facebook): solo si aceptas cookies de publicidad. En ese caso, al enviar tu solicitud de alta les mandamos tu correo electrónico cifrado y datos técnicos de tu navegador, y cuando se aprueba tu alta, solo tu correo cifrado, para saber qué anuncios traen profesionales.</li>
         </ul>
         <p>Algunos están fuera del Espacio Económico Europeo (por ejemplo, en Estados Unidos). En ese caso la transferencia se hace con las garantías del RGPD: cláusulas contractuales tipo de la Comisión Europea o el Marco de Privacidad de Datos UE-EE. UU.</p>
         <p>También podemos comunicar datos a las autoridades cuando una ley nos obligue.</p>

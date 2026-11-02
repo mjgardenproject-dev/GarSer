@@ -1174,6 +1174,8 @@ Rellena esto antes de empezar y ten la tabla a mano:
 
 ## Sección 24 — Lanzamiento: sin gastos de gestión para los clientes propios (2026-10-19)
 
+> **Sustituida en parte por la sección 29 (2026-11-02).** El interruptor de Ajustes ya no existe: «sin gastos» para los clientes del enlace son ahora las reglas de comisión al 0 %. Un cliente que repite con GarSer y las visitas de un plan **ya no van a 0 €**: pagan lo que diga la configuración (por defecto, 3 %). Los pasos 24.x que esperen 0 € en esos dos casos ya no valen; vale lo de la sección 29.
+
 > Rama `feat/sin-gastos-clientes-propios`. Sin gastos de gestión: reservas desde el enlace del
 > profesional (`/reservar/<id>`), clientes con una reserva **completada** con ese profesional y las
 > visitas de los planes. Lo decide el servidor al firmar el presupuesto, y solo con el interruptor
@@ -1539,6 +1541,81 @@ Rellena esto antes de empezar y ten la tabla a mano:
 >
 > El paso real por Google necesita las credenciales del paso 1 de la guía: se prueba aquí.
 
+## Sección 29 — Comisiones configurables (2026-11-02)
+
+> **Qué es.** Rama `feat/comisiones-configurables`.
+> - El administrador decide en **Admin → Comisiones** cuánto cobra GarSer en cada tipo de reserva: primera reserva de un cliente de GarSer (12,5 %), primera por el enlace del jardinero (0 %), reservas posteriores (3 %), visitas de planes de mantenimiento (3 %) y posteriores de un cliente del enlace (0 %).
+> - El servidor decide qué regla toca a cada reserva y hace la cuenta en céntimos. La web solo enseña lo que devuelve.
+> - Cada reserva guarda regla, porcentaje, base, versión y fecha. Cambiar los porcentajes no toca reservas ni presupuestos ya firmados.
+>
+> **Despliegue (en este orden):**
+> 1. `supabase db push` (tres migraciones `20261102130000`, `…140000` y `…150000`).
+> 2. `supabase functions deploy booking-authority booking-payment --use-api`.
+> 3. Fusionar (publica la web).
+>
+> Con la migración puesta y las funciones antiguas, todo sigue como hasta ahora. Con las funciones nuevas y sin migración, las reservas se bloquean con un error recuperable (nunca se cobra de menos).
+>
+> **Antes de empezar:**
+> - tu cuenta de administrador;
+> - un jardinero de prueba con su enlace `/reservar/<id>`;
+> - dos cuentas de cliente nuevas (una para entrar desde garser.es y otra desde el enlace);
+> - tarjeta de prueba de Stripe o real, según el entorno.
+
+**A. El panel**
+
+- [ ] **29.1 — Se ve y es el de partida.** Entra en **Admin → Comisiones**.
+  - ✅ Cinco tarjetas con **12,5 / 0 / 3 / 3 / 0 %** y «Versión 1».
+  - ✅ **No** sale el aviso ámbar «no usa estas comisiones» (si sale, falta desplegar las funciones del paso 2).
+  - En **Ajustes** ✅ ya no está el interruptor «sin gastos de gestión»: hay una línea que lleva a «Comisiones».
+- [ ] **29.2 — Valida.** En la primera tarjeta escribe, uno a uno, `-1`, `101`, `abc`, nada y `1,234`.
+  - ✅ Cada uno muestra su mensaje en rojo y «Guardar configuración» queda desactivado.
+  - ✅ Un campo vacío **no** se toma como 0.
+- [ ] **29.3 — Guarda y persiste.** Pon la primera tarjeta en `13` y la de visitas de planes en `2,5`. Antes de guardar, ✅ sale «Cambios pendientes de guardar» con los dos cambios. Guarda.
+  - ✅ «Configuración guardada (versión 2)» con los cinco valores que devuelve el servidor.
+  - Recarga la página: ✅ siguen ahí.
+  - Abre «Historial de cambios»: ✅ tu nombre, la hora y «12,5 % → 13 %».
+- [ ] **29.4 — Dos pestañas.** Abre el panel en dos pestañas. Guarda un cambio en la A; sin recargar, cambia otro valor en la B y guarda.
+  - ✅ La B avisa «La configuración ha cambiado mientras la editabas» y **no guarda**; «Cargar los valores actuales» trae lo de la A.
+- [ ] **29.5 — Un cliente no entra.** Con una cuenta de cliente, abre `/admin/commissions`. ✅ Te saca del panel.
+  - Con curl y el token de ese cliente: `curl -s -X POST "$SUPABASE_URL/rest/v1/rpc/get_commission_settings" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $TOKEN_CLIENTE" -H "Content-Type: application/json" -d '{}'` → ✅ error `42501` («Acceso denegado»). Lo mismo con `save_commission_settings`.
+  - ✅ `GET /rest/v1/commission_settings` con ese token da error de permisos.
+- Deja los valores otra vez en **12,5 / 0 / 3 / 3 / 0** antes de seguir.
+
+**B. Reservas (con Stripe)**
+
+- [ ] **29.6 — Cliente nuevo desde garser.es (12,5 %).** Entra sin pasar por ningún enlace de jardinero y reserva un servicio que cueste, por ejemplo, 158 €.
+  - ✅ «Pagas hoy 19,75 € de gastos de gestión».
+  - ✅ En Stripe, la autorización es de **19,75 €** exactos.
+  - Termina la reserva. En el SQL editor: `select management_fee, management_fee_source, commission_rule, commission_rate_bps, commission_base_amount, commission_config_version, commission_fixed_at from bookings order by created_at desc limit 1;`
+    ✅ `19.75 | payment_attempt | garser_first | 1250 | 158 | <versión> | <fecha>`.
+  - `select origin from client_provider_relationships where client_id = '<id del cliente>';` ✅ `garser`.
+- [ ] **29.7 — Cliente nuevo por el enlace del jardinero (0 %).** Con la otra cuenta, entra por `/reservar/<id>` y reserva.
+  - ✅ «Sin gastos de gestión», sin hoja de pago, y la reserva se crea al confirmar.
+  - ✅ En SQL: `management_fee = 0`, fuente `waived_provider_link`, regla `link_first`, y su origen es `provider_link`.
+- [ ] **29.8 — Cambiar el porcentaje con una reserva a medias.**
+  - Con un cliente nuevo, llega a la pantalla de pago **sin pagar**.
+  - En otra pestaña pon la primera regla en 15 %.
+  - Vuelve y paga. ✅ Cobra el **12,5 %** con el que se firmó (no se rompe ni cobra el 15 %).
+  - Empieza otra reserva con otro cliente nuevo. ✅ Ahora pide el 15 %.
+  - ✅ Las reservas de 29.6 y 29.7 siguen con lo que tenían (`commission_config_version` antigua).
+  - Vuelve la primera regla a 12,5.
+- [ ] **29.9 — Reserva posterior (3 %).** Con el cliente de 29.6: el jardinero acepta y marca completada su reserva. Reserva otra vez con el mismo jardinero.
+  - ✅ «Pagas hoy» es el **3 %** (por ejemplo 4,74 € sobre 158 €).
+  - Cierra sesión y vuelve a entrar con ese cliente por el enlace `/reservar/<id>` de ese jardinero. ✅ **Sigue siendo el 3 %**: volver por otro enlace no le da el 0 %.
+- [ ] **29.10 — Cliente del enlace que repite (0 %).** Con el cliente de 29.7 (su reserva ya completada): reserva otra vez, **sin** pasar por el enlace. ✅ Sin gastos de gestión (regla `link_repeat`).
+- [ ] **29.11 — Visita de un plan (3 %).**
+  - Con el cliente de 29.7 (el del enlace), crea un plan de mantenimiento desde su reserva completada.
+  - Espera la propuesta (o fuérzala: `update maintenance_plans set next_visit_date = current_date + 3 where id = '<plan>'; select generate_maintenance_proposals();`).
+  - ✅ La propuesta lleva el **3 %** de gastos, también para un cliente del enlace.
+  - Confírmala. ✅ Stripe cobra ese importe y la reserva queda con regla `maintenance_visit`.
+- [ ] **29.12 — Suelo de 0,50 €.** Pon la primera regla en `0,01` y reserva con un cliente nuevo. ✅ «Pagas hoy 0,50 €» y Stripe cobra 50 céntimos. Vuelve a 12,5.
+- [ ] **29.13 — El material de marketing lo sigue.** En «Marketing» de un jardinero, ✅ sale «Tus clientes reservan sin gastos de gestión» mientras las dos reglas de enlace estén al 0 %. Pon la regla de primera por enlace en `1`: ✅ desaparece. Devuélvela a 0.
+
+> **Qué comprueba el código en local, sin pagos reales:**
+> - SQL (PGlite, con las migraciones reales encima de las anteriores): las cinco reglas y su prioridad, las validaciones, el guardado atómico y la auditoría, los permisos con roles reales, la inmutabilidad de las reservas, los planes y 6.240 cálculos en céntimos contra una referencia independiente.
+> - TypeScript (vitest): el panel (carga, errores, validación, guardado, doble clic, versión desfasada), el módulo del servidor y los importes.
+> - **No** se ha podido ejecutar todavía `scripts/commissions/verify-commissions.mjs` (la prueba de punta a punta con funciones y Stripe de prueba): Docker no respondía. Es lo que cubre esta sección contra producción.
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:
@@ -1553,6 +1630,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 10 verde — nadie puede abusar del correo ni de la IA |
 | [ ] | Sección 16 verde — el área de cliente unificada |
 | [ ] | Sección 21 verde — formularios manuales con el mismo precio que antes (21.2 es bloqueante) |
+| [ ] | Sección 29 verde — comisiones configurables (29.6, 29.7 y 29.8 son bloqueantes: es dinero) |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

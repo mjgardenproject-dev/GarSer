@@ -2,41 +2,12 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { advertisingAvailable } from '../config/analytics';
 import { loadMetaPixel } from '../utils/metaPixel';
 import { loadGoogleAdsTag } from '../utils/googleAds';
+import { readStoredConsent, writeStoredConsent } from '../utils/cookieConsentStorage';
 
 // Consentimiento de cookies, 2026-10-22. Conforme a la guía de la AEPD: «Aceptar» y «Rechazar» con el
 // mismo peso, sin instalar nada hasta que el visitante decide, y se vuelve a preguntar como mucho a
 // los 24 meses. Una sola categoría además de las necesarias («publicidad»: Meta + Google Ads) porque es
 // lo único que hay por ahora — si se añade otra más adelante, se amplía aquí.
-
-const STORAGE_KEY = 'garser.cookie-consent.v1';
-const RENEW_AFTER_MS = 24 * 30 * 24 * 60 * 60 * 1000; // 24 meses, en meses de 30 días: sobra margen.
-
-interface StoredConsent {
-  advertising: boolean;
-  decidedAt: string;
-}
-
-function readStoredConsent(): StoredConsent | null {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredConsent>;
-    if (typeof parsed.advertising !== 'boolean' || typeof parsed.decidedAt !== 'string') return null;
-    const decidedAt = new Date(parsed.decidedAt).getTime();
-    if (!Number.isFinite(decidedAt) || Date.now() - decidedAt > RENEW_AFTER_MS) return null; // caducado: se vuelve a preguntar
-    return { advertising: parsed.advertising, decidedAt: parsed.decidedAt };
-  } catch {
-    return null; // localStorage bloqueado o dato corrupto: se trata como «sin decidir».
-  }
-}
-
-function writeStoredConsent(advertising: boolean): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ advertising, decidedAt: new Date().toISOString() }));
-  } catch {
-    // Sin almacenamiento disponible: el banner volverá a salir la próxima vez. No es grave.
-  }
-}
 
 interface CookieConsentValue {
   /** false mientras no se sabe si hay una decisión guardada (primer render, antes de leer localStorage). */

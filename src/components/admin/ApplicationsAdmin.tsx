@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CheckCircle, XCircle, Search, X, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import { trackProviderApproved } from '../../utils/providerApproved';
 
 interface Application {
   id: string;
@@ -110,7 +109,6 @@ const ApplicationsAdmin: React.FC = () => {
         return;
       }
 
-      trackProviderApproved(app.email);
       if (selected?.id === app.id) setSelected(null);
       await fetchSubmitted();
     } catch (e: any) {

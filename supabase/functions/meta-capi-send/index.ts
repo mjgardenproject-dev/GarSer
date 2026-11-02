@@ -7,6 +7,8 @@
 // flujo de la persona que se está dando de alta. Un solo intento, sin reintentos — a diferencia
 // de booking-telemetry, perder un evento de vez en cuando no es grave aquí.
 
+import { buildCapiEvent, normalizePayload } from './event.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -22,44 +24,11 @@ const corsHeaders = {
 const META_DATASET_ID = '1426366976278640';
 const META_GRAPH_VERSION = 'v21.0';
 
-interface CapiPayload {
-  event_name: string;
-  event_id: string;
-  event_source_url?: string;
-  user_data?: { email?: string; phone?: string };
-  custom_data?: Record<string, unknown>;
-}
-
 export function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
-}
-
-export function normalizePayload(payload: unknown): CapiPayload | null {
-  if (!payload || typeof payload !== 'object') return null;
-  const candidate = payload as Record<string, unknown>;
-  const eventName = String(candidate.event_name || '').trim();
-  const eventId = String(candidate.event_id || '').trim();
-  if (!eventName || !eventId) return null;
-
-  const userDataRaw = candidate.user_data && typeof candidate.user_data === 'object'
-    ? candidate.user_data as Record<string, unknown>
-    : {};
-
-  return {
-    event_name: eventName,
-    event_id: eventId,
-    event_source_url: typeof candidate.event_source_url === 'string' ? candidate.event_source_url : undefined,
-    user_data: {
-      email: typeof userDataRaw.email === 'string' ? userDataRaw.email : undefined,
-      phone: typeof userDataRaw.phone === 'string' ? userDataRaw.phone : undefined,
-    },
-    custom_data: candidate.custom_data && typeof candidate.custom_data === 'object'
-      ? candidate.custom_data as Record<string, unknown>
-      : undefined,
-  };
 }
 
 export function resolveAllowedClientApiKeys(): string[] {
@@ -86,25 +55,6 @@ export function hasAllowedClientApiKey(req: Request, allowedApiKeys: string[]): 
   return apiKey !== '' && allowedApiKeys.includes(apiKey);
 }
 
-async function sha256Hex(value: string): Promise<string> {
-  const data = new TextEncoder().encode(value.trim().toLowerCase());
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function buildMetaUserData(payload: CapiPayload, req: Request): Promise<Record<string, unknown>> {
-  const userData: Record<string, unknown> = {};
-  if (payload.user_data?.email) userData.em = [await sha256Hex(payload.user_data.email)];
-  if (payload.user_data?.phone) userData.ph = [await sha256Hex(payload.user_data.phone.replace(/\D/g, ''))];
-
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-  if (clientIp) userData.client_ip_address = clientIp;
-  const userAgent = req.headers.get('user-agent');
-  if (userAgent) userData.client_user_agent = userAgent;
-
-  return userData;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -127,15 +77,14 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: false, accepted: false, error: 'CAPI no configurado.' }, 202);
     }
 
-    const event = {
-      event_name: payload.event_name,
-      event_time: Math.floor(Date.now() / 1000),
-      event_id: payload.event_id,
-      event_source_url: payload.event_source_url,
-      action_source: 'website',
-      user_data: await buildMetaUserData(payload, req),
-      custom_data: payload.custom_data,
-    };
+    const event = await buildCapiEvent(
+      payload,
+      {
+        ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || undefined,
+        userAgent: req.headers.get('user-agent') || undefined,
+      },
+      Math.floor(Date.now() / 1000),
+    );
 
     const graphUrl = `https://graph.facebook.com/${META_GRAPH_VERSION}/${META_DATASET_ID}/events?access_token=${accessToken}`;
     const metaResponse = await fetch(graphUrl, {

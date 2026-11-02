@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CheckCircle, XCircle, Search, X, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { trackProviderApproved } from '../../utils/providerApproved';
 
 interface Application {
   id: string;
@@ -28,6 +29,7 @@ interface Application {
   declaration_truth?: boolean;
   accept_terms?: boolean;
   submitted_at?: string;
+  ads_consent?: boolean;
 }
 
 // PH-02: rechazos anteriores de una solicitud que el jardinero corrigió y volvió a enviar.
@@ -109,6 +111,7 @@ const ApplicationsAdmin: React.FC = () => {
         return;
       }
 
+      trackProviderApproved(app);
       if (selected?.id === app.id) setSelected(null);
       await fetchSubmitted();
     } catch (e: any) {

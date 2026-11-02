@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CONSENT_STORAGE_KEY,
+  advertisingConsentColumns,
   advertisingConsentGranted,
   readStoredConsent,
   writeStoredConsent,
@@ -46,5 +47,19 @@ describe('cookieConsentStorage', () => {
       throw new Error('blocked');
     });
     expect(advertisingConsentGranted()).toBe(false);
+  });
+
+  it('las columnas de la solicitud reflejan la decisión y cuándo se tomó', () => {
+    expect(advertisingConsentColumns()).toEqual({ ads_consent: false, ads_consent_at: null });
+
+    writeStoredConsent(true);
+    const accepted = advertisingConsentColumns();
+    expect(accepted.ads_consent).toBe(true);
+    expect(Number.isNaN(new Date(accepted.ads_consent_at as string).getTime())).toBe(false);
+
+    writeStoredConsent(false);
+    const rejected = advertisingConsentColumns();
+    expect(rejected.ads_consent).toBe(false);
+    expect(rejected.ads_consent_at).toBeTruthy();
   });
 });

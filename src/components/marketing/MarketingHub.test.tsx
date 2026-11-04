@@ -46,8 +46,14 @@ function status(overrides: Partial<ProviderSetupStatus> = {}): ProviderSetupStat
   };
 }
 
-const setStatus = (value: ProviderSetupStatus) =>
-  mocks.rpc.mockImplementation(async (fn: string) => (fn === 'my_provider_setup_status' ? { data: value, error: null } : { data: 1, error: null }));
+const LINK_CODE = '0123456789abcdef0123456789abcdef';
+
+const setStatus = (value: ProviderSetupStatus, link: { data: unknown; error: unknown } = { data: { code: LINK_CODE }, error: null }) =>
+  mocks.rpc.mockImplementation(async (fn: string) => {
+    if (fn === 'my_provider_setup_status') return { data: value, error: null };
+    if (fn === 'my_booking_link') return link;
+    return { data: 1, error: null };
+  });
 
 describe('MarketingHub', () => {
   beforeEach(() => {
@@ -65,7 +71,7 @@ describe('MarketingHub', () => {
 
     expect(await screen.findByRole('heading', { name: 'Marketing' })).toBeTruthy();
     expect(screen.getByText(/Tus clientes reservan sin gastos de gestión/)).toBeTruthy();
-    expect(screen.getByText('https://garser.es/reservar/prov-1?utm_source=enlace')).toBeTruthy();
+    expect(screen.getByText(`https://garser.es/reservar/prov-1?c=${LINK_CODE}&utm_source=enlace`)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Para tus redes' })).toBeTruthy();
     for (const title of ['Tarjetas de visita', 'Tarjeta «Próxima visita»', 'Flyer para buzonear', 'Vinilo para la furgoneta', 'Cartel con pestañas', 'Pegatinas con QR', 'Cartel para la valla']) {
       expect(screen.getByText(title)).toBeTruthy();
@@ -75,7 +81,7 @@ describe('MarketingHub', () => {
     expect(whatsapp).toHaveLength(3);
     const href = whatsapp[0].getAttribute('href') ?? '';
     expect(href.startsWith('https://wa.me/?text=')).toBe(true);
-    expect(decodeURIComponent(href)).toContain('https://garser.es/reservar/prov-1?utm_source=whatsapp');
+    expect(decodeURIComponent(href)).toContain(`https://garser.es/reservar/prov-1?c=${LINK_CODE}&utm_source=whatsapp`);
     expect(screen.getByRole('heading', { name: 'Ideas para promocionarte' })).toBeTruthy();
     // Aparece: no hay aviso de bloqueo y se puede descargar el QR.
     expect(screen.queryByText(/Todavía no apareces a los clientes/)).toBeNull();
@@ -91,6 +97,20 @@ describe('MarketingHub', () => {
     expect((screen.getByRole('button', { name: /Descargar QR/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Completar mi cuenta' }));
     expect(onCompleteAccount).toHaveBeenCalled();
+  });
+
+  it('sin la clave de su enlace no genera ningún material (un QR sin clave no exime de nada)', async () => {
+    setStatus(status(), { data: null, error: { message: 'boom' } });
+    render(<MarketingHub onBack={vi.fn()} onCompleteAccount={vi.fn()} />);
+    expect(await screen.findByText(/No hemos podido cargar tu enlace de reserva/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Descargar QR/ })).toBeNull();
+    expect(screen.queryByText(/reservar\/prov-1/)).toBeNull();
+  });
+
+  it('una clave mal formada se trata como si no hubiera clave', async () => {
+    setStatus(status(), { data: { code: 'no-es-una-clave' }, error: null });
+    render(<MarketingHub onBack={vi.fn()} onCompleteAccount={vi.fn()} />);
+    expect(await screen.findByText(/No hemos podido cargar tu enlace de reserva/)).toBeTruthy();
   });
 
   it('abre el editor de un material y vuelve', async () => {

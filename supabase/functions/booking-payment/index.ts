@@ -744,6 +744,8 @@ async function revalidateQuoteBeforePayment(
         clientId: quote.client_id,
         providerId: quote.gardener_id,
         claimedOrigin: signedCommission.claimedOrigin,
+        // El presupuesto firmado ya anotó si la clave del enlace era la buena: no se vuelve a pedir.
+        claimVerified: signedCommission.linkClaim === 'verified',
         configVersion: signedCommission.configVersion,
         // Un presupuesto sin pago ya lo firmó una web que sabe confirmarlo.
         clientCanConfirmWithoutPayment: true,

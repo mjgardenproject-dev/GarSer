@@ -59,6 +59,15 @@ DECLARE
   v_cli3    uuid := '00000000-0c01-4c01-8fff-000000000005';
   v_pro     uuid := '00000000-0c01-4c01-8fff-000000000006';
   v_pro2    uuid := '00000000-0c01-4c01-8fff-000000000007';
+  v_cli4    uuid := '00000000-0c01-4c01-8fff-000000000008';
+  v_cli5    uuid := '00000000-0c01-4c01-8fff-000000000009';
+  -- Claves de enlace de los dos profesionales (la clave real son 32 hex aleatorios).
+  v_code_pro  text := '0123456789abcdef0123456789abcdef';
+  v_code_pro2 text := 'fedcba9876543210fedcba9876543210';
+  v_link_pro uuid;
+  v_code_a text;
+  v_code_b text;
+  f jsonb;
   v_servicio uuid;
   v_v0 bigint;
   v_vnow bigint;
@@ -106,12 +115,15 @@ BEGIN
     (v_cli2, 'com.cli2@test.local'),
     (v_cli3, 'com.cli3@test.local'),
     (v_pro, 'com.pro@test.local'),
-    (v_pro2, 'com.pro2@test.local')
+    (v_pro2, 'com.pro2@test.local'),
+    (v_cli4, 'com.cli4@test.local'),
+    (v_cli5, 'com.cli5@test.local')
   ) AS u(id, email);
   -- El perfil lo crea el trigger de auth.users; solo se le pone el rol.
   UPDATE public.profiles SET role = 'admin', full_name = 'Admin Pruebas' WHERE user_id = v_admin;
   UPDATE public.profiles SET role = 'gardener', full_name = 'Jardinero Pruebas' WHERE user_id = v_pro;
   UPDATE public.profiles SET role = 'gardener', full_name = 'Jardinero Dos' WHERE user_id = v_pro2;
+  INSERT INTO public.provider_booking_links (provider_id, code) VALUES (v_pro, v_code_pro), (v_pro2, v_code_pro2);
 
   -- ===========================================================================
   -- A. Estado inicial y acceso a las tablas
@@ -154,13 +166,13 @@ BEGIN
     AND has_function_privilege('authenticated', 'public.save_commission_settings(bigint, jsonb)', 'EXECUTE'),
     'A6: permisos de ejecución de las RPC de administrador');
   PERFORM pg_temp.check_that(
-    NOT has_function_privilege('authenticated', 'public.resolve_booking_commission(uuid, uuid, text, boolean, bigint)', 'EXECUTE')
-    AND NOT has_function_privilege('anon', 'public.resolve_booking_commission(uuid, uuid, text, boolean, bigint)', 'EXECUTE')
-    AND NOT has_function_privilege('authenticated', 'public.quote_commission_economics(jsonb, uuid, uuid, text, boolean, bigint)', 'EXECUTE')
+    NOT has_function_privilege('authenticated', 'public.resolve_booking_commission(uuid, uuid, text, boolean, bigint, text, boolean)', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.resolve_booking_commission(uuid, uuid, text, boolean, bigint, text, boolean)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.quote_commission_economics(jsonb, uuid, uuid, text, boolean, bigint, text, boolean)', 'EXECUTE')
     AND NOT has_function_privilege('authenticated', 'public.commission_snapshot_problem(jsonb)', 'EXECUTE')
     AND NOT has_function_privilege('authenticated', 'public.commission_settings_payload()', 'EXECUTE')
-    AND has_function_privilege('service_role', 'public.resolve_booking_commission(uuid, uuid, text, boolean, bigint)', 'EXECUTE')
-    AND has_function_privilege('service_role', 'public.quote_commission_economics(jsonb, uuid, uuid, text, boolean, bigint)', 'EXECUTE'),
+    AND has_function_privilege('service_role', 'public.resolve_booking_commission(uuid, uuid, text, boolean, bigint, text, boolean)', 'EXECUTE')
+    AND has_function_privilege('service_role', 'public.quote_commission_economics(jsonb, uuid, uuid, text, boolean, bigint, text, boolean)', 'EXECUTE'),
     'A7: las funciones que deciden el dinero se pueden llamar desde el navegador');
 
   -- Punto de partida conocido para el resto (dentro de la transacción: se revierte).
@@ -371,13 +383,13 @@ BEGIN
   r := public.resolve_booking_commission(v_cli, v_pro, NULL);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND (r ->> 'rateBps')::int = 1250 AND r ->> 'origin' = 'garser'
     AND (r ->> 'isFirstBooking')::boolean AND (r ->> 'configVersion')::bigint = v_vnow, 'E1: cliente nuevo de GarSer: ' || r::text);
-  r := public.resolve_booking_commission(v_cli, v_pro, 'provider_link');
-  PERFORM pg_temp.check_that(r ->> 'rule' = 'link_first' AND (r ->> 'rateBps')::int = 0 AND r ->> 'origin' = 'provider_link',
-    'E2: primera reserva por el enlace: ' || r::text);
+  r := public.resolve_booking_commission(v_cli, v_pro, 'provider_link', p_link_code => v_code_pro);
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'link_first' AND (r ->> 'rateBps')::int = 0 AND r ->> 'origin' = 'provider_link'
+    AND r ->> 'linkClaim' = 'verified', 'E2: primera reserva por el enlace (con su clave): ' || r::text);
   r := public.resolve_booking_commission(v_cli, v_pro, 'otra_cosa');
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND r -> 'claimedOrigin' = 'null'::jsonb,
     'E3: un origen declarado desconocido cuenta como enlace: ' || r::text);
-  r := public.resolve_booking_commission(NULL, v_pro, 'provider_link');
+  r := public.resolve_booking_commission(NULL, v_pro, 'provider_link', p_link_code => v_code_pro);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'link_first', 'E4: sin sesión, el enlace no cuenta');
   r := public.resolve_booking_commission(NULL, v_pro, NULL);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first', 'E5: sin sesión ni enlace debería ser GarSer');
@@ -398,9 +410,9 @@ BEGIN
     'E7: la primera reserva no guarda el origen del cliente');
 
   -- Vuelve por el enlace de v_pro: NO cambia su origen (decisión 2) ni concede el 0 %.
-  r := public.resolve_booking_commission(v_cli, v_pro, 'provider_link');
+  r := public.resolve_booking_commission(v_cli, v_pro, 'provider_link', p_link_code => v_code_pro);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND r ->> 'origin' = 'garser',
-    'E8: volver por otro enlace cambia el origen o concede el 0 %: ' || r::text);
+    'E8: volver por el enlace (con su clave) cambia el origen o concede el 0 %: ' || r::text);
   -- Una reserva solo aceptada NO es «ya contrató antes».
   UPDATE public.bookings SET status = 'confirmed' WHERE id = v_booking;
   r := public.resolve_booking_commission(v_cli, v_pro, NULL);
@@ -413,16 +425,16 @@ BEGIN
   r := public.resolve_booking_commission(v_cli, v_pro, NULL);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_repeat' AND (r ->> 'rateBps')::int = 300
     AND NOT (r ->> 'isFirstBooking')::boolean, 'E11: cliente de GarSer que repite: ' || r::text);
-  r := public.resolve_booking_commission(v_cli, v_pro, 'provider_link');
+  r := public.resolve_booking_commission(v_cli, v_pro, 'provider_link', p_link_code => v_code_pro);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_repeat', 'E12: un cliente de GarSer que repite se hace pasar por el enlace');
   -- Con otro profesional se decide de nuevo.
   r := public.resolve_booking_commission(v_cli, v_pro2, NULL);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first', 'E13: repetir con uno no afecta a otro profesional');
-  r := public.resolve_booking_commission(v_cli, v_pro2, 'provider_link');
+  r := public.resolve_booking_commission(v_cli, v_pro2, 'provider_link', p_link_code => v_code_pro2);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'link_first', 'E14: el enlace de otro profesional sí cuenta con él');
 
   -- Cliente del enlace de v_pro: su primera reserva fija «enlace»; al completarla, repite con 0 %.
-  e2 := public.quote_commission_economics(pg_temp.base_econ(100), v_cli2, v_pro, 'provider_link');
+  e2 := public.quote_commission_economics(pg_temp.base_econ(100), v_cli2, v_pro, 'provider_link', p_link_code => v_code_pro);
   v_booking2 := gen_random_uuid();
   INSERT INTO public.bookings (id, client_id, gardener_id, service_id, date, start_time, duration_hours, status,
     total_price, client_address, pricing_context)
@@ -652,7 +664,7 @@ BEGIN
   VALUES (v_cli3, v_pro, v_servicio, v_quote, 'sig', current_date + 41, '09:00', 2, 10000, 1250,
     gen_random_uuid()::text, pg_temp.base_econ(100) || '{"managementFee":12.5,"payableNow":12.5}'::jsonb);
   -- 0 € solo con exención válida, también con el motivo nuevo.
-  c := public.quote_commission_economics(pg_temp.base_econ(100), v_cli3, v_pro, 'provider_link');
+  c := public.quote_commission_economics(pg_temp.base_econ(100), v_cli3, v_pro, 'provider_link', p_link_code => v_code_pro);
   PERFORM pg_temp.check_that(c #>> '{feeWaiver,reason}' = 'provider_link', 'H3: el enlace no sale exento: ' || c::text);
   INSERT INTO public.booking_payment_attempts (client_id, gardener_id, service_id, quote_id, quote_signature,
     selected_date, selected_start_time, duration_hours, service_total_amount_cents, payable_now_amount_cents,
@@ -763,7 +775,7 @@ BEGIN
     total_price, client_address, pricing_context)
   VALUES (v_booking2, v_cli3, v_pro2, v_servicio, current_date + 52, '09:00', 2, 'pending', 100, 'Calle 4',
     jsonb_build_object('payable_now_amount_cents', 0, 'quote_economic_snapshot',
-      public.quote_commission_economics(pg_temp.base_econ(100), v_cli3, v_pro2, 'provider_link')));
+      public.quote_commission_economics(pg_temp.base_econ(100), v_cli3, v_pro2, 'provider_link', p_link_code => v_code_pro2)));
   SELECT management_fee, management_fee_source, commission_rule INTO v_fee, v_source, v_rule FROM public.bookings WHERE id = v_booking2;
   PERFORM pg_temp.check_that(v_fee = 0 AND v_source = 'waived_provider_link' AND v_rule = 'link_first',
     format('I13: la reserva del enlace quedó con %s / %s / %s', v_fee, v_source, v_rule));
@@ -931,6 +943,183 @@ BEGIN
   PERFORM pg_temp.check_that(
     NOT has_function_privilege('authenticated', 'public.management_fee_waiver_reason(uuid, uuid, text)', 'EXECUTE'),
     'K7: la regla antigua se puede llamar desde el navegador');
+
+  -- ===========================================================================
+  -- M. La clave del enlace: sin ella, el enlace del profesional no exime
+  -- ===========================================================================
+  PERFORM pg_temp.act_as(NULL);
+  UPDATE public.commission_settings SET rate_garser_first = 12.5, rate_link_first = 0, rate_garser_repeat = 3,
+    rate_maintenance_visit = 3, rate_link_repeat = 0 WHERE id = 1;
+  SELECT version INTO v_vnow FROM public.commission_settings WHERE id = 1;
+
+  -- v_cli4 y v_cli5 no tienen relación ni reservas con nadie.
+  r := public.resolve_booking_commission(v_cli4, v_pro, 'provider_link');
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND r ->> 'origin' = 'garser' AND (r ->> 'rateBps')::int = 1250
+    AND r ->> 'claimedOrigin' = 'provider_link' AND r ->> 'linkClaim' = 'rejected',
+    'M1: el enlace SIN clave exime o no se anota como rechazado: ' || r::text);
+  r := public.resolve_booking_commission(v_cli4, v_pro, 'provider_link', p_link_code => repeat('0', 32));
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND r ->> 'linkClaim' = 'rejected', 'M2: una clave inventada exime: ' || r::text);
+  r := public.resolve_booking_commission(v_cli4, v_pro, 'provider_link', p_link_code => v_code_pro2);
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND r ->> 'linkClaim' = 'rejected', 'M3: la clave de OTRO profesional exime: ' || r::text);
+  r := public.resolve_booking_commission(v_cli4, v_pro, 'provider_link', p_link_code => v_code_pro);
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'link_first' AND r ->> 'origin' = 'provider_link' AND r ->> 'linkClaim' = 'verified'
+    AND (r ->> 'rateBps')::int = 0, 'M4: la clave buena no exime: ' || r::text);
+  r := public.resolve_booking_commission(v_cli4, v_pro, 'provider_link', p_link_code => '  ' || upper(v_code_pro) || ' ');
+  PERFORM pg_temp.check_that(r ->> 'linkClaim' = 'verified', 'M5: mayúsculas y espacios alrededor de la clave no deberían importar');
+  r := public.resolve_booking_commission(v_cli4, v_user, 'provider_link', p_link_code => v_code_pro);
+  PERFORM pg_temp.check_that(r ->> 'linkClaim' = 'rejected' AND r ->> 'rule' = 'garser_first', 'M6: un profesional sin clave puede eximir');
+  r := public.resolve_booking_commission(v_cli4, NULL, 'provider_link', p_link_code => v_code_pro);
+  PERFORM pg_temp.check_that(r ->> 'linkClaim' = 'rejected', 'M7: sin profesional, la clave exime');
+  r := public.resolve_booking_commission(v_cli4, v_pro, 'provider_link', p_claim_verified => true);
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'link_first' AND r ->> 'linkClaim' = 'verified', 'M8: el pago no puede revalidar un enlace ya verificado');
+  r := public.resolve_booking_commission(v_cli4, v_pro, NULL, p_link_code => v_code_pro);
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND r -> 'linkClaim' = 'null'::jsonb AND r -> 'claimedOrigin' = 'null'::jsonb,
+    'M9: una clave sin declarar «enlace» cuenta como enlace: ' || r::text);
+
+  -- La economía firmada recuerda el resultado.
+  e := public.quote_commission_economics(pg_temp.base_econ(158), v_cli4, v_pro, 'provider_link');
+  PERFORM pg_temp.check_that((e ->> 'managementFee')::numeric = 19.75 AND e #>> '{commission,linkClaim}' = 'rejected'
+    AND e #>> '{commission,claimedOrigin}' = 'provider_link' AND e #>> '{commission,rule}' = 'garser_first'
+    AND public.commission_snapshot_problem(e) IS NULL, 'M10: un enlace rechazado debe pagar el 12,5 % y quedar anotado: ' || e::text);
+  e2 := public.quote_commission_economics(pg_temp.base_econ(158), v_cli4, v_pro, 'provider_link', p_link_code => v_code_pro);
+  PERFORM pg_temp.check_that((e2 ->> 'managementFee')::numeric = 0 AND e2 #>> '{commission,linkClaim}' = 'verified'
+    AND e2 #>> '{feeWaiver,reason}' = 'provider_link' AND public.commission_snapshot_problem(e2) IS NULL,
+    'M11: un enlace con su clave debe ir sin gastos y quedar anotado: ' || e2::text);
+  -- Un presupuesto anterior a esta migración (sin la anotación) sigue siendo válido.
+  PERFORM pg_temp.check_that(public.commission_snapshot_problem(e #- '{commission,linkClaim}') IS NULL,
+    'M12: un presupuesto sin la anotación del enlace deja de ser válido');
+  FOREACH s IN ARRAY ARRAY[
+    '{"rule":"garser_first","rateBps":1250,"configVersion":1,"origin":"garser","claimedOrigin":"provider_link","linkClaim":"quizas"}'::jsonb,
+    '{"rule":"garser_first","rateBps":1250,"configVersion":1,"origin":"garser","claimedOrigin":null,"linkClaim":"verified"}'::jsonb,
+    '{"rule":"garser_first","rateBps":1250,"configVersion":1,"origin":"garser","linkClaim":"rejected"}'::jsonb
+  ] LOOP
+    BEGIN
+      PERFORM public.apply_commission_to_economics(pg_temp.base_econ(100), s);
+      RAISE EXCEPTION 'FALLO M13: se ha aceptado una decisión con un resultado de enlace roto: %', s;
+    EXCEPTION WHEN raise_exception THEN
+      IF SQLERRM LIKE 'FALLO%' THEN RAISE; END IF;
+    END;
+  END LOOP;
+
+  -- Cinturón del intento de pago: una comisión de enlace o de «reserva posterior» sin justificar no pasa,
+  -- aunque la economía sea coherente consigo misma.
+  v_quote := gen_random_uuid();
+  INSERT INTO public.booking_quotes (id, client_id, gardener_id, service_id, signature, pricing_version,
+    provider_config_version, input_payload, pricing_snapshot, total_price, estimated_hours, status,
+    generated_at, expires_at, selected_date, selected_start_time, economic_snapshot)
+  VALUES (v_quote, v_cli4, v_pro, v_servicio, 'clave-test-' || gen_random_uuid(), 'booking_quote_v1',
+    'cfg', '{}'::jsonb, '{}'::jsonb, 158, 2, 'active', now(), now() + interval '2 hours',
+    current_date + 60, '09:00', e);
+  -- a) un presupuesto de enlace SIN clave verificada ni origen guardado
+  f := public.apply_commission_to_economics(pg_temp.base_econ(158), jsonb_build_object('rule', 'link_first', 'rateBps', 0,
+    'configVersion', v_vnow, 'origin', 'provider_link', 'claimedOrigin', 'provider_link', 'linkClaim', 'rejected', 'isFirstBooking', true));
+  BEGIN
+    INSERT INTO public.booking_payment_attempts (client_id, gardener_id, service_id, quote_id, quote_signature,
+      selected_date, selected_start_time, duration_hours, service_total_amount_cents, payable_now_amount_cents,
+      stripe_idempotency_key, economic_snapshot)
+    VALUES (v_cli4, v_pro, v_servicio, v_quote, 'sig', current_date + 60, '09:00', 2, 15800, 0, gen_random_uuid()::text, f);
+    RAISE EXCEPTION 'FALLO M14: se ha creado un intento a 0 € con el enlace RECHAZADO';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  -- b) lo mismo sin declaración alguna (como si nadie hubiera mirado el enlace)
+  f := public.apply_commission_to_economics(pg_temp.base_econ(158), jsonb_build_object('rule', 'link_first', 'rateBps', 0,
+    'configVersion', v_vnow, 'origin', 'provider_link', 'claimedOrigin', NULL, 'isFirstBooking', true));
+  BEGIN
+    INSERT INTO public.booking_payment_attempts (client_id, gardener_id, service_id, quote_id, quote_signature,
+      selected_date, selected_start_time, duration_hours, service_total_amount_cents, payable_now_amount_cents,
+      stripe_idempotency_key, economic_snapshot)
+    VALUES (v_cli4, v_pro, v_servicio, v_quote, 'sig', current_date + 60, '09:00', 2, 15800, 0, gen_random_uuid()::text, f);
+    RAISE EXCEPTION 'FALLO M15: se ha creado un intento a 0 € con origen «enlace» sin justificar';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  -- c) con la clave verificada, sí
+  INSERT INTO public.booking_payment_attempts (client_id, gardener_id, service_id, quote_id, quote_signature,
+    selected_date, selected_start_time, duration_hours, service_total_amount_cents, payable_now_amount_cents,
+    stripe_idempotency_key, economic_snapshot)
+  VALUES (v_cli4, v_pro, v_servicio, v_quote, 'sig', current_date + 60, '09:00', 2, 15800, 0, gen_random_uuid()::text, e2);
+  -- d) una «reserva posterior» sin ninguna reserva completada no puede pagar el 3 %
+  f := public.apply_commission_to_economics(pg_temp.base_econ(158), jsonb_build_object('rule', 'garser_repeat', 'rateBps', 300,
+    'configVersion', v_vnow, 'origin', 'garser', 'isFirstBooking', false));
+  BEGIN
+    INSERT INTO public.booking_payment_attempts (client_id, gardener_id, service_id, quote_id, quote_signature,
+      selected_date, selected_start_time, duration_hours, service_total_amount_cents, payable_now_amount_cents,
+      stripe_idempotency_key, economic_snapshot)
+    VALUES (v_cli5, v_pro, v_servicio, v_quote, 'sig', current_date + 61, '09:00', 2, 15800, 474, gen_random_uuid()::text, f);
+    RAISE EXCEPTION 'FALLO M16: se ha creado un intento de «reserva posterior» sin ninguna reserva completada';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  -- e) y con una reserva completada (v_cli la tiene con v_pro desde la sección E), sí
+  INSERT INTO public.booking_payment_attempts (client_id, gardener_id, service_id, quote_id, quote_signature,
+    selected_date, selected_start_time, duration_hours, service_total_amount_cents, payable_now_amount_cents,
+    stripe_idempotency_key, economic_snapshot)
+  VALUES (v_cli, v_pro, v_servicio, v_quote, 'sig', current_date + 62, '09:00', 2, 15800, 474, gen_random_uuid()::text, f);
+
+  -- Quién ve y cambia la clave.
+  PERFORM pg_temp.check_that(
+    NOT has_table_privilege('anon', 'public.provider_booking_links', 'SELECT')
+    AND NOT has_table_privilege('authenticated', 'public.provider_booking_links', 'SELECT')
+    AND NOT has_table_privilege('authenticated', 'public.provider_booking_links', 'UPDATE')
+    AND NOT has_table_privilege('service_role', 'public.provider_booking_links', 'SELECT'),
+    'M17: las claves de enlace se pueden leer fuera de la propia función del profesional');
+  PERFORM pg_temp.check_that(
+    NOT has_function_privilege('anon', 'public.provider_link_code_matches(uuid, text)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.provider_link_code_matches(uuid, text)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'public.provider_link_code_matches(uuid, text)', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.my_booking_link()', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.rotate_my_booking_link()', 'EXECUTE')
+    AND has_function_privilege('authenticated', 'public.my_booking_link()', 'EXECUTE')
+    AND has_function_privilege('authenticated', 'public.rotate_my_booking_link()', 'EXECUTE'),
+    'M18: permisos de ejecución de las funciones de la clave');
+  -- Un cliente no tiene enlace.
+  PERFORM pg_temp.act_as(v_cli4);
+  BEGIN
+    PERFORM public.my_booking_link();
+    RAISE EXCEPTION 'FALLO M19: un cliente ha obtenido un enlace de profesional';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    PERFORM public.rotate_my_booking_link();
+    RAISE EXCEPTION 'FALLO M20: un cliente ha podido cambiar una clave de enlace';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  PERFORM pg_temp.act_as(NULL);
+  BEGIN
+    PERFORM public.my_booking_link();
+    RAISE EXCEPTION 'FALLO M21: sin sesión se obtiene un enlace';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  -- Un profesional con ficha (en la base real puede exigir más columnas: si no se puede crear, se usa uno que exista).
+  BEGIN
+    INSERT INTO public.gardener_profiles (user_id) VALUES (v_pro2);
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+  SELECT g.user_id INTO v_link_pro FROM public.gardener_profiles g WHERE g.user_id = v_pro2;
+  IF v_link_pro IS NULL THEN
+    SELECT g.user_id INTO v_link_pro FROM public.gardener_profiles g LIMIT 1;
+  END IF;
+  IF v_link_pro IS NULL THEN
+    RAISE WARNING 'SALTADO M22-M27: no hay ningún profesional con ficha para probar my_booking_link()';
+  ELSE
+    PERFORM pg_temp.act_as(v_link_pro);
+    r := public.my_booking_link();
+    v_code_a := r ->> 'code';
+    PERFORM pg_temp.check_that((r ->> 'providerId')::uuid = v_link_pro AND v_code_a ~ '^[0-9a-f]{32}$', 'M22: el enlace del profesional no trae su clave: ' || r::text);
+    PERFORM pg_temp.check_that(public.my_booking_link() ->> 'code' = v_code_a, 'M23: pedir el enlace dos veces da claves distintas');
+    PERFORM pg_temp.check_that(public.provider_link_code_matches(v_link_pro, v_code_a), 'M24: la clave que se le da no es la que comprueba el servidor');
+    r := public.rotate_my_booking_link();
+    v_code_b := r ->> 'code';
+    PERFORM pg_temp.check_that(v_code_b ~ '^[0-9a-f]{32}$' AND v_code_b <> v_code_a, 'M25: cambiar la clave no da una nueva');
+    PERFORM pg_temp.check_that(NOT public.provider_link_code_matches(v_link_pro, v_code_a) AND public.provider_link_code_matches(v_link_pro, v_code_b),
+      'M26: tras cambiarla, la clave anterior sigue valiendo (o la nueva no)');
+    PERFORM pg_temp.check_that((SELECT rotations FROM public.provider_booking_links WHERE provider_id = v_link_pro) >= 1
+      AND public.my_booking_link() ->> 'code' = v_code_b, 'M27: lo que se guarda no es la clave nueva');
+    -- Con la clave anterior, el enlace ya no exime.
+    r := public.resolve_booking_commission(v_cli5, v_link_pro, 'provider_link', p_link_code => v_code_a);
+    PERFORM pg_temp.check_that(r ->> 'linkClaim' = 'rejected', 'M28: la clave antigua sigue eximiendo');
+    r := public.resolve_booking_commission(v_cli5, v_link_pro, 'provider_link', p_link_code => v_code_b);
+    PERFORM pg_temp.check_that(r ->> 'linkClaim' = 'verified', 'M29: la clave nueva no exime');
+  END IF;
+  PERFORM pg_temp.act_as(NULL);
 
   -- ===========================================================================
   -- L. Sin configuración válida, ninguna operación económica sigue adelante

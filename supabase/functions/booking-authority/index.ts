@@ -31,7 +31,7 @@ import {
   CommissionUnavailableError,
   type CommissionRpcResult,
 } from '../../../src/shared/commissionEngine.ts';
-import { claimedOriginFor } from '../../../src/shared/commissionRules.ts';
+import { claimedOriginFor, linkCodeFor } from '../../../src/shared/commissionRules.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -106,6 +106,8 @@ interface AuthorityPayload {
    */
   bookingOrigin?: string;
   originProviderId?: string;
+  /** La clave del enlace del profesional (garser.es/reservar/<id>?c=<clave>). SQL la contrasta. */
+  originLinkCode?: string;
   /**
    * Qué sabe hacer la web que llama. `feeWaiver: 1` = sabe confirmar una reserva sin pago. Una web
    * antigua (app instalada sin actualizar) no lo manda y nunca recibe un presupuesto sin gastos.
@@ -135,6 +137,8 @@ async function withCommission<T extends { economics: QuotePreview['economics'] }
       clientId: params.clientId,
       providerId: params.providerId,
       claimedOrigin: claimedOriginFor(params.payload, params.providerId),
+      // Sin la clave de ESE profesional, el enlace declarado se rechaza (y se anota): no exime.
+      linkCode: linkCodeFor(params.payload, params.providerId),
       // Una web antigua (sin la capacidad) no sabe confirmar una reserva sin pago: nunca la recibe.
       clientCanConfirmWithoutPayment: Number(params.payload.clientCapabilities?.feeWaiver || 0) >= FEE_WAIVER_CAPABILITY,
     },

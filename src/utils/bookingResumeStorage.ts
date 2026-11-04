@@ -304,6 +304,7 @@ function isValidBookingDataPayload(value: unknown): value is Record<string, unkn
       )],
     ['serviceIds', isStringArray],
     ['restrictedGardenerId', (input) => input == null || typeof input === 'string'],
+    ['providerLinkCode', (input) => input == null || typeof input === 'string'],
     ['photos', Array.isArray],
     ['description', (input) => typeof input === 'string'],
     ['preferredDate', (input) => typeof input === 'string'],

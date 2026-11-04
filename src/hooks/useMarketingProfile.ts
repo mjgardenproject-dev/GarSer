@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { normalizeProviderLinkCode } from '../shared/commissionRules';
 import type { MarketingProfile } from '../utils/marketing/content';
 
 // Marketing del profesional: lo que sale en sus materiales, de su propia ficha (la que ven los
@@ -13,14 +14,24 @@ export function useMarketingProfile(userId: string | undefined) {
     if (!userId) return undefined;
     let alive = true;
     (async () => {
-      const { data, error: queryError } = await supabase
-        .from('gardener_profiles')
-        .select('user_id, full_name, avatar_url, rating_average, rating_count, city_zone, provider_kind')
-        .eq('user_id', userId)
-        .maybeSingle();
+      // La ficha y la clave de su enlace: los QR y los textos llevan el enlace con su clave, así que no
+      // hay material sin ella (un enlace sin clave no exime a sus clientes de los gastos de gestión).
+      const [{ data, error: queryError }, link] = await Promise.all([
+        supabase
+          .from('gardener_profiles')
+          .select('user_id, full_name, avatar_url, rating_average, rating_count, city_zone, provider_kind')
+          .eq('user_id', userId)
+          .maybeSingle(),
+        supabase.rpc('my_booking_link'),
+      ]);
       if (!alive) return;
       if (queryError || !data) {
         setError('No hemos podido cargar tu ficha.');
+        return;
+      }
+      const linkCode = link.error ? null : normalizeProviderLinkCode((link.data as { code?: unknown } | null)?.code);
+      if (!linkCode) {
+        setError('No hemos podido cargar tu enlace de reserva.');
         return;
       }
       const row = data as {
@@ -40,6 +51,7 @@ export function useMarketingProfile(userId: string | undefined) {
         avatarUrl: row.avatar_url?.trim() || null,
         ratingAverage: row.rating_average === null ? null : Number(row.rating_average),
         ratingCount: Number(row.rating_count || 0),
+        linkCode,
       });
       setError(null);
     })();

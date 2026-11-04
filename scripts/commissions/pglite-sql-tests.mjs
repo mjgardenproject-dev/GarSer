@@ -44,6 +44,7 @@ const MIGRATIONS_NEW = [
   'supabase/migrations/20261102130000_commission_settings.sql',
   'supabase/migrations/20261102140000_commission_engine.sql',
   'supabase/migrations/20261102150000_commission_bookings_and_plans.sql',
+  'supabase/migrations/20261104130000_provider_link_codes.sql',
 ];
 
 let failures = 0;
@@ -133,7 +134,11 @@ check(after.n === before.n && Number(after.fee) === Number(before.fee) && after.
 await db.exec(`UPDATE public.commission_settings SET rate_garser_first = 11 WHERE id = 1`); // un valor del admin que NO debe pisarse
 const versionBefore = (await one('SELECT version FROM public.commission_settings WHERE id = 1')).version;
 let repeated = true;
-for (const migration of MIGRATIONS_NEW) repeated = (await run(`migración repetida: ${path.basename(migration)}`, read(migration))) && repeated;
+// La 20261102140000 no se repite: la sustituye la 20261104130000 (que retira sus firmas antiguas de
+// resolve_booking_commission y quote_commission_economics), y volver a ejecutarla tras ella recrearía
+// esas firmas y dejaría dos funciones con el mismo nombre. En producción nunca se vuelve a ejecutar una
+// migración ya aplicada; esta comprobación es solo de que cada una es repetible por sí misma.
+for (const migration of MIGRATIONS_NEW.filter((m) => !m.includes('20261102140000'))) repeated = (await run(`migración repetida: ${path.basename(migration)}`, read(migration))) && repeated;
 const kept = await one('SELECT version, rate_garser_first FROM public.commission_settings WHERE id = 1');
 check(repeated && Number(kept.rate_garser_first) === 11 && kept.version === versionBefore,
   'repetir las migraciones no pisa la configuración del administrador ni sube la versión', JSON.stringify(kept));

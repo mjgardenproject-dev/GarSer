@@ -177,6 +177,11 @@ export interface BookingQuoteCommission {
   origin: CommissionOrigin;
   /** Lo que declaró la web (solo 'provider_link' o nada). Es una declaración, no una prueba. */
   claimedOrigin: 'provider_link' | null;
+  /**
+   * Resultado de contrastar ese enlace con la clave del profesional: `verified` (traía su clave) o
+   * `rejected` (sin clave, o una que no es la suya: no cuenta). null = no se declaró enlace.
+   */
+  linkClaim: 'verified' | 'rejected' | null;
   isFirstBooking: boolean;
   /** Precio del servicio con IVA sobre el que se calculó. */
   baseAmount: number;
@@ -185,6 +190,28 @@ export interface BookingQuoteCommission {
   /** Lo que se cobra: igual que el cálculo salvo el mínimo de 0,50 € de Stripe. */
   amount: number;
   adjustment: 'minimum_charge' | null;
+}
+
+/** La clave del enlace de un profesional: 32 caracteres hexadecimales (128 bits aleatorios). */
+export const PROVIDER_LINK_CODE_PATTERN = /^[0-9a-f]{32}$/;
+
+/** Una clave bien formada (sin espacios, en minúsculas), o null. No dice si es la buena: eso lo decide SQL. */
+export function normalizeProviderLinkCode(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const code = value.trim().toLowerCase();
+  return PROVIDER_LINK_CODE_PATTERN.test(code) ? code : null;
+}
+
+/**
+ * La clave que acompaña a la declaración «vengo del enlace de ESTE profesional», o null. Sin
+ * declaración válida no hay clave que valga. Es una entrada del navegador: SQL la contrasta con la
+ * clave guardada del profesional y, si no coincide, la rechaza.
+ */
+export function linkCodeFor(
+  payload: { bookingOrigin?: unknown; originProviderId?: unknown; originLinkCode?: unknown },
+  providerId: string,
+): string | null {
+  return claimedOriginFor(payload, providerId) ? normalizeProviderLinkCode(payload.originLinkCode) : null;
 }
 
 /** Lo único que el navegador declara: que la reserva empezó en el enlace de ESTE profesional. */

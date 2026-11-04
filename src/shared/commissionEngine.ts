@@ -78,6 +78,9 @@ export function readCommissionFromEconomics(economics: unknown): BookingQuoteCom
   }
   const adjustment = c.adjustment ?? null;
   if (adjustment !== null && adjustment !== 'minimum_charge') return null;
+  // Las comisiones firmadas antes de la clave del enlace no traen este dato: valen como «sin declarar».
+  const linkClaim = c.linkClaim ?? null;
+  if (linkClaim !== null && linkClaim !== 'verified' && linkClaim !== 'rejected') return null;
   return {
     rule: c.rule,
     rateBps: c.rateBps as number,
@@ -85,6 +88,7 @@ export function readCommissionFromEconomics(economics: unknown): BookingQuoteCom
     configVersion: c.configVersion as number,
     origin: origin as CommissionOrigin,
     claimedOrigin: claimed as 'provider_link' | null,
+    linkClaim: linkClaim as 'verified' | 'rejected' | null,
     isFirstBooking: c.isFirstBooking,
     baseAmount: c.baseAmount,
     calculatedAmount: c.calculatedAmount,
@@ -114,6 +118,13 @@ export interface CommissionRequest {
   providerId: string;
   /** Origen declarado por la web, ya contrastado con el profesional del presupuesto. */
   claimedOrigin: 'provider_link' | null;
+  /** La clave que traía el enlace declarado (SQL la contrasta con la del profesional). */
+  linkCode?: string | null;
+  /**
+   * SOLO al revalidar un pago: el presupuesto firmado ya dejó anotado que la clave era la buena
+   * (`linkClaim = 'verified'`), y no hace falta volver a tenerla.
+   */
+  claimVerified?: boolean;
   maintenanceVisit?: boolean;
   /** null/ausente = la configuración vigente; un número = esa versión (para revalidar un pago). */
   configVersion?: number | null;
@@ -141,6 +152,8 @@ export async function applyCommission(
       p_claimed_origin: request.claimedOrigin,
       p_maintenance_visit: Boolean(request.maintenanceVisit),
       p_config_version: request.configVersion ?? null,
+      p_link_code: request.linkCode ?? null,
+      p_claim_verified: Boolean(request.claimVerified),
     });
   } catch (error) {
     throw new CommissionUnavailableError(error instanceof Error ? error.message : String(error));
@@ -175,6 +188,7 @@ export function commissionMismatch(signed: unknown, expected: unknown): string |
   if (!expectedCommission) return 'no se pudo recalcular la comisión';
   if (signedCommission.configVersion !== expectedCommission.configVersion) return 'la versión de la configuración no coincide';
   if (signedCommission.rule !== expectedCommission.rule) return 'la regla de comisión ha cambiado';
+  if (signedCommission.linkClaim !== expectedCommission.linkClaim) return 'el resultado del enlace ha cambiado';
   if (signedCommission.rateBps !== expectedCommission.rateBps) return 'el porcentaje no coincide';
   const signedPayable = isRecord(signed) ? toCents(signed.payableNow) : null;
   const expectedPayable = isRecord(expected) ? toCents(expected.payableNow) : null;

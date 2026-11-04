@@ -1,4 +1,5 @@
 import { SITE_URL } from '../../config/publicSiteContent';
+import { buildProviderBookingUrl } from '../../shared/providerLinkUrl';
 import type { MaterialId } from './materials';
 
 // Marketing del profesional: los textos de cada material, siempre con datos reales. Sin precios,
@@ -15,6 +16,11 @@ export interface MarketingProfile {
   avatarUrl: string | null;
   ratingAverage: number | null;
   ratingCount: number;
+  /**
+   * La clave de su enlace de reserva. Sin ella el QR no exime de nada (el servidor rechaza el enlace),
+   * así que ningún material se genera sin ella.
+   */
+  linkCode: string;
 }
 
 export interface MarketingOptions {
@@ -51,9 +57,9 @@ export const SITE_LABEL = 'garser.es';
 
 const FEE_WAIVER_BADGE = 'Sin gastos de gestión';
 
-/** El enlace a su perfil con la reserva ligada a él, con el origen para medir. */
-export function bookingUrl(providerId: string, source: string): string {
-  return `${SITE_URL}/reservar/${providerId}?utm_source=${encodeURIComponent(source)}`;
+/** El enlace a su perfil con la reserva ligada a él, con su clave y el origen para medir. */
+export function bookingUrl(providerId: string, source: string, linkCode: string): string {
+  return buildProviderBookingUrl({ origin: SITE_URL, providerId, code: linkCode, source });
 }
 
 export function initialsOf(name: string): string {
@@ -135,7 +141,7 @@ export function buildMarketingContent(params: {
       : null,
     badge: params.feeWaiverEnabled ? FEE_WAIVER_BADGE : null,
     avatarUrl: profile.avatarUrl,
-    qrUrl: bookingUrl(profile.providerId, params.source),
+    qrUrl: bookingUrl(profile.providerId, params.source, profile.linkCode),
     site: SITE_LABEL,
     cta: 'Escanea y reserva en un minuto',
     paymentNote: profile.kind === 'company' ? 'Pagas al terminar el servicio' : 'Pagas al profesional al terminar',

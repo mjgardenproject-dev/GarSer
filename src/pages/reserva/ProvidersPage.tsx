@@ -33,6 +33,7 @@ import {
   type ProviderLinkBlockReason,
 } from '../../utils/providerLink';
 import ProviderLinkBlockedState from './ProviderLinkBlockedState';
+import StaleProviderLinkNotice from './StaleProviderLinkNotice';
 
 // provider_kind (GarSer Empresas F4): 'company' pinta el distintivo «Empresa».
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number; provider_kind?: string | null }
@@ -713,6 +714,17 @@ const ProvidersPage: React.FC = () => {
     setProvidersReloadToken((prev) => prev + 1);
   };
 
+  // La clave del enlace que traía el cliente ya no vale (el profesional la cambió o el enlace está
+  // incompleto): se le explica por qué paga gastos de gestión. Solo si traía una clave (si no, no se le
+  // ha prometido nada) y si de verdad hay gastos que pagar.
+  const linkedEconomics = linkedProviderId ? previewQuotes[linkedProviderId]?.economics : undefined;
+  const showStaleLinkNotice = Boolean(
+    linkedProviderId
+    && bookingData.providerLinkCode
+    && linkedEconomics?.commission?.linkClaim === 'rejected'
+    && Number(linkedEconomics.managementFee) > 0,
+  );
+
   const handleRetryAvailability = () => {
     if (!selectedProvider) return;
     void rebuildMonth(selectedProvider, calendarMonthDate);
@@ -722,7 +734,7 @@ const ProvidersPage: React.FC = () => {
   // Solo se ofrece cuando el profesional del enlace no puede hacer el trabajo (ver
   // describeProviderLinkBlock): la reserva deja de estar ligada a él y se cargan todos.
   const handleShowOtherProviders = () => {
-    setBookingData({ restrictedGardenerId: undefined });
+    setBookingData({ restrictedGardenerId: undefined, providerLinkCode: undefined });
   };
 
   const handleLinkBlockPrimary = () => {
@@ -820,6 +832,8 @@ const ProvidersPage: React.FC = () => {
                 </div>
             </div>
         )}
+
+        {showStaleLinkNotice && <StaleProviderLinkNotice providerName={linkedProfile?.fullName} />}
 
         {/* Primera carga: esqueleto sólo en el hueco de la lista, con la misma forma que
             las tarjetas reales para que no salte el layout al llegar los datos. */}

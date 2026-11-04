@@ -4,6 +4,8 @@ import {
   COMMISSION_RULE_CODES,
   COMMISSION_RULES,
   claimedOriginFor,
+  linkCodeFor,
+  normalizeProviderLinkCode,
   commissionRatesEqual,
   formatCommissionPercent,
   isCommissionRuleCode,
@@ -130,4 +132,27 @@ describe('claimedOriginFor (lo único que declara el navegador)', () => {
     [{ bookingOrigin: { toString: (): string => 'provider_link' }, originProviderId: 'pro-1' }],
     [{}],
   ])('ignora %j', (payload) => expect(claimedOriginFor(payload, 'pro-1')).toBeNull());
+});
+
+describe('clave del enlace del profesional', () => {
+  const code = '0123456789abcdef0123456789abcdef';
+
+  it('solo admite 32 caracteres hexadecimales y los deja en minúsculas y sin espacios', () => {
+    expect(normalizeProviderLinkCode(code)).toBe(code);
+    expect(normalizeProviderLinkCode(`  ${code.toUpperCase()} `)).toBe(code);
+  });
+
+  it.each([
+    [''], ['abc'], [code.slice(1)], [`${code}0`], [`${code.slice(0, 31)}g`], [`${code.slice(0, 16)}-${code.slice(16)}`],
+    [null], [undefined], [42], [{}], [[code]],
+  ])('rechaza %j', (value) => expect(normalizeProviderLinkCode(value)).toBeNull());
+
+  it('acompaña a la declaración «enlace» solo para el profesional del presupuesto', () => {
+    expect(linkCodeFor({ bookingOrigin: 'provider_link', originProviderId: 'pro-1', originLinkCode: code }, 'pro-1')).toBe(code);
+    // Para otro profesional, sin declaración o con una clave mal formada: no hay clave que enviar.
+    expect(linkCodeFor({ bookingOrigin: 'provider_link', originProviderId: 'pro-2', originLinkCode: code }, 'pro-1')).toBeNull();
+    expect(linkCodeFor({ originLinkCode: code }, 'pro-1')).toBeNull();
+    expect(linkCodeFor({ bookingOrigin: 'provider_link', originProviderId: 'pro-1', originLinkCode: 'no-vale' }, 'pro-1')).toBeNull();
+    expect(linkCodeFor({ bookingOrigin: 'provider_link', originProviderId: 'pro-1' }, 'pro-1')).toBeNull();
+  });
 });

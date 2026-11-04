@@ -127,7 +127,7 @@ const MaterialEditor: React.FC<Props> = ({
 
   const copyCaption = async () => {
     try {
-      await navigator.clipboard.writeText(flyerCaption(content, profile.zone, bookingUrl(profile.providerId, 'instagram')));
+      await navigator.clipboard.writeText(flyerCaption(content, profile.zone, bookingUrl(profile.providerId, 'instagram', profile.linkCode)));
       toast.success('Texto copiado: pégalo en tu publicación');
     } catch {
       toast.error('No se ha podido copiar el texto');

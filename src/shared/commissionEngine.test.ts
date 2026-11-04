@@ -36,7 +36,7 @@ function signed(overrides: Record<string, unknown> = {}, fee = 19.75): Record<st
     ...(waived ? { feeWaiver: { reason: 'provider_link', waivedFee: 0 } } : {}),
     commission: {
       rule: 'garser_first', rateBps: 1250, ratePercent: 12.5, configVersion: 3, origin: 'garser', claimedOrigin: null,
-      isFirstBooking: true, baseAmount: 158, calculatedAmount: fee, amount: fee, adjustment: null,
+      linkClaim: null, isFirstBooking: true, baseAmount: 158, calculatedAmount: fee, amount: fee, adjustment: null,
       ...(overrides.commission as object | undefined),
     },
     ...Object.fromEntries(Object.entries(overrides).filter(([key]) => key !== 'commission')),
@@ -66,9 +66,24 @@ describe('applyCommission', () => {
       p_claimed_origin: 'provider_link',
       p_maintenance_visit: false,
       p_config_version: 7,
+      p_link_code: null,
+      p_claim_verified: false,
     });
     expect(result.managementFee).toBe(19.75);
     expect(result.payableNow).toBe(19.75);
+  });
+
+  it('con un enlace declarado, la clave y el «ya verificado» viajan a SQL tal cual (SQL decide si valen)', async () => {
+    const code = '0123456789abcdef0123456789abcdef';
+    const rpc = rpcReturning(signed());
+    await applyCommission(rpc, { ...request, claimedOrigin: 'provider_link', linkCode: code });
+    expect(rpc).toHaveBeenLastCalledWith('quote_commission_economics', expect.objectContaining({
+      p_claimed_origin: 'provider_link', p_link_code: code, p_claim_verified: false,
+    }));
+    await applyCommission(rpc, { ...request, claimedOrigin: 'provider_link', claimVerified: true });
+    expect(rpc).toHaveBeenLastCalledWith('quote_commission_economics', expect.objectContaining({
+      p_claimed_origin: 'provider_link', p_link_code: null, p_claim_verified: true,
+    }));
   });
 
   it('el navegador no puede mandar porcentaje, importe, regla ni recurrencia: la petición no tiene esos campos', async () => {
@@ -83,7 +98,8 @@ describe('applyCommission', () => {
     });
     const args = (rpc as unknown as { mock: { calls: Array<[string, Record<string, unknown>]> } }).mock.calls[0][1];
     expect(Object.keys(args).sort()).toEqual([
-      'p_claimed_origin', 'p_client_id', 'p_config_version', 'p_economics', 'p_maintenance_visit', 'p_provider_id',
+      'p_claim_verified', 'p_claimed_origin', 'p_client_id', 'p_config_version', 'p_economics', 'p_link_code',
+      'p_maintenance_visit', 'p_provider_id',
     ]);
   });
 
@@ -114,6 +130,7 @@ describe('applyCommission', () => {
     ['un porcentaje fuera de rango', signed({ commission: { rateBps: 10001 } })],
     ['una versión de configuración inválida', signed({ commission: { configVersion: 0 } })],
     ['un origen desconocido', signed({ commission: { origin: 'otro' } })],
+    ['un resultado de enlace inventado', signed({ commission: { linkClaim: 'quizas' } })],
     ['un importe que no es el de la comisión', signed({ managementFee: 1 })],
     ['un «pagar ahora» que no es el de la comisión', signed({ payableNow: 1 })],
     ['0 € sin motivo de exención', signed({ managementFee: 0, payableNow: 0, commission: { amount: 0 } })],
@@ -141,7 +158,15 @@ describe('applyCommission', () => {
 
 describe('readCommissionFromEconomics', () => {
   it('lee una comisión completa', () => {
-    expect(readCommissionFromEconomics(signed())).toMatchObject({ rule: 'garser_first', rateBps: 1250, configVersion: 3, origin: 'garser' });
+    expect(readCommissionFromEconomics(signed())).toMatchObject({ rule: 'garser_first', rateBps: 1250, configVersion: 3, origin: 'garser', linkClaim: null });
+  });
+
+  it('lee el resultado del enlace, y una comisión firmada antes de que existiera vale como «sin declarar»', () => {
+    expect(readCommissionFromEconomics(signed({ commission: { claimedOrigin: 'provider_link', linkClaim: 'verified' } }))?.linkClaim).toBe('verified');
+    expect(readCommissionFromEconomics(signed({ commission: { claimedOrigin: 'provider_link', linkClaim: 'rejected' } }))?.linkClaim).toBe('rejected');
+    const legacy = signed() as { commission: Record<string, unknown> };
+    delete legacy.commission.linkClaim;
+    expect(readCommissionFromEconomics(legacy)?.linkClaim).toBeNull();
   });
 
   it.each([null, undefined, 'x', 3, [], {}, { commission: null }, { commission: [] }, { commission: {} }])(
@@ -159,6 +184,7 @@ describe('commissionMismatch (el pago revalida lo firmado)', () => {
     ['otra regla', signed({ commission: { rule: 'garser_repeat', rateBps: 1250 } }), 'regla'],
     ['otro porcentaje', signed({ commission: { rateBps: 300 } }), 'porcentaje'],
     ['otra versión', signed({ commission: { configVersion: 4 } }), 'versión'],
+    ['otro resultado del enlace', signed({ commission: { claimedOrigin: 'provider_link', linkClaim: 'rejected' } }), 'enlace'],
     ['otro importe a pagar', signed({ payableNow: 5 }), 'importe'],
   ])('detecta %s', (_label, expected, word) => {
     expect(commissionMismatch(signed(), expected)).toContain(word);

@@ -88,7 +88,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
     }
   };
 
-  const link = profile ? bookingUrl(profile.providerId, 'enlace') : '';
+  const link = profile ? bookingUrl(profile.providerId, 'enlace', profile.linkCode) : '';
 
   // Un contenido por material, que solo cambia si cambian los datos: si no, las vistas previas se
   // repintarían con cualquier cambio de la pantalla.
@@ -173,7 +173,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
   const social = getMaterial('social');
   const socialContent = contentFor('social');
   const qrContent = contentFor('qr_code');
-  const messages = clientMessages({ kind: profile.kind, feeWaiverEnabled, link: bookingUrl(profile.providerId, 'whatsapp'), date: new Date() });
+  const messages = clientMessages({ kind: profile.kind, feeWaiverEnabled, link: bookingUrl(profile.providerId, 'whatsapp', profile.linkCode), date: new Date() });
   const sectionTitle = 'mb-3 text-lg font-bold text-gray-900';
   const withYou = profile.kind === 'company' ? 'con vosotros' : 'contigo';
 

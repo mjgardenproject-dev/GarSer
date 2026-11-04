@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Ban, CheckCircle2, ChevronDown, Circle, Clock, Lock, Megaphone, Share2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
+import { useMyBookingLink } from '../../hooks/useMyBookingLink';
 import {
   buildProviderSetupSteps,
   providerBookingLink,
@@ -110,8 +111,11 @@ export const SetupStepList: React.FC<{
 );
 
 const ShareLink: React.FC<{ providerId: string; feeWaiver: boolean; onMarketing: () => void }> = ({ providerId, feeWaiver, onMarketing }) => {
+  // El enlace lleva la clave personal del profesional: hasta que se tiene, no se puede compartir.
+  const { state: link } = useMyBookingLink(true);
   const share = async () => {
-    const url = providerBookingLink(window.location.origin, providerId);
+    if (link.status !== 'ready') return;
+    const url = providerBookingLink(window.location.origin, providerId, link.code);
     if (typeof navigator.share === 'function') {
       try {
         await navigator.share({ title: 'Reserva conmigo en GarSer', url });
@@ -138,7 +142,8 @@ const ShareLink: React.FC<{ providerId: string; feeWaiver: boolean; onMarketing:
         <button
           type="button"
           onClick={() => void share()}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
+          disabled={link.status !== 'ready'}
+          className="disabled:cursor-not-allowed disabled:opacity-60 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
         >
           <Share2 className="h-4 w-4" aria-hidden="true" /> Compartir enlace
         </button>

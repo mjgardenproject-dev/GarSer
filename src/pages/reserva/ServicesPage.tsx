@@ -57,7 +57,7 @@ const ServicesPage: React.FC = () => {
   // reserva deja de estar ligada a él y se ve el catálogo entero.
   const handleShowAllServices = () => {
     setRemovedServiceNames([]);
-    setBookingData({ restrictedGardenerId: undefined });
+    setBookingData({ restrictedGardenerId: undefined, providerLinkCode: undefined });
   };
 
   useEffect(() => {

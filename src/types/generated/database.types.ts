@@ -3219,6 +3219,7 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      my_booking_link: { Args: never; Returns: Json }
       my_busy_hours: {
         Args: { p_end: string; p_start: string }
         Returns: {
@@ -3523,6 +3524,7 @@ export type Database = {
         }
         Returns: Json
       }
+      rotate_my_booking_link: { Args: never; Returns: Json }
       save_commission_settings: {
         Args: { p_expected_version: number; p_rates: Json }
         Returns: Json

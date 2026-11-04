@@ -110,14 +110,32 @@ describe('ProviderSetupChecklist', () => {
     expect(localStorage.getItem(DISMISS_KEY)).toBeNull();
   });
 
-  it('compartir el enlace sin menú nativo lo copia', async () => {
-    mocks.rpc.mockResolvedValue({ data: status(), error: null });
+  it('compartir el enlace sin menú nativo lo copia, con su clave', async () => {
+    mocks.rpc.mockImplementation(async (fn: string) =>
+      fn === 'my_booking_link'
+        ? { data: { providerId: 'prov-1', code: '0123456789abcdef0123456789abcdef' }, error: null }
+        : { data: status(), error: null });
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Compartir enlace/ }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/reservar/prov-1`));
+    const share = await screen.findByRole('button', { name: /Compartir enlace/ });
+    await waitFor(() => expect((share as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(share);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/reservar/prov-1?c=0123456789abcdef0123456789abcdef`));
     expect(mocks.toast.success).toHaveBeenCalledWith('Enlace copiado');
+  });
+
+  it('sin la clave de su enlace no se puede compartir (un enlace sin clave no exime de nada)', async () => {
+    mocks.rpc.mockImplementation(async (fn: string) =>
+      fn === 'my_booking_link' ? { data: null, error: { message: 'x' } } : { data: status(), error: null });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+    const share = await screen.findByRole('button', { name: /Compartir enlace/ });
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledWith('my_booking_link'));
+    expect((share as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(share);
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it('si el servidor falla, no bloquea el panel y deja reintentar', async () => {

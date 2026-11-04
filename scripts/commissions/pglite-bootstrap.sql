@@ -60,6 +60,9 @@ AS $$
   );
 $$;
 
+-- Ficha de profesional (en producción tiene muchas más columnas): my_booking_link() solo mira que exista.
+CREATE TABLE public.gardener_profiles (user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE);
+
 CREATE TABLE public.app_settings (
   id integer PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   business_name text NOT NULL DEFAULT 'GarSer',

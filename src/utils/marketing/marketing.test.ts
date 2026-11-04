@@ -30,6 +30,7 @@ const profile = (overrides: Partial<MarketingProfile> = {}): MarketingProfile =>
   avatarUrl: null,
   ratingAverage: 4.8,
   ratingCount: 12,
+  linkCode: '0123456789abcdef0123456789abcdef',
   ...overrides,
 });
 
@@ -135,7 +136,7 @@ describe('contenido', () => {
     expect(JSON.stringify(content)).not.toMatch(/€|\d+ ?euros/);
     expect(content.subtitle).toBe('Jardinería en Marbella');
     expect(content.badge).toBeNull();
-    expect(content.qrUrl).toBe('https://garser.es/reservar/prov-123?utm_source=social');
+    expect(content.qrUrl).toBe(`https://garser.es/reservar/prov-123?c=${profile().linkCode}&utm_source=social`);
   });
 
   it('el sello «Sin gastos de gestión» solo con el interruptor encendido', () => {
@@ -174,7 +175,8 @@ describe('contenido', () => {
   it('iniciales, enlace y nombre de archivo', () => {
     expect(initialsOf('Pablo Gómez')).toBe('PG');
     expect(initialsOf('Jardines')).toBe('JA');
-    expect(bookingUrl('abc', 'vinilo furgo')).toBe('https://garser.es/reservar/abc?utm_source=vinilo%20furgo');
+    expect(bookingUrl('abc', 'vinilo furgo', '0123456789abcdef0123456789abcdef'))
+      .toBe('https://garser.es/reservar/abc?c=0123456789abcdef0123456789abcdef&utm_source=vinilo%20furgo');
     expect(materialFileName('Jardines Pérez S.L.', 'van_vinyl', 'side')).toBe('garser-jardines-perez-s-l-vinilo-furgoneta-side.png');
   });
 

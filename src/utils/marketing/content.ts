@@ -92,7 +92,7 @@ export function headlinePresets(date: Date): string[] {
     seasonalHeadline(date),
     'Tu jardín, en buenas manos',
     '¿Tu jardín necesita un repaso?',
-    'Reserva tu jardinero en un minuto',
+    'Reserva tu jardinero en pocos minutos',
   ];
 }
 
@@ -137,7 +137,7 @@ export function buildMarketingContent(params: {
     avatarUrl: profile.avatarUrl,
     qrUrl: bookingUrl(profile.providerId, params.source, profile.linkCode),
     site: SITE_LABEL,
-    cta: 'Escanea y reserva en un minuto',
+    cta: 'Escanea y reserva online',
     paymentNote: profile.kind === 'company' ? 'Pagas al terminar el servicio' : 'Pagas al profesional al terminar',
     theme: options.theme,
   };
@@ -158,7 +158,7 @@ export function flyerCaption(content: MarketingContent, zone: string | null, lin
   return [
     content.headline,
     '',
-    [services, `Reserva en un minuto: ${link}`].filter(Boolean).join('\n'),
+    [services, `Reserva online: ${link}`].filter(Boolean).join('\n'),
     '',
     ['#jardineria', zoneTag ? `#${zoneTag}` : '', '#GarSer'].filter(Boolean).join(' '),
   ].join('\n');
@@ -179,7 +179,7 @@ export function clientMessages(params: { kind: 'solo' | 'company'; link: string;
     {
       id: 'online',
       title: 'Ya puedes reservar online',
-      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en un minuto, y pagas al terminar, directamente ${toUs}. ${params.link}`,
+      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en pocos minutos, y pagas al terminar, directamente ${toUs}. ${params.link}`,
     },
     {
       id: 'season',
@@ -189,7 +189,7 @@ export function clientMessages(params: { kind: 'solo' | 'company'; link: string;
     {
       id: 'thanks',
       title: 'Gracias por confiar',
-      text: `¡Gracias por confiar en ${company ? 'nosotros' : 'mí'}! Cuando quieras la próxima visita, la reservas aquí en un minuto: ${params.link}`,
+      text: `¡Gracias por confiar en ${company ? 'nosotros' : 'mí'}! Cuando quieras la próxima visita, la reservas aquí en pocos minutos: ${params.link}`,
     },
   ];
 }

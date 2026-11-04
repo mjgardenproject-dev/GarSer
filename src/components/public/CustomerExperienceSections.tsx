@@ -98,7 +98,7 @@ const CustomerExperienceSections: React.FC<CustomerExperienceSectionsProps> = ({
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700">Servicios destacados</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              {locationLabel ? `Servicios disponibles para ${locationLabel}` : 'Trabajos habituales para viviendas con jardín'}
+              {locationLabel ? `Servicios que puedes pedir para tu jardín en ${locationLabel}` : 'Trabajos habituales para viviendas con jardín'}
             </h2>
           </div>
         </div>

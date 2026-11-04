@@ -29,8 +29,14 @@ describe('páginas legales', () => {
   it('términos: los gastos de gestión y la regla de las 24 horas, como hace la app', () => {
     renderPage(<TermsPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Términos y condiciones' })).toBeTruthy();
-    expect(screen.getByText(/solo se cobran cuando el profesional la acepta/)).toBeTruthy();
-    expect(screen.getByText(/con más de 24 horas/)).toBeTruthy();
+    expect(screen.getByText(/se cobran cuando el profesional la acepta/)).toBeTruthy();
+    // Con el mismo límite que cancel_booking (`>= 24 horas`): «24 horas o más» devuelve, «menos de 24» no.
+    expect(screen.getByText(/con 24 horas o más/)).toBeTruthy();
+    expect(screen.getAllByText(/con menos de 24 horas/).length).toBeGreaterThan(0);
+    // Si cancela con menos de 24 h una reserva sin aceptar, se cobra: los términos lo dicen.
+    expect(screen.getByText(/se cobran aunque no la hubiera aceptado todavía/)).toBeTruthy();
+    // Nada de lo que dicen depende de los ajustes de comisiones.
+    expect(document.body.textContent).not.toMatch(/Algunas reservas no tienen gastos|sin gastos de gestión|sin comisión/i);
     expect(screen.getByRole('link', { name: 'Política de privacidad' }).getAttribute('href')).toBe('/privacidad');
   });
 

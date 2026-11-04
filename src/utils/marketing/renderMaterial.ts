@@ -380,7 +380,7 @@ function slotTexts(material: MaterialId, content: MarketingContent): Partial<Rec
     case 'qr_stickers':
       return { kicker: 'Reserva tu próxima visita', name: content.name, site: content.site };
     case 'fence_sign':
-      return { ...base, kicker: 'Este jardín lo cuida', cta: 'Escanea y reserva en un minuto', site: content.site };
+      return { ...base, kicker: 'Este jardín lo cuida', cta: 'Escanea y reserva online', site: content.site };
     case 'qr_code':
       return { name: content.name, site: `Reserva en ${content.site}` };
     default:

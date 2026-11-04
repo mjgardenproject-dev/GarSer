@@ -195,7 +195,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
       <header className="rounded-2xl bg-[#0E3A22] p-5 text-white sm:p-7">
         <h1 className="text-2xl font-bold sm:text-3xl">Marketing</h1>
         <p className="mt-2 max-w-2xl text-base text-white/90">
-          Date a conocer y consigue más reservas. Todo lo que descargues lleva tu QR: quien lo escanea ve tu perfil y reserva {withYou} en un minuto.
+          Date a conocer y consigue más reservas. Todo lo que descargues lleva tu QR: quien lo escanea ve tu perfil y reserva {withYou} online.
         </p>
         <p className="mt-2 text-sm font-semibold text-[#7BE36F]">{ownClientsLine(billingTerms)}</p>
       </header>
@@ -235,7 +235,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
             />
           )}
           <div className="min-w-0 flex-1 space-y-3">
-            <p className="text-sm text-gray-600">Quien lo escanee o abra el enlace verá tu perfil y podrá reservar {withYou} en un minuto.</p>
+            <p className="text-sm text-gray-600">Quien lo escanee o abra el enlace verá tu perfil y podrá reservar {withYou} online.</p>
             <p className="truncate rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-800" title={link}>{link}</p>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => void copyLink()} className="inline-flex min-h-11 flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
@@ -328,7 +328,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
       {/* Mensajes para tus clientes */}
       <section aria-labelledby="messages-title">
         <h2 id="messages-title" className={sectionTitle}>Mensajes para tus clientes</h2>
-        <p className="mb-3 text-sm text-gray-600">Mándaselos por WhatsApp a tus clientes de siempre: con tu enlace reservan {withYou} en un minuto.</p>
+        <p className="mb-3 text-sm text-gray-600">Mándaselos por WhatsApp a tus clientes de siempre: con tu enlace reservan {withYou} online.</p>
         <ul className="grid gap-3 md:grid-cols-3">
           {messages.map((message) => (
             <li key={message.id} className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white p-4">

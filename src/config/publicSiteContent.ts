@@ -176,14 +176,14 @@ export const pageSeo = {
   marbella: {
     title: 'Jardinería en Marbella | Reserva online con GarSer',
     description:
-      'Reserva trabajos de jardinería en Marbella con una experiencia clara, mobile first y enfocada a viviendas particulares.',
+      'Pide trabajos de jardinería en Marbella con una experiencia clara, mobile first y enfocada a viviendas particulares: indica tu dirección y te mostramos qué jardineros llegan hasta tu jardín.',
     path: '/marbella',
     ogImageSlot: 'shared.og.marbella',
   } satisfies SeoPageData,
   costaDelSol: {
     title: 'Jardinería en la Costa del Sol | Precios y disponibilidad | GarSer',
     description:
-      'Servicios de jardinería en la Costa del Sol: corte de césped, poda de setos, árboles y palmeras, desbroce y tratamientos. Consulta precio y disponibilidad de jardineros en Marbella, Estepona, Benahavís y alrededores.',
+      'Servicios de jardinería en la Costa del Sol: corte de césped, poda de setos, árboles y palmeras, desbroce y tratamientos. Indica tu dirección y te mostramos el precio y los jardineros que llegan hasta tu jardín.',
     path: '/costa-del-sol',
     ogImageSlot: 'shared.og.costaDelSol',
   } satisfies SeoPageData,
@@ -241,7 +241,7 @@ export const costaDelSolContent = {
   eyebrow: 'Jardinería en la Costa del Sol',
   title: 'Jardineros en la Costa del Sol: mira el precio y la disponibilidad antes de reservar',
   description:
-    'De Estepona a Marbella, muchas viviendas y urbanizaciones necesitan mantenimiento puntual de jardín sin atarse a un contrato anual. Aquí describes tu jardín, ves el precio calculado con las tarifas reales de los jardineros de tu zona y eliges día.',
+    'Muchas viviendas y urbanizaciones de la costa necesitan mantenimiento puntual de jardín sin atarse a un contrato anual. Aquí describes tu jardín, ves el precio calculado con las tarifas reales de los jardineros que llegan hasta tu dirección y eliges día.',
   finalCtaTitle: '¿Tienes un jardín en la Costa del Sol? Empieza por el precio',
   finalCtaDescription:
     'Sin visitas comerciales ni llamadas para pedir presupuesto: describes el jardín, ves el precio y la disponibilidad real, y reservas si te encaja.',

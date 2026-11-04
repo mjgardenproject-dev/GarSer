@@ -173,7 +173,7 @@ describe('MarketingHub', () => {
     mocks.profileRow = { ...mocks.profileRow, provider_kind: 'company', full_name: 'Jardines Sol' };
     setStatus(status({ provider_kind: 'company' }));
     render(<MarketingHub onCompleteAccount={vi.fn()} />);
-    expect(await screen.findByText(/reserva con vosotros en un minuto/)).toBeTruthy();
+    expect(await screen.findByText(/reserva con vosotros online/)).toBeTruthy();
     const messages = screen.getByRole('heading', { name: 'Mensajes para tus clientes' }).closest('section') as HTMLElement;
     expect(within(messages).getAllByText(/con nosotros|en nosotros|pasemos/).length).toBeGreaterThan(0);
   });

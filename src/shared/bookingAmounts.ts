@@ -253,9 +253,11 @@ export function clientAmountsNote(amounts: BookingAmounts): string {
   const fee = formatEuro(amounts.managementFee);
   switch (amounts.feeState) {
     case 'held':
-      return `Los ${fee} de gastos de gestión están retenidos y solo se cobran cuando el profesional acepte la reserva.`;
+      return `Los ${fee} de gastos de gestión están retenidos: se cobran cuando el profesional acepte la reserva y, si no la acepta, se liberan sin cobrarte nada.`;
     case 'void':
-      return `No se te ha cobrado nada: la retención de ${fee} de gastos de gestión queda liberada.`;
+      // Qué pasó con el dinero depende de quién canceló y de la antelación (cancel_booking): la fila no
+      // lo guarda, así que se explica la regla, que es cierta en todos los casos, en vez de afirmar un resultado.
+      return `Reserva cancelada. Si el profesional no la aceptó o la canceló, o si cancelaste con 24 h o más de antelación, los ${fee} de gastos de gestión se devuelven o no llegan a cobrarse. Si cancelaste con menos de 24 h, no se devuelven.`;
     default:
       return `Los ${fee} de gastos de gestión ya están pagados online. El resto se lo abonas directamente al profesional.`;
   }
@@ -336,7 +338,7 @@ export function cancellationConfirmMessage(preview: CancellationRefundPreview): 
     return 'Se cancelará la reserva y se liberará el hueco del profesional.';
   }
   if (preview.refundable) {
-    return `Faltan más de 24 h para el servicio: se te devolverán íntegros los ${formatEuro(
+    return `Faltan 24 h o más para el servicio: se te devolverán íntegros los ${formatEuro(
       preview.refundAmount,
     )} de gastos de gestión. Se liberará el hueco del profesional.`;
   }

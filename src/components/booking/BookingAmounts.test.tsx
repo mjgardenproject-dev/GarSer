@@ -30,13 +30,15 @@ describe('ClientBookingAmounts', () => {
     render(<ClientBookingAmounts booking={{ ...booking, status: 'pending' }} />);
     // El cargo de Stripe es una autorización: hasta que el profesional acepta no se cobra.
     expect(document.body.textContent).toContain('están retenidos');
-    expect(document.body.textContent).toContain('solo se cobran cuando el profesional acepte');
+    expect(document.body.textContent).toContain('se cobran cuando el profesional acepte la reserva');
+    expect(document.body.textContent).toContain('si no la acepta, se liberan sin cobrarte nada');
   });
 
   it('no afirma que quede nada pendiente en una reserva cancelada', () => {
     render(<ClientBookingAmounts booking={{ ...booking, status: 'cancelled' }} />);
     expect(screen.queryByText('Pendiente de pagar al profesional')).toBeNull();
-    expect(document.body.textContent).toContain('No se te ha cobrado nada');
+    expect(document.body.textContent).not.toContain('No se te ha cobrado nada');
+    expect(document.body.textContent).toContain('con 24 h o más de antelación');
   });
 
   it('dice "Pagado al profesional" cuando el servicio ya se completó', () => {

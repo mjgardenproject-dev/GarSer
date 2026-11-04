@@ -165,7 +165,12 @@ describe('clientAmountsNote', () => {
   it('distingue la retención del cobro efectivo', () => {
     expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'pending' }))).toContain('retenidos');
     expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'confirmed' }))).toContain('pagados');
-    expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'cancelled' }))).toContain('No se te ha cobrado nada');
+    // Qué pasó con el dinero depende de quién canceló y de la antelación, y la fila no lo guarda: la nota
+    // explica la regla (cierta siempre) y NUNCA afirma «no se te ha cobrado nada».
+    const cancelled = clientAmountsNote(getBookingAmounts({ ...base, status: 'cancelled' }));
+    expect(cancelled).toContain('con 24 h o más de antelación');
+    expect(cancelled).toContain('con menos de 24 h, no se devuelven');
+    expect(cancelled).not.toMatch(/No se te ha cobrado nada|queda liberada/);
   });
 });
 
@@ -178,7 +183,7 @@ describe('getCancellationRefundPreview / cancellationConfirmMessage (F1)', () =>
     expect(preview.refundable).toBe(true);
     expect(preview.refundAmount).toBe(19.75);
     expect(preview.forfeitAmount).toBe(0);
-    expect(cancellationConfirmMessage(preview)).toContain('más de 24 h');
+    expect(cancellationConfirmMessage(preview)).toContain('24 h o más');
     expect(cancellationConfirmMessage(preview)).toContain('19,75 €');
   });
 

@@ -191,7 +191,7 @@ describe('contenido', () => {
     const caption = flyerCaption(content, 'Marbella', 'https://garser.es/reservar/prov-123');
     expect(caption).toContain('Tu jardín, listo para el verano');
     expect(caption).toContain('Corte de césped · Poda de setos.');
-    expect(caption).toContain('Reserva en un minuto: https://garser.es/reservar/prov-123');
+    expect(caption).toContain('Reserva online: https://garser.es/reservar/prov-123');
     expect(caption).toContain('#jardineria #Marbella #GarSer');
   });
 

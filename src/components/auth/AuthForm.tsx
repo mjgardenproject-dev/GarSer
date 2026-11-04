@@ -190,7 +190,7 @@ const AuthForm = () => {
         <div className="text-center">
           <div className="flex justify-center mb-6">
             <GarserLogo
-              className="h-16 w-auto mx-auto drop-shadow-sm"
+              className="h-16 w-auto mx-auto"
               textClassName="text-3xl font-bold text-gray-900 tracking-tight"
             />
           </div>

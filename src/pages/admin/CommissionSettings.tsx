@@ -8,6 +8,7 @@ import {
   type CommissionAuditEntry,
   type CommissionSettings as CommissionSettingsData,
 } from '../../config/commissionSettings';
+import BillingCopyPreview from './BillingCopyPreview';
 import {
   COMMISSION_RULES,
   COMMISSION_RULE_CODES,
@@ -157,6 +158,16 @@ const CommissionSettingsPage: React.FC = () => {
   }, [persisted, readings]);
 
   const hasInvalid = readings ? COMMISSION_RULE_CODES.some((code) => !readings[code].ok) : false;
+  // Con lo que está escrito (si todos los campos son válidos); si no, la vista previa usa lo guardado.
+  const previewRates = useMemo<CommissionRates | null>(() => {
+    if (!readings || COMMISSION_RULE_CODES.some((code) => !readings[code].ok)) return null;
+    return Object.fromEntries(
+      COMMISSION_RULE_CODES.map((code) => {
+        const reading = readings[code];
+        return [code, reading.ok ? reading.value : 0];
+      }),
+    ) as CommissionRates;
+  }, [readings]);
   const dirty = changes.length > 0 || hasInvalid;
   const canSave = Boolean(persisted) && !saving && changes.length > 0 && !hasInvalid;
 
@@ -374,6 +385,8 @@ const CommissionSettingsPage: React.FC = () => {
               );
             })}
           </div>
+
+          <BillingCopyPreview rates={previewRates ?? persisted.rates} unsaved={previewRates !== null && changes.length > 0} />
 
           {changes.length > 0 && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">

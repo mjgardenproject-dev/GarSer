@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import { useMarketingProfile } from '../../hooks/useMarketingProfile';
+import { usePublicBillingTerms } from '../../hooks/usePublicBillingTerms';
+import { ownClientsLine } from '../../config/billingCopy';
 import MaterialEditor from './MaterialEditor';
 import MaterialPreview from './MaterialPreview';
 import { getMaterial, PRINT_MATERIAL_IDS, thumbnailSize, type MaterialId } from '../../utils/marketing/materials';
@@ -60,7 +62,9 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
 
   const visibleServices = useMemo(() => (status?.services ?? []).filter((s) => s.visible).map((s) => s.name), [status]);
   const canDownload = Boolean(status && !status.suspended && visibleServices.length > 0);
-  const feeWaiverEnabled = Boolean(status?.fee_waiver_enabled);
+  // Lo que se dice de los gastos de gestión sale de los ajustes vigentes (y solo en pantalla: lo que se
+  // descarga o se copia no lleva nada que pueda dejar de ser cierto).
+  const billingTerms = usePublicBillingTerms();
 
   useEffect(() => {
     let alive = true;
@@ -96,9 +100,9 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
     if (!profile || !options) return null;
     const ids: MaterialId[] = ['social', 'qr_code', ...PRINT_MATERIAL_IDS];
     return Object.fromEntries(
-      ids.map((id) => [id, buildMarketingContent({ profile, visibleServices, feeWaiverEnabled, options, source: id })]),
+      ids.map((id) => [id, buildMarketingContent({ profile, visibleServices, options, source: id })]),
     ) as Record<MaterialId, ReturnType<typeof buildMarketingContent>>;
-  }, [profile, options, visibleServices, feeWaiverEnabled]);
+  }, [profile, options, visibleServices]);
   const contentFor = (material: MaterialId) => contents?.[material] ?? null;
 
   const copyLink = async () => {
@@ -156,7 +160,6 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
         material={getMaterial(openMaterial)}
         profile={profile}
         visibleServices={visibleServices}
-        feeWaiverEnabled={feeWaiverEnabled}
         canDownload={canDownload}
         avatar={avatar}
         options={options}
@@ -173,7 +176,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
   const social = getMaterial('social');
   const socialContent = contentFor('social');
   const qrContent = contentFor('qr_code');
-  const messages = clientMessages({ kind: profile.kind, feeWaiverEnabled, link: bookingUrl(profile.providerId, 'whatsapp', profile.linkCode), date: new Date() });
+  const messages = clientMessages({ kind: profile.kind, link: bookingUrl(profile.providerId, 'whatsapp', profile.linkCode), date: new Date() });
   const sectionTitle = 'mb-3 text-lg font-bold text-gray-900';
   const withYou = profile.kind === 'company' ? 'con vosotros' : 'contigo';
 
@@ -194,7 +197,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
         <p className="mt-2 max-w-2xl text-base text-white/90">
           Date a conocer y consigue más reservas. Todo lo que descargues lleva tu QR: quien lo escanea ve tu perfil y reserva {withYou} en un minuto.
         </p>
-        {feeWaiverEnabled && <p className="mt-2 text-sm font-semibold text-[#7BE36F]">Tus clientes reservan sin gastos de gestión.</p>}
+        <p className="mt-2 text-sm font-semibold text-[#7BE36F]">{ownClientsLine(billingTerms)}</p>
       </header>
 
       {!canDownload && (

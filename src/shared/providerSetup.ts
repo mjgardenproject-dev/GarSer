@@ -117,7 +117,7 @@ export interface ProviderSetupSummary {
   hiddenServices: string[];
   headline: { tone: 'danger' | 'warning' | 'info' | 'success'; title: string; detail: string };
   /** «Comparte tu enlace»: en cuanto sale en algún servicio. */
-  share: { show: boolean; feeWaiver: boolean };
+  share: { show: boolean };
 }
 
 const PHYTO_SERVICE_NAME = 'Servicios fitosanitarios';
@@ -477,7 +477,7 @@ export function buildProviderSetupSteps(status: ProviderSetupStatus): ProviderSe
     visibleServices,
     hiddenServices,
     headline,
-    share: { show: !status.suspended && visibleServices.length > 0, feeWaiver: status.fee_waiver_enabled },
+    share: { show: !status.suspended && visibleServices.length > 0 },
   };
 }
 

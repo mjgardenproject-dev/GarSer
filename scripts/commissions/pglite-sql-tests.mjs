@@ -45,6 +45,7 @@ const MIGRATIONS_NEW = [
   'supabase/migrations/20261102140000_commission_engine.sql',
   'supabase/migrations/20261102150000_commission_bookings_and_plans.sql',
   'supabase/migrations/20261104130000_provider_link_codes.sql',
+  'supabase/migrations/20261104140000_public_billing_terms.sql',
 ];
 
 let failures = 0;
@@ -144,6 +145,17 @@ check(repeated && Number(kept.rate_garser_first) === 11 && kept.version === vers
   'repetir las migraciones no pisa la configuración del administrador ni sube la versión', JSON.stringify(kept));
 check((await one('SELECT count(*)::int AS n FROM public.client_provider_relationships')).n === 3, 'repetir las migraciones no duplica relaciones');
 await db.exec(`UPDATE public.commission_settings SET rate_garser_first = 12.5 WHERE id = 1`);
+
+// ── 4b) Paridad de los niveles públicos: el SQL y el TypeScript dan lo mismo en los mismos casos ──
+{
+  const { cases } = JSON.parse(read('src/shared/billingTerms.cases.json'));
+  let bad = [];
+  for (const [rate, baseline, expected] of cases) {
+    const got = await one(`SELECT public.commission_term_level(${rate}::numeric, ${baseline}::numeric) AS level`);
+    if (got.level !== expected) bad.push(`${rate} vs ${baseline}: SQL=${got.level} esperado=${expected}`);
+  }
+  check(bad.length === 0, `niveles públicos: ${cases.length} casos del SQL coinciden con los de TypeScript`, bad.join('\n'));
+}
 
 // ── 5) Tests SQL del repositorio ─────────────────────────────────────────────────────────
 for (const file of ['supabase/tests/commission_settings.test.sql', 'supabase/tests/fee_waiver.test.sql']) {

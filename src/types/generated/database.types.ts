@@ -3137,6 +3137,7 @@ export type Database = {
         Returns: Json
       }
       get_commission_settings: { Args: never; Returns: Json }
+      get_public_billing_terms: { Args: never; Returns: Json }
       get_rebook_payload: { Args: { p_booking_id: string }; Returns: Json }
       has_valid_phyto_license: { Args: { p_user_id: string }; Returns: boolean }
       invitation_preview: { Args: { p_token: string }; Returns: Json }

@@ -37,7 +37,6 @@ function renderEditor(overrides: Partial<React.ComponentProps<typeof MaterialEdi
       material={getMaterial('social')}
       profile={profile}
       visibleServices={visible}
-      feeWaiverEnabled={false}
       canDownload
       avatar={null}
       options={options}

@@ -40,8 +40,6 @@ export interface MarketingContent {
   headline: string;
   services: string[];
   rating: { average: number; count: number; label: string } | null;
-  /** «Sin gastos de gestión», solo con el interruptor del lanzamiento encendido. */
-  badge: string | null;
   avatarUrl: string | null;
   qrUrl: string;
   site: string;
@@ -54,8 +52,6 @@ export const MAX_SERVICES = 6;
 export const HEADLINE_MAX = 42;
 export const SUBTITLE_MAX = 40;
 export const SITE_LABEL = 'garser.es';
-
-const FEE_WAIVER_BADGE = 'Sin gastos de gestión';
 
 /** El enlace a su perfil con la reserva ligada a él, con su clave y el origen para medir. */
 export function bookingUrl(providerId: string, source: string, linkCode: string): string {
@@ -121,7 +117,6 @@ export function buildMarketingContent(params: {
   profile: MarketingProfile;
   /** Los servicios que salen de verdad a los clientes (my_provider_setup_status). */
   visibleServices: string[];
-  feeWaiverEnabled: boolean;
   options: MarketingOptions;
   source: MaterialId | string;
 }): MarketingContent {
@@ -139,7 +134,6 @@ export function buildMarketingContent(params: {
     rating: showRating
       ? { average: Number(profile.ratingAverage), count: profile.ratingCount, label: ratingLabel(Number(profile.ratingAverage), profile.ratingCount) }
       : null,
-    badge: params.feeWaiverEnabled ? FEE_WAIVER_BADGE : null,
     avatarUrl: profile.avatarUrl,
     qrUrl: bookingUrl(profile.providerId, params.source, profile.linkCode),
     site: SITE_LABEL,
@@ -164,7 +158,7 @@ export function flyerCaption(content: MarketingContent, zone: string | null, lin
   return [
     content.headline,
     '',
-    [services, `Reserva en un minuto${content.badge ? ', sin gastos de gestión' : ''}: ${link}`].filter(Boolean).join('\n'),
+    [services, `Reserva en un minuto: ${link}`].filter(Boolean).join('\n'),
     '',
     ['#jardineria', zoneTag ? `#${zoneTag}` : '', '#GarSer'].filter(Boolean).join(' '),
   ].join('\n');
@@ -177,16 +171,15 @@ export interface ClientMessage {
 }
 
 /** Mensajes listos para mandar a sus clientes por WhatsApp. */
-export function clientMessages(params: { kind: 'solo' | 'company'; feeWaiverEnabled: boolean; link: string; date: Date }): ClientMessage[] {
+export function clientMessages(params: { kind: 'solo' | 'company'; link: string; date: Date }): ClientMessage[] {
   const company = params.kind === 'company';
   const withUs = company ? 'con nosotros' : 'conmigo';
   const toUs = company ? 'a nosotros' : 'a mí';
-  const fee = params.feeWaiverEnabled ? ', sin gastos de gestión' : '';
   return [
     {
       id: 'online',
       title: 'Ya puedes reservar online',
-      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en un minuto${fee}, y pagas al terminar, directamente ${toUs}. ${params.link}`,
+      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en un minuto, y pagas al terminar, directamente ${toUs}. ${params.link}`,
     },
     {
       id: 'season',

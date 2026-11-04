@@ -108,7 +108,7 @@ describe('buildProviderSetupSteps · jardinero', () => {
     expect(summary.allRequiredDone).toBe(true);
     expect(summary.headline).toMatchObject({ tone: 'success', title: 'Ya apareces a los clientes' });
     expect(summary.visibleServices).toEqual(['Corte de césped']);
-    expect(summary.share).toEqual({ show: true, feeWaiver: true });
+    expect(summary.share).toEqual({ show: true });
     expect(summary.nextStep).toBeNull();
     expect(stepById(summary, 'coverage')?.detail).toBe('Hasta 25 km desde Marbella.');
     expect(stepById(summary, 'schedule')?.detail).toBe('30 horas libres en los próximos 14 días.');

@@ -3,6 +3,8 @@ import { AlertTriangle, Ban, CheckCircle2, ChevronDown, Circle, Clock, Lock, Meg
 import toast from 'react-hot-toast';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import { useMyBookingLink } from '../../hooks/useMyBookingLink';
+import { usePublicBillingTerms } from '../../hooks/usePublicBillingTerms';
+import { ownClientsLine } from '../../config/billingCopy';
 import {
   buildProviderSetupSteps,
   providerBookingLink,
@@ -110,7 +112,9 @@ export const SetupStepList: React.FC<{
   </ol>
 );
 
-const ShareLink: React.FC<{ providerId: string; feeWaiver: boolean; onMarketing: () => void }> = ({ providerId, feeWaiver, onMarketing }) => {
+const ShareLink: React.FC<{ providerId: string; onMarketing: () => void }> = ({ providerId, onMarketing }) => {
+  // Qué decirle sobre los gastos de gestión de sus clientes sale de los ajustes vigentes.
+  const billingTerms = usePublicBillingTerms();
   // El enlace lleva la clave personal del profesional: hasta que se tiene, no se puede compartir.
   const { state: link } = useMyBookingLink(true);
   const share = async () => {
@@ -136,7 +140,7 @@ const ShareLink: React.FC<{ providerId: string; feeWaiver: boolean; onMarketing:
     <div className="mt-4 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-gray-700">
         <span className="font-semibold text-gray-900">Comparte tu enlace de reserva.</span>{' '}
-        {feeWaiver ? 'Tus clientes reservan contigo sin gastos de gestión.' : 'Tus clientes reservan directamente contigo.'}
+        {ownClientsLine(billingTerms)}
       </p>
       <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
         <button
@@ -259,7 +263,7 @@ const ProviderSetupChecklist: React.FC<{ onNavigate: (target: SetupTarget) => vo
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        {summary.share.show && <ShareLink providerId={status.provider_id} feeWaiver={summary.share.feeWaiver} onMarketing={() => onNavigate({ kind: 'marketing' })} />}
+        {summary.share.show && <ShareLink providerId={status.provider_id} onMarketing={() => onNavigate({ kind: 'marketing' })} />}
         {recommendedPending > 0 && (
           <Extras steps={summary.recommended} open={extrasOpen} onToggle={() => setExtrasOpen((v) => !v)} onNavigate={onNavigate} pending={recommendedPending} />
         )}
@@ -305,7 +309,7 @@ const ProviderSetupChecklist: React.FC<{ onNavigate: (target: SetupTarget) => vo
         />
       </div>
 
-      {summary.share.show && <ShareLink providerId={status.provider_id} feeWaiver={summary.share.feeWaiver} onMarketing={() => onNavigate({ kind: 'marketing' })} />}
+      {summary.share.show && <ShareLink providerId={status.provider_id} onMarketing={() => onNavigate({ kind: 'marketing' })} />}
 
       <Extras
         steps={summary.recommended}

@@ -30,8 +30,6 @@ interface Palette {
   accent: string;
   chipBg: string;
   chipText: string;
-  badgeBg: string;
-  badgeText: string;
   deco: string;
   brandBg: string;
   brandText: string;
@@ -47,8 +45,6 @@ const PALETTES: Record<MarketingTheme, Palette> = {
     accent: '#2BCA21',
     chipBg: 'rgba(255,255,255,0.12)',
     chipText: '#FFFFFF',
-    badgeBg: '#FFFFFF',
-    badgeText: '#14532D',
     deco: 'rgba(43,202,33,0.12)',
     brandBg: '#0A2A18',
     brandText: 'rgba(255,255,255,0.9)',
@@ -62,8 +58,6 @@ const PALETTES: Record<MarketingTheme, Palette> = {
     accent: '#24A54C',
     chipBg: '#E8F5EA',
     chipText: '#14532D',
-    badgeBg: '#24A54C',
-    badgeText: '#FFFFFF',
     deco: 'rgba(36,165,76,0.09)',
     brandBg: '#171C2B',
     brandText: '#FFFFFF',
@@ -295,43 +289,27 @@ function drawServices(ctx: Ctx, b: Box, services: string[], palette: Palette, mo
   });
 }
 
-/** Valoración, sello «Sin gastos de gestión» o, si no hay ninguno, cómo se paga. */
+/**
+ * La valoración o, si no hay ninguna, cómo se paga el servicio. Nunca dice nada de los gastos de
+ * gestión: un material impreso o descargado no se puede corregir cuando cambian los ajustes.
+ */
 function drawMeta(ctx: Ctx, b: Box, content: MarketingContent, palette: Palette, align: 'left' | 'center') {
-  const size = b.h * 0.5;
-  ctx.font = fontOf(700, size);
-  const items: Array<{ kind: 'text' | 'badge'; text: string; w: number }> = [];
-  if (content.rating) items.push({ kind: 'text', text: content.rating.label, w: ctx.measureText(content.rating.label).width });
-  if (content.badge) items.push({ kind: 'badge', text: content.badge, w: ctx.measureText(content.badge).width + size * 1.4 });
-  if (items.length === 0) {
+  if (!content.rating) {
     fitText(ctx, content.paymentNote, b, { weight: 600, color: palette.muted, align, maxLines: 1 });
     return;
   }
-  const gap = size * 0.9;
-  const total = items.reduce((sum, i) => sum + i.w, 0) + gap * (items.length - 1);
-  const factor = total > b.w ? b.w / total : 1;
-  const s = size * factor;
+  const size = b.h * 0.5;
+  ctx.font = fontOf(700, size);
+  const label = content.rating.label;
+  const width = ctx.measureText(label).width;
+  const s = width > b.w ? size * (b.w / width) : size;
   ctx.font = fontOf(700, s);
-  let x = align === 'center' ? b.x + (b.w - total * factor) / 2 : b.x;
-  const cy = b.y + b.h / 2;
-  for (const item of items) {
-    const w = item.w * factor;
-    if (item.kind === 'badge') {
-      const h = s * 1.75;
-      ctx.fillStyle = palette.badgeBg;
-      roundRect(ctx, { x, y: cy - h / 2, w, h }, h / 2);
-      ctx.fill();
-      ctx.fillStyle = palette.badgeText;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(item.text, x + w / 2, cy);
-    } else {
-      ctx.fillStyle = palette.text;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(item.text, x, cy);
-    }
-    x += w + gap * factor;
-  }
+  const w = Math.min(width, b.w);
+  const x = align === 'center' ? b.x + (b.w - w) / 2 : b.x;
+  ctx.fillStyle = palette.text;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, b.y + b.h / 2);
 }
 
 function drawSteps(ctx: Ctx, b: Box, content: MarketingContent, palette: Palette) {
@@ -394,7 +372,7 @@ function slotTexts(material: MaterialId, content: MarketingContent): Partial<Rec
         ...base,
         headline: 'Reserva tu próxima visita',
         name: `con ${content.name}`,
-        subtitle: content.badge ? 'Escanea y elige día y hora. Sin gastos de gestión.' : 'Escanea y elige el día y la hora.',
+        subtitle: 'Escanea y elige el día y la hora.',
         cta: 'Escanea aquí',
       };
     case 'van_vinyl':

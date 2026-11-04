@@ -1,4 +1,5 @@
--- Pruebas de las comisiones configurables (migraciones 20261102130000, 20261102140000 y 20261102150000).
+-- Pruebas de las comisiones configurables (migraciones 20261102130000, 20261102140000, 20261102150000,
+-- 20261104130000 y 20261104140000).
 --
 -- Todo corre dentro de una transacción que se revierte al final: se puede lanzar contra una base con
 -- datos sin ensuciarla.
@@ -1120,6 +1121,77 @@ BEGIN
     PERFORM pg_temp.check_that(r ->> 'linkClaim' = 'verified', 'M29: la clave nueva no exime');
   END IF;
   PERFORM pg_temp.act_as(NULL);
+
+  -- ===========================================================================
+  -- N. Términos públicos de facturación (migración 20261104140000): lo que la web puede decir
+  -- ===========================================================================
+  -- Configuración de partida de esta sección: la de fábrica (12,5 / 0 / 3 / 3 / 0).
+  UPDATE public.commission_settings
+     SET rate_garser_first = 12.5, rate_link_first = 0, rate_garser_repeat = 3, rate_maintenance_visit = 3, rate_link_repeat = 0
+   WHERE id = 1;
+  r := public.get_public_billing_terms();
+  PERFORM pg_temp.check_that(
+    r ->> 'garserFirst' = 'standard' AND r ->> 'linkFirst' = 'none' AND r ->> 'garserRepeat' = 'reduced'
+    AND r ->> 'linkRepeat' = 'none' AND r ->> 'maintenanceVisit' = 'reduced',
+    'N1: los niveles de la configuración de fábrica no son los esperados: ' || r::text);
+  -- Solo niveles: ningún porcentaje ni importe sale a la web pública.
+  PERFORM pg_temp.check_that(
+    (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(r) k)
+      = ARRAY['garserFirst', 'garserRepeat', 'linkFirst', 'linkRepeat', 'maintenanceVisit', 'version'],
+    'N2: la respuesta pública lleva campos que no debería: ' || r::text);
+  PERFORM pg_temp.check_that(r::text !~ '[0-9]+\.[0-9]' AND r::text !~ '%',
+    'N3: la respuesta pública deja ver un porcentaje: ' || r::text);
+  PERFORM pg_temp.check_that((r ->> 'version')::bigint = (SELECT version FROM public.commission_settings WHERE id = 1),
+    'N4: la versión no es la vigente');
+
+  -- Cualquier combinación se traduce a su nivel (una por cada caso del esquema).
+  UPDATE public.commission_settings SET rate_link_first = 5, rate_link_repeat = 12.5, rate_garser_repeat = 20, rate_maintenance_visit = 0.01 WHERE id = 1;
+  r := public.get_public_billing_terms();
+  PERFORM pg_temp.check_that(
+    r ->> 'linkFirst' = 'reduced' AND r ->> 'linkRepeat' = 'standard' AND r ->> 'garserRepeat' = 'higher' AND r ->> 'maintenanceVisit' = 'reduced',
+    'N5: reduced/standard/higher mal derivados: ' || r::text);
+  -- Sin comisión para los clientes de GarSer: cualquier otra regla con porcentaje es «más» que la línea base.
+  UPDATE public.commission_settings SET rate_garser_first = 0, rate_link_first = 5, rate_garser_repeat = 0, rate_maintenance_visit = 3, rate_link_repeat = 0 WHERE id = 1;
+  r := public.get_public_billing_terms();
+  PERFORM pg_temp.check_that(
+    r ->> 'garserFirst' = 'none' AND r ->> 'linkFirst' = 'higher' AND r ->> 'garserRepeat' = 'none' AND r ->> 'maintenanceVisit' = 'higher',
+    'N6: con la línea base a 0 %, un porcentaje positivo debe ser «higher»: ' || r::text);
+  -- Todo a 0 %: ninguna regla cobra.
+  UPDATE public.commission_settings SET rate_garser_first = 0, rate_link_first = 0, rate_garser_repeat = 0, rate_maintenance_visit = 0, rate_link_repeat = 0 WHERE id = 1;
+  r := public.get_public_billing_terms();
+  PERFORM pg_temp.check_that(
+    r ->> 'garserFirst' = 'none' AND r ->> 'linkFirst' = 'none' AND r ->> 'garserRepeat' = 'none'
+    AND r ->> 'linkRepeat' = 'none' AND r ->> 'maintenanceVisit' = 'none',
+    'N7: todo a 0 % debe ser «none» en todo: ' || r::text);
+  -- Todo al 100 %: cobra siempre y es la misma línea base.
+  UPDATE public.commission_settings SET rate_garser_first = 100, rate_link_first = 100, rate_garser_repeat = 100, rate_maintenance_visit = 100, rate_link_repeat = 100 WHERE id = 1;
+  r := public.get_public_billing_terms();
+  PERFORM pg_temp.check_that(
+    r ->> 'garserFirst' = 'standard' AND r ->> 'linkFirst' = 'standard' AND r ->> 'garserRepeat' = 'standard'
+    AND r ->> 'linkRepeat' = 'standard' AND r ->> 'maintenanceVisit' = 'standard',
+    'N8: todo al 100 % debe ser «standard» en todo: ' || r::text);
+
+  -- Coherencia con el motor: «none» es exactamente lo que el motor cobra 0 €, «>0» lo que cobra algo.
+  UPDATE public.commission_settings
+     SET rate_garser_first = 12.5, rate_link_first = 0, rate_garser_repeat = 3, rate_maintenance_visit = 3, rate_link_repeat = 0
+   WHERE id = 1;
+  PERFORM pg_temp.check_that(
+    public.own_clients_fee_waiver_enabled()
+      = (public.get_public_billing_terms() ->> 'linkFirst' = 'none' AND public.get_public_billing_terms() ->> 'linkRepeat' = 'none'),
+    'N9: el «sin gastos» del asistente de alta no coincide con los términos públicos');
+
+  -- Permisos: la web (sin sesión) la puede leer; la función auxiliar es interna.
+  PERFORM pg_temp.check_that(
+    has_function_privilege('anon', 'public.get_public_billing_terms()', 'EXECUTE')
+    AND has_function_privilege('authenticated', 'public.get_public_billing_terms()', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.commission_term_level(numeric, numeric)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.commission_term_level(numeric, numeric)', 'EXECUTE'),
+    'N10: permisos de los términos públicos');
+  -- Y no abre la tabla de configuración a nadie más.
+  PERFORM pg_temp.check_that(
+    NOT has_table_privilege('anon', 'public.commission_settings', 'SELECT')
+    AND NOT has_table_privilege('authenticated', 'public.commission_settings', 'SELECT'),
+    'N11: la tabla de comisiones quedó legible');
 
   -- ===========================================================================
   -- L. Sin configuración válida, ninguna operación económica sigue adelante

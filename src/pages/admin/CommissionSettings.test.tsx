@@ -94,8 +94,8 @@ describe('Configuración de comisiones', () => {
 
     it('enseña las cinco reglas con su nombre, su descripción y el valor guardado en el servidor', async () => {
       await renderLoaded();
-      // Las cinco reglas más el bloque del historial.
-      expect(screen.getAllByRole('region')).toHaveLength(6);
+      // Las cinco reglas, «lo que dirá la web» y el bloque del historial.
+      expect(screen.getAllByRole('region')).toHaveLength(7);
       expect(input(TITLES.garserFirst).value).toBe('12,5');
       expect(input(TITLES.linkFirst).value).toBe('0');
       expect(input(TITLES.repeat).value).toBe('3');
@@ -106,6 +106,41 @@ describe('Configuración de comisiones', () => {
       expect(screen.getByText(/Actualizada el/)).toBeTruthy();
       // Sin cambios no hay nada que guardar.
       expect((saveButton() as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  describe('«Lo que dirá la web»', () => {
+    const preview = () => screen.getByRole('region', { name: 'Lo que dirá la web' });
+
+    it('con los porcentajes guardados enseña lo que leerá un visitante', async () => {
+      await renderLoaded();
+      expect(within(preview()).getByText('Con los porcentajes guardados.', { exact: false })).toBeTruthy();
+      expect(within(preview()).getByText(/Pagan tu precio y nada más\./)).toBeTruthy();
+      expect(within(preview()).getByText('Y si un cliente que te trajo GarSer vuelve a reservar contigo, paga menos gastos de gestión.')).toBeTruthy();
+      expect(within(preview()).getByText('Tus clientes reservan contigo sin gastos de gestión (salvo en las visitas de un plan de mantenimiento).')).toBeTruthy();
+    });
+
+    it('se actualiza con lo que se escribe, antes de guardar, y avisa de que no está guardado', async () => {
+      await renderLoaded();
+      fireEvent.change(input(TITLES.linkFirst), { target: { value: '12,5' } });
+      fireEvent.change(input(TITLES.linkRepeat), { target: { value: '12,5' } });
+      expect(within(preview()).getByText('todavía sin guardar', { exact: false })).toBeTruthy();
+      expect(within(preview()).getByText('Pagan gastos de gestión, aparte de tu precio. Tú cobras tu precio entero.')).toBeTruthy();
+      expect(within(preview()).queryByText(/sin gastos de gestión/i)).toBeNull();
+      expect(mocks.saveCommissionSettings).not.toHaveBeenCalled();
+    });
+
+    it('con un campo inválido no inventa nada: sigue enseñando lo guardado', async () => {
+      await renderLoaded();
+      fireEvent.change(input(TITLES.linkFirst), { target: { value: 'abc' } });
+      expect(within(preview()).getByText('Con los porcentajes guardados.', { exact: false })).toBeTruthy();
+      expect(within(preview()).getByText(/Pagan tu precio y nada más\./)).toBeTruthy();
+    });
+
+    it('todo a 0 %: la web puede decir que nadie paga gastos de gestión', async () => {
+      await renderLoaded(settings({ rates: { garser_first: 0, link_first: 0, garser_repeat: 0, maintenance_visit: 0, link_repeat: 0 } }));
+      expect(within(preview()).getByText('Para ti es gratis. Para tus clientes, sin gastos de gestión.')).toBeTruthy();
+      expect(within(preview()).getByText('Tampoco pagan gastos de gestión. Y a ti no se te descuenta nada.')).toBeTruthy();
     });
   });
 

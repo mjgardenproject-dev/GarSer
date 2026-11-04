@@ -1,6 +1,8 @@
 # Comisiones configurables — informe (2026-11-02)
 
-Rama `feat/comisiones-configurables`. Estado: **implementado y probado en local (SQL en PGlite, TypeScript en vitest, build); sin desplegar; sin probar de punta a punta con funciones y Stripe** (Docker no respondía en la máquina de desarrollo). Las migraciones las aplicas tú.
+Rama `feat/comisiones-configurables`. Estado (2026-11-04): **implementado y probado en local de punta a punta** — SQL en PGlite **y en el Postgres real de Supabase**, edge functions reales, **Stripe en modo prueba** (77 comprobaciones de dinero y motor), vitest, tipos, build y navegador. **Sin desplegar.** Las migraciones las aplicas tú.
+
+> **Segunda ronda (2026-11-04)** — ver §12: clave secreta del enlace (cierra el riesgo 10.1), textos de la web que cambian con los ajustes, auditoría de afirmaciones falsas, skill actualizada y pruebas con Stripe real. Seguimiento de tareas: `SEGUIMIENTO.md`.
 
 ## 0. En cinco líneas
 
@@ -8,7 +10,7 @@ Rama `feat/comisiones-configurables`. Estado: **implementado y probado en local 
 2. El 12,5 % era una constante (`BOOKING_MANAGEMENT_FEE_RATE`). Ahora son **cinco reglas configurables** en **Admin → Comisiones**, guardadas en `commission_settings` (con historial inmutable y auditoría).
 3. **Quien decide es SQL**: qué regla toca a cada reserva, el porcentaje y los céntimos. La web solo enseña; el motor de precios entrega el servicio sin comisión; `booking-authority` la completa al firmar el presupuesto; `booking-payment` la revalida contra la versión firmada.
 4. Cada reserva guarda **regla, porcentaje, base, versión y fecha** (inmutables). Cambiar los porcentajes no toca reservas ni presupuestos ya firmados.
-5. Hay un riesgo que no se puede eliminar (ver §10.1): el origen «enlace» de la **primera** reserva lo declara el navegador.
+5. ~~El origen «enlace» lo declara el navegador~~ → **resuelto el 2026-11-04**: el enlace lleva una clave secreta por profesional que verifica SQL (§12.1).
 
 ## 1. Diagnóstico del sistema anterior (resumen)
 
@@ -116,13 +118,17 @@ Todo en `resolve_booking_commission(cliente, profesional, origen declarado, ¿vi
 ## 8. Lo que tienes que hacer tú
 
 ### Local
-- (nada obligatorio) Para el SQL sin Docker: `npm i --no-save @electric-sql/pglite --prefix <carpeta>` y `PGLITE_DIR=<carpeta> node scripts/commissions/pglite-sql-tests.mjs`.
-- Con Docker en marcha: `docker exec -i <contenedor_db> psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/commission_settings.test.sql`, y `supabase functions serve --workdir "$(pwd)"` + `node scripts/commissions/verify-commissions.mjs` (**nunca se ha ejecutado**).
+- **Nada obligatorio**: todo lo de abajo ya está ejecutado y en verde (2026-11-04). Si quieres repetirlo:
+  - SQL sin Docker: `npm i --no-save @electric-sql/pglite --prefix <carpeta>` y `PGLITE_DIR=<carpeta> node scripts/commissions/pglite-sql-tests.mjs`.
+  - SQL contra el Postgres real: `docker exec -i <contenedor_db> psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/commission_settings.test.sql`.
+  - Motor y funciones: `supabase functions serve --workdir "$(pwd)"` y `node scripts/commissions/verify-commissions.mjs`.
+  - **Dinero con Stripe de pruebas**: crea un env local con un `STRIPE_WEBHOOK_SECRET` inventado (solo para esto), sírvelo con `supabase functions serve --env-file <ese env>` y lanza `COMMISSIONS_FUNCTIONS_ENV=<ese env> node scripts/commissions/verify-commissions-stripe.mjs`. Usa la clave `sk_test_` de `supabase/functions/.env`; se niega a seguir si no lo es.
+- **Cuidado**: `supabase functions list`, `secrets` y `db push` **sin `--local`** hablan con PRODUCCIÓN. En local: `supabase migration up --local`.
 - Regenerar los tipos: `supabase gen types typescript --local > src/types/generated/database.types.ts` (hoy están retocados a mano).
 
 ### Producción (en este orden)
-1. `supabase db push` — aplica las tres migraciones `20261102130000`, `20261102140000` y `20261102150000`. Con ellas puestas y las funciones antiguas, todo sigue como hasta ahora.
-2. `supabase functions deploy booking-authority booking-payment --use-api` (recuerda: el clasificador pide esas palabras exactas).
+1. `supabase db push` — aplica las **cinco** migraciones: `20261102130000`, `20261102140000`, `20261102150000`, `20261104130000` (clave del enlace) y `20261104140000` (textos públicos). Con ellas puestas y las funciones antiguas, todo sigue como hasta ahora, salvo que un enlace sin clave deja de eximir.
+2. `supabase functions deploy booking-authority booking-payment send-email-notification --use-api` (recuerda: el clasificador pide esas palabras exactas; la tercera solo cambia dos frases de correo).
 3. Fusionar la rama (publica la web).
 4. Pasar la **sección 29** de `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md`. 29.6, 29.7 y 29.8 son bloqueantes.
 5. Si el panel enseña el aviso ámbar «no usa estas comisiones», falta el paso 2.
@@ -147,27 +153,32 @@ Todo en `resolve_booking_commission(cliente, profesional, origen declarado, ¿vi
 | Build | ✅ |
 | Panel en el navegador (móvil 375 px y escritorio, datos simulados) | ✅ sin desbordamiento horizontal; campos y botones de 44 px; fuente 16 px; estados de carga, error, validación, guardado y aviso de funciones sin desplegar |
 
+**Ronda del 2026-11-04** (pila local real: Postgres de Supabase, edge functions, Stripe en modo prueba) — ver §12.3 y `SEGUIMIENTO.md`:
+- `commission_settings.test.sql` y `fee_waiver.test.sql` contra el **Postgres real**: ✅ (encontró dos diferencias con PGlite, corregidas).
+- `verify-commissions.mjs`: ✅ **37/37** · `verify-commissions-stripe.mjs`: ✅ **40/40**.
+
 **No probado** (y por qué):
-- `scripts/commissions/verify-commissions.mjs` (funciones + Stripe de prueba): Docker no respondía. Está escrito; revisarlo antes de fiarse de un fallo suyo.
-- Las edge functions en Deno: solo sintaxis (transpilación de TypeScript); su lógica de comisión está en módulos que sí tienen tests.
-- Stripe real y el webhook: sin cambios en su integración; el importe que reciben sale del intento, que el trigger valida.
-- La API REST real con tokens de verdad (sección 29.5 y escenario H del script).
-- Hay diferencias entre PGlite y el servidor de Supabase (versión de Postgres, extensiones, `auth`): el esquema era un stub mínimo.
+- 3-D Secure, el formulario de Stripe Elements y la pantalla de pago real: necesitan un navegador y una tarjeta real o de pruebas con desafío (sección 29 de producción).
+- Las funciones desplegadas en producción (solo se han ejecutado en local) y el Pixel de Meta.
 
 Pre-existentes, **no** introducidos: 129 errores de tipos (p. ej. `metaPixel.ts`, `profileNames.ts`, `oauthAccount.ts`) y 768 avisos de lint; los 22 archivos de test que «fallan» en una copia limpia sin `.env` (con variables ficticias pasan todos).
 
 Cambios de un snapshot: `manualEntryPricingParity.test.ts.snap` se regeneró. Comparado entrada a entrada, las 88 entradas vivas son idénticas salvo la comisión (`managementFee`, `payableNow`, línea y cargo de Stripe); además `-u` retiró 5 entradas obsoletas que ningún test usaba (`…-curative-insects 2`).
 
-## 10. Riesgos pendientes y decisiones abiertas
+## 10. Riesgos pendientes y decisiones abiertas (estado 2026-11-04)
 
-1. **El origen «enlace» de la primera reserva sigue siendo una declaración** (el enlace `/reservar/<id>` es público y los QR ya impresos no se pueden firmar). Cualquier cliente puede declararlo en su primera reserva con cualquier profesional y no pagar. Lo que sí está cubierto: solo vale para ese profesional, solo mientras no haya origen guardado, no cambia nunca después y queda en `commission.claimedOrigin`. **Decisión pendiente**: aceptar el riesgo o enlaces firmados por profesional (rompería los impresos). Hay una consulta útil para vigilarlo: `select client_id, count(*) from client_provider_relationships where origin = 'provider_link' group by 1 having count(*) > 1;`.
-2. **Promesas públicas**: «tus clientes reservan sin comisión» (web y materiales) deja de ser exacta para las **visitas de un plan** de un cliente del enlace (3 %). Es consecuencia de tu decisión 1; revisar el texto si importa.
+1. ✅ **Resuelto — el origen «enlace» ya no es una declaración.** Cada profesional tiene una clave secreta (§12.1); sin ella, con una falsa, de otro profesional o antigua, el cliente paga como cliente de GarSer. Consecuencia asumida por ti: los **enlaces y QR antiguos sin clave dejan de eximir** (no hay profesionales reales todavía). Consulta de vigilancia: `select client_id, count(*) from client_provider_relationships where origin = 'provider_link' group by 1 having count(*) > 1;`.
+2. ✅ **Resuelto — promesas públicas.** «Tus clientes reservan sin comisión» ya no es un texto fijo: lo decide `billingCopy.ts` según los ajustes y avisa de que las visitas de un plan sí llevan gastos (§12.2). Lo que se imprime o descarga ya no habla de gastos.
 3. **Cliente que repite con GarSer** paga 3 % (antes, con el interruptor encendido, 0 €).
 4. **Dos reservas seguidas** antes de completar la primera pagan las dos como «primera» (decisión: solo cuenta lo completado).
-5. **Cambio de precio aceptado**: la comisión no se recalcula (igual que antes).
-6. **Redondeo**: con precios con céntimos (el motor no los produce) el cálculo exacto difiere en 1 céntimo, en algunos empates de medio céntimo, del que daba la coma flotante antigua (que cobraba 1 céntimo de menos). Con euros enteros no cambia nada.
-7. `booking_quotes` se consulta sin índice por `generated_at` para el aviso del panel: irrelevante hoy, revisar si la tabla crece mucho.
-8. La skill `garser-pricing-rules` (fuera del repo) todavía dice que el 12,5 % es una constante de `bookingQuoteCore.ts`: está obsoleta en las secciones 4, 9 y 10.8.
+5. **Cambio de precio aceptado**: la comisión no se recalcula (igual que antes); verificado con Stripe real (se cobra lo autorizado).
+6. **Redondeo**: con precios con céntimos (el motor no los produce) el cálculo exacto difiere en 1 céntimo, en algunos empates de medio céntimo, del que daba la coma flotante antigua. Con euros enteros no cambia nada.
+7. `booking_quotes` se consulta sin índice por `generated_at` para el aviso del panel: irrelevante hoy.
+8. ✅ **Resuelto — skill** `garser-pricing-rules` actualizada (copia en esta carpeta: `SKILL-garser-pricing-rules.actual-2026-11-04.md`; la anterior, `…antes-…`).
+9. **Menor y preexistente — pagos simultáneos.** Cinco `prepare_payment` a la vez del mismo presupuesto crean **un solo** PaymentIntent y un solo intento (verificado), pero los perdedores pueden recibir 502/409 por la idempotencia de Stripe. No mueve dinero; la web reintenta.
+10. **Menor — liberar una solicitud caducada** tarda hasta ~20 min (la conciliación del reloj espera ese margen antes de mirar una reserva cambiada). El cliente no paga nada; solo ve la retención unos minutos más.
+11. **Tu promesa operativa**: «Revisamos tu alta en menos de 24 h» (jardineros y empresas) se mantiene por decisión tuya; la cumples tú, el código no la garantiza.
+12. **Una clave filtrada** exime a quien la tenga hasta que el profesional pulse «Cambiar mi enlace». Un presupuesto ya firmado con la clave antigua se respeta (vive 2 h).
 
 ## 11. Qué cambia respecto a producción hoy
 
@@ -179,3 +190,45 @@ Con los valores iniciales **12,5 / 0 / 3 / 3 / 0** (los que pediste):
 - Visita de un plan: **cambia**, de 0 € a **3 %**.
 - Con el interruptor apagado en producción, todo lo anterior ya pagaba 12,5 %: entonces el cambio sería a la baja.
 - Importes por debajo de 0,50 €: pasan a cobrarse 0,50 € (antes fallaban en Stripe).
+
+## 12. Segunda ronda — cierre (2026-11-04)
+
+Cinco encargos: explicar y cerrar el fallo del origen «enlace», textos que cambian con los ajustes, revisar toda la web, actualizar la skill y probar a fondo con Stripe de prueba. Commits en la rama: `b6a4ef7`, `259ee22`, `52a1ff1`, `360a858` (más el de estos documentos).
+
+### 12.1 El fallo del origen «enlace» y su solución (clave secreta)
+**El fallo, en llano.** La primera reserva de un cliente por el enlace de un profesional no paga gastos. Pero el enlace era `/reservar/<id>` y el `<id>` de un profesional es público (sale en el directorio). Es como si la puerta del descuento dijese «dime que vienes de parte de Pepe»: cualquiera lo dice. El servidor se fiaba de lo que decía el navegador, así que un cliente podía declarar «vengo del enlace de Pepe» y no pagar los gastos de su primera reserva (con 158 € de servicio, 19,75 € por reserva). Los QR ya impresos no se pueden firmar para evitarlo.
+
+**La solución que elegiste («enlace con clave secreta»).** Cada profesional tiene una clave de 32 caracteres que solo ve él. Su enlace es `/reservar/<id>?c=<clave>`. SQL comprueba la clave (`provider_link_code_matches`); sin clave, con una falsa, de otro profesional o antigua, la declaración se **rechaza** (`linkClaim = 'rejected'`) y el cliente paga como cualquier cliente de GarSer. Se anota en el presupuesto firmado y el pago reutiliza ese resultado. El trigger de `booking_payment_attempts` exige además justificación para las reglas de enlace y de «posterior».
+- Migración `20261104130000_provider_link_codes.sql`: tabla `provider_booking_links` (sin acceso directo), `my_booking_link()`, `rotate_my_booking_link()`, reglas y funciones nuevas (firmas con la clave).
+- Web: la clave se **captura de la dirección y se quita** antes de pintar nada (para que el Pixel de Meta no la vea), se guarda por profesional 180 días, viaja en el borrador y como `originLinkCode`. «Mi cuenta» (tarjeta «Enlace de reserva directo» con «Cambiar mi enlace»), el asistente de alta, «Marketing» y los QR construyen el enlace **con** la clave y **no generan nada sin ella**. Aviso al cliente si trae una clave que ya no vale.
+- Sin ventana de transición (decisión tuya: aún no hay jardineros reales).
+
+### 12.2 Textos que cambian con los ajustes
+- Migración `20261104140000_public_billing_terms.sql`: `get_public_billing_terms()` (legible sin sesión) devuelve **niveles** por regla (`none`/`reduced`/`standard`/`higher`), nunca porcentajes.
+- `src/config/billingCopy.ts` genera todos los textos que dependen de quién paga (landing de jardineros, preguntas frecuentes y su JSON-LD, asistente de alta, «Marketing»). Sin los niveles (cargando o error) usa textos **neutros** ciertos con cualquier configuración. Probado con las **1.024 combinaciones**.
+- Lo fijo (SEO, portada, `index.html`, términos) ya no promete «sin comisión».
+- **Decisión tuya:** ningún material que se imprima o descargue (flyers, tarjetas, vinilo, QR, pie de foto, mensajes para copiar) habla de gastos de gestión.
+- Admin → Comisiones: «Lo que dirá la web» con los porcentajes que se escriben, antes de guardar.
+- Paridad SQL/TypeScript de los niveles con una fixture de 90 casos compartida.
+
+### 12.3 Auditoría de afirmaciones: lo que no era cierto y se corrigió
+| Dónde | Decía | Problema | Ahora |
+|---|---|---|---|
+| Tarjeta de una reserva cancelada | «No se te ha cobrado nada» | **Falso** si cancelas con menos de 24 h (se cobra o se conserva) | Explica la regla; nunca afirma un resultado |
+| Resumen, confirmación y términos | «Solo se cobran cuando el profesional acepte» | Omitía el cobro al cancelar con menos de 24 h | «Se cobran al aceptar; si no acepta, se liberan; con menos de 24 h se cobra» |
+| Términos y aviso de cancelar | «Más de 24 h» | La base de datos devuelve con `>= 24 h` | «24 h o más» |
+| Correos / incidencia | Reembolso en «3 a 5 días hábiles» | Stripe indica 5–10 | «5 a 10 días hábiles» |
+| Correo de reserva rechazada | «Hay más profesionales disponibles en tu zona» | Se afirma sin saberlo | «Puedes repetir la reserva y elegir otro profesional disponible» |
+| Marketing y mensajes | «Reserva en un minuto» | Una reserva nueva no se hace en un minuto | «Online» / «en pocos minutos» |
+| Páginas de Marbella/Costa del Sol, `index.html` | «Disponibilidad de jardineros en Marbella, Estepona, Benahavís» | Cobertura que aún no existe | Habla de lo que es cierto siempre (decisión tuya) |
+| Política de privacidad | «No usamos tus datos para publicidad» | Contradice el uso de Meta/Google con permiso | «No vendemos tus datos… solo con tu permiso medimos qué anuncios traen profesionales» |
+| Términos | «Algunas reservas no tienen gastos de gestión (…enlace)» | Depende de los ajustes | Texto válido con cualquier configuración |
+| Plan de mantenimiento | (comentario) visitas sin gastos | Ahora llevan el 3 % | «Si lleva gastos, los ves antes de confirmar» |
+Una guardia (`src/config/publicClaims.test.ts`) falla si vuelve alguna de estas frases. Se **mantiene** «Revisamos tu alta en menos de 24 h» por decisión tuya (promesa operativa).
+
+### 12.4 Pruebas con Stripe en modo prueba (local, 2026-11-04)
+Pila real: Postgres de Supabase + edge functions + API de pruebas de Stripe. Cada comprobación **mira en Stripe** cuánto se autorizó, cobró o devolvió.
+- `verify-commissions-stripe.mjs` **40/40**: autorizar y comprobar el importe y la captura manual; webhook firmado (falso, sin firma, antiguo, repetido, importe o divisa manipulados); aceptar → cobra; doble aceptación no cobra dos veces; rechazar y caducar → se libera; cancelar con 24 h o más / menos / 24 h 5 min / 23 h 55 min; cancela el profesional → devolución + penalización; tarjeta rechazada y reintento sobre el mismo pago; cambio de precio aceptado (misma comisión) y rechazado (se libera); visita de plan (3 %); 0,50 € mínimo; 100 %; 21 porcentajes con decimales contra un cálculo independiente; cambio de ajustes con un pago en curso (manda lo firmado); sin configuración; todo a 0 % (sin pago en Stripe); clave del enlace falsa o cambiada; cinco pagos simultáneos.
+- `verify-commissions.mjs` **37/37**; SQL contra el Postgres real ✅; vitest **169 archivos / 2.647 tests** ✅; tipos **129 = base, 0 nuevos**; build ✅; navegador real: clave capturada y quitada de la dirección, textos de `/para-jardineros` cambian al cambiar los ajustes en la base.
+- Encontrado y corregido gracias a la base real: la máquina de estados de `bookings` y los privilegios por defecto de `service_role` (la función interna `provider_link_code_matches` se le revoca expresamente).
+

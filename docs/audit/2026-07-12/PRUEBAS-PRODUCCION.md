@@ -1549,15 +1549,17 @@ Rellena esto antes de empezar y ten la tabla a mano:
 > - Cada reserva guarda regla, porcentaje, base, versión y fecha. Cambiar los porcentajes no toca reservas ni presupuestos ya firmados.
 >
 > **Despliegue (en este orden):**
-> 1. `supabase db push` (tres migraciones `20261102130000`, `…140000` y `…150000`).
-> 2. `supabase functions deploy booking-authority booking-payment --use-api`.
+> 1. `supabase db push` (cinco migraciones: `20261102130000`, `…140000`, `…150000`, `20261104130000` —clave del enlace— y `20261104140000` —textos públicos—).
+> 2. `supabase functions deploy booking-authority booking-payment send-email-notification --use-api` (la tercera solo cambia dos frases de correo).
 > 3. Fusionar (publica la web).
 >
-> Con la migración puesta y las funciones antiguas, todo sigue como hasta ahora. Con las funciones nuevas y sin migración, las reservas se bloquean con un error recuperable (nunca se cobra de menos).
+> Con las migraciones puestas y las funciones antiguas, todo sigue como hasta ahora, **salvo** que los enlaces `/reservar/<id>` sin clave dejan de eximir (la clave la verifica el servidor nuevo). Con las funciones nuevas y sin migración, las reservas se bloquean con un error recuperable (nunca se cobra de menos).
+>
+> **Importante (2026-11-04):** el origen «enlace» ya NO es una declaración del navegador: el enlace lleva una **clave secreta** (`/reservar/<id>?c=<clave>`) que SQL comprueba. Los enlaces y QR antiguos (sin clave) **no eximen**. Cada profesional ve su enlace en «Mi cuenta» y en «Marketing».
 >
 > **Antes de empezar:**
 > - tu cuenta de administrador;
-> - un jardinero de prueba con su enlace `/reservar/<id>`;
+> - un jardinero de prueba con su enlace **completo con clave** (cópialo de su «Mi cuenta»);
 > - dos cuentas de cliente nuevas (una para entrar desde garser.es y otra desde el enlace);
 > - tarjeta de prueba de Stripe o real, según el entorno.
 
@@ -1589,7 +1591,8 @@ Rellena esto antes de empezar y ten la tabla a mano:
   - Termina la reserva. En el SQL editor: `select management_fee, management_fee_source, commission_rule, commission_rate_bps, commission_base_amount, commission_config_version, commission_fixed_at from bookings order by created_at desc limit 1;`
     ✅ `19.75 | payment_attempt | garser_first | 1250 | 158 | <versión> | <fecha>`.
   - `select origin from client_provider_relationships where client_id = '<id del cliente>';` ✅ `garser`.
-- [ ] **29.7 — Cliente nuevo por el enlace del jardinero (0 %).** Con la otra cuenta, entra por `/reservar/<id>` y reserva.
+- [ ] **29.7 — Cliente nuevo por el enlace del jardinero (0 %).** Con la otra cuenta, entra por el enlace **completo con clave** (`/reservar/<id>?c=<clave>`, el que se copia de «Mi cuenta») y reserva.
+  - ✅ Al abrirlo, la dirección se queda en `/reservar/<id>` (la clave desaparece de la barra).
   - ✅ «Sin gastos de gestión», sin hoja de pago, y la reserva se crea al confirmar.
   - ✅ En SQL: `management_fee = 0`, fuente `waived_provider_link`, regla `link_first`, y su origen es `provider_link`.
 - [ ] **29.8 — Cambiar el porcentaje con una reserva a medias.**
@@ -1609,12 +1612,36 @@ Rellena esto antes de empezar y ten la tabla a mano:
   - ✅ La propuesta lleva el **3 %** de gastos, también para un cliente del enlace.
   - Confírmala. ✅ Stripe cobra ese importe y la reserva queda con regla `maintenance_visit`.
 - [ ] **29.12 — Suelo de 0,50 €.** Pon la primera regla en `0,01` y reserva con un cliente nuevo. ✅ «Pagas hoy 0,50 €» y Stripe cobra 50 céntimos. Vuelve a 12,5.
-- [ ] **29.13 — El material de marketing lo sigue.** En «Marketing» de un jardinero, ✅ sale «Tus clientes reservan sin gastos de gestión» mientras las dos reglas de enlace estén al 0 %. Pon la regla de primera por enlace en `1`: ✅ desaparece. Devuélvela a 0.
+- [ ] **29.13 — La frase de «Marketing» y del asistente de alta sigue a los ajustes.** En «Marketing» de un jardinero, ✅ sale «Tus clientes reservan contigo sin gastos de gestión (salvo en las visitas de un plan de mantenimiento)» con los valores de partida. Pon la regla de primera por enlace en `1`: ✅ pasa a «Tus clientes reservan directamente contigo.». Devuélvela a 0.
+- [ ] **29.14 — Lo que se imprime NO habla de gastos de gestión.** Descarga un flyer, una tarjeta y el QR, y copia un mensaje de WhatsApp y el pie de foto. ✅ Ninguno menciona «gastos de gestión», «comisión» ni «gratis».
 
-> **Qué comprueba el código en local, sin pagos reales:**
-> - SQL (PGlite, con las migraciones reales encima de las anteriores): las cinco reglas y su prioridad, las validaciones, el guardado atómico y la auditoría, los permisos con roles reales, la inmutabilidad de las reservas, los planes y 6.240 cálculos en céntimos contra una referencia independiente.
-> - TypeScript (vitest): el panel (carga, errores, validación, guardado, doble clic, versión desfasada), el módulo del servidor y los importes.
-> - **No** se ha podido ejecutar todavía `scripts/commissions/verify-commissions.mjs` (la prueba de punta a punta con funciones y Stripe de prueba): Docker no respondía. Es lo que cubre esta sección contra producción.
+**B. La clave del enlace (2026-11-04)**
+
+- [ ] **29.15 — El enlace sin clave no exime.** Con un cliente nuevo, entra por `/reservar/<id>` **sin** `?c=` y reserva. ✅ Paga la comisión de GarSer (12,5 %) y, en la hoja de pago, **no** aparece «sin gastos de gestión». Mismo resultado con una clave inventada (`?c=00000000000000000000000000000000`).
+- [ ] **29.16 — El aviso.** Con un cliente nuevo, entra con una clave inventada hasta «Profesionales». ✅ Aparece «Este enlace ya no es el directo de <nombre>…» y paga los gastos. Con el enlace sin clave **no** aparece el aviso.
+- [ ] **29.17 — Cambiar el enlace.** En «Mi cuenta» del jardinero, pulsa **Cambiar mi enlace** y confirma. ✅ Sale el enlace nuevo. Con un cliente nuevo: el enlace **antiguo** paga el 12,5 % y el **nuevo** va a 0 €. ✅ Los QR y flyers descargados antes siguen abriendo su perfil pero ya no eximen (hay que volver a descargarlos).
+- [ ] **29.18 — Nadie ve las claves.** Con una cuenta de cliente, en la consola del navegador: `await supabase.rpc('my_booking_link')` (o desde el SQL editor, como `authenticated`) ✅ error «Solo un profesional tiene enlace de reserva». `select * from provider_booking_links` ✅ sin permiso.
+- [ ] **29.19 — La clave no viaja a terceros.** Abre el enlace completo con el **Pixel de Meta** activo (Meta Pixel Helper o la pestaña de red). ✅ Ninguna petición a `facebook.com` ni `google` lleva `c=<clave>`.
+
+**C. Textos que cambian con los ajustes (2026-11-04)**
+
+- [ ] **29.20 — /para-jardineros sigue a los ajustes.** Con los valores de partida, abre `/para-jardineros`. ✅ «Tus clientes reservan sin gastos de gestión (salvo en planes de mantenimiento)»; «Y si un cliente que te trajo GarSer vuelve a reservar contigo, paga menos gastos de gestión.» (**no** «deja de pagar»). Pon la regla de reservas posteriores en `0`: ✅ pasa a «deja de pagar». Pon las dos reglas del enlace en `12,5`: ✅ desaparece cualquier «sin gastos de gestión». Devuelve todo a los valores de partida.
+- [ ] **29.21 — Vista previa del panel.** En **Admin → Comisiones** cambia un porcentaje **sin guardar**: ✅ «Lo que dirá la web» cambia con lo que escribes y avisa «todavía sin guardar».
+- [ ] **29.22 — Sin saber los ajustes, no promete nada.** En las herramientas del navegador, bloquea la petición a `get_public_billing_terms` y recarga `/para-jardineros`. ✅ Dice «Tus clientes reservan directamente contigo» y «Los gastos de gestión, si los hay, los paga el cliente, aparte»; ✅ **ningún** «sin gastos de gestión».
+- [ ] **29.23 — El SEO no promete.** Ver el código fuente de `/para-jardineros` y de `/`: ✅ ni `title` ni `description` ni JSON-LD de las preguntas dicen «sin comisión»; las respuestas de las preguntas coinciden con lo que se ve en pantalla.
+
+**D. Dinero con Stripe real (con tarjeta de prueba si el entorno lo permite)**
+
+- [ ] **29.24 — Cancelar con 24 h o más / menos.** ✅ Con 24 h o más de una reserva ya cobrada, se **devuelve** (Stripe muestra el reembolso). ✅ Con menos de 24 h de una reserva **aceptada**, no se devuelve. ✅ Con menos de 24 h de una solicitud **sin aceptar**, **se cobra** (lo dicen los términos y el aviso de cancelar). El aviso del cuadro de cancelar dice «24 h o más» / «menos de 24 h».
+- [ ] **29.25 — Tras cancelar, el texto no miente.** En la tarjeta de una reserva cancelada ✅ **no** dice «No se te ha cobrado nada»: explica la regla (se devuelve con 24 h o más o si cancela el profesional; con menos, no).
+- [ ] **29.26 — Rechazo y caducidad.** ✅ Si el jardinero **rechaza**, Stripe muestra la autorización cancelada y el cliente no paga. ✅ Si **caduca** (24 h sin respuesta), la autorización se libera en cuanto pasa el reloj (hasta ~20 min después).
+
+> **Qué se ha comprobado ya en local (2026-11-04), con Stripe en modo prueba:**
+> - SQL: PGlite **y el Postgres real de Supabase** (`supabase/tests/commission_settings.test.sql`).
+> - `scripts/commissions/verify-commissions.mjs` (37/37): reglas, clave del enlace, planes, 0,50 €, manipulaciones, sin configuración.
+> - `scripts/commissions/verify-commissions-stripe.mjs` (**40/40, con Stripe real de pruebas**): autorizar, capturar al aceptar, liberar al rechazar/caducar, cancelar con 24 h o más / menos / en el límite, cancela el profesional, tarjeta rechazada y reintento, webhooks (firma falsa, repetido, caducado, importe o divisa manipulados), cambio de precio, planes, 0,50 €, 100 %, 21 porcentajes con decimales, cambio de ajustes con un pago en curso, sin configuración.
+> - vitest, el navegador real contra la base local (clave capturada y quitada de la dirección; textos que cambian al cambiar los ajustes).
+> - Lo que **no** se ha podido comprobar en local y cubre esta sección contra producción: 3-D Secure, el formulario real de Stripe Elements, las funciones desplegadas de verdad y el Pixel de Meta.
 
 ## Criterio de GO definitivo
 

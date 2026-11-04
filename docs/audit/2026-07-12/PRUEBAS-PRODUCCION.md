@@ -1664,6 +1664,23 @@ Requisitos previos (acciones tuyas, ver el informe de la tarea): migración `202
 
 ---
 
+## Sección 31 — Logo vectorial sin fondo (2026-11-04)
+
+El logo de GarSer.es de la web ya no es un PNG con recuadro blanco: es el SVG vectorial (`/garser-logo.svg`), transparente y nítido a cualquier tamaño. Lo pinta un único componente (`GarserLogo`), así que sale igual en el encabezado, `/auth`, las páginas legales y la invitación de empleado.
+
+Requisitos previos: solo el despliegue del front en Vercel (sin migraciones ni funciones). Si tu navegador conserva la web antigua, recarga a fondo (Cmd+Shift+R) antes de juzgar.
+
+- [ ] **31.1 — Encabezado.** Abre garser.es sin sesión y, después, con sesión iniciada. ✅ Arriba a la izquierda se ve el logo nítido: «GarSer» oscuro, «.es» verde y la curva verde debajo, **sin recuadro blanco** alrededor. ❌ Borroso, pixelado o con un rectángulo blanco: sigue saliendo el PNG antiguo (recarga a fondo, o el despliegue no es el último).
+- [ ] **31.2 — Acceso.** Abre `/auth` (iniciar sesión y «Crea tu cuenta»). ✅ Logo grande, nítido, sin sombra ni recuadro.
+- [ ] **31.3 — Páginas legales.** Abre `/privacidad` y `/terminos`. ✅ El mismo logo arriba a la izquierda.
+- [ ] **31.4 — Móvil.** Con el móvil (o el navegador a 375 px de ancho) abre `/` y `/auth`. ✅ Logo completo, sin cortarse ni desplazar la página en horizontal; en `/` queda hueco entre el logo y los botones «Contacto y ayuda» y «Acceder».
+- [ ] **31.5 — Nitidez.** Aumenta el zoom al 300 % (Cmd/Ctrl y «+») o mira desde una pantalla retina. ✅ Los bordes siguen limpios: es vector.
+- [ ] **31.6 — Archivo directo.** Abre `https://garser.es/garser-logo.svg`. ✅ Se ve el logo (no un 404).
+
+> **Comprobado ya en local (2026-11-04):** `GarserLogo.test.tsx` (4 tests: apunta al SVG y el archivo existe, el SVG solo tiene trazados y ningún fondo, reserva el hueco de la imagen, texto de respaldo si falla); en el navegador, `/`, `/auth`, `/privacidad` y `/invitacion` cargan `garser-logo.svg` sin errores de consola; sobre un fondo verde el logo nuevo es transparente y el PNG antiguo enseñaba su recuadro blanco; a 375 px no hay desplazamiento horizontal. **No** comprobado: el `Navbar` con sesión iniciada (mismo componente, mismas clases y fondo blanco que el encabezado público).
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

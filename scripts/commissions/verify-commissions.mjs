@@ -4,15 +4,15 @@
 //   supabase functions serve --workdir "$(pwd)"   # en otra terminal
 //   node scripts/commissions/verify-commissions.mjs
 //
-// ESTADO: escrito junto con las migraciones 20261102*, pero NO EJECUTADO todavía: la máquina donde se
-// escribió tenía Docker sin responder, así que no había pila local. Las migraciones y toda la lógica
-// SQL sí se han probado (scripts/commissions/pglite-sql-tests.mjs); lo que este script añade es
-// comprobar la unión real con las edge functions y con Stripe. Si algún escenario falla, mirar primero
-// si es un fallo del propio script antes de culpar a la funcionalidad.
+// ESTADO: ejecutado contra la pila local (2026-11-04) tras añadir la clave del enlace (migración
+// 20261104130000). Este script cubre el motor de comisiones y su unión con booking-authority y con la
+// creación del PaymentIntent; el dinero REAL en Stripe (capturar, liberar, devolver, tarjetas que fallan,
+// webhooks) lo prueba scripts/commissions/verify-commissions-stripe.mjs.
 //
 // Escenarios (ver docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md, sección 29):
 //   A  primera reserva de un cliente captado por GarSer → 12,5 %, Stripe por ese importe, instantánea y origen
-//   B  primera reserva por el enlace del profesional → 0 €, sin Stripe, origen «enlace»
+//   B  primera reserva por el enlace del profesional (con su CLAVE) → 0 €, sin Stripe, origen «enlace»;
+//      sin clave, con una falsa, con la de otro profesional o con una cambiada → paga como cliente de GarSer
 //   C  reserva posterior (GarSer) → 3 %; el cliente no puede declararse «enlace» después
 //   D  reserva posterior de un cliente del enlace → 0 %
 //   E  visita de un plan → 3 % (también para un cliente del enlace)
@@ -41,7 +41,9 @@ const INPUT = {
   addressCoordinates: { lat: 36.51, lng: -4.882 },
 };
 const CAPS = { clientCapabilities: { feeWaiver: 1 } };
-const LINK = { bookingOrigin: 'provider_link', originProviderId: PROVIDER_ID };
+// La clave del enlace del profesional (la lee main() con su sesión, como hace la web).
+const LINK = { bookingOrigin: 'provider_link', originProviderId: PROVIDER_ID, originLinkCode: '' };
+const NO_KEY = { bookingOrigin: 'provider_link', originProviderId: PROVIDER_ID };
 const COLUMNS = ['rate_garser_first', 'rate_link_first', 'rate_garser_repeat', 'rate_maintenance_visit', 'rate_link_repeat'];
 
 const created = { bookings: new Set(), attempts: new Set(), quotes: new Set(), plans: new Set(), users: new Set() };
@@ -97,13 +99,20 @@ const readConfig = () => sql(`select ${COLUMNS.join(', ')} from public.commissio
 const setRates = (values) => sql(`update public.commission_settings set ${COLUMNS.map((c, i) => `${c} = ${values[i]}`).join(', ')} where id = 1`);
 const configVersion = () => Number(sql('select version from public.commission_settings where id = 1'));
 
-function pickDate() {
-  const date = sql(`select date::text from public.availability
+// Cada reserva que se PAGA ocupa su hueco (varias horas): para que no se pisen, cada una va en un día distinto.
+function pickDates(count) {
+  const dates = sql(`select date::text from public.availability
     where gardener_id='${PROVIDER_ID}' and date >= current_date + 3
     group by date having count(*) filter (where is_available) >= 10
-    order by date limit 1`);
-  if (!date) throw new Error('No hay ningún día con 10+ horas libres a partir de dentro de 3 días.');
-  return date;
+    order by date limit ${count}`).split('\n').filter(Boolean);
+  if (dates.length < count) throw new Error(`Hacen falta ${count} días con 10+ horas libres a partir de dentro de 3 días y hay ${dates.length}.`);
+  return dates;
+}
+async function firstValidHour(date) {
+  const vh = await authority({ action: 'valid_hours', serviceId: LAWN, providerId: PROVIDER_ID, date, bookingInput: INPUT, ...CAPS });
+  const hours = vh.body?.validHours ?? [];
+  if (!hours.length) throw new Error(`El ${date} no tiene ninguna hora válida.`);
+  return hours[0];
 }
 
 async function quoteFor({ token, date, hour, extra = {} }) {
@@ -146,13 +155,20 @@ async function main() {
   try {
     setRates([12.5, 0, 3, 3, 0]); // los valores iniciales del sistema
     const gardenerToken = await signIn(GARDENER_EMAIL);
-    const date = pickDate();
+    const myLink = await rpc('my_booking_link', {}, gardenerToken);
+    LINK.originLinkCode = myLink.body?.code ?? '';
+    record('B0', 'El profesional tiene su enlace con clave (32 hex) y es el suyo', /^[0-9a-f]{32}$/.test(LINK.originLinkCode) && myLink.body?.providerId === PROVIDER_ID, `${myLink.status}`);
+    const [date, dateF, dateB, dateC] = pickDates(4);
     const vh = await authority({ action: 'valid_hours', serviceId: LAWN, providerId: PROVIDER_ID, date, bookingInput: INPUT, ...CAPS });
     const hours = vh.body?.validHours ?? [];
     if (hours.length < 6) throw new Error(`El ${date} no tiene 6 horas válidas: ${JSON.stringify(hours)}`);
     // Las horas que se PAGAN (cada una bloquea su hueco) son distintas; los presupuestos que no se pagan
     // comparten la última (pedir un presupuesto no reserva nada).
-    const [hA, hF, hB, hC] = hours;
+    const hA = hours[0];
+    const hF = await firstValidHour(dateF);
+    const hB = await firstValidHour(dateB);
+    const hC = await firstValidHour(dateC);
+    // Lo que NO se paga (solo pedir presupuesto) no bloquea nada: comparte la última hora del primer día.
     const hQ = hours[hours.length - 1];
     console.log(`Día de prueba ${date}; horas ${hours.join(',')}\n`);
     const garser = await signUpTempClient('garser');
@@ -183,7 +199,7 @@ async function main() {
     }
 
     // ── F · un cambio de configuración (con la reserva A ya hecha y un presupuesto en curso) ─────
-    const fPending = await quoteFor({ token: linked.token, date, hour: hF, extra: CAPS }); // firmado ANTES del cambio
+    const fPending = await quoteFor({ token: linked.token, date: dateF, hour: hF, extra: CAPS }); // firmado ANTES del cambio
     setRates([20, 0, 4, 3, 0]);
     // Un cliente NUEVO (aún sin reservas con este profesional) → «primera reserva (GarSer)» al 20 % nuevo.
     const fNewClient = await signUpTempClient('cambio');
@@ -192,6 +208,7 @@ async function main() {
       fNew.body?.economics?.commission?.rule === 'garser_first' && fNew.body.economics.commission.rateBps === 2000
       && fNew.body.economics.commission.configVersion === configVersion(),
       JSON.stringify(fNew.body?.economics?.commission));
+    if (!fPending.body?.quoteId) console.log('   (aviso) el presupuesto previo al cambio no se firmó:', fPending.status, JSON.stringify(fPending.body).slice(0, 220));
     const fPendingFee = fPending.body?.economics?.managementFee;
     const fPendingPrep = await prepare(linked.token, fPending.body?.quoteId);
     record('F2', 'El presupuesto firmado ANTES del cambio se puede pagar con el porcentaje con el que se firmó',
@@ -204,7 +221,7 @@ async function main() {
     setRates([12.5, 0, 3, 3, 0]);
 
     // ── B · primera reserva por el enlace del profesional ───────────────────────────
-    const bQuote = await quoteFor({ token: linked.token, date, hour: hB, extra: { ...CAPS, ...LINK } });
+    const bQuote = await quoteFor({ token: linked.token, date: dateB, hour: hB, extra: { ...CAPS, ...LINK } });
     const bEcon = bQuote.body?.economics;
     record('B1', 'Por el enlace: regla link_first al 0 %, sin gastos y con motivo',
       bEcon?.commission?.rule === 'link_first' && bEcon?.managementFee === 0 && bEcon?.payableNow === 0 && bEcon?.feeWaiver?.reason === 'provider_link',
@@ -218,10 +235,39 @@ async function main() {
     record('B3', 'Un doble envío no duplica la reserva', bAgain.body?.attempt?.bookingId === bBooking
       && sql(`select count(*) from public.bookings where pricing_context->>'quote_id'='${bQuote.body.quoteId}'`) === '1');
 
+    // ── B4+ · la clave del enlace: sin ella, falsa, de otro profesional o antigua, NO exime ─────────
+    const payFee = (q) => q.body?.economics?.commission?.rule === 'garser_first' && q.body.economics.managementFee > 0
+      && q.body.economics.commission.claimedOrigin === 'provider_link' && q.body.economics.commission.linkClaim === 'rejected';
+    const bNoKey = await quoteFor({ token: (await signUpTempClient('sin-clave')).token, date, hour: hQ, extra: { ...CAPS, ...NO_KEY } });
+    record('B4', 'El enlace SIN clave no exime: paga el 12,5 % y se anota «rechazado»', payFee(bNoKey), JSON.stringify(bNoKey.body?.economics?.commission));
+    const bFake = await quoteFor({ token: (await signUpTempClient('clave-falsa')).token, date, hour: hQ, extra: { ...CAPS, ...NO_KEY, originLinkCode: '0'.repeat(32) } });
+    record('B5', 'Una clave inventada no exime', payFee(bFake), JSON.stringify(bFake.body?.economics?.commission));
+    const bBad = await quoteFor({ token: (await signUpTempClient('clave-rara')).token, date, hour: hQ, extra: { ...CAPS, ...NO_KEY, originLinkCode: "x'; drop table bookings;--" } });
+    record('B6', 'Una clave mal formada no exime (ni rompe nada)', payFee(bBad) && sql('select to_regclass(\'public.bookings\') is not null') === 't', JSON.stringify(bBad.body?.economics?.commission));
+    const otherCode = sql(`select coalesce((select code from public.provider_booking_links where provider_id <> '${PROVIDER_ID}' limit 1), '${'f'.repeat(32)}')`);
+    const bOther = await quoteFor({ token: (await signUpTempClient('clave-ajena')).token, date, hour: hQ, extra: { ...CAPS, ...NO_KEY, originLinkCode: otherCode } });
+    record('B7', 'La clave de OTRO profesional no vale con éste', payFee(bOther), JSON.stringify(bOther.body?.economics?.commission));
+    const bUpper = await quoteFor({ token: (await signUpTempClient('clave-mayus')).token, date, hour: hQ, extra: { ...CAPS, ...NO_KEY, originLinkCode: LINK.originLinkCode.toUpperCase() } });
+    record('B8', 'La clave en mayúsculas (como la copiaría un cliente) sí vale: SQL la compara en minúsculas', bUpper.body?.economics?.commission?.linkClaim === 'verified' && bUpper.body?.economics?.managementFee === 0, JSON.stringify(bUpper.body?.economics?.commission));
+    const rotated = await rpc('rotate_my_booking_link', {}, gardenerToken);
+    const newCode = rotated.body?.code ?? '';
+    const bOld = await quoteFor({ token: (await signUpTempClient('clave-vieja')).token, date, hour: hQ, extra: { ...CAPS, ...NO_KEY, originLinkCode: LINK.originLinkCode } });
+    const bNew = await quoteFor({ token: (await signUpTempClient('clave-nueva')).token, date, hour: hQ, extra: { ...CAPS, ...NO_KEY, originLinkCode: newCode } });
+    record('B9', 'Al cambiar la clave, la antigua deja de eximir y la nueva exime', /^[0-9a-f]{32}$/.test(newCode) && newCode !== LINK.originLinkCode && payFee(bOld)
+      && bNew.body?.economics?.commission?.linkClaim === 'verified' && bNew.body.economics.managementFee === 0,
+      `${JSON.stringify(bOld.body?.economics?.commission)} | ${JSON.stringify(bNew.body?.economics?.commission)}`);
+    LINK.originLinkCode = newCode;
+    const aKey = await rest('provider_booking_links?select=*', { token: garser.token });
+    record('B10', 'Ningún cliente puede leer las claves por la API REST', !aKey.ok || (Array.isArray(aKey.body) && aKey.body.length === 0), `${aKey.status}`);
+    const aKeyRpc = await rpc('my_booking_link', {}, garser.token);
+    record('B11', 'Quien no es profesional no obtiene ninguna clave', !aKeyRpc.ok || !aKeyRpc.body?.code, `${aKeyRpc.status} ${JSON.stringify(aKeyRpc.body).slice(0, 100)}`);
+
     // ── C/D · reservas posteriores ──────────────────────────────────────────────────
     if (aBooking && bBooking) {
-      sql(`update public.bookings set status = 'completed' where id in ('${aBooking}', '${bBooking}')`);
-      const cQuote = await quoteFor({ token: garser.token, date, hour: hC, extra: CAPS });
+      // La máquina de estados real (pending → confirmed → completed) no deja saltar de golpe: aquí solo hace
+      // falta el DATO «ya contrató», así que se salta esa comprobación en este UPDATE.
+      sql(`set session_replication_role = replica; update public.bookings set status = 'completed' where id in ('${aBooking}', '${bBooking}')`);
+      const cQuote = await quoteFor({ token: garser.token, date: dateC, hour: hC, extra: CAPS });
       record('C1', 'Cliente de GarSer que repite: regla garser_repeat al 3 %', cQuote.body?.economics?.commission?.rule === 'garser_repeat' && cQuote.body?.economics?.commission?.rateBps === 300,
         JSON.stringify(cQuote.body?.economics?.commission));
       const cClaim = await quoteFor({ token: garser.token, date, hour: hQ, extra: { ...CAPS, ...LINK } });

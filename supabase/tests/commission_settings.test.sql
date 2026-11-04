@@ -421,8 +421,11 @@ BEGIN
   UPDATE public.bookings SET status = 'cancelled' WHERE id = v_booking;
   r := public.resolve_booking_commission(v_cli, v_pro, NULL);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first', 'E10: una reserva cancelada cuenta como contratación');
-  -- Completada: ahora sí, y con relación GarSer → 3 %.
+  -- Completada: ahora sí, y con relación GarSer → 3 %. (En la base real la máquina de estados no deja pasar de
+  -- «cancelada» a «completada»; aquí solo hace falta el dato, así que se salta esa comprobación en este UPDATE.)
+  SET LOCAL session_replication_role = replica;
   UPDATE public.bookings SET status = 'completed' WHERE id = v_booking;
+  SET LOCAL session_replication_role = origin;
   r := public.resolve_booking_commission(v_cli, v_pro, NULL);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_repeat' AND (r ->> 'rateBps')::int = 300
     AND NOT (r ->> 'isFirstBooking')::boolean, 'E11: cliente de GarSer que repite: ' || r::text);

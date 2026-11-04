@@ -443,7 +443,9 @@ END;
 $$;
 
 -- ── 6) Quién puede ejecutar qué ──────────────────────────────────────────────────────────
-REVOKE ALL ON FUNCTION public.provider_link_code_matches(uuid, text) FROM PUBLIC, anon, authenticated;
+-- Ni siquiera service_role: solo la llaman las funciones del motor (SECURITY DEFINER, con los permisos de su dueño).
+-- En Supabase, service_role recibe EXECUTE por privilegios por defecto, así que hay que quitárselo a propósito.
+REVOKE ALL ON FUNCTION public.provider_link_code_matches(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.resolve_booking_commission(uuid, uuid, text, boolean, bigint, text, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.quote_commission_economics(jsonb, uuid, uuid, text, boolean, bigint, text, boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.resolve_booking_commission(uuid, uuid, text, boolean, bigint, text, boolean) TO service_role;

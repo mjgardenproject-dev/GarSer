@@ -2860,6 +2860,7 @@ export type Database = {
         Args: { p_email: string }
         Returns: Json
       }
+      admin_pending_review_counts: { Args: never; Returns: Json }
       admin_phyto_license_queue: { Args: never; Returns: Json }
       admin_provider_setup_overview: { Args: never; Returns: Json }
       admin_signup_methods: { Args: { p_days?: number }; Returns: Json }

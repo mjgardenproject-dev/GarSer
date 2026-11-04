@@ -1643,6 +1643,27 @@ Rellena esto antes de empezar y ten la tabla a mano:
 > - vitest, el navegador real contra la base local (clave capturada y quitada de la dirección; textos que cambian al cambiar los ajustes).
 > - Lo que **no** se ha podido comprobar en local y cubre esta sección contra producción: 3-D Secure, el formulario real de Stripe Elements, las funciones desplegadas de verdad y el Pixel de Meta.
 
+## Sección 30 — Avisos al administrador (2026-11-04)
+
+Cada novedad que espera la revisión del administrador avisa **por correo** y **por notificación al móvil** a todas las cuentas de administrador, y aparece como número rojo en el menú del panel.
+
+Requisitos previos (acciones tuyas, ver el informe de la tarea): migración `20261104150000` aplicada, `send-email-notification` redesplegada con `--use-api`, y en tu cuenta de administrador **Mi cuenta → Notificaciones activadas** en el móvil.
+
+- [ ] **30.1 — Solicitud de jardinero.** Con una cuenta de prueba, envía una solicitud de alta de jardinero. ✅ En 1-2 minutos llega a **todos** los correos de administrador «Nueva solicitud de jardinero para revisar» con nombre, zona, servicios y experiencia, y un botón que abre **Admin → Usuarios**. ✅ Llega también la notificación al móvil (si la activaste). ✅ «Usuarios» muestra un número rojo.
+- [ ] **30.2 — Una sola vez.** Edita la solicitud ya enviada (sin cambiar de estado) y recarga el panel. ✅ **No** llega un segundo correo.
+- [ ] **30.3 — Reenvío tras corregir.** Rechaza la solicitud con un motivo; con la cuenta de prueba, corrígela y reenvíala. ✅ Llega un **nuevo** aviso (es otra revisión).
+- [ ] **30.4 — Solicitud de empresa.** Envía una solicitud de alta de empresa. ✅ Llega «Nueva solicitud de empresa para revisar» con nombre comercial, contacto y servicios; el botón abre **Admin → Usuarios**.
+- [ ] **30.5 — Carnet fitosanitario.** Sube un carnet (propio y, aparte, uno de un empleado desde una empresa). ✅ Llega «Nuevo carnet fitosanitario para revisar» (titular, quién lo envía, caducidad); el botón abre **Certificados Fito.**; el menú muestra el número.
+- [ ] **30.6 — Incidencia.** Abre una incidencia desde una reserva. ✅ Llega «Nueva incidencia para revisar» con quién la abre, el motivo y un extracto del texto; el botón abre **Incidencias**. ✅ El aviso que ya recibía la otra parte sigue llegando igual.
+- [ ] **30.7 — Lo ya resuelto no avisa.** Aprueba la solicitud o el carnet **antes** de que llegue el correo (o desactiva el reloj un minuto). ✅ El correo no llega (el estado se comprueba al enviar). ✅ En el resumen «Pendiente ahora» de cada correo, los números coinciden con los del menú.
+- [ ] **30.8 — Los números del menú bajan.** Aprueba o rechaza una solicitud y navega a otra sección del panel. ✅ El número rojo baja sin recargar a mano.
+- [ ] **30.9 — Nada se rompe si el aviso falla.** (Solo lectura) En el registro de la función, ✅ ningún error `admin_review_needed no se pudo apuntar` durante las pruebas anteriores.
+- [ ] **30.10 — Privacidad.** ✅ El correo **no** incluye teléfono, dirección completa ni el documento del carnet; solo lo necesario para decidir si hay que entrar a revisar. ✅ Un cliente o un profesional (no administrador) que llame a `admin_pending_review_counts` recibe error de permisos.
+
+> **Comprobado ya en local (2026-11-04):** SQL en Postgres real (`supabase/tests/admin_review_notifications.test.sql`: avisos por cada tabla, sin duplicados, reenvío, un fallo al apuntar no tumba la acción, contadores solo para administradores); 24 tests del texto y la lectura de datos; cadena completa trigger → cola → campana → `notification-dispatch` → `send-email-notification` (3 administradores × 2 avisos, correo simulado); contadores del menú con y sin la función en la base. **No** comprobado en local: el envío real por Brevo (SMTP) y la notificación al móvil (necesitan los secretos de producción).
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

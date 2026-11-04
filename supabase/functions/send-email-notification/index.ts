@@ -39,6 +39,8 @@ import { invitationEmailCopy } from '../_shared/companyEmailCopy.ts';
 import { companyLicenseEmailCopy, holderLicenseEmailCopy, licenseRequestEmailCopy, type LicenseEmailCopy, type LicenseEvent, type LicenseHolderKind } from '../_shared/licenseEmailCopy.ts';
 import { isInternalServiceCaller, presentedToken } from '../_shared/functionAuth.ts';
 import { pushForEmail } from '../_shared/pushDelivery.ts';
+import { adminReviewEmailCopy, isAdminReviewKind } from '../_shared/adminReviewEmailCopy.ts';
+import { loadAdminRecipients, loadAdminReviewItem, loadPendingCounts } from '../_shared/adminReviewNotification.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -93,7 +95,11 @@ type EmailType =
   // la cola del servidor; el estado se comprueba otra vez al enviar.
   | 'phyto_license_update'
   | 'member_phyto_license_update'
-  | 'phyto_license_requested';
+  | 'phyto_license_requested'
+  // Avisos al ADMINISTRADOR (2026-11-04): algo espera su revisión (solicitud de alta de jardinero o de
+  // empresa, carnet fitosanitario, incidencia). Solo desde la cola del servidor; los destinatarios
+  // salen de la base de datos y el estado se comprueba otra vez al enviar.
+  | 'admin_review_needed';
 
 interface EmailPayload {
   /**
@@ -126,6 +132,9 @@ interface EmailPayload {
   memberId?: string;
   /** Carnet fitosanitario: el carnet y qué le ha pasado (approved, rejected, expiring, expired…). */
   licenseId?: string;
+  /** admin_review_needed: qué es (gardener_application, company_application, phyto_license, incident) y su id. */
+  kind?: string;
+  itemId?: string;
   event?: string;
   data?: {
     name?: string;
@@ -733,6 +742,74 @@ Deno.serve(async (req) => {
       }
       await pushForEmail(admin, recipientEmail, copy.subject, copy.intro, licenseOpts.cta?.url);
       return new Response(JSON.stringify({ success: true, sent: 1, mock: !SMTP_USER || !SMTP_PASS }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'admin_review_needed') {
+      // Algo espera la revisión del administrador. Solo desde la cola del servidor (notification-dispatch):
+      // quien lo pida no elige destinatario ni contenido, solo «qué novedad» (tipo + id), y todo se vuelve
+      // a leer de la base de datos.
+      if (!admin) {
+        throw new Error('Faltan secretos de Supabase para autorizar la llamada.');
+      }
+      if (!isInternalServiceCaller(req)) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const reviewKind = String(payload.kind || '');
+      if (!isAdminReviewKind(reviewKind)) {
+        // Un tipo que no existe no se arregla reintentando: 4xx y la cola lo da por perdido.
+        return new Response(JSON.stringify({ error: 'invalid_review_kind' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const reviewItem = await loadAdminReviewItem(admin, reviewKind, String(payload.itemId || ''));
+      if (!reviewItem) {
+        // Ya está resuelto (o no existe): no se avisa de algo que no espera a nadie.
+        return new Response(JSON.stringify({ success: true, skipped: 'no_longer_pending' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const reviewRecipients = await loadAdminRecipients(admin);
+      if (reviewRecipients.length === 0) {
+        return new Response(JSON.stringify({ success: true, skipped: 'no_admin_recipients' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const reviewCopy = adminReviewEmailCopy({ item: reviewItem, counts: await loadPendingCounts(admin) });
+      const reviewOpts: Parameters<typeof renderBrandedEmail>[0] = {
+        title: reviewCopy.subject,
+        heading: reviewCopy.heading,
+        intro: reviewCopy.intro,
+        bodyHtml: detailRows(reviewCopy.pairs),
+        cta: { label: reviewCopy.ctaLabel, url: `${BRAND.site}${reviewCopy.ctaPath}` },
+        footerNote: reviewCopy.footerNote,
+      };
+      const reviewHtml = renderBrandedEmail(reviewOpts);
+      const reviewText = renderPlainText({ ...reviewOpts, detailPairs: reviewCopy.pairs });
+      let reviewSent = 0;
+      let reviewFirstError = '';
+      for (const recipient of reviewRecipients) {
+        try {
+          if (!SMTP_USER || !SMTP_PASS) {
+            console.log('MOCK EMAIL SEND (faltan SMTP_USER/SMTP_PASS):', { to: recipient.email, type, subject: reviewCopy.subject });
+          } else {
+            const sent = await sendViaBrevo({ to: recipient.email, subject: reviewCopy.subject, html: reviewHtml, text: reviewText, smtpUser: SMTP_USER, smtpPass: SMTP_PASS });
+            if (!sent.ok) throw new Error(sent.error || 'Error sending email via Brevo');
+          }
+          reviewSent += 1;
+        } catch (error) {
+          reviewFirstError = reviewFirstError || (error instanceof Error ? error.message : String(error));
+          console.error('admin_review_needed: no se pudo mandar el correo a un administrador:', reviewFirstError);
+        }
+        // La notificación al móvil es independiente del correo: si el correo falla, igualmente se intenta.
+        await pushForEmail(admin, recipient.email, reviewCopy.subject, reviewCopy.intro, reviewOpts.cta?.url);
+      }
+      // Si no salió NINGÚN correo, es un fallo (la cola reintenta). Si salió a alguno, la novedad ya está avisada.
+      if (reviewSent === 0) {
+        throw new Error(reviewFirstError || 'No se pudo avisar a ningún administrador.');
+      }
+      return new Response(JSON.stringify({ success: true, sent: reviewSent, mock: !SMTP_USER || !SMTP_PASS }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } else if (type === 'company_member_joined' || type === 'member_schedule_published') {

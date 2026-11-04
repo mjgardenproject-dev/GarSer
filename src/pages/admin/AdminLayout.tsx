@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Leaf, 
@@ -16,24 +16,46 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
+import { parseAdminPendingCounts, pendingApplications, type AdminPendingCounts } from '../../components/admin/adminPendingCounts';
 
 const AdminLayout: React.FC = () => {
   const { user, signOut } = useAuth();
-  const [openIncidents, setOpenIncidents] = useState(0);
+  const { pathname } = useLocation();
+  const [pending, setPending] = useState<AdminPendingCounts | null>(null);
+  const [fallbackIncidents, setFallbackIncidents] = useState(0);
 
-  // Sin este contador la sección es invisible hasta que a alguien se le ocurre mirar: es dinero
-  // de un cliente esperando, no algo que deba depender de que el admin lo recuerde por su cuenta.
+  // Sin estos contadores las secciones son invisibles hasta que a alguien se le ocurre mirar: son
+  // altas de profesionales, carnets e incidencias (dinero de un cliente) esperando al administrador.
+  // Se piden al entrar, al moverse por el panel (tras revisar algo el número baja) y al volver a la
+  // pestaña. El correo y la notificación al móvil avisan sin necesidad de tener el panel abierto.
   useEffect(() => {
     let alive = true;
-    (async () => {
+    const load = async () => {
+      const { data, error } = await supabase.rpc('admin_pending_review_counts');
+      const parsed = error ? null : parseAdminPendingCounts(data);
+      if (!alive) return;
+      if (parsed) {
+        setPending(parsed);
+        return;
+      }
+      // La función aún no está en la base (la web se despliega antes que la migración) o falló:
+      // al menos las incidencias, como antes.
       const { count } = await supabase
         .from('booking_incidents')
         .select('id', { count: 'exact', head: true })
         .in('status', ['open', 'in_review']);
-      if (alive) setOpenIncidents(count || 0);
-    })();
-    return () => { alive = false; };
-  }, []);
+      if (alive) setFallbackIncidents(count || 0);
+    };
+    void load();
+    const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [pathname]);
+
+  const openIncidents = pending ? pending.incidents : fallbackIncidents;
 
   // Mismo cierre que el resto de la web: solo este dispositivo (R-06) y limpieza del almacenamiento.
   const handleLogout = async () => {
@@ -50,8 +72,9 @@ const AdminLayout: React.FC = () => {
     // Quién sale a los clientes y qué le falta a cada uno (completar la cuenta profesional).
     { to: '/admin/providers', icon: UserCheck, label: 'Profesionales' },
     { to: '/admin/services', icon: Briefcase, label: 'Servicios' },
-    { to: '/admin/phytosanitary', icon: Leaf, label: 'Certificados Fito.' },
-    { to: '/admin/users', icon: Users, label: 'Usuarios' },
+    { to: '/admin/phytosanitary', icon: Leaf, label: 'Certificados Fito.', badge: pending?.licenses ?? 0 },
+    // Solicitudes de alta (jardineros y empresas) pendientes de aprobar.
+    { to: '/admin/users', icon: Users, label: 'Usuarios', badge: pending ? pendingApplications(pending) : 0 },
     // Lo que cobra GarSer en cada tipo de reserva (antes un interruptor dentro de Configuración).
     { to: '/admin/commissions', icon: Percent, label: 'Comisiones' },
     { to: '/admin/settings', icon: Settings, label: 'Configuración' },

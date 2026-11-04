@@ -43,6 +43,12 @@ export interface BookingData {
   serviceInputs?: Record<string, Record<string, unknown>>;
   restrictedGardenerId?: string;
   /**
+   * La clave del enlace del profesional al que está ligada la reserva (garser.es/reservar/<id>?c=<clave>).
+   * Sin ella el enlace sigue abriendo su perfil, pero la reserva no cuenta como «cliente del
+   * profesional»: el servidor la rechaza. Solo se envía junto con `restrictedGardenerId`.
+   */
+  providerLinkCode?: string;
+  /**
    * GarSer Empresas (F9): se está pagando la visita propuesta de un plan de mantenimiento. Su
    * presupuesto tiene el precio fijo del plan (D19): no se rehace ni se cambia de hora aquí.
    */

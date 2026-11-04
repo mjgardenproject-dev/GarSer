@@ -4,7 +4,16 @@ import { MemoryRouter } from 'react-router-dom';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { gardenersContent, gardenersFaqs } from '../../config/publicSiteContent';
+import { gardenersFaqs } from '../../config/billingCopy';
+import { gardenersContent, generalHomeContent, pageSeo } from '../../config/publicSiteContent';
+import type { PublicBillingTerms } from '../../shared/billingTerms';
+
+const billing = vi.hoisted(() => ({ terms: null as PublicBillingTerms | null }));
+vi.mock('../../hooks/usePublicBillingTerms', () => ({ usePublicBillingTerms: () => billing.terms }));
+
+const TERMS: PublicBillingTerms = {
+  version: 1, garserFirst: 'standard', linkFirst: 'none', garserRepeat: 'reduced', linkRepeat: 'none', maintenanceVisit: 'reduced',
+};
 
 const navigateMock = vi.fn();
 const seoHeadMock = vi.fn();
@@ -38,6 +47,7 @@ describe('GardenersLandingPage', () => {
     cleanup();
     navigateMock.mockClear();
     seoHeadMock.mockClear();
+    billing.terms = null;
   });
 
   it('«Crear mi cuenta gratis» lleva al registro con el rol de jardinero', async () => {
@@ -90,8 +100,9 @@ describe('GardenersLandingPage', () => {
     renderPage();
 
     const faqSection = screen.getByRole('heading', { name: 'Preguntas frecuentes' }).closest('section') as HTMLElement;
-    expect(gardenersFaqs).toHaveLength(7);
-    for (const faq of gardenersFaqs) {
+    const faqs = gardenersFaqs(null);
+    expect(faqs).toHaveLength(7);
+    for (const faq of faqs) {
       expect(within(faqSection).getByText(faq.question)).toBeTruthy();
     }
 
@@ -101,11 +112,60 @@ describe('GardenersLandingPage', () => {
   });
 
   it('no vuelve a prometer lo que la app no hace (cobro online, 12,5 %, «portal»)', () => {
-    const visibleCopy = JSON.stringify([gardenersContent, gardenersFaqs]).toLowerCase();
+    const visibleCopy = JSON.stringify([gardenersContent, gardenersFaqs(null), gardenersFaqs(TERMS)]).toLowerCase();
 
     expect(visibleCopy).not.toContain('12,5');
     expect(visibleCopy).not.toContain('cobras por la plataforma');
     expect(visibleCopy).not.toContain('se gestiona online');
     expect(visibleCopy).not.toContain('portal');
+  });
+
+  describe('lo que dice de los gastos de gestión sale de los ajustes', () => {
+    it('sin saberlos (cargando o error) no promete nada: textos neutros', () => {
+      billing.terms = null;
+      renderPage();
+      const main = screen.getByRole('main').textContent ?? '';
+      expect(main).toContain('Tus clientes reservan directamente contigo');
+      expect(main).toContain('Para ti es gratis. Los gastos de gestión, los paga el cliente.');
+      expect(main).not.toMatch(/sin gastos de gestión|no pagan gastos|deja de pagar|sin comisión/i);
+      expect(document.getElementById('quien-paga')).not.toBeNull();
+    });
+
+    it('con los ajustes de fábrica: los clientes del enlace no pagan, salvo en planes; los de vuelta de GarSer pagan menos', () => {
+      billing.terms = TERMS;
+      renderPage();
+      const main = screen.getByRole('main').textContent ?? '';
+      expect(main).toContain('Tus clientes reservan sin gastos de gestión (salvo en planes de mantenimiento)');
+      expect(main).toContain('Las visitas de un plan de mantenimiento sí llevan gastos de gestión.');
+      expect(main).toContain('paga menos gastos de gestión');
+      expect(main).not.toContain('deja de pagar gastos de gestión');
+    });
+
+    it('cuando cambian los ajustes cambia el texto (y el JSON-LD de las preguntas)', () => {
+      billing.terms = { ...TERMS, garserRepeat: 'none', maintenanceVisit: 'none' };
+      renderPage();
+      const main = screen.getByRole('main').textContent ?? '';
+      expect(main).toContain('Para ti es gratis. Para tus clientes, sin gastos de gestión.');
+      expect(main).toContain('deja de pagar gastos de gestión');
+      const { jsonLd } = seoHeadMock.mock.calls[seoHeadMock.mock.calls.length - 1]?.[0] as {
+        jsonLd: Array<{ '@type': string; mainEntity?: Array<{ acceptedAnswer: { text: string } }> }>;
+      };
+      const answers = jsonLd.find((entry) => entry['@type'] === 'FAQPage')?.mainEntity?.map((q) => q.acceptedAnswer.text) ?? [];
+      expect(answers).toEqual(gardenersFaqs(billing.terms).map((f) => f.answer));
+    });
+
+    it('si los ajustes dicen que se cobra a todos, la página no presume de lo contrario', () => {
+      billing.terms = { ...TERMS, linkFirst: 'standard', linkRepeat: 'standard', garserRepeat: 'standard', maintenanceVisit: 'standard' };
+      renderPage();
+      const main = screen.getByRole('main').textContent ?? '';
+      expect(main).not.toMatch(/sin gastos de gestión|no pagan gastos|deja de pagar|sin comisión/i);
+      expect(main).toContain('Pagan gastos de gestión, aparte de tu precio.');
+    });
+  });
+
+  it('el texto fijo (SEO, portada, contenido estático) no puede prometer nada que dependa de los ajustes', () => {
+    // Lo fijo no cambia cuando cambian los ajustes: solo puede decir lo que es cierto siempre.
+    const fixed = JSON.stringify([gardenersContent, pageSeo, generalHomeContent]).toLowerCase();
+    expect(fixed).not.toMatch(/sin comisi[oó]n|sin gastos|gastos de gesti[oó]n|sin pagar comisi[oó]n/);
   });
 });

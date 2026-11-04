@@ -1,6 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  applyManagementFeeWaiver,
   buildAuthoritativeBookingQuote,
   type BookingAvailabilityCalendarDay,
   type BookingQuoteAvailability,
@@ -26,7 +25,13 @@ import {
 } from '../../../src/shared/bookingEligibilityCore.ts';
 import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
 import { validateManualSerializableInput } from '../../../src/shared/manualEntry/manualEntryValidation.ts';
-import { isManagementFeeWaiverReason, type ManagementFeeWaiverReason } from '../../../src/shared/bookingAmounts.ts';
+import {
+  applyCommission,
+  ClientUpdateRequiredError,
+  CommissionUnavailableError,
+  type CommissionRpcResult,
+} from '../../../src/shared/commissionEngine.ts';
+import { claimedOriginFor, linkCodeFor } from '../../../src/shared/commissionRules.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -101,6 +106,8 @@ interface AuthorityPayload {
    */
   bookingOrigin?: string;
   originProviderId?: string;
+  /** La clave del enlace del profesional (garser.es/reservar/<id>?c=<clave>). SQL la contrasta. */
+  originLinkCode?: string;
   /**
    * Qué sabe hacer la web que llama. `feeWaiver: 1` = sabe confirmar una reserva sin pago. Una web
    * antigua (app instalada sin actualizar) no lo manda y nunca recibe un presupuesto sin gastos.
@@ -111,52 +118,45 @@ interface AuthorityPayload {
 const FEE_WAIVER_CAPABILITY = 1;
 
 /**
- * Lanzamiento (2026-10): ¿este presupuesto va SIN gastos de gestión, y por qué? La regla vive en
- * SQL (`management_fee_waiver_reason`: interruptor del admin + enlace del profesional o cliente con
- * una reserva completada con él). Ante cualquier fallo se cobra la comisión, como siempre: nunca se
- * exime por error.
+ * Comisiones configurables (2026-11): la economía de este presupuesto con la comisión que le toca a
+ * este cliente con este profesional. La regla, el porcentaje y los céntimos los decide SQL
+ * (`quote_commission_economics`) con la configuración del administrador y datos de la base de datos.
+ * De la web solo viene el origen «enlace», y solo cuenta para el profesional del propio presupuesto y
+ * mientras el cliente no tenga ya un origen guardado con él. Sin una comisión válida no hay
+ * presupuesto: se lanza CommissionUnavailableError (503 recuperable), nunca se cobra un valor por defecto.
  */
-async function resolveFeeWaiverReason(
+async function withCommission<T extends { economics: QuotePreview['economics'] }>(
   admin: ReturnType<typeof createClient>,
+  quote: T,
   params: { payload: AuthorityPayload; clientId: string | null; providerId: string },
-): Promise<ManagementFeeWaiverReason | null> {
-  if (Number(params.payload.clientCapabilities?.feeWaiver || 0) < FEE_WAIVER_CAPABILITY) return null;
-  const claimedOrigin = params.payload.bookingOrigin === 'provider_link'
-    && String(params.payload.originProviderId || '').trim() === params.providerId
-    ? 'provider_link'
-    : null;
-  // Sin cliente (paso «Profesionales», sin sesión) solo puede contar el enlace.
-  if (!params.clientId && !claimedOrigin) return null;
-  const { data, error } = await admin.rpc('management_fee_waiver_reason', {
-    p_client_id: params.clientId,
-    p_provider_id: params.providerId,
-    p_claimed_origin: claimedOrigin,
-  });
-  if (error) {
-    console.error('management_fee_waiver_reason falló: se cobra la comisión', error);
-    return null;
-  }
-  return isManagementFeeWaiverReason(data) ? data : null;
+): Promise<T> {
+  const economics = await applyCommission(
+    (fn, args) => admin.rpc(fn, args) as unknown as PromiseLike<CommissionRpcResult>,
+    {
+      economics: quote.economics,
+      clientId: params.clientId,
+      providerId: params.providerId,
+      claimedOrigin: claimedOriginFor(params.payload, params.providerId),
+      // Sin la clave de ESE profesional, el enlace declarado se rechaza (y se anota): no exime.
+      linkCode: linkCodeFor(params.payload, params.providerId),
+      // Una web antigua (sin la capacidad) no sabe confirmar una reserva sin pago: nunca la recibe.
+      clientCanConfirmWithoutPayment: Number(params.payload.clientCapabilities?.feeWaiver || 0) >= FEE_WAIVER_CAPABILITY,
+    },
+  );
+  return { ...quote, economics };
 }
 
 /**
- * Lanzamiento (2026-10): quién mira la vista previa («Profesionales», calendario). Con sesión, el
- * cliente que repite ya ve «Sin gastos de gestión» ahí, igual que se firmará después. Sin sesión
- * (o una web que no sabe reservar sin pago), nadie: solo cuenta el enlace del profesional.
+ * Quién mira la vista previa («Profesionales», calendario): con sesión, la comisión sale ya
+ * personalizada (cliente que repite, origen guardado), igual que se firmará después. Sin sesión,
+ * como un cliente nuevo; solo cuenta el enlace del profesional declarado.
  */
 async function resolvePreviewClientId(
   admin: ReturnType<typeof createClient>,
   req: Request,
-  payload: AuthorityPayload,
 ): Promise<string | null> {
-  if (Number(payload.clientCapabilities?.feeWaiver || 0) < FEE_WAIVER_CAPABILITY) return null;
   return (await resolveUser(admin, req))?.id ?? null;
 }
-
-const withFeeWaiver = <T extends { economics: QuotePreview['economics'] }>(
-  quote: T,
-  reason: ManagementFeeWaiverReason | null,
-): T => (reason ? { ...quote, economics: applyManagementFeeWaiver(quote.economics, reason) } : quote);
 
 // F8: un servicio más de la visita, con la tarifa de un profesional para él.
 type ExtraService = { serviceId: string; serviceName?: string; bookingInput: SerializableBookingData; priceRow?: PriceRow };
@@ -752,7 +752,7 @@ Deno.serve(async (req: Request) => {
       });
       const planning = await fetchProviderPlanning(admin, providerIds);
       const noticeSettings = await fetchMinNoticeSettings(admin, providerIds);
-      const previewClientId = await resolvePreviewClientId(admin, req, payload);
+      const previewClientId = await resolvePreviewClientId(admin, req);
       const nowMs = Date.now();
 
       const quotes: Record<string, QuotePreview> = {};
@@ -794,12 +794,12 @@ Deno.serve(async (req: Request) => {
         };
       }
 
-      // Lanzamiento: cada tarjeta sale como se firmará. Sin gastos de gestión por el enlace del
-      // profesional o, con sesión, por ser cliente que repite con él.
-      const waiverReasons = await Promise.all(eligibleProviderIds.map((providerId) =>
-        resolveFeeWaiverReason(admin, { payload, clientId: previewClientId, providerId })));
-      eligibleProviderIds.forEach((providerId, index) => {
-        quotes[providerId] = withFeeWaiver(quotes[providerId], waiverReasons[index]);
+      // Cada tarjeta sale como se firmará: con la comisión que le toca a este cliente con ese
+      // profesional (primera reserva, cliente que repite, enlace) según la configuración vigente.
+      const quotesWithCommission = await Promise.all(eligibleProviderIds.map(async (providerId) =>
+        [providerId, await withCommission(admin, quotes[providerId], { payload, clientId: previewClientId, providerId })] as const));
+      quotesWithCommission.forEach(([providerId, quote]) => {
+        quotes[providerId] = quote;
       });
 
       return new Response(JSON.stringify({ quotes, earliestByProvider, eligibleProviderIds, exclusions }), {
@@ -859,13 +859,13 @@ Deno.serve(async (req: Request) => {
         if (plan) slotPlans[hour] = buildPlannedSlot(date, hour, plan);
       });
 
-      // Lanzamiento: este presupuesto sustituye al de la tarjeta; sale igual que se firmará.
-      const waiverReason = await resolveFeeWaiverReason(admin, {
-        payload, clientId: await resolvePreviewClientId(admin, req, payload), providerId,
+      // Este presupuesto sustituye al de la tarjeta; sale igual que se firmará.
+      const quoteWithCommission = await withCommission(admin, evaluation.quote, {
+        payload, clientId: await resolvePreviewClientId(admin, req), providerId,
       });
 
       return new Response(JSON.stringify({
-        quote: withFeeWaiver(evaluation.quote, waiverReason),
+        quote: quoteWithCommission,
         validHours: evaluation.validHoursForRequestedDate,
         slotPlans,
       }), {
@@ -943,14 +943,14 @@ Deno.serve(async (req: Request) => {
         cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
 
-      // Lanzamiento: este presupuesto sustituye al de la tarjeta; sale igual que se firmará.
-      const waiverReason = await resolveFeeWaiverReason(admin, {
-        payload, clientId: await resolvePreviewClientId(admin, req, payload), providerId,
+      // Este presupuesto sustituye al de la tarjeta; sale igual que se firmará.
+      const quoteWithCommission = await withCommission(admin, evaluation.quote, {
+        payload, clientId: await resolvePreviewClientId(admin, req), providerId,
       });
 
       return new Response(JSON.stringify({
         quote: {
-          ...withFeeWaiver(evaluation.quote, waiverReason),
+          ...quoteWithCommission,
           availability: buildAvailabilityContract({
             requestedDate: monthDate,
             windowEndDate: end,
@@ -1035,12 +1035,10 @@ Deno.serve(async (req: Request) => {
         earliestSlot: validHours.length > 0 ? plannedSlot(validHours[0]) : null,
       });
 
-      // Lanzamiento: la exención se aplica ANTES de firmar. La firma cubre la economía, y todo lo que
-      // viene después (intento de pago, reserva, emails) lee esta economía firmada.
-      const feeWaiverReason = await resolveFeeWaiverReason(admin, { payload, clientId: user.id, providerId });
-      const economics = feeWaiverReason
-        ? applyManagementFeeWaiver(evaluation.quote.economics, feeWaiverReason)
-        : evaluation.quote.economics;
+      // La comisión se fija ANTES de firmar, con la configuración vigente en este momento. La firma
+      // cubre la economía, y todo lo que viene después (intento de pago, reserva, emails) lee esta
+      // economía firmada: un cambio posterior en el panel no la toca.
+      const { economics } = await withCommission(admin, evaluation.quote, { payload, clientId: user.id, providerId });
 
       const ttlMinutes = Math.max(15, Math.min(24 * 60, Number(payload.ttlMinutes || 120)));
       const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
@@ -1149,6 +1147,14 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
+    // Sin una comisión válida se bloquea solo esta operación económica, con un error recuperable.
+    if (error instanceof CommissionUnavailableError) {
+      console.error('booking-authority: comisión no disponible', error.detail);
+      return buildErrorResponse(503, error.code, error.message);
+    }
+    if (error instanceof ClientUpdateRequiredError) {
+      return buildErrorResponse(409, error.code, error.message);
+    }
     // Log the real cause server-side (Supabase function logs); never echo raw
     // error text to the client to avoid leaking internals.
     console.error('booking-authority fatal error', error);

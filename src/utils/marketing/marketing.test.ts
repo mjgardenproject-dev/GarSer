@@ -30,6 +30,7 @@ const profile = (overrides: Partial<MarketingProfile> = {}): MarketingProfile =>
   avatarUrl: null,
   ratingAverage: 4.8,
   ratingCount: 12,
+  linkCode: '0123456789abcdef0123456789abcdef',
   ...overrides,
 });
 
@@ -127,27 +128,34 @@ describe('contenido', () => {
     const content = buildMarketingContent({
       profile: profile(),
       visibleServices: visible,
-      feeWaiverEnabled: false,
       options: { ...defaultOptions(profile(), visible, new Date('2026-07-01')), services: ['Poda de setos', 'Poda de árboles', 'Corte de césped'] },
       source: 'social',
     });
     expect(content.services).toEqual(['Poda de setos', 'Corte de césped']);
     expect(JSON.stringify(content)).not.toMatch(/€|\d+ ?euros/);
     expect(content.subtitle).toBe('Jardinería en Marbella');
-    expect(content.badge).toBeNull();
-    expect(content.qrUrl).toBe('https://garser.es/reservar/prov-123?utm_source=social');
+    expect(content.qrUrl).toBe(`https://garser.es/reservar/prov-123?c=${profile().linkCode}&utm_source=social`);
   });
 
-  it('el sello «Sin gastos de gestión» solo con el interruptor encendido', () => {
-    const options = defaultOptions(profile(), visible, new Date());
-    expect(buildMarketingContent({ profile: profile(), visibleServices: visible, feeWaiverEnabled: true, options, source: 'x' }).badge).toBe('Sin gastos de gestión');
+  it('NADA de lo que se imprime o se descarga habla de gastos de gestión, comisión o gratuidad (un papel no se corrige)', () => {
+    const options = defaultOptions(profile(), visible, new Date('2026-07-01'));
+    for (const kind of ['solo', 'company'] as const) {
+      const content = buildMarketingContent({ profile: profile({ kind }), visibleServices: visible, options, source: 'social' });
+      expect(content).not.toHaveProperty('badge');
+      const everything = [
+        JSON.stringify(content),
+        flyerCaption(content, 'Marbella', 'https://garser.es/reservar/x'),
+        ...clientMessages({ kind, link: 'L', date: new Date('2026-10-20') }).map((m) => m.text),
+      ].join('\n').toLowerCase();
+      expect(everything).not.toMatch(/gesti[oó]n|comisi[oó]n|gratis|gratuit|sin coste|sin cargo|descuento|%/);
+    }
   });
 
   it('valoración solo si tiene reseñas y lo quiere enseñar', () => {
     const options = defaultOptions(profile(), visible, new Date());
-    expect(buildMarketingContent({ profile: profile(), visibleServices: visible, feeWaiverEnabled: false, options, source: 'x' }).rating?.label).toBe('★ 4,8 · 12 reseñas');
-    expect(buildMarketingContent({ profile: profile({ ratingCount: 0, ratingAverage: 0 }), visibleServices: visible, feeWaiverEnabled: false, options, source: 'x' }).rating).toBeNull();
-    expect(buildMarketingContent({ profile: profile(), visibleServices: visible, feeWaiverEnabled: false, options: { ...options, showRating: false }, source: 'x' }).rating).toBeNull();
+    expect(buildMarketingContent({ profile: profile(), visibleServices: visible, options, source: 'x' }).rating?.label).toBe('★ 4,8 · 12 reseñas');
+    expect(buildMarketingContent({ profile: profile({ ratingCount: 0, ratingAverage: 0 }), visibleServices: visible, options, source: 'x' }).rating).toBeNull();
+    expect(buildMarketingContent({ profile: profile(), visibleServices: visible, options: { ...options, showRating: false }, source: 'x' }).rating).toBeNull();
     expect(ratingLabel(5, 1)).toBe('★ 5,0 · 1 reseña');
   });
 
@@ -155,7 +163,6 @@ describe('contenido', () => {
     const content = buildMarketingContent({
       profile: profile({ zone: null }),
       visibleServices: visible,
-      feeWaiverEnabled: false,
       options: { ...defaultOptions(profile({ zone: null }), visible, new Date()), headline: 'x'.repeat(80), subtitle: '' },
       source: 'x',
     });
@@ -174,29 +181,29 @@ describe('contenido', () => {
   it('iniciales, enlace y nombre de archivo', () => {
     expect(initialsOf('Pablo Gómez')).toBe('PG');
     expect(initialsOf('Jardines')).toBe('JA');
-    expect(bookingUrl('abc', 'vinilo furgo')).toBe('https://garser.es/reservar/abc?utm_source=vinilo%20furgo');
+    expect(bookingUrl('abc', 'vinilo furgo', '0123456789abcdef0123456789abcdef'))
+      .toBe('https://garser.es/reservar/abc?c=0123456789abcdef0123456789abcdef&utm_source=vinilo%20furgo');
     expect(materialFileName('Jardines Pérez S.L.', 'van_vinyl', 'side')).toBe('garser-jardines-perez-s-l-vinilo-furgoneta-side.png');
   });
 
   it('pie de foto para redes', () => {
-    const content = buildMarketingContent({ profile: profile(), visibleServices: visible, feeWaiverEnabled: true, options: defaultOptions(profile(), visible, new Date('2026-07-01')), source: 'social' });
+    const content = buildMarketingContent({ profile: profile(), visibleServices: visible, options: defaultOptions(profile(), visible, new Date('2026-07-01')), source: 'social' });
     const caption = flyerCaption(content, 'Marbella', 'https://garser.es/reservar/prov-123');
     expect(caption).toContain('Tu jardín, listo para el verano');
     expect(caption).toContain('Corte de césped · Poda de setos.');
-    expect(caption).toContain('sin gastos de gestión: https://garser.es/reservar/prov-123');
+    expect(caption).toContain('Reserva online: https://garser.es/reservar/prov-123');
     expect(caption).toContain('#jardineria #Marbella #GarSer');
   });
 
   it('mensajes para clientes: autónomo en primera persona, empresa en plural, enlace al final', () => {
-    const solo = clientMessages({ kind: 'solo', feeWaiverEnabled: false, link: 'L', date: new Date('2026-10-20') });
+    const solo = clientMessages({ kind: 'solo', link: 'L', date: new Date('2026-10-20') });
     expect(solo.map((m) => m.id)).toEqual(['online', 'season', 'thanks']);
     expect(solo[0].text).toContain('reservar conmigo');
     expect(solo[0].text).toContain('directamente a mí');
     expect(solo[1].text).toContain('poner tu jardín a punto este otoño');
     solo.forEach((m) => expect(m.text.endsWith('L')).toBe(true));
-    const company = clientMessages({ kind: 'company', feeWaiverEnabled: true, link: 'L', date: new Date('2026-10-20') });
+    const company = clientMessages({ kind: 'company', link: 'L', date: new Date('2026-10-20') });
     expect(company[0].text).toContain('con nosotros');
-    expect(company[0].text).toContain('sin gastos de gestión');
     expect(company[1].text).toContain('pasemos');
     expect(whatsappUrl('Hola & adiós')).toBe('https://wa.me/?text=Hola%20%26%20adi%C3%B3s');
   });

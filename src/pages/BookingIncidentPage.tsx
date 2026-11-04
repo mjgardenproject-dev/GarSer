@@ -198,7 +198,7 @@ const BookingIncidentPage = () => {
         <p className="text-xs font-semibold text-gray-600 mb-1">Qué pasa ahora</p>
         <p className="text-xs text-gray-600 leading-relaxed">
           La revisamos y te escribimos por email. Si procede una devolución, tu banco puede
-          tardar entre 3 y 5 días hábiles en reflejarla.
+          tardar entre 5 y 10 días hábiles en reflejarla.
         </p>
       </div>
 

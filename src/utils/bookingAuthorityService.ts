@@ -3,6 +3,7 @@ import type {
   BookingAuthoritativeQuoteSnapshot,
 } from '../shared/bookingAuthoritativeSnapshot';
 import type { BookingQuoteSlotSelection } from '../shared/bookingQuoteCore';
+import { normalizeProviderLinkCode } from '../shared/commissionRules';
 import { sanitizeBookingPayload } from './bookingResumeStorage';
 import { supabase } from '../lib/supabase';
 import { reportBookingEvent } from './bookingTelemetry';
@@ -126,11 +127,22 @@ export function buildServicesPayload(bookingData: BookingData): { bookingInput: 
  */
 export const BOOKING_CLIENT_CAPABILITIES = { feeWaiver: 1 } as const;
 
-export function buildBookingOriginPayload(bookingData: Pick<BookingData, 'restrictedGardenerId'>): Record<string, unknown> {
+export function buildBookingOriginPayload(
+  bookingData: Pick<BookingData, 'restrictedGardenerId' | 'providerLinkCode'>,
+): Record<string, unknown> {
   const linkedProviderId = String(bookingData.restrictedGardenerId || '').trim();
+  const linkCode = normalizeProviderLinkCode(bookingData.providerLinkCode);
   return {
     clientCapabilities: BOOKING_CLIENT_CAPABILITIES,
-    ...(linkedProviderId ? { bookingOrigin: 'provider_link', originProviderId: linkedProviderId } : {}),
+    ...(linkedProviderId
+      ? {
+          bookingOrigin: 'provider_link',
+          originProviderId: linkedProviderId,
+          // La clave del enlace. Sin ella (o con una que no es la del profesional) el servidor
+          // rechaza la declaración y la reserva paga como cualquier cliente de GarSer.
+          ...(linkCode ? { originLinkCode: linkCode } : {}),
+        }
+      : {}),
   };
 }
 

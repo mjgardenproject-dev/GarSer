@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  BOOKING_MANAGEMENT_FEE_RATE,
   cancellationConfirmMessage,
   clientAmountsNote,
   feeWaiverReasonFromSource,
@@ -52,7 +51,7 @@ describe('getBookingAmounts', () => {
 
     expect(amounts.clientTotal).toBe(219.75);
     expect(amounts.managementFee).toBe(19.75);
-    expect(amounts.managementFee).not.toBe(200 * BOOKING_MANAGEMENT_FEE_RATE);
+    expect(amounts.managementFee).not.toBe(200 * EXAMPLE_RATE);
   });
 
   it('acepta numeric devuelto como string por PostgREST', () => {
@@ -134,11 +133,15 @@ describe('getBookingAmounts', () => {
   });
 });
 
+// El porcentaje ya no es una constante del código (lo configura el administrador y lo aplica SQL):
+// aquí solo es un ejemplo para fabricar importes de prueba.
+const EXAMPLE_RATE = 0.125;
+
 describe('getQuoteAmounts', () => {
   it('produce las mismas cifras que una reserva ya creada', () => {
     // Garantiza que checkout, tarjeta de reserva y email dicen exactamente lo mismo.
     for (const servicePrice of [50, 158, 999.99, 1234.56]) {
-      const managementFee = Math.round(servicePrice * BOOKING_MANAGEMENT_FEE_RATE * 100) / 100;
+      const managementFee = Math.round(servicePrice * EXAMPLE_RATE * 100) / 100;
       const quote = getQuoteAmounts({ serviceGrossTotal: servicePrice, managementFee });
       const booking = getBookingAmounts({
         total_price: servicePrice,
@@ -162,7 +165,12 @@ describe('clientAmountsNote', () => {
   it('distingue la retención del cobro efectivo', () => {
     expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'pending' }))).toContain('retenidos');
     expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'confirmed' }))).toContain('pagados');
-    expect(clientAmountsNote(getBookingAmounts({ ...base, status: 'cancelled' }))).toContain('No se te ha cobrado nada');
+    // Qué pasó con el dinero depende de quién canceló y de la antelación, y la fila no lo guarda: la nota
+    // explica la regla (cierta siempre) y NUNCA afirma «no se te ha cobrado nada».
+    const cancelled = clientAmountsNote(getBookingAmounts({ ...base, status: 'cancelled' }));
+    expect(cancelled).toContain('con 24 h o más de antelación');
+    expect(cancelled).toContain('con menos de 24 h, no se devuelven');
+    expect(cancelled).not.toMatch(/No se te ha cobrado nada|queda liberada/);
   });
 });
 
@@ -175,7 +183,7 @@ describe('getCancellationRefundPreview / cancellationConfirmMessage (F1)', () =>
     expect(preview.refundable).toBe(true);
     expect(preview.refundAmount).toBe(19.75);
     expect(preview.forfeitAmount).toBe(0);
-    expect(cancellationConfirmMessage(preview)).toContain('más de 24 h');
+    expect(cancellationConfirmMessage(preview)).toContain('24 h o más');
     expect(cancellationConfirmMessage(preview)).toContain('19,75 €');
   });
 
@@ -230,9 +238,11 @@ describe('reservas sin gastos de gestión (lanzamiento)', () => {
     expect(isManagementFeeWaiverReason('provider_link')).toBe(true);
     expect(isManagementFeeWaiverReason('returning_client')).toBe(true);
     expect(isManagementFeeWaiverReason('maintenance_plan')).toBe(true);
+    expect(isManagementFeeWaiverReason('zero_commission')).toBe(true);
     expect(isManagementFeeWaiverReason('waived')).toBe(false);
     expect(isManagementFeeWaiverReason(undefined)).toBe(false);
     expect(feeWaiverReasonFromSource('waived_provider_link')).toBe('provider_link');
+    expect(feeWaiverReasonFromSource('waived_zero_commission')).toBe('zero_commission');
     expect(feeWaiverReasonFromSource('waived_otra_cosa')).toBeNull();
     expect(feeWaiverReasonFromSource('payment_attempt')).toBeNull();
   });
@@ -294,6 +304,7 @@ describe('reservas sin gastos de gestión (lanzamiento)', () => {
     expect(feeWaiverReasonText('provider_link', 'Miguel')).toBe('Reservas con Miguel desde su enlace: sin gastos de gestión.');
     expect(feeWaiverReasonText('returning_client', '')).toBe('Ya has trabajado con este profesional: sin gastos de gestión.');
     expect(feeWaiverReasonText('maintenance_plan')).toBe('Visita de tu plan de mantenimiento: sin gastos de gestión.');
+    expect(feeWaiverReasonText('zero_commission')).toBe('Esta reserva va sin gastos de gestión.');
     expect(feeWaiverReasonText(null)).toBe('');
   });
 });

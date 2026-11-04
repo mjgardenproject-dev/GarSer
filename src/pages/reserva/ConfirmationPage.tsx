@@ -1808,7 +1808,7 @@ const ConfirmationPage: React.FC = () => {
               <p className="mt-3 text-sm leading-6 text-gray-600">
                 {feeWaived
                   ? 'Esta reserva no tiene gastos de gestión: el servicio se lo pagas directamente al profesional. Puedes seguir la reserva desde tu panel.'
-                  : 'Los gastos de gestión quedan retenidos y solo se cobran cuando el profesional acepte. Puedes seguir la reserva desde tu panel.'}
+                  : 'Los gastos de gestión quedan retenidos: se cobran cuando el profesional acepte y, si no acepta, se liberan sin cobrarte nada. Puedes seguir la reserva desde tu panel.'}
               </p>
             </div>
 

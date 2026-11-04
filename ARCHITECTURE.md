@@ -14,7 +14,7 @@
 | Web | React + Vite + TypeScript, una sola aplicación para cliente, profesional, empresa, empleado y admin. Se puede instalar (PWA). | `src/main.tsx`, rutas en `src/App.tsx`, `public/sw.js` |
 | Base de datos | Supabase (Postgres) con RLS. Todo el esquema está en migraciones. | `supabase/migrations/` |
 | Funciones del servidor | Supabase Edge Functions (Deno). | `supabase/functions/<nombre>/index.ts`; código común en `supabase/functions/_shared/` |
-| Pagos | Stripe. Al reservar se cobran los **gastos de gestión** (12,5 %); el resto lo paga el cliente al profesional. | `src/shared/bookingAmounts.ts` (`BOOKING_MANAGEMENT_FEE_RATE`), `supabase/functions/booking-payment/`, `booking-payment-webhook/` |
+| Pagos | Stripe. Al reservar se cobran los **gastos de gestión** (la comisión de GarSer); el resto lo paga el cliente al profesional. El porcentaje no es una constante: lo configura el administrador en **Admin → Comisiones** (cinco reglas) y lo aplica SQL al firmar el presupuesto. | `supabase/migrations/20261102*` (`commission_settings`, `resolve_booking_commission`, `apply_commission_to_economics`), `src/shared/commissionRules.ts`, `commissionEngine.ts`, `supabase/functions/booking-payment/`, `booking-payment-webhook/` |
 | Análisis con IA | Gemini estima medidas a partir de fotos, con cuota por usuario y lista blanca de orígenes de imagen. | `supabase/functions/ai-pricing-estimator/index.ts` |
 | Correo | Brevo. Plantilla única con la marca. | `supabase/functions/_shared/emailBrand.ts`, `send-email-notification/` |
 | Notificaciones al móvil | Web Push propio (RFC 8291 y VAPID), sin dependencias. | `supabase/functions/_shared/webPush.ts`, `_shared/pushDelivery.ts`, `src/utils/pushNotifications.ts` |
@@ -26,7 +26,12 @@ Código compartido entre la web y las funciones (el mismo fichero en los dos lad
   esas dos funciones.**
 - `src/domain/pricingEngine.ts` y `src/domain/pricing/`: fórmulas de precio que usa el motor.
 - `src/shared/bookingAmounts.ts`: cómo se reparte el importe entre gastos de gestión y
-  profesional.
+  profesional (solo lee importes; ya no contiene el porcentaje).
+- `src/shared/commissionRules.ts` y `commissionEngine.ts`: las cinco reglas de comisión, su
+  validación y el pegamento del servidor con SQL. La cuenta (qué regla toca y cuántos céntimos)
+  vive solo en SQL; el motor de precios entrega la economía del servicio SIN comisión y
+  `booking-authority` la completa al firmar el presupuesto. **Si se toca, hay que redesplegar
+  `booking-authority` y `booking-payment`.**
 
 ## 2. El recorrido de una reserva
 

@@ -26,7 +26,6 @@ interface Props {
   material: MarketingMaterial;
   profile: MarketingProfile;
   visibleServices: string[];
-  feeWaiverEnabled: boolean;
   canDownload: boolean;
   avatar: HTMLImageElement | null;
   options: MarketingOptions;
@@ -49,7 +48,6 @@ const MaterialEditor: React.FC<Props> = ({
   material,
   profile,
   visibleServices,
-  feeWaiverEnabled,
   canDownload,
   avatar,
   options,
@@ -67,8 +65,8 @@ const MaterialEditor: React.FC<Props> = ({
   const shareSupported = useMemo(() => canShareFiles(), []);
 
   const content = useMemo(
-    () => buildMarketingContent({ profile, visibleServices, feeWaiverEnabled, options, source: material.id }),
-    [profile, visibleServices, feeWaiverEnabled, options, material.id],
+    () => buildMarketingContent({ profile, visibleServices, options, source: material.id }),
+    [profile, visibleServices, options, material.id],
   );
   const previewSize = material.sizes.find((s) => s.id === previewId) ?? material.sizes[0];
   const set = (patch: Partial<MarketingOptions>) => onOptionsChange({ ...options, ...patch });
@@ -127,7 +125,7 @@ const MaterialEditor: React.FC<Props> = ({
 
   const copyCaption = async () => {
     try {
-      await navigator.clipboard.writeText(flyerCaption(content, profile.zone, bookingUrl(profile.providerId, 'instagram')));
+      await navigator.clipboard.writeText(flyerCaption(content, profile.zone, bookingUrl(profile.providerId, 'instagram', profile.linkCode)));
       toast.success('Texto copiado: pégalo en tu publicación');
     } catch {
       toast.error('No se ha podido copiar el texto');

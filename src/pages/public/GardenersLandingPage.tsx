@@ -21,13 +21,10 @@ import ClientBookingMockup from '../../components/public/app-mockups/ClientBooki
 import TeamScheduleMockup from '../../components/public/app-mockups/TeamScheduleMockup';
 import PublicFooter from '../../components/public/PublicFooter';
 import PublicHeader from '../../components/public/PublicHeader';
-import {
-  SITE_URL,
-  gardenersContent,
-  gardenersFaqs,
-  pageSeo,
-} from '../../config/publicSiteContent';
+import { feeSplitCopy, gardenersFaqs, gardenersHighlights } from '../../config/billingCopy';
+import { SITE_URL, gardenersContent, pageSeo } from '../../config/publicSiteContent';
 import { useAppSettings } from '../../hooks/useAppSettings';
+import { usePublicBillingTerms } from '../../hooks/usePublicBillingTerms';
 import { getMarketingAssetUrl } from '../../utils/marketingAssets';
 
 /** Icono por línea de «Y además». La clave la trae el propio contenido en publicSiteContent.ts,
@@ -56,7 +53,13 @@ const GardenersLandingPage: React.FC = () => {
   const navigate = useNavigate();
   const seo = pageSeo.gardeners;
   const { settings } = useAppSettings();
-  const { hero, feeSplit, steps, extras, companies, finalCta } = gardenersContent;
+  const { hero, steps, extras, companies, finalCta } = gardenersContent;
+  // Todo lo que dependa de quién paga gastos de gestión sale de los ajustes vigentes (null = sin
+  // saberlo: textos neutros que no prometen nada).
+  const terms = usePublicBillingTerms();
+  const feeSplit = useMemo(() => feeSplitCopy(terms), [terms]);
+  const faqs = useMemo(() => gardenersFaqs(terms), [terms]);
+  const highlights = useMemo(() => gardenersHighlights(terms), [terms]);
 
   const jsonLd = useMemo(
     () => [
@@ -76,7 +79,7 @@ const GardenersLandingPage: React.FC = () => {
       {
         '@context': 'https://schema.org',
         '@type': 'FAQPage',
-        mainEntity: gardenersFaqs.map((faq) => ({
+        mainEntity: faqs.map((faq) => ({
           '@type': 'Question',
           name: faq.question,
           acceptedAnswer: {
@@ -104,7 +107,7 @@ const GardenersLandingPage: React.FC = () => {
         ],
       },
     ],
-    [seo.path, seo.title, settings.contactEmail],
+    [faqs, seo.path, seo.title, settings.contactEmail],
   );
 
   // Alta real: /auth en modo registro con la tarjeta de rol ya elegida. Después, el jardinero
@@ -141,7 +144,7 @@ const GardenersLandingPage: React.FC = () => {
             <p className="mt-4 max-w-xl text-base leading-7 text-slate-600 sm:text-lg sm:leading-8">{hero.description}</p>
 
             <ul className="mt-5 space-y-2">
-              {hero.highlights.map((highlight) => (
+              {highlights.map((highlight) => (
                 <li key={highlight} className="flex items-start gap-2.5 text-[15px] font-medium leading-6 text-slate-800">
                   <Check className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" aria-hidden="true" />
                   {highlight}
@@ -171,8 +174,8 @@ const GardenersLandingPage: React.FC = () => {
         </section>
 
         {/* Quién paga qué: la diferencia entre tus clientes y los que trae GarSer, sin letra pequeña. */}
-        <section id="sin-comision" aria-labelledby="sin-comision-title" className="mt-12 scroll-mt-40 sm:mt-20">
-          <h2 id="sin-comision-title" className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+        <section id="quien-paga" aria-labelledby="quien-paga-title" className="mt-12 scroll-mt-40 sm:mt-20">
+          <h2 id="quien-paga-title" className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
             {feeSplit.title}
           </h2>
           <p className="mt-2 text-base leading-7 text-slate-600">{feeSplit.intro}</p>
@@ -182,13 +185,15 @@ const GardenersLandingPage: React.FC = () => {
               <div key={row.id} className="p-4 sm:p-6">
                 <dt className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-lg font-semibold text-slate-950">{row.label}</span>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${
-                      row.id === 'own' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'
-                    }`}
-                  >
-                    {row.badge}
-                  </span>
+                  {row.badge && (
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${
+                        row.id === 'own' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-slate-200'
+                      }`}
+                    >
+                      {row.badge}
+                    </span>
+                  )}
                 </dt>
                 <dd className="mt-2 text-base leading-7 text-slate-600">
                   {row.who} <span className="font-semibold text-slate-900">{row.result}</span>
@@ -197,7 +202,7 @@ const GardenersLandingPage: React.FC = () => {
             ))}
           </dl>
 
-          <p className="mt-4 text-base leading-7 text-slate-700">{feeSplit.loyaltyNote}</p>
+          {feeSplit.loyaltyNote && <p className="mt-4 text-base leading-7 text-slate-700">{feeSplit.loyaltyNote}</p>}
           <button
             type="button"
             onClick={() => handleSignup('gardener')}
@@ -314,7 +319,7 @@ const GardenersLandingPage: React.FC = () => {
             {gardenersContent.faqTitle}
           </h2>
           <div className="mt-5 divide-y divide-slate-200 rounded-3xl border border-slate-200 bg-white px-5 shadow-sm">
-            {gardenersFaqs.map((faq) => (
+            {faqs.map((faq) => (
               <details key={faq.question} className="group">
                 <summary className="flex min-h-[56px] cursor-pointer list-none items-center justify-between gap-4 rounded py-3 text-base font-semibold text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [&::-webkit-details-marker]:hidden">
                   {faq.question}

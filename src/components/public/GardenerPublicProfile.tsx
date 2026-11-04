@@ -5,6 +5,7 @@ import { Star, MapPin, Leaf, Calendar } from 'lucide-react';
 import ReviewList from '../reviews/ReviewList';
 import { isServiceId, serviceLabels } from '../../utils/serviceLabels';
 import { rememberProviderLinkProfile } from '../../utils/providerLinkProfile';
+import { recallProviderLinkCode } from '../../utils/providerLinkCode';
 
 const GardenerPublicProfile: React.FC = () => {
   const { gardenerId } = useParams();
@@ -59,7 +60,8 @@ const GardenerPublicProfile: React.FC = () => {
 
   const handleReserve = () => {
     if (!gardenerId) return;
-    navigate('/reserva', { state: { restrictedGardenerId: gardenerId } });
+    // La clave del enlace (si el cliente entró por el enlace del profesional) se guardó al abrir la web.
+    navigate('/reserva', { state: { restrictedGardenerId: gardenerId, providerLinkCode: recallProviderLinkCode(gardenerId) ?? undefined } });
   };
 
   if (loading) {

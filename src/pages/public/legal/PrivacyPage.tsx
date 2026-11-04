@@ -36,7 +36,7 @@ const PrivacyPage: React.FC = () => {
           <li><strong>Revisar a los profesionales y sus carnets fitosanitarios</strong> antes de que ofrezcan tratamientos químicos. Base: obligación legal sobre el uso de productos fitosanitarios e interés legítimo en la seguridad de los clientes.</li>
           <li><strong>Seguridad y prevención del fraude.</strong> Base: interés legítimo.</li>
         </ul>
-        <p>No usamos tus datos para publicidad ni los vendemos a nadie.</p>
+        <p>No vendemos tus datos a nadie. Solo si aceptas las cookies de publicidad usamos las herramientas de Meta y Google que se explican más abajo, para medir qué anuncios traen profesionales; si no las aceptas, no se usan.</p>
       </Section>
 
       <Section id="destinatarios" title="3. Con quién los compartimos">

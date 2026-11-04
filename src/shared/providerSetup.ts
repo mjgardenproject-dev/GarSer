@@ -1,3 +1,5 @@
+import { buildProviderBookingUrl } from './providerLinkUrl.ts';
+
 // Completar la cuenta profesional (2026-10-20): de la verdad del servidor (my_provider_setup_status /
 // admin_provider_setup_overview, migración 20261020120000) a los pasos que ve el profesional y el
 // admin. Función pura: el servidor decide qué está hecho con las mismas reglas que deciden quién
@@ -11,6 +13,7 @@ export interface ProviderSetupService {
   name: string;
   service_active: boolean;
   /** Fitosanitarios, o desbroce con herbicida: los tratamientos químicos piden carnet. */
+
   needs_license: boolean;
   /** Personas que pueden hacerlo (autónomo: él; empresa: quien lo tiene asignado y trabaja). */
   workers: number;
@@ -114,7 +117,7 @@ export interface ProviderSetupSummary {
   hiddenServices: string[];
   headline: { tone: 'danger' | 'warning' | 'info' | 'success'; title: string; detail: string };
   /** «Comparte tu enlace»: en cuanto sale en algún servicio. */
-  share: { show: boolean; feeWaiver: boolean };
+  share: { show: boolean };
 }
 
 const PHYTO_SERVICE_NAME = 'Servicios fitosanitarios';
@@ -474,9 +477,13 @@ export function buildProviderSetupSteps(status: ProviderSetupStatus): ProviderSe
     visibleServices,
     hiddenServices,
     headline,
-    share: { show: !status.suspended && visibleServices.length > 0, feeWaiver: status.fee_waiver_enabled },
+    share: { show: !status.suspended && visibleServices.length > 0 },
   };
 }
 
-/** El enlace de reserva directo del profesional (el mismo que «Mi cuenta»). */
-export const providerBookingLink = (origin: string, providerId: string) => `${origin}/reservar/${providerId}`;
+/**
+ * El enlace de reserva directo del profesional (el mismo que «Mi cuenta»): lleva su clave personal,
+ * que es lo que hace que sus clientes cuenten como suyos. Sin clave no hay enlace que repartir.
+ */
+export const providerBookingLink = (origin: string, providerId: string, code: string) =>
+  buildProviderBookingUrl({ origin, providerId, code });

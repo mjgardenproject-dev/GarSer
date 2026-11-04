@@ -5,9 +5,14 @@ import { PRIVACY_PATH } from '../../../config/legal';
 
 // Términos y condiciones (2026-10-22). Base para revisar con un abogado. Lo que dicen de dinero y
 // cancelaciones es lo que hace la app: los gastos de gestión se autorizan al enviar la solicitud y
-// se cobran cuando el profesional la acepta; si no la acepta o caduca, no se cobran; si el cliente
-// cancela con más de 24 h se devuelven enteros, con menos no; si cancela el profesional tras
-// aceptarla, se devuelven (cancel_booking, 20260909120000).
+// se cobran cuando el profesional la acepta (o si el cliente cancela con menos de 24 h, aunque no la
+// hubiera aceptado); si no la acepta o caduca, no se cobran; si el cliente cancela con 24 h o más se
+// devuelven enteros, con menos no; si cancela el profesional tras aceptarla, se devuelven
+// (cancel_booking, 20260909120000: `>= interval '24 hours'`).
+//
+// NADA de aquí puede depender de los ajustes de comisiones (quién paga y quién no cambia sin tocar
+// código): solo se afirma lo que es cierto con cualquier configuración. Las reglas de dinero se
+// verifican con scripts/commissions/verify-commissions.mjs.
 //
 // Sin los datos del titular (nombre, NIF, domicilio) a petición del usuario (2026-10-22): se quitó
 // la sección «Quiénes somos» de aquí y «Quién es el responsable» de PrivacyPage.tsx. El contacto
@@ -45,14 +50,14 @@ const TermsPage: React.FC = () => {
       <Section id="pagos" title="4. Precios y pagos">
         <ul className="list-disc space-y-2 pl-5">
           <li><strong>El precio del servicio</strong> se paga directamente al profesional cuando termina el trabajo, por el medio que acordéis.</li>
-          <li><strong>Los gastos de gestión de GarSer</strong> se pagan con tarjeta a través de Stripe. Se autorizan al enviar la solicitud y solo se cobran cuando el profesional la acepta. Si no la acepta o caduca, no se cobran.</li>
-          <li>Algunas reservas no tienen gastos de gestión (por ejemplo, las de los clientes que trae el propio profesional con su enlace). En ese caso lo verás antes de reservar.</li>
+          <li><strong>Los gastos de gestión de GarSer</strong>, cuando una reserva los tiene, se pagan con tarjeta a través de Stripe. Se autorizan al enviar la solicitud y se cobran cuando el profesional la acepta. Si no la acepta o caduca, no se cobran. Si cancelas con menos de 24 horas de antelación, se cobran aunque no la hubiera aceptado todavía.</li>
+          <li>El importe de los gastos de gestión, o que la reserva no los tiene, depende del tipo de reserva y se te muestra siempre antes de confirmarla. No se cobra nada que no hayas visto antes de reservar.</li>
         </ul>
       </Section>
 
       <Section id="cancelaciones" title="5. Cancelaciones y devoluciones">
         <ul className="list-disc space-y-2 pl-5">
-          <li>Si cancelas <strong>con más de 24 horas</strong> de antelación al inicio del servicio, te devolvemos los gastos de gestión enteros (o no se llegan a cobrar).</li>
+          <li>Si cancelas <strong>con 24 horas o más</strong> de antelación al inicio del servicio, te devolvemos los gastos de gestión enteros (o no se llegan a cobrar).</li>
           <li>Si cancelas <strong>con menos de 24 horas</strong>, los gastos de gestión no se devuelven.</li>
           <li>Si el profesional cancela una reserva que ya había aceptado, te devolvemos los gastos de gestión.</li>
           <li>Si hay una incidencia con el servicio, la revisamos y, si procede, devolvemos los gastos de gestión. El precio del servicio lo resuelves con el profesional.</li>
@@ -65,7 +70,7 @@ const TermsPage: React.FC = () => {
           <li>Haz los trabajos que aceptas, en la fecha acordada y con el precio de la reserva (o el que el cliente acepte si propones otro).</li>
           <li>Para los tratamientos con productos químicos necesitas tu carnet de aplicador aprobado y en vigor. Si caduca, dejarás de poder hacerlos hasta que se apruebe el renovado. En una empresa, cada persona que aplica tiene que tener el suyo.</li>
           <li>Eres responsable de cumplir tus obligaciones fiscales, laborales y de seguros.</li>
-          <li>Si cancelas una reserva aceptada, el cliente recupera los gastos de gestión y puede afectar a tu valoración.</li>
+          <li>Si cancelas una reserva aceptada, el cliente recupera los gastos de gestión y recibes una valoración negativa automática.</li>
         </ul>
       </Section>
 

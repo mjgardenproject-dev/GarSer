@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import PushNotificationsCard from './PushNotificationsCard';
+import BookingLinkCard from './BookingLinkCard';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
-import { Camera, Lock, Trash2, Copy, AlertTriangle, CheckCircle2, UploadCloud, Link as LinkIcon, CheckCircle } from 'lucide-react';
+import { Camera, Lock, Trash2, AlertTriangle, CheckCircle2, UploadCloud, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AppHeader from '../common/AppHeader';
 import InstallAppPrompt from '../common/InstallAppPrompt';
@@ -197,42 +198,8 @@ function MyAccount() {
         </div>
 
         {/* Autónomos y empresas: la empresa también reparte su enlace a sus clientes
-            (/reservar/<id de la cuenta de empresa> abre su perfil y fija la reserva a ella). */}
-        {(effectiveRole === 'gardener' || effectiveRole === 'company') && (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm hover:shadow-lg transition-shadow">
-            <div className="flex items-center mb-3">
-              <LinkIcon className="w-5 h-5 text-green-600 mr-2" />
-              <div className="text-lg font-semibold text-gray-900">Enlace de reserva directo</div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
-              <div className="md:col-span-5">
-                <input
-                  value={`${window.location.origin}/reservar/${user?.id || ''}`}
-                  readOnly
-                  className="w-full p-3 border border-gray-300 rounded-lg bg-white text-gray-800 text-base sm:text-sm"
-                />
-              </div>
-              <div className="md:col-span-1">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const url = `${window.location.origin}/reservar/${user?.id || ''}`;
-                    try {
-                      await navigator.clipboard.writeText(url);
-                      toast.success('Enlace copiado');
-                    } catch {
-                      toast.error('No se pudo copiar');
-                    }
-                  }}
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800"
-                >
-                  <Copy className="w-4 h-4" />
-                  Copiar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+            (/reservar/<id de la cuenta de empresa>?c=<clave> abre su perfil y fija la reserva a ella). */}
+        {(effectiveRole === 'gardener' || effectiveRole === 'company') && <BookingLinkCard />}
 
         <PushNotificationsCard />
 

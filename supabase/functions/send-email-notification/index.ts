@@ -1200,7 +1200,7 @@ Deno.serve(async (req) => {
         intro: `${counterpartName || 'El profesional'} no ha podido aceptar tu solicitud de reserva. No se te cobrará nada.`,
         bodyHtml: detailPairs.length ? detailRows(detailPairs) : '',
         cta: { label: 'Buscar otro profesional', url: `${BRAND.site}/reserva` },
-        footerNote: 'Hay más profesionales disponibles en tu zona: puedes repetir la reserva en un minuto.',
+        footerNote: 'Puedes repetir la reserva y elegir otro profesional que esté disponible en la fecha que prefieras.',
       };
     } else if (type === 'booking_cancelled') {
       subject = 'Reserva cancelada en GarSer';
@@ -1322,7 +1322,7 @@ Deno.serve(async (req) => {
         cta: { label: 'Ver el detalle', url: `${BRAND.site}/bookings` },
         footerNote: bookingFeeWaived
           ? 'Si necesitas algo más, escríbenos desde la app.'
-          : 'Si hemos devuelto los gastos de gestión, tu banco puede tardar entre 3 y 5 días hábiles en reflejarlo.',
+          : 'Si hemos devuelto los gastos de gestión, tu banco puede tardar entre 5 y 10 días hábiles en reflejarlo.',
       };
     } else {
       throw new Error('Invalid email type');

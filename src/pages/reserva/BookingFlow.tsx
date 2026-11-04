@@ -13,11 +13,14 @@ import { LogOut, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { reconcileProviderLink, resolveProviderLinkEntry } from '../../utils/providerLink';
 import { loadProviderLinkProfile } from '../../utils/providerLinkProfile';
+import { normalizeProviderLinkCode } from '../../shared/commissionRules';
 
 type BookingFlowLocationState = {
   selectedServiceId?: string;
   /** Viene del perfil público de un profesional (su enlace garser.es/reservar/<id>). */
   restrictedGardenerId?: string;
+  /** La clave de ese enlace, si el cliente entró con ella (garser.es/reservar/<id>?c=<clave>). */
+  providerLinkCode?: string;
 };
 
 const BookingFlow: React.FC = () => {
@@ -28,6 +31,7 @@ const BookingFlow: React.FC = () => {
   const stayButtonRef = useRef<HTMLButtonElement>(null);
   const locationState = (location.state || {}) as BookingFlowLocationState;
   const linkGardenerId = locationState.restrictedGardenerId || '';
+  const linkCode = normalizeProviderLinkCode(locationState.providerLinkCode) ?? undefined;
   // Mientras se decide qué hacer con el borrador anterior no se pinta ningún paso: si no, se
   // vería un instante la reserva vieja (con su profesional) antes de cambiar a la nueva.
   const [linkEntryPending, setLinkEntryPending] = useState(Boolean(linkGardenerId));
@@ -67,9 +71,13 @@ const BookingFlow: React.FC = () => {
 
       if (entry.kind === 'fresh') {
         resetBooking();
-        setBookingData({ restrictedGardenerId: linkGardenerId });
+        setBookingData({ restrictedGardenerId: linkGardenerId, providerLinkCode: linkCode });
+      } else if (entry.kind === 'unchanged') {
+        // Ya era la reserva de este profesional: si ahora llega con clave, se queda con la nueva.
+        if (linkCode) setBookingData({ providerLinkCode: linkCode });
       } else if (entry.kind === 'rebound') {
-        setBookingData(entry.updates);
+        // Otro profesional: la clave del anterior no vale para éste (se limpia si el enlace no trae la suya).
+        setBookingData({ ...entry.updates, providerLinkCode: linkCode });
         setCurrentStep(entry.step);
         toast(
           entry.missingServiceIds.length > 0
@@ -81,8 +89,9 @@ const BookingFlow: React.FC = () => {
 
       // El enlace ya está aplicado: se quita del historial para que recargar, volver atrás o
       // pulsar «Ver otros profesionales» no lo vuelva a aplicar.
-      const { restrictedGardenerId: _applied, ...rest } = locationState;
+      const { restrictedGardenerId: _applied, providerLinkCode: _appliedCode, ...rest } = locationState;
       void _applied;
+      void _appliedCode;
       navigate(
         { pathname: location.pathname, search: location.search },
         { replace: true, state: Object.keys(rest).length > 0 ? rest : null },

@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import { useMarketingProfile } from '../../hooks/useMarketingProfile';
+import { usePublicBillingTerms } from '../../hooks/usePublicBillingTerms';
+import { ownClientsLine } from '../../config/billingCopy';
 import MaterialEditor from './MaterialEditor';
 import MaterialPreview from './MaterialPreview';
 import { getMaterial, PRINT_MATERIAL_IDS, thumbnailSize, type MaterialId } from '../../utils/marketing/materials';
@@ -60,7 +62,9 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
 
   const visibleServices = useMemo(() => (status?.services ?? []).filter((s) => s.visible).map((s) => s.name), [status]);
   const canDownload = Boolean(status && !status.suspended && visibleServices.length > 0);
-  const feeWaiverEnabled = Boolean(status?.fee_waiver_enabled);
+  // Lo que se dice de los gastos de gestión sale de los ajustes vigentes (y solo en pantalla: lo que se
+  // descarga o se copia no lleva nada que pueda dejar de ser cierto).
+  const billingTerms = usePublicBillingTerms();
 
   useEffect(() => {
     let alive = true;
@@ -88,7 +92,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
     }
   };
 
-  const link = profile ? bookingUrl(profile.providerId, 'enlace') : '';
+  const link = profile ? bookingUrl(profile.providerId, 'enlace', profile.linkCode) : '';
 
   // Un contenido por material, que solo cambia si cambian los datos: si no, las vistas previas se
   // repintarían con cualquier cambio de la pantalla.
@@ -96,9 +100,9 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
     if (!profile || !options) return null;
     const ids: MaterialId[] = ['social', 'qr_code', ...PRINT_MATERIAL_IDS];
     return Object.fromEntries(
-      ids.map((id) => [id, buildMarketingContent({ profile, visibleServices, feeWaiverEnabled, options, source: id })]),
+      ids.map((id) => [id, buildMarketingContent({ profile, visibleServices, options, source: id })]),
     ) as Record<MaterialId, ReturnType<typeof buildMarketingContent>>;
-  }, [profile, options, visibleServices, feeWaiverEnabled]);
+  }, [profile, options, visibleServices]);
   const contentFor = (material: MaterialId) => contents?.[material] ?? null;
 
   const copyLink = async () => {
@@ -156,7 +160,6 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
         material={getMaterial(openMaterial)}
         profile={profile}
         visibleServices={visibleServices}
-        feeWaiverEnabled={feeWaiverEnabled}
         canDownload={canDownload}
         avatar={avatar}
         options={options}
@@ -173,7 +176,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
   const social = getMaterial('social');
   const socialContent = contentFor('social');
   const qrContent = contentFor('qr_code');
-  const messages = clientMessages({ kind: profile.kind, feeWaiverEnabled, link: bookingUrl(profile.providerId, 'whatsapp'), date: new Date() });
+  const messages = clientMessages({ kind: profile.kind, link: bookingUrl(profile.providerId, 'whatsapp', profile.linkCode), date: new Date() });
   const sectionTitle = 'mb-3 text-lg font-bold text-gray-900';
   const withYou = profile.kind === 'company' ? 'con vosotros' : 'contigo';
 
@@ -192,9 +195,9 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
       <header className="rounded-2xl bg-[#0E3A22] p-5 text-white sm:p-7">
         <h1 className="text-2xl font-bold sm:text-3xl">Marketing</h1>
         <p className="mt-2 max-w-2xl text-base text-white/90">
-          Date a conocer y consigue más reservas. Todo lo que descargues lleva tu QR: quien lo escanea ve tu perfil y reserva {withYou} en un minuto.
+          Date a conocer y consigue más reservas. Todo lo que descargues lleva tu QR: quien lo escanea ve tu perfil y reserva {withYou} online.
         </p>
-        {feeWaiverEnabled && <p className="mt-2 text-sm font-semibold text-[#7BE36F]">Tus clientes reservan sin gastos de gestión.</p>}
+        <p className="mt-2 text-sm font-semibold text-[#7BE36F]">{ownClientsLine(billingTerms)}</p>
       </header>
 
       {!canDownload && (
@@ -232,7 +235,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
             />
           )}
           <div className="min-w-0 flex-1 space-y-3">
-            <p className="text-sm text-gray-600">Quien lo escanee o abra el enlace verá tu perfil y podrá reservar {withYou} en un minuto.</p>
+            <p className="text-sm text-gray-600">Quien lo escanee o abra el enlace verá tu perfil y podrá reservar {withYou} online.</p>
             <p className="truncate rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-800" title={link}>{link}</p>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => void copyLink()} className="inline-flex min-h-11 flex-auto items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-800 hover:bg-gray-50">
@@ -325,7 +328,7 @@ const MarketingHub: React.FC<Props> = ({ onBack, onCompleteAccount }) => {
       {/* Mensajes para tus clientes */}
       <section aria-labelledby="messages-title">
         <h2 id="messages-title" className={sectionTitle}>Mensajes para tus clientes</h2>
-        <p className="mb-3 text-sm text-gray-600">Mándaselos por WhatsApp a tus clientes de siempre: con tu enlace reservan {withYou} en un minuto.</p>
+        <p className="mb-3 text-sm text-gray-600">Mándaselos por WhatsApp a tus clientes de siempre: con tu enlace reservan {withYou} online.</p>
         <ul className="grid gap-3 md:grid-cols-3">
           {messages.map((message) => (
             <li key={message.id} className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white p-4">

@@ -18,8 +18,14 @@ vi.mock('../../contexts/AccountContext', () => ({ useAccount: () => ({ role: 'cl
 vi.mock('./PushNotificationsCard', () => ({ default: () => null }));
 vi.mock('../common/InstallAppPrompt', () => ({ default: () => null }));
 vi.mock('../common/AppHeader', () => ({ default: () => null }));
+const LINK_CODE = '0123456789abcdef0123456789abcdef';
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    rpc: async (fn: string) =>
+      fn === 'my_booking_link'
+        ? { data: { providerId: '11111111-1111-1111-1111-111111111111', code: '0123456789abcdef0123456789abcdef' }, error: null }
+        : { data: null, error: { message: 'unexpected rpc' } },
     from: () => ({
       select: () => ({ or: () => ({ limit: async () => ({ data: [{ user_id: USER_ID, full_name: 'Yo', role: profileRole }] }) }) }),
       update: (values: unknown) => ({
@@ -81,7 +87,8 @@ describe('«Mi cuenta»: el enlace de reserva directo', () => {
     profileRole = role;
     render(<MemoryRouter><MyAccount /></MemoryRouter>);
     expect(await screen.findByText('Enlace de reserva directo')).toBeTruthy();
-    expect(screen.getByDisplayValue(`${window.location.origin}/reservar/${USER_ID}`)).toBeTruthy();
+    // El enlace lleva su clave: sin ella no eximiría de nada.
+    expect(screen.getByDisplayValue(`${window.location.origin}/reservar/${USER_ID}?c=${LINK_CODE}`)).toBeTruthy();
   });
 
   it.each(['client', 'employee'])('no lo ve una cuenta %s', async (role) => {

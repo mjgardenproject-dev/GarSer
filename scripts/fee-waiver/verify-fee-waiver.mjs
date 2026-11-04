@@ -1,3 +1,9 @@
+// OBSOLETO desde las comisiones configurables (migraciones 20261102*): este script comprueba el
+// sistema ANTERIOR (interruptor de Ajustes: cliente que repite y visitas de plan a 0 €). Con las
+// reglas nuevas, esos casos pagan lo que diga la configuración (por defecto 3 %). La verificación de
+// punta a punta vigente es scripts/commissions/verify-commissions.mjs. Se conserva como referencia
+// del modelo anterior y para volver atrás.
+//
 // Lanzamiento (2026-10): verificación de punta a punta de «sin gastos de gestión para los clientes
 // propios» contra el entorno LOCAL, por los caminos reales (booking-authority, booking-payment y las
 // RPC), con Stripe en modo TEST.

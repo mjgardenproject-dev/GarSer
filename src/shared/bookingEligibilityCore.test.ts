@@ -820,17 +820,19 @@ describe('F8 — varios servicios en una visita (mismo motor, se suman)', () => 
     mainService: { serviceId: 'svc-a', serviceName: 'Césped' },
   };
 
-  it('suma precio y horas de cada servicio con su tarifa; los gastos de gestión, sobre el total', () => {
+  it('suma precio y horas de cada servicio con su tarifa; la economía lleva el total del servicio', () => {
     const result = evaluateOperationalEligibility({
       ...base,
       extraServices: [{ serviceId: 'svc-b', serviceName: 'Otro', bookingInput, providerConfig: secondConfig }],
     });
     expect(result.eligible).toBe(true);
     if (!result.eligible) return;
-    // 2 h a 30 € + 1 h a 50 € = 110 €, 3 h. Gestión 12,5 % de 110.
+    // 2 h a 30 € + 1 h a 50 € = 110 €, 3 h. La base de la comisión (que pone el servidor al firmar)
+    // es el total de los servicios: 110 €.
     expect(result.quote.totalPrice).toBe(110);
     expect(result.quote.estimatedHours).toBe(3);
-    expect(result.quote.economics.managementFee).toBe(13.75);
+    expect(result.quote.economics.serviceGrossTotal).toBe(110);
+    expect(result.quote.economics.managementFee).toBe(0);
     expect(result.validHoursForRequestedDate).toEqual([8, 9, 10]);
     expect((result.quote as { items?: Array<{ serviceId: string; totalPrice: number }> }).items?.map((i) => `${i.serviceId}:${i.totalPrice}`))
       .toEqual(['svc-a:60', 'svc-b:50']);

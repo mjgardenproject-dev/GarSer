@@ -12,7 +12,8 @@ import { HEDGE_MAX_PLAUSIBLE_LENGTH_M } from '../domain/hedgeBusinessRules.ts';
 import type { PhytosanitaryYields } from '../types/index.ts';
 import type { TreePruningServiceConfig } from '../types/treePruning.ts';
 import { getPrecioPorHora, getPricingMethod } from '../utils/hourlyPricing.ts';
-import { BOOKING_MANAGEMENT_FEE_RATE, type ManagementFeeWaiverReason } from './bookingAmounts.ts';
+import type { ManagementFeeWaiverReason } from './bookingAmounts.ts';
+import type { BookingQuoteCommission } from './commissionRules.ts';
 
 export interface BookingQuoteLine {
   desc: string;
@@ -122,9 +123,16 @@ export interface BookingQuoteEconomicBreakdown {
   lines: BookingQuoteEconomicLine[];
   stripeLineItems: BookingStripeLineItem[];
   /**
-   * Lanzamiento (2026-10): presente cuando este presupuesto va SIN gastos de gestión. Lo pone el
-   * servidor al firmar (ver `applyManagementFeeWaiver`). `waivedFee` es la comisión perdonada, para
-   * poder deshacer la exención (los planes guardan siempre la economía completa).
+   * Cómo quedó fijada la comisión de este presupuesto: regla, porcentaje, base, versión de la
+   * configuración y origen del cliente. La escribe el servidor al firmar (SQL:
+   * `apply_commission_to_economics`); el motor de precios entrega la economía SIN ella y SIN
+   * comisión (`managementFee` y `payableNow` a 0), de modo que un presupuesto al que nadie aplicó la
+   * comisión no puede cobrarse: su intento de pago se rechaza.
+   */
+  commission?: BookingQuoteCommission;
+  /**
+   * Presente cuando este presupuesto va SIN gastos de gestión porque la regla que le toca está al
+   * 0 %. Lo pone el servidor al firmar. `reason` es el motivo que ve el cliente.
    */
   feeWaiver?: {
     reason: ManagementFeeWaiverReason;
@@ -596,6 +604,15 @@ const inferEconomicLineKind = (desc: string): BookingQuoteEconomicLine['kind'] =
   return 'service';
 };
 
+/**
+ * La economía del SERVICIO: precio con IVA, base e IVA. Sin comisión de GarSer.
+ *
+ * La comisión no la pone el motor de precios: la decide el servidor al firmar el presupuesto, con la
+ * regla que le toca al cliente y la configuración vigente del administrador (SQL:
+ * `quote_commission_economics`). Por eso aquí `managementFee` y `payableNow` salen a 0 y sin exención:
+ * si algún camino se olvidara de aplicarla, el intento de pago se rechazaría (no se cobraría de menos
+ * en silencio). El precio del servicio sale exactamente igual que siempre.
+ */
 const buildQuoteEconomics = (
   totalPrice: number,
   breakdown: BookingQuoteLine[]
@@ -603,7 +620,6 @@ const buildQuoteEconomics = (
   const serviceGrossTotal = roundCurrency(totalPrice);
   const serviceNetSubtotal = roundCurrency(serviceGrossTotal / (1 + BOOKING_TAX_RATE));
   const serviceTaxAmount = roundCurrency(serviceGrossTotal - serviceNetSubtotal);
-  const managementFee = roundCurrency(serviceGrossTotal * BOOKING_MANAGEMENT_FEE_RATE);
 
   return {
     currency: 'EUR',
@@ -611,8 +627,8 @@ const buildQuoteEconomics = (
     serviceGrossTotal,
     serviceNetSubtotal,
     serviceTaxAmount,
-    managementFee,
-    payableNow: managementFee,
+    managementFee: 0,
+    payableNow: 0,
     payableLater: serviceGrossTotal,
     lines: [
       ...breakdown.map((line, index) => ({
@@ -633,47 +649,10 @@ const buildQuoteEconomics = (
         amount: serviceTaxAmount,
         kind: 'tax',
       },
-      {
-        code: 'management_fee',
-        label: 'Gastos de gestión',
-        amount: managementFee,
-        kind: 'fee',
-      },
     ],
-    stripeLineItems: managementFee > 0
-      ? [{
-          code: 'management_fee',
-          label: 'Gastos de gestión',
-          unitAmount: managementFee,
-          quantity: 1,
-        }]
-      : [],
+    stripeLineItems: [],
   };
 };
-
-/**
- * Quita los gastos de gestión de una economía ya calculada: comisión y pago ahora a 0, sin línea
- * de comisión ni cargo de Stripe, y `feeWaiver` con el motivo y la comisión perdonada.
- *
- * Es el espejo EXACTO de `public.waive_quote_economics` (migración 20261019120000): la misma forma,
- * campo a campo, porque la comprobación de las visitas de los planes compara las dos versiones en
- * SQL. Idempotente: si ya iba exenta, conserva la comisión perdonada original.
- * Solo la usa el servidor (booking-authority) al firmar el presupuesto.
- */
-export const applyManagementFeeWaiver = (
-  economics: BookingQuoteEconomicBreakdown,
-  reason: ManagementFeeWaiverReason,
-): BookingQuoteEconomicBreakdown => ({
-  ...economics,
-  managementFee: 0,
-  payableNow: 0,
-  stripeLineItems: [],
-  lines: economics.lines.filter((line) => line.code !== 'management_fee'),
-  feeWaiver: {
-    reason,
-    waivedFee: economics.feeWaiver?.waivedFee ?? economics.managementFee,
-  },
-});
 
 const getPalmBaseUnitPrice = (config: any, group: Pick<PalmPricingGroup, 'species' | 'height'>): number => {
   const precioPorHora = getPrecioPorHora(config);

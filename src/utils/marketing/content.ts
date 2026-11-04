@@ -1,4 +1,5 @@
 import { SITE_URL } from '../../config/publicSiteContent';
+import { buildProviderBookingUrl } from '../../shared/providerLinkUrl';
 import type { MaterialId } from './materials';
 
 // Marketing del profesional: los textos de cada material, siempre con datos reales. Sin precios,
@@ -15,6 +16,11 @@ export interface MarketingProfile {
   avatarUrl: string | null;
   ratingAverage: number | null;
   ratingCount: number;
+  /**
+   * La clave de su enlace de reserva. Sin ella el QR no exime de nada (el servidor rechaza el enlace),
+   * así que ningún material se genera sin ella.
+   */
+  linkCode: string;
 }
 
 export interface MarketingOptions {
@@ -34,8 +40,6 @@ export interface MarketingContent {
   headline: string;
   services: string[];
   rating: { average: number; count: number; label: string } | null;
-  /** «Sin gastos de gestión», solo con el interruptor del lanzamiento encendido. */
-  badge: string | null;
   avatarUrl: string | null;
   qrUrl: string;
   site: string;
@@ -49,11 +53,9 @@ export const HEADLINE_MAX = 42;
 export const SUBTITLE_MAX = 40;
 export const SITE_LABEL = 'garser.es';
 
-const FEE_WAIVER_BADGE = 'Sin gastos de gestión';
-
-/** El enlace a su perfil con la reserva ligada a él, con el origen para medir. */
-export function bookingUrl(providerId: string, source: string): string {
-  return `${SITE_URL}/reservar/${providerId}?utm_source=${encodeURIComponent(source)}`;
+/** El enlace a su perfil con la reserva ligada a él, con su clave y el origen para medir. */
+export function bookingUrl(providerId: string, source: string, linkCode: string): string {
+  return buildProviderBookingUrl({ origin: SITE_URL, providerId, code: linkCode, source });
 }
 
 export function initialsOf(name: string): string {
@@ -90,7 +92,7 @@ export function headlinePresets(date: Date): string[] {
     seasonalHeadline(date),
     'Tu jardín, en buenas manos',
     '¿Tu jardín necesita un repaso?',
-    'Reserva tu jardinero en un minuto',
+    'Reserva tu jardinero en pocos minutos',
   ];
 }
 
@@ -115,7 +117,6 @@ export function buildMarketingContent(params: {
   profile: MarketingProfile;
   /** Los servicios que salen de verdad a los clientes (my_provider_setup_status). */
   visibleServices: string[];
-  feeWaiverEnabled: boolean;
   options: MarketingOptions;
   source: MaterialId | string;
 }): MarketingContent {
@@ -133,11 +134,10 @@ export function buildMarketingContent(params: {
     rating: showRating
       ? { average: Number(profile.ratingAverage), count: profile.ratingCount, label: ratingLabel(Number(profile.ratingAverage), profile.ratingCount) }
       : null,
-    badge: params.feeWaiverEnabled ? FEE_WAIVER_BADGE : null,
     avatarUrl: profile.avatarUrl,
-    qrUrl: bookingUrl(profile.providerId, params.source),
+    qrUrl: bookingUrl(profile.providerId, params.source, profile.linkCode),
     site: SITE_LABEL,
-    cta: 'Escanea y reserva en un minuto',
+    cta: 'Escanea y reserva online',
     paymentNote: profile.kind === 'company' ? 'Pagas al terminar el servicio' : 'Pagas al profesional al terminar',
     theme: options.theme,
   };
@@ -158,7 +158,7 @@ export function flyerCaption(content: MarketingContent, zone: string | null, lin
   return [
     content.headline,
     '',
-    [services, `Reserva en un minuto${content.badge ? ', sin gastos de gestión' : ''}: ${link}`].filter(Boolean).join('\n'),
+    [services, `Reserva online: ${link}`].filter(Boolean).join('\n'),
     '',
     ['#jardineria', zoneTag ? `#${zoneTag}` : '', '#GarSer'].filter(Boolean).join(' '),
   ].join('\n');
@@ -171,16 +171,15 @@ export interface ClientMessage {
 }
 
 /** Mensajes listos para mandar a sus clientes por WhatsApp. */
-export function clientMessages(params: { kind: 'solo' | 'company'; feeWaiverEnabled: boolean; link: string; date: Date }): ClientMessage[] {
+export function clientMessages(params: { kind: 'solo' | 'company'; link: string; date: Date }): ClientMessage[] {
   const company = params.kind === 'company';
   const withUs = company ? 'con nosotros' : 'conmigo';
   const toUs = company ? 'a nosotros' : 'a mí';
-  const fee = params.feeWaiverEnabled ? ', sin gastos de gestión' : '';
   return [
     {
       id: 'online',
       title: 'Ya puedes reservar online',
-      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en un minuto${fee}, y pagas al terminar, directamente ${toUs}. ${params.link}`,
+      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en pocos minutos, y pagas al terminar, directamente ${toUs}. ${params.link}`,
     },
     {
       id: 'season',
@@ -190,7 +189,7 @@ export function clientMessages(params: { kind: 'solo' | 'company'; feeWaiverEnab
     {
       id: 'thanks',
       title: 'Gracias por confiar',
-      text: `¡Gracias por confiar en ${company ? 'nosotros' : 'mí'}! Cuando quieras la próxima visita, la reservas aquí en un minuto: ${params.link}`,
+      text: `¡Gracias por confiar en ${company ? 'nosotros' : 'mí'}! Cuando quieras la próxima visita, la reservas aquí en pocos minutos: ${params.link}`,
     },
   ];
 }

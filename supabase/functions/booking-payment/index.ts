@@ -20,8 +20,14 @@ import {
   isInFlightPaymentAttemptStatus,
   validateBookingStripeMetadataIntegrity,
 } from '../../../src/shared/bookingPaymentCore.ts';
-import { applyManagementFeeWaiver, type SerializableBookingData } from '../../../src/shared/bookingQuoteCore.ts';
-import { isManagementFeeWaiverReason } from '../../../src/shared/bookingAmounts.ts';
+import type { SerializableBookingData } from '../../../src/shared/bookingQuoteCore.ts';
+import {
+  applyCommission,
+  CommissionUnavailableError,
+  commissionMismatch,
+  readCommissionFromEconomics,
+  type CommissionRpcResult,
+} from '../../../src/shared/commissionEngine.ts';
 import { geocodeAddressWithGoogleApi } from '../../../src/shared/providerOperationalGeocoding.ts';
 import {
   BookingPaymentHttpError,
@@ -715,13 +721,52 @@ async function revalidateQuoteBeforePayment(
     });
   }
 
-  // Lanzamiento (2026-10): si el presupuesto se firmó SIN gastos de gestión, lo que se espera
-  // cobrar ahora es 0. El motivo sale del presupuesto firmado (solo lo escribe el servidor) y se
-  // aplica con la misma función que al firmar, así que precio y horas se siguen comprobando igual.
-  const signedWaiverReason = asRecord(asRecord(quote.economic_snapshot).feeWaiver).reason;
-  const expectedEconomics = isManagementFeeWaiverReason(signedWaiverReason)
-    ? applyManagementFeeWaiver(evaluation.quote.economics, signedWaiverReason)
-    : evaluation.quote.economics;
+  // Comisiones configurables (2026-11): lo que se espera cobrar ahora se vuelve a decidir en SQL, con
+  // información verificada (cliente de la sesión, profesional del presupuesto, origen que se firmó) y
+  // con la MISMA versión de la configuración con la que se firmó. Así un cambio de porcentajes en el
+  // panel entre la firma y el pago no rompe un pago en curso, y un presupuesto adulterado (otra regla,
+  // otro porcentaje, otro importe) no pasa. Un presupuesto firmado por el sistema anterior, sin
+  // comisión configurable, hay que regenerarlo.
+  const signedCommission = readCommissionFromEconomics(quote.economic_snapshot);
+  if (!signedCommission) {
+    throw new BookingPaymentHttpError({
+      status: 422,
+      code: 'invalid_quote_state',
+      message: 'El presupuesto se generó con un sistema anterior. Debes regenerar el presupuesto antes de pagar.',
+    });
+  }
+  let expectedEconomics: Awaited<ReturnType<typeof applyCommission>>;
+  try {
+    expectedEconomics = await applyCommission(
+      (fn, args) => admin.rpc(fn, args) as unknown as PromiseLike<CommissionRpcResult>,
+      {
+        economics: evaluation.quote.economics,
+        clientId: quote.client_id,
+        providerId: quote.gardener_id,
+        claimedOrigin: signedCommission.claimedOrigin,
+        // El presupuesto firmado ya anotó si la clave del enlace era la buena: no se vuelve a pedir.
+        claimVerified: signedCommission.linkClaim === 'verified',
+        configVersion: signedCommission.configVersion,
+        // Un presupuesto sin pago ya lo firmó una web que sabe confirmarlo.
+        clientCanConfirmWithoutPayment: true,
+      },
+    );
+  } catch (error) {
+    if (error instanceof CommissionUnavailableError) {
+      console.error('booking-payment: comisión no disponible', error.detail);
+      throw new BookingPaymentHttpError({ status: 503, code: error.code, message: error.message });
+    }
+    throw error;
+  }
+  const mismatch = commissionMismatch(quote.economic_snapshot, expectedEconomics);
+  if (mismatch) {
+    console.error('booking-payment: la comisión firmada ya no coincide', { quoteId: quote.id, mismatch });
+    throw new BookingPaymentHttpError({
+      status: 422,
+      code: 'invalid_quote_state',
+      message: 'Las condiciones del presupuesto han cambiado. Debes regenerar el presupuesto antes de pagar.',
+    });
+  }
 
   assertQuoteEconomicsStillMatch({
     quote,

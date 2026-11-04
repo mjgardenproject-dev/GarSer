@@ -133,10 +133,13 @@ async function scenarios() {
     await quote(LAWN, photos(6000, 'normal', false)), { totalPrice: 1080, estimatedHours: 36 });
 
   const economics = (await quote(LAWN, photos(1000, 'normal', false))).economics;
-  if (economics?.managementFee === 22.5 && economics?.payableLater === 180) {
-    pass('S1  economics: managementFee 12,5% (22,50 €) y payableLater 180 €', JSON.stringify(economics).slice(0, 200));
+  // Comisiones configurables (2026-11): el motor de precios entrega la economía del SERVICIO, sin
+  // comisión. La comisión (regla, porcentaje, céntimos) la pone `booking-authority` al firmar el
+  // presupuesto con la configuración del administrador; aquí solo se mide el precio.
+  if (economics?.serviceGrossTotal === 180 && economics?.payableLater === 180 && economics?.managementFee === 0 && economics?.payableNow === 0) {
+    pass('S1  economics: servicio 180 € (payableLater 180) y sin comisión (la pone el servidor al firmar)', JSON.stringify(economics).slice(0, 200));
   } else {
-    fail('S1  economics: managementFee 12,5% y payableLater', JSON.stringify(economics));
+    fail('S1  economics: servicio 180 € y sin comisión', JSON.stringify(economics));
   }
 }
 

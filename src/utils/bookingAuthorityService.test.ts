@@ -157,6 +157,25 @@ describe('buildBookingOriginPayload', () => {
     });
   });
 
+  it('con la clave del enlace la manda también; una clave inválida o ausente no se manda', () => {
+    const code = '0123456789abcdef0123456789abcdef';
+    expect(buildBookingOriginPayload({ restrictedGardenerId: 'prov-1', providerLinkCode: code.toUpperCase() })).toEqual({
+      clientCapabilities: { feeWaiver: 1 },
+      bookingOrigin: 'provider_link',
+      originProviderId: 'prov-1',
+      originLinkCode: code,
+    });
+    for (const bad of [undefined, '', 'trampa', `${code}00`]) {
+      expect(buildBookingOriginPayload({ restrictedGardenerId: 'prov-1', providerLinkCode: bad })).not.toHaveProperty('originLinkCode');
+    }
+  });
+
+  it('una clave suelta, sin profesional ligado, no declara nada', () => {
+    expect(buildBookingOriginPayload({ providerLinkCode: '0123456789abcdef0123456789abcdef' })).toEqual({
+      clientCapabilities: { feeWaiver: 1 },
+    });
+  });
+
   it('create_quote lleva el origen del enlace', async () => {
     invokeMock.mockResolvedValueOnce({ data: { quoteId: 'q-1' }, error: null });
     await createAuthoritativeQuote({

@@ -1211,6 +1211,11 @@ export type Database = {
           client_latitude: number | null
           client_longitude: number | null
           client_total_price: number | null
+          commission_base_amount: number | null
+          commission_config_version: number | null
+          commission_fixed_at: string | null
+          commission_rate_bps: number | null
+          commission_rule: string | null
           confirmation_deadline_at: string | null
           confirmation_prompt_attempts: number
           confirmation_prompt_due_at: string | null
@@ -1275,6 +1280,11 @@ export type Database = {
           client_latitude?: number | null
           client_longitude?: number | null
           client_total_price?: number | null
+          commission_base_amount?: number | null
+          commission_config_version?: number | null
+          commission_fixed_at?: string | null
+          commission_rate_bps?: number | null
+          commission_rule?: string | null
           confirmation_deadline_at?: string | null
           confirmation_prompt_attempts?: number
           confirmation_prompt_due_at?: string | null
@@ -1339,6 +1349,11 @@ export type Database = {
           client_latitude?: number | null
           client_longitude?: number | null
           client_total_price?: number | null
+          commission_base_amount?: number | null
+          commission_config_version?: number | null
+          commission_fixed_at?: string | null
+          commission_rate_bps?: number | null
+          commission_rule?: string | null
           confirmation_deadline_at?: string | null
           confirmation_prompt_attempts?: number
           confirmation_prompt_due_at?: string | null
@@ -3121,6 +3136,8 @@ export type Database = {
         Args: { p_booking_id: string }
         Returns: Json
       }
+      get_commission_settings: { Args: never; Returns: Json }
+      get_public_billing_terms: { Args: never; Returns: Json }
       get_rebook_payload: { Args: { p_booking_id: string }; Returns: Json }
       has_valid_phyto_license: { Args: { p_user_id: string }; Returns: boolean }
       invitation_preview: { Args: { p_token: string }; Returns: Json }
@@ -3138,6 +3155,7 @@ export type Database = {
         Returns: string
       }
       lifecycle_tick_setting: { Args: { p_name: string }; Returns: string }
+      list_commission_audit: { Args: { p_limit?: number }; Returns: Json }
       list_bookings_pending_payment_reconciliation: {
         Args: { p_limit?: number }
         Returns: {
@@ -3202,6 +3220,7 @@ export type Database = {
         Args: never
         Returns: Json
       }
+      my_booking_link: { Args: never; Returns: Json }
       my_busy_hours: {
         Args: { p_end: string; p_start: string }
         Returns: {
@@ -3504,6 +3523,11 @@ export type Database = {
           p_license_number?: string
           p_member_id?: string
         }
+        Returns: Json
+      }
+      rotate_my_booking_link: { Args: never; Returns: Json }
+      save_commission_settings: {
+        Args: { p_expected_version: number; p_rates: Json }
         Returns: Json
       }
       save_push_subscription: {

@@ -23,6 +23,7 @@ import { defaultOptions, type MarketingOptions, type MarketingProfile } from '..
 
 const profile: MarketingProfile = {
   providerId: 'prov-1', name: 'Pablo Gómez', kind: 'solo', zone: 'Marbella', avatarUrl: null, ratingAverage: 4.5, ratingCount: 2,
+  linkCode: '0123456789abcdef0123456789abcdef',
 };
 const visible = ['Corte de césped', 'Poda de setos'];
 
@@ -36,7 +37,6 @@ function renderEditor(overrides: Partial<React.ComponentProps<typeof MaterialEdi
       material={getMaterial('social')}
       profile={profile}
       visibleServices={visible}
-      feeWaiverEnabled={false}
       canDownload
       avatar={null}
       options={options}
@@ -112,6 +112,6 @@ describe('MaterialEditor', () => {
     renderEditor();
     fireEvent.click(screen.getByRole('button', { name: /Copiar texto para la publicación/ }));
     await waitFor(() => expect(writeText).toHaveBeenCalled());
-    expect((writeText.mock.calls[0] as unknown as [string])[0]).toContain('https://garser.es/reservar/prov-1?utm_source=instagram');
+    expect((writeText.mock.calls[0] as unknown as [string])[0]).toContain(`https://garser.es/reservar/prov-1?c=${profile.linkCode}&utm_source=instagram`);
   });
 });

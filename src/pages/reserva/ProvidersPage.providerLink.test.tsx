@@ -156,6 +156,47 @@ describe('ProvidersPage — reserva desde el enlace de un profesional', () => {
     expect(screen.queryByText('Otro Profesional')).toBeNull();
   });
 
+  describe('aviso cuando la clave del enlace ya no vale', () => {
+    const CODE = '0123456789abcdef0123456789abcdef';
+    const withClaim = (linkClaim: 'verified' | 'rejected' | null, managementFee = 11.25) => {
+      const quote = quoteFor('gardener-B');
+      mocks.previewProviderQuotes.mockResolvedValue({
+        quotes: {
+          'gardener-B': {
+            ...quote,
+            economics: { ...quote.economics, managementFee, payableNow: managementFee, commission: { linkClaim } },
+          },
+        },
+        eligibleProviderIds: ['gardener-B'],
+        earliestByProvider: { 'gardener-B': { date: '2026-10-17', startHour: 9 } },
+      });
+    };
+
+    it('traía clave, el servidor la rechazó y paga gastos: se le explica por qué', async () => {
+      useLinkedBooking({ providerLinkCode: CODE });
+      withClaim('rejected');
+      render(<ProvidersPage />);
+      expect(await screen.findByText(/Este enlace ya no es el directo de Ana Jardines/)).toBeTruthy();
+      // La clave viaja al servidor para que decida él.
+      expect(mocks.previewProviderQuotes).toHaveBeenCalledWith(
+        expect.objectContaining({ bookingData: expect.objectContaining({ providerLinkCode: CODE }) }),
+      );
+    });
+
+    it.each([
+      ['la clave era buena', { providerLinkCode: CODE }, 'verified' as const, 11.25],
+      ['no traía clave (no se le prometió nada)', {}, 'rejected' as const, 11.25],
+      ['no paga gastos de gestión', { providerLinkCode: CODE }, 'rejected' as const, 0],
+      ['el servidor no se pronunció', { providerLinkCode: CODE }, null, 11.25],
+    ])('no avisa si %s', async (_label, booking, claim, fee) => {
+      useLinkedBooking(booking);
+      withClaim(claim, fee);
+      render(<ProvidersPage />);
+      expect(await screen.findByText('Ana Jardines')).toBeTruthy();
+      expect(screen.queryByText(/ya no es el directo/)).toBeNull();
+    });
+  });
+
   it('si no hace el servicio lo dice, propone cambiarlo y ofrece ver otros profesionales', async () => {
     mocks.pricedGardeners = ['gardener-A'];
 

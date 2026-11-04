@@ -12,6 +12,16 @@ vi.mock('../../lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }));
 
 import ProviderSetupChecklist from './ProviderSetupChecklist';
+import { resetPublicBillingTermsCache } from '../../hooks/usePublicBillingTerms';
+
+const FACTORY_TERMS = { version: 1, garserFirst: 'standard', linkFirst: 'none', garserRepeat: 'reduced', linkRepeat: 'none', maintenanceVisit: 'reduced' };
+
+/** El estado del alta y, aparte, lo que dicen los ajustes de comisiones (null = no se pueden leer). */
+const answer = (setup: unknown, billing: unknown = FACTORY_TERMS) =>
+  mocks.rpc.mockImplementation(async (fn: string) => {
+    if (fn === 'get_public_billing_terms') return billing ? { data: billing, error: null } : { data: null, error: { message: 'x' } };
+    return { data: setup, error: null };
+  });
 
 function status(overrides: Partial<ProviderSetupStatus> = {}): ProviderSetupStatus {
   return {
@@ -45,6 +55,7 @@ describe('ProviderSetupChecklist', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    resetPublicBillingTermsCache();
   });
   afterEach(() => cleanup());
 
@@ -77,15 +88,31 @@ describe('ProviderSetupChecklist', () => {
   });
 
   it('todo lo obligatorio hecho: tarjeta pequeña con el enlace, que se puede cerrar', async () => {
-    mocks.rpc.mockResolvedValue({ data: status(), error: null });
+    answer(status());
     render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
 
     expect(await screen.findByRole('heading', { name: 'Ya apareces a los clientes' })).toBeTruthy();
-    expect(screen.getByText(/sin gastos de gestión/)).toBeTruthy();
+    // Lo que dice de los gastos de gestión sale de los ajustes vigentes.
+    expect(await screen.findByText(/Tus clientes reservan contigo sin gastos de gestión \(salvo en las visitas de un plan de mantenimiento\)\./)).toBeTruthy();
     expect(screen.queryByRole('progressbar')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
     expect(screen.queryByRole('heading', { name: 'Ya apareces a los clientes' })).toBeNull();
     expect(localStorage.getItem(DISMISS_KEY)).toBe('1');
+  });
+
+  it('si los ajustes cambian cambia la frase; si no se pueden leer, no promete nada', async () => {
+    answer(status(), { ...FACTORY_TERMS, linkFirst: 'standard', linkRepeat: 'standard' });
+    const { unmount } = render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Ya apareces a los clientes' })).toBeTruthy();
+    expect(await screen.findByText('Tus clientes reservan directamente contigo.')).toBeTruthy();
+    expect(screen.queryByText(/sin gastos de gestión/i)).toBeNull();
+    unmount();
+
+    resetPublicBillingTermsCache();
+    answer(status(), null);
+    render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+    expect(await screen.findByText('Tus clientes reservan directamente contigo.')).toBeTruthy();
+    expect(screen.queryByText(/sin gastos de gestión/i)).toBeNull();
   });
 
   it('cerrada sigue cerrada… hasta que algo obligatorio deja de estar bien', async () => {
@@ -110,14 +137,32 @@ describe('ProviderSetupChecklist', () => {
     expect(localStorage.getItem(DISMISS_KEY)).toBeNull();
   });
 
-  it('compartir el enlace sin menú nativo lo copia', async () => {
-    mocks.rpc.mockResolvedValue({ data: status(), error: null });
+  it('compartir el enlace sin menú nativo lo copia, con su clave', async () => {
+    mocks.rpc.mockImplementation(async (fn: string) =>
+      fn === 'my_booking_link'
+        ? { data: { providerId: 'prov-1', code: '0123456789abcdef0123456789abcdef' }, error: null }
+        : { data: status(), error: null });
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Compartir enlace/ }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/reservar/prov-1`));
+    const share = await screen.findByRole('button', { name: /Compartir enlace/ });
+    await waitFor(() => expect((share as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(share);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/reservar/prov-1?c=0123456789abcdef0123456789abcdef`));
     expect(mocks.toast.success).toHaveBeenCalledWith('Enlace copiado');
+  });
+
+  it('sin la clave de su enlace no se puede compartir (un enlace sin clave no exime de nada)', async () => {
+    mocks.rpc.mockImplementation(async (fn: string) =>
+      fn === 'my_booking_link' ? { data: null, error: { message: 'x' } } : { data: status(), error: null });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+    const share = await screen.findByRole('button', { name: /Compartir enlace/ });
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledWith('my_booking_link'));
+    expect((share as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(share);
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it('si el servidor falla, no bloquea el panel y deja reintentar', async () => {

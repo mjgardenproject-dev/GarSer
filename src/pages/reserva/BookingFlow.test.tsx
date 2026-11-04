@@ -48,6 +48,7 @@ const { stepProbe } = vi.hoisted(() => ({
         { 'data-testid': 'step', 'data-step': step },
         JSON.stringify({
           restrictedGardenerId: bookingData.restrictedGardenerId ?? null,
+          providerLinkCode: bookingData.providerLinkCode ?? null,
           providerId: bookingData.providerId,
           timeSlot: bookingData.timeSlot,
           address: bookingData.address,
@@ -180,6 +181,7 @@ describe('BookingFlow — entrada por el enlace de un profesional', () => {
     const { data } = await readStep();
     expect(data).toEqual({
       restrictedGardenerId: 'gardener-B',
+      providerLinkCode: null,
       providerId: '',
       timeSlot: '',
       // Lo que describe el trabajo se conserva.
@@ -226,6 +228,63 @@ describe('BookingFlow — entrada por el enlace de un profesional', () => {
     await waitFor(async () => expect((await readStep()).data.restrictedGardenerId).toBe('gardener-B'));
     expect((await readStep()).step).toBe('address');
     expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  describe('la clave del enlace (?c=) viaja con la reserva y solo con la de ese profesional', () => {
+    const CODE = '0123456789abcdef0123456789abcdef';
+    const CODE_B = 'fedcba9876543210fedcba9876543210';
+
+    it('reserva nueva: la guarda junto al profesional', async () => {
+      renderFlow({ restrictedGardenerId: 'gardener-B', providerLinkCode: CODE });
+      await waitFor(async () => expect((await readStep()).data.restrictedGardenerId).toBe('gardener-B'));
+      expect((await readStep()).data.providerLinkCode).toBe(CODE);
+    });
+
+    it('sin clave en el enlace no hay clave (un enlace viejo no exime)', async () => {
+      renderFlow({ restrictedGardenerId: 'gardener-B' });
+      await waitFor(async () => expect((await readStep()).data.restrictedGardenerId).toBe('gardener-B'));
+      expect((await readStep()).data.providerLinkCode).toBeNull();
+    });
+
+    it('una clave mal formada se ignora', async () => {
+      renderFlow({ restrictedGardenerId: 'gardener-B', providerLinkCode: 'trampa' });
+      await waitFor(async () => expect((await readStep()).data.restrictedGardenerId).toBe('gardener-B'));
+      expect((await readStep()).data.providerLinkCode).toBeNull();
+    });
+
+    it('el mismo profesional con una clave nueva se queda con la nueva', async () => {
+      seedDraft(draftWithProviderA({ providerId: 'gardener-B', restrictedGardenerId: 'gardener-B', providerLinkCode: CODE }), 4);
+      renderFlow({ restrictedGardenerId: 'gardener-B', providerLinkCode: CODE_B });
+      await waitFor(async () => expect((await readStep()).step).toBe('confirmation'));
+      expect((await readStep()).data.providerLinkCode).toBe(CODE_B);
+    });
+
+    it('el mismo profesional sin clave en el enlace conserva la que ya tenía', async () => {
+      seedDraft(draftWithProviderA({ providerId: 'gardener-B', restrictedGardenerId: 'gardener-B', providerLinkCode: CODE }), 4);
+      renderFlow({ restrictedGardenerId: 'gardener-B' });
+      await waitFor(async () => expect((await readStep()).step).toBe('confirmation'));
+      expect((await readStep()).data.providerLinkCode).toBe(CODE);
+    });
+
+    it('otro profesional: la clave del anterior NO se hereda', async () => {
+      seedDraft(draftWithProviderA({ providerLinkCode: CODE }), 4);
+      renderFlow({ restrictedGardenerId: 'gardener-B' });
+      await waitFor(async () => expect((await readStep()).step).toBe('providers'));
+      expect((await readStep()).data).toMatchObject({ restrictedGardenerId: 'gardener-B', providerLinkCode: null });
+    });
+
+    it('otro profesional con su propia clave: usa la suya', async () => {
+      seedDraft(draftWithProviderA({ providerLinkCode: CODE }), 4);
+      renderFlow({ restrictedGardenerId: 'gardener-B', providerLinkCode: CODE_B });
+      await waitFor(async () => expect((await readStep()).step).toBe('providers'));
+      expect((await readStep()).data).toMatchObject({ restrictedGardenerId: 'gardener-B', providerLinkCode: CODE_B });
+    });
+
+    it('la clave se quita del historial una vez aplicada (recargar no la reaplica)', async () => {
+      renderFlow({ restrictedGardenerId: 'gardener-B', providerLinkCode: CODE });
+      await waitFor(async () => expect((await readStep()).data.restrictedGardenerId).toBe('gardener-B'));
+      await waitFor(() => expect(screen.getByTestId('location-state').textContent).toBe('null'));
+    });
   });
 
   it('no enseña la reserva vieja mientras decide', async () => {

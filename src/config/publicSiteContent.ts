@@ -162,36 +162,8 @@ export const costaDelSolFaqs: FaqItem[] = [
   },
 ];
 
-export const gardenersFaqs: FaqItem[] = [
-  {
-    question: '¿Cuánto me cuesta?',
-    answer: 'Nada. No hay cuota ni comisión: cobras el 100 % de tu precio.',
-  },
-  {
-    question: '¿Mis clientes pagan algo por reservar conmigo?',
-    answer: 'No. Si reservan desde tu enlace o vuelven a reservar contigo, pagan tu precio y nada más.',
-  },
-  {
-    question: '¿Y los clientes nuevos que me mande GarSer?',
-    answer: 'Esos pagan unos gastos de gestión a GarSer al reservar. Los paga el cliente, aparte: a ti no se te descuenta nada.',
-  },
-  {
-    question: '¿Cómo me pagan mis clientes?',
-    answer: 'Directamente a ti al terminar el trabajo, de la manera que acordéis. GarSer no toca tu dinero.',
-  },
-  {
-    question: '¿Mis clientes tienen que registrarse?',
-    answer: 'Solo para confirmar. Ven tu precio y tus huecos sin cuenta, y en el último paso crean una con su correo. Así siguen la reserva y hablan contigo por el chat.',
-  },
-  {
-    question: '¿Sirve para empresas con empleados?',
-    answer: 'Sí. Das de alta tu empresa, añades a tu equipo y cada empleado ve sus trabajos en su app. GarSer reparte los trabajos o eliges tú quién va.',
-  },
-  {
-    question: '¿Necesito instalar algo?',
-    answer: 'No. Funciona en el navegador del móvil o del ordenador. Si quieres, la añades a tu pantalla de inicio desde Safari o Chrome y activas los avisos en el móvil.',
-  },
-];
+// Las preguntas frecuentes de /para-jardineros están en `billingCopy.ts` (`gardenersFaqs(terms)`): dos de
+// ellas dependen de los ajustes de comisiones y no pueden ser un texto fijo.
 
 export const pageSeo = {
   general: {
@@ -204,21 +176,21 @@ export const pageSeo = {
   marbella: {
     title: 'Jardinería en Marbella | Reserva online con GarSer',
     description:
-      'Reserva trabajos de jardinería en Marbella con una experiencia clara, mobile first y enfocada a viviendas particulares.',
+      'Pide trabajos de jardinería en Marbella con una experiencia clara, mobile first y enfocada a viviendas particulares: indica tu dirección y te mostramos qué jardineros llegan hasta tu jardín.',
     path: '/marbella',
     ogImageSlot: 'shared.og.marbella',
   } satisfies SeoPageData,
   costaDelSol: {
     title: 'Jardinería en la Costa del Sol | Precios y disponibilidad | GarSer',
     description:
-      'Servicios de jardinería en la Costa del Sol: corte de césped, poda de setos, árboles y palmeras, desbroce y tratamientos. Consulta precio y disponibilidad de jardineros en Marbella, Estepona, Benahavís y alrededores.',
+      'Servicios de jardinería en la Costa del Sol: corte de césped, poda de setos, árboles y palmeras, desbroce y tratamientos. Indica tu dirección y te mostramos el precio y los jardineros que llegan hasta tu jardín.',
     path: '/costa-del-sol',
     ogImageSlot: 'shared.og.costaDelSol',
   } satisfies SeoPageData,
   gardeners: {
     title: 'Portal para jardineros gratis: reservas y clientes | GarSer',
     description:
-      'Portal y app gratis para jardineros y empresas: tus clientes reservan con tu enlace, tus precios y tu agenda, sin comisión. Y GarSer te trae clientes nuevos.',
+      'Portal y app gratis para jardineros y empresas: tus clientes reservan con tu enlace, tus precios y tu agenda. Y GarSer te trae clientes nuevos.',
     path: '/para-jardineros',
     ogImageSlot: 'shared.og.gardeners',
   } satisfies SeoPageData,
@@ -248,7 +220,7 @@ export const generalHomeContent = {
   gardenerCtaBadge: '¿Eres jardinero?',
   gardenerCtaTitle: 'Descubre las ventajas de trabajar con GarSer',
   gardenerCtaDescription:
-    'Tus clientes te reservan con tu enlace, sin comisión, y GarSer te trae clientes nuevos. Gratis para ti.',
+    'Tus clientes te reservan con tu enlace y GarSer te trae clientes nuevos. Gratis para ti.',
   gardenerCtaButtonLabel: 'Ver ventajas para jardineros',
 };
 
@@ -269,7 +241,7 @@ export const costaDelSolContent = {
   eyebrow: 'Jardinería en la Costa del Sol',
   title: 'Jardineros en la Costa del Sol: mira el precio y la disponibilidad antes de reservar',
   description:
-    'De Estepona a Marbella, muchas viviendas y urbanizaciones necesitan mantenimiento puntual de jardín sin atarse a un contrato anual. Aquí describes tu jardín, ves el precio calculado con las tarifas reales de los jardineros de tu zona y eliges día.',
+    'Muchas viviendas y urbanizaciones de la costa necesitan mantenimiento puntual de jardín sin atarse a un contrato anual. Aquí describes tu jardín, ves el precio calculado con las tarifas reales de los jardineros que llegan hasta tu dirección y eliges día.',
   finalCtaTitle: '¿Tienes un jardín en la Costa del Sol? Empieza por el precio',
   finalCtaDescription:
     'Sin visitas comerciales ni llamadas para pedir presupuesto: describes el jardín, ves el precio y la disponibilidad real, y reservas si te encaja.',
@@ -281,11 +253,10 @@ export type GardenersStepMockup = 'agenda' | 'link' | 'client';
 export type GardenersExtraIcon = 'chat' | 'reviews' | 'repeat' | 'price' | 'multiday' | 'done' | 'alerts';
 
 /**
- * Textos de /para-jardineros. Modelo que se explica (decisión del dueño, 2026-10-16): el
- * profesional no paga nada; sus clientes (los de su enlace y los que vuelven con él) tampoco;
- * los clientes que trae GarSer pagan ellos los gastos de gestión. Lo aplica el servidor con el
- * interruptor de Ajustes del admin (migración 20261019120000_own_clients_fee_waiver): mientras esté
- * apagado, todos los clientes siguen pagando gastos de gestión.
+ * Textos FIJOS de /para-jardineros: solo lo que es cierto con cualquier configuración de comisiones
+ * (el profesional no paga nada y cobra el 100 % de su precio, porque los gastos de gestión los paga el
+ * cliente, aparte). Todo lo que dependa de quién paga gastos de gestión sale de `billingCopy.ts` a
+ * partir de los ajustes vigentes; aquí NO puede haber una frase que prometa «sin comisión» a los clientes.
  */
 export const gardenersContent = {
   hero: {
@@ -293,36 +264,9 @@ export const gardenersContent = {
     title: 'La app gratis para gestionar las reservas de tus clientes',
     description:
       'Mandas tu enlace y tus clientes te reservan solos, con tus precios y en tus huecos libres. Además, GarSer te trae clientes nuevos.',
-    highlights: [
-      'Gratis para ti: sin cuota ni comisión',
-      'Tus clientes reservan sin pagar comisión',
-      'Cobras el 100 % de tu precio',
-    ],
     primaryCtaLabel: 'Crear mi cuenta gratis',
     primaryCtaNote: 'Sin tarjeta ni permanencia. Revisamos tu alta en menos de 24 h.',
     companiesLinkLabel: '¿Tienes una empresa con empleados? Mira cómo funciona para equipos',
-  },
-  feeSplit: {
-    title: 'Para ti es gratis. Para tus clientes, sin comisión.',
-    intro: 'Nunca pagas nada a GarSer. Lo único que cambia es quién trae al cliente:',
-    rows: [
-      {
-        id: 'own',
-        label: 'Tus clientes',
-        who: 'Reservan con tu enlace o vuelven a reservar contigo.',
-        badge: 'Sin comisión',
-        result: 'Pagan tu precio y nada más.',
-      },
-      {
-        id: 'garser',
-        label: 'Clientes nuevos de GarSer',
-        who: 'Te encuentran buscando jardinero en garser.es.',
-        badge: 'Gastos de gestión',
-        result: 'Esos gastos los paga el cliente, aparte. Tú cobras tu precio entero.',
-      },
-    ],
-    loyaltyNote:
-      'Y si un cliente que te trajo GarSer vuelve a reservar contigo, pasa a ser tuyo: deja de pagar gastos de gestión.',
   },
   stepsTitle: 'Así funciona',
   steps: [

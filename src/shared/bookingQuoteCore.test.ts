@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyManagementFeeWaiver, buildAuthoritativeBookingQuote } from './bookingQuoteCore';
+import { buildAuthoritativeBookingQuote } from './bookingQuoteCore';
 
 describe('buildAuthoritativeBookingQuote', () => {
   it.each([
@@ -651,44 +651,27 @@ describe('buildAuthoritativeBookingQuote', () => {
   });
 });
 
-// Lanzamiento (2026-10): espejo de public.waive_quote_economics (misma forma exacta).
-describe('applyManagementFeeWaiver', () => {
-  const economics = {
-    currency: 'EUR' as const,
-    taxRate: 0.21,
-    serviceGrossTotal: 100,
-    serviceNetSubtotal: 82.64,
-    serviceTaxAmount: 17.36,
-    managementFee: 12.5,
-    payableNow: 12.5,
-    payableLater: 100,
-    lines: [
-      { code: 'service_line_1', label: 'Corte', amount: 100, kind: 'service' as const },
-      { code: 'management_fee', label: 'Gastos de gestión', amount: 12.5, kind: 'fee' as const },
-    ],
-    stripeLineItems: [{ code: 'management_fee', label: 'Gastos de gestión', unitAmount: 12.5, quantity: 1 }],
-  };
-
-  it('quita la comisión, el cobro de Stripe y su línea, y guarda la comisión perdonada', () => {
-    const waived = applyManagementFeeWaiver(economics, 'provider_link');
-    expect(waived.managementFee).toBe(0);
-    expect(waived.payableNow).toBe(0);
-    expect(waived.stripeLineItems).toEqual([]);
-    expect(waived.lines.map((line) => line.code)).toEqual(['service_line_1']);
-    expect(waived.feeWaiver).toEqual({ reason: 'provider_link', waivedFee: 12.5 });
-    // El precio del servicio no se toca.
-    expect(waived.serviceGrossTotal).toBe(100);
-    expect(waived.payableLater).toBe(100);
+// Comisiones configurables (2026-11): el motor de precios entrega la economía del SERVICIO, sin
+// comisión. La comisión (regla, porcentaje, céntimos) la pone el servidor al firmar, en SQL
+// (`quote_commission_economics`), y se prueba en supabase/tests/commission_settings.test.sql.
+describe('economía del motor de precios', () => {
+  const quote = buildAuthoritativeBookingQuote({
+    bookingData: { serviceIds: ['svc'], lawnZones: [{ quantity: 100, state: 'normal' }] } as never,
+    providerConfig: { pricing_method: 'per_quantity', price_per_m2: 1, yield_m2_per_hour: 50, minimum_price: 0, condition_surcharges: { descuidado: 0, muy_descuidado: 0 }, waste_removal: { percentage: 0 } },
   });
 
-  it('no modifica la economía original', () => {
-    applyManagementFeeWaiver(economics, 'returning_client');
-    expect(economics.managementFee).toBe(12.5);
-    expect(economics.lines).toHaveLength(2);
+  it('el precio del servicio sale como siempre: euros enteros, IVA incluido', () => {
+    expect(quote.totalPrice).toBe(100);
+    expect(quote.economics).toMatchObject({ serviceGrossTotal: 100, payableLater: 100, taxRate: 0.21 });
+    expect(Number.isInteger(quote.economics.serviceGrossTotal)).toBe(true);
   });
 
-  it('es idempotente: conserva la comisión perdonada original', () => {
-    const twice = applyManagementFeeWaiver(applyManagementFeeWaiver(economics, 'provider_link'), 'maintenance_plan');
-    expect(twice.feeWaiver).toEqual({ reason: 'maintenance_plan', waivedFee: 12.5 });
+  it('no lleva comisión ni cobro: nadie cobra un porcentaje que no se ha decidido', () => {
+    expect(quote.economics.managementFee).toBe(0);
+    expect(quote.economics.payableNow).toBe(0);
+    expect(quote.economics.stripeLineItems).toEqual([]);
+    expect(quote.economics.lines.map((line) => line.code)).not.toContain('management_fee');
+    expect(quote.economics.commission).toBeUndefined();
+    expect(quote.economics.feeWaiver).toBeUndefined();
   });
 });

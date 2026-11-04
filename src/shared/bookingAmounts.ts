@@ -13,16 +13,17 @@
  *
  * La comision NO es derivable de servicePrice: `respond_booking_price_change` puede mutar
  * `total_price` despues de que la comision ya se haya cobrado, y en ese caso no se recobra.
- * Por eso `management_fee` es una columna persistida y este modulo nunca aplica el 12,5%
- * sobre una reserva ya creada. Ver `getQuoteAmounts` para la fase pre-reserva.
+ * Por eso `management_fee` es una columna persistida y este modulo nunca calcula la comision
+ * de una reserva ya creada. Ver `getQuoteAmounts` para la fase pre-reserva.
+ *
+ * Tampoco decide cuanto se cobra: el porcentaje ya no es una constante del codigo sino una de las
+ * cinco reglas que configura el administrador (`commission_settings`), y quien aplica la regla y
+ * hace la cuenta en centimos es SQL (`apply_commission_to_economics`). Aqui solo se LEEN importes.
  *
  * IMPORTANTE: este fichero NO debe importar nada. Lo consumen tanto React como las edge
  * functions de Deno (que lo cargan por ruta relativa); cualquier import arrastraria el
  * motor de precios entero (~60 KB) al bundle de las funciones de email.
  */
-
-/** Comision de la plataforma. Unico lugar del repo donde vive la tasa. */
-export const BOOKING_MANAGEMENT_FEE_RATE = 0.125;
 
 /**
  * Estado del cargo de gastos de gestion. El cobro de Stripe es una autorizacion con captura
@@ -33,11 +34,18 @@ export const BOOKING_MANAGEMENT_FEE_RATE = 0.125;
 export type BookingFeeState = 'held' | 'charged' | 'void';
 
 /**
- * Lanzamiento (2026-10): por qué una reserva va SIN gastos de gestión. Lo decide el servidor al
- * firmar el presupuesto (`management_fee_waiver_reason` en SQL) y queda en la economía firmada
- * (`feeWaiver.reason`) y en la reserva (`management_fee_source = 'waived_<motivo>'`).
+ * Por qué una reserva va SIN gastos de gestión. Lo decide el servidor al firmar el presupuesto
+ * (`apply_commission_to_economics` en SQL, cuando la regla que toca está configurada al 0 %) y queda
+ * en la economía firmada (`feeWaiver.reason`) y en la reserva (`management_fee_source = 'waived_<motivo>'`).
+ * `zero_commission` es una regla al 0 % que no es de enlace, de cliente que repite ni de plan.
+ * La lista es la misma que `public.fee_waiver_reasons()` en SQL.
  */
-export const MANAGEMENT_FEE_WAIVER_REASONS = ['provider_link', 'returning_client', 'maintenance_plan'] as const;
+export const MANAGEMENT_FEE_WAIVER_REASONS = [
+  'provider_link',
+  'returning_client',
+  'maintenance_plan',
+  'zero_commission',
+] as const;
 export type ManagementFeeWaiverReason = (typeof MANAGEMENT_FEE_WAIVER_REASONS)[number];
 
 export const isManagementFeeWaiverReason = (value: unknown): value is ManagementFeeWaiverReason =>
@@ -225,6 +233,8 @@ export function feeWaiverReasonText(
         : 'Ya has trabajado con este profesional: sin gastos de gestión.';
     case 'maintenance_plan':
       return 'Visita de tu plan de mantenimiento: sin gastos de gestión.';
+    case 'zero_commission':
+      return 'Esta reserva va sin gastos de gestión.';
     default:
       return '';
   }

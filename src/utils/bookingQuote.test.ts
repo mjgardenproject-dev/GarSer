@@ -40,8 +40,9 @@ describe('bookingQuote', () => {
     expect(result.economics).toMatchObject({
       currency: 'EUR',
       serviceGrossTotal: 60,
-      managementFee: 7.5,
-      payableNow: 7.5,
+      // La comisión no la pone el motor de precios: la firma el servidor (SQL) con la configuración.
+      managementFee: 0,
+      payableNow: 0,
       payableLater: 60,
     });
     expect(result.economics.serviceNetSubtotal).toBeCloseTo(49.59, 2);
@@ -86,15 +87,10 @@ describe('bookingQuote', () => {
       { desc: '2 m2 de arbustos (medianas, descuidado)', price: 53 },
       { desc: 'Ajuste por importe mínimo (80€)', price: 27 },
     ]);
-    expect(result.economics.managementFee).toBe(10);
-    expect(result.economics.stripeLineItems).toEqual([
-      {
-        code: 'management_fee',
-        label: 'Gastos de gestión',
-        unitAmount: 10,
-        quantity: 1,
-      },
-    ]);
+    // El precio (80 € por el mínimo) no cambia; la comisión no la calcula el motor.
+    expect(result.economics.serviceGrossTotal).toBe(80);
+    expect(result.economics.managementFee).toBe(0);
+    expect(result.economics.stripeLineItems).toEqual([]);
   });
 
   it('falla cerrado cuando la configuración de palmeras no cubre todos los grupos solicitados', () => {

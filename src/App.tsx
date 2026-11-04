@@ -47,6 +47,7 @@ const ServicesManagement = lazy(() => import('./pages/admin/ServicesManagement')
 const PhytosanitaryManagement = lazy(() => import('./pages/admin/PhytosanitaryManagement'));
 const UserManagement = lazy(() => import('./pages/admin/UserManagement'));
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
+const CommissionSettings = lazy(() => import('./pages/admin/CommissionSettings'));
 const ProvidersSetupManagement = lazy(() => import('./pages/admin/ProvidersSetupManagement'));
 const RoleMonitor = lazy(() => import('./components/admin/RoleMonitor'));
 const IncidentsManagement = lazy(() => import('./pages/admin/IncidentsManagement'));
@@ -266,6 +267,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
               <Route path="services" element={<ServicesManagement />} />
               <Route path="phytosanitary" element={<PhytosanitaryManagement />} />
               <Route path="users" element={<UserManagement />} />
+              <Route path="commissions" element={<CommissionSettings />} />
               <Route path="settings" element={<AdminSettings />} />
               <Route path="applications" element={<Navigate to="/admin/users" replace />} />
               <Route path="licenses" element={<Navigate to="/admin/phytosanitary" replace />} />

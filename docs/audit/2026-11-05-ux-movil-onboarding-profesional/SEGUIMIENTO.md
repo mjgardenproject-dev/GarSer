@@ -15,7 +15,7 @@ Método: cada fase se implementa, se prueba con tests, se prueba **navegando de 
 | 2 — Actualizar estado de la solicitud | 6 | ✅ Hecha y verificada en local (2026-11-05) |
 | 3 — Confirmar esta dirección | 4 | ✅ Hecha y verificada en local (2026-11-05) |
 | 4 — Horario y reglas sin preconfigurar + aviso | 5b | ✅ Hecha y verificada en local (2026-11-05) |
-| 5 — Botón Activar de tres estados | 7.1 | ⏳ |
+| 5 — Botón Activar de tres estados | 7.1 | ✅ Hecha y verificada en local (2026-11-05) |
 | 6 — Primeros pasos guiados | 7.2 | ⏳ |
 
 ## Fase 1 — hecha
@@ -132,3 +132,29 @@ Tests nuevos: `CoverageTab` (6), `providerSetup` (+2). Suite completa: 179 archi
 Tests: `RecurringScheduleManager` 3 → 14, `providerSetup` +2. Suite completa: 179 archivos, 2.774 tests en verde.
 
 **Pendiente de decidir (no bloquea):** la semilla local de `jardinero.local` tiene antelación de 12 h, que no está entre las opciones del selector (0/24/48/72/168): la pantalla muestra «Sin restricción» aunque guarda 12. Es anterior a esta ronda y solo afecta a datos de prueba.
+
+## Fase 5 — hecha
+
+**Qué se cambió**
+
+- `ServiceActivateButton` (nuevo): botón **«Activar»** con tres estados — **gris muy claro** (no se puede activar: falta el precio; sigue siendo tocable, `aria-disabled` y no `disabled`), **gris más oscuro** (configurado, se puede activar) y **verde «Activado»**. Mínimo 44 px, sin doble toque.
+- `ServiceItem` (Mi perfil → Servicios): el círculo mudo se sustituye por ese botón. Dos filas (nombre + engranaje / qué falta + botón) para que en 375 px el nombre no quede en una columna estrecha. Pistas: «Primero configura tu precio con el engranaje», «Configurado. Falta activarlo», «Activado: los clientes pueden reservarlo».
+- `ServicesTab`: tocar un servicio **sin configurar** ya no da un error suelto: avisa «Primero configura el precio de X» y **abre su configuración**. `ProfileSettings` solo pasa `canActivateService` (usa su `isServiceConfigValid` de siempre); no se tocó `handleToggleService`.
+- `serviceActivation.ts` (nuevo): `isSavedServiceConfigValid` (los **mismos validadores** del configurador, con la normalización de fitosanitarios), `loadServiceActivation` y `setServiceActive` (cambia **solo** `active` y deja al día `gardener_profiles.services`).
+- **Ayuda «Completa tu cuenta»**, paso «Servicios y precios»: con servicios configurados y sin activar dice **«Tienes N servicios configurados pero sin activar: A y B. Actívalos…»** y enseña **cada servicio con su botón** para activarlo ahí mismo; los empezados a medias salen en gris claro y llevan a terminarlos. Con uno ya activo y otros sin activar, el paso queda hecho y avisa «Tienes además…». Los datos los lee el navegador (`useProviderSetupStatus`); el servidor no se toca.
+
+**No se tocó:** precios, configuradores, el contenido de la configuración guardada, RLS ni funciones.
+
+**Verificación local (375×812, `jardin-nuevo.ux`; sembrados 2 servicios válidos y 1 a medias con `{}`)**
+
+| Caso | Resultado |
+|---|---|
+| Ayuda del panel | «Tienes 2 servicios configurados pero sin activar: Corte de césped y Poda de setos» + 3 botones: **Activar** oscuro, **Activar** claro (árboles, a medias), **Activar** oscuro |
+| Pulsar «Activar» en césped, en la ayuda | Toast «Corte de césped activado»; el botón pasa a verde **Activado**; el paso queda «Hecho» con «Tienes además 1 servicio configurado…»; BD: `active = true` y `gardener_profiles.services` = [césped] |
+| Mi perfil → Servicios | Césped **Activado** (verde), setos **Activar** (oscuro), los otros 5 **Activar** (claro) con su pista; layout a dos filas legible |
+| Activar setos / desactivar césped desde Mi perfil | Setos → verde; césped → vuelve a oscuro; BD coherente |
+| Tocar «Activar» claro (Desbroce) | Toast «Primero configura el precio de Desbroce de malas hierbas.» y se abre su configuración |
+
+Tests nuevos: `ServiceActivateButton` (5), `ServiceItem` (4), `ServicesTab` (5), `serviceActivation` (10), `providerSetup` (+7), `ProviderSetupChecklist.services` (6). Suite completa: 184 archivos, 2.810 tests en verde.
+
+**Límite de lo verificado:** el paso «configurar y guardar un servicio desde cero hasta que el botón pasa a oscuro» se probó con configuraciones ya válidas cargadas de la base (las de la semilla), no rellenando el formulario del configurador a mano. El mismo `isServiceConfigValid` decide en los dos casos.

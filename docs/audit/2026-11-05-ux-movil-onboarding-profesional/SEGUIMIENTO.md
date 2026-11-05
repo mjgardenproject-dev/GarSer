@@ -16,7 +16,7 @@ Método: cada fase se implementa, se prueba con tests, se prueba **navegando de 
 | 3 — Confirmar esta dirección | 4 | ✅ Hecha y verificada en local (2026-11-05) |
 | 4 — Horario y reglas sin preconfigurar + aviso | 5b | ✅ Hecha y verificada en local (2026-11-05) |
 | 5 — Botón Activar de tres estados | 7.1 | ✅ Hecha y verificada en local (2026-11-05) |
-| 6 — Primeros pasos guiados | 7.2 | ⏳ |
+| 6 — Primeros pasos guiados | 7.2 | ✅ Hecha y verificada en local (2026-11-05) |
 
 ## Fase 1 — hecha
 
@@ -158,3 +158,58 @@ Tests: `RecurringScheduleManager` 3 → 14, `providerSetup` +2. Suite completa: 
 Tests nuevos: `ServiceActivateButton` (5), `ServiceItem` (4), `ServicesTab` (5), `serviceActivation` (10), `providerSetup` (+7), `ProviderSetupChecklist.services` (6). Suite completa: 184 archivos, 2.810 tests en verde.
 
 **Límite de lo verificado:** el paso «configurar y guardar un servicio desde cero hasta que el botón pasa a oscuro» se probó con configuraciones ya válidas cargadas de la base (las de la semilla), no rellenando el formulario del configurador a mano. El mismo `isServiceConfigValid` decide en los dos casos.
+
+## Fase 6 — hecha
+
+**Qué se cambió**
+
+- **La guía va primero** (`GardenerDashboard`): mientras falte algo obligatorio, «Completa tu cuenta» va **encima** de los seis atajos (antes, debajo y casi fuera de pantalla). El panel y la ayuda comparten **un solo estado** (`useProviderSetupStatus({ enabled })`). Con todo hecho, vuelve a su sitio de siempre.
+- **Un paso a la vez** (`SetupStepList`, modo `guided`): el que toca va **abierto, numerado («Paso 2 de 3 · ahora») y con «Qué tienes que hacer»** en pasos concretos (`howTo` en `providerSetup.ts`, un solo sitio); los otros pendientes, en una línea con «Ver cómo» (y «Ocultar»); los hechos, compactos (título + resumen en una línea).
+- **Cada pantalla sabe en qué paso estás** (`SetupGuideBanner`, nuevo): en Servicios, Zona y Horario (autónomo) sale arriba «Primeros pasos · Paso X de N» con lo que hay que hacer; al terminarlo cambia a «¡Hecho!» + **«Siguiente paso: …»**, y al completar el último, «¡Todo listo!» + «Volver al panel». Se actualiza **solo al guardar** (`SETUP_CHANGED_EVENT`, `notifySetupChanged()` tras activar un servicio, guardar un precio, confirmar la zona o guardar el horario).
+- **«Precio guardado. ¿Activas X ahora?»** (`ServicesTab`): tras guardar un precio válido de un servicio apagado, un aviso con botón «Activar». Antes el servicio se quedaba «configurado» sin que nada dijera que faltaba el último toque.
+- **Ya no se vuelve a entrar «dentro» de una pantalla a medias:** el panel recuerda la última pestaña (`gardener_active_tab`), pero **mientras falte algo por configurar abre el panel** (marca `gardener_setup_incomplete`), donde está la guía.
+- **Lenguaje llano:** pasos y textos de `providerSetup.ts`; «Cobertura validada… coordenadas operativas…» ya no existe.
+
+**No se tocó:** precios, configuradores, servidor, RLS, funciones.
+
+**Verificación local (375×812, y 320×568 para desbordes)**
+
+| Recorrido | Resultado |
+|---|---|
+| Autónomo nuevo (`jardin-nuevo.ux`): panel con una pestaña vieja («Disponibilidad») guardada y la cuenta a medias | Entra en el **panel**, con la guía arriba: «Paso 1 de 3 · ahora — Servicios y precios», con «Qué tienes que hacer» y el botón «Activar» del servicio configurado; Zona y Horario en una línea con «Ver cómo» |
+| Pulsar «Activar» (en la ayuda) | El paso queda hecho (✓ compacto) y **pasa solo al «Paso 2 de 3 · ahora — Zona de trabajo»** |
+| «Confirmar mi zona» → pestaña Cobertura | Franja «Primeros pasos · Paso 2 de 3 · Zona de trabajo» con las 3 acciones; al confirmar, **se vuelve «¡Hecho! … Siguiente paso: Horario»** sin recargar |
+| «Siguiente paso» → panel → «Crear horario» | Abre **Horario fijo**, franja «Paso 3 de 3» + aviso de lo que falta; con días, franja, semanas y antelación elegidos → guardar → confirmar → franja **«¡Todo listo! … Volver al panel»** |
+| Volver al panel | «Ya apareces a los clientes», la ayuda ya **debajo** de los atajos; `gardener_setup_incomplete = 0` |
+| Mi perfil → Servicios → engranaje de césped → cambiar el precio → «Guardar cambios» | Toast **«Precio guardado. ¿Activas Corte de césped ahora?» [Activar]**; al pulsarlo, el servicio pasa a **Activado** y la base queda `active = true` |
+| Empresa (`empresa-aprobada.ux`) | Misma guía: «Paso 4 de 6 · ahora» con sus acciones, 3 pasos hechos compactos, 2 plegados; el paso de ahora arranca a y=555 de 812 |
+| Desbordes a 320×568 (panel, Cobertura, Servicios) | Sin scroll horizontal |
+
+Tests nuevos: `SetupGuideBanner` (7), `ProviderSetupChecklist` (+3 guiada), `ServicesTab` (+4 oferta de activar). Suite completa: **185 archivos, 2.824 tests en verde**; `npm run build` compila; ESLint sin errores.
+
+**Límites de lo verificado**
+
+- El paso «Horario» de una **empresa** se guía desde el panel (pasos y «Ver cómo»), pero **no** lleva franja «Paso X de N» en su pantalla de horario (es el horario del equipo): decisión deliberada.
+- Con el servidor, la recarga de la ayuda tras guardar depende de que el evento llegue: si el guardado se hace desde otra pestaña del navegador, se actualiza al volver a la app (`useRefreshOnReturn`, ya existente).
+
+---
+
+## Resumen de la ronda
+
+| Fallo | Estado | Dónde se comprobó |
+|---|---|---|
+| 1 Progreso del alta tapado | ✅ Corregido (progreso fijo) — **confirmar en el iPhone** | Local: fijo a y=65 en todas las posiciones de scroll |
+| 2 «En revisión» tapado | ✅ Corregido (causa: `pb-16` en páginas sin menú inferior) — **confirmar en el iPhone** | Local: 812/812 y sin scroll |
+| 3 Menú de empresa sobre el encabezado | ✅ Corregido | Local: pila Navbar + AppHeader sin solape en las 6 pantallas |
+| 4 Confirmar esta dirección | ✅ | Local con geocodificación real |
+| 5a Disponibilidad solapada | ✅ | Local |
+| 5b Horario/reglas sin preconfigurar + aviso | ✅ | Local |
+| 6 Actualizar estado de la solicitud | ✅ (botón + al volver a la app) | Local con el administrador aceptando |
+| 7.1 Botón «Activar» de tres estados | ✅ | Local |
+| 7.2 Primeros pasos guiados | ✅ | Local, autónomo y empresa |
+
+## Acciones manuales del usuario
+
+- **(nada que desplegar en servidor):** ninguna fase lleva migración ni Edge Function. Solo el **front** (Vercel) cuando se fusione el PR.
+- **Pruebas en producción:** sección 33 de `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md`. Imprescindible en el iPhone con la web instalada: **33.1 y 33.2** (fallos 1 y 2: no se reproducen en el emulador).
+- **Commit/PR:** la rama `auditoria/ux-movil-onboarding-profesional` tiene solo los documentos commiteados; el código está sin commitear (a la espera de que se pida).

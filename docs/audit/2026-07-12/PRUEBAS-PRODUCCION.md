@@ -1730,6 +1730,51 @@ where u.email in ('gmail-nuevo-1@gmail.com', 'gmail-nuevo-2@gmail.com');
 
 ---
 
+## Sección 33 — Alta y primeros pasos del profesional en el móvil (2026-11-05)
+
+Nueve fallos que salieron al crear una cuenta de jardinero y de empresa desde el iPhone: encabezados que se pisan, progreso y mensaje «en revisión» tapados, zona de trabajo sin confirmar, horario preconfigurado, estado de la solicitud que no se actualizaba, servicios sin activar y una ayuda que obligaba a adivinar. Detalle y causas: `docs/audit/2026-11-05-ux-movil-onboarding-profesional/SEGUIMIENTO.md`.
+
+Requisitos previos: solo el despliegue del front en Vercel (**sin migraciones ni funciones**). **Todas con el iPhone y la web instalada en la pantalla de inicio**, y recarga a fondo (o cierra y abre la app) para no ver la versión antigua. Necesitas: una cuenta de jardinero **recién aprobada** (sin servicios), otra de **empresa** y, de ser posible, el panel de admin en otro dispositivo.
+
+**A. Encabezados (lo que no se reproduce en un ordenador)**
+
+- [ ] **33.1 — Alta de empresa.** Entra con una cuenta de empresa sin enviar (o crea una) y abre `/empresa/solicitud`. ✅ Debajo de la barra de GarSer.es hay **siempre** una franja con «Alta de empresa · Paso X de 5» y la barra de progreso, **aunque hayas bajado o subido la pantalla**. Pasa de paso con «Siguiente» y vuelve atrás con «Atrás». ❌ La barra tapada por la cabecera y solo visible deslizando hacia abajo.
+- [ ] **33.2 — «Solicitud en revisión».** Con la solicitud enviada, mira la pantalla de espera (empresa: `/empresa/estado`; jardinero: `/status`). ✅ La tarjeta se ve **entera**, debajo de la barra de GarSer.es, y la pantalla **no tiene scroll de más** (no hay nada que bajar). ❌ La barra tapa parte de la tarjeta.
+- [ ] **33.3 — Alta de jardinero.** `/apply`. ✅ La franja «Alta de jardinero · Paso X de 5» queda fija bajo la barra al hacer scroll.
+- [ ] **33.4 — Panel de empresa.** Entra con la empresa aprobada. Baja y sube en cada pestaña (Agenda, Equipo, Marketing, Tu empresa). ✅ La barra de GarSer.es queda **siempre arriba** y el nombre de la empresa con sus pestañas se pega **justo debajo**; nunca se montan una encima de la otra.
+- [ ] **33.5 — Resto de pantallas con cabecera.** Mis reservas, Chat, Mi cuenta y «Gestión de disponibilidad» (jardinero y empresa), y «Mi trabajo» de un empleado. ✅ Mismo comportamiento: dos barras apiladas, sin solaparse, también con el menú ☰ abierto.
+
+**B. Estado de la solicitud (fallo 6)**
+
+- [ ] **33.6 — Actualizar estado.** Con una solicitud en revisión, pulsa «**Actualizar estado**». ✅ Sale «Sigue en revisión. Te avisaremos por correo…» y la pantalla no parpadea.
+- [ ] **33.7 — Aceptar sin cerrar sesión.** Con la pantalla de espera abierta en el móvil, **acepta la solicitud desde el panel de admin**. En el móvil pulsa «Actualizar estado». ✅ Entras al panel (de jardinero o de empresa) **sin cerrar sesión**. Repite saliendo de la app, esperando 15 s y volviendo a abrirla **sin pulsar nada**: ✅ entra sola.
+
+**C. Zona de trabajo (fallo 4)**
+
+- [ ] **33.8 — Confirmar esta dirección.** Con una cuenta recién aprobada (dirección escrita, sin tocar nada): «Mi perfil → Cobertura». ✅ Sale «Falta confirmar tu zona de trabajo» con tu dirección, los km y el botón **«Confirmar esta dirección»**. Púlsalo. ✅ «Zona confirmada»; el botón desaparece; en el panel, el paso «Zona de trabajo» queda hecho. Con una dirección inventada: ✅ aviso rojo y el botón sigue ahí.
+
+**D. Horario sin preconfigurar (fallo 5b)**
+
+- [ ] **33.9 — Todo vacío.** Cuenta nueva → «Horario» → «Horario fijo». ✅ «Desde/Hasta», «Semanas de agenda» y «Antelación mínima» dicen **«Elige…»** (nada de 9-17, «1 mes» ni «24 horas»). Marca un día: ✅ **no se rellena** el calendario hasta elegir las dos horas. Al tocar un selector, ✅ el móvil **no hace zoom**.
+- [ ] **33.10 — Aviso y guardado.** ✅ Arriba, «Te quedan cosas por configurar en tu horario» con la lista, que se vacía según eliges. Pulsa «Guardar cambios» **sin** elegir semanas ni antelación: ✅ avisa, marca los campos en rojo y **no guarda**. Elígelos y guarda: ✅ se guarda y el aviso desaparece. En la ayuda, el paso recomendado «Reglas de tu horario» queda hecho.
+
+**E. Activar servicios (fallo 7.1)**
+
+- [ ] **33.11 — Botón «Activar».** «Mi perfil → Servicios». ✅ Cada servicio tiene un botón **«Activar»**: gris **muy claro** si aún no tiene precio, gris **más oscuro** si está configurado, **verde «Activado»** si está activo. Toca uno claro: ✅ avisa «Primero configura el precio de…» y abre su configuración. Toca uno oscuro: ✅ pasa a verde y sale «Servicio … activado». Toca uno verde: ✅ se desactiva.
+- [ ] **33.12 — En la ayuda.** Configura el precio de dos servicios **sin activarlos**. ✅ La ayuda dice «**Tienes 2 servicios configurados pero sin activar**» con un botón «Activar» por servicio; pulsa uno: ✅ pasa a verde y el paso se actualiza.
+- [ ] **33.13 — «¿Lo activas ahora?».** Guarda un precio válido de un servicio apagado. ✅ Sale «Precio guardado. ¿Activas … ahora?» con botón **«Activar»**.
+
+**F. Primeros pasos guiados (fallo 7.2)**
+
+- [ ] **33.14 — La guía, primero.** Cuenta recién aprobada, abre el panel. ✅ «Completa tu cuenta profesional» está **arriba**, antes de los seis botones; el paso «ahora» sale abierto («Paso 1 de 3 · ahora») con **«Qué tienes que hacer»** en pasos; los demás, en una línea con «Ver cómo».
+- [ ] **33.15 — Recorrido completo.** Sigue la guía hasta el final: Servicios → Zona → Horario. En cada pantalla, ✅ arriba sale «Primeros pasos · Paso X de N» con lo que hay que hacer; al terminar el paso, **«¡Hecho!» + «Siguiente paso: …»**; al terminar el último, «¡Todo listo!». Al volver al panel: «Ya apareces a los clientes» y la ayuda pasa **debajo** de los botones.
+- [ ] **33.16 — No te pierdes.** Deja a medias la configuración dentro de «Disponibilidad», cierra la app y vuelve a abrirla. ✅ Entras en el **panel** (con la guía), no dentro de «Disponibilidad».
+- [ ] **33.17 — Empresa.** El panel de la empresa muestra la misma guía numerada («Paso X de 6 · ahora»).
+
+> **Comprobado ya en local (2026-11-05):** 185 archivos y 2.824 tests; y navegando a 375 px (y 320 px para desbordes) con cuentas locales de jardinero nuevo, jardinero completo, empresa en alta, empresa en revisión, empresa aprobada y empleado: pila de barras medida en las 6 pantallas, progreso fijo en las dos altas, `/empresa/estado` sin scroll, aceptación por el admin con la pantalla abierta, confirmar dirección con geocodificación real (y con dirección imposible), horario vacío con validación, activación desde la ayuda y desde Mi perfil, el aviso «¿Activas…?» tras guardar por el configurador real y el recorrido guiado completo hasta «Ya apareces». **Lo único que no se puede comprobar fuera del iPhone son 33.1 y 33.2.**
+
+---
+
 ---
 
 ## Criterio de GO definitivo
@@ -1748,6 +1793,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 21 verde — formularios manuales con el mismo precio que antes (21.2 es bloqueante) |
 | [ ] | Sección 29 verde — comisiones configurables (29.6, 29.7 y 29.8 son bloqueantes: es dinero) |
 | [ ] | Sección 32 verde — acceso en el móvil y tipo de cuenta con Google (32.8, 32.9 y 32.10 son bloqueantes: un profesional no puede acabar como cliente) |
+| [ ] | Sección 33 verde — alta y primeros pasos en el móvil (33.1 y 33.2, con el iPhone, son bloqueantes: un profesional no puede quedarse sin ver su progreso ni su estado) |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

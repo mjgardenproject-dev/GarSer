@@ -207,3 +207,11 @@ estético. Si se necesita un input visualmente compacto, se reduce el `padding`,
    configuraciones largas donde un mensaje de "Guardado" en cada tecleo es ruidoso.
 
 No mezclar los dos patrones dentro de la misma pantalla.
+
+## 11. Activar servicios y guía de primeros pasos (2026-11-05)
+
+- **Botón «Activar»** (`src/components/gardener/ServiceActivateButton.tsx`) — la **única** forma de activar/desactivar un servicio (Mi perfil → Servicios y la ayuda «Completa tu cuenta»). Tres estados: *locked* (gris muy claro, falta el precio; **sigue siendo tocable**: abre la configuración y explica), *ready* (gris más oscuro, se puede activar) y *active* (verde, «Activado»). Un círculo sin texto no explica nada; no se vuelve a usar para esto.
+- **Guía de primeros pasos**: `ProviderSetupChecklist` en modo `guided` (un paso a la vez: el de ahora abierto con «Qué tienes que hacer», los demás en una línea, los hechos compactos). Los textos de cada paso viven en `src/shared/providerSetup.ts` (`detail` = por qué; `howTo` = cómo), **no** en los componentes.
+- **Franja «Paso X de N»** (`SetupGuideBanner`) en las pantallas donde se hace un paso (Servicios, Zona, Horario). Al guardar algo que cuenta para la ayuda, llamar a `notifySetupChanged()` (`src/utils/setupEvents.ts`): la ayuda y la franja se releen solas.
+- Un valor que el profesional **no ha decidido** no se preselecciona (horario, semanas de agenda, antelación): selector vacío («Elige…») y no se guarda hasta elegirlo.
+- Estados «pendiente de confirmar» (p. ej. la zona de trabajo): botón primario explícito («Confirmar esta dirección»), no un guardado que solo ocurre si se toca algo.

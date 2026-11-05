@@ -12,7 +12,7 @@ Método: cada fase se implementa, se prueba con tests, se prueba **navegando de 
 | Fase | Fallos | Estado |
 |---|---|---|
 | 1 — Encabezados apilados | 3, 5a, 1, 2 | ✅ Hecha y verificada en local (2026-11-05) |
-| 2 — Actualizar estado de la solicitud | 6 | ⏳ |
+| 2 — Actualizar estado de la solicitud | 6 | ✅ Hecha y verificada en local (2026-11-05) |
 | 3 — Confirmar esta dirección | 4 | ⏳ |
 | 4 — Horario y reglas sin preconfigurar + aviso | 5b | ⏳ |
 | 5 — Botón Activar de tres estados | 7.1 | ⏳ |
@@ -54,3 +54,26 @@ Tests nuevos: `useStickyHeight` (5), `AppHeader` (4), `StickyStepProgress` (3). 
 **Pendiente del usuario (no verificable en el emulador):** confirmar en el iPhone, con la web instalada, que el progreso del alta y el mensaje «en revisión» ya no quedan tapados.
 
 **Observación:** en «Gestión de disponibilidad» la pila fija (Navbar + cabecera con pestañas y botón Guardar) ocupa 226 px de los 812. No se toca en esta ronda; si molesta, se compacta más adelante.
+
+## Fase 2 — hecha
+
+**Qué se cambió**
+
+- `RefreshApplicationStatus` (nuevo, `components/common`): botón **«Actualizar estado»** (texto visible también en el móvil) + la misma comprobación **en silencio al volver a la app** desde segundo plano (reutiliza `useRefreshOnReturn`, mínimo 10 s entre comprobaciones). Dice «Sigue en revisión», «¡Solicitud aceptada! Entrando en tu panel…», «Tu solicitud no se ha aceptado…» o «No se ha podido comprobar…». Al volver solo habla si cambió algo.
+- `RefreshButton`: nueva opción `alwaysShowLabel` (en el móvil solo salía el icono).
+- Empresa: `useCompanyOnboarding().recheck()` — relee **sin** poner la pantalla en «cargando» (el botón no se desmonta) y devuelve el estado; un fallo de red se propaga. `CompanyStatusPage` lo usa.
+- Jardinero: `App.tsx` saca la lectura del estado a `loadApplicationStatus` (misma lógica de siempre; con `strict`, un fallo de red se propaga en vez de dejar el estado en null) y se la pasa a `GardenerStatusPage` como `onRefresh`. Al pasar a «active», la regla de redirección de siempre lleva al panel.
+- Solo en «en revisión»: en una solicitud rechazada no hay botón (ahí lo que toca es corregirla).
+
+**Verificación local (375×812)**
+
+| Caso | Resultado |
+|---|---|
+| Empresa en revisión, pulsar el botón | Toast «Sigue en revisión…», la pantalla no parpadea ni se vacía |
+| Empresa: el admin acepta (RPC `admin_review_company_application`) con la pantalla abierta → pulsar | Pasa de `/empresa/estado` a `/empresa` (panel «Jardines Enviada») **sin cerrar sesión** |
+| Jardinero en revisión, pulsar el botón | Toast «Sigue en revisión…», sigue en `/status` |
+| Jardinero: el admin acepta (`admin_review_gardener_application`) → vuelve a la app (`visibilitychange`) sin pulsar nada | Pasa de `/status` a `/dashboard` sola |
+
+Tests nuevos: `RefreshApplicationStatus` (7), `useCompanyOnboarding` (5), `GardenerStatusPage` (+2). Suite completa: 178 archivos, 2.753 tests en verde.
+
+**No verificado en vivo:** el fallo de red (cubierto con tests: no cambia nada, avisa y se puede reintentar) y el rechazo detectado tras actualizar.

@@ -14,7 +14,7 @@ Método: cada fase se implementa, se prueba con tests, se prueba **navegando de 
 | 1 — Encabezados apilados | 3, 5a, 1, 2 | ✅ Hecha y verificada en local (2026-11-05) |
 | 2 — Actualizar estado de la solicitud | 6 | ✅ Hecha y verificada en local (2026-11-05) |
 | 3 — Confirmar esta dirección | 4 | ✅ Hecha y verificada en local (2026-11-05) |
-| 4 — Horario y reglas sin preconfigurar + aviso | 5b | ⏳ |
+| 4 — Horario y reglas sin preconfigurar + aviso | 5b | ✅ Hecha y verificada en local (2026-11-05) |
 | 5 — Botón Activar de tres estados | 7.1 | ⏳ |
 | 6 — Primeros pasos guiados | 7.2 | ⏳ |
 
@@ -100,3 +100,35 @@ Tests nuevos: `RefreshApplicationStatus` (7), `useCompanyOnboarding` (5), `Garde
 Tests nuevos: `CoverageTab` (6), `providerSetup` (+2). Suite completa: 179 archivos, 2.761 tests en verde.
 
 **Hallazgo para la Fase 6:** `GardenerDashboard` guarda la última pestaña en `localStorage.gardener_active_tab` y la reabre. Un jardinero que dejó «Disponibilidad» abierta vuelve a entrar **dentro** de ella, no en el panel con la guía. Se trata en la Fase 6.
+
+## Fase 4 — hecha
+
+**Qué se cambió** (`RecurringScheduleManager`, `providerSetup.ts`, `useProviderSetupStatus`)
+
+- **Nada preconfigurado:** la franja («Desde»/«Hasta»), las semanas de agenda y la antelación mínima arrancan **vacías** (`Elige hora`, `Elige una opción`). Antes: 9-17, «1 mes» y «24 horas» puestos y guardados sin que nadie los eligiera.
+- Marcar días **no pinta nada** si no hay franja (las dos horas); con días y franja, se rellena como siempre. Los horarios ya guardados se cargan igual.
+- **Guardar exige elegir las reglas:** sin semanas (y, en el horario propio, sin antelación) no se guarda: aviso «Antes de guardar, elige…», campos en rojo (`aria-invalid`), y la pantalla baja a ellos. Vale para el botón de guardar, para la confirmación y para «Guardar y salir». Un **empleado** (la antelación la decide su empresa) solo necesita las semanas, y su guardado ya no envía una antelación que no es suya.
+- **Aviso «Te quedan cosas por configurar en tu horario»** arriba de «Horario fijo», con la lista de lo que falta (días y horas, semanas, antelación), que se vacía según elige y lleva a las reglas. Para el dueño que prepara el horario de un empleado dice «Quedan cosas… en su horario» / «trabaja».
+- **Ayuda del panel:** nuevo paso **recomendado** «Reglas de tu horario» (autónomo): pendiente si no existe su fila de `recurring_availability_settings`; no bloquea «ya apareces». El dato lo lee el navegador (el servidor no se toca).
+- Los 4 `<select>` pasan a 16 px en el móvil (`text-base sm:text-sm`): iOS hacía zoom al tocarlos.
+- Corregido un fallo de paso: `settData.min_notice_hours || 24` convertía «Sin restricción» (0 h) en «24 horas» al volver a entrar; ahora `??`.
+
+**No se tocó:** `applyRecurringSchedule`, `generate_recurring_slots`, `set_member_recurring_schedule` ni el servidor. Solo cambia qué valores hay al empezar y que no se guarda hasta haberlos elegido.
+
+**Verificación local (375×812)**
+
+| Caso | Resultado |
+|---|---|
+| `jardin-nuevo.ux` abre «Horario fijo» | Cuatro selects vacíos a **16 px**; aviso con 3 puntos |
+| Marcar L y M sin franja | El calendario **no se rellena**; el aviso sigue pidiendo la franja |
+| Elegir solo «Desde 09» | Sigue sin rellenar |
+| Elegir «Hasta 14» | Se rellenan los 2 días × 5 horas; desaparece «Los días y las horas…» |
+| «Guardar cambios» sin reglas | Toast «Antes de guardar, elige las semanas de agenda y la antelación mínima.»; **sin** diálogo de confirmación; 2 campos en rojo; baja a las reglas |
+| Elegir 1 mes y 48 h → guardar → confirmar | Desaparece el aviso; BD: `recurring_availability_settings` = 4 semanas / 48 h y `recurring_schedules` = L y M 09:00-14:00 |
+| Sin fila de reglas (borrada a mano) | La ayuda enseña «Reglas de tu horario» pendiente («4 pendientes») |
+| `jardinero.local` (horario ya guardado) | Carga 08:00-18:00 y «1 mes» como siempre; sin aviso |
+| Dueño abre el horario de `empleado.ux` | Sin antelación; aviso solo con días/horas y semanas, en tercera persona |
+
+Tests: `RecurringScheduleManager` 3 → 14, `providerSetup` +2. Suite completa: 179 archivos, 2.774 tests en verde.
+
+**Pendiente de decidir (no bloquea):** la semilla local de `jardinero.local` tiene antelación de 12 h, que no está entre las opciones del selector (0/24/48/72/168): la pantalla muestra «Sin restricción» aunque guarda 12. Es anterior a esta ronda y solo afecta a datos de prueba.

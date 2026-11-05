@@ -82,7 +82,13 @@ La cuenta de administración (`mjgardenproject@gmail.com`) también podrá entra
   - No se sale de garser.es, así que no se pierde la reserva.
 - **Si el script de Google no carga** (bloqueadores): `signInWithOAuth`, la redirección clásica, que vuelve por `/auth/callback?next=…` (`src/pages/auth/AuthCallbackPage.tsx`).
 - **Dentro de Instagram, Facebook o TikTok** (`detectEmbeddedBrowser`): Google no deja entrar. Se explica cómo abrir la web en el navegador y se puede copiar el enlace (en la reserva, con la reserva dentro).
-- **Cuentas nuevas:** el servidor las crea como «cliente» (`provision_profile_on_signup`). Las de jardinero y empresa se siguen creando con correo.
+- **Cuentas nuevas:** el servidor las crea siempre como «cliente» (`provision_profile_on_signup`): Google no puede mandar el tipo elegido, al contrario que el alta por correo. Por eso, en `/auth`:
+  - «Crear cuenta» **empieza por la pregunta** «¿cómo vas a usar GarSer?» (nada preseleccionado; Google y el formulario salen después). Para jardinero o empresa, `GoogleSignInButton` recibe `signupRole` y, en cuanto hay sesión, `declareSignupRoleIfNeeded` (`src/lib/oauthAccount.ts`) llama a `self_declare_signup_role`.
+  - Esa función **la decide el servidor** y devuelve un estado: `declared`, `unchanged`, `blocked_activity` (cliente con reservas, solicitudes o relación con un profesional: no cambia), `blocked_role` (ya es de otro tipo) o `no_profile`. El front enseña el motivo (`RoleProblemPanel`); si falla, ofrece Reintentar. No se sigue «como cliente» en silencio.
+  - Si alguien crea cuenta con Google desde la pestaña «Entrar» (sin elegir), `NewAccountChooser` le pregunta el tipo antes de seguir. «Cuenta nueva» se decide con las fechas del servidor (`created_at` y `last_sign_in_at`), no con el reloj del móvil.
+  - Tras cambiar el tipo se llama a `AccountContext.refresh()` **antes de navegar**: la app lee `profiles.role` una sola vez al iniciar sesión y, sin releerlo, se veía el panel de cliente hasta recargar.
+  - El paso pendiente (pregunta o aviso) vive en `src/lib/pendingAuthStep.ts`, **fuera** de los componentes: al haber sesión, `App.tsx` enseña «Cargando…» y desmonta `/auth`, y un estado local se perdía.
+  - Con la vuelta por redirección (`/auth/callback`), el tipo viaja en `?role=` **y** se guarda unos minutos en el navegador (`rememberSignupIntent`/`takeSignupIntent`), por si la URL de vuelta pierde los parámetros.
 - **Nombre y foto:** se copian al perfil de un cliente solo si está vacío (`src/lib/oauthAccount.ts`).
 - **Medición:** `admin_signup_methods(p_days)`, en el panel del admin: «Altas con Google · 30 días».
 - **Probar en local con Google de verdad:**

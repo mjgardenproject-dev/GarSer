@@ -50,41 +50,125 @@ export async function syncProfileFromGoogle(user: User | null | undefined): Prom
   }
 }
 
+/** Por qué no se ha podido dejar la cuenta como jardinero/empresa. */
+export type RoleProblem = 'has_activity' | 'other_role' | 'failed';
+
 export interface OAuthSignInResult {
   role: string | null;
   /** Cuenta creada ahora mismo (para darle la bienvenida). */
   isNew: boolean;
   firstName: string;
+  /** Jardinero o empresa que la persona eligió antes de entrar con Google. */
+  requestedRole?: ProfessionalRole;
+  /** Si lo que eligió no se pudo dejar hecho: el motivo (la pantalla lo explica, no se sigue). */
+  roleProblem?: RoleProblem;
+}
+
+export type ProfessionalRole = 'gardener' | 'company';
+
+/** Lo que contesta el servidor (self_declare_signup_role), o 'failed' si no llegó a contestar. */
+export type DeclareStatus = 'declared' | 'unchanged' | 'blocked_activity' | 'blocked_role' | 'failed';
+
+/**
+ * Pide al servidor que la cuenta sea de jardinero o empresa. Es el único sitio que llama a la
+ * función: la decide el servidor (con su reloj y sus datos) y contesta con un estado, así que aquí
+ * no se adivina nada. Un fallo no se traga: devuelve 'failed' para que la pantalla lo diga.
+ */
+export async function declareAccountType(role: ProfessionalRole): Promise<DeclareStatus> {
+  const { data, error } = await supabase.rpc('self_declare_signup_role', { p_role: role });
+  if (error) {
+    console.warn('No se ha podido declarar el tipo de cuenta:', error);
+    return 'failed';
+  }
+  // Una versión anterior de la función no devolvía nada (void): sin error, es que se hizo.
+  const status = typeof data === 'string' ? data : 'declared';
+  if (status === 'declared' || status === 'unchanged' || status === 'blocked_activity' || status === 'blocked_role') return status;
+  return 'failed';
 }
 
 /**
- * Jardinero o empresa por Google (2026-10-28): la cuenta siempre nace 'client'
- * (provision_profile_on_signup no ve el rol elegido en el selector, al contrario que el alta por
- * correo). Si es una cuenta nueva y sigue en 'client', declara la intención real con
- * self_declare_signup_role antes de que el resto del flujo navegue a su panel — se usa tanto
- * desde el popup de Google (GoogleSignInButton) como desde la vuelta por redirección clásica
- * (AuthCallbackPage), así que vive aquí, no duplicada en los dos sitios.
+ * Jardinero o empresa por Google. Google no puede mandar el rol como sí hace el alta por correo
+ * (supabase.auth.signUp con requested_role en los metadatos): la cuenta nace 'client'. Con el
+ * tipo elegido antes de pulsar Google, se declara al servidor en cuanto hay sesión — desde el
+ * popup (GoogleSignInButton) y desde la vuelta por redirección (AuthCallbackPage), que comparten
+ * esta función — y el resultado dice la verdad: o la cuenta es del tipo elegido, o trae el motivo
+ * (`roleProblem`). Nunca se sigue «como cliente» en silencio.
+ *
+ * Ya no depende de que la cuenta parezca nueva: una cuenta de cliente sin actividad (p. ej. la
+ * que se creó por error al pulsar Google sin elegir) puede pasar a jardinero/empresa si la persona
+ * lo pide. Si ya tiene reservas o es de otro tipo, el servidor lo impide y se explica.
  */
 export async function declareSignupRoleIfNeeded(
   result: OAuthSignInResult,
-  signupRole: 'gardener' | 'company' | null | undefined,
+  signupRole: ProfessionalRole | null | undefined,
 ): Promise<OAuthSignInResult> {
-  if (!signupRole || !result.isNew || result.role !== 'client') return result;
-  const { error } = await supabase.rpc('self_declare_signup_role', { p_role: signupRole });
-  if (error) {
-    console.warn('No se ha podido declarar el rol tras el alta con Google:', error);
-    return result;
+  if (!signupRole) return result;
+  if (result.role === signupRole) return { ...result, requestedRole: signupRole };
+  const asked = { ...result, requestedRole: signupRole };
+  if (result.role && result.role !== 'client') return { ...asked, roleProblem: 'other_role' };
+
+  const status = await declareAccountType(signupRole);
+  if (status === 'declared' || status === 'unchanged') return { ...asked, role: signupRole };
+  if (status === 'blocked_activity') return { ...asked, roleProblem: 'has_activity' };
+  if (status === 'blocked_role') return { ...asked, roleProblem: 'other_role' };
+  return { ...asked, roleProblem: 'failed' };
+}
+
+// Si la vuelta de Google es por redirección (el script de Google no cargó), el tipo elegido viaja en
+// la URL de vuelta (?role=). Por si esa URL pierde los parámetros (lista de direcciones permitidas,
+// el navegador, una app), se guarda también aquí unos minutos. Se lee una sola vez.
+const INTENT_KEY = 'garser:signup-intent';
+const INTENT_TTL_MS = 15 * 60 * 1000;
+
+export function rememberSignupIntent(role: ProfessionalRole | null | undefined): void {
+  try {
+    if (role) localStorage.setItem(INTENT_KEY, JSON.stringify({ role, at: Date.now() }));
+    else localStorage.removeItem(INTENT_KEY);
+  } catch { /* sin almacenamiento: queda la URL de vuelta */ }
+}
+
+export function takeSignupIntent(now: number = Date.now()): ProfessionalRole | null {
+  try {
+    const raw = localStorage.getItem(INTENT_KEY);
+    localStorage.removeItem(INTENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { role?: unknown; at?: unknown };
+    if (typeof parsed.at !== 'number' || now - parsed.at > INTENT_TTL_MS) return null;
+    return parsed.role === 'gardener' || parsed.role === 'company' ? parsed.role : null;
+  } catch {
+    return null;
   }
-  return { ...result, role: signupRole };
+}
+
+/**
+ * ¿Es una cuenta recién creada? Mejor con las dos fechas del SERVIDOR (creación y primer acceso,
+ * casi iguales si acaba de nacer) que con el reloj del móvil, que puede ir adelantado o atrasado.
+ * Sin la segunda fecha, se compara con el reloj como antes.
+ */
+export function isFreshAccount(user: Pick<User, 'created_at' | 'last_sign_in_at'>, now: number = Date.now()): boolean {
+  const created = Date.parse(user.created_at || '');
+  if (!Number.isFinite(created)) return false;
+  const last = Date.parse(user.last_sign_in_at || '');
+  if (Number.isFinite(last)) return Math.abs(last - created) < 60 * 1000;
+  return now - created < 2 * 60 * 1000;
 }
 
 /** Tras entrar con Google: tipo de cuenta, si es nueva y su nombre de pila. */
 export async function describeOAuthSignIn(user: User, now: number = Date.now()): Promise<OAuthSignInResult> {
   await syncProfileFromGoogle(user);
   const role = await fetchCurrentUserProfileRole(user.id).catch(() => null);
-  const createdAt = Date.parse(user.created_at || '');
-  const isNew = Number.isFinite(createdAt) && now - createdAt < 2 * 60 * 1000;
-  return { role, isNew, firstName: googleProfileOf(user).fullName.split(/\s+/)[0] || '' };
+  return { role, isNew: isFreshAccount(user, now), firstName: googleProfileOf(user).fullName.split(/\s+/)[0] || '' };
+}
+
+/** «cliente», «jardinero»… para las frases de aviso. */
+export function accountRoleLabel(role: string | null | undefined): string {
+  switch (role) {
+    case 'gardener': return 'jardinero';
+    case 'company': return 'empresa';
+    case 'employee': return 'empleado de una empresa';
+    case 'admin': return 'administrador';
+    default: return 'cliente';
+  }
 }
 
 /** «¡Bienvenido a GarSer, Ana!» o «¡Hola de nuevo, Ana!». */

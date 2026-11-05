@@ -1506,7 +1506,7 @@ Rellena esto antes de empezar y ten la tabla a mano:
   - ✅ En «Mi cuenta» están tu nombre y tu foto de Google.
   - ✅ Es una cuenta de cliente.
 - [ ] **28.2 — Cuenta que ya existía.** Sal y entra con Google usando el Gmail que ya tenía cuenta. ✅ Es la misma cuenta: mismas reservas y «¡Hola de nuevo!». No se crea otra.
-- [ ] **28.3 — Jardinero y empresa.** `/auth` → «Regístrate gratis» → «Jardinero». ✅ No sale Google y dice «Las cuentas de jardinero y de empresa se crean con tu correo». Con «Cliente», ✅ vuelve «Registrarse con Google».
+- [ ] **28.3 — Jardinero y empresa.** (Sustituida por la sección 32: ahora Google vale para los tres tipos de cuenta y primero se elige el tipo.)
 - [ ] **28.4 — Cancelar.** Pulsa Google y cierra la ventanita sin elegir cuenta. ✅ Sigues en la misma pantalla, sin errores raros, y puedes volver a intentarlo.
 - [ ] **28.5 — Cerrar sesión.** Sal. ✅ Al volver a `/auth`, Google puede sugerirte la cuenta («One Tap»), pero **no entra solo**.
 
@@ -1679,6 +1679,57 @@ Requisitos previos: solo el despliegue del front en Vercel (sin migraciones ni f
 
 > **Comprobado ya en local (2026-11-04):** `GarserLogo.test.tsx` (4 tests: apunta al SVG y el archivo existe, el SVG solo tiene trazados y ningún fondo, reserva el hueco de la imagen, texto de respaldo si falla); en el navegador, `/`, `/auth`, `/privacidad` y `/invitacion` cargan `garser-logo.svg` sin errores de consola; sobre un fondo verde el logo nuevo es transparente y el PNG antiguo enseñaba su recuadro blanco; a 375 px no hay desplazamiento horizontal. **No** comprobado: el `Navbar` con sesión iniciada (mismo componente, mismas clases y fondo blanco que el encabezado público).
 
+## Sección 32 — Acceso en el móvil y tipo de cuenta con Google (2026-11-04)
+
+Tres fallos de `/auth` desde el móvil: la página era larga y recargada; un jardinero podía crearse una cuenta de **cliente** sin darse cuenta (el tipo venía marcado y Google estaba a un toque); y al elegir «jardinero» o «empresa» con Google la persona acababa viendo el panel de cliente. Ahora «Crear cuenta» empieza por una pregunta («¿Cómo vas a usar GarSer?»), nada viene marcado, y el tipo elegido se aplica y se comprueba antes de entrar.
+
+Requisitos previos:
+- migración `20261104160000_account_type_declaration_status.sql` aplicada (comprobación abajo) y front desplegado en Vercel; sin funciones.
+- Para Google, 3 Gmail: uno **nuevo** (sin cuenta en GarSer), otro **nuevo** distinto, y uno que ya sea **cliente con alguna reserva**.
+- Si tu navegador conserva la web antigua, recarga a fondo antes de juzgar.
+
+**A. Diseño en el móvil**
+
+- [ ] **32.1 — Entrar cabe en una pantalla.** Abre `/auth` en el móvil. ✅ Arriba «Entrar | Crear cuenta»; debajo, Google, «o con tu correo», correo, contraseña y el botón **Entrar**, todo visible sin bajar (en un iPhone normal). ✅ Abajo, un recuadro «¿Eres jardinero o empresa? Crea tu cuenta profesional». ❌ Bloques enormes o botones cortados.
+- [ ] **32.2 — Crear cuenta empieza por la pregunta.** Toca «Crear cuenta». ✅ Solo se ve «¿Cómo vas a usar GarSer?» con tres filas (Cliente, Jardinero, Empresa), **ninguna marcada**, y «Después no podrás cambiar el tipo de cuenta». ✅ **No** hay Google ni formulario todavía.
+- [ ] **32.3 — Elegir Jardinero.** Toca «Jardinero». ✅ El título pasa a «Crea tu cuenta de jardinero», sale el aviso verde («…La revisamos antes de publicarte») y ahora sí «Registrarse con Google» y el formulario. «Cambiar tipo de cuenta» vuelve a la pregunta. Con **Empresa** el aviso habla de los datos de la empresa; con **Cliente** no hay aviso.
+- [ ] **32.4 — Teclado y contraseña.** Toca «Correo electrónico». ✅ La pantalla **no hace zoom** y el teclado trae la «@». En «Contraseña», ✅ el ojo muestra y oculta lo escrito. En «Crear cuenta», si «Repite la contraseña» no coincide, ✅ lo dice debajo del campo.
+- [ ] **32.5 — Recuperar contraseña.** «¿Has olvidado tu contraseña?». ✅ Pantalla propia con «Enviar enlace»; pide confirmar antes de enviar; «Volver a entrar» regresa.
+- [ ] **32.6 — Desde la web de jardineros.** En `/para-jardineros`, pulsa el botón de registrarte como jardinero y, en otra prueba, como empresa. ✅ Llegas a `/auth` ya con el tipo elegido (sin la pregunta).
+- [ ] **32.7 — Volver.** «‹ Volver a la web» (arriba a la izquierda) lleva al inicio.
+
+**B. Tipo de cuenta con Google (lo que más importa)**
+
+- [ ] **32.8 — Jardinero con Google.** Con el Gmail nuevo n.º 1: «Crear cuenta» → «Jardinero» → «Registrarse con Google».
+  - ✅ Entras **directamente en la solicitud de jardinero** («Tus datos», `/apply`). ❌ El panel de cliente («Hola de nuevo… Empezar una reserva»), aunque sea un instante.
+  - ✅ En el panel del admin, «Profesionales» (o «Usuarios»), esa cuenta figura como **jardinero**.
+- [ ] **32.9 — Empresa con Google.** Con el Gmail nuevo n.º 2: «Crear cuenta» → «Empresa» → Google. ✅ Entras en el alta de empresa (`/empresa/solicitud`). ✅ En el admin figura como **empresa**.
+- [ ] **32.10 — «Entrar» con Google sin tener cuenta.** Con otro Gmail nuevo: `/auth` (pestaña «Entrar») → «Continuar con Google». ✅ **Antes de seguir** sale «Te damos la bienvenida… Hemos creado tu cuenta. ¿Cómo vas a usar GarSer?». «Cliente» → panel de cliente; en otra prueba «Jardinero» → `/apply`. ❌ Entrar en el panel de cliente sin preguntar.
+- [ ] **32.11 — Cuenta que ya existe.** Con un Gmail que ya tiene cuenta: «Entrar» → Google. ✅ Entra directo («¡Hola de nuevo!»), **sin** preguntar nada.
+- [ ] **32.12 — Cliente con reservas que prueba Jardinero.** Con el Gmail que ya es cliente con reservas: «Crear cuenta» → «Jardinero» → Google.
+  - ✅ Sale «Este correo ya tiene una cuenta de cliente» con el motivo, **sin** entrar y sin cambiar nada.
+  - «Usar otro correo» ✅ cierra la sesión y vuelve a `/auth` **sin** el cartel de «sesión cerrada desde otro dispositivo». «Seguir como cliente» ✅ entra en su panel.
+- [ ] **32.13 — Cliente normal.** Gmail nuevo: «Crear cuenta» → «Cliente» → Google. ✅ «¡Bienvenido a GarSer!» y panel de cliente, sin preguntas de más.
+- [ ] **32.14 — Si falla, no engaña.** (Opcional, con el modo avión justo después de elegir cuenta de Google.) ✅ Si no se pudo dejar la cuenta como jardinero, sale «No hemos podido crear tu cuenta de jardinero» con **Reintentar**; nunca entra «como cliente» en silencio.
+- [ ] **32.15 — Desde Instagram o con el script de Google bloqueado.** (Vuelta por redirección.) Abre el enlace en el navegador y repite 32.8. ✅ Mismo resultado: la vuelta pasa por `/auth/callback` y la cuenta queda de jardinero.
+- [ ] **32.16 — La reserva con Google sigue igual.** Repite 28.6. ✅ Sin cambios: «Continuar con Google» arriba, vuelves a la misma pantalla, sin pregunta de tipo.
+
+**C. Comprobación en la base de datos** (Supabase → SQL Editor)
+
+```sql
+-- Debe devolver: text
+select pg_get_function_result('public.self_declare_signup_role(text)'::regprocedure);
+-- Las cuentas de las pruebas 32.8 y 32.9 (poner tus Gmail):
+select u.email, p.role
+from auth.users u join public.profiles p on p.user_id = u.id
+where u.email in ('gmail-nuevo-1@gmail.com', 'gmail-nuevo-2@gmail.com');
+-- Esperado: 32.8 → gardener, 32.9 → company
+```
+
+> **Comprobado ya en local (2026-11-04), con el código real y la base local** (solo se sustituyó la ventana de Google por un inicio de sesión de una cuenta «tipo Google» recién creada): `AuthForm.test.tsx` (30+ tests), `oauthAccount.test.ts`, `GoogleSignInButton.test.tsx`; en el navegador a 320, 375 y escritorio: Jardinero con Google → `/apply` y rol `gardener`; Empresa → `/empresa/solicitud` y `company`; «Entrar» con Google en cuenta nueva → pregunta → Empresa/Jardinero; cliente con actividad → aviso y rol sin cambiar; fallo simulado → «Reintentar» → `company`; vuelta por redirección con el tipo solo guardado en el navegador → `company`.
+
+---
+
 ---
 
 ## Criterio de GO definitivo
@@ -1696,6 +1747,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 16 verde — el área de cliente unificada |
 | [ ] | Sección 21 verde — formularios manuales con el mismo precio que antes (21.2 es bloqueante) |
 | [ ] | Sección 29 verde — comisiones configurables (29.6, 29.7 y 29.8 son bloqueantes: es dinero) |
+| [ ] | Sección 32 verde — acceso en el móvil y tipo de cuenta con Google (32.8, 32.9 y 32.10 son bloqueantes: un profesional no puede acabar como cliente) |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

@@ -1,65 +1,131 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Eye, EyeOff, User, Briefcase, Building2, Check, Mail, Lock, AlertTriangle } from 'lucide-react';
-import { createPortal } from 'react-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { AlertTriangle, ChevronLeft, ChevronRight, Eye, EyeOff, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../contexts/AuthContext';
+import { useAccount } from '../../contexts/AccountContext';
 import { postLoginPath } from '../../utils/postLoginPath';
 import EmailConfirmationModal from './EmailConfirmationModal';
 import GarserLogo from '../common/GarserLogo';
 import { supabase } from '../../lib/supabase';
 import GoogleSignInButton from './GoogleSignInButton';
+import AccountTypePicker, { ACCOUNT_TYPES, isAccountType, type AccountType } from './AccountTypePicker';
+import { NewAccountChooser, RoleProblemPanel } from './GoogleAccountPanels';
 import { LegalConsentNote, OrWithEmail } from './SocialAuthBits';
-import { welcomeMessage } from '../../lib/oauthAccount';
+import { welcomeMessage, type OAuthSignInResult } from '../../lib/oauthAccount';
 import { getGoogleClientId } from '../../utils/googleIdentity';
+import { setPendingAuthStep, usePendingAuthStep } from '../../lib/pendingAuthStep';
+
+// Pantalla de acceso (/auth), pensada primero para el móvil (2026-11-04).
+//
+//  · Entrar y Crear cuenta son dos pestañas arriba, siempre visibles (antes, un enlace al final de
+//    una página de casi dos pantallas).
+//  · Crear cuenta empieza por UNA pregunta: ¿cómo vas a usar GarSer? Sin tipo preseleccionado y sin
+//    Google ni formulario hasta contestarla: un jardinero ya no puede crearse una cuenta de cliente
+//    sin darse cuenta pulsando el primer botón que ve.
+//  · Entrar con Google desde «Entrar» también puede crear cuenta. Si lo hace, se pregunta el tipo
+//    antes de seguir (NewAccountChooser) en vez de dejar a la persona como cliente.
 
 const schema = yup.object({
-  email: yup.string().email('Email inválido').required('Email requerido'),
-  password: yup.string().min(6, 'Mínimo 6 caracteres').required('Contraseña requerida'),
-  role: yup.string().oneOf(['client', 'gardener', 'company']).required('Rol requerido'),
-  confirmPassword: yup.string().default('').defined()
+  email: yup.string().trim().email('Escribe un correo válido').required('Escribe tu correo'),
+  password: yup.string().min(6, 'Mínimo 6 caracteres').required('Escribe tu contraseña'),
+  confirmPassword: yup.string().default('').defined(),
 });
 
-type FormData = {
-  email: string;
-  password: string;
-  role: 'client' | 'gardener' | 'company';
-  confirmPassword: string;
-};
+type FormData = { email: string; password: string; confirmPassword: string };
+type View = 'login' | 'signup' | 'forgot';
+
+const INPUT = 'block min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3.5 py-3 text-base text-gray-900 placeholder:text-gray-400 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 aria-[invalid=true]:border-red-500';
+const SUBMIT = 'inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-base font-bold text-white shadow-sm hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 [touch-action:manipulation]';
+const LINK = 'inline-flex min-h-11 items-center font-semibold text-emerald-700 hover:text-emerald-800 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 rounded';
+
+interface FieldProps {
+  id: string;
+  label: string;
+  error?: string;
+  registration: UseFormRegisterReturn;
+  type?: string;
+  autoComplete: string;
+  placeholder?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+  enterKeyHint?: React.HTMLAttributes<HTMLInputElement>['enterKeyHint'];
+  action?: React.ReactNode;
+}
+
+/** Etiqueta + campo + error, bien enlazados (lectores de pantalla, autorrelleno, teclado del móvil). */
+const Field: React.FC<FieldProps> = ({ id, label, error, registration, type = 'text', autoComplete, placeholder, inputMode, enterKeyHint, action }) => (
+  <div>
+    <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-gray-800">{label}</label>
+    <div className="relative">
+      <input
+        id={id}
+        type={type}
+        autoComplete={autoComplete}
+        inputMode={inputMode}
+        enterKeyHint={enterKeyHint}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder={placeholder}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        className={`${INPUT} ${action ? 'pr-12' : ''}`}
+        {...registration}
+      />
+      {action}
+    </div>
+    {error && <p id={`${id}-error`} role="alert" className="mt-1.5 text-sm text-red-600">{error}</p>}
+  </div>
+);
 
 const AuthForm = () => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
-  const [sendingForgot, setSendingForgot] = useState(false);
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<'client' | 'gardener' | 'company'>('client');
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const forceClientOnly: boolean = !!((location.state as any)?.forceClientOnly);
-  const redirectTo: string | null = typeof (location.state as any)?.redirectTo === 'string' ? (location.state as any)?.redirectTo : null;
-  const requestedInitialMode =
-    ((location.state as any)?.initialMode as 'login' | 'signup' | undefined) ||
-    ((searchParams.get('mode') as 'login' | 'signup' | null) ?? undefined);
-  const requestedRole =
-    ((location.state as any)?.preselectedRole as 'client' | 'gardener' | 'company' | undefined) ||
-    ((searchParams.get('role') as 'client' | 'gardener' | 'company' | null) ?? undefined);
+  const navigate = useNavigate();
+  const { user, signIn, signUp, signOut } = useAuth();
+  const { refresh: refreshAccount } = useAccount();
+
+  const state = (location.state ?? {}) as { forceClientOnly?: boolean; redirectTo?: unknown; initialMode?: string; preselectedRole?: unknown };
+  const forceClientOnly = Boolean(state.forceClientOnly);
+  const redirectTo: string | null = typeof state.redirectTo === 'string' ? state.redirectTo : null;
+  const requestedInitialMode = state.initialMode ?? searchParams.get('mode') ?? undefined;
+  const requestedRoleRaw = state.preselectedRole ?? searchParams.get('role');
+  const requestedRole: AccountType | undefined = isAccountType(requestedRoleRaw) ? requestedRoleRaw : undefined;
+
+  const [view, setView] = useState<View>(() =>
+    requestedInitialMode === 'signup' || (requestedRole && requestedRole !== 'client') ? 'signup' : 'login');
+  // Sin tipo elegido (null) se enseña la pregunta. Nunca hay uno por defecto: tiene que elegirlo.
+  const [role, setRole] = useState<AccountType | null>(() => (forceClientOnly ? 'client' : requestedRole ?? null));
+  const [showPassword, setShowPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [sendingForgot, setSendingForgot] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp } = useAuth();
-  const navigate = useNavigate();
-  // Google (2026-10-21, ampliado a jardinero/empresa 2026-10-28): vale para entrar con cualquier
-  // cuenta y para crear cualquier tipo — GoogleSignInButton declara la intención del selector
-  // (self_declare_signup_role) en cuanto hay sesión nueva, porque Google no puede mandar el rol
-  // elegido como sí hace el alta por correo.
-  const googleAvailable = Boolean(getGoogleClientId());
-  const showGoogle = googleAvailable;
+  // El aviso de después de Google vive FUERA del componente (src/lib/pendingAuthStep.ts): al iniciar
+  // sesión, App.tsx enseña «Cargando…» y desmonta esta pantalla, y el estado local se perdía.
+  // Sin sesión no hay nada pendiente, por si quedara algo de otra persona.
+  const pendingStep = usePendingAuthStep();
+  const googleOutcome = user ? pendingStep : null;
+  const setGoogleOutcome = setPendingAuthStep;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const firstRender = useRef(true);
+
+  const showGoogle = Boolean(getGoogleClientId());
+
+  const { register, handleSubmit, reset, clearErrors, setError, formState: { errors } } = useForm<FormData>({
+    resolver: yupResolver(schema),
+    defaultValues: { email: '', password: '', confirmPassword: '' },
+  });
+
+  useEffect(() => {
+    if (!user) setPendingAuthStep(null);
+  }, [user]);
 
   useEffect(() => {
     const flag = localStorage.getItem('passwordChanged');
@@ -69,70 +135,77 @@ const AuthForm = () => {
     }
   }, []);
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<FormData>({
-    resolver: yupResolver(schema),
-    defaultValues: {
-      email: '',
-      password: '',
-      role: 'client',
-      confirmPassword: ''
-    }
-  });
-
-  // Sincronizar el campo del formulario con selectedRole
+  // La pantalla se puede volver a abrir con otro estado sin desmontarse (enlaces a /auth desde dentro).
   useEffect(() => {
-    setValue('role', selectedRole);
-  }, [selectedRole, setValue]);
-
-  useEffect(() => {
-    if (forceClientOnly) {
-      setSelectedRole('client');
-    }
-  }, [forceClientOnly]);
-
-  useEffect(() => {
-    if (requestedInitialMode === 'signup') {
-      setIsLogin(false);
-    } else if (requestedInitialMode === 'login') {
-      setIsLogin(true);
-    }
+    if (requestedInitialMode === 'signup') setView('signup');
+    else if (requestedInitialMode === 'login') setView('login');
   }, [requestedInitialMode]);
 
   useEffect(() => {
     if (forceClientOnly) {
-      setSelectedRole('client');
+      setRole('client');
       return;
     }
-
-    if (requestedRole === 'client' || requestedRole === 'gardener' || requestedRole === 'company') {
-      setSelectedRole(requestedRole);
-      if (requestedRole !== 'client') {
-        setIsLogin(false);
-      }
+    if (requestedRole) {
+      setRole(requestedRole);
+      if (requestedRole !== 'client') setView('signup');
     }
   }, [forceClientOnly, requestedRole]);
 
-  const handleForgotSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!forgotPasswordEmail) {
-      toast.error('Email requerido');
+  // Al cambiar de pantalla (tipo elegido, pestaña…), el foco va al título: quien usa lector de pantalla
+  // oye dónde está y quien usa teclado no se queda en un botón que ya no existe.
+  // (No al cambiar entre las pestañas Entrar/Crear cuenta: ahí el foco debe seguir en la pestaña.)
+  const focusKey = `${googleOutcome?.kind ?? ''}|${role ?? ''}|${view === 'forgot'}`;
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
       return;
     }
-    setShowForgotModal(true);
+    headingRef.current?.focus();
+  }, [focusKey]);
+
+  const changeView = (next: View) => {
+    if (next === view) return;
+    clearErrors();
+    setShowPassword(false);
+    setView(next);
+  };
+
+  const finishGoogle = async (result: OAuthSignInResult, explicit: boolean) => {
+    if (result.roleProblem) {
+      setGoogleOutcome({ kind: 'problem', result });
+      return;
+    }
+    if (!explicit && result.isNew && result.role === 'client' && !forceClientOnly) {
+      setGoogleOutcome({ kind: 'chooser', result });
+      return;
+    }
+    // Si la cuenta acaba de pasar de cliente a jardinero/empresa, la app todavía tiene leído el
+    // tipo de ANTES (se lee una vez al iniciar sesión): sin releerlo se enseñaría el panel de
+    // cliente hasta recargar la página. Era el fallo «elijo jardinero con Google y me sale cliente».
+    if (result.requestedRole) await refreshAccount().catch(() => undefined);
+    setGoogleOutcome(null);
+    toast.success(welcomeMessage(result));
+    navigate(postLoginPath(result.role, redirectTo));
+  };
+
+  // «Usar otro correo»: cierre de sesión de verdad (el de AuthContext: no sale el aviso de «sesión
+  // cerrada desde otro dispositivo», Google deja de sugerir esta cuenta y se limpia lo guardado).
+  const switchGoogleAccount = async () => {
+    setGoogleOutcome(null);
+    await signOut();
   };
 
   const confirmForgotReset = async () => {
     setSendingForgot(true);
     try {
-      // Usamos el origen (root) para asegurar que la URL está en la whitelist de Supabase
-      // AuthContext manejará la redirección a /reset-password al detectar el evento PASSWORD_RECOVERY
-      const redirectTo = window.location.origin;
-      // Sin imprimir el email: es el dato personal más sensible de esta pantalla.
-      const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, { redirectTo });
+      // Usamos el origen (root) para asegurar que la URL está en la whitelist de Supabase.
+      // AuthContext manejará la redirección a /reset-password al detectar el evento PASSWORD_RECOVERY.
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, { redirectTo: window.location.origin });
       if (error) throw error;
       toast.success('Email de recuperación enviado');
       setShowForgotModal(false);
-      setShowForgotPassword(false);
+      setView('login');
     } catch (e: any) {
       toast.error(e?.message || 'Error enviando recuperación');
     } finally {
@@ -141,428 +214,318 @@ const AuthForm = () => {
   };
 
   const onSubmit = async (data: FormData) => {
+    if (view === 'signup' && !role) return;
     setLoading(true);
     try {
-      if (isLogin) {
+      if (view === 'login') {
         const accountRole = await signIn(data.email, data.password);
         toast.success('¡Bienvenido de vuelta!');
         navigate(postLoginPath(accountRole, redirectTo));
       } else {
-        // El rol viaja en los metadatos del alta y el servidor crea el perfil con él
-        // (trg_provision_profile). Ya no se guarda en localStorage: era una segunda fuente
-        // de verdad que controlaba el propio usuario.
-        const roleToUse = selectedRole;
-        const confirm = watch('confirmPassword');
-        if (!confirm || confirm !== data.password) {
-          toast.error('Las contraseñas no coinciden');
+        if (!data.confirmPassword || data.confirmPassword !== data.password) {
+          setError('confirmPassword', { type: 'validate', message: 'Las contraseñas no coinciden' });
           return;
         }
-        // El alta real de jardinero (servicios, herramientas, experiencia, fotos) ocurre
-        // después de confirmar el email, en /apply (GardenerApplicationWizard). Aquí solo
-        // se crea la cuenta con email/contraseña/rol para las dos vías.
-        await signUp(data.email, data.password, roleToUse);
+        // El tipo viaja en los metadatos del alta y el servidor crea el perfil con él
+        // (trg_provision_profile). El alta real de jardinero (servicios, herramientas, fotos) ocurre
+        // después de confirmar el correo, en /apply; la de empresa, en /empresa/solicitud.
+        await signUp(data.email, data.password, role as AccountType);
         setRegisteredEmail(data.email);
         setShowEmailModal(true);
         reset();
       }
     } catch (error: any) {
-      console.error('❌ Error en registro:', error);
-      
+      console.error('❌ Error en acceso:', error);
       let message = error.message || 'Ha ocurrido un error';
-      
-      // Personalizar mensajes de error según lo solicitado
       if (message.includes('Invalid login credentials')) {
         message = 'Este correo electrónico no parece estar registrado o la contraseña es incorrecta. Si aún no tienes cuenta, por favor regístrate.';
       } else if (message.includes('User already registered')) {
         message = 'Esta cuenta ya está registrada. Por favor, inicia sesión simplemente.';
       }
-      
       toast.error(message);
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-white p-4 sm:p-6">
-      <div className="w-full max-w-md space-y-8">
-        {/* Logo & Header */}
-        <div className="text-center">
-          <div className="flex justify-center mb-6">
-            <GarserLogo
-              className="h-16 w-auto mx-auto"
-              textClassName="text-3xl font-bold text-gray-900 tracking-tight"
-            />
+  const passwordToggle = (
+    <button
+      type="button"
+      onClick={() => setShowPassword((v) => !v)}
+      aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+      aria-pressed={showPassword}
+      className="absolute right-0 top-0 flex h-12 w-12 items-center justify-center rounded-xl text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]"
+    >
+      {showPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
+    </button>
+  );
+
+  const isSignup = view === 'signup';
+  const pickingType = isSignup && role === null;
+  const proRole: 'gardener' | 'company' | null = role === 'gardener' || role === 'company' ? role : null;
+  const isPro = proRole !== null;
+
+  let title = '¡Hola de nuevo!';
+  let subtitle = 'Entra en tu cuenta de GarSer';
+  if (view === 'forgot') { title = 'Recuperar contraseña'; subtitle = 'Te enviamos un enlace a tu correo'; }
+  else if (pickingType) { title = 'Crea tu cuenta'; subtitle = '¿Cómo vas a usar GarSer?'; }
+  else if (isSignup && role) { title = `Crea tu cuenta de ${ACCOUNT_TYPES[role].nounPhrase}`; subtitle = ''; }
+
+  const renderBody = () => {
+    if (googleOutcome?.kind === 'chooser') {
+      return <NewAccountChooser result={googleOutcome.result} onResolved={(result) => void finishGoogle(result, true)} />;
+    }
+    if (googleOutcome?.kind === 'problem') {
+      return (
+        <RoleProblemPanel
+          result={googleOutcome.result}
+          onResolved={(result) => void finishGoogle(result, true)}
+          onContinue={() => {
+            setGoogleOutcome(null);
+            toast.success(welcomeMessage(googleOutcome.result));
+            navigate(postLoginPath(googleOutcome.result.role, redirectTo));
+          }}
+          onSwitchAccount={switchGoogleAccount}
+        />
+      );
+    }
+
+    return (
+      <>
+        {view === 'forgot' ? (
+          <div className="mb-5 text-center">
+            <h1 ref={headingRef} tabIndex={-1} className="text-xl font-bold text-gray-900 outline-none">{title}</h1>
+            <p className="mt-1 text-base text-gray-600">{subtitle}</p>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-            {showForgotPassword ? 'Recuperar contraseña' : (isLogin ? '¡Hola de nuevo!' : 'Crea tu cuenta')}
-          </h1>
-          <p className="text-sm text-gray-500 mt-2">
-            {showForgotPassword ? 'Ingresa tu email para recibir instrucciones' : (isLogin ? 'Ingresa tus datos para continuar' : 'Únete a nuestra comunidad de jardinería')}
-          </p>
-        </div>
-
-        {showForgotPassword ? (
-          <form onSubmit={handleForgotSubmit} className="space-y-6 animate-fade-in-up">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-              <div className="relative group">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
-                <input
-                  type="email"
-                  value={forgotPasswordEmail}
-                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
-                  placeholder="ejemplo@correo.com"
-                  required
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={sendingForgot}
-              className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-emerald-700/20 transition-all disabled:opacity-50"
-            >
-              Enviar email
-            </button>
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => setShowForgotPassword(false)}
-                className="text-sm font-medium text-green-600 hover:text-green-700 hover:underline"
-              >
-                Volver al inicio de sesión
-              </button>
-            </div>
-          </form>
         ) : (
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-
-          {!isLogin && (
-            <div className="animate-fade-in-down">
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                ¿Qué tipo de cuenta necesitas?
-              </label>
-              <div className={`grid grid-cols-1 gap-4 ${forceClientOnly ? '' : 'sm:grid-cols-3'}`}>
-                {/* Botón Cliente */}
+          <div className="mb-5">
+            <div role="tablist" aria-label="Acceso a GarSer" className="grid grid-cols-2 rounded-xl bg-gray-100 p-1">
+              {(['login', 'signup'] as const).map((tab) => (
                 <button
+                  key={tab}
                   type="button"
-                  onClick={() => setSelectedRole('client')}
-                  className={`relative p-3 sm:p-4 border-2 rounded-xl transition-all duration-200 ${
-                    selectedRole === 'client'
-                      ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
-                      : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                  role="tab"
+                  aria-selected={view === tab}
+                  onClick={() => changeView(tab)}
+                  className={`min-h-11 rounded-lg text-base font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation] ${
+                    view === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <div className="flex flex-col items-center space-y-2">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
-                      selectedRole === 'client' ? 'bg-green-500' : 'bg-gray-200'
-                    }`}>
-                      <User className={`w-6 h-6 transition-colors ${
-                        selectedRole === 'client' ? 'text-white' : 'text-gray-600'
-                      }`} />
-                    </div>
-                    <div className="text-center">
-                      <h3 className={`text-sm sm:text-base font-semibold transition-colors ${
-                        selectedRole === 'client' ? 'text-green-700' : 'text-gray-700'
-                      }`}>
-                        Cliente
-                      </h3>
-                      <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                        Busco servicios
-                      </p>
-                    </div>
-                  </div>
-                  {selectedRole === 'client' && (
-                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md animate-bounce-small">
-                      <Check className="w-4 h-4 text-white" />
-                    </div>
-                  )}
+                  {tab === 'login' ? 'Entrar' : 'Crear cuenta'}
                 </button>
-
-                {!forceClientOnly && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRole('gardener')}
-                    className={`relative p-3 sm:p-4 border-2 rounded-xl transition-all duration-200 ${
-                      selectedRole === 'gardener'
-                        ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
-                        : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex flex-col items-center space-y-2">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
-                        selectedRole === 'gardener' ? 'bg-green-500' : 'bg-gray-200'
-                      }`}>
-                        <Briefcase className={`w-6 h-6 transition-colors ${
-                          selectedRole === 'gardener' ? 'text-white' : 'text-gray-600'
-                        }`} />
-                      </div>
-                      <div className="text-center">
-                        <h3 className={`text-sm sm:text-base font-semibold transition-colors ${
-                          selectedRole === 'gardener' ? 'text-green-700' : 'text-gray-700'
-                        }`}>
-                          Jardinero
-                        </h3>
-                        <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                          Trabajo por mi cuenta
-                        </p>
-                      </div>
-                    </div>
-                    {selectedRole === 'gardener' && (
-                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md animate-bounce-small">
-                        <Check className="w-4 h-4 text-white" />
-                      </div>
-                    )}
-                  </button>
-                )}
-
-                {/* GarSer Empresas (F3.2): alta de empresa de jardinería. Se revisa antes de aparecer. */}
-                {!forceClientOnly && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRole('company')}
-                    className={`relative p-3 sm:p-4 border-2 rounded-xl transition-all duration-200 ${
-                      selectedRole === 'company'
-                        ? 'border-green-500 bg-green-50 shadow-lg transform scale-105'
-                        : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex flex-col items-center space-y-2">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
-                        selectedRole === 'company' ? 'bg-green-500' : 'bg-gray-200'
-                      }`}>
-                        <Building2 className={`w-6 h-6 transition-colors ${
-                          selectedRole === 'company' ? 'text-white' : 'text-gray-600'
-                        }`} />
-                      </div>
-                      <div className="text-center">
-                        <h3 className={`text-sm sm:text-base font-semibold transition-colors ${
-                          selectedRole === 'company' ? 'text-green-700' : 'text-gray-700'
-                        }`}>
-                          Empresa
-                        </h3>
-                        <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                          Tengo un equipo de jardinería
-                        </p>
-                      </div>
-                    </div>
-                    {selectedRole === 'company' && (
-                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-md animate-bounce-small">
-                        <Check className="w-4 h-4 text-white" />
-                      </div>
-                    )}
-                  </button>
-                )}
-              </div>
-              
-              {/* Indicador visual del rol seleccionado */}
-              <div className="mt-4 p-3 bg-green-50/50 border border-green-200 rounded-xl">
-                <p className="text-sm text-green-800 text-center font-medium">
-                  Rol seleccionado: <span className="font-bold">{selectedRole === 'client' ? 'Cliente' : selectedRole === 'company' ? 'Empresa' : 'Jardinero'}</span>
-                  <span className="block text-xs font-normal text-green-600 mt-1">
-                    Este rol será permanente tras el registro
-                  </span>
-                </p>
-              </div>
+              ))}
             </div>
-          )}
+            <div className="mt-5 text-center">
+              <h1 ref={headingRef} tabIndex={-1} className="text-xl font-bold text-gray-900 outline-none">{title}</h1>
+              {subtitle && <p className="mt-1 text-base text-gray-600">{subtitle}</p>}
+            </div>
+          </div>
+        )}
 
-          {showGoogle && (
-            <div className="space-y-4">
-              <GoogleSignInButton
-                context={isLogin ? 'signin' : 'signup'}
-                redirectPath={redirectTo || ''}
-                oneTap={isLogin}
-                signupRole={!isLogin && selectedRole !== 'client' ? selectedRole : undefined}
-                onSignedIn={(result) => {
-                  toast.success(welcomeMessage(result));
-                  navigate(postLoginPath(result.role, redirectTo));
-                }}
+        {view === 'forgot' && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!forgotEmail.trim()) {
+                toast.error('Escribe tu correo');
+                return;
+              }
+              setShowForgotModal(true);
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label htmlFor="forgot-email" className="mb-1.5 block text-sm font-medium text-gray-800">Correo electrónico</label>
+              <input
+                id="forgot-email"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                className={INPUT}
+                placeholder="tu@correo.com"
+                required
               />
-              <OrWithEmail />
             </div>
-          )}
+            <button type="submit" disabled={sendingForgot} className={SUBMIT}>Enviar enlace</button>
+            <div className="text-center">
+              <button type="button" onClick={() => setView('login')} className={LINK}>Volver a entrar</button>
+            </div>
+          </form>
+        )}
 
+        {pickingType && (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Correo electrónico</label>
-              <div className="relative group">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
-                <input
-                  {...register('email')}
-                  type="email"
-                  className="w-full pl-10 pr-4 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
-                  placeholder="tu@email.com"
-                />
-              </div>
-              {errors.email && (
-                <p className="mt-1 text-xs sm:text-sm text-red-600 flex items-center gap-1">
-                  <span className="w-1 h-1 bg-red-600 rounded-full"></span>
-                  {errors.email.message}
-                </p>
-              )}
-            </div>
+            <AccountTypePicker onSelect={setRole} />
+            <p className="text-center text-sm text-gray-500">Después no podrás cambiar el tipo de cuenta.</p>
+          </div>
+        )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
-              <div className="relative group">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
-                <input
-                  {...register('password')}
-                  type={showPassword ? 'text' : 'password'}
-                  className="w-full pl-10 pr-12 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+        {(view === 'login' || (isSignup && role)) && (
+          <div className="space-y-4">
+            {isSignup && role && !forceClientOnly && (
+              <div className="-mt-3 text-center">
+                <button type="button" onClick={() => setRole(null)} className={`${LINK} text-sm`}>
+                  <ChevronLeft className="mr-0.5 h-4 w-4" aria-hidden="true" /> Cambiar tipo de cuenta
                 </button>
-              </div>
-              {errors.password && (
-                <p className="mt-1 text-xs sm:text-sm text-red-600 flex items-center gap-1">
-                  <span className="w-1 h-1 bg-red-600 rounded-full"></span>
-                  {errors.password.message}
-                </p>
-              )}
-              {isLogin && (
-                <div className="flex justify-end mt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotPassword(true)}
-                    className="text-xs sm:text-sm font-medium text-green-600 hover:text-green-700 transition-colors"
-                  >
-                    ¿Has olvidado tu contraseña?
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {!isLogin && (
-              <div className="animate-fade-in-up">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Repite la contraseña</label>
-                <div className="relative group">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
-                  <input
-                    {...register('confirmPassword')}
-                    type="password"
-                    className="w-full pl-10 pr-4 py-3 text-base sm:text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-sm bg-gray-50 focus:bg-white"
-                    placeholder="••••••••"
-                  />
-                </div>
               </div>
             )}
+            {isSignup && isPro && (
+              <p className="rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm leading-snug text-emerald-900">
+                {role === 'company'
+                  ? 'Primero creas la cuenta y después completas los datos de tu empresa. La revisamos antes de publicarla.'
+                  : 'Primero creas la cuenta y después completas tu solicitud. La revisamos antes de publicarte.'}
+              </p>
+            )}
+
+            {showGoogle && (
+              <>
+                <GoogleSignInButton
+                  key={`${view}-${role ?? 'none'}`}
+                  context={isSignup ? 'signup' : 'signin'}
+                  redirectPath={redirectTo || ''}
+                  oneTap={view === 'login'}
+                  signupRole={isSignup && proRole ? proRole : undefined}
+                  onSignedIn={(result) => void finishGoogle(result, isSignup)}
+                />
+                <OrWithEmail />
+              </>
+            )}
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+              <Field
+                id="auth-email"
+                label="Correo electrónico"
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                enterKeyHint="next"
+                placeholder="tu@correo.com"
+                error={errors.email?.message}
+                registration={register('email')}
+              />
+              <div>
+                <Field
+                  id="auth-password"
+                  label="Contraseña"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete={isSignup ? 'new-password' : 'current-password'}
+                  enterKeyHint={isSignup ? 'next' : 'go'}
+                  error={errors.password?.message}
+                  registration={register('password')}
+                  action={passwordToggle}
+                />
+                {view === 'login' && (
+                  <div className="mt-1 flex justify-end">
+                    <button type="button" onClick={() => setView('forgot')} className={`${LINK} text-sm`}>
+                      ¿Has olvidado tu contraseña?
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isSignup && (
+                <Field
+                  id="auth-confirm"
+                  label="Repite la contraseña"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  enterKeyHint="go"
+                  error={errors.confirmPassword?.message}
+                  registration={register('confirmPassword')}
+                />
+              )}
+              <button type="submit" disabled={loading} className={SUBMIT}>
+                {loading ? (<><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Procesando…</>) : (view === 'login' ? 'Entrar' : 'Crear cuenta')}
+              </button>
+              <LegalConsentNote className="text-center" />
+            </form>
+
+            {view === 'login' && !forceClientOnly && (
+              <button
+                type="button"
+                onClick={() => { setRole(null); changeView('signup'); }}
+                className="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-left hover:border-emerald-300 hover:bg-emerald-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]"
+              >
+                <span className="text-sm leading-snug text-gray-700">
+                  <span className="block font-semibold text-gray-900">¿Eres jardinero o empresa?</span>
+                  Crea tu cuenta profesional
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
+              </button>
+            )}
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white py-3 px-4 text-sm sm:text-base rounded-xl font-bold shadow-lg shadow-emerald-700/20 transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Procesando...
-              </span>
-            ) : (isLogin ? 'Iniciar Sesión' : 'Crear Cuenta')}
-          </button>
-          <LegalConsentNote className="text-center" />
-        </form>
         )}
+      </>
+    );
+  };
 
-        {!showForgotPassword && (
-        <div className="mt-8 text-center">
-          <p className="text-gray-600 text-sm">
-            {isLogin ? '¿No tienes cuenta? ' : '¿Ya tienes cuenta? '}
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="font-semibold text-green-600 hover:text-green-700 transition-colors hover:underline"
-            >
-              {isLogin ? 'Regístrate gratis' : 'Inicia sesión'}
-            </button>
-          </p>
-        </div>
-        )}
-
-        <div className="mt-6 pt-6 border-t border-gray-100">
+  return (
+    <div className="min-h-[100dvh] w-full bg-white">
+      <div className="mx-auto w-full max-w-md px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-2 sm:pt-10">
+        <nav className="flex min-h-11 items-center">
           <button
             type="button"
-            onClick={() => navigate('/')}
-            className="w-full py-3 px-4 bg-white border-2 border-gray-200 text-gray-600 rounded-xl font-semibold hover:border-green-200 hover:bg-green-50 hover:text-green-700 transition-all duration-200 flex items-center justify-center gap-2 group"
+            onClick={() => {
+              if (view === 'forgot') { setView('login'); return; }
+              setGoogleOutcome(null);
+              navigate('/');
+            }}
+            className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-gray-600 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]"
           >
-            <span>Ver vista previa de la web</span>
-            <svg 
-              className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            {view === 'forgot' ? 'Volver' : 'Volver a la web'}
           </button>
+        </nav>
+
+        <div className="mb-5 mt-1 flex justify-center">
+          <GarserLogo className="h-9 w-auto" textClassName="text-2xl font-bold text-gray-900 tracking-tight" />
         </div>
+
+        {renderBody()}
 
         <EmailConfirmationModal
           isOpen={showEmailModal}
           onClose={() => {
             setShowEmailModal(false);
-            setIsLogin(true); // Cambiar a modo login después de cerrar el modal
+            setView('login'); // Tras cerrar el aviso, a entrar con la cuenta recién creada.
           }}
           email={registeredEmail}
         />
 
-      {showForgotModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-6 shrink-0">
-                <AlertTriangle className="w-8 h-8 text-yellow-600" />
-              </div>
-              
-              <h3 className="text-xl font-bold text-gray-900 mb-4">
-                ¿Enviar correo de recuperación?
-              </h3>
-              
-              <div className="bg-yellow-50 rounded-xl p-4 mb-6 w-full text-left">
-                <p className="text-sm text-gray-700">
-                  Se enviará un enlace a tu correo electrónico <strong>{forgotPasswordEmail}</strong> para restablecer tu contraseña.
-                </p>
-                <p className="text-sm text-gray-700 mt-2">
-                  Si continúas, recibirás un email con las instrucciones.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 w-full">
-                 <button
-                   onClick={confirmForgotReset}
-                   disabled={sendingForgot}
-                   className="w-full py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                 >
-                   {sendingForgot ? (
-                     <>Enviando...</>
-                   ) : (
-                     <>Confirmar</>
-                   )}
-                 </button>
-                 <button
-                   onClick={() => setShowForgotModal(false)}
-                   disabled={sendingForgot}
-                   className="w-full py-3 px-4 bg-white border-2 border-gray-100 hover:bg-gray-50 text-gray-700 rounded-xl font-semibold transition-colors"
-                 >
-                   Cancelar
-                 </button>
+        {showForgotModal && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="forgot-title">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="flex flex-col items-center text-center">
+                <div className="mb-5 flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-yellow-100">
+                  <AlertTriangle className="h-7 w-7 text-yellow-600" aria-hidden="true" />
+                </div>
+                <h3 id="forgot-title" className="mb-3 text-xl font-bold text-gray-900">¿Enviar correo de recuperación?</h3>
+                <div className="mb-5 w-full rounded-xl bg-yellow-50 p-4 text-left">
+                  <p className="text-sm text-gray-700">
+                    Se enviará un enlace a <strong>{forgotEmail}</strong> para restablecer tu contraseña.
+                  </p>
+                </div>
+                <div className="flex w-full flex-col gap-3">
+                  <button type="button" onClick={confirmForgotReset} disabled={sendingForgot} className={SUBMIT}>
+                    {sendingForgot ? 'Enviando…' : 'Confirmar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    disabled={sendingForgot}
+                    className="min-h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-base font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body,
+        )}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Briefcase, RotateCcw, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ServiceItem from '../ServiceItem';
@@ -21,6 +21,8 @@ interface ServicesTabProps {
   watchedServices: string[];
   expandedServiceId: string | null;
   handleToggleService: (id: string) => void;
+  /** ¿Se puede activar este servicio (su configuración es válida)? Lo decide ProfileSettings. */
+  canActivateService: (id: string) => boolean;
   handleExpand: (id: string) => void;
   handleWrapperSave: (name: string, config: any) => Promise<boolean>;
   configs: {
@@ -70,6 +72,7 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
   sortedServices,
   watchedServices,
   handleToggleService,
+  canActivateService,
   handleExpand,
   handleWrapperSave,
   configs,
@@ -87,6 +90,37 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
   const [saving, setSaving] = useState(false);
   const [showResetOptions, setShowResetOptions] = useState(false);
   const { openConfirm, confirmDialog } = useConfirmDialog();
+
+  // Lo último que dice ProfileSettings sobre «¿se puede activar?»: tras guardar, esa respuesta cambia en
+  // el siguiente pintado, así que se lee de la referencia y no de lo que había al pulsar «Guardar».
+  const canActivateRef = useRef(canActivateService);
+  canActivateRef.current = canActivateService;
+  const toggleRef = useRef(handleToggleService);
+  toggleRef.current = handleToggleService;
+
+  // Guardó un precio válido de un servicio que sigue apagado: se ofrece activarlo ahora (si no, el
+  // servicio se quedaba «configurado» sin que nada dijera que falta un último toque).
+  const offerActivation = (service: { id: string; name: string } | null) => {
+    if (!service || watchedServices.includes(service.id)) return;
+    window.setTimeout(() => {
+      if (!canActivateRef.current(service.id)) return;
+      toast.custom(
+        (t) => (
+          <div className="flex max-w-sm items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-lg" role="status">
+            <p className="min-w-0 flex-1 text-sm text-gray-900">Precio guardado. ¿Activas <strong>{service.name}</strong> ahora?</p>
+            <button
+              type="button"
+              onClick={() => { toast.dismiss(t.id); toggleRef.current(service.id); }}
+              className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 [touch-action:manipulation]"
+            >
+              Activar
+            </button>
+          </div>
+        ),
+        { id: `offer-activate-${service.id}`, duration: 9000 },
+      );
+    }, 250);
+  };
 
   // Al abrir un servicio distinto (o cerrar), se descarta el registro del anterior — evita
   // guardar o comprobar cambios de un configurador que ya no está montado.
@@ -114,7 +148,9 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
         const result = await registeredSave?.();
         setSaving(false);
         if (result === 'success') {
+          const saved = slideOverService;
           closeSlideOver();
+          offerActivation(saved);
         } else if (result === 'invalid') {
           toast.error('Revisa los campos marcados en rojo antes de guardar.');
         }
@@ -137,6 +173,8 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
     setSaving(false);
     if (result === 'invalid') {
       toast.error('Revisa los campos marcados en rojo antes de guardar.');
+    } else if (result === 'success') {
+      offerActivation(slideOverService);
     }
   };
 
@@ -171,7 +209,18 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
               service={service}
               isActive={isSelected}
               hasError={false}
-              onToggle={() => handleToggleService(service.id)}
+              canActivate={canActivateService(service.id)}
+              onToggle={() => {
+                // Sin precio todavía no se puede activar: en vez de un error, se explica y se abre su
+                // configuración (el botón «Activar» claro no es un botón muerto).
+                if (!isSelected && !canActivateService(service.id)) {
+                  toast(`Primero configura el precio de ${service.name}.`, { icon: 'ℹ️' });
+                  setSlideOverService(service);
+                  handleExpand(service.id);
+                  return;
+                }
+                handleToggleService(service.id);
+              }}
               onConfigClick={() => {
                 setSlideOverService(service);
                 handleExpand(service.id);

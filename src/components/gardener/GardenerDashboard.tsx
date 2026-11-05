@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, MapPin, Clock, User, MessageCircle, Bell, Star, Megaphone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -26,12 +26,15 @@ import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingSe
 import SuspendedProviderNotice from '../common/SuspendedProviderNotice';
 import ProviderSetupChecklist from '../provider/ProviderSetupChecklist';
 import MarketingHub from '../marketing/MarketingHub';
-import type { SetupTarget } from '../../shared/providerSetup';
+import { buildProviderSetupSteps, type SetupTarget } from '../../shared/providerSetup';
+import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
   pending?: boolean;
 }
+
+const SETUP_INCOMPLETE_KEY = 'gardener_setup_incomplete';
 
 const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }) => {
   const { user, loading: authLoading } = useAuth();
@@ -41,6 +44,10 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const isFetchingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews' | 'marketing'>(() => {
+    // Se reabre donde se quedó... salvo mientras le falte algo por configurar: entonces, el panel, donde
+    // está la guía de primeros pasos. Sin esto, quien dejó «Disponibilidad» abierta volvía a entrar DENTRO
+    // de ella, sin ver qué le faltaba (2026-11-05).
+    if (localStorage.getItem(SETUP_INCOMPLETE_KEY) === '1') return 'dashboard';
     const savedTab = localStorage.getItem('gardener_active_tab');
     return (savedTab as 'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews' | 'marketing') || 'dashboard';
   });
@@ -48,6 +55,15 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   useEffect(() => {
     localStorage.setItem('gardener_active_tab', activeTab);
   }, [activeTab]);
+
+  // «Completa tu cuenta»: un único estado, compartido con la ayuda. Si falta algo obligatorio, la guía va
+  // ARRIBA del panel (antes quedaba debajo de seis atajos, casi fuera de la pantalla).
+  const setup = useProviderSetupStatus({ enabled: !pending });
+  const setupSummary = useMemo(() => (setup.status ? buildProviderSetupSteps(setup.status) : null), [setup.status]);
+  const guideFirst = Boolean(setupSummary && !setupSummary.allRequiredDone);
+  useEffect(() => {
+    if (setupSummary) localStorage.setItem(SETUP_INCOMPLETE_KEY, setupSummary.allRequiredDone ? '0' : '1');
+  }, [setupSummary]);
   // «Completar la cuenta» abre el horario en «Horario fijo» para crearlo; el botón de siempre, no.
   const [availabilityTab, setAvailabilityTab] = useState<'weekly' | 'recurring'>('weekly');
 
@@ -347,6 +363,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       {/* Tab Content */}
       {activeTab === 'dashboard' && (
         <>
+          {!pending && guideFirst && <ProviderSetupChecklist className="mb-6" onNavigate={handleSetupNavigate} setup={setup} />}
+
           {/* Header */}
           <div className="bg-white rounded-2xl shadow-lg p-5 sm:p-8 mb-8">
             <div className="flex items-center justify-between">
@@ -432,7 +450,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           </div>
 
           {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
-          {!pending && <ProviderSetupChecklist className="mb-8" onNavigate={handleSetupNavigate} />}
+          {!pending && !guideFirst && <ProviderSetupChecklist className="mb-8" onNavigate={handleSetupNavigate} setup={setup} />}
 
           {/* Aviso de instalación (fallo 1, 2026-09-15): solo en móvil, entre el panel y
               las reservas — en Mi Cuenta pasaba desapercibido. Se oculta sola en cuanto

@@ -49,3 +49,23 @@ describe('«Mi cuenta» desde la espera o el rechazo (pruebas en garser.es)', ()
     expect(screen.getByRole('link', { name: 'Mi cuenta' }).getAttribute('href')).toBe('/account');
   });
 });
+
+describe('«Actualizar estado» en la espera (fallo 6, 2026-11-05)', () => {
+  afterEach(cleanup);
+
+  it('con onRefresh enseña el botón y lo llama; sin él, la pantalla es la de siempre', async () => {
+    const onRefresh = vi.fn().mockResolvedValue('pending');
+    const { unmount } = render(<MemoryRouter><GardenerStatusPage status="pending" onRefresh={onRefresh} /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar estado' }));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    unmount();
+
+    render(<MemoryRouter><GardenerStatusPage status="pending" /></MemoryRouter>);
+    expect(screen.queryByRole('button', { name: 'Actualizar estado' })).toBeNull();
+  });
+
+  it('en una solicitud rechazada no hay botón de actualizar (ahí lo que toca es corregirla)', () => {
+    render(<MemoryRouter><GardenerStatusPage status="denied" denialReason="x" onRefresh={vi.fn()} /></MemoryRouter>);
+    expect(screen.queryByRole('button', { name: 'Actualizar estado' })).toBeNull();
+  });
+});

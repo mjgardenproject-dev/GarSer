@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings, Star } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -6,6 +6,7 @@ import { isAdminRole } from '../../lib/adminAccess';
 import { useAccount } from '../../contexts/AccountContext';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
 import GarserLogo from '../common/GarserLogo';
+import { HEADER_PAD_VAR, NAVBAR_HEIGHT_VAR, usePublishStickyHeight } from '../../hooks/useStickyHeight';
 
 interface NavbarProps {
   applicationStatus?: 'pending' | 'active' | 'denied' | null;
@@ -24,6 +25,11 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  // La barra de cada pantalla (AppHeader) se pega justo debajo de esta: ver useStickyHeight.ts.
+  // El margen del notch ya lo pone esta barra, así que el AppHeader no lo repite.
+  const navRef = useRef<HTMLElement>(null);
+  usePublishStickyHeight(navRef, NAVBAR_HEIGHT_VAR, { [HEADER_PAD_VAR]: '0px' });
 
   const handleSignOut = async () => {
     try {
@@ -88,6 +94,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
 
   return (
     <nav
+      ref={navRef}
       className="sticky top-0 z-40 bg-white shadow-lg border-b border-gray-200"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >

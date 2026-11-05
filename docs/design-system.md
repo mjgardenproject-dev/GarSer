@@ -99,10 +99,13 @@ para que la web se sienta unida:
 
 Reglas:
 
-- `sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200`, con
-  `padding-top: env(safe-area-inset-top)` para no invadir el notch/isla dinámica en PWA
-  standalone. Es el mismo patrón que ya usa `src/components/public/PublicHeader.tsx:7`
-  — se generaliza, no se inventa.
+- `sticky z-30 bg-white/95 backdrop-blur border-b border-gray-200`, pegado **debajo de la barra
+  general** (`Navbar`) con `top: var(--app-navbar-h, 0px)` — ver «Barras fijas apiladas» abajo.
+  Sin `Navbar` encima, `--app-navbar-h` vale 0 y es el propio `AppHeader` quien pone
+  `padding-top: env(safe-area-inset-top)` (notch/isla dinámica en PWA standalone). El patrón de
+  partida es el de `src/components/public/PublicHeader.tsx`, que no tiene `Navbar` debajo.
+- **Nunca dos barras con el mismo `top`.** Hasta el 2026-11-05 `Navbar` y `AppHeader` eran los dos
+  `sticky top-0 z-40` y, al hacer scroll, se tapaban entre sí (fallos 3 y 5 de la ronda del móvil).
 - **Botón volver/salir**: icono `ArrowLeft` o `X` (lucide) + texto opcional en `sm:`.
   Si hay cambios sin guardar pendientes en la pantalla, el botón vuelve a través de
   `useConfirmDialog` (ver §7) en vez de navegar directo.
@@ -114,6 +117,24 @@ Reglas:
 - El header **nunca** se sustituye por un botón flotante pegado al pie de página — ese
   patrón (visto hoy en `AvailabilityManager.tsx:655-668`) se retira porque se solapa con
   el menú rápido inferior de la web en móvil.
+
+### Barras fijas apiladas (Navbar + AppHeader / progreso del alta)
+
+Cada barra fija publica su **alto real** en una variable CSS del `<html>`
+(`src/hooks/useStickyHeight.ts`); la de debajo se pega justo después. Nada de alturas puestas a mano.
+
+| Variable | La publica | Para qué |
+|---|---|---|
+| `--app-navbar-h` | `Navbar` | `top` del `AppHeader` y del progreso del alta |
+| `--app-header-pad` | `Navbar` (vale `0px`) | el `AppHeader` no repite el margen del notch que ya pone el `Navbar` |
+| `--app-sticky-sub-h` | `AppHeader` o `StickyStepProgress` | `scroll-padding-top` global (anclas, foco y `scrollIntoView` no caen debajo de las barras) |
+
+Reglas:
+
+- Una pantalla tiene **una** barra de pantalla bajo el `Navbar`: `AppHeader` **o** `StickyStepProgress`, nunca las dos (comparten `--app-sticky-sub-h`).
+- Altas por pasos (`/apply`, `/empresa/solicitud`): el progreso va en `StickyStepProgress` (`src/components/common/StickyStepProgress.tsx`), **fijo** bajo el `Navbar`. Dentro de la página lo tapaba el `Navbar` si no se estaba arriba del todo (fallo 1).
+- Las páginas sin menú inferior (altas y estado de solicitud) **no llevan `pb-16`** en el `<main>` de `App.tsx`: ese hueco es del menú inferior y, sin él, daba 64 px de scroll de más que metían la tarjeta bajo la barra fija (fallo 2).
+- Páginas de estado a pantalla completa: alto `min-h-[calc(100dvh-var(--app-navbar-h,4rem))]`, no `min-h-screen` (que sumaba el `Navbar` y hacía scroll).
 
 ## 6. Botones
 
@@ -186,3 +207,11 @@ estético. Si se necesita un input visualmente compacto, se reduce el `padding`,
    configuraciones largas donde un mensaje de "Guardado" en cada tecleo es ruidoso.
 
 No mezclar los dos patrones dentro de la misma pantalla.
+
+## 11. Activar servicios y guía de primeros pasos (2026-11-05)
+
+- **Botón «Activar»** (`src/components/gardener/ServiceActivateButton.tsx`) — la **única** forma de activar/desactivar un servicio (Mi perfil → Servicios y la ayuda «Completa tu cuenta»). Tres estados: *locked* (gris muy claro, falta el precio; **sigue siendo tocable**: abre la configuración y explica), *ready* (gris más oscuro, se puede activar) y *active* (verde, «Activado»). Un círculo sin texto no explica nada; no se vuelve a usar para esto.
+- **Guía de primeros pasos**: `ProviderSetupChecklist` en modo `guided` (un paso a la vez: el de ahora abierto con «Qué tienes que hacer», los demás en una línea, los hechos compactos). Los textos de cada paso viven en `src/shared/providerSetup.ts` (`detail` = por qué; `howTo` = cómo), **no** en los componentes.
+- **Franja «Paso X de N»** (`SetupGuideBanner`) en las pantallas donde se hace un paso (Servicios, Zona, Horario). Al guardar algo que cuenta para la ayuda, llamar a `notifySetupChanged()` (`src/utils/setupEvents.ts`): la ayuda y la franja se releen solas.
+- Un valor que el profesional **no ha decidido** no se preselecciona (horario, semanas de agenda, antelación): selector vacío («Elige…») y no se guarda hasta elegirlo.
+- Estados «pendiente de confirmar» (p. ej. la zona de trabajo): botón primario explícito («Confirmar esta dirección»), no un guardado que solo ocurre si se toca algo.

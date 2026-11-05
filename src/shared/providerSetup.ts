@@ -64,6 +64,18 @@ export interface ProviderSetupStatus {
   team: ProviderSetupTeam | null;
   push_enabled: boolean;
   fee_waiver_enabled: boolean;
+  /**
+   * Autónomo: ya eligió la antelación mínima y las semanas de agenda (existe su fila de
+   * recurring_availability_settings). Lo añade el navegador, no el servidor; sin él (el panel del admin)
+   * el paso no se enseña.
+   */
+  schedule_rules_configured?: boolean;
+  /**
+   * Los servicios que ya empezó a configurar (con fila de precios) y su estado: `active` / `can_activate`
+   * (su configuración guardada es válida). El servidor solo cuenta los ACTIVOS, así que no sabe que
+   * uno configurado y sin activar existe: lo añade el navegador. Sin él, el paso es el de siempre.
+   */
+  service_activation?: Array<{ id: string; name: string; active: boolean; can_activate: boolean }>;
 }
 
 export type SetupStepId =
@@ -75,6 +87,7 @@ export type SetupStepId =
   | 'license'
   | 'photo'
   | 'description'
+  | 'schedule_rules'
   | 'push';
 
 /** done: hecho · todo: por hacer · review: lo está revisando GarSer · warning: estaba y ya no
@@ -93,12 +106,27 @@ export type SetupTarget =
   /** Apartado «Marketing»: flyer, tarjetas, vinilo… */
   | { kind: 'marketing' };
 
+/** Un servicio dentro de un paso, con el estado de su botón «Activar». */
+export interface SetupStepService {
+  id: string;
+  name: string;
+  state: 'locked' | 'ready' | 'active';
+}
+
 export interface SetupStep {
   id: SetupStepId;
   title: string;
   detail: string;
   state: SetupStepState;
   cta?: { label: string; target: SetupTarget };
+  /** Servicios configurados con su botón «Activar» (paso «Servicios y precios»). */
+  services?: SetupStepService[];
+  /**
+   * «Qué tienes que hacer»: 1-3 acciones concretas, en el orden en que se hacen. `detail` dice POR QUÉ
+   * hace falta el paso; esto dice CÓMO, para que nadie tenga que adivinarlo dentro de una pantalla
+   * larga (2026-11-05). Solo en los pasos pendientes.
+   */
+  howTo?: string[];
 }
 
 export interface ProviderSetupSummary {
@@ -154,20 +182,59 @@ const isPending = (step: SetupStep) => step.state === 'todo' || step.state === '
 
 function servicesStep(status: ProviderSetupStatus): SetupStep {
   const names = status.services.map((s) => s.name);
+  const configured = status.service_activation ?? [];
+  const notActive = configured.filter((s) => !s.active);
+  const ready = notActive.filter((s) => s.can_activate);
+  // Con algún servicio sin activar, se enseña cada uno con su botón «Activar» (también los ya activos,
+  // para que se vea el cambio al instante).
+  const services: SetupStepService[] | undefined = notActive.length > 0
+    ? configured.map((s) => ({ id: s.id, name: s.name, state: s.active ? 'active' : s.can_activate ? 'ready' : 'locked' }))
+    : undefined;
+  const toActivate = `${ready.length} ${plural(ready.length, 'servicio configurado', 'servicios configurados')} pero sin activar`;
+
   if (names.length === 0) {
+    if (ready.length > 0) {
+      return {
+        id: 'services',
+        title: 'Servicios y precios',
+        detail: `Tienes ${toActivate}: ${serviceList(ready.map((s) => s.name))}. ${ready.length === 1 ? 'Actívalo' : 'Actívalos'} para que los clientes puedan reservarte.`,
+        state: 'todo',
+        services,
+        howTo: [`Pulsa «Activar» en ${ready.length === 1 ? 'el servicio' : 'cada servicio que quieras ofrecer'}.`],
+        cta: { label: 'Ver mis servicios', target: { kind: 'profile', tab: 'services' } },
+      };
+    }
+    if (notActive.length > 0) {
+      return {
+        id: 'services',
+        title: 'Servicios y precios',
+        detail: `Has empezado con ${serviceList(notActive.map((s) => s.name))}, pero a su precio le faltan datos. Termina de configurarlo y actívalo.`,
+        state: 'todo',
+        services,
+        howTo: ['Toca el engranaje del servicio y termina de poner su precio.', 'Guarda y pulsa «Activar».'],
+        cta: { label: 'Terminar de configurar', target: { kind: 'profile', tab: 'services' } },
+      };
+    }
     return {
       id: 'services',
       title: 'Servicios y precios',
       detail: 'Activa al menos un servicio con tus precios: es lo que los clientes pueden reservarte.',
       state: 'todo',
+      howTo: [
+        'Elige el servicio que más haces y toca el engranaje.',
+        'Pon tus precios y pulsa «Guardar».',
+        'Vuelve a la lista y pulsa «Activar».',
+      ],
       cta: { label: 'Configurar servicios', target: { kind: 'profile', tab: 'services' } },
     };
   }
+  const extra = ready.length > 0 ? ` Tienes además ${toActivate}: ${serviceList(ready.map((s) => s.name))}.` : '';
   return {
     id: 'services',
     title: 'Servicios y precios',
-    detail: `${names.length} ${plural(names.length, 'servicio activo', 'servicios activos')}: ${serviceList(names)}.`,
+    detail: `${names.length} ${plural(names.length, 'servicio activo', 'servicios activos')}: ${serviceList(names)}.${extra}`,
     state: 'done',
+    services,
     cta: { label: 'Revisar servicios', target: { kind: 'profile', tab: 'services' } },
   };
 }
@@ -175,11 +242,27 @@ function servicesStep(status: ProviderSetupStatus): SetupStep {
 function coverageStep(status: ProviderSetupStatus): SetupStep {
   const { has_coordinates, address, max_distance } = status.profile;
   if (!has_coordinates) {
+    // Con la dirección ya escrita (la de la solicitud) solo falta confirmarla: un botón, no un formulario.
+    if (address) {
+      return {
+        id: 'coverage',
+        title: 'Zona de trabajo',
+        detail: `Tu dirección ya está escrita (${address}), pero falta confirmarla. Sin confirmarla no te podemos ofrecer a los clientes de tu zona.`,
+        state: 'todo',
+        howTo: ['Revisa que la dirección sea la tuya.', 'Elige hasta cuántos kilómetros te desplazas.', 'Pulsa «Confirmar esta dirección».'],
+        cta: { label: 'Confirmar mi zona', target: { kind: 'profile', tab: 'coverage' } },
+      };
+    }
     return {
       id: 'coverage',
       title: 'Zona de trabajo',
       detail: 'Guarda tu dirección base y hasta cuántos kilómetros te desplazas. Sin ella no te podemos ofrecer a los clientes de tu zona.',
       state: 'todo',
+      howTo: [
+        'Escribe la dirección desde la que trabajas y elige una de las sugerencias.',
+        'Elige hasta cuántos kilómetros te desplazas.',
+        'Comprueba que sale «Zona confirmada».',
+      ],
       cta: { label: 'Configurar zona', target: { kind: 'profile', tab: 'coverage' } },
     };
   }
@@ -211,6 +294,11 @@ function soloScheduleStep(status: ProviderSetupStatus): SetupStep {
       title: 'Horario',
       detail: 'Crea tu horario semanal: los clientes solo pueden reservarte en tus horas libres.',
       state: 'todo',
+      howTo: [
+        'Marca los días en que trabajas.',
+        'Elige de qué hora a qué hora.',
+        'Elige las semanas de agenda y la antelación, y pulsa «Guardar cambios».',
+      ],
       cta: { label: 'Crear horario', target: { kind: 'schedule', tab: 'recurring' } },
     };
   }
@@ -219,6 +307,7 @@ function soloScheduleStep(status: ProviderSetupStatus): SetupStep {
     title: 'Horario',
     detail: `No tienes horas libres en los próximos ${days} días (agenda llena o días cerrados). Abre más horas para seguir recibiendo reservas.`,
     state: 'warning',
+    howTo: ['Toca las casillas del calendario para abrir más horas.', 'Pulsa «Guardar cambios».'],
     cta: { label: 'Abrir más horas', target: { kind: 'schedule' } },
   };
 }
@@ -239,7 +328,13 @@ function soloLicenseStep(status: ProviderSetupStatus): SetupStep | null {
     case 'rejected':
       return { ...base, state: 'todo', detail: 'No pudimos aprobar el que subiste. Súbelo de nuevo para salir en los tratamientos químicos.', cta: cta('Subir carnet') };
     default:
-      return { ...base, state: 'todo', detail: 'Súbelo para salir en los tratamientos con producto químico o herbicida. Sin él solo apareces en los ecológicos.', cta: cta('Subir carnet') };
+      return {
+        ...base,
+        state: 'todo',
+        detail: 'Súbelo para salir en los tratamientos con producto químico o herbicida. Sin él solo apareces en los ecológicos.',
+        howTo: ['Haz una foto clara de tu carnet fitosanitario.', 'Súbela en «Mi perfil», pestaña «Personal».', 'GarSer la revisa y te avisa.'],
+        cta: cta('Subir carnet'),
+      };
   }
 }
 
@@ -253,6 +348,7 @@ function companyTeamStep(team: ProviderSetupTeam): SetupStep {
       title: 'Quién hace los trabajos',
       detail: `Activa «Yo también trabajo» o invita a tu equipo: sin nadie que trabaje no recibes reservas.${invites}`,
       state: 'todo',
+      howTo: ['Si tú también trabajas, activa «Yo también trabajo».', 'O invita a tu equipo por correo desde la pestaña «Equipo».'],
       cta: { label: 'Ir a Equipo', target: { kind: 'team' } },
     };
   }
@@ -290,6 +386,7 @@ function companyServicesStep(status: ProviderSetupStatus, team: ProviderSetupTea
     detail: `Nadie de tu equipo hace ${joinNames(uncovered.map((s) => s.name))}. ${uncovered.length === 1 ? 'Asígnalo' : 'Asígnalos'} a alguien.${
       phytoNeedsLicense ? ' Los fitosanitarios necesitan a alguien con el carnet aprobado.' : ''
     }`,
+    howTo: ['Abre a cada persona en la pestaña «Equipo».', 'Marca los servicios que hace.'],
     cta: { label: 'Asignar servicios', target: { kind: 'team' } },
   };
 }
@@ -329,6 +426,7 @@ function companyScheduleStep(status: ProviderSetupStatus, team: ProviderSetupTea
     ...base,
     state: people.some((m) => m.has_recurring_schedule) && people.every((m) => m.has_recurring_schedule) ? 'warning' : 'todo',
     detail: `${who}Los clientes no pueden reservar ${joinNames(withoutHours.map((s) => s.name))} en los próximos ${days} días.`,
+    howTo: ['Abre el horario de la persona que no tiene horas libres.', 'Marca sus días y horas y pulsa «Guardar cambios».'],
     cta,
   };
 }
@@ -369,9 +467,25 @@ function companyLicenseStep(status: ProviderSetupStatus, team: ProviderSetupTeam
   };
 }
 
+/** Antelación mínima y semanas de agenda: ya no vienen preelegidas (2026-11-05), así que se piden. */
+function scheduleRulesStep(status: ProviderSetupStatus): SetupStep[] {
+  if (status.provider_kind !== 'solo' || status.schedule_rules_configured === undefined) return [];
+  if (status.schedule_rules_configured) {
+    return [{ id: 'schedule_rules', title: 'Reglas de tu horario', state: 'done', detail: 'Ya elegiste con cuánta antelación te reservan y cuántas semanas de agenda abres.' }];
+  }
+  return [{
+    id: 'schedule_rules',
+    title: 'Reglas de tu horario',
+    state: 'todo',
+    detail: 'Elige con cuánta antelación pueden reservarte y cuántas semanas de agenda abres. Sin elegirlo, te pueden reservar con muy poca antelación.',
+    cta: { label: 'Elegir reglas', target: { kind: 'schedule', tab: 'recurring' } },
+  }];
+}
+
 function recommendedSteps(status: ProviderSetupStatus): SetupStep[] {
   const company = status.provider_kind === 'company';
   return [
+    ...scheduleRulesStep(status),
     status.profile.has_photo
       ? { id: 'photo', title: company ? 'Logo o foto' : 'Foto de perfil', state: 'done', detail: 'Los clientes ya la ven en tu perfil.' }
       : {

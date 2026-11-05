@@ -8,6 +8,7 @@ import { trackMetaLead } from '../../utils/metaLead';
 import { advertisingConsentColumns } from '../../utils/cookieConsentStorage';
 import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-react';
 import GardenerStatusPage from './GardenerStatusPage';
+import StickyStepProgress from '../common/StickyStepProgress';
 import { compressImage } from '../../utils/imageCompression';
 
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -330,7 +331,10 @@ const GardenerApplicationWizard: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-4 sm:p-6">
+    <div className="min-h-screen">
+      {/* Progreso FIJO bajo la barra general: dentro de la página el Navbar lo tapaba (fallo 1 del móvil). */}
+      <StickyStepProgress title="Alta de jardinero" stepLabel={`Paso ${step} de ${totalSteps}`} percent={progress} className="sm:px-6" />
+      <div className="max-w-3xl mx-auto p-4 sm:p-6">
       <div className="space-y-6">
         
         {lastRejection && step === 1 && (
@@ -345,16 +349,6 @@ const GardenerApplicationWizard: React.FC = () => {
           {step === 1 && (
             <p className="mb-3 text-sm text-gray-500">{totalSteps} pasos, unos 3-4 minutos.</p>
           )}
-          {/* Progress Row */}
-          <div className="w-full mb-4">
-            <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
-              <span>Progreso</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div className="h-2 bg-green-600 transition-all duration-300" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
 
           {/* Navigation & Title Row */}
           <div className="flex items-center justify-between gap-2">
@@ -670,6 +664,7 @@ const GardenerApplicationWizard: React.FC = () => {
             <p className="text-xs text-gray-500 mt-2 text-center">{stepHint(step)}</p>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

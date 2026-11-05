@@ -4,13 +4,16 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { restartRejectedApplication } from '../../utils/gardenerApplicationRetry';
+import RefreshApplicationStatus from '../common/RefreshApplicationStatus';
 
 interface GardenerStatusPageProps {
   status: 'pending' | 'denied';
   denialReason?: string;
+  /** Vuelve a preguntar el estado de la solicitud (App.tsx). Lanza si no se pudo comprobar. */
+  onRefresh?: () => Promise<'pending' | 'active' | 'denied' | null>;
 }
 
-const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialReason }) => {
+const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialReason, onRefresh }) => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [isResetting, setIsResetting] = React.useState(false);
@@ -65,9 +68,19 @@ const GardenerStatusPage: React.FC<GardenerStatusPageProps> = ({ status, denialR
             Tu solicitud para unirte a GarSer como jardinero ha sido recibida correctamente. 
             Nuestro equipo está revisando tu perfil y documentación.
           </p>
-          <div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm mb-8">
+          <div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm mb-4">
             Te notificaremos por email cuando tu cuenta sea activada.
           </div>
+          {onRefresh && (
+            <div className="mb-3">
+              <RefreshApplicationStatus
+                check={async () => {
+                  const result = await onRefresh();
+                  return result === 'active' ? 'approved' : result === 'denied' ? 'rejected' : 'pending';
+                }}
+              />
+            </div>
+          )}
           <button
             onClick={handleSignOut}
             className="flex items-center justify-center gap-2 w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"

@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { applyRecurringSchedule } from '../../utils/availabilityService';
 import { Clock, Calendar, AlertTriangle, CheckCircle2, Info, History, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { notifySetupChanged } from '../../utils/setupEvents';
 
 // Tipos
+// `null` = todavía sin elegir. Antes arrancaban en «1 mes» y «24 horas» (y el horario en 9-17) sin que
+// el profesional hubiera decidido nada, y se guardaban tal cual (fallo 5b del móvil, 2026-11-05).
 interface RecurringSettings {
-  weeks_to_maintain: number;
-  min_notice_hours: number;
+  weeks_to_maintain: number | null;
+  min_notice_hours: number | null;
   last_generated_date?: string;
 }
 
@@ -80,12 +83,12 @@ export default function RecurringScheduleManager({
   const [dirty, setDirty] = useState(false);
 
   // Estado del Paso 1: Generador.
-  // Por defecto NO hay días seleccionados: la UI solo resalta lo realmente
-  // configurado/guardado. Las horas son únicamente valores neutros del selector
-  // (no pintan nada hasta que el jardinero elige días o se cargan datos de BD).
+  // Por defecto NO hay nada elegido: ni días, ni franja (antes 9-17 venía puesto y al pulsar un día se
+  // pintaba solo). El calendario solo se rellena cuando la persona ha elegido días Y las dos horas;
+  // al cargar un horario ya guardado, se infiere de él.
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
-  const [startHour, setStartHour] = useState(9);
-  const [endHour, setEndHour] = useState(17);
+  const [startHour, setStartHour] = useState<number | null>(null);
+  const [endHour, setEndHour] = useState<number | null>(null);
 
   // Estado del Paso 2: Matriz de horario (Source of Truth)
   // Mapa: día (0-6) -> Set de horas activas (7-19)
@@ -93,9 +96,11 @@ export default function RecurringScheduleManager({
 
   // Estado de Configuración
   const [settings, setSettings] = useState<RecurringSettings>({
-    weeks_to_maintain: 4, // "1 mes" por defecto aprox
-    min_notice_hours: 24,
+    weeks_to_maintain: null,
+    min_notice_hours: null,
   });
+  // Tras intentar guardar con reglas sin elegir, se marcan en rojo.
+  const [showRuleErrors, setShowRuleErrors] = useState(false);
 
   const markDirty = () => {
     if (!dirty) {
@@ -124,7 +129,9 @@ export default function RecurringScheduleManager({
   }, [showConfirmation]);
 
   // Efecto para aplicar cambios del Paso 1 al Paso 2 (Generador -> Matriz)
-  const applyGeneratorToMatrix = (days: number[], start: number, end: number) => {
+  const applyGeneratorToMatrix = (days: number[], start: number | null, end: number | null) => {
+    // Sin franja elegida (las dos horas), marcar días no pinta nada: no se inventa un horario.
+    if (start === null || end === null) return;
     const newMatrix: Record<number, Set<number>> = {};
     
     // Inicializar todos los días vacíos
@@ -145,8 +152,8 @@ export default function RecurringScheduleManager({
 
   const handleGeneratorChange = (
     newDays: number[], 
-    newStart: number, 
-    newEnd: number
+    newStart: number | null, 
+    newEnd: number | null
   ) => {
     setSelectedDays(newDays);
     setStartHour(newStart);
@@ -220,9 +227,10 @@ export default function RecurringScheduleManager({
 
       // 5. Establecer configuración
       if (settData) {
+        // `??`, no `||`: «Sin restricción» se guarda como 0 y, con `|| 24`, al volver a entrar salía «24 horas».
         setSettings({
-          weeks_to_maintain: settData.weeks_to_maintain || 4,
-          min_notice_hours: settData.min_notice_hours || 24,
+          weeks_to_maintain: settData.weeks_to_maintain ?? null,
+          min_notice_hours: settData.min_notice_hours ?? null,
           last_generated_date: settData.last_generated_date
         });
       }
@@ -251,7 +259,28 @@ export default function RecurringScheduleManager({
     markDirty();
   };
 
+  // Lo que falta por elegir en «Reglas de disponibilidad» para poder guardar. La antelación no aplica a
+  // un empleado (la decide su empresa, `hideMinNotice`).
+  const missingRules = useMemo(() => {
+    const missing: string[] = [];
+    if (settings.weeks_to_maintain === null) missing.push('las semanas de agenda');
+    if (!hideMinNotice && settings.min_notice_hours === null) missing.push('la antelación mínima');
+    return missing;
+  }, [settings.weeks_to_maintain, settings.min_notice_hours, hideMinNotice]);
+
+  /** ¿Se puede guardar? Si no, lo dice, marca los campos y lleva a ellos. */
+  const ensureRulesChosen = useCallback((): boolean => {
+    if (missingRules.length === 0) return true;
+    setShowRuleErrors(true);
+    toast.error(`Antes de guardar, elige ${missingRules.join(' y ')}.`);
+    document.getElementById('reglas-horario')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    return false;
+  }, [missingRules]);
+
   const commitSave = useCallback(async (): Promise<boolean> => {
+    // También al «Guardar y salir» del aviso de cambios sin guardar: pasa por aquí.
+    if (!ensureRulesChosen()) return false;
+    const weeks = settings.weeks_to_maintain as number;
     setSaving(true);
 
     try {
@@ -261,10 +290,11 @@ export default function RecurringScheduleManager({
         const { error } = await supabase.rpc('set_member_recurring_schedule', {
           p_member_id: member.memberId,
           p_rules: matrixToRules(scheduleMatrix),
-          p_weeks: settings.weeks_to_maintain,
+          p_weeks: weeks,
         });
         if (error) throw error;
         toast.success(`Horario fijo de ${member.name} guardado y aplicado. Si ha cambiado, le avisamos por correo.`);
+        notifySetupChanged();
         setDirty(false);
         onChangePending?.(false);
         return true;
@@ -275,8 +305,10 @@ export default function RecurringScheduleManager({
         .from('recurring_availability_settings')
         .upsert({
           gardener_id: user.id,
-          weeks_to_maintain: settings.weeks_to_maintain,
-          min_notice_hours: settings.min_notice_hours,
+          weeks_to_maintain: weeks,
+          // En el horario del propio profesional la antelación está elegida (lo exige ensureRulesChosen).
+          // Un empleado no la elige (la decide su empresa): entonces no se envía y no se toca la fila.
+          ...(settings.min_notice_hours !== null ? { min_notice_hours: settings.min_notice_hours } : {}),
           updated_at: new Date().toISOString()
         });
 
@@ -348,7 +380,7 @@ export default function RecurringScheduleManager({
       // SIEMPRE ejecutamos la lógica del cliente para asegurar que se aplica correctamente
       // y para cubrir el caso donde el RPC no existe o está desactualizado.
       try {
-        await applyRecurringSchedule(user.id, scheduleMatrix, settings.weeks_to_maintain);
+        await applyRecurringSchedule(user.id, scheduleMatrix, weeks);
       } catch (clientError) {
         console.error('Client-side generation failed:', clientError);
         // Si el RPC también falló, lanzamos error
@@ -356,6 +388,7 @@ export default function RecurringScheduleManager({
       }
 
       toast.success('Horario fijo guardado y aplicado correctamente');
+      notifySetupChanged();
       setDirty(false);
       onChangePending?.(false);
       return true;
@@ -367,15 +400,16 @@ export default function RecurringScheduleManager({
     } finally {
       setSaving(false);
     }
-  }, [settings, scheduleMatrix, user?.id, member]);
+  }, [settings, scheduleMatrix, user?.id, member, ensureRulesChosen]);
   
   useEffect(() => {
     registerSaveHandler?.(commitSave);
   }, [commitSave]);
 
   useEffect(() => {
-    registerExplicitSaveTrigger?.(() => setShowConfirmation(true));
-  }, [registerExplicitSaveTrigger]);
+    // Sin las reglas elegidas no se abre ni el aviso de confirmación: primero se dice qué falta.
+    registerExplicitSaveTrigger?.(() => { if (ensureRulesChosen()) setShowConfirmation(true); });
+  }, [registerExplicitSaveTrigger, ensureRulesChosen]);
 
   useEffect(() => {
     onSavingChange?.(saving);
@@ -394,8 +428,38 @@ export default function RecurringScheduleManager({
     );
   }
 
+  // Qué le queda por configurar (aviso fijo arriba, se va vaciando según elige).
+  const hasAnyHours = Object.values(scheduleMatrix).some((set) => set && set.size > 0);
+  const pendingConfig: string[] = [];
+  // «trabajas» (el propio profesional) o «trabaja» (el dueño preparando el horario de un empleado).
+  const works = member ? 'trabaja' : 'trabajas';
+  if (!hasAnyHours) pendingConfig.push(`Los días y las horas en que ${works}`);
+  if (settings.weeks_to_maintain === null) pendingConfig.push('Cuántas semanas de agenda quieres abrir');
+  if (!hideMinNotice && settings.min_notice_hours === null) pendingConfig.push('Con cuánta antelación pueden reservarte');
+
   return (
     <div className="space-y-8">
+
+      {pendingConfig.length > 0 && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+            {member ? 'Quedan cosas por configurar en su horario' : 'Te quedan cosas por configurar en tu horario'}
+          </p>
+          <ul className="mt-2 list-disc space-y-0.5 pl-9">
+            {pendingConfig.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+          {missingRules.length > 0 && (
+            <button
+              type="button"
+              onClick={() => document.getElementById('reglas-horario')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+              className="mt-2 inline-flex min-h-11 items-center font-semibold text-amber-900 underline underline-offset-2"
+            >
+              Ir a las reglas de disponibilidad
+            </button>
+          )}
+        </div>
+      )}
 
       {/* PANEL DE AYUDA: cómo funciona el horario — plegado por defecto (fallo 13,
           auditoría UX 2026-09-14: ocupaba mucho espacio al entrar en la pantalla). */}
@@ -481,15 +545,16 @@ export default function RecurringScheduleManager({
               <div className="flex-1">
                 <span className="text-xs text-gray-500 mb-1 block">Desde</span>
                 <select
-                  value={startHour}
+                  value={startHour ?? ''}
                   onChange={(e) => {
                     const val = parseInt(e.target.value);
-                    handleGeneratorChange(selectedDays, val, Math.max(val + 1, endHour));
+                    handleGeneratorChange(selectedDays, val, endHour === null ? null : Math.max(val + 1, endHour));
                   }}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-3 text-sm focus:ring-green-500 focus:border-green-500"
+                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-3 text-base sm:text-sm focus:ring-green-500 focus:border-green-500"
                 >
+                  <option value="" disabled>Elige hora</option>
                   {BLOCK_START_HOURS.map(h => (
-                    <option key={h} value={h} disabled={h >= endHour}>{h.toString().padStart(2, '0')}:00</option>
+                    <option key={h} value={h} disabled={endHour !== null && h >= endHour}>{h.toString().padStart(2, '0')}:00</option>
                   ))}
                 </select>
               </div>
@@ -497,21 +562,33 @@ export default function RecurringScheduleManager({
               <div className="flex-1">
                 <span className="text-xs text-gray-500 mb-1 block">Hasta</span>
                 <select
-                  value={endHour}
+                  value={endHour ?? ''}
                   onChange={(e) => {
                     const val = parseInt(e.target.value);
-                    handleGeneratorChange(selectedDays, Math.min(startHour, val - 1), val);
+                    handleGeneratorChange(selectedDays, startHour === null ? null : Math.min(startHour, val - 1), val);
                   }}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-3 text-sm focus:ring-green-500 focus:border-green-500"
+                  className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-3 text-base sm:text-sm focus:ring-green-500 focus:border-green-500"
                 >
+                  <option value="" disabled>Elige hora</option>
                   {END_HOURS.map(h => (
-                    <option key={h} value={h} disabled={h <= startHour}>{h.toString().padStart(2, '0')}:00</option>
+                    <option key={h} value={h} disabled={startHour !== null && h <= startHour}>{h.toString().padStart(2, '0')}:00</option>
                   ))}
                 </select>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Qué falta para que el calendario se rellene solo (no se rellena hasta tener días Y franja). */}
+        {(selectedDays.length === 0 || startHour === null || endHour === null) && (
+          <p role="status" className="mt-4 rounded-xl bg-gray-50 px-3.5 py-2.5 text-sm text-gray-600">
+            {selectedDays.length === 0 && startHour === null && endHour === null
+              ? `Marca los días en que ${member ? 'trabaja' : 'trabajas'} y elige de qué hora a qué hora: el calendario de abajo se rellena solo. También puedes tocar las casillas a mano.`
+              : selectedDays.length === 0
+                ? `Marca los días en que ${member ? 'trabaja' : 'trabajas'} para rellenar el calendario.`
+                : `Elige también de qué hora a qué hora ${member ? 'trabaja' : 'trabajas'} para rellenar el calendario.`}
+          </p>
+        )}
       </section>
 
       {/* SECCIÓN 2: PERFECCIONA TU HORARIO (CALENDARIO) */}
@@ -631,7 +708,7 @@ export default function RecurringScheduleManager({
       </section>
 
       {/* SECCIÓN 3: CONFIGURACIÓN ADELANTO/ANTELACIÓN */}
-      <section className="mb-8">
+      <section className="mb-8" id="reglas-horario">
         <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
           <Info className="w-5 h-5 text-green-600" />
           Reglas de disponibilidad
@@ -647,13 +724,17 @@ export default function RecurringScheduleManager({
               Al guardar, se creará disponibilidad automática para este período. Los clientes solo podrán reservar dentro de este rango.
             </p>
             <select
-              value={settings.weeks_to_maintain}
+              value={settings.weeks_to_maintain ?? ''}
+              aria-invalid={showRuleErrors && settings.weeks_to_maintain === null ? true : undefined}
               onChange={(e) => {
                 setSettings({ ...settings, weeks_to_maintain: parseInt(e.target.value) });
                 markDirty();
               }}
-              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-green-500 focus:border-green-500 shadow-sm"
+              className={`w-full bg-white border rounded-xl px-4 py-3 text-base sm:text-sm focus:ring-green-500 focus:border-green-500 shadow-sm ${
+                showRuleErrors && settings.weeks_to_maintain === null ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300'
+              }`}
             >
+              <option value="" disabled>Elige una opción</option>
               <option value={2}>2 semanas</option>
               <option value={4}>1 mes (Recomendado)</option>
               <option value={8}>2 meses</option>
@@ -670,13 +751,17 @@ export default function RecurringScheduleManager({
               Los clientes no podrán reservar una franja que esté dentro de este plazo. Las franjas ya pasadas se ocultan automáticamente.
             </p>
             <select
-              value={settings.min_notice_hours}
+              value={settings.min_notice_hours ?? ''}
+              aria-invalid={showRuleErrors && settings.min_notice_hours === null ? true : undefined}
               onChange={(e) => {
                 setSettings({ ...settings, min_notice_hours: parseInt(e.target.value) });
                 markDirty();
               }}
-              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-green-500 focus:border-green-500 shadow-sm"
+              className={`w-full bg-white border rounded-xl px-4 py-3 text-base sm:text-sm focus:ring-green-500 focus:border-green-500 shadow-sm ${
+                showRuleErrors && settings.min_notice_hours === null ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300'
+              }`}
             >
+              <option value="" disabled>Elige una opción</option>
               <option value={0}>Sin restricción (inmediato)</option>
               <option value={24}>24 horas antes</option>
               <option value={48}>48 horas antes</option>

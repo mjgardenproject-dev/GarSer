@@ -10,9 +10,12 @@ import {
   providerBookingLink,
   type ProviderSetupSummary,
   type SetupStep,
+  type SetupStepService,
   type SetupStepState,
   type SetupTarget,
 } from '../../shared/providerSetup';
+import ServiceActivateButton from '../gardener/ServiceActivateButton';
+import { setServiceActive } from '../../utils/serviceActivation';
 
 // Completar la cuenta profesional (2026-10-20): lo que le falta a un jardinero o a una empresa para
 // aparecer a los clientes, calculado en el servidor con las mismas reglas que «Profesionales». Con
@@ -63,54 +66,138 @@ const StateIcon: React.FC<{ state: SetupStepState }> = ({ state }) => {
   );
 };
 
-/** La lista de pasos. Sin `onNavigate` (el admin) no lleva botones. */
+/**
+ * La lista de pasos. Sin `onNavigate` (el admin) no lleva botones.
+ *
+ * `guided` (el panel del profesional, 2026-11-05): UN paso a la vez. El que toca ahora va abierto, con
+ * «Qué tienes que hacer» en pasos numerados; los demás pendientes quedan en una línea («Ver cómo») y los
+ * hechos, discretos. Antes estaban todos abiertos a la vez, cada uno con su párrafo y su botón.
+ */
 export const SetupStepList: React.FC<{
   steps: SetupStep[];
   nextStepId?: string | null;
   onNavigate?: (target: SetupTarget) => void;
+  /** Activar o desactivar un servicio desde el propio paso. Sin él (el admin), no hay botones. */
+  onActivateService?: (service: SetupStepService) => void;
+  busyServiceId?: string | null;
+  guided?: boolean;
   label: string;
-}> = ({ steps, nextStepId, onNavigate, label }) => (
-  <ol className="space-y-1" aria-label={label}>
-    {steps.map((step) => {
-      const isNext = step.id === nextStepId;
-      const showCta = Boolean(onNavigate && step.cta && step.state !== 'done' && step.state !== 'blocked');
-      return (
-        <li
-          key={step.id}
-          className={`flex gap-3 rounded-xl px-3 py-3 ${isNext ? 'bg-emerald-50 ring-1 ring-emerald-200' : ''}`}
-          aria-current={isNext ? 'step' : undefined}
-        >
-          <StateIcon state={step.state} />
-          <div className="min-w-0 flex-1">
-            <p className={`font-semibold ${step.state === 'done' || step.state === 'blocked' ? 'text-gray-500' : 'text-gray-900'}`}>
-              {step.title}
-            </p>
-            <p className="mt-0.5 text-sm text-gray-600">{step.detail}</p>
-            {showCta && step.cta && (
-              isNext ? (
+}> = ({ steps, nextStepId, onNavigate, onActivateService, busyServiceId = null, guided = false, label }) => {
+  const [openId, setOpenId] = useState<string | null>(null);
+  return (
+    <ol className="space-y-1" aria-label={label}>
+      {steps.map((step, index) => {
+        const isNext = step.id === nextStepId;
+        const pending = step.state === 'todo' || step.state === 'warning';
+        const collapsed = guided && pending && !isNext && openId !== step.id;
+        const showCta = Boolean(onNavigate && step.cta && step.state !== 'done' && step.state !== 'blocked');
+
+        if (collapsed) {
+          return (
+            <li key={step.id} className="flex items-center gap-3 rounded-xl px-3 py-1">
+              <StateIcon state={step.state} />
+              <p className="min-w-0 flex-1 font-semibold text-gray-900">{step.title}</p>
+              <button
+                type="button"
+                onClick={() => setOpenId(step.id)}
+                aria-expanded={false}
+                aria-label={`Ver cómo hacer: ${step.title}`}
+                className="inline-flex min-h-11 shrink-0 items-center rounded text-sm font-semibold text-emerald-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
+              >
+                Ver cómo
+              </button>
+            </li>
+          );
+        }
+
+        // Un paso hecho, en guiado: dos líneas (título + resumen en una), para que el que toca ahora
+        // quede a la vista sin tener que bajar por todo lo ya completado.
+        if (guided && step.state === 'done') {
+          return (
+            <li key={step.id} className="flex gap-3 rounded-xl px-3 py-1.5">
+              <StateIcon state={step.state} />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-500">{step.title}</p>
+                <p className="truncate text-sm text-gray-500" title={step.detail}>{step.detail}</p>
+              </div>
+            </li>
+          );
+        }
+
+        return (
+          <li
+            key={step.id}
+            className={`flex gap-3 rounded-xl px-3 py-3 ${isNext ? 'bg-emerald-50 ring-1 ring-emerald-200' : ''}`}
+            aria-current={isNext ? 'step' : undefined}
+          >
+            <StateIcon state={step.state} />
+            <div className="min-w-0 flex-1">
+              {guided && isNext && (
+                <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Paso {index + 1} de {steps.length} · ahora</p>
+              )}
+              <p className={`font-semibold ${step.state === 'done' || step.state === 'blocked' ? 'text-gray-500' : 'text-gray-900'}`}>
+                {step.title}
+              </p>
+              <p className="mt-0.5 text-sm text-gray-600">{step.detail}</p>
+              {guided && pending && step.howTo && step.howTo.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Qué tienes que hacer</p>
+                  <ol className="mt-1.5 list-decimal space-y-1.5 pl-5 text-sm text-gray-800 marker:font-bold marker:text-emerald-700">
+                    {step.howTo.map((action) => <li key={action}>{action}</li>)}
+                  </ol>
+                </div>
+              )}
+              {onActivateService && step.services && step.services.length > 0 && (
+                <ul className="mt-3 space-y-2" aria-label="Tus servicios">
+                  {step.services.map((service) => (
+                    <li key={service.id} className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2">
+                      <span className="min-w-0 flex-1 text-sm font-medium text-gray-900">{service.name}</span>
+                      <ServiceActivateButton
+                        state={service.state}
+                        serviceName={service.name}
+                        busy={busyServiceId === service.id}
+                        onClick={() => onActivateService(service)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {showCta && step.cta && (
+                isNext ? (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.(step.cta!.target)}
+                    className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+                  >
+                    {step.cta.label}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.(step.cta!.target)}
+                    className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded [touch-action:manipulation]"
+                  >
+                    {step.cta.label}
+                  </button>
+                )
+              )}
+              {guided && pending && !isNext && openId === step.id && (
                 <button
                   type="button"
-                  onClick={() => onNavigate?.(step.cta!.target)}
-                  className="mt-3 inline-flex min-h-11 items-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+                  onClick={() => setOpenId(null)}
+                  aria-expanded
+                  className="mt-1 inline-flex min-h-11 items-center rounded text-sm font-semibold text-gray-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
                 >
-                  {step.cta.label}
+                  Ocultar
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onNavigate?.(step.cta!.target)}
-                  className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 rounded [touch-action:manipulation]"
-                >
-                  {step.cta.label}
-                </button>
-              )
-            )}
-          </div>
-        </li>
-      );
-    })}
-  </ol>
-);
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+};
 
 const ShareLink: React.FC<{ providerId: string; onMarketing: () => void }> = ({ providerId, onMarketing }) => {
   // Qué decirle sobre los gastos de gestión de sus clientes sale de los ajustes vigentes.
@@ -195,14 +282,45 @@ const Extras: React.FC<{
   </div>
 );
 
-const ProviderSetupChecklist: React.FC<{ onNavigate: (target: SetupTarget) => void; className?: string }> = ({
+const ProviderSetupChecklist: React.FC<{
+  onNavigate: (target: SetupTarget) => void;
+  className?: string;
+  /** El estado ya cargado por quien la monta (el panel lo comparte para decidir el orden). Sin él, lo pide ella. */
+  setup?: ReturnType<typeof useProviderSetupStatus>;
+}> = ({
   onNavigate,
   className = '',
+  setup,
 }) => {
-  const { status, loading, error, refresh } = useProviderSetupStatus();
+  const own = useProviderSetupStatus({ enabled: !setup });
+  const { status, loading, error, refresh } = setup ?? own;
   const summary = useMemo(() => (status ? buildProviderSetupSteps(status) : null), [status]);
   const [dismissed, setDismissed] = useState(false);
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [busyServiceId, setBusyServiceId] = useState<string | null>(null);
+
+  // Activar/desactivar un servicio sin salir de la ayuda. Si todavía no se puede (falta el precio),
+  // no se hace nada a medias: se explica y se lleva a configurarlo.
+  const handleService = async (service: SetupStepService) => {
+    if (!status) return;
+    if (service.state === 'locked') {
+      toast(`Primero configura el precio de ${service.name}.`, { icon: 'ℹ️' });
+      onNavigate({ kind: 'profile', tab: 'services' });
+      return;
+    }
+    const activate = service.state !== 'active';
+    setBusyServiceId(service.id);
+    try {
+      await setServiceActive(status.provider_id, service.id, activate);
+      toast.success(`${service.name} ${activate ? 'activado' : 'desactivado'}`);
+      await refresh();
+    } catch (activationError) {
+      console.error('No se ha podido cambiar el servicio:', activationError);
+      toast.error('No se ha podido cambiar el servicio. Inténtalo de nuevo.');
+    } finally {
+      setBusyServiceId(null);
+    }
+  };
 
   // Cerrada solo mientras lo obligatorio siga hecho. Si algo se rompe, se olvida que la cerró.
   useEffect(() => {
@@ -305,6 +423,9 @@ const ProviderSetupChecklist: React.FC<{ onNavigate: (target: SetupTarget) => vo
           steps={summary.required}
           nextStepId={summary.nextStep?.id}
           onNavigate={onNavigate}
+          onActivateService={(service) => void handleService(service)}
+          busyServiceId={busyServiceId}
+          guided
           label="Pasos para aparecer a los clientes"
         />
       </div>

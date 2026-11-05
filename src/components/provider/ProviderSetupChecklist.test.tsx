@@ -68,13 +68,61 @@ describe('ProviderSetupChecklist', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('my_provider_setup_status');
     expect(screen.getByText('0 de 3')).toBeTruthy();
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('0');
-    // El siguiente paso lleva botón principal; los demás, enlace.
+    // El paso de ahora va abierto con su botón principal; los demás pendientes, en una línea: se abren con «Ver cómo».
     fireEvent.click(screen.getByRole('button', { name: 'Configurar servicios' }));
     expect(onNavigate).toHaveBeenCalledWith({ kind: 'profile', tab: 'services' });
+    expect(screen.queryByRole('button', { name: 'Crear horario' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver cómo hacer: Horario' }));
     fireEvent.click(screen.getByRole('button', { name: 'Crear horario' }));
     expect(onNavigate).toHaveBeenCalledWith({ kind: 'schedule', tab: 'recurring' });
     // Sin servicios visibles, no se ofrece compartir el enlace.
     expect(screen.queryByRole('button', { name: /Compartir enlace/ })).toBeNull();
+  });
+
+  describe('guiada: un paso a la vez (fallo 7.2)', () => {
+    it('el paso de ahora va abierto, numerado, con «Qué tienes que hacer» en pasos; los demás, plegados', async () => {
+      mocks.rpc.mockResolvedValue({ data: fresh(), error: null });
+      render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+      await screen.findByRole('heading', { name: 'Todavía no apareces a los clientes' });
+
+      expect(screen.getByText('Paso 1 de 3 · ahora')).toBeTruthy();
+      expect(screen.getByText('Qué tienes que hacer')).toBeTruthy();
+      expect(screen.getByText('Elige el servicio que más haces y toca el engranaje.')).toBeTruthy();
+      expect(screen.getByText('Pon tus precios y pulsa «Guardar».')).toBeTruthy();
+      expect(screen.getByText('Vuelve a la lista y pulsa «Activar».')).toBeTruthy();
+
+      // Los otros dos pendientes: una línea cada uno, sin su párrafo ni su botón.
+      expect(screen.getByRole('button', { name: 'Ver cómo hacer: Zona de trabajo' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Ver cómo hacer: Horario' })).toBeTruthy();
+      expect(screen.queryByText(/Crea tu horario semanal/)).toBeNull();
+    });
+
+    it('«Ver cómo» abre ese paso con sus acciones y «Ocultar» lo vuelve a plegar', async () => {
+      mocks.rpc.mockResolvedValue({ data: fresh(), error: null });
+      render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+      await screen.findByRole('heading', { name: 'Todavía no apareces a los clientes' });
+      fireEvent.click(screen.getByRole('button', { name: 'Ver cómo hacer: Horario' }));
+      expect(screen.getByText('Marca los días en que trabajas.')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Ocultar' }));
+      expect(screen.queryByText('Marca los días en que trabajas.')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Ver cómo hacer: Horario' })).toBeTruthy();
+    });
+
+    it('un paso hecho no lleva acciones ni se pliega: queda como confirmación', async () => {
+      mocks.rpc.mockResolvedValue({ data: fresh(), error: null });
+      render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+      await screen.findByRole('heading', { name: 'Todavía no apareces a los clientes' });
+      // Con la zona ya hecha (coordenadas), solo quedan servicios y horario por hacer.
+      cleanup();
+      mocks.rpc.mockResolvedValue({
+        data: status({ services: [], profile: { full_name: 'Miguel', address: 'Marbella', max_distance: 25, has_coordinates: true, has_description: true, has_photo: false }, schedule: { has_recurring: false, free_hours_14d: 0 } }),
+        error: null,
+      });
+      render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+      await screen.findByText('Paso 1 de 3 · ahora');
+      expect(screen.getByText('Hasta 25 km desde Marbella.')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Ver cómo hacer: Zona de trabajo' })).toBeNull();
+    });
   });
 
   it('los recomendados van plegados aparte', async () => {

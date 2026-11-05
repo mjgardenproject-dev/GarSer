@@ -6,4 +6,8 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body { overflow-x: hidden; }
+/* Las barras fijas de arriba (Navbar + AppHeader o progreso del alta) publican su alto en estas variables
+   (src/hooks/useStickyHeight.ts). Con esto, ir a un ancla, enfocar un campo o hacer scrollIntoView no deja
+   el contenido escondido debajo de ellas. */
+html { scroll-padding-top: calc(var(--app-navbar-h, 0px) + var(--app-sticky-sub-h, 0px) + 0.5rem); }
 img, video, canvas { max-width: 100%; height: auto; }

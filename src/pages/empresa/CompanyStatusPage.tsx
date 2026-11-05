@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { AlertTriangle, Clock, Loader2, LogOut, PencilLine } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
+import RefreshApplicationStatus from '../../components/common/RefreshApplicationStatus';
 
 // Estado de la solicitud de alta de una empresa (GarSer Empresas F3.2): en revisión o no
 // aceptada. Al rechazo se puede corregir y volver a enviar: se abre un borrador nuevo con los
@@ -11,7 +12,7 @@ import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
 const CompanyStatusPage: React.FC = () => {
   const { signOut } = useAuth();
   const navigate = useNavigate();
-  const { loading, stage, application } = useCompanyOnboarding();
+  const { loading, stage, application, recheck } = useCompanyOnboarding();
 
   if (loading) {
     return (
@@ -26,8 +27,10 @@ const CompanyStatusPage: React.FC = () => {
 
   const rejected = stage === 'rejected';
 
+  // Alto = pantalla menos la barra general: con `min-h-screen` el total (barra + 100vh) se pasaba de la
+  // pantalla y la página nacía con scroll.
   return (
-    <div className="flex min-h-screen items-start justify-center bg-gray-50 px-4 py-10 sm:items-center">
+    <div className="flex min-h-[calc(100dvh-var(--app-navbar-h,4rem))] items-start justify-center bg-gray-50 px-4 py-8 sm:items-center">
       <div className="w-full rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm sm:max-w-md">
         <div className={`mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full ${rejected ? 'bg-red-100' : 'bg-amber-100'}`}>
           {rejected ? <AlertTriangle className="h-7 w-7 text-red-600" /> : <Clock className="h-7 w-7 text-amber-600" />}
@@ -47,6 +50,15 @@ const CompanyStatusPage: React.FC = () => {
         )}
 
         <div className="mt-6 space-y-3">
+          {/* Si el administrador la acepta, no hace falta cerrar sesión: se vuelve a preguntar aquí. */}
+          {!rejected && (
+            <RefreshApplicationStatus
+              check={async () => {
+                const next = await recheck();
+                return next === 'approved' ? 'approved' : next === 'rejected' ? 'rejected' : 'pending';
+              }}
+            />
+          )}
           {rejected && (
             <button
               type="button"

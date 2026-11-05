@@ -4,6 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import StickyStepProgress from '../../components/common/StickyStepProgress';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
 import { trackMetaLead } from '../../utils/metaLead';
 import { advertisingConsentColumns } from '../../utils/cookieConsentStorage';
@@ -166,17 +167,14 @@ const CompanyApplicationPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sin cabecera propia: la barra general de la web ya está encima (una sola cabecera,
-          docs/design-system.md §1). El progreso va dentro de la página, como en el alta de jardinero. */}
+          docs/design-system.md §1). El progreso va FIJO justo debajo de ella: dentro de la página
+          el Navbar lo tapaba si no se estaba arriba del todo (fallo 1 del móvil, 2026-11-05). */}
+      <StickyStepProgress
+        title="Alta de empresa"
+        stepLabel={`Paso ${stepIndex + 1} de ${COMPANY_APPLICATION_STEPS.length}`}
+        percent={progress}
+      />
       <main className="mx-auto w-full px-4 py-5 sm:max-w-xl">
-        <div className="mb-5">
-          <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
-            <span className="font-medium text-gray-700">Alta de empresa</span>
-            <span>Paso {stepIndex + 1} de {COMPANY_APPLICATION_STEPS.length}</span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
-            <div className="h-1.5 bg-emerald-700 transition-all duration-300" style={{ width: `${progress}%` }} />
-          </div>
-        </div>
         <h1 className="mb-1 text-xl font-bold text-gray-900">{step.title}</h1>
         {stepIndex === 0 && (
           <p className="mb-5 text-sm text-gray-600">

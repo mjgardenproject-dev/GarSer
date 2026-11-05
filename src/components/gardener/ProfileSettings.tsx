@@ -34,6 +34,8 @@ import {
 } from '../../utils/serviceValidation';
 // import { isTreePruningConfigValid } from '../../domain/treePruning';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
+import { notifySetupChanged } from '../../utils/setupEvents';
+import SetupGuideBanner from '../provider/SetupGuideBanner';
 import { getCoordinatesFromAddress } from '../../utils/geolocation';
 import { getProviderCoordinates } from '../../shared/bookingEligibilityCore';
 
@@ -574,6 +576,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         [service.name]: payload.additional_config,
       }));
       toast.success(`Servicio "${service.name}" ${isActive ? 'desactivado' : 'activado'}`);
+      notifySetupChanged();
     } catch (e) {
       console.error(e);
       toast.error(`Error al ${isActive ? 'desactivar' : 'activar'} servicio`);
@@ -595,6 +598,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         
         setSavedConfigs(prev => ({ ...prev, [service.name]: payload.additional_config }));
         toast.success(isActive ? 'Configuración guardada y servicio sincronizado' : 'Configuración guardada');
+        notifySetupChanged();
         return true;
       } catch (error) {
         console.error(`Error saving ${service.name}:`, error);
@@ -633,6 +637,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
          setSavedConfigs(prev => ({ ...prev, [serviceName]: payload.additional_config }));
          toast.success(isActive ? 'Configuración guardada y servicio sincronizado' : 'Configuración guardada');
+         notifySetupChanged();
          return true;
       } catch(e) {
           console.error(e);
@@ -647,8 +652,12 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
     toast.error('Por favor, completa todos los campos requeridos marcados en rojo.');
   };
 
-  const onSaveProfileInfo = async (data: any) => {
-    if (!user) return;
+  /**
+   * Guarda el perfil. Devuelve `true` si se guardó. `successMessage` cambia el aviso (el botón
+   * «Confirmar esta dirección» dice «Zona de trabajo confirmada», no «Información personal guardada»).
+   */
+  const onSaveProfileInfo = async (data: any, opts?: { successMessage?: string }): Promise<boolean> => {
+    if (!user) return false;
     setLoading(true);
     try {
         const normalizedAddress = String(data.address || '').trim();
@@ -666,7 +675,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
         if (!resolvedCoordinates) {
             toast.error('No se pudo validar la dirección base en el mapa. Selecciona una dirección sugerida válida antes de guardar.');
-            return;
+            return false;
         }
 
         const profileData = {
@@ -697,11 +706,14 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
         };
         await (supabase.from('profiles') as any).update(mainProfileData).eq('user_id', user.id);
         
-        toast.success("Información personal guardada");
+        toast.success(opts?.successMessage ?? "Información personal guardada");
         fetchGardenerProfile();
+        notifySetupChanged();
+        return true;
     } catch (e: any) {
         console.error(e);
         toast.error("Error al guardar perfil");
+        return false;
     } finally {
         setLoading(false);
     }
@@ -767,8 +779,12 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
         {/* Tab Content Area */}
         <div className="flex-1 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
+          {/* «Paso X de N» si llega desde los primeros pasos (Servicios y Zona). */}
+          {onBack && (activeTab === 'services' || activeTab === 'coverage') && (
+            <SetupGuideBanner stepId={activeTab} onBack={onBack} className="mb-5" />
+          )}
           <FormProvider {...methods}>
-            <form onSubmit={handleSubmit(onSaveProfileInfo, onError)}>
+            <form onSubmit={handleSubmit((formData) => onSaveProfileInfo(formData), onError)}>
               {activeTab === 'personal' && (
                 <PersonalTab
                   loading={loading}
@@ -795,6 +811,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     watchedServices={watchedServices}
                     expandedServiceId={expandedServiceId}
                     handleToggleService={handleToggleService}
+                    canActivateService={(serviceId) => {
+                      const svc = services.find((candidate) => candidate.id === serviceId);
+                      return svc ? isServiceConfigValid(svc) : false;
+                    }}
                     handleExpand={handleExpand}
                     handleWrapperSave={handleWrapperSave}
                     configs={{

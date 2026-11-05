@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
@@ -137,6 +137,64 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   const [denialReason, setDenialReason] = useState<string>('');
   const [statusLoaded, setStatusLoaded] = useState(false);
 
+  // Estado de la solicitud del jardinero: perfil activo → «active»; si no, la última solicitud.
+  // `strict` (el botón «Actualizar estado» de /status): un fallo de red se propaga en vez de dejar
+  // el estado en null, para poder decir «no se ha podido comprobar» sin tocar lo que ya se sabía.
+  const loadApplicationStatus = useCallback(async ({ strict = false } = {}): Promise<'pending' | 'active' | 'denied' | null> => {
+    if (!user?.id) return null;
+
+    // Check 1: Gardener Profile (Active). Si existe, es active.
+    const { data: gp, error: gpError } = await supabase
+      .from('gardener_profiles')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (gpError && strict) throw gpError;
+    const gardenerProfile = gp as { user_id?: string | null } | null;
+
+    if (gardenerProfile?.user_id) {
+      setApplicationStatus('active');
+      try { localStorage.setItem('gardenerApplicationStatus', 'active'); } catch {}
+      return 'active';
+    }
+
+    // Check 2: Application Status (Pending/Draft/Denied). Solo si no es activo buscamos la solicitud.
+    const { data: app, error: appError } = await supabase
+      .from('gardener_applications')
+      .select('status, review_comment')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (appError && strict) throw appError;
+    const latestApplication = app as { status?: string | null; review_comment?: string | null } | null;
+
+    if (appError) console.error('Error fetching application:', appError);
+
+    setDenialReason(latestApplication?.review_comment || '');
+
+    // Si no hay solicitud pero la cuenta es de jardinero -> Draft/Null
+    if (!latestApplication && isGardenerAccount) {
+      // Check LS for optimistic updates just in case
+      const lsStatus = (() => { try { return localStorage.getItem('gardenerApplicationStatus') as any; } catch { return null; } })();
+      const lsJust = (() => { try { return !!localStorage.getItem('gardenerApplicationJustSubmitted'); } catch { return false; } })();
+      const optimistic = lsStatus === 'submitted' && lsJust ? 'pending' : null;
+      setApplicationStatus(optimistic);
+      return optimistic;
+    }
+
+    // Calcular estado UI
+    const ui = toUiStatus(latestApplication?.status);
+
+    // Cachear en LS para futuro
+    try {
+      if (ui) localStorage.setItem('gardenerApplicationStatus', ui === 'pending' ? 'submitted' : ui);
+    } catch {}
+
+    setApplicationStatus(ui);
+    return ui;
+  }, [user?.id, isGardenerAccount]);
+
   useEffect(() => {
     // Si está cargando auth o el tipo de cuenta, esperamos
     if (authLoading || accountLoading) return;
@@ -154,64 +212,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
 
     const fetchStatus = async () => {
       try {
-        // Optimización: Hacemos una única llamada compuesta o paralela si es posible
-        // Primero verificamos perfil activo (es lo más común para usuarios establecidos)
-        
-        // Check 1: Gardener Profile (Active)
-        // Intentamos leer el perfil directamente. Si existe, es active.
-        const { data: gp } = await supabase
-            .from('gardener_profiles')
-            .select('user_id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-        const gardenerProfile = gp as { user_id?: string | null } | null;
-            
-        if (gardenerProfile?.user_id) {
-            setApplicationStatus('active');
-            try { localStorage.setItem('gardenerApplicationStatus','active'); } catch {}
-            setStatusLoaded(true);
-            return;
-        }
-
-        // Check 2: Application Status (Pending/Draft/Denied)
-        // Solo si no es activo buscamos la solicitud
-        const { data: app, error: appError } = await supabase
-          .from('gardener_applications')
-          .select('status, review_comment')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        const latestApplication = app as { status?: string | null; review_comment?: string | null } | null;
-
-        if (appError) console.error('Error fetching application:', appError);
-
-        setDenialReason(latestApplication?.review_comment || '');
-
-        // Si no hay solicitud pero la cuenta es de jardinero -> Draft/Null
-        if (!latestApplication && isGardenerAccount) {
-            // Check LS for optimistic updates just in case
-            const lsStatus = (()=>{ try { return localStorage.getItem('gardenerApplicationStatus') as any; } catch { return null; } })();
-            const lsJust = (()=>{ try { return !!localStorage.getItem('gardenerApplicationJustSubmitted'); } catch { return false; } })();
-            
-            if (lsStatus === 'submitted' && lsJust) {
-                setApplicationStatus('pending');
-            } else {
-                setApplicationStatus(null);
-            }
-            setStatusLoaded(true);
-            return;
-        }
-        
-        // Calcular estado UI
-        const ui = toUiStatus(latestApplication?.status);
-        
-        // Cachear en LS para futuro
-        try {
-          if (ui) localStorage.setItem('gardenerApplicationStatus', ui === 'pending' ? 'submitted' : ui);
-        } catch {}
-        
-        setApplicationStatus(ui);
+        await loadApplicationStatus();
       } catch (error) {
         console.error('Error fetching application status:', error);
         setApplicationStatus(null);
@@ -219,9 +220,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         setStatusLoaded(true);
       }
     };
-    
+
     fetchStatus();
-  }, [user?.id, authLoading, accountLoading, isGardenerAccount]);
+  }, [user?.id, authLoading, accountLoading, isGardenerAccount, loadApplicationStatus]);
 
   // Strict Redirect Logic
   useEffect(() => {
@@ -283,7 +284,12 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
               ? 'w-full'
               : isBookingPage || isAuthPage
                 ? 'w-full pb-16 sm:pb-0'
-                : 'mx-auto max-w-full px-3 pb-16 sm:max-w-7xl sm:px-6 sm:pb-0 lg:px-8'
+                : isApplyPage
+                  // Altas y estado de solicitud: no hay menú inferior (arriba, `!isApplyPage`), así que
+                  // tampoco su hueco. Con el `pb-16` la página tenía 64 px de scroll de más y, al
+                  // bajarlos, la tarjeta se metía bajo la barra fija (fallo 2 del móvil, 2026-11-05).
+                  ? 'mx-auto max-w-full px-3 sm:max-w-7xl sm:px-6 lg:px-8'
+                  : 'mx-auto max-w-full px-3 pb-16 sm:max-w-7xl sm:px-6 sm:pb-0 lg:px-8'
           }
         >
           <Suspense fallback={<RouteFallback />}>
@@ -409,6 +415,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                 <GardenerStatusPage 
                     status={applicationStatus === 'denied' ? 'denied' : 'pending'} 
                     denialReason={denialReason} 
+                    onRefresh={() => loadApplicationStatus({ strict: true })}
                 />
             </ProtectedRoute>
           } 

@@ -114,6 +114,99 @@ describe('buildProviderSetupSteps · jardinero', () => {
     expect(stepById(summary, 'schedule')?.detail).toBe('30 horas libres en los próximos 14 días.');
   });
 
+  it('zona de trabajo con la dirección ya escrita pero sin confirmar (la de la solicitud): pide CONFIRMARLA, no configurarla', () => {
+    const step = stepById(buildProviderSetupSteps(freshSolo()), 'coverage');
+    expect(step?.state).toBe('todo');
+    expect(step?.detail).toContain('ya está escrita (Marbella)');
+    expect(step?.detail).toContain('falta confirmarla');
+    expect(step?.cta?.label).toBe('Confirmar mi zona');
+    expect(step?.cta?.target).toEqual({ kind: 'profile', tab: 'coverage' });
+  });
+
+  it('zona de trabajo sin dirección: sigue pidiendo configurarla', () => {
+    const status = freshSolo();
+    const step = stepById(buildProviderSetupSteps({ ...status, profile: { ...status.profile, address: null } }), 'coverage');
+    expect(step?.cta?.label).toBe('Configurar zona');
+    expect(step?.detail).toContain('Guarda tu dirección base');
+  });
+
+  it('reglas del horario: sin elegir antelación y semanas, un paso recomendado (no bloquea «ya apareces»)', () => {
+    const summary = buildProviderSetupSteps(solo({ schedule_rules_configured: false }));
+    const step = summary.recommended.find((s) => s.id === 'schedule_rules');
+    expect(step?.state).toBe('todo');
+    expect(step?.cta).toEqual({ label: 'Elegir reglas', target: { kind: 'schedule', tab: 'recurring' } });
+    expect(summary.allRequiredDone).toBe(true); // lo obligatorio no cambia
+    expect(summary.required.map((s) => s.id)).not.toContain('schedule_rules');
+  });
+
+  it('reglas del horario ya elegidas: hecho; sin el dato (panel del admin) o en empresa: no se enseña', () => {
+    expect(buildProviderSetupSteps(solo({ schedule_rules_configured: true })).recommended.find((s) => s.id === 'schedule_rules')?.state).toBe('done');
+    expect(buildProviderSetupSteps(solo()).recommended.some((s) => s.id === 'schedule_rules')).toBe(false);
+    expect(buildProviderSetupSteps(company({ schedule_rules_configured: false })).recommended.some((s) => s.id === 'schedule_rules')).toBe(false);
+  });
+
+  describe('servicios configurados pero sin activar (fallo 7.1)', () => {
+    const act = (id: string, name: string, active: boolean, can_activate: boolean) => ({ id, name, active, can_activate });
+
+    it('sin servicios activos pero con 2 configurados: «tienes 2 servicios configurados pero sin activar», con un botón por servicio', () => {
+      const status = { ...freshSolo(), service_activation: [act('a', 'Corte de césped', false, true), act('b', 'Poda de setos', false, true)] };
+      const step = stepById(buildProviderSetupSteps(status), 'services');
+      expect(step?.state).toBe('todo');
+      expect(step?.detail).toBe('Tienes 2 servicios configurados pero sin activar: Corte de césped y Poda de setos. Actívalos para que los clientes puedan reservarte.');
+      expect(step?.services).toEqual([
+        { id: 'a', name: 'Corte de césped', state: 'ready' },
+        { id: 'b', name: 'Poda de setos', state: 'ready' },
+      ]);
+      expect(step?.cta?.label).toBe('Ver mis servicios');
+    });
+
+    it('en singular: «1 servicio configurado pero sin activar… Actívalo»', () => {
+      const status = { ...freshSolo(), service_activation: [act('a', 'Corte de césped', false, true)] };
+      expect(stepById(buildProviderSetupSteps(status), 'services')?.detail)
+        .toBe('Tienes 1 servicio configurado pero sin activar: Corte de césped. Actívalo para que los clientes puedan reservarte.');
+    });
+
+    it('empezado pero a medias (no se puede activar): lo dice y el botón sale en «locked»', () => {
+      const status = { ...freshSolo(), service_activation: [act('a', 'Poda de árboles', false, false)] };
+      const step = stepById(buildProviderSetupSteps(status), 'services');
+      expect(step?.state).toBe('todo');
+      expect(step?.detail).toContain('Has empezado con Poda de árboles');
+      expect(step?.detail).toContain('le faltan datos');
+      expect(step?.services).toEqual([{ id: 'a', name: 'Poda de árboles', state: 'locked' }]);
+      expect(step?.cta?.label).toBe('Terminar de configurar');
+    });
+
+    it('mezcla: uno listo y otro a medias → los dos con su estado; solo el listo cuenta en el texto', () => {
+      const status = { ...freshSolo(), service_activation: [act('a', 'Corte de césped', false, true), act('b', 'Poda de árboles', false, false)] };
+      const step = stepById(buildProviderSetupSteps(status), 'services');
+      expect(step?.detail).toContain('Tienes 1 servicio configurado pero sin activar: Corte de césped');
+      expect(step?.services?.map((x) => x.state)).toEqual(['ready', 'locked']);
+    });
+
+    it('con un servicio ya activo y otro configurado sin activar: el paso está hecho y avisa del otro (con su botón)', () => {
+      const status = solo({ service_activation: [act('svc-lawn', 'Corte de césped', true, true), act('b', 'Poda de setos', false, true)] });
+      const step = stepById(buildProviderSetupSteps(status), 'services');
+      expect(step?.state).toBe('done');
+      expect(step?.detail).toContain('1 servicio activo: Corte de césped.');
+      expect(step?.detail).toContain('Tienes además 1 servicio configurado pero sin activar: Poda de setos.');
+      expect(step?.services).toEqual([
+        { id: 'svc-lawn', name: 'Corte de césped', state: 'active' },
+        { id: 'b', name: 'Poda de setos', state: 'ready' },
+      ]);
+    });
+
+    it('todo activado: sin lista de botones (paso limpio)', () => {
+      const status = solo({ service_activation: [act('svc-lawn', 'Corte de césped', true, true)] });
+      expect(stepById(buildProviderSetupSteps(status), 'services')?.services).toBeUndefined();
+    });
+
+    it('sin el dato (panel del admin, o no se pudo leer): el paso es el de siempre', () => {
+      const step = stepById(buildProviderSetupSteps(freshSolo()), 'services');
+      expect(step?.detail).toBe('Activa al menos un servicio con tus precios: es lo que los clientes pueden reservarte.');
+      expect(step?.services).toBeUndefined();
+    });
+  });
+
   it('sin el carnet, con fitosanitarios: sale en los ecológicos y le falta el carnet', () => {
     const summary = buildProviderSetupSteps(solo({ services: [service(), phyto({ visible_chemical: false, licensed_workers_with_hours: 0 })] }));
     const license = stepById(summary, 'license');

@@ -11,6 +11,7 @@ import {
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import RecurringScheduleManager from './RecurringScheduleManager';
+import SetupGuideBanner from '../provider/SetupGuideBanner';
 import AppHeader from '../common/AppHeader';
 import { useConfirmDialog } from '../common/ConfirmDialog';
 
@@ -502,6 +503,11 @@ const AvailabilityManager: React.FC<AvailabilityManagerProps> = ({ onBack, busyF
                 ? 'Modifica franjas concretas de esta semana — excepciones, bloqueos o horas extra sobre tu horario fijo.'
                 : 'Define tu plantilla semanal recurrente. Se aplica automáticamente a las próximas semanas.'}
         </p>
+
+        {/* «Paso X de N» si llega desde los primeros pasos (solo el horario propio). */}
+        {activeTab === 'recurring' && !member && !readOnly && onBack && (
+          <SetupGuideBanner stepId="schedule" onBack={onBack} className="mb-5" />
+        )}
 
         {activeTab === 'recurring' ? (
           <RecurringScheduleManager

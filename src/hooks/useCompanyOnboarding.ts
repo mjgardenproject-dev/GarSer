@@ -24,6 +24,12 @@ export interface CompanyOnboarding {
   companyId: string | null;
   error: string | null;
   refresh: () => Promise<void>;
+  /**
+   * Vuelve a preguntar por el estado SIN poner la pantalla en «cargando» (el botón «Actualizar
+   * estado» no puede desmontarse mientras comprueba) y devuelve el estado actual. Un fallo de red se
+   * propaga: quien llama dice «no se ha podido comprobar» sin perder lo que ya se enseñaba.
+   */
+  recheck: () => Promise<CompanyOnboardingStage>;
 }
 
 export function stageFromData(companyId: string | null, application: CompanyApplicationRow | null): CompanyOnboardingStage {
@@ -38,19 +44,21 @@ export function stageFromData(companyId: string | null, application: CompanyAppl
 export function useCompanyOnboarding(): CompanyOnboarding {
   const { user } = useAuth();
   const { role, loading: accountLoading } = useAccount();
-  const [state, setState] = useState<Omit<CompanyOnboarding, 'refresh'>>({
+  const [state, setState] = useState<Omit<CompanyOnboarding, 'refresh' | 'recheck'>>({
     loading: true, stage: 'none', application: null, companyId: null, error: null,
   });
   const seq = useRef(0);
+  const stageRef = useRef<CompanyOnboardingStage>('none');
+  stageRef.current = state.stage;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false): Promise<CompanyOnboardingStage | null> => {
     const mine = ++seq.current;
-    if (accountLoading) return;
+    if (accountLoading) return null;
     if (!user?.id || role !== 'company') {
       setState({ loading: false, stage: 'not_company', application: null, companyId: null, error: null });
-      return;
+      return 'not_company';
     }
-    setState((s) => ({ ...s, loading: true, error: null }));
+    if (!silent) setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const [{ data: companyId, error: companyError }, { data: apps, error: appError }] = await Promise.all([
         supabase.rpc('my_company_id'),
@@ -63,14 +71,18 @@ export function useCompanyOnboarding(): CompanyOnboarding {
       ]);
       if (companyError) throw companyError;
       if (appError) throw appError;
-      if (mine !== seq.current) return;
+      if (mine !== seq.current) return null;
       const application = ((apps as CompanyApplicationRow[] | null) ?? [])[0] ?? null;
       const id = (companyId as string | null) ?? null;
-      setState({ loading: false, stage: stageFromData(id, application), application, companyId: id, error: null });
+      const stage = stageFromData(id, application);
+      setState({ loading: false, stage, application, companyId: id, error: null });
+      return stage;
     } catch (error) {
-      if (mine !== seq.current) return;
+      if (silent) throw error;
+      if (mine !== seq.current) return null;
       console.error('Error cargando el alta de la empresa:', error);
       setState((s) => ({ ...s, loading: false, error: 'No hemos podido cargar el estado de tu solicitud.' }));
+      return null;
     }
   }, [user?.id, role, accountLoading]);
 
@@ -78,5 +90,8 @@ export function useCompanyOnboarding(): CompanyOnboarding {
     void load();
   }, [load]);
 
-  return { ...state, loading: state.loading || accountLoading, refresh: load };
+  const refresh = useCallback(async () => { await load(); }, [load]);
+  const recheck = useCallback(async () => (await load(true)) ?? stageRef.current, [load]);
+
+  return { ...state, loading: state.loading || accountLoading, refresh, recheck };
 }

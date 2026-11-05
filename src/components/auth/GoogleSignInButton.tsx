@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, ExternalLink, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
-import { declareSignupRoleIfNeeded, describeOAuthSignIn, type OAuthSignInResult } from '../../lib/oauthAccount';
+import { declareSignupRoleIfNeeded, describeOAuthSignIn, rememberSignupIntent, type OAuthSignInResult, type ProfessionalRole } from '../../lib/oauthAccount';
 import {
   createNonce,
   detectEmbeddedBrowser,
@@ -31,12 +31,14 @@ interface Props {
   /** Sugerir la cuenta de Google con «One Tap» al llegar. */
   oneTap?: boolean;
   /**
-   * Rol elegido en el selector del alta, cuando no es cliente (2026-10-28). Google no puede
-   * mandar el rol como sí hace el alta por correo (supabase.auth.signUp con requested_role en
-   * los metadatos): la cuenta nace 'client' siempre. Con esto, en cuanto hay sesión nueva se
-   * declara la intención real vía self_declare_signup_role antes de avisar a onSignedIn.
+   * Tipo elegido en el alta, cuando no es cliente (2026-10-28). Google no puede mandar el rol
+   * como sí hace el alta por correo (supabase.auth.signUp con requested_role en los metadatos):
+   * la cuenta nace 'client' siempre. Con esto, en cuanto hay sesión se declara al servidor
+   * (self_declare_signup_role) ANTES de avisar a onSignedIn, y el resultado trae `roleProblem`
+   * si no se pudo dejar así. Se lee de una referencia al pulsar, no de lo que había al pintar el
+   * botón: cambiar de tipo no vuelve a inicializar Google ni deja un callback viejo.
    */
-  signupRole?: 'gardener' | 'company';
+  signupRole?: ProfessionalRole;
   onSignedIn: (result: OAuthSignInResult) => void;
 }
 
@@ -65,6 +67,8 @@ const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath,
   const apiRef = useRef<GoogleAccountsId | null>(null);
   const onSignedInRef = useRef(onSignedIn);
   onSignedInRef.current = onSignedIn;
+  const signupRoleRef = useRef(signupRole);
+  signupRoleRef.current = signupRole;
 
   const setUp = useCallback(async (api: GoogleAccountsId, withPrompt: boolean) => {
     const nonce = await createNonce();
@@ -88,7 +92,7 @@ const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath,
             nonce: nonceRef.current,
           });
           if (signInError || !data?.user) throw signInError ?? new Error('sin_usuario');
-          const result = await declareSignupRoleIfNeeded(await describeOAuthSignIn(data.user), signupRole);
+          const result = await declareSignupRoleIfNeeded(await describeOAuthSignIn(data.user), signupRoleRef.current);
           onSignedInRef.current(result);
         } catch (signInError) {
           setError(googleSignInErrorMessage(signInError));
@@ -114,7 +118,7 @@ const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath,
       });
     }
     if (withPrompt) api.prompt();
-  }, [clientId, context, signupRole]);
+  }, [clientId, context]);
 
   useEffect(() => {
     if (!clientId || embedded) return undefined;
@@ -138,6 +142,8 @@ const GoogleSignInButton: React.FC<Props> = ({ context = 'signin', redirectPath,
     setError('');
     try {
       beforeRedirect?.();
+      // El tipo elegido, también en el navegador: si la URL de vuelta pierde el ?role=, no se pierde.
+      rememberSignupIntent(signupRole);
       // Sin ruta de vuelta, el callback lleva a cada cuenta a su panel (postLoginPath). `role`
       // viaja igual: AuthCallbackPage declara la intención con self_declare_signup_role antes de
       // navegar, para la vuelta por redirección clásica (sin esto, el popup de arriba basta).

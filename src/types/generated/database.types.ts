@@ -3540,6 +3540,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      self_declare_signup_role: { Args: { p_role: string }; Returns: string }
       set_company_allow_split_jobs: {
         Args: { p_allow: boolean }
         Returns: Json

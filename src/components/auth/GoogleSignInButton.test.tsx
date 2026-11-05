@@ -9,13 +9,14 @@ const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   describe: vi.fn(async () => ({ role: 'client', isNew: true, firstName: 'Ana' })),
   declareRole: vi.fn(async (result: unknown) => result),
+  remember: vi.fn(),
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
 vi.mock('../../lib/supabase', () => ({
   supabase: { auth: { signInWithIdToken: mocks.signInWithIdToken, signInWithOAuth: mocks.signInWithOAuth } },
 }));
-vi.mock('../../lib/oauthAccount', () => ({ describeOAuthSignIn: mocks.describe, declareSignupRoleIfNeeded: mocks.declareRole }));
+vi.mock('../../lib/oauthAccount', () => ({ describeOAuthSignIn: mocks.describe, declareSignupRoleIfNeeded: mocks.declareRole, rememberSignupIntent: mocks.remember }));
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }));
 vi.mock('../../utils/googleIdentity', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../utils/googleIdentity')>()),
@@ -139,6 +140,31 @@ describe('GoogleSignInButton', () => {
         queryParams: { prompt: 'select_account' },
       },
     });
+    // Y guardado en el navegador, por si la URL de vuelta pierde el ?role=.
+    expect(mocks.remember).toHaveBeenCalledWith('company');
+  });
+
+  it('cambiar de tipo no vuelve a inicializar Google, y al pulsar manda el ÚLTIMO elegido', async () => {
+    const google = fakeGoogle();
+    mocks.load.mockResolvedValue(google.api);
+    mocks.signInWithIdToken.mockResolvedValue({ data: { user: { id: 'u-1' } }, error: null });
+    const onSignedIn = vi.fn();
+    const { rerender } = render(<GoogleSignInButton context="signup" redirectPath="/x" signupRole="gardener" onSignedIn={onSignedIn} />);
+    await waitFor(() => expect(google.api.initialize).toHaveBeenCalledTimes(1));
+
+    rerender(<GoogleSignInButton context="signup" redirectPath="/x" signupRole="company" onSignedIn={onSignedIn} />);
+    await google.config().callback({ credential: 'id-token-de-google' });
+
+    expect(google.api.initialize).toHaveBeenCalledTimes(1);
+    expect(mocks.declareRole).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana' }, 'company');
+  });
+
+  it('sin tipo de alta (cliente) la redirección borra cualquier tipo guardado de un intento anterior', async () => {
+    mocks.load.mockRejectedValue(new Error('google_identity_blocked'));
+    render(<GoogleSignInButton redirectPath="/x" onSignedIn={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Continuar con Google/ }));
+    await waitFor(() => expect(mocks.signInWithOAuth).toHaveBeenCalled());
+    expect(mocks.remember).toHaveBeenCalledWith(undefined);
   });
 
   it('dentro de Instagram no abre Google: explica cómo abrir la web en el navegador', async () => {

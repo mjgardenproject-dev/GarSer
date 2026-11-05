@@ -13,7 +13,7 @@ Método: cada fase se implementa, se prueba con tests, se prueba **navegando de 
 |---|---|---|
 | 1 — Encabezados apilados | 3, 5a, 1, 2 | ✅ Hecha y verificada en local (2026-11-05) |
 | 2 — Actualizar estado de la solicitud | 6 | ✅ Hecha y verificada en local (2026-11-05) |
-| 3 — Confirmar esta dirección | 4 | ⏳ |
+| 3 — Confirmar esta dirección | 4 | ✅ Hecha y verificada en local (2026-11-05) |
 | 4 — Horario y reglas sin preconfigurar + aviso | 5b | ⏳ |
 | 5 — Botón Activar de tres estados | 7.1 | ⏳ |
 | 6 — Primeros pasos guiados | 7.2 | ⏳ |
@@ -77,3 +77,26 @@ Tests nuevos: `useStickyHeight` (5), `AppHeader` (4), `StickyStepProgress` (3). 
 Tests nuevos: `RefreshApplicationStatus` (7), `useCompanyOnboarding` (5), `GardenerStatusPage` (+2). Suite completa: 178 archivos, 2.753 tests en verde.
 
 **No verificado en vivo:** el fallo de red (cubierto con tests: no cambia nada, avisa y se puede reintentar) y el rechazo detectado tras actualizar.
+
+## Fase 3 — hecha
+
+**Qué se cambió**
+
+- `CoverageTab`: con dirección escrita y **sin coordenadas**, un bloque «Falta confirmar tu zona de trabajo» con la dirección y los km que se van a guardar y el botón **«Confirmar esta dirección»**. Sin doble toque; si la dirección no se puede localizar, aviso en rojo y el botón sigue. Con coordenadas: «Zona confirmada. Los clientes de tu zona ya pueden verte.» (antes, jerga: «coordenadas operativas para el filtrado de reservas»).
+- `ProfileSettings.onSaveProfileInfo`: ahora devuelve `true/false` y admite un mensaje propio («Zona de trabajo confirmada»). Es el **mismo guardado de siempre** (`getCoordinatesFromAddress` + `persistGardenerProfile`); no se tocó su lógica. `handleSubmit` lo llama envuelto para no pasarle el evento como segundo argumento.
+- `providerSetup.ts` (paso «Zona de trabajo» de la ayuda): con la dirección ya escrita dice «Tu dirección ya está escrita (…), pero falta confirmarla» y el botón «**Confirmar mi zona**» (antes «Configurar zona», como si hubiera que empezar de cero).
+
+**Causa:** una cuenta recién aprobada trae la dirección de su solicitud sin coordenadas, y el guardado automático solo actúa cuando algo cambia (`useAutoSave`); sin tocar la dirección o el radio, no contaba.
+
+**Verificación local (375×812, `jardin-nuevo.ux`)**
+
+| Caso | Resultado |
+|---|---|
+| Pestaña Cobertura con dirección sin coordenadas | Bloque ámbar con dirección + «Hasta 25 km» + botón |
+| Pulsar «Confirmar esta dirección» (geocodificación real de Google) | En la BD: `36.511206, -4.885432`; aviso verde «Zona confirmada»; el botón desaparece |
+| Dirección imposible («zzzqqq xxxkkk 99999 nowhere») | Aviso rojo «No hemos podido localizar esa dirección…» + toast; sin coordenadas guardadas; el botón sigue activo |
+| Ayuda del panel | «Tu dirección ya está escrita (Calle Ancha 5…), pero falta confirmarla» + «Confirmar mi zona» |
+
+Tests nuevos: `CoverageTab` (6), `providerSetup` (+2). Suite completa: 179 archivos, 2.761 tests en verde.
+
+**Hallazgo para la Fase 6:** `GardenerDashboard` guarda la última pestaña en `localStorage.gardener_active_tab` y la reabre. Un jardinero que dejó «Disponibilidad» abierta vuelve a entrar **dentro** de ella, no en el panel con la guía. Se trata en la Fase 6.

@@ -95,13 +95,15 @@ INSERT INTO public.gardener_profiles (
   user_id, full_name, phone, address, city_zone, description,
   experience_years, max_distance, is_available,
   operational_latitude, operational_longitude,
-  has_phytosanitary_license, license_verification_status,
+  has_phytosanitary_license, license_verification_status, license_expires_at,
   rating, rating_average, rating_count, total_reviews
 ) VALUES (
   '11111111-aaaa-4aaa-8aaa-111111111111','Miguel Ángel Ruiz','600112233',
   'Avenida Ricardo Soriano, Marbella','Marbella',
   'Jardinero profesional con 12 años de experiencia en la Costa del Sol. Mantenimiento integral, poda de palmeras y tratamientos fitosanitarios con carné aplicador.',
-  12, 40, true, 36.5101, -4.8824, true, 'approved', NULL, 0, 0, 0
+  -- El carnet «vigente» exige fecha de caducidad futura (isPhytosanitaryLicenseActive): sin ella los
+  -- tratamientos químicos del jardinero de la semilla quedaban excluidos tras un `supabase db reset`.
+  12, 40, true, 36.5101, -4.8824, true, 'approved', now() + interval '10 years', NULL, 0, 0, 0
 ) ON CONFLICT (user_id) DO NOTHING;
 
 -- Solicitud ya APROBADA. Un jardinero real aprobado por el admin tiene las dos cosas:

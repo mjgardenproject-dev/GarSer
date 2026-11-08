@@ -17,6 +17,8 @@ Cuatro pasos, en este orden. No te saltes ninguno aunque creas que ya sabes el e
    El estado real es el de ese fichero, no el de tu memoria ni el de tu resumen de contexto.
 2. **Lee `02-HALLAZGOS.md`.** Contiene decisiones ya tomadas y trampas ya pisadas. Si vuelves
    a proponer algo que ahí está descartado, has perdido el tiempo del usuario.
+   Si la tarea toca el **tipo de cuenta**, el **modo individual/equipo** o el alta de profesionales, lee también
+   **`08-CUENTA-PROFESIONAL-DINAMICA.md`**: desde 2026-11-08 ya no hay una cuenta «Empresa» (D31–D40).
 3. **Comprueba dónde estás:** `git branch --show-current` y `git status --short`.
    Si hay cambios sin commitear que no son tuyos, **para y pregunta**: puede haber otra
    sesión trabajando en la misma carpeta. Ha pasado.

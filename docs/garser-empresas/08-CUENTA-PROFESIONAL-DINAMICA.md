@@ -1,8 +1,8 @@
 # 08 — Cuenta de profesional única y dinámica (de autónomo a equipo)
 
-> **Estado: EN EJECUCIÓN (2026-11-08).** El usuario respondió **D35 = autoservicio con declaración de seguro** y dio el OK para
-> ejecutar §6. Hechas F-A (BD), F-B (hook y rutas) y F-E (registro); siguen F-C/F-D (interfaz de los dos modos), F-F (correos) y F-G (cierre).
-> El diseño de abajo no ha cambiado; lo que cambió al ejecutar está en §10.
+> **Estado: EJECUTADO y verificado en local (2026-11-08); falta que el usuario lo lleve a producción (§9, §11).** El usuario respondió
+> **D35 = autoservicio con declaración de seguro** y dio el OK para ejecutar §6. Hechas F-A a F-G. El diseño de §1–§9 no cambió; lo que
+> cambió al ejecutar está en §10 y el cierre (qué se verificó y qué no) en §11.
 > Rama: `feat/cuenta-profesional-dinamica`, creada desde `origin/main` `8ab9b98` (la PR #76
 > `auditoria/ux-movil-onboarding-profesional` ya estaba fusionada, con squash). Antes de
 > tocar nada, lee `00-GUIA-DEL-CHAT.md`.
@@ -312,13 +312,18 @@ una hipótesis que F-A debe demostrar; las líneas marcadas «(aud.)» vienen de
 
 ## 9. Acciones manuales del usuario
 
-**Esta entrega:** (nada que desplegar). Solo se ha escrito documentación en `docs/garser-empresas/`.
+**Nada se ha empujado ni desplegado** (sin `git push`, sin migración ni función en producción). Para llevarlo a producción, **en este orden** y juntos (el
+front antiguo con la migración nueva sigue funcionando, pero sin el modo equipo hasta que se publique el nuevo):
 
-**Para decidir (§3):** D35 — con o sin revisión previa de admin, y si la frase de seguro es obligatoria.
-
-**Apuntado para el día de la fusión, no se hace ahora:** aplicar `20261108120000_cuenta_profesional_dinamica.sql` (`supabase db push --linked`),
-desplegar `send-email-notification` con `--use-api` (F-F), fusionar la PR para que Vercel publique la web, y recrear a mano las cuentas
-de prueba con un alta de empresa a medias. Las pruebas en garser.es se añadirán a `PRUEBAS-PRODUCCION.md`.
+1. **Antes de migrar**, en producción: `select status, count(*) from company_applications group by 1;`. Si hay alguna `submitted`, recházala desde el admin
+   (con la migración ya no se podrá aprobar: la cuenta deja de tener rol `company`).
+2. `supabase db push --linked` → aplica `20261108120000_cuenta_profesional_dinamica.sql`. Comprobar: ninguna cuenta con `profiles.role = 'company'` y
+   `select count(*) from gardener_profiles gp left join companies c on c.provider_user_id = gp.user_id where (c.id is null and gp.provider_kind <> 'solo') or (c.id is not null and gp.provider_kind <> 'company' and exists (select 1 from company_members m where m.company_id = c.id and m.status='active' and m.role <> 'owner'))` = 0.
+3. `supabase functions deploy send-email-notification --use-api` (los correos de carnet/suspensión distinguen el modo).
+4. Abrir la PR y fusionarla (Vercel publica el front). **Aún no hay PR abierta.**
+5. Pasar la **sección 34** de `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md` (34.4 y 34.6 son bloqueantes).
+6. Las cuentas de prueba que eran «Empresa» con un alta a medias (borrador o enviada) se recrean a mano como profesional.
+7. **Solo en local:** tras un `supabase db reset` hay que volver a crear los secretos del Vault (`lifecycle_tick_url` y `lifecycle_tick_secret`), si no los avisos no salen (H-53).
 
 ## 10. Lo que cambió al ejecutar (se va completando)
 
@@ -349,3 +354,45 @@ ser la puerta de `/empresa/*` (equipo = «aprobada»). Las 25 comparaciones de r
 **F-E · registro (hecha).** El selector tiene dos tipos (Cliente, **Profesional**: «Ofrezco mis servicios de jardinería, solo o con mi equipo»). Un
 `?role=company`, un estado de navegación o una sesión vieja se leen como profesional (`parseAccountType`, `authCallback`, `takeSignupIntent`); `AuthContext.signUp` y
 el servidor lo normalizan también. La sección «Empresas» de `/para-jardineros` crea la misma cuenta («Crear mi cuenta para mi equipo»).
+
+**F-C · modo individual (hecha).** La tarjeta «¿Trabajas con más gente? **Añadir a mi equipo**» (`TeamEntryCard`) va debajo de los accesos del panel y de la
+guía de primeros pasos, solo en modo individual con la cuenta en regla. Abre `AddTeamSheet` (hoja con `BottomSheet`): *Qué cambia*, *Qué sigue igual*, la
+frase del seguro (solo si aún no hay empresa: `hasTeamStructure`) y `InviteMemberCard` en variante `bare`. Tras enviar: enlace para copiar y «Mientras no
+acepte, tu cuenta no cambia». Con invitaciones pendientes la tarjeta las lista (lectura directa de `company_invitations`, que ya podía leer el dueño) con
+«Anular» y «¿Ya ha aceptado? Actualizar». **Barrido de vocabulario:** además de lo que ya salía limpio, había un solo sitio que enseñaba «empresa» a un
+individual con empresa latente: el texto de «Cerrar cuenta» (`selfAccountClosure.ts`); ahora solo habla de empresa con empleados activos. La pregunta de
+las preguntas frecuentes de `/para-jardineros` (`billingCopy.ts`) también decía «das de alta tu empresa».
+
+**F-D · equipo y transición (hecha).** `ProviderModeNotice` (montado en `App.tsx`) enseña **una vez por cambio** «Ya tienes equipo» o «Vuelves al modo
+individual»; lo único que guarda el navegador es el último modo visto (`garser.providerMode.lastSeen:<usuario>`), y solo sirve para ese aviso. Panel de
+equipo: **Reseñas propias** (`/empresa/resenas`, enlace en «Tu empresa»; antes una empresa no tenía ninguna entrada a ellas). La etiqueta de Mi cuenta y de
+la barra es «Jardinero» en individual y «Empresa» en equipo. **Hallazgo al verificar en el navegador:** dar de baja al último compañero no refrescaba el
+modo (la pantalla de equipo seguía hasta recargar); `CompanyHomePage` ahora relee el modo tras la baja y salta sola al panel de siempre.
+
+**F-F · correos (hecha).** `send-email-notification`: el enlace «Ir a mi panel» y «titular de empresa» salen de `gardener_profiles.provider_kind`, no de la
+fila `companies` (una empresa latente no cuenta). **Obliga a redesplegar la función** (§9). `PM-22` lo cubre y falla con el código anterior.
+
+## 11. Cierre (qué se verificó y qué no)
+
+**Verificado (2026-11-08, local):**
+
+- `npm test`: **2918 en verde / 197 ficheros** (línea base 2824 / 185). `npm run build` ✅. `tsc` igual que la línea base (126; el repo parte de 126, no 128).
+- `supabase db reset` desde cero ✅ + 8 ficheros SQL de `supabase/tests/` ✅ (A6 de `admin_review_notifications` exige la tabla de avisos vacía: H-54).
+- **29 baterías de Empresas ✅ (incluida la nueva, 22/22)** y las **7 de servicios por HTTP: 269/269, 0 fallos** (cesped 33, setos 35, arbustos 18, árboles 15, palmeras 71,
+  desbroce 19, fitosanitarios 78). Al medirlas tras el `db reset` aparecieron 2 fallos de fitosanitarios que eran de la semilla, no de este cambio (H-58, corregida).
+- Navegador 375×812 con `scripts/garser-empresas/demo-professional-mode.mjs`: registro con dos tipos; individual → invitación (con seguro) → pendiente →
+  aceptación → «Actualizar» → `/empresa` + aviso; panel de equipo, Reseñas con la misma reseña; baja → vuelta sola al panel de siempre + aviso; vuelta a
+  invitar sin volver a pedir el seguro; refresco al volver a la app (`visibilitychange` tras 20 s). Capturas en `capturas-08/`.
+- **Pantallas y menús del modo individual sin ninguna palabra de empresa/equipo/empleado/compañero/titular** (salvo la tarjeta de equipo): Panel, Solicitudes,
+  Disponibilidad, Mi perfil, Reseñas, Marketing, Reservas, Chat, Mi cuenta (con «Cerrar cuenta»), barra superior e inferior.
+
+**No verificado / límites honestos:**
+
+- **No se ha probado en producción ni con el iPhone real** (la batería está en `PRUEBAS-PRODUCCION.md` §34; 34.8 es con el iPhone).
+- Los correos se comprueban con el envío simulado local (`MOCK EMAIL SEND`); el enlace del correo del carnet sí se ve en el registro, el de suspensión no.
+- No se probó la **concurrencia** (dos pestañas del titular, o aceptar y dar de baja a la vez): el servidor es la autoridad y la RPC es idempotente, pero no hay prueba.
+- Un empleado que cierra su cuenta (borrado de su fila) devuelve el modo individual por el disparador (cubierto en SQL) pero no hay prueba de extremo a extremo de
+  `account-closure` con un equipo.
+- `CompanyApplicationPage`, `CompanyStatusPage`, su cola de admin y sus correos quedan **latentes e inaccesibles** (D38); limpieza pendiente (H-49).
+- Una cuenta de empresa **antigua en producción con una solicitud enviada sin aprobar** no se podrá aprobar (ya no tiene rol `company`): se rechaza desde el admin
+  o se recrea (§9).

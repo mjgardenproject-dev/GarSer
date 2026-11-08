@@ -18,6 +18,7 @@ import MarketingHub from '../../components/marketing/MarketingHub';
 import ProviderSetupChecklist from '../../components/provider/ProviderSetupChecklist';
 import type { SetupTarget } from '../../shared/providerSetup';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
+import { useProviderMode } from '../../hooks/useProviderMode';
 import { PHYTO_SERVICE_NAME, useCompanyTeam, type TeamInvitation, type TeamMember } from '../../hooks/useCompanyTeam';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -40,6 +41,8 @@ const Spinner = () => (
 
 const CompanyPanel: React.FC = () => {
   const { data, loading, error, refresh } = useCompanyTeam();
+  // El modo (individual/equipo) lo decide el servidor: al dar de baja a alguien puede cambiar (D31, D39).
+  const { refresh: refreshMode } = useProviderMode();
   const { openConfirm, confirmDialog } = useConfirmDialog();
   // El panel abre en la agenda (lo aprendido en el hito: «quién hace qué y cuándo» es lo diario),
   // salvo que el enlace pida otra pestaña (los avisos del carnet llevan a «Equipo» o «Tu empresa»).
@@ -97,6 +100,9 @@ const CompanyPanel: React.FC = () => {
         }
         toast.success(`${name} ya no forma parte de tu equipo`);
         await refresh();
+        // Si era el último, la cuenta vuelve al modo individual: se relee para que la app lo refleje al
+        // momento (esta pantalla salta sola al panel de siempre y sale el aviso de la transición).
+        await refreshMode();
       },
     });
   };

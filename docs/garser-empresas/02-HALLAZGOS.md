@@ -6,7 +6,7 @@
 > Regla de la casa: un hallazgo sin `fichero:línea` no es un hallazgo, es una sospecha.
 > Las sospechas van a §3.
 
-**Última actualización:** 2026-11-08 (H-45 a H-55, cuenta de profesional dinámica)
+**Última actualización:** 2026-11-08 (H-45 a H-58, cuenta de profesional dinámica)
 
 ---
 
@@ -906,6 +906,25 @@ solicitud y el admin la aprueba. Desde D31 el registro «company» da `gardener`
 'company'`. Para no perder cobertura del código que sigue vivo (D38), esas baterías **emulan una cuenta anterior al cambio** poniendo
 `profiles.role = 'company'` por SQL tras el alta (parámetro `legacy`/`emulateLegacy`). La vida real de la cuenta nueva (promoción, aceptación, vuelta)
 la cubre `verify-professional-mode.mjs`. F2-01 cambió de regla (D32) y se explica en su comentario.
+
+### H-56 · El texto de «Esa franja ya no está libre» habla de «la empresa» a cualquier cliente — 🟢 Fuera de alcance
+
+`src/utils/bookingRescheduleService.ts:13` (`no_longer_available`): «La empresa puede proponerte otra». Lo ve el cliente sea el proveedor autónomo o equipo.
+Es texto de cliente (fuera del alcance de esta tarea) y ya era así antes. Se anota sin tocar.
+
+### H-57 · Un titular con equipo aparece al cliente con la etiqueta «Empresa» — 🟢 Decidido (coherente)
+
+`ProvidersPage.tsx:961` y `profileNames.ts:78` pintan «Empresa» por `provider_kind = 'company'`. Con la cuenta dinámica eso significa «modo equipo»: un autónomo que
+añade a su primer compañero pasa a verse como «Empresa» ante los clientes, y vuelve a verse como el de siempre al quedarse solo. Se deja así: es lo que el cliente
+recibe de verdad (un equipo reparte el trabajo). El panel de admin («Profesionales») usa la misma etiqueta por tipo.
+
+### H-58 · La semilla local no daba fecha de caducidad al carnet del jardinero de pruebas — 🟡 Corregido
+
+`supabase/seed.sql` sembraba `license_verification_status = 'approved'` sin `license_expires_at`, y desde `20260913120000` un carnet solo es «vigente» con fecha futura
+(`isPhytosanitaryLicenseActive`). Tras un `supabase db reset` los tratamientos químicos del jardinero de la semilla quedaban excluidos y `readiness/fitosanitarios.mjs`
+daba 2 fallos por HTTP («martes laborable ofrece horas», «aparece desde una dirección cubierta»; 76/78). Antes del reset pasaba porque la base local tenía la fecha puesta a mano.
+La semilla ahora pone `now() + 10 years`: **78/78** y el total de las 7 baterías de servicios vuelve a **269**. (Con `READINESS_ENGINE=local` salen más «NO PROBADO» porque esas
+comprobaciones solo existen por HTTP: la cifra de referencia se mide por HTTP con las funciones servidas.)
 
 ## 3. Sospechas sin verificar
 

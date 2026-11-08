@@ -259,10 +259,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (email: string, password: string, role: 'client' | 'gardener' | 'company', _applicationPayload?: any) => {
     // Eliminamos setLoading(true) para no desmontar AuthForm durante el proceso
     try {
+      // Un solo tipo de profesional (D31): «company» (un enlace o un valor viejo) se registra como gardener.
+      const accountType = role === 'client' ? 'client' : 'gardener';
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { requested_role: role, role: role } },
+        options: { data: { requested_role: accountType, role: accountType } },
       });
       if (error) throw error;
       // No hacemos escrituras en tablas protegidas aquí: aún no hay sesión confirmada.

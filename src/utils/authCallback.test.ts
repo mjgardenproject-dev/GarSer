@@ -3,8 +3,13 @@ import { readCallbackParams } from './authCallback';
 
 describe('readCallbackParams', () => {
   it('lee next y role cuando los dos están presentes', () => {
+    const params = readCallbackParams('https://garser.es/auth/callback?next=%2Fdashboard&role=gardener');
+    expect(params).toMatchObject({ next: '/dashboard', role: 'gardener', error: null, errorDescription: null });
+  });
+
+  it('una vuelta antigua con role=company se lee como profesional: ya no existe ese tipo de cuenta (D31)', () => {
     const params = readCallbackParams('https://garser.es/auth/callback?next=%2Fempresa&role=company');
-    expect(params).toMatchObject({ next: '/empresa', role: 'company', error: null, errorDescription: null });
+    expect(params).toMatchObject({ next: '/empresa', role: 'gardener' });
   });
 
   it('sin role en la URL, role es null (vuelta de un cliente o del popup)', () => {

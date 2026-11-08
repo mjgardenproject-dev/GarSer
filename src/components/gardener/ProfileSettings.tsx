@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProviderMode } from '../../hooks/useProviderMode';
 import { useForm, FormProvider } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -95,6 +96,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
+  // En equipo el carnet es de cada persona, no del titular (se sube desde «Equipo»): D4.
+  const { isTeam } = useProviderMode();
   
   // Configurations State
   const [palmConfig, setPalmConfig] = useState<PalmPricingConfig | undefined>(undefined);
@@ -791,7 +794,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                   setLicenseStatus={setLicenseStatus}
                   initialData={personalInitialData}
                   onSave={onSaveProfileInfo}
-                  showLicense={gardenerProfile?.provider_kind !== 'company'}
+                  showLicense={!isTeam}
                 />
               )}
 

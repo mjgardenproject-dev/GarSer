@@ -6,7 +6,7 @@
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
 **Estado global:** ✅ F0–F9 en producción desde la fusión (#35, 2026-09-25) · ✅ prueba real F1–F8 en producción (#41, 2026-09-29) · ✅ pendientes A–G (`07-PROCEDIMIENTO-CORRECCION.md`) hechos en local el 2026-10-09, rama `fix/pendientes-ph` · **en curso: fase H (despliegue y pruebas en garser.es)** · después: guía de pruebas de `06` §3, limpieza y Stripe en real
-**Última actualización:** 2026-11-08 (diseño de la cuenta de profesional dinámica: `08-CUENTA-PROFESIONAL-DINAMICA.md`, a la espera de respuesta del usuario)
+**Última actualización:** 2026-11-08 (cuenta de profesional dinámica: D35 resuelta, fases F-A (BD) y F-B/F-E (hook, rutas y registro) hechas; sigue `08-CUENTA-PROFESIONAL-DINAMICA.md` §6)
 **Línea base de tests:** 2824 en verde / 185 ficheros (medida el 2026-11-08; la anterior, 953 / 118, estaba desfasada) · `tsc` 128 · 27 baterías de Empresas (300) · 7 de servicios (269)
 ---
 
@@ -115,7 +115,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D32 | El modo se deriva del servidor (2026-11-08) | **Equipo ⟺ ≥1 empleado activo; `provider_kind` lo mantiene un disparador, nadie por API.** | Precisa **A-19**; relaja `trg_check_company_provider_kind`. | Cuenta dinámica |
 | D33 | Promoción en sitio (2026-11-08) | **La empresa se crea al invitar al primer compañero, sobre la ficha existente; el modo equipo empieza al aceptar.** | Precisa A-01/A-24. Opción A de `08` §4.3. | Cuenta dinámica |
 | D34 | Volver a individual (2026-11-08) | **El titular trabaja siempre en individual; al volver, ajustes de empresa a fábrica.** | Precisa **D3** y **D11**. | Cuenta dinámica |
-| D35 | ¿La promoción a equipo la revisa un admin? (2026-11-08) | **PREGUNTA pendiente.** Recomendado: sin revisión previa, con declaración de seguro y visible en «Profesionales». | Sustituiría la parte de revisión de D2/D7. | Cuenta dinámica |
+| D35 | ¿La promoción a equipo la revisa un admin? (2026-11-08) | **Resuelta por el usuario (2026-11-08): autoservicio con declaración de seguro de responsabilidad civil**, sin revisión previa; visible en «Profesionales». La declaración se guarda con fecha (`companies.liability_declared_at`). | Sustituye la parte de revisión de D2/D7. | Cuenta dinámica |
 | D36 | Un profesional no puede ser empleado (2026-11-08) | **A-03 se mantiene.** Mensaje claro; un ex-empleado sí puede hacerse profesional. | Mantiene A-03. | Cuenta dinámica |
 | D37 | Cuentas actuales de prueba (2026-11-08) | **Migración mínima; lo que no cuadre se recrea a mano.** | **Sustituye D8.** | Cuenta dinámica |
 | D38 | Alta de empresa por solicitud (2026-11-08) | **Queda latente, sin acceso; no se borra.** | Aplica R3. | Cuenta dinámica |
@@ -826,6 +826,7 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-10-09 | Pendientes F | **Fase F cerrada**: PH-09 cerrado, PH-07 (readiness 7/7, 269), PH-06 (`ARCHITECTURE.md`). | readiness 269 ✅ | `bc04bdf` `5de4cd6` |
 | 2026-10-09 | Pendientes G | **Fase G cerrada** (PH-10): estados de `02` (H-02, H-03, H-06, H-11, H-17, H-21, H-22) y §3 «Sospechas» al día; estado global actualizado. | — | (este commit) |
 | 2026-11-08 | Cuenta dinámica · diseño | **Diseño y parada.** Rama `feat/cuenta-profesional-dinamica` desde `main` `8ab9b98` (PR #76 ya fusionada). Auditoría con 4 exploradores + relectura de las funciones SQL clave. `08-CUENTA-PROFESIONAL-DINAMICA.md` con D31–D40, opción A (promoción en sitio), disparador que mantiene `provider_kind` y plan F-A…F-G. Sin código ni migraciones; a la espera de D35. | 2824 ✅ / 185 ficheros | (este commit) |
+| 2026-11-08 | Cuenta dinámica · F-A, F-B y F-E | **D35 resuelta: autoservicio + seguro.** Migración `20261108120000` (disparador que mantiene `provider_kind`, promoción en sitio, `my_provider_mode()`, `company`→`gardener`, backfill) con `supabase/tests/professional_mode.test.sql` y la batería `verify-professional-mode` (21). Hook `useProviderMode` sobre `AccountContext`, `/dashboard`⇄`/empresa` por modo, registro con un solo tipo «Profesional». 29 baterías en verde tras `db reset`; F2-01 cambia de regla (D32); H-51…H-55. | 2862 ✅ / 190 ficheros · tsc sin subir | (este commit) |
 
 ---
 

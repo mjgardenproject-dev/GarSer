@@ -1,7 +1,8 @@
 # 08 — Cuenta de profesional única y dinámica (de autónomo a equipo)
 
-> **Estado: DISEÑO ENTREGADO el 2026-11-08. Parada obligatoria: no se ha tocado código ni migraciones.**
-> Se ejecuta (§6) solo cuando el usuario responda a las preguntas de §3 marcadas **PREGUNTA**.
+> **Estado: EN EJECUCIÓN (2026-11-08).** El usuario respondió **D35 = autoservicio con declaración de seguro** y dio el OK para
+> ejecutar §6. Hechas F-A (BD), F-B (hook y rutas) y F-E (registro); siguen F-C/F-D (interfaz de los dos modos), F-F (correos) y F-G (cierre).
+> El diseño de abajo no ha cambiado; lo que cambió al ejecutar está en §10.
 > Rama: `feat/cuenta-profesional-dinamica`, creada desde `origin/main` `8ab9b98` (la PR #76
 > `auditoria/ux-movil-onboarding-profesional` ya estaba fusionada, con squash). Antes de
 > tocar nada, lee `00-GUIA-DEL-CHAT.md`.
@@ -120,7 +121,7 @@ Autoriza el cambio de diseño **solo para el alcance de esta tarea** (R7). Se co
 | **D32** | **El modo se deriva del servidor.** Equipo ⟺ al menos un empleado activo. `provider_kind` pasa a ser el reflejo de eso, escrito **solo** por un disparador sobre `company_members`; nadie lo cambia por API ni lo guarda el navegador. `trg_check_company_provider_kind` se relaja: una empresa cuelga de una ficha de proveedor, sea del tipo que sea. | Precisa **A-19**; relaja el invariante `F2:258-278`. | Es lo que lee el motor (hallazgo 3). Reescribir esas lecturas obligaría a tocar `booking-authority` y `booking-payment`, que están fuera de alcance. | Resuelta |
 | **D33** | **Promoción en sitio.** La empresa (`companies` + dueño `owner`) se crea al **invitar** al primer compañero, dentro de `create_company_invitation`, sobre la ficha existente. La invitación pendiente no cambia la app. El modo equipo empieza al **aceptar**. | Precisa **A-01/A-24** (hoy la empresa solo nace por solicitud aprobada). | Opción A del §4.3. | Resuelta |
 | **D34** | **El titular trabaja siempre en modo individual.** Al volver a individual se fuerza `counts_as_labour = true` y los ajustes de empresa vuelven a fábrica (`max_crew=1`, `allow_split_jobs=false`, `assignment_mode='auto'`) y se limpian las propuestas `assignment_pending`. | Precisa **D3** (el dueño elige si trabaja: sigue valiendo en modo equipo) y **D11** («autónomo: siempre 1» = modo individual). | Sin esto, una empresa latente con `assignment_mode='manual'` dejaría reservas esperando una confirmación que la pantalla individual no ofrece (hallazgo 4). | Resuelta |
-| **D35** | **¿La promoción a equipo la revisa un admin?** Ver §4.4. | Sustituiría la parte de revisión de **D2/D7**. | Es la única decisión con peso de producto y de ley. | **PREGUNTA** |
+| **D35** | **¿La promoción a equipo la revisa un admin?** Ver §4.4. | Sustituiría la parte de revisión de **D2/D7**. | **Resuelta por el usuario (2026-11-08): autoservicio con declaración de seguro de responsabilidad civil**, sin revisión previa; la ve el admin en «Profesionales». | Resuelta |
 | **D36** | **Un profesional con ficha no puede ser empleado de otro** (A-03 se mantiene). Quien ya es profesional y recibe una invitación ve el mensaje que ya existe («necesitas una cuenta distinta»). Un ex-empleado (miembro inactivo, sin ficha) sí puede hacerse profesional después. | Mantiene **A-03**. | Es una imposibilidad del modelo; la contraria exigiría retirar la ficha del que se une. | Resuelta |
 | **D37** | **Cuentas actuales: son de prueba.** La migración solo hace lo imprescindible para aplicar limpia desde cero y sobre producción: las cuentas `company` pasan a `gardener` y se recalcula el modo de todas. Lo que no cuadre (alta de empresa a medias) se recrea a mano. | Sustituye **D8**. | Confirmado por el usuario (2026-11-08): no hay cuentas reales. Los DEFAULT y la compatibilidad se mantienen por buena práctica, no por obligación. | Resuelta |
 | **D38** | **El alta de empresa por solicitud queda latente, no se borra.** `/empresa/solicitud`, `/empresa/estado`, la cola «Solicitudes de Empresas» y sus correos no se tocan; ya nadie puede llegar (sin rol `company`). Se anota para limpiar. | Aplica **R3** (no arreglar fuera de alcance). | Borrarlo toca el panel de admin, fuera de alcance. | Resuelta |
@@ -318,3 +319,33 @@ una hipótesis que F-A debe demostrar; las líneas marcadas «(aud.)» vienen de
 **Apuntado para el día de la fusión, no se hace ahora:** aplicar `20261108120000_cuenta_profesional_dinamica.sql` (`supabase db push --linked`),
 desplegar `send-email-notification` con `--use-api` (F-F), fusionar la PR para que Vercel publique la web, y recrear a mano las cuentas
 de prueba con un alta de empresa a medias. Las pruebas en garser.es se añadirán a `PRUEBAS-PRODUCCION.md`.
+
+## 10. Lo que cambió al ejecutar (se va completando)
+
+**F-A · base de datos (hecha).** `supabase/migrations/20261108120000_cuenta_profesional_dinamica.sql`, tal como describe §5. Diferencias con lo diseñado:
+
+- `create_company_invitation(p_email, p_liability_declared DEFAULT false)`: **se borra la firma antigua** `(text)` antes de crear la nueva (dos sobrecargas
+  hacen ambigua la llamada por nombre desde PostgREST). El front ya desplegado, que solo manda `p_email`, sigue funcionando.
+- La declaración de seguro se exige **solo al promocionar** (cuando aún no hay empresa). Las empresas antiguas (alta por solicitud) no la piden: su
+  encuesta ya preguntaba por el seguro.
+- `my_provider_mode()` devuelve además `liability_declared`.
+- Al entrar en equipo, los servicios del titular son los **activos y, si son fitosanitarios, solo con carnet válido** (las mismas reglas que
+  `set_company_member_services`). Al volver a entrar tras una baja, se rehacen con los activos de ese momento; un compañero que vuelve conserva los suyos.
+- El backfill pasó las cuentas locales de empresa a `gardener` y las empresas sin empleados a individual (D37).
+- Pruebas: `supabase/tests/professional_mode.test.sql` (verifica además con dos mutaciones: sin el disparador falla 5b; sin el reinicio de servicios, 5d) y
+  `scripts/garser-empresas/verify-professional-mode.mjs` (**21/21**: registro, promoción, aceptación, horas que suman, ida y vuelta sin pérdidas,
+  reparto manual → individual sin reservas colgando, reutilización de la empresa latente y carnet del titular). **29 baterías (332 comprobaciones) en
+  verde tras `supabase db reset` desde cero**; las 8 SQL de `supabase/tests/` también.
+- Cambios de expectativas en pruebas antiguas (R2), todos explicados en `02` H-51…H-55: F2-01 (nueva regla de D32), F3-21 (registrarse «company» da
+  `gardener`), F3-31 (inserción del carnet por SQL), y `provider_setup_status.test.sql` (al irse el último empleado la cuenta vuelve a individual:
+  se comprueba y se reincorpora a Ana para seguir probando el modo equipo).
+
+**F-B · hook y rutas (hecha).** `AccountContext` lee el modo junto al rol para los `gardener` (`providerMode`, `providerModeError`,
+`refreshProviderMode`, relectura al volver a la app si lo último tiene más de 20 s) y `useProviderMode()` lo expone. `/dashboard` decide con la función pura
+`professionalHome` (`src/utils/professionalHome.ts`): aprobada + equipo → `/empresa`; aprobada + individual → el panel de siempre. `useCompanyOnboarding` pasó a
+ser la puerta de `/empresa/*` (equipo = «aprobada»). Las 25 comparaciones de rol se sustituyeron y una prueba recorre `src/` para que no vuelvan
+(`src/lib/noCompanyRole.test.ts`). `Navbar`/`BottomNav`: «Panel» queda marcado también en `/empresa` (`navActive.ts`).
+
+**F-E · registro (hecha).** El selector tiene dos tipos (Cliente, **Profesional**: «Ofrezco mis servicios de jardinería, solo o con mi equipo»). Un
+`?role=company`, un estado de navegación o una sesión vieja se leen como profesional (`parseAccountType`, `authCallback`, `takeSignupIntent`); `AuthContext.signUp` y
+el servidor lo normalizan también. La sección «Empresas» de `/para-jardineros` crea la misma cuenta («Crear mi cuenta para mi equipo»).

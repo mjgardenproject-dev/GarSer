@@ -65,14 +65,14 @@ describe('GardenersLandingPage', () => {
     }
   });
 
-  it('«Dar de alta mi empresa» lleva al registro con el rol de empresa', async () => {
+  it('el botón de la sección de equipos lleva al mismo registro de profesional: no hay un tipo «empresa» (D31)', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.click(screen.getByRole('button', { name: 'Dar de alta mi empresa' }));
+    await user.click(screen.getByRole('button', { name: gardenersContent.companies.ctaLabel }));
 
     expect(navigateMock).toHaveBeenCalledWith('/auth', {
-      state: { initialMode: 'signup', preselectedRole: 'company' },
+      state: { initialMode: 'signup', preselectedRole: 'gardener' },
     });
   });
 

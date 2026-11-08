@@ -110,9 +110,9 @@ const GardenersLandingPage: React.FC = () => {
     [faqs, seo.path, seo.title, settings.contactEmail],
   );
 
-  // Alta real: /auth en modo registro con la tarjeta de rol ya elegida. Después, el jardinero
-  // pasa por /apply y la empresa por /empresa/solicitud; en ambos casos lo revisa el admin.
-  const handleSignup = (role: 'gardener' | 'company') => {
+  // Alta real: /auth en modo registro con la tarjeta de rol ya elegida. Después el profesional pasa por
+  // /apply y lo revisa el admin. Hay un solo tipo (D31): si crece, añade a su equipo desde su panel.
+  const handleSignup = (role: 'gardener') => {
     navigate('/auth', {
       state: {
         initialMode: 'signup',
@@ -299,7 +299,7 @@ const GardenersLandingPage: React.FC = () => {
             <div className="mt-6">
               <button
                 type="button"
-                onClick={() => handleSignup('company')}
+                onClick={() => handleSignup('gardener')}
                 className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-base font-semibold text-emerald-800 transition-colors hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 sm:w-auto [touch-action:manipulation]"
               >
                 {companies.ctaLabel}

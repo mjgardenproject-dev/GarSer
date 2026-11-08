@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { normalizeAccountRole } from './accountRole';
 import { fetchCurrentUserProfileRole } from './adminAccess';
 
 // Cuentas que entran con Google (2026-10-21).
@@ -58,19 +59,21 @@ export interface OAuthSignInResult {
   /** Cuenta creada ahora mismo (para darle la bienvenida). */
   isNew: boolean;
   firstName: string;
-  /** Jardinero o empresa que la persona eligió antes de entrar con Google. */
+  /** Profesional que la persona eligió antes de entrar con Google. */
   requestedRole?: ProfessionalRole;
   /** Si lo que eligió no se pudo dejar hecho: el motivo (la pantalla lo explica, no se sigue). */
   roleProblem?: RoleProblem;
 }
 
-export type ProfessionalRole = 'gardener' | 'company';
+// Un solo tipo de profesional (D31): «company» ya no existe como tipo de cuenta. Un valor viejo que llegue
+// (la URL de vuelta, el almacenamiento del navegador) se lee como 'gardener'.
+export type ProfessionalRole = 'gardener';
 
 /** Lo que contesta el servidor (self_declare_signup_role), o 'failed' si no llegó a contestar. */
 export type DeclareStatus = 'declared' | 'unchanged' | 'blocked_activity' | 'blocked_role' | 'failed';
 
 /**
- * Pide al servidor que la cuenta sea de jardinero o empresa. Es el único sitio que llama a la
+ * Pide al servidor que la cuenta sea de profesional. Es el único sitio que llama a la
  * función: la decide el servidor (con su reloj y sus datos) y contesta con un estado, así que aquí
  * no se adivina nada. Un fallo no se traga: devuelve 'failed' para que la pantalla lo diga.
  */
@@ -87,7 +90,7 @@ export async function declareAccountType(role: ProfessionalRole): Promise<Declar
 }
 
 /**
- * Jardinero o empresa por Google. Google no puede mandar el rol como sí hace el alta por correo
+ * Profesional por Google. Google no puede mandar el rol como sí hace el alta por correo
  * (supabase.auth.signUp con requested_role en los metadatos): la cuenta nace 'client'. Con el
  * tipo elegido antes de pulsar Google, se declara al servidor en cuanto hay sesión — desde el
  * popup (GoogleSignInButton) y desde la vuelta por redirección (AuthCallbackPage), que comparten
@@ -95,7 +98,7 @@ export async function declareAccountType(role: ProfessionalRole): Promise<Declar
  * (`roleProblem`). Nunca se sigue «como cliente» en silencio.
  *
  * Ya no depende de que la cuenta parezca nueva: una cuenta de cliente sin actividad (p. ej. la
- * que se creó por error al pulsar Google sin elegir) puede pasar a jardinero/empresa si la persona
+ * que se creó por error al pulsar Google sin elegir) puede pasar a profesional si la persona
  * lo pide. Si ya tiene reservas o es de otro tipo, el servidor lo impide y se explica.
  */
 export async function declareSignupRoleIfNeeded(
@@ -134,7 +137,7 @@ export function takeSignupIntent(now: number = Date.now()): ProfessionalRole | n
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { role?: unknown; at?: unknown };
     if (typeof parsed.at !== 'number' || now - parsed.at > INTENT_TTL_MS) return null;
-    return parsed.role === 'gardener' || parsed.role === 'company' ? parsed.role : null;
+    return normalizeAccountRole(parsed.role) === 'gardener' ? 'gardener' : null;
   } catch {
     return null;
   }
@@ -160,11 +163,10 @@ export async function describeOAuthSignIn(user: User, now: number = Date.now()):
   return { role, isNew: isFreshAccount(user, now), firstName: googleProfileOf(user).fullName.split(/\s+/)[0] || '' };
 }
 
-/** «cliente», «jardinero»… para las frases de aviso. */
+/** «cliente», «profesional»… para las frases de aviso. */
 export function accountRoleLabel(role: string | null | undefined): string {
-  switch (role) {
-    case 'gardener': return 'jardinero';
-    case 'company': return 'empresa';
+  switch (normalizeAccountRole(role)) {
+    case 'gardener': return 'profesional';
     case 'employee': return 'empleado de una empresa';
     case 'admin': return 'administrador';
     default: return 'cliente';

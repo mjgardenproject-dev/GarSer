@@ -6,7 +6,7 @@
 > Regla de la casa: un hallazgo sin `fichero:línea` no es un hallazgo, es una sospecha.
 > Las sospechas van a §3.
 
-**Última actualización:** 2026-11-08 (H-45 a H-50, cuenta de profesional dinámica)
+**Última actualización:** 2026-11-08 (H-45 a H-55, cuenta de profesional dinámica)
 
 ---
 
@@ -871,6 +871,41 @@ empresa como cliente (se resuelve solo al ser `gardener`); `DashboardApplyCTA.ts
 
 Línea base real el 2026-11-08: **2824 tests / 185 ficheros** (`01` decía 953 / 118) y **28** baterías de Empresas (`01` decía 27 / 300;
 la nueva es `verify-application-ads-consent`, 11 comprobaciones). Ver `08` §1. `01` ya está corregido.
+
+### H-51 · `verify-f3-db` F3-31 llevaba roto desde el 2026-10-20 y abortaba la batería — 🟡 Corregido
+
+La migración `20261020140000_phyto_licenses_for_teams.sql:349` retiró `INSERT` sobre `gardener_licenses` a `authenticated` (el carnet entra por
+`submit_phyto_license`, que exige un fichero ya subido a Storage). F3-31 seguía insertando la fila con la sesión del empleado → 403 y, como el
+siguiente paso usa el id de esa fila, la batería **se interrumpía en 25/27** sin ejecutar las comprobaciones posteriores. No lo causa la cuenta
+dinámica (es anterior). Se corrige insertando la fila pendiente por SQL y probando lo que decide (revisión del admin y asignación): **35/35**.
+
+### H-52 · El harness de baterías no funcionaba con la CLI actual — 🟡 Corregido
+
+`scripts/readiness/_harness.mjs` leía `status.FUNCTIONS_URL` de `supabase status -o json`, que la versión actual de la CLI ya no da: toda batería que
+llama a `booking-authority` fallaba con `Failed to parse URL from undefined/booking-authority`. Ahora cae a `${API_URL}/functions/v1`.
+Además, las funciones locales hay que servirlas: `supabase functions serve` (el contenedor `supabase_edge_runtime_…` no está en marcha tras un
+`supabase start` normal en esta máquina).
+
+### H-53 · Tras un `supabase db reset` el reloj de avisos local deja de funcionar — 🟡 Procedimiento
+
+Los secretos `lifecycle_tick_url` y `lifecycle_tick_secret` del Vault local (los usa `private.ring_notification_dispatch`) no viven en ninguna
+migración: un `db reset` los borra y los avisos se quedan en `pending` (se nota en `verify-self-closure` SC-04 y `verify-notification-outbox`).
+Hay que volver a crearlos (URL `http://supabase_kong_GarSer-main_4:8000/functions/v1/booking-lifecycle-tick` y el `LIFECYCLE_TICK_SECRET` del
+contenedor de funciones). Ya documentado a medias en `04-FALLOS-PRUEBA-REAL.md` (§ configuración local).
+
+### H-54 · `admin_review_notifications.test.sql` A6 cuenta avisos de toda la base — 🟢 Frágil
+
+`supabase/tests/admin_review_notifications.test.sql:96` espera exactamente 3 avisos `gardener_application` en TODA la tabla: con restos de baterías
+(que no limpian `notification_outbox`) da falso fallo. Se comprobó borrando los `admin_review_needed` locales: pasa. Pendiente de acotarlo a las filas
+de la prueba.
+
+### H-55 · Las baterías antiguas fabrican su empresa por el camino que ya no se puede usar — 🟡 Decidido
+
+`_company-harness.createCompany` (y copias locales en `verify-f3-db`, `verify-f3-emails`, `verify-f4-sell`) registran un usuario «company», envían la
+solicitud y el admin la aprueba. Desde D31 el registro «company» da `gardener` y la política de `company_applications` exige `profiles.role =
+'company'`. Para no perder cobertura del código que sigue vivo (D38), esas baterías **emulan una cuenta anterior al cambio** poniendo
+`profiles.role = 'company'` por SQL tras el alta (parámetro `legacy`/`emulateLegacy`). La vida real de la cuenta nueva (promoción, aceptación, vuelta)
+la cubre `verify-professional-mode.mjs`. F2-01 cambió de regla (D32) y se explica en su comentario.
 
 ## 3. Sospechas sin verificar
 

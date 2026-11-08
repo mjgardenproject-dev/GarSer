@@ -97,9 +97,9 @@ describe('AuthForm · acceso y registro', () => {
       expect(password.type).toBe('password');
     });
 
-    it('un jardinero ve una entrada clara a su registro, que lleva a elegir el tipo', () => {
+    it('un profesional ve una entrada clara a su registro, que lleva a elegir el tipo', () => {
       renderAuth();
-      fireEvent.click(screen.getByRole('button', { name: /¿Eres jardinero o empresa\?/ }));
+      fireEvent.click(screen.getByRole('button', { name: /¿Ofreces servicios de jardinería\?/ }));
       expect(screen.getByRole('tab', { name: 'Crear cuenta' }).getAttribute('aria-selected')).toBe('true');
       expect(screen.getByText('¿Cómo vas a usar GarSer?')).toBeTruthy();
     });
@@ -129,17 +129,18 @@ describe('AuthForm · acceso y registro', () => {
       renderAuth('/auth?mode=signup');
       expect(screen.getByText('¿Cómo vas a usar GarSer?')).toBeTruthy();
       expect(optionNames().some((n) => /Cliente/.test(n))).toBe(true);
-      expect(optionNames().some((n) => /Jardinero/.test(n))).toBe(true);
-      expect(optionNames().some((n) => /Empresa/.test(n))).toBe(true);
+      expect(optionNames().some((n) => /Profesional/.test(n))).toBe(true);
+      // Un solo tipo de profesional (D31): la empresa no se elige al registrarse, nace al añadir a alguien.
+      expect(optionNames().some((n) => /Empresa|Jardinero/.test(n))).toBe(false);
       expect(screen.queryByRole('button', { name: /Google/ })).toBeNull();
       expect(screen.queryByLabelText('Correo electrónico')).toBeNull();
       expect(screen.getByText('Después no podrás cambiar el tipo de cuenta.')).toBeTruthy();
     });
 
-    it('elegir Jardinero: Google y el formulario aparecen, y Google lleva el tipo elegido', () => {
+    it('elegir Profesional: Google y el formulario aparecen, y Google lleva el tipo elegido', () => {
       renderAuth('/auth?mode=signup');
-      fireEvent.click(screen.getByRole('button', { name: /Jardinero/ }));
-      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de jardinero' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /Profesional/ }));
+      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de profesional' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Google (signup, gardener)' })).toBeTruthy();
       expect(mocks.lastGoogleProps!.oneTap).toBe(false);
       expect(screen.getByLabelText('Correo electrónico')).toBeTruthy();
@@ -147,11 +148,10 @@ describe('AuthForm · acceso y registro', () => {
       expect(screen.getByText(/La revisamos antes de publicarte/)).toBeTruthy();
     });
 
-    it('Empresa y Cliente también, y Cliente no manda ningún tipo especial a Google', () => {
+    it('Cliente no manda ningún tipo especial a Google ni enseña el aviso de revisión', () => {
       renderAuth('/auth?mode=signup');
-      fireEvent.click(screen.getByRole('button', { name: /Empresa/ }));
-      expect(screen.getByRole('button', { name: 'Google (signup, company)' })).toBeTruthy();
-      expect(screen.getByText(/datos de tu empresa/)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /Profesional/ }));
+      expect(screen.getByRole('button', { name: 'Google (signup, gardener)' })).toBeTruthy();
 
       fireEvent.click(screen.getByRole('button', { name: /Cambiar tipo de cuenta/ }));
       fireEvent.click(screen.getByRole('button', { name: /Cliente/ }));
@@ -176,24 +176,34 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('desde la web de jardineros llega con el tipo ya elegido (sin pregunta)', () => {
+      renderAuth({ pathname: '/auth', state: { initialMode: 'signup', preselectedRole: 'gardener' } });
+      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de profesional' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Google (signup, gardener)' })).toBeTruthy();
+    });
+
+    it('un enlace antiguo con role=company (estado o URL) se registra como profesional (D31)', () => {
       renderAuth({ pathname: '/auth', state: { initialMode: 'signup', preselectedRole: 'company' } });
-      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de empresa' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Google (signup, company)' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de profesional' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Google (signup, gardener)' })).toBeTruthy();
+      cleanup();
+      renderAuth('/auth?mode=signup&role=company');
+      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de profesional' })).toBeTruthy();
+      expect(screen.queryByText(/Crea tu cuenta de empresa/)).toBeNull();
     });
 
     it('?role=gardener sin modo abre el registro, no el acceso', () => {
       renderAuth('/auth?role=gardener');
       expect(screen.getByRole('tab', { name: 'Crear cuenta' }).getAttribute('aria-selected')).toBe('true');
-      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de jardinero' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: 'Crea tu cuenta de profesional' })).toBeTruthy();
     });
 
     it('una invitación de empleado (solo cliente): tipo fijo, sin cambiar y sin entrada profesional', () => {
       renderAuth({ pathname: '/auth', state: { initialMode: 'login', forceClientOnly: true } });
-      expect(screen.queryByRole('button', { name: /¿Eres jardinero o empresa\?/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /¿Ofreces servicios de jardinería\?/ })).toBeNull();
       fireEvent.click(screen.getByRole('tab', { name: 'Crear cuenta' }));
       expect(screen.getByRole('heading', { name: 'Crea tu cuenta de cliente' })).toBeTruthy();
       expect(screen.queryByRole('button', { name: /Cambiar tipo de cuenta/ })).toBeNull();
-      expect(screen.queryByRole('button', { name: /Jardinero/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Profesional/ })).toBeNull();
     });
 
     it('con correo: manda el tipo elegido al alta y abre el aviso de confirmación', async () => {
@@ -235,10 +245,10 @@ describe('AuthForm · acceso y registro', () => {
       expect(await screen.findByText('Panel del cliente')).toBeTruthy();
     });
 
-    it('registro como empresa: la cuenta ya es de empresa y va a su panel', async () => {
-      renderAuth('/auth?mode=signup&role=company');
-      mocks.lastGoogleProps!.onSignedIn({ role: 'company', isNew: true, firstName: 'Ana', requestedRole: 'company' });
-      expect(await screen.findByText('Panel de empresa')).toBeTruthy();
+    it('registro como profesional: la cuenta ya es de profesional y va a su panel (/dashboard decide el modo)', async () => {
+      renderAuth('/auth?mode=signup&role=gardener');
+      mocks.lastGoogleProps!.onSignedIn({ role: 'gardener', isNew: true, firstName: 'Ana', requestedRole: 'gardener' });
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
     });
 
     it('al cambiar el tipo de cuenta, la app relee el tipo ANTES de navegar (si no, se ve el panel de cliente)', async () => {
@@ -303,12 +313,14 @@ describe('AuthForm · acceso y registro', () => {
       expect(mocks.declare).not.toHaveBeenCalled();
     });
 
-    it('…y si dice Empresa, se declara al servidor y va al panel de empresa', async () => {
+    it('…y si dice Profesional, se declara al servidor y va a su panel; no hay opción «Empresa»', async () => {
       renderAuth();
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana' });
-      fireEvent.click(await screen.findByRole('button', { name: /Empresa/ }));
-      expect(await screen.findByText('Panel de empresa')).toBeTruthy();
-      expect(mocks.declare).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana' }, 'company');
+      expect(await screen.findByRole('button', { name: /Profesional/ })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Empresa/ })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Profesional/ }));
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+      expect(mocks.declare).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana' }, 'gardener');
     });
 
     it('si Google crea la cuenta desde una invitación de empleado (solo cliente), no pregunta', async () => {
@@ -333,26 +345,26 @@ describe('AuthForm · acceso y registro', () => {
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: false, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'has_activity' });
       fireEvent.click(await screen.findByRole('button', { name: 'Usar otro correo' }));
       await waitFor(() => expect(mocks.signOut).toHaveBeenCalled());
-      expect(await screen.findByRole('heading', { name: 'Crea tu cuenta de jardinero' })).toBeTruthy();
+      expect(await screen.findByRole('heading', { name: 'Crea tu cuenta de profesional' })).toBeTruthy();
     });
 
     it('si falló al declarar el tipo, ofrece Reintentar y, si sale bien, sigue al panel', async () => {
-      renderAuth('/auth?mode=signup&role=company');
-      mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'company', roleProblem: 'failed' });
-      expect(await screen.findByRole('heading', { name: 'No hemos podido crear tu cuenta de empresa' })).toBeTruthy();
+      renderAuth('/auth?mode=signup&role=gardener');
+      mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'failed' });
+      expect(await screen.findByRole('heading', { name: 'No hemos podido crear tu cuenta de profesional' })).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
-      expect(await screen.findByText('Panel de empresa')).toBeTruthy();
-      expect(mocks.declare).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'company', roleProblem: undefined }, 'company');
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+      expect(mocks.declare).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'gardener', roleProblem: undefined }, 'gardener');
     });
 
     it('si Reintentar vuelve a fallar, sigue en el aviso (no se escapa al panel)', async () => {
       mocks.declare.mockImplementation(async (result: GoogleResult) => ({ ...result, roleProblem: 'failed' }));
-      renderAuth('/auth?mode=signup&role=company');
-      mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'company', roleProblem: 'failed' });
+      renderAuth('/auth?mode=signup&role=gardener');
+      mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'failed' });
       fireEvent.click(await screen.findByRole('button', { name: 'Reintentar' }));
       await waitFor(() => expect(mocks.declare).toHaveBeenCalled());
-      expect(screen.getByRole('heading', { name: 'No hemos podido crear tu cuenta de empresa' })).toBeTruthy();
-      expect(screen.queryByText('Panel de empresa')).toBeNull();
+      expect(screen.getByRole('heading', { name: 'No hemos podido crear tu cuenta de profesional' })).toBeTruthy();
+      expect(screen.queryByText('Panel del cliente')).toBeNull();
     });
   });
 

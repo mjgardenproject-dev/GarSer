@@ -13,7 +13,7 @@ import EmailConfirmationModal from './EmailConfirmationModal';
 import GarserLogo from '../common/GarserLogo';
 import { supabase } from '../../lib/supabase';
 import GoogleSignInButton from './GoogleSignInButton';
-import AccountTypePicker, { ACCOUNT_TYPES, isAccountType, type AccountType } from './AccountTypePicker';
+import AccountTypePicker, { ACCOUNT_TYPES, parseAccountType, type AccountType } from './AccountTypePicker';
 import { NewAccountChooser, RoleProblemPanel } from './GoogleAccountPanels';
 import { LegalConsentNote, OrWithEmail } from './SocialAuthBits';
 import { welcomeMessage, type OAuthSignInResult } from '../../lib/oauthAccount';
@@ -94,7 +94,8 @@ const AuthForm = () => {
   const redirectTo: string | null = typeof state.redirectTo === 'string' ? state.redirectTo : null;
   const requestedInitialMode = state.initialMode ?? searchParams.get('mode') ?? undefined;
   const requestedRoleRaw = state.preselectedRole ?? searchParams.get('role');
-  const requestedRole: AccountType | undefined = isAccountType(requestedRoleRaw) ? requestedRoleRaw : undefined;
+  // Un enlace antiguo con ?role=company se registra como profesional (D31).
+  const requestedRole: AccountType | undefined = parseAccountType(requestedRoleRaw);
 
   const [view, setView] = useState<View>(() =>
     requestedInitialMode === 'signup' || (requestedRole && requestedRole !== 'client') ? 'signup' : 'login');
@@ -180,7 +181,7 @@ const AuthForm = () => {
       setGoogleOutcome({ kind: 'chooser', result });
       return;
     }
-    // Si la cuenta acaba de pasar de cliente a jardinero/empresa, la app todavía tiene leído el
+    // Si la cuenta acaba de pasar de cliente a profesional, la app todavía tiene leído el
     // tipo de ANTES (se lee una vez al iniciar sesión): sin releerlo se enseñaría el panel de
     // cliente hasta recargar la página. Era el fallo «elijo jardinero con Google y me sale cliente».
     if (result.requestedRole) await refreshAccount().catch(() => undefined);
@@ -228,7 +229,8 @@ const AuthForm = () => {
         }
         // El tipo viaja en los metadatos del alta y el servidor crea el perfil con él
         // (trg_provision_profile). El alta real de jardinero (servicios, herramientas, fotos) ocurre
-        // después de confirmar el correo, en /apply; la de empresa, en /empresa/solicitud.
+        // después de confirmar el correo, en /apply. El equipo no se declara aquí: llega al invitar al primer
+        // compañero desde el panel (D31).
         await signUp(data.email, data.password, role as AccountType);
         setRegisteredEmail(data.email);
         setShowEmailModal(true);
@@ -262,7 +264,7 @@ const AuthForm = () => {
 
   const isSignup = view === 'signup';
   const pickingType = isSignup && role === null;
-  const proRole: 'gardener' | 'company' | null = role === 'gardener' || role === 'company' ? role : null;
+  const proRole: 'gardener' | null = role === 'gardener' ? role : null;
   const isPro = proRole !== null;
 
   let title = '¡Hola de nuevo!';
@@ -375,9 +377,7 @@ const AuthForm = () => {
             )}
             {isSignup && isPro && (
               <p className="rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm leading-snug text-emerald-900">
-                {role === 'company'
-                  ? 'Primero creas la cuenta y después completas los datos de tu empresa. La revisamos antes de publicarla.'
-                  : 'Primero creas la cuenta y después completas tu solicitud. La revisamos antes de publicarte.'}
+                Primero creas la cuenta y después completas tu solicitud. La revisamos antes de publicarte.
               </p>
             )}
 
@@ -450,8 +450,8 @@ const AuthForm = () => {
                 className="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-left hover:border-emerald-300 hover:bg-emerald-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]"
               >
                 <span className="text-sm leading-snug text-gray-700">
-                  <span className="block font-semibold text-gray-900">¿Eres jardinero o empresa?</span>
-                  Crea tu cuenta profesional
+                  <span className="block font-semibold text-gray-900">¿Ofreces servicios de jardinería?</span>
+                  Crea tu cuenta de profesional
                 </span>
                 <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
               </button>

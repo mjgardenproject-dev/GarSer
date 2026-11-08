@@ -1504,6 +1504,7 @@ export type Database = {
           created_at: string
           id: string
           legal_name: string | null
+          liability_declared_at: string | null
           logo_url: string | null
           max_crew: number
           provider_user_id: string
@@ -1517,6 +1518,7 @@ export type Database = {
           created_at?: string
           id?: string
           legal_name?: string | null
+          liability_declared_at?: string | null
           logo_url?: string | null
           max_crew?: number
           provider_user_id: string
@@ -1530,6 +1532,7 @@ export type Database = {
           created_at?: string
           id?: string
           legal_name?: string | null
+          liability_declared_at?: string | null
           logo_url?: string | null
           max_crew?: number
           provider_user_id?: string
@@ -3102,7 +3105,7 @@ export type Database = {
         }
         Returns: Json
       }
-      create_company_invitation: { Args: { p_email: string }; Returns: Json }
+      create_company_invitation: { Args: { p_email: string; p_liability_declared?: boolean }; Returns: Json }
       create_maintenance_plan: {
         Args: { p_booking_id: string; p_frequency: string }
         Returns: Json
@@ -3233,6 +3236,7 @@ export type Database = {
       my_company_id: { Args: never; Returns: string }
       my_company_membership: { Args: never; Returns: Json }
       my_phyto_license: { Args: never; Returns: Json }
+      my_provider_mode: { Args: never; Returns: Json }
       my_jobs: {
         Args: { p_from: string; p_to: string }
         Returns: {

@@ -68,6 +68,10 @@ async function newUser(label, role = 'client') {
   const id = body?.user?.id ?? body?.id;
   if (!id) throw new Error(`No se pudo crear ${label}: ${JSON.stringify(body).slice(0, 160)}`);
   createdUsers.push(id);
+  // Cuenta de empresa del camino antiguo (alta con solicitud). Desde el 2026-11-08 el registro ya no la
+  // produce (D31: «company» se registra como profesional), pero el código de la solicitud sigue vivo
+  // (D38) y esta batería lo sigue cubriendo: se emula una cuenta creada antes del cambio.
+  if (role === 'company') sql(`update public.profiles set role = 'company' where user_id = '${id}'`);
   return { id, email, token: body.access_token };
 }
 

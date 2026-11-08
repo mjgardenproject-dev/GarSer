@@ -1,6 +1,8 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAccount } from '../../contexts/AccountContext';
+import { useProviderMode } from '../../hooks/useProviderMode';
+import { isNavItemActive } from '../../utils/navActive';
 import { Home, Calendar, MessageCircle, User as UserIcon, Briefcase, CalendarClock } from 'lucide-react';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
 
@@ -9,6 +11,7 @@ const BottomNav: React.FC = () => {
   const location = useLocation();
   // Antes leía `useAuth().profile`, que no existe: el jardinero nunca veía «Panel».
   const { role } = useAccount();
+  const { isTeam } = useProviderMode();
   const unreadChats = useUnreadChats();
 
   const isGardener = role === 'gardener';
@@ -32,7 +35,8 @@ const BottomNav: React.FC = () => {
         <div className="grid grid-cols-3 gap-1 h-16">
           {items.map((item) => {
             const Icon = item.icon as any;
-            const isActive = location.pathname === item.path;
+            // El panel de un equipo vive en /empresa: «Panel» sigue marcado allí (D31).
+            const isActive = isNavItemActive(item.path, location.pathname, isTeam);
             return (
               <button
                 key={item.path}

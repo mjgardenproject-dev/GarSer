@@ -4,10 +4,11 @@ import { safeRedirectPath } from './postLoginPath';
 // `role` (2026-10-28): la intención elegida en el selector del alta, cuando Google usó la
 // redirección en vez del popup — ver GoogleSignInButton.redirectToGoogle.
 
+// «company» (un enlace de vuelta antiguo) se lee como profesional: ya no existe ese tipo de cuenta (D31).
 const SIGNUP_ROLES = new Set(['gardener', 'company']);
 
 /** Lo que dice la dirección de vuelta: adónde ir, qué rol declarar y, si lo hay, el error. */
-export function readCallbackParams(url: string): { next: string | null; role: 'gardener' | 'company' | null; error: string | null; errorDescription: string | null } {
+export function readCallbackParams(url: string): { next: string | null; role: 'gardener' | null; error: string | null; errorDescription: string | null } {
   const parsed = new URL(url);
   const hash = new URLSearchParams(parsed.hash.replace(/^#/, ''));
   const query = parsed.searchParams;
@@ -15,7 +16,7 @@ export function readCallbackParams(url: string): { next: string | null; role: 'g
   const roleParam = query.get('role');
   return {
     next: next && !next.startsWith('/auth/callback') ? next : null,
-    role: roleParam && SIGNUP_ROLES.has(roleParam) ? (roleParam as 'gardener' | 'company') : null,
+    role: roleParam && SIGNUP_ROLES.has(roleParam) ? 'gardener' : null,
     error: query.get('error') || hash.get('error'),
     errorDescription: query.get('error_description') || hash.get('error_description'),
   };

@@ -303,6 +303,18 @@ BEGIN
     RAISE EXCEPTION 'FALLO 5k: sin Ana no queda nadie con horas: %', s;
   END IF;
 
+  -- Cambio de 2026-11-08 (cuenta de profesional dinámica, D32): con el último empleado fuera, la cuenta
+  -- vuelve a modo individual (provider_kind = 'solo'): el tipo es el reflejo de los empleados. Para probar
+  -- lo que sigue (quién puede pedir el estado de un EQUIPO) se vuelve a incorporar a Ana, que lo devuelve
+  -- a modo equipo.
+  IF (SELECT provider_kind FROM public.gardener_profiles WHERE user_id = v_empresa) <> 'solo' THEN
+    RAISE EXCEPTION 'FALLO 5l: al irse el último empleado, la cuenta no vuelve a modo individual';
+  END IF;
+  UPDATE public.company_members SET status = 'active', left_at = NULL WHERE id = v_ana_member;
+  IF (SELECT provider_kind FROM public.gardener_profiles WHERE user_id = v_empresa) <> 'company' THEN
+    RAISE EXCEPTION 'FALLO 5m: al volver un empleado, la cuenta no vuelve a modo equipo';
+  END IF;
+
   -- ---------------------------------------------------------------------------
   -- 6. Quién puede pedir qué
   -- ---------------------------------------------------------------------------

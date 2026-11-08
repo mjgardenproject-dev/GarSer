@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useAccount } from '../../contexts/AccountContext';
+import { useProviderMode } from '../../hooks/useProviderMode';
 import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import { formatDateRange } from '../../utils/jobShape';
@@ -107,9 +107,9 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
   const [correctionLoading, setCorrectionLoading] = useState(false);
   const [correctionVars, setCorrectionVars] = useState<Record<string, Record<string, unknown>>>({});
   // GarSer Empresas (F4): una cuenta de empresa ve también quién de su equipo va a cada trabajo.
-  const { role } = useAccount();
+  const { isTeam } = useProviderMode();
   const [workersVersion, setWorkersVersion] = useState(0);
-  const workers = useBookingWorkers(requests, { enabled: role === 'company', myId: user?.id, version: workersVersion });
+  const workers = useBookingWorkers(requests, { enabled: isTeam, myId: user?.id, version: workersVersion });
 
   const handleCorrectionSubmit = async (request: BookingRequestWithDetails, payload: ManualWizardSubmitPayload) => {
     const serviceKey = resolveManualServiceKey(request.services?.name);

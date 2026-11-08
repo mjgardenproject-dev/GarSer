@@ -64,7 +64,7 @@ async function signIn(email) {
   return (await res.json()).access_token;
 }
 
-async function newUser(label, role = 'client') {
+async function newUser(label, role = 'client', { emulateLegacy = true } = {}) {
   const email = `${label}-${RUN}@f3-verify.local`;
   const res = await fetch(`${API}/auth/v1/signup`, {
     method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
@@ -74,6 +74,10 @@ async function newUser(label, role = 'client') {
   const id = body?.user?.id ?? body?.id;
   if (!id) throw new Error(`No se pudo crear ${label}: ${JSON.stringify(body).slice(0, 160)}`);
   createdUsers.push(id);
+  // Cuenta de empresa del camino antiguo (alta con solicitud). Desde el 2026-11-08 el registro ya no la
+  // produce (D31: «company» se registra como profesional), pero el código de la solicitud sigue vivo
+  // (D38) y esta batería lo sigue cubriendo: se emula una cuenta creada antes del cambio.
+  if (role === 'company' && emulateLegacy) sql(`update public.profiles set role = 'company' where user_id = '${id}'`);
   return { id, email, token: body.access_token };
 }
 
@@ -103,9 +107,13 @@ async function main() {
     record('F3-20', 'Un cliente NO puede abrir una solicitud de empresa', !r.ok, `HTTP ${r.status}`);
   }
 
+  // Cambió el 2026-11-08 (D31 sustituye a A-20): pedir «empresa» al registrarse (enlaces antiguos, un
+  // valor viejo en el navegador) deja una cuenta de PROFESIONAL (gardener); ya no existe un tipo empresa.
+  const registered = await newUser('dueno-registro', 'company', { emulateLegacy: false });
+  record('F3-21', 'Registrarse como empresa (alta antigua) deja la cuenta como profesional (gardener): D31 sustituye a A-20',
+    sql(`select role from public.profiles where user_id='${registered.id}'`) === 'gardener');
+
   const owner = await newUser('dueno', 'company');
-  record('F3-21', 'Registrarse como empresa deja la cuenta con rol company (A-20)',
-    sql(`select role from public.profiles where user_id='${owner.id}'`) === 'company');
 
   let appId;
   {
@@ -249,10 +257,12 @@ async function main() {
   }
 
   {
-    const upload = await call('POST', '/rest/v1/gardener_licenses', emp.token, {
-      gardener_id: emp.id, license_number: `F3-${RUN}`, document_url: `${emp.id}/carnet.pdf`, status: 'pending', terms_accepted: true,
-    });
-    const licenseId = upload.rows[0]?.id;
+    // Desde 20261020140000 la tabla no se escribe desde la web (REVOKE INSERT): el carnet se envía con
+    // submit_phyto_license, que exige un fichero ya subido a Storage. Aquí se inserta la fila pendiente
+    // por SQL y se prueba lo que de verdad decide: la revisión del admin y la asignación de servicios.
+    const licenseId = sql(`insert into public.gardener_licenses (gardener_id, license_number, document_url, status, terms_accepted, submitted_by)
+      values ('${emp.id}', 'F3-${RUN}', '${emp.id}/carnet.pdf', 'pending', true, '${emp.id}') returning id`);
+    const upload = { ok: Boolean(licenseId), status: licenseId ? 'fila insertada' : 'sin fila', data: {} };
     const review = await rpc('review_gardener_license', adminToken, { p_license_id: licenseId, p_status: 'approved', p_expires_at: '2030-01-01T00:00:00Z' });
     const phyto = await rpc('set_company_member_services', ownerToken, { p_member_id: empMember, p_service_ids: [LAWN, PHYTO] });
     record('F3-31', 'El empleado sube su carnet, el admin lo aprueba y ya se le puede activar fitosanitarios',

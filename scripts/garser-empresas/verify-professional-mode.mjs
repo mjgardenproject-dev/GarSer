@@ -17,6 +17,7 @@
 // Requisito: el contenedor de funciones sirve el código actual de booking-authority.
 // Salida: una línea por prueba; código 1 si alguna falla. Lo borra todo al terminar.
 
+import { execFileSync } from 'node:child_process';
 import {
   accounts, makeRecorder, runVerification, rpc, rest, why, signIn, sql, authority, apiUrl, anonKey,
   LAWN, PHYTO, HEDGE, LAWN_INPUT, PROVIDER_ID, setAvailability, pay, workerOf,
@@ -108,7 +109,7 @@ async function scenario() {
     JSON.stringify(modeStart));
 
   // Historia previa: una reserva completada con su reseña, y una futura ya pagada.
-  const doneId = sql('select gen_random_uuid()').trim();
+  const doneId = sql('select gen_random_uuid()').split('\n')[0].trim();
   sql(`insert into public.bookings (id, client_id, gardener_id, service_id, date, start_time, duration_hours, status, total_price, client_address, management_fee, management_fee_source)
        values ('${doneId}', '${client1.id}', '${pro.id}', '${LAWN}', current_date - 10, '09:00', 2, 'completed', 100, 'Calle Prueba 1', 12.50, 'payment_attempt')`);
   sql(`insert into public.reviews (booking_id, client_id, gardener_id, rating, comment) values ('${doneId}', '${client1.id}', '${pro.id}', 5, 'Muy bien')`);
@@ -278,6 +279,30 @@ async function scenario() {
          or (c.id is not null and gp.provider_kind <> 'company' and exists (
               select 1 from public.company_members m where m.company_id = c.id and m.status = 'active' and m.role <> 'owner')))`);
     record('PM-21', 'El tipo de la ficha casa con sus empleados (la regla de F2-01)', incoherent === '0', `incoherentes ${incoherent}`);
+  }
+
+  // ── PM-22 · el correo del carnet distingue el modo por provider_kind, no por la fila de la empresa ──
+  // «Titular de empresa» (enlace al panel de equipo) solo en modo equipo: una empresa LATENTE no cuenta.
+  {
+    const edgeLog = () => execFileSync('sh', ['-c', 'docker logs supabase_edge_runtime_GarSer-main_4 2>&1'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    const licenseMails = () => edgeLog().split('MOCK EMAIL SEND').filter((c) => c.includes(pro.email) && c.includes('phyto_license_update'));
+    const approveNewLicense = async (tag) => {
+      const before = licenseMails().length;
+      const id = sql(`insert into public.gardener_licenses (gardener_id, license_number, document_url, status, terms_accepted, submitted_by)
+        values ('${pro.id}', 'PM-${tag}-${acc.run}', '${pro.id}/carnet-${tag}-${acc.run}.pdf', 'pending', true, '${pro.id}') returning id`).split('\n')[0].trim();
+      const review = await rpc('review_gardener_license', { p_license_id: id, p_status: 'approved', p_expires_at: '2031-01-01T00:00:00Z' }, adminToken);
+      for (let i = 0; i < 40 && licenseMails().length === before; i++) await new Promise((r) => setTimeout(r, 700));
+      return { review, mail: licenseMails().pop() || '', sent: licenseMails().length > before };
+    };
+
+    const inTeam = kindOf(pro.id) === 'company';
+    const teamMail = await approveNewLicense('equipo');
+    const leave = await rpc('deactivate_company_member', { p_member_id: memberOf(ana.id) }, pro.token);
+    const individualMail = await approveNewLicense('individual');
+    record('PM-22', 'El correo del carnet lleva al panel de equipo en modo equipo y NO en individual (aunque quede una empresa latente)',
+      inTeam && teamMail.review.ok && teamMail.sent && teamMail.mail.includes('/empresa?tab=company')
+        && leave.ok && kindOf(pro.id) === 'solo' && individualMail.review.ok && individualMail.sent && !individualMail.mail.includes('/empresa'),
+      `equipo ${teamMail.sent ? (teamMail.mail.includes('/empresa?tab=company') ? '/empresa' : 'otro enlace') : 'sin correo'} · individual ${individualMail.sent ? (individualMail.mail.includes('/empresa') ? '/empresa (mal)' : 'sin /empresa') : 'sin correo'}${why(leave)}`);
   }
 
 }

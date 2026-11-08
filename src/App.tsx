@@ -20,6 +20,7 @@ import PublicHomePage from './pages/public/PublicHomePage';
 import { supabase } from './lib/supabase';
 import { useAccount } from './contexts/AccountContext';
 import { useProviderMode } from './hooks/useProviderMode';
+import ProviderModeNotice from './components/provider/ProviderModeNotice';
 import { professionalHome } from './utils/professionalHome';
 import { hasWizardResume } from './utils/bookingResumeStorage';
 import { applicantRedirect } from './utils/applicantRedirect';
@@ -65,6 +66,7 @@ const CompanyStatusPage = lazy(() => import('./pages/empresa/CompanyStatusPage')
 const CompanyHomePage = lazy(() => import('./pages/empresa/CompanyHomePage'));
 // GarSer Empresas (F3.3): configuración de la empresa, invitación y panel del empleado.
 const CompanyConfigPage = lazy(() => import('./pages/empresa/CompanyConfigPage'));
+const CompanyReviewsPage = lazy(() => import('./pages/empresa/CompanyReviewsPage'));
 const CompanyRequestsPage = lazy(() => import('./pages/empresa/CompanyRequestsPage'));
 // GarSer Empresas (F5.1): horarios del equipo.
 const CompanySchedulePage = lazy(() => import('./pages/empresa/CompanySchedulePage'));
@@ -257,6 +259,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   return (
     <div className="min-h-screen bg-gray-50">
       <ScrollToTop />
+      {/* Aviso de «tu cuenta ha cambiado de modo» (D39): individual ⇄ equipo, una vez por cambio. */}
+      {user && <ProviderModeNotice />}
       {/* En el funnel de reserva la navbar de marketing sobra: duplica cabecera (el funnel
           ya tiene Volver/Salir) y roba ~130px de la primera pantalla en móvil */}
       {!isAuthPage && !isAdminPage && !isMarketingPage && !isBookingPage && <Navbar applicationStatus={applicationStatus} />}
@@ -542,6 +546,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/empresa/solicitud" element={<ProtectedRoute><CompanyApplicationPage /></ProtectedRoute>} />
         <Route path="/empresa/estado" element={<ProtectedRoute><CompanyStatusPage /></ProtectedRoute>} />
         <Route path="/empresa/configuracion" element={<ProtectedRoute><CompanyConfigPage /></ProtectedRoute>} />
+        <Route path="/empresa/resenas" element={<ProtectedRoute><CompanyReviewsPage /></ProtectedRoute>} />
         <Route path="/empresa/solicitudes" element={<ProtectedRoute><CompanyRequestsPage /></ProtectedRoute>} />
         <Route path="/empresa/horario" element={<ProtectedRoute><CompanySchedulePage /></ProtectedRoute>} />
         <Route path="/empresa/equipo/:memberId/horario" element={<ProtectedRoute><CompanyMemberSchedulePage /></ProtectedRoute>} />

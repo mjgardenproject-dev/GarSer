@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, Star, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import { useConfirmDialog } from '../../components/common/ConfirmDialog';
@@ -270,6 +270,16 @@ const CompanyPanel: React.FC = () => {
               <span className="flex-1">
                 <span className="block font-semibold text-gray-900">Servicios, precios y zona</span>
                 <span className="block text-sm text-gray-600">Lo que ofreces a los clientes y hasta dónde vas.</span>
+              </span>
+              <ChevronRight className="h-5 w-5 text-gray-400" />
+            </Link>
+
+            {/* Las reseñas son las mismas de siempre (misma cuenta antes y después de tener equipo). */}
+            <Link to="/empresa/resenas" className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+              <Star className="h-6 w-6 shrink-0 text-emerald-700" />
+              <span className="flex-1">
+                <span className="block font-semibold text-gray-900">Reseñas</span>
+                <span className="block text-sm text-gray-600">Lo que dicen tus clientes. Puedes responderles.</span>
               </span>
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </Link>

@@ -6,7 +6,7 @@
 > Regla de la casa: un hallazgo sin `fichero:línea` no es un hallazgo, es una sospecha.
 > Las sospechas van a §3.
 
-**Última actualización:** 2026-09-23 (decisiones D1–D6)
+**Última actualización:** 2026-11-08 (H-45 a H-50, cuenta de profesional dinámica)
 
 ---
 
@@ -831,6 +831,46 @@ esta es la respuesta.
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 
 ---
+
+### H-45 · El tipo de cuenta vive en tres sitios y no hay ninguna RPC para cambiarlo — 🟠 Se resuelve con D31–D33 (`08`)
+
+`profiles.role` (rutas y menús), `gardener_profiles.provider_kind` (motor SQL, Edge Functions, distintivo) y la fila
+`companies` + dueño nacen juntos solo al aprobar una empresa (`20260924130000_empresas_f3_onboarding_server.sql:247-262`).
+`self_declare_signup_role` solo convierte desde `client` sin actividad (`20261104160000_account_type_declaration_status.sql:39-59`).
+Un autónomo no puede llegar a empresa ni volver. La prueba F2-01 mide la coherencia (`verify-f2-db.mjs:105-117`) y deberá cambiar a
+la regla nueva (empresa latente válida): `kind='company'` ⟹ hay empresa, y empresa con ≥1 empleado ⟹ `kind='company'`.
+
+### H-46 · Una empresa latente con ajustes de equipo divergiría del autónomo — 🟠 Resuelto en el diseño (D34), sin implementar
+
+Hay dos discriminadores a la vez: `provider_kind` (`provider_workers_all` `F8:112-131`, `provider_max_crew` `F7:79-91`) y la **fila
+`companies`** (`provider_allows_split_jobs` `F6:42-50`; `own_clients_fee_waiver` `:739-742`; `sync_booking_span` `M28:65-68`;
+`booking-authority/index.ts:381-395` y `booking-payment/index.ts:654-659`, estos dos sin releer). Si una empresa vuelve a
+individual conservando `assignment_mode='manual'`, el pago deja las reservas `assignment_pending` y la pantalla individual no ofrece
+«Confirmar». Por eso al volver se restauran `max_crew=1`, `allow_split_jobs=false`, `assignment_mode='auto'` y se limpian las propuestas.
+
+### H-47 · `ProfileSettings` escribe el mismo nombre en la ficha y en el perfil personal — 🟠 Fuera de alcance (R3)
+
+(Explorador, sin releer) `ProfileSettings.tsx:700-707` guarda `full_name` en `gardener_profiles` y en `profiles`. En modo equipo el
+nombre comercial pisa el personal del titular (saludo de correos, «Va: …»). No hay `companies.trade_name`: el nombre comercial es
+`gardener_profiles.full_name`. Se anota; no se arregla aquí.
+
+### H-48 · Las reseñas no distinguen «lo del equipo» de «lo personal» — 🟢 Informativo
+
+Van por `reviews.gardener_id` = el titular (aud.). Ida y vuelta no pierde ninguna, pero al volver a individual lo ganado por el equipo
+queda como reputación personal. No hay `provider_kind` ni historial de tipo en reservas ni reseñas para separarlo.
+
+### H-49 · Mala calidad heredada que la cuenta única deja visible — 🟠 Fuera de alcance salvo lo que arregla D31
+
+(Explorador, sin releer.) Una empresa no tiene «Reseñas» propias y la barra le enseña `/valoraciones` de cliente (`Navbar.tsx:90`): **se
+corrige en F-D** porque el modo equipo debe conservar las reseñas. El resto se anota sin tocar: `ChatList.tsx:66,195,262` trata a una
+empresa como cliente (se resuelve solo al ser `gardener`); `DashboardApplyCTA.tsx` huérfano; `gardenerApplicationJustSubmitted` solo se lee
+(`App.tsx:180`); `src/types/index.ts:4,15` con una unión de rol sin `company`/`employee`; `RoleMonitor.tsx:70-83` subiría a `gardener` un
+`client` con ficha; cualquier cuenta con sesión puede abrir `/apply`; la barra inferior sale en `/status`.
+
+### H-50 · Los documentos de `01` estaban desfasados — 🟢 Informativo
+
+Línea base real el 2026-11-08: **2824 tests / 185 ficheros** (`01` decía 953 / 118) y **28** baterías de Empresas (`01` decía 27 / 300;
+la nueva es `verify-application-ads-consent`, 11 comprobaciones). Ver `08` §1. `01` ya está corregido.
 
 ## 3. Sospechas sin verificar
 

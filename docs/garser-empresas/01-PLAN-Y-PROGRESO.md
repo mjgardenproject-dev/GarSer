@@ -7,7 +7,7 @@
 
 **Estado global:** ✅ F0–F9 en producción desde la fusión (#35, 2026-09-25) · ✅ prueba real F1–F8 en producción (#41, 2026-09-29) · ✅ pendientes A–G (`07-PROCEDIMIENTO-CORRECCION.md`) hechos en local el 2026-10-09, rama `fix/pendientes-ph` · **en curso: fase H (despliegue y pruebas en garser.es)** · después: guía de pruebas de `06` §3, limpieza y Stripe en real
 **Última actualización:** 2026-11-08 (cuenta de profesional dinámica: D35 resuelta, fases F-A (BD) y F-B/F-E (hook, rutas y registro) hechas; sigue `08-CUENTA-PROFESIONAL-DINAMICA.md` §6)
-**Línea base de tests:** 2918 en verde / 197 ficheros (tras la cuenta dinámica, 2026-11-08; antes 2824 / 185 y, antes de corregirla, 953 / 118) · `tsc` 126 (el repo parte de 126, no 128) · 29 baterías de Empresas (332+ comprobaciones) · 7 de servicios (269 por HTTP)
+**Línea base de tests:** 2918 en verde / 197 ficheros (tras la cuenta dinámica, 2026-11-08; antes 2824 / 185 y, antes de corregirla, 953 / 118) · `tsc` 126 (el repo parte de 126, no 128) · 29 baterías de Empresas (333 comprobaciones) · 7 de servicios (269 por HTTP)
 ---
 
 ## 0. Cómo se entrega este proyecto

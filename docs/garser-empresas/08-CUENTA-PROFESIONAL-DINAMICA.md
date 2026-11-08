@@ -377,7 +377,7 @@ fila `companies` (una empresa latente no cuenta). **Obliga a redesplegar la func
 **Verificado (2026-11-08, local):**
 
 - `npm test`: **2918 en verde / 197 ficheros** (línea base 2824 / 185). `npm run build` ✅. `tsc` igual que la línea base (126; el repo parte de 126, no 128).
-- `supabase db reset` desde cero ✅ + 8 ficheros SQL de `supabase/tests/` ✅ (A6 de `admin_review_notifications` exige la tabla de avisos vacía: H-54).
+- `supabase db reset` desde cero ✅ (repetido al final con la semilla corregida) + los 8 ficheros SQL de `supabase/tests/` ✅ (A6 de `admin_review_notifications` exige la tabla de avisos vacía: H-54; con la base recién creada pasa).
 - **29 baterías de Empresas ✅ (incluida la nueva, 22/22)** y las **7 de servicios por HTTP: 269/269, 0 fallos** (cesped 33, setos 35, arbustos 18, árboles 15, palmeras 71,
   desbroce 19, fitosanitarios 78). Al medirlas tras el `db reset` aparecieron 2 fallos de fitosanitarios que eran de la semilla, no de este cambio (H-58, corregida).
 - Navegador 375×812 con `scripts/garser-empresas/demo-professional-mode.mjs`: registro con dos tipos; individual → invitación (con seguro) → pendiente →

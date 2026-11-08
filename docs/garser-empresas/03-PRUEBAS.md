@@ -588,7 +588,7 @@ Diseño en `08-CUENTA-PROFESIONAL-DINAMICA.md` (D31–D40). Pruebas, por capas:
   (ajustes de fábrica, sin reservas colgando, horas, nada se pierde, venta normal con la empresa latente); PM-20/21 reentrada y carnet del titular, F2-01;
   **PM-22** correo del carnet por modo (**falla con el código anterior**).
 - **Baterías antiguas:** F2-01 con la regla nueva; F3-21 (registrarse «company» → `gardener`); F3-31 (el carnet se inserta por SQL, ya no por la web); las
-  cuentas «company» de las baterías que prueban la solicitud se emulan por SQL (H-55). **29 de 29 en verde (332+ comprobaciones) tras `supabase db reset`.**
+  cuentas «company» de las baterías que prueban la solicitud se emulan por SQL (H-55). **29 de 29 en verde (333 comprobaciones) tras `supabase db reset`.**
 - **Vitest** (+94, 2918 / 197 ficheros): `providerMode`, `useProviderMode`, `AccountContext` (modo: carga, error, relectura, tardía, al volver a la app), `BottomNav`, `Navbar`, `professionalHome`, `navActive`, `providerModeNotice`,
   `ProviderModeNotice`, `TeamEntryCard`, `InviteMemberCard`, `BottomSheet`, `useCompanyOnboarding`, páginas de `/empresa` por modo, cierre de cuenta, y
   `noCompanyRole.test.ts` (recorre `src/` y prohíbe `role === 'company'`). `AuthForm`, `oauthAccount`, `authCallback`, `postLoginPath`,

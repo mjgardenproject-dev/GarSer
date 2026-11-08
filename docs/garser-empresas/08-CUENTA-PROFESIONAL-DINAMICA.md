@@ -339,7 +339,7 @@ order by u.email;
 ```
 
 **Paso 3 · Empujar la rama y abrir la PR (no fusionar todavía).** `git push -u origin feat/cuenta-profesional-dinamica` y
-`gh pr create --base main --head feat/cuenta-profesional-dinamica --title "Cuenta de profesional única y dinámica (de autónomo a equipo)" --body-file docs/garser-empresas/08-CUENTA-PROFESIONAL-DINAMICA.md`.
+`gh pr create --base main --head feat/cuenta-profesional-dinamica --title "Cuenta de profesional única y dinámica (de autónomo a equipo)" --body "Un solo tipo de cuenta Profesional que pasa de individual a equipo y vuelve, sin perder nada. Diseño y pruebas: docs/garser-empresas/08-CUENTA-PROFESIONAL-DINAMICA.md. Antes de fusionar: migración 20261108120000 y función send-email-notification (paso 4 y 6)."`.
 
 **Paso 4 · Migración.** `supabase db push --linked --dry-run` (debe listar SOLO `20261108120000_cuenta_profesional_dinamica.sql`; si lista otras, para)
 y después `supabase db push --linked`.

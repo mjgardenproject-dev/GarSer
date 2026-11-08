@@ -310,20 +310,85 @@ F2-01, `AccountContext`, `postLoginPath`, `useCompanyOnboarding`, rutas de `App.
 **No verificado:** nada se ha ejecutado salvo `npm test` y las consultas de estado; el comportamiento de las 28 baterías ante el disparador es
 una hipótesis que F-A debe demostrar; las líneas marcadas «(aud.)» vienen de los exploradores.
 
-## 9. Acciones manuales del usuario
+## 9. Acciones manuales del usuario (paso a paso)
 
-**Nada se ha empujado ni desplegado** (sin `git push`, sin migración ni función en producción). Para llevarlo a producción, **en este orden** y juntos (el
-front antiguo con la migración nueva sigue funcionando, pero sin el modo equipo hasta que se publique el nuevo):
+**Nada se ha empujado ni desplegado.** Orden obligatorio: copia de seguridad → mirar datos → PR → migración → función → fusionar → probar. Todo con el
+proyecto de producción `hleqspdnjfswrmozjkai` (ya enlazado en la CLI). Los comandos van desde `"/Users/javier/Downloads/GarSer-main 4"`.
 
-1. **Antes de migrar**, en producción: `select status, count(*) from company_applications group by 1;`. Si hay alguna `submitted`, recházala desde el admin
-   (con la migración ya no se podrá aprobar: la cuenta deja de tener rol `company`).
-2. `supabase db push --linked` → aplica `20261108120000_cuenta_profesional_dinamica.sql`. Comprobar: ninguna cuenta con `profiles.role = 'company'` y
-   `select count(*) from gardener_profiles gp left join companies c on c.provider_user_id = gp.user_id where (c.id is null and gp.provider_kind <> 'solo') or (c.id is not null and gp.provider_kind <> 'company' and exists (select 1 from company_members m where m.company_id = c.id and m.status='active' and m.role <> 'owner'))` = 0.
-3. `supabase functions deploy send-email-notification --use-api` (los correos de carnet/suspensión distinguen el modo).
-4. Abrir la PR y fusionarla (Vercel publica el front). **Aún no hay PR abierta.**
-5. Pasar la **sección 34** de `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md` (34.4 y 34.6 son bloqueantes).
-6. Las cuentas de prueba que eran «Empresa» con un alta a medias (borrador o enviada) se recrean a mano como profesional.
-7. **Solo en local:** tras un `supabase db reset` hay que volver a crear los secretos del Vault (`lifecycle_tick_url` y `lifecycle_tick_secret`), si no los avisos no salen (H-53).
+**Paso 0 · Preparar.** `git checkout feat/cuenta-profesional-dinamica && git status --short` (solo debe salir `?? campaign/`) y `supabase projects list`
+(debe salir GarSer enlazado; si pide sesión, `supabase login`).
+
+**Paso 1 · Copia de seguridad.** Supabase → proyecto GarSer → Database → Backups: comprueba que hay una de hoy (o créala). Las migraciones no se revierten solas.
+
+**Paso 2 · Mirar los datos (SQL Editor de Supabase).** Antes de migrar:
+
+```sql
+-- A) Solicitudes de empresa por estado. Las 'submitted' hay que rechazarlas desde el admin antes de migrar.
+select status, count(*) from public.company_applications group by status order by status;
+
+-- B) Cuentas que hoy son «empresa» (todas pasarán a profesional). Guarda el resultado.
+select u.email, p.role, gp.provider_kind,
+       (select a.status from public.company_applications a where a.user_id = p.user_id order by a.created_at desc limit 1) as ultima_solicitud,
+       (select count(*) from public.company_members m join public.companies c on c.id = m.company_id
+         where c.provider_user_id = p.user_id and m.role <> 'owner' and m.status = 'active') as empleados_activos
+from public.profiles p
+join auth.users u on u.id = p.user_id
+left join public.gardener_profiles gp on gp.user_id = p.user_id
+where p.role = 'company'
+order by u.email;
+```
+
+**Paso 3 · Empujar la rama y abrir la PR (no fusionar todavía).** `git push -u origin feat/cuenta-profesional-dinamica` y
+`gh pr create --base main --head feat/cuenta-profesional-dinamica --title "Cuenta de profesional única y dinámica (de autónomo a equipo)" --body-file docs/garser-empresas/08-CUENTA-PROFESIONAL-DINAMICA.md`.
+
+**Paso 4 · Migración.** `supabase db push --linked --dry-run` (debe listar SOLO `20261108120000_cuenta_profesional_dinamica.sql`; si lista otras, para)
+y después `supabase db push --linked`.
+
+**Paso 5 · Comprobar la migración (SQL Editor).** Resultado esperado en comentarios:
+
+```sql
+select count(*) as cuentas_company_restantes from public.profiles where role = 'company';   -- 0
+
+select count(*) as fichas_incoherentes
+from public.gardener_profiles gp
+left join public.companies c on c.provider_user_id = gp.user_id
+where (c.id is null and gp.provider_kind <> 'solo')
+   or (c.id is not null and gp.provider_kind <> 'company' and exists (
+         select 1 from public.company_members m
+         where m.company_id = c.id and m.status = 'active' and m.role <> 'owner'));          -- 0
+
+select proname, pg_get_function_identity_arguments(oid) as argumentos
+from pg_proc
+where pronamespace = 'public'::regnamespace and proname in ('my_provider_mode', 'create_company_invitation')
+order by proname;   -- 2 filas: create_company_invitation(p_email text, p_liability_declared boolean) y my_provider_mode()
+
+select has_function_privilege('anon', 'public.my_provider_mode()', 'EXECUTE') as anon_puede,
+       has_function_privilege('authenticated', 'public.my_provider_mode()', 'EXECUTE') as autenticado_puede;   -- false / true
+
+select count(*) as disparador_modo from pg_trigger where tgname = 'trg_company_members_sync_mode';   -- 1
+```
+
+**Paso 6 · Función de correos.** `supabase functions deploy send-email-notification --use-api --project-ref hleqspdnjfswrmozjkai`.
+
+**Paso 7 · Fusionar la PR** (botón «Squash and merge» en GitHub, o `gh pr merge --squash`) y esperar a que Vercel marque «Ready». Recarga a fondo la web
+(Cmd+Shift+R) y cierra y abre la app instalada en el móvil.
+
+**Paso 8 · Probar en garser.es** (sección 34 de `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md`; 34.4 y 34.6 son bloqueantes). Para ver el estado de un profesional:
+
+```sql
+select u.email, gp.provider_kind,
+  (select count(*) from public.company_members m join public.companies c on c.id = m.company_id
+    where c.provider_user_id = gp.user_id and m.role <> 'owner' and m.status = 'active') as empleados_activos,
+  (select count(*) from public.bookings b where b.gardener_id = gp.user_id and b.assignment_pending) as reservas_por_asignar
+from public.gardener_profiles gp
+join auth.users u on u.id = gp.user_id
+where u.email = 'TU_CORREO_AQUI';
+```
+
+**Paso 9 · Cuentas de prueba antiguas.** Las que tenían un alta de empresa a medias (resultado B del paso 2, sin ficha) se recrean a mano como profesional.
+
+**Si algo falla.** Front: Vercel → Deployments → el anterior → Rollback. Función: `git checkout main -- supabase/functions/send-email-notification` y repetir el paso 6.
+Migración: no se revierte sola; restaurar el backup o pedir una migración correctora.
 
 ## 10. Lo que cambió al ejecutar (se va completando)
 

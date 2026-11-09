@@ -7,10 +7,15 @@ import { CookieConsentProvider } from './contexts/CookieConsentContext';
 import App from './App.tsx';
 import './index.css';
 import { captureProviderLinkCodeFromUrl } from './utils/providerLinkCode';
+import { disableBrowserScrollRestoration } from './utils/scrollRestoration';
 
 // La clave del enlace de un profesional (garser.es/reservar/<id>?c=<clave>) se guarda y se quita de
 // la dirección antes de que arranque nada que pueda mandar esa dirección a terceros (el Pixel de Meta).
 captureProviderLinkCodeFromUrl();
+
+// Al recargar, el navegador del móvil devolvía la pantalla a medias, con su primera sección tapada por las barras
+// fijas. ScrollToTop decide dónde empieza cada pantalla (src/utils/scrollRestoration.ts).
+disableBrowserScrollRestoration();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

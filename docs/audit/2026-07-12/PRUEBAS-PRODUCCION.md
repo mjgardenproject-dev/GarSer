@@ -1815,6 +1815,30 @@ Requisitos previos: **migración `20261108120000_cuenta_profesional_dinamica.sql
 
 ---
 
+## Sección 35 — Alta de jardinero: actividad, nº de personas y recargar (2026-11-09)
+
+El alta de jardinero (`garser.es/apply`, 5 pasos) pensaba en empleados: el paso 3 pedía el currículum y si «has trabajado para empresas de jardinería». GarSer es para profesionales **por cuenta propia y empresas**. Ahora el paso 3 es **«Tu actividad»** y pregunta **cuántas personas trabajarán desde el perfil** (dato para aceptar o rechazar). Además, al **recargar** el móvil dejaba la pantalla a medias, con su primera sección tapada por las barras fijas.
+
+Requisitos previos: **migración `20261109120000_alta_jardinero_equipo_estimado.sql`** aplicada ANTES de fusionar el front (sin la columna nueva el formulario no puede guardar) y el front en Vercel. Necesitas una **cuenta nueva de profesional** (alias de Gmail, p. ej. `tucorreo+alta@gmail.com`) y el **admin**.
+
+**A. Paso 3 «Tu actividad»**
+
+- [ ] **35.1 — Sin preguntas de empleado.** Crea la cuenta como Profesional y llega al paso 3 (el título dice «Tu actividad»). ✅ **No** hay «He trabajado para empresas de jardinería», ni «Puedo acreditarlo», ni se nombra el **CV**. ✅ Sí: años de experiencia, «Describe tu experiencia» (con ejemplo de qué contar), la pregunta del equipo y «Fotos de trabajos que hayas hecho (opcional)».
+- [ ] **35.2 — ¿Cuántas personas? (bloqueante).** ✅ Con «Describe tu experiencia» escrita y **sin elegir** «Solo yo» / «Con equipo», «Siguiente» está desactivado y dice «Indica si trabajas solo o con equipo». ✅ «Solo yo» deja continuar. ✅ «Con equipo» enseña un campo: vacío, `1`, `0` o `201` → desactivado y avisa «de 2 a 200»; `2` y `200` → continúa.
+- [ ] **35.3 — Se guarda y se recuerda.** Elige «Con equipo», `4`, avanza y vuelve atrás (o sal y entra): ✅ sigue «Con equipo» con el `4`.
+- [ ] **35.4 — Lo ve el admin (bloqueante).** Termina el alta y envíala. Como admin, en **Usuarios** (solicitudes pendientes): ✅ la tarjeta dice «**Equipo:** Con equipo (4 personas contando al solicitante)» (o «Solo, sin equipo (1 persona)») y en «Ver detalle» sale «**Personas en el perfil**». ✅ Ya no salen «Trabajó para empresas» ni «Puede demostrar».
+- [ ] **35.5 — Declarar un equipo no crea equipo.** Aprueba la solicitud con «4 personas»: ✅ el profesional entra en **modo individual** (panel de siempre; el equipo se crea al aceptar su primer compañero, sección 34).
+
+**B. Recargar la página**
+
+- [ ] **35.6 — Recargar empieza arriba (iPhone).** Con el iPhone, en **Mi cuenta**, **Reservas**, **Panel** y **Estado de la solicitud**: baja un poco la pantalla y **recarga** (⟳ de Safari o tirando hacia abajo). ✅ La pantalla arranca **desde arriba** y su primera sección se ve **entera bajo las barras** (nada cortado por el encabezado). Repítelo **abriendo la web desde el enlace de un correo en Gmail** (navegador interno) y con la **app instalada**.
+  - ⚠️ En el simulador de iPhone (Safari) **no** se pudo reproducir el corte, así que el arreglo (desactivar la restauración de scroll del navegador) **no está probado en un iPhone real**: este punto lo decide tu prueba. Si el corte sigue, anota **desde dónde abres la web** (Safari, Gmail, app instalada), **en qué pantalla** y **qué haces para recargar**.
+- [ ] **35.7 — Navegar sigue igual.** Entre pantallas de la web (Panel → Reservas → Mi cuenta): ✅ cada una abre arriba, como antes. Los enlaces con ancla (`/para-jardineros#empresas`) siguen llevando a su sección.
+
+> **Comprobado ya en local (2026-11-09):** 199 archivos y 2937 tests; build; 9 ficheros de SQL (incluido `gardener_application_team_size.test.sql`: el envío exige el dato, 1-200, un rechazo corregido lo conserva, enviar no crea equipo; con la función antigua falla); baterías `verify-gardener-reapply` (9/9) y `verify-application-ads-consent` (11/11); y el alta completa en el navegador a 375 px con la cuenta de prueba (paso 3 → envío → tarjeta y detalle del admin).
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:
@@ -1833,6 +1857,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 32 verde — acceso en el móvil y tipo de cuenta con Google (32.8, 32.9 y 32.10 son bloqueantes: un profesional no puede acabar como cliente) |
 | [ ] | Sección 33 verde — alta y primeros pasos en el móvil (33.1 y 33.2, con el iPhone, son bloqueantes: un profesional no puede quedarse sin ver su progreso ni su estado) |
 | [ ] | Sección 34 verde — cuenta de profesional única y dinámica (34.4 y 34.6 son bloqueantes: al pasar a equipo y al volver no se puede perder ni cambiar nada: reservas, reseñas, enlace, precios) |
+| [ ] | Sección 35 verde — alta de jardinero: sin preguntas de empleado y con el nº de personas (35.2 y 35.4 son bloqueantes: sin ese dato el admin decide a ciegas) |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

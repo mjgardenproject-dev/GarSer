@@ -20,7 +20,7 @@ const DECIDED_AT = '2026-11-02T10:15:00.000Z';
 const GARDENER_APP = {
   status: 'draft', full_name: 'Jardinero Consent', phone: '600123456', city_zone: 'Marbella',
   professional_photo_url: 'https://example.com/foto.jpg', services: ['Corte de césped'], tools_available: ['Cortacésped'],
-  experience_years: 4, experience_description: 'Comunidades y chalets', declaration_truth: true, accept_terms: true,
+  experience_years: 4, experience_description: 'Comunidades y chalets', estimated_team_size: 1, declaration_truth: true, accept_terms: true,
 };
 const COMPANY_APP = {
   commercial_name: 'Jardines Consent', legal_name: 'Jardines Consent S.L.', tax_id: 'B12345678',

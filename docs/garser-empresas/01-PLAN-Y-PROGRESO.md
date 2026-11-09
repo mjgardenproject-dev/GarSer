@@ -6,8 +6,8 @@
 > Antes de tocarlo, lee `00-GUIA-DEL-CHAT.md`.
 
 **Estado global:** ✅ F0–F9 en producción desde la fusión (#35, 2026-09-25) · ✅ prueba real F1–F8 en producción (#41, 2026-09-29) · ✅ pendientes A–G (`07-PROCEDIMIENTO-CORRECCION.md`) hechos en local el 2026-10-09, rama `fix/pendientes-ph` · **en curso: fase H (despliegue y pruebas en garser.es)** · después: guía de pruebas de `06` §3, limpieza y Stripe en real
-**Última actualización:** 2026-10-09
-**Línea base de tests:** 953 en verde / 118 ficheros · `tsc` 128 · 27 baterías de Empresas (300) · 7 de servicios (269)
+**Última actualización:** 2026-11-08 (cuenta de profesional dinámica: D35 resuelta, fases F-A (BD) y F-B/F-E (hook, rutas y registro) hechas; sigue `08-CUENTA-PROFESIONAL-DINAMICA.md` §6)
+**Línea base de tests:** 2918 en verde / 197 ficheros (tras la cuenta dinámica, 2026-11-08; antes 2824 / 185 y, antes de corregirla, 953 / 118) · `tsc` 126 (el repo parte de 126, no 128) · 29 baterías de Empresas (333 comprobaciones) · 7 de servicios (269 por HTTP)
 ---
 
 ## 0. Cómo se entrega este proyecto
@@ -111,6 +111,16 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 | D30 | ¿Se avisa a los empleados de una empresa suspendida? (2026-10-09) | **No, solo a la empresa**: sus trabajos ya citados siguen. | A-55. | Pendientes |
 | D29 | PH-18: ¿validar el alta de jardinero en el servidor? (2026-10-09) | **Lo deja al chat**: se valida en el servidor como las empresas (A-54). | A-54. | Pendientes |
 | D28 | ¿Qué nombre llevan los correos de reserva? (PH-15, 2026-10-09) | **El de la ficha**: el cliente por su nombre; el profesional por el de su ficha (nombre comercial de la empresa). | A-49. | Pendientes |
+| D31 | Una sola cuenta «Profesional» (2026-11-08) | **`role = gardener` para todo profesional; `company` deja de asignarse.** | Sustituye **D2** (alta propia de empresa con encuesta y aprobación) y **A-20**. Ver `08` §3. | Cuenta dinámica |
+| D32 | El modo se deriva del servidor (2026-11-08) | **Equipo ⟺ ≥1 empleado activo; `provider_kind` lo mantiene un disparador, nadie por API.** | Precisa **A-19**; relaja `trg_check_company_provider_kind`. | Cuenta dinámica |
+| D33 | Promoción en sitio (2026-11-08) | **La empresa se crea al invitar al primer compañero, sobre la ficha existente; el modo equipo empieza al aceptar.** | Precisa A-01/A-24. Opción A de `08` §4.3. | Cuenta dinámica |
+| D34 | Volver a individual (2026-11-08) | **El titular trabaja siempre en individual; al volver, ajustes de empresa a fábrica.** | Precisa **D3** y **D11**. | Cuenta dinámica |
+| D35 | ¿La promoción a equipo la revisa un admin? (2026-11-08) | **Resuelta por el usuario (2026-11-08): autoservicio con declaración de seguro de responsabilidad civil**, sin revisión previa; visible en «Profesionales». La declaración se guarda con fecha (`companies.liability_declared_at`). | Sustituye la parte de revisión de D2/D7. | Cuenta dinámica |
+| D36 | Un profesional no puede ser empleado (2026-11-08) | **A-03 se mantiene.** Mensaje claro; un ex-empleado sí puede hacerse profesional. | Mantiene A-03. | Cuenta dinámica |
+| D37 | Cuentas actuales de prueba (2026-11-08) | **Migración mínima; lo que no cuadre se recrea a mano.** | **Sustituye D8.** | Cuenta dinámica |
+| D38 | Alta de empresa por solicitud (2026-11-08) | **Queda latente, sin acceso; no se borra.** | Aplica R3. | Cuenta dinámica |
+| D39 | Refresco del modo (2026-11-08) | **Sin recarga de sesión: al volver, tras acciones y con botón.** | Aplica D26. | Cuenta dinámica |
+| D40 | Dinero y ley (2026-11-08) | **Nada cambia: 12,5 %, gastos de gestión, carnet por persona (D4), textos legales.** | Confirma D1, D4. | Cuenta dinámica |
 
 > **D4, precisión confirmada por el usuario (2026-09-23):** el carnet se exige **solo a los
 > empleados que ofertan servicios fitosanitarios**. Sin su carnet adjuntado y aprobado no se
@@ -121,7 +131,7 @@ Respondidas por el usuario el **2026-09-23**. Son de producto: el chat no las ca
 
 | # | Pregunta | Bloquea | Por qué |
 |---|---|---|---|
-| D8 | ~~¿Se arregla H-11 ya en producción?~~ | — | **Respondida (2026-09-23): no es urgente**, `garser.es` aún no tiene usuarios reales. Se arregla con F0 el día de la fusión (§6). **Si antes de la fusión entran usuarios reales, esta decisión debe revisarse.** |
+| D8 | ~~¿Se arregla H-11 ya en producción?~~ | — | **Respondida (2026-09-23): no es urgente**, `garser.es` aún no tiene usuarios reales. Se arregla con F0 el día de la fusión (§6). **Si antes de la fusión entran usuarios reales, esta decisión debe revisarse.** **Sustituida el 2026-11-08 por D37**: el usuario confirma que no hay cuentas reales y las de producción son suyas de prueba. |
 | D7 | **¿Qué preguntas lleva la encuesta de alta de empresas?** | F3 | Sale de D2. **Borrador propuesto el 2026-09-24** en F3 («D7 — Borrador»), pendiente de que el usuario lo ajuste. Se implementa de forma que cambiar preguntas no exija migración. |
 
 ---|---|---|---|
@@ -815,6 +825,9 @@ Una fila por sesión de trabajo. Se añade al **cerrar**, con lo que pasó de ve
 | 2026-10-09 | Pendientes E | **Fase E cerrada** (`07` §4): aviso en el panel y correos al suspender y reactivar (PR-02, A-55, D30). | 953 ✅ · build ✅ · tsc 128 · 27 baterías 300/300 | `8c5f902` |
 | 2026-10-09 | Pendientes F | **Fase F cerrada**: PH-09 cerrado, PH-07 (readiness 7/7, 269), PH-06 (`ARCHITECTURE.md`). | readiness 269 ✅ | `bc04bdf` `5de4cd6` |
 | 2026-10-09 | Pendientes G | **Fase G cerrada** (PH-10): estados de `02` (H-02, H-03, H-06, H-11, H-17, H-21, H-22) y §3 «Sospechas» al día; estado global actualizado. | — | (este commit) |
+| 2026-11-08 | Cuenta dinámica · diseño | **Diseño y parada.** Rama `feat/cuenta-profesional-dinamica` desde `main` `8ab9b98` (PR #76 ya fusionada). Auditoría con 4 exploradores + relectura de las funciones SQL clave. `08-CUENTA-PROFESIONAL-DINAMICA.md` con D31–D40, opción A (promoción en sitio), disparador que mantiene `provider_kind` y plan F-A…F-G. Sin código ni migraciones; a la espera de D35. | 2824 ✅ / 185 ficheros | (este commit) |
+| 2026-11-08 | Cuenta dinámica · F-A, F-B y F-E | **D35 resuelta: autoservicio + seguro.** Migración `20261108120000` (disparador que mantiene `provider_kind`, promoción en sitio, `my_provider_mode()`, `company`→`gardener`, backfill) con `supabase/tests/professional_mode.test.sql` y la batería `verify-professional-mode` (21). Hook `useProviderMode` sobre `AccountContext`, `/dashboard`⇄`/empresa` por modo, registro con un solo tipo «Profesional». 29 baterías en verde tras `db reset`; F2-01 cambia de regla (D32); H-51…H-55. | 2862 ✅ / 190 ficheros · tsc = línea base | (este commit) |
+| 2026-11-08 | Cuenta dinámica · F-C, F-D, F-F y F-G | **Modo individual** con la tarjeta «¿Trabajas con más gente?» y la hoja «Añade a tu equipo» (seguro, enlace, pendientes con Anular/Actualizar), sin vocabulario de empresa; **transición** con aviso único y refresco al volver a la app y tras la baja; **Reseñas** en el panel de equipo; correos por `provider_kind` (PM-22). Verificado en el navegador a 375×812 (individual → equipo → individual), 29 baterías + 7 de servicios en verde, `db reset` desde cero. **Falta producción (§9 de `08`).** | 2918 ✅ / 197 ficheros · build ✅ · tsc 126 = línea base | (este commit) |
 
 ---
 

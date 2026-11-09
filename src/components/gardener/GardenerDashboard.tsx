@@ -25,6 +25,7 @@ import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookin
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 import SuspendedProviderNotice from '../common/SuspendedProviderNotice';
 import ProviderSetupChecklist from '../provider/ProviderSetupChecklist';
+import TeamEntryCard from '../provider/TeamEntryCard';
 import MarketingHub from '../marketing/MarketingHub';
 import { buildProviderSetupSteps, type SetupTarget } from '../../shared/providerSetup';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
@@ -451,6 +452,10 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
 
           {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
           {!pending && !guideFirst && <ProviderSetupChecklist className="mb-8" onNavigate={handleSetupNavigate} setup={setup} />}
+
+          {/* «¿Trabajas con más gente?» (D31): la única pista de equipo del modo individual. Va debajo de los
+              accesos del panel y de la guía (que, si falta algo obligatorio, ya sale arriba del todo). */}
+          {!pending && <TeamEntryCard className="mb-8" />}
 
           {/* Aviso de instalación (fallo 1, 2026-09-15): solo en móvil, entre el panel y
               las reservas — en Mi Cuenta pasaba desapercibido. Se oculta sola en cuanto

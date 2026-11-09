@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, X } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Clock, Loader2, Settings2, Star, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import AppHeader from '../../components/common/AppHeader';
 import { useConfirmDialog } from '../../components/common/ConfirmDialog';
@@ -18,6 +18,7 @@ import MarketingHub from '../../components/marketing/MarketingHub';
 import ProviderSetupChecklist from '../../components/provider/ProviderSetupChecklist';
 import type { SetupTarget } from '../../shared/providerSetup';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
+import { useProviderMode } from '../../hooks/useProviderMode';
 import { PHYTO_SERVICE_NAME, useCompanyTeam, type TeamInvitation, type TeamMember } from '../../hooks/useCompanyTeam';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -40,6 +41,8 @@ const Spinner = () => (
 
 const CompanyPanel: React.FC = () => {
   const { data, loading, error, refresh } = useCompanyTeam();
+  // El modo (individual/equipo) lo decide el servidor: al dar de baja a alguien puede cambiar (D31, D39).
+  const { refresh: refreshMode } = useProviderMode();
   const { openConfirm, confirmDialog } = useConfirmDialog();
   // El panel abre en la agenda (lo aprendido en el hito: «quién hace qué y cuándo» es lo diario),
   // salvo que el enlace pida otra pestaña (los avisos del carnet llevan a «Equipo» o «Tu empresa»).
@@ -97,6 +100,9 @@ const CompanyPanel: React.FC = () => {
         }
         toast.success(`${name} ya no forma parte de tu equipo`);
         await refresh();
+        // Si era el último, la cuenta vuelve al modo individual: se relee para que la app lo refleje al
+        // momento (esta pantalla salta sola al panel de siempre y sale el aviso de la transición).
+        await refreshMode();
       },
     });
   };
@@ -270,6 +276,16 @@ const CompanyPanel: React.FC = () => {
               <span className="flex-1">
                 <span className="block font-semibold text-gray-900">Servicios, precios y zona</span>
                 <span className="block text-sm text-gray-600">Lo que ofreces a los clientes y hasta dónde vas.</span>
+              </span>
+              <ChevronRight className="h-5 w-5 text-gray-400" />
+            </Link>
+
+            {/* Las reseñas son las mismas de siempre (misma cuenta antes y después de tener equipo). */}
+            <Link to="/empresa/resenas" className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+              <Star className="h-6 w-6 shrink-0 text-emerald-700" />
+              <span className="flex-1">
+                <span className="block font-semibold text-gray-900">Reseñas</span>
+                <span className="block text-sm text-gray-600">Lo que dicen tus clientes. Puedes responderles.</span>
               </span>
               <ChevronRight className="h-5 w-5 text-gray-400" />
             </Link>

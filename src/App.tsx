@@ -19,6 +19,9 @@ import NotFoundPage from './pages/public/NotFoundPage';
 import PublicHomePage from './pages/public/PublicHomePage';
 import { supabase } from './lib/supabase';
 import { useAccount } from './contexts/AccountContext';
+import { useProviderMode } from './hooks/useProviderMode';
+import ProviderModeNotice from './components/provider/ProviderModeNotice';
+import { professionalHome } from './utils/professionalHome';
 import { hasWizardResume } from './utils/bookingResumeStorage';
 import { applicantRedirect } from './utils/applicantRedirect';
 import { invitationPath, readPendingInvitation } from './lib/pendingInvitation';
@@ -63,6 +66,7 @@ const CompanyStatusPage = lazy(() => import('./pages/empresa/CompanyStatusPage')
 const CompanyHomePage = lazy(() => import('./pages/empresa/CompanyHomePage'));
 // GarSer Empresas (F3.3): configuración de la empresa, invitación y panel del empleado.
 const CompanyConfigPage = lazy(() => import('./pages/empresa/CompanyConfigPage'));
+const CompanyReviewsPage = lazy(() => import('./pages/empresa/CompanyReviewsPage'));
 const CompanyRequestsPage = lazy(() => import('./pages/empresa/CompanyRequestsPage'));
 // GarSer Empresas (F5.1): horarios del equipo.
 const CompanySchedulePage = lazy(() => import('./pages/empresa/CompanySchedulePage'));
@@ -117,6 +121,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     // deducciones desde user_metadata y localStorage.signup_role, que controla el usuario.
     const { role: accountRole, loading: accountLoading } = useAccount();
     const isGardenerAccount = accountRole === 'gardener';
+    // Modo de la cuenta de profesional (D31): individual o equipo. Lo decide el servidor.
+    const { isTeam } = useProviderMode();
     const location = useLocation();
     const navigate = useNavigate();
     const isAuthPage = location.pathname === '/auth' || location.pathname === '/auth/callback' || location.pathname === '/confirmar-servicio' || location.pathname === '/invitacion';
@@ -253,6 +259,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
   return (
     <div className="min-h-screen bg-gray-50">
       <ScrollToTop />
+      {/* Aviso de «tu cuenta ha cambiado de modo» (D39): individual ⇄ equipo, una vez por cambio. */}
+      {user && <ProviderModeNotice />}
       {/* En el funnel de reserva la navbar de marketing sobra: duplica cabecera (el funnel
           ya tiene Volver/Salir) y roba ~130px de la primera pantalla en móvil */}
       {!isAuthPage && !isAdminPage && !isMarketingPage && !isBookingPage && <Navbar applicationStatus={applicationStatus} />}
@@ -342,51 +350,42 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                   return <Navigate to="/admin/dashboard" replace />;
                 }
 
-                // Cuenta de empresa: su alta y su panel viven en /empresa (F3.2).
-                if (accountRole === 'company') {
-                  return <Navigate to="/empresa" replace />;
-                }
-
                 // Empleado de una empresa: su panel es /mi-trabajo (F3.3).
                 if (accountRole === 'employee') {
                   return <Navigate to="/mi-trabajo" replace />;
                 }
 
                 const gardenerIntent = isGardenerAccount || (applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied');
-                
-                if (gardenerIntent) {
-                    if (!statusLoaded) {
-                        return (
-                            <ErrorBoundary fallbackTitle="Cargando panel" fallbackMessage="Cargando información del perfil...">
-                              <div className="flex items-center justify-center min-h-[50vh]">
-                                <div className="text-center">
-                                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-                                  <p className="mt-4 text-gray-600">Cargando estado...</p>
-                                </div>
-                              </div>
-                            </ErrorBoundary>
-                        );
-                    }
 
-                   // Si llega aquí es porque applicationStatus === 'active' debido al useEffect de redirección estricta
-                   // O porque hubo un fallo en la redirección, en cuyo caso forzamos la navegación
-                   if (applicationStatus === 'active') {
-                      return (
-                        <ErrorBoundary fallbackTitle="Algo ha fallado en el panel" fallbackMessage="Estamos trabajando para solucionarlo.">
-                          <GardenerDashboard />
-                        </ErrorBoundary>
-                      );
-                   }
-                   
-                   // Redirección declarativa como respaldo al useEffect
-                   if (applicationStatus === 'pending' || applicationStatus === 'denied') {
-                     return <Navigate to="/status" replace />;
-                   }
-                   
-                   // Si no es ninguno de los anteriores, asumir draft/null y enviar a apply
-                   return <Navigate to="/apply" replace />;
+                if (gardenerIntent) {
+                  const home = professionalHome({ applicationStatus, statusLoaded, isTeam });
+                  if (home === 'loading') {
+                    return (
+                      <ErrorBoundary fallbackTitle="Cargando panel" fallbackMessage="Cargando información del perfil...">
+                        <div className="flex items-center justify-center min-h-[50vh]">
+                          <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+                            <p className="mt-4 text-gray-600">Cargando estado...</p>
+                          </div>
+                        </div>
+                      </ErrorBoundary>
+                    );
+                  }
+                  // Con equipo (al menos un empleado activo) el panel es el de equipo (D31).
+                  if (home === 'team') return <Navigate to="/empresa" replace />;
+                  if (home === 'individual') {
+                    return (
+                      <ErrorBoundary fallbackTitle="Algo ha fallado en el panel" fallbackMessage="Estamos trabajando para solucionarlo.">
+                        <GardenerDashboard />
+                      </ErrorBoundary>
+                    );
+                  }
+                  // Redirección declarativa como respaldo al useEffect de redirección estricta.
+                  if (home === 'status') return <Navigate to="/status" replace />;
+                  // Sin enviar (draft o nada): a /apply.
+                  return <Navigate to="/apply" replace />;
                 }
-                
+
                 // Rol de Cliente
                 // Invitación de empresa a medias (se registró desde el enlace y acaba de
                 // confirmar el correo): se retoma antes que nada.
@@ -505,11 +504,6 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
                 if (accountRole === 'admin') {
                   return <Navigate to="/admin/dashboard" replace />;
                 }
-                // Empresa (F4): sus reservas son las de proveedor. Sin alta aprobada (sin ficha)
-                // no tiene reservas: vuelve a su panel, que la lleva a su alta.
-                if (accountRole === 'company') {
-                  return applicationStatus === 'active' ? <GardenerBookings /> : <Navigate to="/empresa" replace />;
-                }
                 if (isGardenerAccount) {
                   if (applicationStatus !== 'active') {
                     return (
@@ -552,6 +546,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/empresa/solicitud" element={<ProtectedRoute><CompanyApplicationPage /></ProtectedRoute>} />
         <Route path="/empresa/estado" element={<ProtectedRoute><CompanyStatusPage /></ProtectedRoute>} />
         <Route path="/empresa/configuracion" element={<ProtectedRoute><CompanyConfigPage /></ProtectedRoute>} />
+        <Route path="/empresa/resenas" element={<ProtectedRoute><CompanyReviewsPage /></ProtectedRoute>} />
         <Route path="/empresa/solicitudes" element={<ProtectedRoute><CompanyRequestsPage /></ProtectedRoute>} />
         <Route path="/empresa/horario" element={<ProtectedRoute><CompanySchedulePage /></ProtectedRoute>} />
         <Route path="/empresa/equipo/:memberId/horario" element={<ProtectedRoute><CompanyMemberSchedulePage /></ProtectedRoute>} />

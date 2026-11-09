@@ -65,7 +65,7 @@ export async function signIn(email) {
 export function accounts(domain) {
   const run = Date.now();
   const created = [];
-  const newUser = async (label, role = 'client') => {
+  const newUser = async (label, role = 'client', { legacy = true } = {}) => {
     const email = `${label}-${run}@${domain}`;
     const res = await fetch(`${apiUrl}/auth/v1/signup`, {
       method: 'POST', headers: { apikey: anonKey, 'Content-Type': 'application/json' },
@@ -75,6 +75,10 @@ export function accounts(domain) {
     const id = body?.user?.id ?? body?.id;
     if (!id) throw new Error(`No se pudo crear ${label}: ${JSON.stringify(body).slice(0, 160)}`);
     created.push(id);
+    // Cuenta de empresa del camino antiguo (alta con solicitud). Desde el 2026-11-08 el registro ya no la
+    // produce (D31: «company» se registra como profesional), pero el código de la solicitud sigue vivo
+    // (D38) y estas baterías lo siguen cubriendo: se emula una cuenta creada antes del cambio.
+    if (role === 'company' && legacy) sql(`update public.profiles set role = 'company' where user_id = '${id}'`);
     return { id, email, token: body.access_token };
   };
   const stale = () => {

@@ -62,6 +62,16 @@ describe('baja desde «Mi cuenta» (PH-01)', () => {
     expect(describeClosureOutcome({ exists: true, mode: 'blocked' })).toEqual([]);
   });
 
+  it('un profesional en modo individual (aunque conserve una empresa latente) no ve ninguna palabra de empresa ni de equipo (D31)', () => {
+    const latent = { id: 'c', status: 'active', name: 'Jardines', activeEmployees: 0 };
+    for (const mode of ['delete', 'deactivate'] as const) {
+      const text = describeClosureOutcome({ exists: true, mode, company: latent }).join(' ');
+      expect(text).not.toMatch(/empresa|equipo/i);
+    }
+    // Con equipo, sí: es lo que se pierde de verdad.
+    expect(describeClosureOutcome({ exists: true, mode: 'delete', company: { ...latent, activeEmployees: 1 } }).join(' ')).toMatch(/Tu empresa se borrará/);
+  });
+
   it('pide el análisis al servidor y ejecuta lo que dijo', async () => {
     vi.mocked(supabase.rpc).mockResolvedValue({ data: { exists: true, mode: 'delete' }, error: null } as never);
     await expect(fetchSelfClosurePlan()).resolves.toEqual({ exists: true, mode: 'delete' });

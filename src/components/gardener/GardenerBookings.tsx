@@ -21,7 +21,7 @@ import PhotoGallery from '../common/PhotoGallery';
 import { GardenerBookingAmount } from '../booking/BookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookingStatus';
-import { useAccount } from '../../contexts/AccountContext';
+import { useProviderMode } from '../../hooks/useProviderMode';
 import { useBookingWorkers } from '../../hooks/useBookingWorkers';
 import AssignWorkerControl from '../empresa/AssignWorkerControl';
 import BookingWorkerLine from '../empresa/BookingWorkerLine';
@@ -79,9 +79,10 @@ const GardenerBookings: React.FC = () => {
   const [incidentDrafts, setIncidentDrafts] = useState<Record<string, string>>({});
   const [respondingId, setRespondingId] = useState<string | null>(null);
   // GarSer Empresas (F4): una cuenta de empresa ve también quién de su equipo va a cada trabajo.
-  const { role } = useAccount();
+  // Con equipo (modo equipo) cada trabajo puede tener varias personas: se pide quién trabaja en cada uno.
+  const { isTeam } = useProviderMode();
   const [workersVersion, setWorkersVersion] = useState(0);
-  const workers = useBookingWorkers(bookings, { enabled: role === 'company', myId: user?.id, version: workersVersion });
+  const workers = useBookingWorkers(bookings, { enabled: isTeam, myId: user?.id, version: workersVersion });
 
   // F9: planes de mantenimiento de los que salen visitas para este profesional.
   const [plans, setPlans] = useState<MaintenancePlan[]>([]);

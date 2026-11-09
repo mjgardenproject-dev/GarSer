@@ -4,6 +4,8 @@ import PushNotificationsCard from './PushNotificationsCard';
 import BookingLinkCard from './BookingLinkCard';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAccount } from '../../contexts/AccountContext';
+import { normalizeAccountRole } from '../../lib/accountRole';
+import { useProviderMode } from '../../hooks/useProviderMode';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
 import { Camera, Lock, Trash2, AlertTriangle, CheckCircle2, UploadCloud, CheckCircle } from 'lucide-react';
@@ -19,6 +21,7 @@ import {
 function MyAccount() {
   const { user, signOut, signOutEverywhere } = useAuth();
   const { role: accountRole } = useAccount();
+  const { isTeam } = useProviderMode();
   const navigate = useNavigate();
   const [myProfile, setMyProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -156,8 +159,9 @@ function MyAccount() {
   };
 
   // Tipo de cuenta desde profiles.role (F0 de GarSer Empresas), no desde user_metadata.
-  const ROLE_LABEL: Record<string, string> = { gardener: 'Jardinero', company: 'Empresa', employee: 'Empleado', admin: 'Admin', client: 'Cliente' };
-  const effectiveRole = myProfile?.role || accountRole || 'client';
+  // Un solo tipo de profesional (D31): autónomo o equipo es un modo, no un tipo de cuenta.
+  const ROLE_LABEL: Record<string, string> = { gardener: 'Jardinero', employee: 'Empleado', admin: 'Admin', client: 'Cliente' };
+  const effectiveRole = normalizeAccountRole(myProfile?.role) || accountRole || 'client';
 
   return (
     <div>
@@ -171,7 +175,7 @@ function MyAccount() {
           <div className="flex items-center gap-4 justify-start sm:justify-between mb-3">
             <div className="min-w-0">
               <div className="text-lg font-semibold text-gray-900">Perfil</div>
-              <div className="text-sm text-gray-600 truncate">{(myProfile?.full_name || user?.email) || ''} · {ROLE_LABEL[effectiveRole] ?? 'Cliente'}</div>
+              <div className="text-sm text-gray-600 truncate">{(myProfile?.full_name || user?.email) || ''} · {effectiveRole === 'gardener' && isTeam ? 'Empresa' : (ROLE_LABEL[effectiveRole] ?? 'Cliente')}</div>
             </div>
             <div className="shrink-0">
               {avatarPreview ? (
@@ -199,7 +203,7 @@ function MyAccount() {
 
         {/* Autónomos y empresas: la empresa también reparte su enlace a sus clientes
             (/reservar/<id de la cuenta de empresa>?c=<clave> abre su perfil y fija la reserva a ella). */}
-        {(effectiveRole === 'gardener' || effectiveRole === 'company') && <BookingLinkCard />}
+        {effectiveRole === 'gardener' && <BookingLinkCard />}
 
         <PushNotificationsCard />
 

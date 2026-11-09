@@ -13,12 +13,13 @@ export function safeRedirectPath(path: unknown): string | null {
   return trimmed;
 }
 
+// Un profesional entra por /dashboard, también si lleva un equipo: allí se decide el panel según su modo
+// (individual o equipo, D31), que lee el servidor. Una cuenta «company» heredada va igual.
 export function postLoginPath(accountRole: string | null | undefined, redirectTo?: unknown): string {
   const back = safeRedirectPath(redirectTo);
   if (back) return back;
   switch (accountRole) {
     case 'admin': return '/admin/dashboard';
-    case 'company': return '/empresa';
     case 'employee': return '/mi-trabajo';
     default: return '/dashboard';
   }

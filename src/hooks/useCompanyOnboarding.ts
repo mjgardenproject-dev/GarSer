@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
-import { useAccount } from '../contexts/AccountContext';
+import { useCallback } from 'react';
+import { useProviderMode } from './useProviderMode';
 
-// En qué punto del alta está una cuenta de empresa (GarSer Empresas, F3).
+// Puerta de las pantallas de equipo (`/empresa/*`, GarSer Empresas F3 en adelante).
 //
-// Aprobada = pertenece a una empresa (my_company_id(), que solo existe tras la aprobación del
-// admin). Si no, manda la última solicitud. Una cuenta que no es de empresa no tiene alta.
+// Antes decía en qué punto del alta estaba una CUENTA de empresa (borrador, enviada, aprobada…). Desde la
+// cuenta de profesional única (D31, 2026-11-08) ya no hay cuentas de empresa: el equipo es un modo del
+// profesional. Por eso «aprobada» pasa a significar «está en modo equipo» (`useProviderMode().isTeam`) y
+// cualquier otra cuenta es `not_company` y vuelve a su panel.
+//
+// Las etapas del alta de empresa por solicitud (`none`, `draft`, `submitted`, `rejected`) siguen en el
+// tipo porque las pantallas `/empresa/solicitud` y `/empresa/estado` y la cola del admin quedaron
+// LATENTES (D38): nadie puede llegar ya a ellas. Se limpiarán aparte (02-HALLAZGOS H-49).
 
 export type CompanyOnboardingStage = 'not_company' | 'none' | 'draft' | 'submitted' | 'rejected' | 'approved';
 
@@ -24,74 +28,30 @@ export interface CompanyOnboarding {
   companyId: string | null;
   error: string | null;
   refresh: () => Promise<void>;
-  /**
-   * Vuelve a preguntar por el estado SIN poner la pantalla en «cargando» (el botón «Actualizar
-   * estado» no puede desmontarse mientras comprueba) y devuelve el estado actual. Un fallo de red se
-   * propaga: quien llama dice «no se ha podido comprobar» sin perder lo que ya se enseñaba.
-   */
+  /** Vuelve a preguntar por el modo sin poner la pantalla en «cargando» y devuelve el estado actual. */
   recheck: () => Promise<CompanyOnboardingStage>;
 }
 
-export function stageFromData(companyId: string | null, application: CompanyApplicationRow | null): CompanyOnboardingStage {
-  if (companyId) return 'approved';
-  if (!application) return 'none';
-  // Aprobada sin empresa no debería darse (la aprobación crea ambas en la misma transacción):
-  // si pasara, se trata como enviada — el usuario ve «en revisión», nunca un panel roto.
-  if (application.status === 'approved') return 'submitted';
-  return application.status;
+export function stageFromMode(isTeam: boolean): CompanyOnboardingStage {
+  return isTeam ? 'approved' : 'not_company';
 }
 
 export function useCompanyOnboarding(): CompanyOnboarding {
-  const { user } = useAuth();
-  const { role, loading: accountLoading } = useAccount();
-  const [state, setState] = useState<Omit<CompanyOnboarding, 'refresh' | 'recheck'>>({
-    loading: true, stage: 'none', application: null, companyId: null, error: null,
-  });
-  const seq = useRef(0);
-  const stageRef = useRef<CompanyOnboardingStage>('none');
-  stageRef.current = state.stage;
+  const { loading, isTeam, error, refresh: refreshMode } = useProviderMode();
 
-  const load = useCallback(async (silent = false): Promise<CompanyOnboardingStage | null> => {
-    const mine = ++seq.current;
-    if (accountLoading) return null;
-    if (!user?.id || role !== 'company') {
-      setState({ loading: false, stage: 'not_company', application: null, companyId: null, error: null });
-      return 'not_company';
-    }
-    if (!silent) setState((s) => ({ ...s, loading: true, error: null }));
-    try {
-      const [{ data: companyId, error: companyError }, { data: apps, error: appError }] = await Promise.all([
-        supabase.rpc('my_company_id'),
-        supabase
-          .from('company_applications')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1),
-      ]);
-      if (companyError) throw companyError;
-      if (appError) throw appError;
-      if (mine !== seq.current) return null;
-      const application = ((apps as CompanyApplicationRow[] | null) ?? [])[0] ?? null;
-      const id = (companyId as string | null) ?? null;
-      const stage = stageFromData(id, application);
-      setState({ loading: false, stage, application, companyId: id, error: null });
-      return stage;
-    } catch (error) {
-      if (silent) throw error;
-      if (mine !== seq.current) return null;
-      console.error('Error cargando el alta de la empresa:', error);
-      setState((s) => ({ ...s, loading: false, error: 'No hemos podido cargar el estado de tu solicitud.' }));
-      return null;
-    }
-  }, [user?.id, role, accountLoading]);
+  const refresh = useCallback(async () => { await refreshMode(); }, [refreshMode]);
+  const recheck = useCallback(async (): Promise<CompanyOnboardingStage> => {
+    const next = await refreshMode();
+    return stageFromMode(next ? next.mode === 'team' : isTeam);
+  }, [refreshMode, isTeam]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const refresh = useCallback(async () => { await load(); }, [load]);
-  const recheck = useCallback(async () => (await load(true)) ?? stageRef.current, [load]);
-
-  return { ...state, loading: state.loading || accountLoading, refresh, recheck };
+  return {
+    loading,
+    stage: stageFromMode(isTeam),
+    application: null,
+    companyId: null,
+    error: error ? 'No hemos podido comprobar tu cuenta.' : null,
+    refresh,
+    recheck,
+  };
 }

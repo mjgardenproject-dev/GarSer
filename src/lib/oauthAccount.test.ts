@@ -97,8 +97,9 @@ describe('oauthAccount', () => {
   });
 
   it('nombra cada tipo de cuenta para los avisos', () => {
-    expect(accountRoleLabel('gardener')).toBe('jardinero');
-    expect(accountRoleLabel('company')).toBe('empresa');
+    expect(accountRoleLabel('gardener')).toBe('profesional');
+    // Una cuenta «company» heredada es un profesional más (D31): ya no hay tipo «empresa».
+    expect(accountRoleLabel('company')).toBe('profesional');
     expect(accountRoleLabel('employee')).toBe('empleado de una empresa');
     expect(accountRoleLabel('client')).toBe('cliente');
     expect(accountRoleLabel(null)).toBe('cliente');
@@ -115,9 +116,9 @@ describe('oauthAccount', () => {
 
     it('un error de red o de la función es «failed», nunca un éxito', async () => {
       mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'nope' } });
-      expect(await declareAccountType('company')).toBe('failed');
+      expect(await declareAccountType('gardener')).toBe('failed');
       mocks.rpc.mockResolvedValueOnce({ data: 'algo_raro', error: null });
-      expect(await declareAccountType('company')).toBe('failed');
+      expect(await declareAccountType('gardener')).toBe('failed');
     });
 
     it('la versión antigua de la función (void, sin error) cuenta como hecho', async () => {
@@ -137,9 +138,9 @@ describe('oauthAccount', () => {
     });
 
     it('ya NO depende de que la cuenta parezca nueva: una de cliente sin actividad también pasa', async () => {
-      const result = await declareSignupRoleIfNeeded({ ...client, isNew: false }, 'company');
-      expect(mocks.rpc).toHaveBeenCalledWith('self_declare_signup_role', { p_role: 'company' });
-      expect(result.role).toBe('company');
+      const result = await declareSignupRoleIfNeeded({ ...client, isNew: false }, 'gardener');
+      expect(mocks.rpc).toHaveBeenCalledWith('self_declare_signup_role', { p_role: 'gardener' });
+      expect(result.role).toBe('gardener');
     });
 
     it('sin tipo elegido (cliente normal, o solo entrando): no llama al servidor', async () => {
@@ -155,10 +156,10 @@ describe('oauthAccount', () => {
       expect(result.roleProblem).toBeUndefined();
     });
 
-    it('si es de OTRO tipo (jardinero que elige empresa): lo dice, no lo toca', async () => {
-      const result = await declareSignupRoleIfNeeded({ ...client, role: 'gardener' }, 'company');
+    it('si es de OTRO tipo (un empleado que elige profesional): lo dice, no lo toca', async () => {
+      const result = await declareSignupRoleIfNeeded({ ...client, role: 'employee' }, 'gardener');
       expect(mocks.rpc).not.toHaveBeenCalled();
-      expect(result).toMatchObject({ role: 'gardener', requestedRole: 'company', roleProblem: 'other_role' });
+      expect(result).toMatchObject({ role: 'employee', requestedRole: 'gardener', roleProblem: 'other_role' });
     });
 
     it('cliente con reservas: el servidor lo impide y se dice «has_activity»', async () => {
@@ -184,9 +185,14 @@ describe('oauthAccount', () => {
     beforeEach(() => localStorage.clear());
 
     it('se guarda, se lee una sola vez y se borra', () => {
-      rememberSignupIntent('company');
-      expect(takeSignupIntent()).toBe('company');
+      rememberSignupIntent('gardener');
+      expect(takeSignupIntent()).toBe('gardener');
       expect(takeSignupIntent()).toBeNull();
+    });
+
+    it('un «company» guardado por una versión anterior se lee como profesional (D31)', () => {
+      localStorage.setItem('garser:signup-intent', JSON.stringify({ role: 'company', at: Date.now() }));
+      expect(takeSignupIntent()).toBe('gardener');
     });
 
     it('caduca a los 15 minutos', () => {

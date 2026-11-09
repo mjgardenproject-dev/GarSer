@@ -303,16 +303,16 @@ export const gardenersContent = {
     { icon: 'alerts', text: 'Avisos por correo y en el móvil' },
   ] satisfies { icon: GardenersExtraIcon; text: string }[],
   companies: {
-    eyebrow: 'Empresas de jardinería',
+    eyebrow: 'Equipos de jardinería',
     title: '¿Tienes equipo? GarSer reparte el trabajo',
-    intro: 'Lo mismo que para un autónomo, con tu enlace incluido, y además:',
+    intro: 'Empiezas como cualquier profesional y, cuando invitas a tu primer compañero, tu cuenta pasa a ser la de un equipo: lo mismo, con tu enlace incluido, y además:',
     points: [
       'Cada empleado tiene su horario y su app, «Mi trabajo», con sus trabajos del día.',
       'GarSer asigna cada trabajo a quien está libre, o eliges tú quién va. Si hace falta, van varios a la vez.',
       'Ves la agenda de todo el equipo, cambias quién va o propones otra fecha al cliente.',
     ],
-    ctaLabel: 'Dar de alta mi empresa',
-    ctaNote: 'También gratis. Revisamos la solicitud en menos de 24 h.',
+    ctaLabel: 'Crear mi cuenta para mi equipo',
+    ctaNote: 'Añades a tu equipo desde tu panel cuando quieras. Revisamos tu alta en menos de 24 h.',
   },
   faqTitle: 'Preguntas frecuentes',
   finalCta: {

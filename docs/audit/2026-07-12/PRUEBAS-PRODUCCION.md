@@ -1732,6 +1732,8 @@ where u.email in ('gmail-nuevo-1@gmail.com', 'gmail-nuevo-2@gmail.com');
 
 ## Sección 33 — Alta y primeros pasos del profesional en el móvil (2026-11-05)
 
+> **Nota (2026-11-08):** desde la sección 34 ya **no existe la cuenta «Empresa»** ni su alta por solicitud. Donde esta sección habla de «cuenta de empresa» (33.1, la parte de empresa de 33.2 y 33.7, 33.4 y 33.17), léase «profesional con equipo» (modo equipo) y no se prueba el alta de empresa: se sustituye por 34.1 a 34.6.
+
 Nueve fallos que salieron al crear una cuenta de jardinero y de empresa desde el iPhone: encabezados que se pisan, progreso y mensaje «en revisión» tapados, zona de trabajo sin confirmar, horario preconfigurado, estado de la solicitud que no se actualizaba, servicios sin activar y una ayuda que obligaba a adivinar. Detalle y causas: `docs/audit/2026-11-05-ux-movil-onboarding-profesional/SEGUIMIENTO.md`.
 
 Requisitos previos: solo el despliegue del front en Vercel (**sin migraciones ni funciones**). **Todas con el iPhone y la web instalada en la pantalla de inicio**, y recarga a fondo (o cierra y abre la app) para no ver la versión antigua. Necesitas: una cuenta de jardinero **recién aprobada** (sin servicios), otra de **empresa** y, de ser posible, el panel de admin en otro dispositivo.
@@ -1777,6 +1779,42 @@ Requisitos previos: solo el despliegue del front en Vercel (**sin migraciones ni
 
 ---
 
+## Sección 34 — Cuenta de profesional única y dinámica (2026-11-08)
+
+Una sola cuenta «Profesional» que se adapta: **individual** (el jardinero de siempre) y, al aceptar su primer compañero, **equipo** (la app de empresa). Vuelve a individual cuando se va el último, sin perder nada. Diseño, decisiones y pruebas en `docs/garser-empresas/08-CUENTA-PROFESIONAL-DINAMICA.md` (D31–D40).
+
+Requisitos previos: **migración `20261108120000_cuenta_profesional_dinamica.sql`** aplicada, **`send-email-notification` redesplegada** (`--use-api`) y el front en Vercel. **Con el iPhone y la web instalada** para 34.8; el resto vale con el móvil o con el navegador a 375 px. Necesitas: un profesional **aprobado y con precios, zona y horas** (el tuyo), con una **reserva futura y una reseña**, y una **cuenta de cliente nueva** (otro correo) para ser tu compañero.
+
+**A. Registro**
+
+- [ ] **34.1 — Un solo tipo.** `garser.es/auth` → «Crear cuenta». ✅ Solo **Cliente** y **Profesional** («Ofrezco mis servicios de jardinería, solo o con mi equipo»); **no hay «Empresa»**. Abre `garser.es/auth?mode=signup&role=company` (un enlace antiguo): ✅ entra como **Profesional**.
+
+**B. Modo individual**
+
+- [ ] **34.2 — Sin rastro de empresa.** Entra con tu profesional (sin equipo). Recorre Panel, Solicitudes, Horario, Mi perfil (las 3 pestañas), Reseñas, Marketing, Reservas, Chat, Mi cuenta (y «Cerrar cuenta») y el menú ☰. ✅ **Ni una palabra de «empresa», «empleado» ni «equipo»** salvo la tarjeta del panel «¿Trabajas con más gente? **Añadir a mi equipo**». La etiqueta de Mi cuenta dice «Jardinero».
+- [ ] **34.3 — Invitar al primer compañero.** Pulsa «Añadir a mi equipo». ✅ Sale una hoja con **Qué cambia / Qué sigue igual**, la frase del **seguro de responsabilidad civil** (casilla) y el correo. ✅ **No deja enviar** sin marcar la casilla. Marca, escribe el correo de tu cliente nuevo y envía: ✅ «Le hemos enviado la invitación…», un enlace para copiar y «**Mientras no acepte, tu cuenta no cambia**». Cierra la hoja: ✅ el panel sigue siendo el de siempre, con «**Invitaciones pendientes (1)**», su fecha de caducidad y «Anular». Anula y vuelve a invitar: ✅ **no pide otra vez el seguro**.
+
+**C. Pasar a equipo (bloqueante)**
+
+- [ ] **34.4 — Aceptar y ver el cambio.** Antes, **anota** tu enlace de reserva (Mi cuenta), tu nº de reseñas, el precio de un servicio y tu reserva futura. El compañero abre su enlace (móvil o navegador) y **acepta**. En tu móvil, pulsa «**¿Ya ha aceptado? Actualizar**» (o sal de la app 20 s y vuelve). ✅ Sin recargar ni cerrar sesión, salta al **panel de equipo** (`/empresa`, con el nombre de tu ficha y las pestañas Agenda · Equipo · Marketing · Tu empresa) y sale «**Ya tienes equipo**» (una sola vez). **Comprueba que sigue todo igual**: enlace de reserva y QR, reseñas (también en «Tu empresa → Reseñas»), precios, la reserva futura (mismo día, hora y estado) y tu perfil público. ❌ Cualquier cambio en esto es **bloqueante**.
+- [ ] **34.5 — Las horas suman.** Asigna un servicio a tu compañero y dale horas libres. Abre tu enlace de reserva como cliente: ✅ las horas válidas son las **tuyas más las de tu compañero**. Reserva una hora que solo tiene él: ✅ la hace él; una que solo tienes tú: ✅ la haces tú.
+
+**D. Volver a individual (bloqueante)**
+
+- [ ] **34.6 — La baja del último.** Con el equipo configurado (reparto manual, capacidad 2…), da de baja a tu compañero (sin trabajos suyos por delante: si los tiene, ✅ **te lo impide** y te dice que los reasignes). ✅ Vuelves solo al **panel de siempre** y sale «**Vuelves al modo individual**». ✅ No queda ninguna reserva «por asignar»; el reparto vuelve a automático y la capacidad a 1; el titular vuelve a trabajar. ✅ Enlace, reseñas, precios y reservas **exactamente como antes** (compara con lo anotado en 34.4).
+- [ ] **34.7 — Volver a crecer.** Invita otra vez: ✅ no pide el seguro, se reutiliza la misma empresa y tus servicios activos entran solos en la agenda del equipo.
+
+**E. Reglas y correos**
+
+- [ ] **34.8 — iPhone (PWA).** Con la web instalada: acepta la invitación desde otro dispositivo mientras tienes la app abierta, bloquea el móvil, desbloquéalo. ✅ Al volver, el modo se actualiza solo (≤ 20 s) y sale el aviso.
+- [ ] **34.9 — Un profesional no es empleado de otro.** Con otro profesional (con ficha), abre el enlace de una invitación. ✅ Dice que su cuenta es de profesional y que necesita una distinta; **no se une**.
+- [ ] **34.10 — Correos.** El admin aprueba un carnet fitosanitario a tu profesional **en modo equipo**: ✅ el correo lleva a «Tu empresa» (`/empresa?tab=company`). Tras volver a individual, otro: ✅ **no** lleva a `/empresa`.
+- [ ] **34.11 — Cuentas de prueba antiguas.** Las cuentas que eran «Empresa» entran ahora como **profesional** (modo equipo si tenían empleados, individual si no). Las que tenían un alta de empresa a medias no tienen solicitud: ✅ van a «Alta de jardinero» (se recrean a mano).
+
+> **Comprobado ya en local (2026-11-08):** 197 archivos y 2918 tests; `supabase db reset` desde cero; 8 ficheros de SQL; **29 baterías de Empresas** (incluida la nueva `verify-professional-mode`, 22 comprobaciones: registro, promoción, aceptación, horas que suman, ida y vuelta sin pérdidas, reparto manual → individual sin reservas colgando, reutilización de la empresa latente y carnet del titular, correos por modo) y las 7 de servicios; y navegador a 375×812 con un profesional demo (individual → invitación → equipo → baja → individual), con las capturas de `docs/garser-empresas/capturas-08/`.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:
@@ -1794,6 +1832,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 29 verde — comisiones configurables (29.6, 29.7 y 29.8 son bloqueantes: es dinero) |
 | [ ] | Sección 32 verde — acceso en el móvil y tipo de cuenta con Google (32.8, 32.9 y 32.10 son bloqueantes: un profesional no puede acabar como cliente) |
 | [ ] | Sección 33 verde — alta y primeros pasos en el móvil (33.1 y 33.2, con el iPhone, son bloqueantes: un profesional no puede quedarse sin ver su progreso ni su estado) |
+| [ ] | Sección 34 verde — cuenta de profesional única y dinámica (34.4 y 34.6 son bloqueantes: al pasar a equipo y al volver no se puede perder ni cambiar nada: reservas, reseñas, enlace, precios) |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

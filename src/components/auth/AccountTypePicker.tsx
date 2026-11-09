@@ -1,11 +1,14 @@
 import React from 'react';
-import { Briefcase, Building2, ChevronRight, Loader2, User, type LucideIcon } from 'lucide-react';
+import { Briefcase, ChevronRight, Loader2, User, type LucideIcon } from 'lucide-react';
 
-// Las tres formas de usar GarSer (2026-11-04). Una sola lista, usada en el registro (/auth) y en la
-// pregunta que sale al crearse una cuenta nueva con Google sin haber elegido: así los textos y el
-// orden no se pueden descuadrar entre un sitio y otro.
+// Las dos formas de usar GarSer (2026-11-08: antes eran tres). Una sola lista, usada en el registro
+// (/auth) y en la pregunta que sale al crearse una cuenta nueva con Google sin haber elegido: así los
+// textos y el orden no se pueden descuadrar entre un sitio y otro.
+//
+// «Profesional» es una sola cuenta que se adapta: trabaja sola o, cuando añade a alguien, pasa a ser la
+// de un equipo (D31). No se elige «empresa» al registrarse: no existe ese tipo.
 
-export type AccountType = 'client' | 'gardener' | 'company';
+export type AccountType = 'client' | 'gardener';
 
 export const ACCOUNT_TYPES: Record<AccountType, { title: string; description: string; Icon: LucideIcon; nounPhrase: string }> = {
   client: {
@@ -15,21 +18,22 @@ export const ACCOUNT_TYPES: Record<AccountType, { title: string; description: st
     nounPhrase: 'cliente',
   },
   gardener: {
-    title: 'Jardinero',
-    description: 'Trabajo por mi cuenta y quiero conseguir clientes',
+    title: 'Profesional',
+    description: 'Ofrezco mis servicios de jardinería, solo o con mi equipo',
     Icon: Briefcase,
-    nounPhrase: 'jardinero',
-  },
-  company: {
-    title: 'Empresa',
-    description: 'Tengo una empresa con un equipo de jardinería',
-    Icon: Building2,
-    nounPhrase: 'empresa',
+    nounPhrase: 'profesional',
   },
 };
 
 export const isAccountType = (value: unknown): value is AccountType =>
-  value === 'client' || value === 'gardener' || value === 'company';
+  value === 'client' || value === 'gardener';
+
+/**
+ * Lee un tipo que viene de fuera (?role= de un enlace, una sesión vieja del navegador). Un enlace
+ * antiguo con «company» se registra como profesional (D31); todo lo que no se entiende, sin tipo.
+ */
+export const parseAccountType = (value: unknown): AccountType | undefined =>
+  value === 'company' ? 'gardener' : isAccountType(value) ? value : undefined;
 
 interface Props {
   types?: AccountType[];
@@ -40,7 +44,7 @@ interface Props {
 }
 
 /** Filas grandes y tocables (≥ 64 px): elegir una avanza de pantalla, sin botón «Continuar». */
-const AccountTypePicker: React.FC<Props> = ({ types = ['client', 'gardener', 'company'], onSelect, busyType = null, disabled = false }) => (
+const AccountTypePicker: React.FC<Props> = ({ types = ['client', 'gardener'], onSelect, busyType = null, disabled = false }) => (
   <ul className="space-y-2.5">
     {types.map((type) => {
       const { title, description, Icon } = ACCOUNT_TYPES[type];

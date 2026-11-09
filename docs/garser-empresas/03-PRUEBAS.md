@@ -570,6 +570,36 @@ autónomo igual (PS-05); solo el admin, y el correo no se pide desde el navegado
 `scripts/readiness/<servicio>.mjs`, por HTTP y con `READINESS_ENGINE=local`: **7/7 en verde, 269 comprobaciones**
 (césped 33, setos 35, arbustos 18, árboles 15, palmeras 71, desbroce 19, fitosanitarios 78). Antes fallaban 9.
 
+### Cuenta de profesional única y dinámica (2026-11-08)
+
+Diseño en `08-CUENTA-PROFESIONAL-DINAMICA.md` (D31–D40). Pruebas, por capas:
+
+- **SQL** (`supabase/tests/professional_mode.test.sql`, transacción que se revierte): registro (`signup_role_from_metadata`, `self_declare_signup_role`,
+  perfil del alta); `my_provider_mode()` (individual, sin sesión, cliente); invitación (cliente, suspendido, correo inválido, **sin declaración de seguro**,
+  **atomicidad: nada de empresa a medias**); promoción en sitio y modo que NO cambia con una invitación pendiente; segunda invitación sin declaración y
+  firma antigua `(p_email)`; A-03 (un profesional no acepta ser empleado); entrada en equipo (servicios activos sin carnet, el segundo empleado no los
+  reescribe); invariantes de F2 (empleado sin ficha, `provider_kind` no escribible, funciones internas sin `EXECUTE`, una sola sobrecarga); **vuelta a
+  individual** (ajustes a fábrica, `assignment_pending` a falso, el motor deja de ver equipo, quien se fue queda como cliente); reutilización de la empresa
+  latente; borrado de la fila del empleado (cierre de cuenta); empresa suspendida; empresa del camino antiguo (el dueño solo no cambia el modo).
+  **Se comprobó con dos mutaciones** (sin el disparador falla 5b; sin el reinicio de servicios, 5d). `provider_setup_status.test.sql` se adaptó (5l/5m).
+- **Batería** `scripts/garser-empresas/verify-professional-mode.mjs`, **22/22**: por la API y `booking-authority`, un profesional individual con reserva pagada
+  y reseña pasa a equipo y vuelve; PM-01/02 registro; PM-03/04 individual; PM-05/06 invitación y promoción; PM-07/08 A-03 y `provider_kind` por API;
+  PM-09…PM-12 equipo (horas que suman, nada se pierde, reparto entre titular y compañero); PM-13/14 baja con trabajos y reparto manual; PM-15…PM-19 vuelta
+  (ajustes de fábrica, sin reservas colgando, horas, nada se pierde, venta normal con la empresa latente); PM-20/21 reentrada y carnet del titular, F2-01;
+  **PM-22** correo del carnet por modo (**falla con el código anterior**).
+- **Baterías antiguas:** F2-01 con la regla nueva; F3-21 (registrarse «company» → `gardener`); F3-31 (el carnet se inserta por SQL, ya no por la web); las
+  cuentas «company» de las baterías que prueban la solicitud se emulan por SQL (H-55). **29 de 29 en verde (333 comprobaciones) tras `supabase db reset`.**
+- **Vitest** (+94, 2918 / 197 ficheros): `providerMode`, `useProviderMode`, `AccountContext` (modo: carga, error, relectura, tardía, al volver a la app), `BottomNav`, `Navbar`, `professionalHome`, `navActive`, `providerModeNotice`,
+  `ProviderModeNotice`, `TeamEntryCard`, `InviteMemberCard`, `BottomSheet`, `useCompanyOnboarding`, páginas de `/empresa` por modo, cierre de cuenta, y
+  `noCompanyRole.test.ts` (recorre `src/` y prohíbe `role === 'company'`). `AuthForm`, `oauthAccount`, `authCallback`, `postLoginPath`,
+  `GardenersLandingPage` y `GoogleSignInButton` se actualizaron a un solo tipo de profesional.
+- **Navegador** (375×812, local, con `demo-professional-mode.mjs`): registro con dos tipos; panel individual con la tarjeta; hoja con la casilla del seguro;
+  invitación enviada y pendiente; compañero acepta → «Actualizar» → `/empresa` + «Ya tienes equipo»; panel de equipo; Reseñas; baja → vuelta sola al
+  panel de siempre + «Vuelves al modo individual»; refresco al volver a la app. Capturas en `docs/garser-empresas/capturas-08/`.
+- **Pantallas y menús revisados en modo individual** (sin «empresa», «equipo», «empleado», «compañero» ni «titular», salvo la tarjeta de equipo): Panel
+  (cuenta con la guía y con la guía completa), Solicitudes, Disponibilidad, Mi perfil, Reseñas, Marketing, Reservas, Chat, Mi cuenta (con «Cerrar cuenta»),
+  barra superior (etiqueta «Jardinero») e inferior. La cuenta de la prueba había pasado antes por equipo y vuelto (empresa latente).
+
 ## 3. Batería de producción (`garser.es`)
 
 Se rellena al cerrar cada fase, traduciendo las pruebas de arriba a lo que hay que

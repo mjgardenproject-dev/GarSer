@@ -62,7 +62,8 @@ export function env() {
   }
   cachedEnv = {
     apiUrl: status.API_URL,
-    functionsUrl: status.FUNCTIONS_URL,
+    // Las versiones recientes de la CLI no dan FUNCTIONS_URL en `supabase status -o json`.
+    functionsUrl: status.FUNCTIONS_URL ?? `${status.API_URL}/functions/v1`,
     storageUrl: `${status.API_URL}/storage/v1`,
     anonKey: status.ANON_KEY,
     serviceRoleKey: status.SERVICE_ROLE_KEY,

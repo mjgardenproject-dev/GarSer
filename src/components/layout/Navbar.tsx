@@ -4,6 +4,8 @@ import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings, Star } f
 import { useNavigate, useLocation } from 'react-router-dom';
 import { isAdminRole } from '../../lib/adminAccess';
 import { useAccount } from '../../contexts/AccountContext';
+import { useProviderMode } from '../../hooks/useProviderMode';
+import { isNavItemActive } from '../../utils/navActive';
 import { useUnreadChats } from '../../hooks/useUnreadChats';
 import GarserLogo from '../common/GarserLogo';
 import { HEADER_PAD_VAR, NAVBAR_HEIGHT_VAR, usePublishStickyHeight } from '../../hooks/useStickyHeight';
@@ -17,6 +19,8 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // Tipo de cuenta compartido (profiles.role); antes el Navbar hacía su propia consulta.
   const { role: userRole } = useAccount();
+  // Modo del profesional (D31): en equipo el panel está en /empresa y la etiqueta es la de empresa.
+  const { isTeam } = useProviderMode();
   const unreadChats = useUnreadChats();
   
   // Use prop if available, otherwise default to null (or we could keep local state if prop is undefined)
@@ -43,19 +47,16 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
 
   const isAdmin = isAdminRole(userRole);
   
-  const isCompany = userRole === 'company';
   const isEmployee = userRole === 'employee';
-  const showRoleBadge = isAdmin || isCompany || isEmployee || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
+  const showRoleBadge = isAdmin || isEmployee || applicationStatus === 'pending' || applicationStatus === 'active' || applicationStatus === 'denied';
   const roleBadgeLabel = isAdmin
     ? 'Admin'
-    : isCompany
-      ? 'Empresa'
     : isEmployee
       ? 'Empleado'
     : applicationStatus === 'pending'
       ? 'Jardinero (pendiente)'
       : applicationStatus === 'active'
-        ? 'Jardinero'
+        ? (isTeam ? 'Empresa' : 'Jardinero')
         : applicationStatus === 'denied'
           ? 'Jardinero (no aceptado)'
           : '';
@@ -121,7 +122,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
             <div className="flex items-center gap-1 lg:gap-2 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = isNavItemActive(item.path, location.pathname, isTeam);
                 return (
                   <button
                     key={item.path}
@@ -199,7 +200,7 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
             <div className="px-4 py-3 space-y-2">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = isNavItemActive(item.path, location.pathname, isTeam);
                 return (
                   <button
                     key={item.path}

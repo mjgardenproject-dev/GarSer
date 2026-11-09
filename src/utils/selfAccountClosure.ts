@@ -62,12 +62,17 @@ export function describeClosureBlockers(plan: SelfClosurePlan): string[] {
   return lines;
 }
 
+/** Solo un profesional CON equipo (modo equipo) tiene «empresa» a ojos de quien cierra su cuenta (D31). */
+const activeTeam = (plan: SelfClosurePlan) => (plan.company && plan.company.activeEmployees > 0 ? plan.company : null);
+
 /** Qué pasará si confirma, según lo que diga el servidor. */
 export function describeClosureOutcome(plan: SelfClosurePlan): string[] {
+  const team = activeTeam(plan);
   if (plan.mode === 'delete') {
     return [
       'Se borrará tu cuenta entera: tus datos, tus fotos y todo lo que hayas guardado.',
-      ...(plan.company ? ['Tu empresa se borrará con ella.'] : []),
+      // Una empresa latente (hubo equipo antes, ahora trabaja solo) no se menciona: en modo individual no hay empresa que ver.
+      ...(team ? ['Tu empresa se borrará con ella.'] : []),
       'No se puede deshacer.',
     ];
   }
@@ -75,8 +80,8 @@ export function describeClosureOutcome(plan: SelfClosurePlan): string[] {
     return [
       'Se borrarán tus datos personales (nombre, teléfono, dirección y fotos) y no podrás volver a entrar.',
       'Tus reservas pasadas y sus importes se conservan, sin tus datos, porque forman parte de las cuentas de la otra persona.',
-      ...(plan.company
-        ? [`Tu empresa dejará de aparecer y de recibir reservas, y tu equipo (${plan.company.activeEmployees} persona(s)) dejará de tener acceso a ella.`]
+      ...(team
+        ? [`Tu empresa dejará de aparecer y de recibir reservas, y tu equipo (${team.activeEmployees} persona(s)) dejará de tener acceso a ella.`]
         : []),
       'Los mensajes del chat se conservan para la otra persona.',
       'No se puede deshacer.',

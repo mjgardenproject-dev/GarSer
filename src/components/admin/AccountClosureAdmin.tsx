@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { AlertTriangle, Loader2, Search, ShieldOff, ShieldCheck, Trash2, UserX } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useConfirmDialog } from '../common/ConfirmDialog';
+import { normalizeAccountRole } from '../../lib/accountRole';
 
 // Prueba real · F6 (R-02, D23): la única vía para quitar una cuenta sin romper nada. Antes solo
 // existía el panel de Supabase, que borra en bruto (con empresas se bloqueaba; con clientes o
@@ -93,7 +94,8 @@ const AccountClosureAdmin: React.FC = () => {
     await review(plan.email || email);
   };
 
-  const isProvider = plan?.role === 'gardener' || plan?.role === 'company';
+  // Un solo tipo de profesional (D31); una cuenta «company» heredada cuenta como tal.
+  const isProvider = normalizeAccountRole(plan?.role) === 'gardener';
 
   return (
     <div className="p-4 sm:p-6">

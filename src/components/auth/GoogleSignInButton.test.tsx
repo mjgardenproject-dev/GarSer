@@ -130,18 +130,18 @@ describe('GoogleSignInButton', () => {
 
   it('con rol de alta, la redirección clásica lo manda en la URL de vuelta', async () => {
     mocks.load.mockRejectedValue(new Error('google_identity_blocked'));
-    render(<GoogleSignInButton redirectPath="/empresa" signupRole="company" onSignedIn={vi.fn()} />);
+    render(<GoogleSignInButton redirectPath="/dashboard" signupRole="gardener" onSignedIn={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: /Continuar con Google/ }));
     await waitFor(() => expect(mocks.signInWithOAuth).toHaveBeenCalled());
     expect(mocks.signInWithOAuth).toHaveBeenCalledWith({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/empresa')}&role=company`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/dashboard')}&role=gardener`,
         queryParams: { prompt: 'select_account' },
       },
     });
     // Y guardado en el navegador, por si la URL de vuelta pierde el ?role=.
-    expect(mocks.remember).toHaveBeenCalledWith('company');
+    expect(mocks.remember).toHaveBeenCalledWith('gardener');
   });
 
   it('cambiar de tipo no vuelve a inicializar Google, y al pulsar manda el ÚLTIMO elegido', async () => {
@@ -152,11 +152,11 @@ describe('GoogleSignInButton', () => {
     const { rerender } = render(<GoogleSignInButton context="signup" redirectPath="/x" signupRole="gardener" onSignedIn={onSignedIn} />);
     await waitFor(() => expect(google.api.initialize).toHaveBeenCalledTimes(1));
 
-    rerender(<GoogleSignInButton context="signup" redirectPath="/x" signupRole="company" onSignedIn={onSignedIn} />);
+    rerender(<GoogleSignInButton context="signup" redirectPath="/x" signupRole="gardener" onSignedIn={onSignedIn} />);
     await google.config().callback({ credential: 'id-token-de-google' });
 
     expect(google.api.initialize).toHaveBeenCalledTimes(1);
-    expect(mocks.declareRole).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana' }, 'company');
+    expect(mocks.declareRole).toHaveBeenCalledWith({ role: 'client', isNew: true, firstName: 'Ana' }, 'gardener');
   });
 
   it('sin tipo de alta (cliente) la redirección borra cualquier tipo guardado de un intento anterior', async () => {

@@ -6,7 +6,7 @@ import {
   type OAuthSignInResult,
   type RoleProblem,
 } from '../../lib/oauthAccount';
-import AccountTypePicker, { ACCOUNT_TYPES, type AccountType } from './AccountTypePicker';
+import AccountTypePicker, { ACCOUNT_TYPES, parseAccountType, type AccountType } from './AccountTypePicker';
 
 // Pantallas que salen DESPUÉS de entrar con Google cuando hay que aclarar algo (2026-11-04). Las usan
 // el acceso (AuthForm) y la vuelta por redirección (AuthCallbackPage), para que no se diga una cosa
@@ -15,7 +15,7 @@ import AccountTypePicker, { ACCOUNT_TYPES, type AccountType } from './AccountTyp
 //  · NewAccountChooser: Google crea cuenta con solo pulsar un botón, y la cuenta nace de cliente.
 //    Quien entró desde «Entrar» sin haber elegido (un jardinero despistado, sobre todo) no puede
 //    quedarse como cliente sin saberlo: se le pregunta antes de seguir.
-//  · RoleProblemPanel: eligió jardinero/empresa y no se ha podido dejar así. Se dice por qué y qué
+//  · RoleProblemPanel: eligió profesional y no se ha podido dejar así. Se dice por qué y qué
 //    hacer, en vez de llevarle al panel de cliente como si nada.
 
 const useFocusOnMount = (ref: React.RefObject<HTMLElement>) => {
@@ -27,7 +27,7 @@ const SECONDARY = 'inline-flex min-h-12 w-full items-center justify-center round
 
 interface ChooserProps {
   result: OAuthSignInResult;
-  /** Cuando ya está elegido (y, si era jardinero/empresa, declarado). Puede traer `roleProblem`. */
+  /** Cuando ya está elegido (y, si era profesional, declarado). Puede traer `roleProblem`. */
   onResolved: (result: OAuthSignInResult) => void;
 }
 
@@ -101,7 +101,7 @@ export const RoleProblemPanel: React.FC<ProblemProps> = ({ result, onResolved, o
   useFocusOnMount(headingRef);
 
   const problem = result.roleProblem ?? 'failed';
-  const requested = result.requestedRole ? ACCOUNT_TYPES[result.requestedRole].nounPhrase : 'jardinero';
+  const requested = ACCOUNT_TYPES[parseAccountType(result.requestedRole) ?? 'gardener'].nounPhrase;
   const copy = problemCopy(problem, requested, accountRoleLabel(result.role));
 
   const retry = async () => {

@@ -203,7 +203,7 @@ export function gardenersFaqs(terms: BillingTermsInput): BillingFaqItem[] {
     },
     {
       question: '¿Sirve para empresas con empleados?',
-      answer: 'Sí. Das de alta tu empresa, añades a tu equipo y cada empleado ve sus trabajos en su app. GarSer reparte los trabajos o eliges tú quién va.',
+      answer: 'Sí. Creas tu cuenta y, cuando quieras, añades a tu equipo desde tu panel: cada empleado ve sus trabajos en su app. GarSer reparte los trabajos o eliges tú quién va.',
     },
     {
       question: '¿Necesito instalar algo?',

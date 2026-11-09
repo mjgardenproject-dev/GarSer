@@ -6,7 +6,7 @@
 > Regla de la casa: un hallazgo sin `fichero:línea` no es un hallazgo, es una sospecha.
 > Las sospechas van a §3.
 
-**Última actualización:** 2026-09-23 (decisiones D1–D6)
+**Última actualización:** 2026-11-08 (H-45 a H-58, cuenta de profesional dinámica)
 
 ---
 
@@ -831,6 +831,100 @@ esta es la respuesta.
 | A-16 | **`availability` es la única fuente que decide si una hora está libre.** `availability_blocks` pasa a ser un espejo que se escribe pero no decide. | H-01. La web, el pago y la confirmación ya usaban `availability`; `reserve` y `resize` se alinean con ellos. La retirada completa del espejo se hace en F4, junto a `provider_free_hours`. |
 
 ---
+
+### H-45 · El tipo de cuenta vive en tres sitios y no hay ninguna RPC para cambiarlo — 🟠 Se resuelve con D31–D33 (`08`)
+
+`profiles.role` (rutas y menús), `gardener_profiles.provider_kind` (motor SQL, Edge Functions, distintivo) y la fila
+`companies` + dueño nacen juntos solo al aprobar una empresa (`20260924130000_empresas_f3_onboarding_server.sql:247-262`).
+`self_declare_signup_role` solo convierte desde `client` sin actividad (`20261104160000_account_type_declaration_status.sql:39-59`).
+Un autónomo no puede llegar a empresa ni volver. La prueba F2-01 mide la coherencia (`verify-f2-db.mjs:105-117`) y deberá cambiar a
+la regla nueva (empresa latente válida): `kind='company'` ⟹ hay empresa, y empresa con ≥1 empleado ⟹ `kind='company'`.
+
+### H-46 · Una empresa latente con ajustes de equipo divergiría del autónomo — 🟠 Resuelto en el diseño (D34), sin implementar
+
+Hay dos discriminadores a la vez: `provider_kind` (`provider_workers_all` `F8:112-131`, `provider_max_crew` `F7:79-91`) y la **fila
+`companies`** (`provider_allows_split_jobs` `F6:42-50`; `own_clients_fee_waiver` `:739-742`; `sync_booking_span` `M28:65-68`;
+`booking-authority/index.ts:381-395` y `booking-payment/index.ts:654-659`, estos dos sin releer). Si una empresa vuelve a
+individual conservando `assignment_mode='manual'`, el pago deja las reservas `assignment_pending` y la pantalla individual no ofrece
+«Confirmar». Por eso al volver se restauran `max_crew=1`, `allow_split_jobs=false`, `assignment_mode='auto'` y se limpian las propuestas.
+
+### H-47 · `ProfileSettings` escribe el mismo nombre en la ficha y en el perfil personal — 🟠 Fuera de alcance (R3)
+
+(Explorador, sin releer) `ProfileSettings.tsx:700-707` guarda `full_name` en `gardener_profiles` y en `profiles`. En modo equipo el
+nombre comercial pisa el personal del titular (saludo de correos, «Va: …»). No hay `companies.trade_name`: el nombre comercial es
+`gardener_profiles.full_name`. Se anota; no se arregla aquí.
+
+### H-48 · Las reseñas no distinguen «lo del equipo» de «lo personal» — 🟢 Informativo
+
+Van por `reviews.gardener_id` = el titular (aud.). Ida y vuelta no pierde ninguna, pero al volver a individual lo ganado por el equipo
+queda como reputación personal. No hay `provider_kind` ni historial de tipo en reservas ni reseñas para separarlo.
+
+### H-49 · Mala calidad heredada que la cuenta única deja visible — 🟠 Fuera de alcance salvo lo que arregla D31
+
+(Explorador, sin releer.) Una empresa no tiene «Reseñas» propias y la barra le enseña `/valoraciones` de cliente (`Navbar.tsx:90`): **se
+corrige en F-D** porque el modo equipo debe conservar las reseñas. El resto se anota sin tocar: `ChatList.tsx:66,195,262` trata a una
+empresa como cliente (se resuelve solo al ser `gardener`); `DashboardApplyCTA.tsx` huérfano; `gardenerApplicationJustSubmitted` solo se lee
+(`App.tsx:180`); `src/types/index.ts:4,15` con una unión de rol sin `company`/`employee`; `RoleMonitor.tsx:70-83` subiría a `gardener` un
+`client` con ficha; cualquier cuenta con sesión puede abrir `/apply`; la barra inferior sale en `/status`.
+
+### H-50 · Los documentos de `01` estaban desfasados — 🟢 Informativo
+
+Línea base real el 2026-11-08: **2824 tests / 185 ficheros** (`01` decía 953 / 118) y **28** baterías de Empresas (`01` decía 27 / 300;
+la nueva es `verify-application-ads-consent`, 11 comprobaciones). Ver `08` §1. `01` ya está corregido.
+
+### H-51 · `verify-f3-db` F3-31 llevaba roto desde el 2026-10-20 y abortaba la batería — 🟡 Corregido
+
+La migración `20261020140000_phyto_licenses_for_teams.sql:349` retiró `INSERT` sobre `gardener_licenses` a `authenticated` (el carnet entra por
+`submit_phyto_license`, que exige un fichero ya subido a Storage). F3-31 seguía insertando la fila con la sesión del empleado → 403 y, como el
+siguiente paso usa el id de esa fila, la batería **se interrumpía en 25/27** sin ejecutar las comprobaciones posteriores. No lo causa la cuenta
+dinámica (es anterior). Se corrige insertando la fila pendiente por SQL y probando lo que decide (revisión del admin y asignación): **35/35**.
+
+### H-52 · El harness de baterías no funcionaba con la CLI actual — 🟡 Corregido
+
+`scripts/readiness/_harness.mjs` leía `status.FUNCTIONS_URL` de `supabase status -o json`, que la versión actual de la CLI ya no da: toda batería que
+llama a `booking-authority` fallaba con `Failed to parse URL from undefined/booking-authority`. Ahora cae a `${API_URL}/functions/v1`.
+Además, las funciones locales hay que servirlas: `supabase functions serve` (el contenedor `supabase_edge_runtime_…` no está en marcha tras un
+`supabase start` normal en esta máquina).
+
+### H-53 · Tras un `supabase db reset` el reloj de avisos local deja de funcionar — 🟡 Procedimiento
+
+Los secretos `lifecycle_tick_url` y `lifecycle_tick_secret` del Vault local (los usa `private.ring_notification_dispatch`) no viven en ninguna
+migración: un `db reset` los borra y los avisos se quedan en `pending` (se nota en `verify-self-closure` SC-04 y `verify-notification-outbox`).
+Hay que volver a crearlos (URL `http://supabase_kong_GarSer-main_4:8000/functions/v1/booking-lifecycle-tick` y el `LIFECYCLE_TICK_SECRET` del
+contenedor de funciones). Ya documentado a medias en `04-FALLOS-PRUEBA-REAL.md` (§ configuración local).
+
+### H-54 · `admin_review_notifications.test.sql` A6 cuenta avisos de toda la base — 🟢 Frágil
+
+`supabase/tests/admin_review_notifications.test.sql:96` espera exactamente 3 avisos `gardener_application` en TODA la tabla: con restos de baterías
+(que no limpian `notification_outbox`) da falso fallo. Se comprobó borrando los `admin_review_needed` locales: pasa. Pendiente de acotarlo a las filas
+de la prueba.
+
+### H-55 · Las baterías antiguas fabrican su empresa por el camino que ya no se puede usar — 🟡 Decidido
+
+`_company-harness.createCompany` (y copias locales en `verify-f3-db`, `verify-f3-emails`, `verify-f4-sell`) registran un usuario «company», envían la
+solicitud y el admin la aprueba. Desde D31 el registro «company» da `gardener` y la política de `company_applications` exige `profiles.role =
+'company'`. Para no perder cobertura del código que sigue vivo (D38), esas baterías **emulan una cuenta anterior al cambio** poniendo
+`profiles.role = 'company'` por SQL tras el alta (parámetro `legacy`/`emulateLegacy`). La vida real de la cuenta nueva (promoción, aceptación, vuelta)
+la cubre `verify-professional-mode.mjs`. F2-01 cambió de regla (D32) y se explica en su comentario.
+
+### H-56 · El texto de «Esa franja ya no está libre» habla de «la empresa» a cualquier cliente — 🟢 Fuera de alcance
+
+`src/utils/bookingRescheduleService.ts:13` (`no_longer_available`): «La empresa puede proponerte otra». Lo ve el cliente sea el proveedor autónomo o equipo.
+Es texto de cliente (fuera del alcance de esta tarea) y ya era así antes. Se anota sin tocar.
+
+### H-57 · Un titular con equipo aparece al cliente con la etiqueta «Empresa» — 🟢 Decidido (coherente)
+
+`ProvidersPage.tsx:961` y `profileNames.ts:78` pintan «Empresa» por `provider_kind = 'company'`. Con la cuenta dinámica eso significa «modo equipo»: un autónomo que
+añade a su primer compañero pasa a verse como «Empresa» ante los clientes, y vuelve a verse como el de siempre al quedarse solo. Se deja así: es lo que el cliente
+recibe de verdad (un equipo reparte el trabajo). El panel de admin («Profesionales») usa la misma etiqueta por tipo.
+
+### H-58 · La semilla local no daba fecha de caducidad al carnet del jardinero de pruebas — 🟡 Corregido
+
+`supabase/seed.sql` sembraba `license_verification_status = 'approved'` sin `license_expires_at`, y desde `20260913120000` un carnet solo es «vigente» con fecha futura
+(`isPhytosanitaryLicenseActive`). Tras un `supabase db reset` los tratamientos químicos del jardinero de la semilla quedaban excluidos y `readiness/fitosanitarios.mjs`
+daba 2 fallos por HTTP («martes laborable ofrece horas», «aparece desde una dirección cubierta»; 76/78). Antes del reset pasaba porque la base local tenía la fecha puesta a mano.
+La semilla ahora pone `now() + 10 years`: **78/78** y el total de las 7 baterías de servicios vuelve a **269**. (Con `READINESS_ENGINE=local` salen más «NO PROBADO» porque esas
+comprobaciones solo existen por HTTP: la cifra de referencia se mide por HTTP con las funciones servidas.)
 
 ## 3. Sospechas sin verificar
 

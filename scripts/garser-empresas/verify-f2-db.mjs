@@ -102,16 +102,21 @@ function seedCompany(owner, name, employees) {
 }
 
 async function main() {
-  // ── F2-01 · lo existente queda como autónomo ───────────────────────────────
-  // La regla permanente no es «todas son solo» (eso solo es cierto justo tras migrar, antes de
-  // que exista ninguna empresa): es que el tipo casa con la realidad. Toda ficha sin empresa es
-  // 'solo' (los jardineros de siempre) y toda ficha 'company' tiene su fila en companies.
+  // ── F2-01 · el tipo casa con la realidad ───────────────────────────────────
+  // Cambió el 2026-11-08 (cuenta de profesional dinámica, D32): el tipo ya no es una etiqueta que
+  // se elige al aprobar, sino el reflejo de los empleados (un disparador lo mantiene). La regla
+  // permanente es: toda ficha 'company' tiene su fila en companies, y toda empresa con al menos un
+  // empleado activo es 'company'. Una empresa SIN empleados puede ser 'solo' (modo individual con la
+  // empresa latente) o 'company' (las del camino antiguo, mientras no cambie su plantilla).
   const mismatched = hasColumn('gardener_profiles', 'provider_kind') && exists('companies')
     ? sql(`select count(*) from public.gardener_profiles gp
            left join public.companies c on c.provider_user_id = gp.user_id
-           where (c.id is null and gp.provider_kind <> 'solo') or (c.id is not null and gp.provider_kind <> 'company')`)
+           where (c.id is null and gp.provider_kind <> 'solo')
+              or (c.id is not null and gp.provider_kind <> 'company' and exists (
+                    select 1 from public.company_members m
+                    where m.company_id = c.id and m.status = 'active' and m.role <> 'owner'))`)
     : null;
-  record('F2-01', 'Toda ficha sin empresa es de autónomo (solo) y toda ficha de empresa tiene su empresa',
+  record('F2-01', 'Toda ficha de empresa tiene su empresa y toda empresa con empleados activos es de equipo',
     mismatched === '0',
     mismatched === null ? 'no existe la columna provider_kind o la tabla companies'
       : `solo: ${sql("select count(*) from public.gardener_profiles where provider_kind='solo'")}, company: ${sql("select count(*) from public.gardener_profiles where provider_kind='company'")}, incoherentes: ${mismatched}`);

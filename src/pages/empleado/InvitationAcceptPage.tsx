@@ -289,8 +289,7 @@ const InvitationAcceptPage: React.FC = () => {
   const wrongEmail = (user.email || '').toLowerCase() !== (preview.email || '').toLowerCase();
   const blocker =
     role === 'employee' ? 'Ya formas parte de una empresa en GarSer.'
-    : role === 'company' ? `Este es el enlace que tienes que enviar a ${preview.email}: lo abrirá desde su móvil para unirse a tu equipo.`
-    : role === 'gardener' ? 'Tu cuenta es de profesional en GarSer. Para trabajar como empleado de una empresa necesitas una cuenta distinta, con otro correo.'
+    : role === 'gardener' ? `Tu cuenta es de profesional en GarSer: con ella no puedes unirte como empleado (hace falta una cuenta distinta, con otro correo). Si este es el enlace que enviaste a ${preview.email} para tu equipo, tiene que abrirlo esa persona desde su móvil.`
     : role === 'admin' ? 'Una cuenta de administración no puede unirse a una empresa.'
     : wrongEmail ? `Esta invitación es para ${preview.email} y has entrado como ${user.email}.`
     : null;
@@ -304,10 +303,10 @@ const InvitationAcceptPage: React.FC = () => {
           <div className="mt-5 space-y-2">
             {role === 'employee' ? (
               <Link to="/mi-trabajo" className="block w-full rounded-xl bg-emerald-700 px-4 py-3 text-center font-bold text-white hover:bg-emerald-800">Ir a mi trabajo</Link>
-            ) : role === 'company' ? (
+            ) : role === 'gardener' ? (
               <>
-                <Link to="/empresa" className="block w-full rounded-xl bg-emerald-700 px-4 py-3 text-center font-bold text-white hover:bg-emerald-800">Volver a tu empresa</Link>
-                {/* Si el enlace se abre en un móvil con la sesión de la empresa: dejarla lista para el empleado. */}
+                <Link to="/dashboard" className="block w-full rounded-xl bg-emerald-700 px-4 py-3 text-center font-bold text-white hover:bg-emerald-800">Volver a mi panel</Link>
+                {/* Si el enlace se abre en un móvil con la sesión del titular: dejarla lista para el empleado. */}
                 <button type="button" onClick={() => { void signOut(); }} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-700 hover:bg-gray-50">
                   No soy yo: cerrar sesión
                 </button>

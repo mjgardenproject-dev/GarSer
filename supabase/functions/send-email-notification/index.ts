@@ -451,8 +451,10 @@ Deno.serve(async (req) => {
       }
       to = email;
       name = String(card.full_name || '').trim() || 'hola';
-      const { data: ownCompany } = await admin.from('companies').select('id').eq('provider_user_id', user_id || '').maybeSingle();
-      confirmUrl = `${BRAND.site}${ownCompany ? '/empresa' : '/dashboard'}`;
+      // El panel es el de equipo solo si la cuenta está en modo equipo (provider_kind, que sigue a los
+      // empleados activos). Una empresa LATENTE —hubo equipo y ya trabaja sola— no cuenta (D31/D32).
+      const { data: providerCard } = await admin.from('gardener_profiles').select('provider_kind').eq('user_id', user_id || '').maybeSingle();
+      confirmUrl = `${BRAND.site}${providerCard?.provider_kind === 'company' ? '/empresa' : '/dashboard'}`;
     } else if (type === 'company_approved' || type === 'company_rejected') {
       // Estado de la solicitud de empresa: solo administradores (o un servicio interno). El
       // correo tiene que decir lo mismo que la base de datos: si la solicitud no está en ese
@@ -700,8 +702,9 @@ Deno.serve(async (req) => {
             reason: license.rejection_reason,
           });
         } else {
-          const { data: ownCompany } = await admin.from('companies').select('id').eq('provider_user_id', license.gardener_id).maybeSingle();
-          const kind: LicenseHolderKind = membership ? 'employee' : ownCompany ? 'company_owner' : 'solo';
+          // «Titular de empresa» solo en modo equipo: una empresa latente es un profesional individual (D31/D32).
+          const { data: holderCard } = await admin.from('gardener_profiles').select('provider_kind').eq('user_id', license.gardener_id).maybeSingle();
+          const kind: LicenseHolderKind = membership ? 'employee' : holderCard?.provider_kind === 'company' ? 'company_owner' : 'solo';
           recipientId = license.gardener_id;
           copy = holderLicenseEmailCopy({
             event,

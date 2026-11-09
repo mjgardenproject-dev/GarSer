@@ -31,6 +31,10 @@
     <!-- Verificación del dominio garser.es en Meta (portafolio empresarial). Va en el HTML estático, no inyectada por
          JavaScript, para que Meta la encuentre al leer la página. No quitar: si falta, Meta pierde la verificación. -->
     <meta name="facebook-domain-verification" content="ymtdrj9m6st3ihwcs6a7mtoibzfz0o" />
+    <!-- Recargar empieza arriba: sin esto el móvil restaura el scroll cuando la pantalla (carga en diferido) ya existe y la
+         deja a medias, con su primera sección tapada por las barras fijas. Va aquí para que actúe antes que la app;
+         src/main.tsx lo repite. ScrollToTop decide dónde empieza cada pantalla. -->
+    <script>try{if('scrollRestoration' in history)history.scrollRestoration='manual'}catch(e){}</script>
   </head>
   <body>
     <div id="root"></div>

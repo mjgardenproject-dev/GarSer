@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { teamStateFromSize } from './applicationTeamSize';
 
 // Pendiente PH-02: un jardinero rechazado corrige su solicitud y la vuelve a enviar. Antes la web
 // intentaba pasarla a borrador y borrarla desde el navegador; las reglas no lo dejan (respondía
@@ -43,8 +44,8 @@ export type GardenerApplicationRow = {
   tools_available?: string[] | null;
   experience_years?: number | null;
   experience_description?: string | null;
-  worked_for_companies?: boolean | null;
-  can_prove?: boolean | null;
+  /** Personas que trabajarán desde el perfil, contando al solicitante (1 = solo). Nulo en solicitudes anteriores. */
+  estimated_team_size?: number | null;
   proof_photos?: string[] | null;
   certification_text?: string | null;
   certification_photos?: string[] | null;
@@ -53,6 +54,7 @@ export type GardenerApplicationRow = {
 /** Los datos guardados de la solicitud, con la forma del formulario de alta. */
 export function wizardStateFromApplication(row: GardenerApplicationRow) {
   const years = Number(row.experience_years ?? 0) || 0;
+  const team = teamStateFromSize(row.estimated_team_size);
   return {
     fullName: row.full_name || '',
     phone: row.phone || '',
@@ -64,8 +66,8 @@ export function wizardStateFromApplication(row: GardenerApplicationRow) {
     expYears: years,
     expYearsInput: String(years),
     experienceText: row.experience_description || '',
-    workedForCompanies: Boolean(row.worked_for_companies),
-    canProve: Boolean(row.can_prove),
+    teamChoice: team.choice,
+    teamSizeInput: team.input,
     proofPhotos: row.proof_photos || [],
     educationText: row.certification_text || '',
     certPhotos: row.certification_photos || [],

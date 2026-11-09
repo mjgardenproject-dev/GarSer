@@ -1091,6 +1091,7 @@ export type Database = {
           declaration_truth: boolean | null
           email: string | null
           experience_description: string | null
+          estimated_team_size: number | null
           experience_range: string | null
           experience_years: number | null
           full_name: string | null
@@ -1123,6 +1124,7 @@ export type Database = {
           declaration_truth?: boolean | null
           email?: string | null
           experience_description?: string | null
+          estimated_team_size?: number | null
           experience_range?: string | null
           experience_years?: number | null
           full_name?: string | null
@@ -1155,6 +1157,7 @@ export type Database = {
           declaration_truth?: boolean | null
           email?: string | null
           experience_description?: string | null
+          estimated_team_size?: number | null
           experience_range?: string | null
           experience_years?: number | null
           full_name?: string | null

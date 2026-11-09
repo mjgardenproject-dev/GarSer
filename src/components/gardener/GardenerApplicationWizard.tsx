@@ -10,6 +10,7 @@ import { Check, ChevronLeft, ChevronRight, UploadCloud, Plus } from 'lucide-reac
 import GardenerStatusPage from './GardenerStatusPage';
 import StickyStepProgress from '../common/StickyStepProgress';
 import { compressImage } from '../../utils/imageCompression';
+import { MAX_TEAM_SIZE, MIN_TEAM_SIZE_WITH_TEAM, estimatedTeamSize, teamSizeHint, type TeamChoice } from '../../utils/applicationTeamSize';
 
 type Step = 1 | 2 | 3 | 4 | 5;
 
@@ -41,6 +42,9 @@ const TOOLS = [
 
 const UPLOAD_BOX_CLASS = "relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 cursor-pointer overflow-hidden flex flex-col items-center justify-center transition-colors";
 const TEXT_INPUT_CLASS = "w-full rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 text-base sm:text-sm shadow-sm transition-all focus:border-transparent focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500";
+// Campos numéricos estrechos. `w-24 ${TEXT_INPUT_CLASS}` no servía: el `w-full` del campo de texto ganaba y el número
+// ocupaba toda la fila (y «personas en total…» caía a la línea de abajo).
+const NUMBER_INPUT_CLASS = TEXT_INPUT_CLASS.replace('w-full', 'w-24');
 const SECONDARY_BUTTON_CLASS = "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]";
 
 const GardenerApplicationWizard: React.FC = () => {
@@ -74,8 +78,10 @@ const GardenerApplicationWizard: React.FC = () => {
   const [expYears, setExpYears] = useState<number>(0);
   const [expYearsInput, setExpYearsInput] = useState<string>('0');
   const [experienceText, setExperienceText] = useState('');
-  const [workedForCompanies, setWorkedForCompanies] = useState<boolean>(false);
-  const [canProve, setCanProve] = useState<boolean>(false);
+  // «¿Cuántas personas trabajarán desde tu perfil?» (contándote a ti). Sin respuesta por defecto: es el dato
+  // que más pesa al revisar la solicitud, así que se elige a propósito (applicationTeamSize.ts).
+  const [teamChoice, setTeamChoice] = useState<TeamChoice | null>(null);
+  const [teamSizeInput, setTeamSizeInput] = useState<string>('');
   const [proofPhotos, setProofPhotos] = useState<string[]>([]);
 
   const [educationText, setEducationText] = useState('');
@@ -96,7 +102,7 @@ const GardenerApplicationWizard: React.FC = () => {
   const isStepValid = (s: number) => {
     if (s === 1) return fullName.trim().length > 0 && isPhoneValid(phone) && cityZone.trim().length > 0 && !!photoUrl;
     if (s === 2) return services.length > 0 && tools.length > 0; // "Otros" es opcional
-    if (s === 3) return (expYears >= 0) && (experienceText.trim().length > 0);
+    if (s === 3) return (expYears >= 0) && (experienceText.trim().length > 0) && estimatedTeamSize(teamChoice, teamSizeInput) !== null;
     if (s === 4) return true; // Paso 4 (formación) es OPCIONAL por diseño: no debe frenar la solicitud
     if (s === 5) return declTruth && acceptTerms;
     return true;
@@ -114,7 +120,10 @@ const GardenerApplicationWizard: React.FC = () => {
       if (services.length === 0) return 'Marca al menos un servicio que ofrezcas.';
       if (tools.length === 0) return 'Marca al menos una herramienta de la que dispongas.';
     }
-    if (s === 3) return 'Indica tus años de experiencia y descríbela brevemente.';
+    if (s === 3) {
+      if (experienceText.trim().length === 0) return 'Describe brevemente tu experiencia.';
+      return teamSizeHint(teamChoice, teamSizeInput) || 'Indica tus años de experiencia.';
+    }
     if (s === 5) return 'Marca las dos casillas para poder enviar la solicitud.';
     return '';
   };
@@ -145,8 +154,8 @@ const GardenerApplicationWizard: React.FC = () => {
         if (data.expYears !== undefined) setExpYears(data.expYears);
         if (data.expYearsInput !== undefined) setExpYearsInput(data.expYearsInput);
         if (data.experienceText !== undefined) setExperienceText(data.experienceText);
-        if (data.workedForCompanies !== undefined) setWorkedForCompanies(data.workedForCompanies);
-        if (data.canProve !== undefined) setCanProve(data.canProve);
+        if (data.teamChoice === 'solo' || data.teamChoice === 'team') setTeamChoice(data.teamChoice);
+        if (typeof data.teamSizeInput === 'string') setTeamSizeInput(data.teamSizeInput);
         if (data.proofPhotos !== undefined) setProofPhotos(data.proofPhotos);
         
         if (data.educationText !== undefined) setEducationText(data.educationText);
@@ -170,7 +179,7 @@ const GardenerApplicationWizard: React.FC = () => {
       fullName, phone, cityZone, photoUrl,
       services, otherServices,
       tools,
-      expYears, expYearsInput, experienceText, workedForCompanies, canProve, proofPhotos,
+      expYears, expYearsInput, experienceText, teamChoice, teamSizeInput, proofPhotos,
       educationText, certPhotos,
       declTruth, acceptTerms
     };
@@ -185,7 +194,7 @@ const GardenerApplicationWizard: React.FC = () => {
     fullName, phone, cityZone, photoUrl,
     services, otherServices,
     tools,
-    expYears, expYearsInput, experienceText, workedForCompanies, canProve, proofPhotos,
+    expYears, expYearsInput, experienceText, teamChoice, teamSizeInput, proofPhotos,
     educationText, certPhotos,
     declTruth, acceptTerms
   ]);
@@ -215,7 +224,7 @@ const GardenerApplicationWizard: React.FC = () => {
             setFullName(restored.fullName); setPhone(restored.phone); setCityZone(restored.cityZone); setPhotoUrl(restored.photoUrl);
             setServices(restored.services); setOtherServices(restored.otherServices); setTools(restored.tools);
             setExpYears(restored.expYears); setExpYearsInput(restored.expYearsInput); setExperienceText(restored.experienceText);
-            setWorkedForCompanies(restored.workedForCompanies); setCanProve(restored.canProve); setProofPhotos(restored.proofPhotos);
+            setTeamChoice(restored.teamChoice); setTeamSizeInput(restored.teamSizeInput); setProofPhotos(restored.proofPhotos);
             setEducationText(restored.educationText); setCertPhotos(restored.certPhotos);
           }
           const rejection = await fetchLastRejection(user!.id);
@@ -276,8 +285,8 @@ const GardenerApplicationWizard: React.FC = () => {
       tools_available: tools,
       experience_years: expYears || null,
       experience_description: experienceText, // Assuming this field exists or mapping it
-      worked_for_companies: workedForCompanies,
-      can_prove: canProve,
+      // Personas que trabajarán desde el perfil, contándote a ti (null mientras no esté respondida).
+      estimated_team_size: estimatedTeamSize(teamChoice, teamSizeInput),
       proof_photos: proofPhotos,
       certification_text: educationText || null,
       certification_photos: certPhotos, // Assuming this field exists
@@ -323,7 +332,7 @@ const GardenerApplicationWizard: React.FC = () => {
     switch(s) {
       case 1: return 'Tus datos';
       case 2: return 'Servicios y herramientas';
-      case 3: return 'Experiencia';
+      case 3: return 'Tu actividad';
       case 4: return 'Formación';
       case 5: return 'Confirmación';
       default: return '';
@@ -480,43 +489,85 @@ const GardenerApplicationWizard: React.FC = () => {
         )}
 
         {step === 3 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold mb-2">Experiencia</h2>
-            <div className="flex items-center gap-3">
-              <label htmlFor="gw-exp-years" className="sr-only">Años de experiencia</label>
-              <input id="gw-exp-years" type="number" min={0} value={expYearsInput} onFocus={()=>{ if (expYearsInput === '0') setExpYearsInput(''); }} onBlur={()=>{ if (expYearsInput.trim() === '') { setExpYearsInput('0'); setExpYears(0); } }} onChange={(e)=>{ const v=e.target.value; setExpYearsInput(v); const n=parseInt(v||'0',10); setExpYears(isNaN(n)?0:n); }} className={`w-24 ${TEXT_INPUT_CLASS}`} />
-              <span className="text-sm text-gray-700">años de experiencia</span>
-            </div>
-            <label htmlFor="gw-exp-text" className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
-            <textarea id="gw-exp-text" value={experienceText} onChange={(e)=>setExperienceText(e.target.value)} rows={4} className={TEXT_INPUT_CLASS} />
+          <div className="space-y-6">
+            <p className="text-sm text-gray-600">
+              GarSer es para profesionales que trabajan por su cuenta y para empresas de jardinería. Cuéntanos cómo trabajas
+              para que podamos revisar tu solicitud.
+            </p>
 
-            {/* Experiencia laboral verificable (se persiste en worked_for_companies / can_prove) */}
-            <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={workedForCompanies}
-                  onChange={() => setWorkedForCompanies((v) => { const next = !v; if (!next) setCanProve(false); return next; })}
-                  className="w-4 h-4 text-green-600 rounded"
-                />
-                <span className="text-sm text-gray-800">He trabajado para empresas de jardinería</span>
-              </label>
-              {workedForCompanies && (
-                <label className="flex items-center gap-2 cursor-pointer pl-6">
+            <div className="space-y-4">
+              <h2 className="text-lg font-semibold">Experiencia</h2>
+              <div className="flex items-center gap-3">
+                <label htmlFor="gw-exp-years" className="sr-only">Años de experiencia</label>
+                <input id="gw-exp-years" type="number" min={0} value={expYearsInput} onFocus={()=>{ if (expYearsInput === '0') setExpYearsInput(''); }} onBlur={()=>{ if (expYearsInput.trim() === '') { setExpYearsInput('0'); setExpYears(0); } }} onChange={(e)=>{ const v=e.target.value; setExpYearsInput(v); const n=parseInt(v||'0',10); setExpYears(isNaN(n)?0:n); }} className={NUMBER_INPUT_CLASS} />
+                <span className="text-sm text-gray-700">años de experiencia</span>
+              </div>
+              <label htmlFor="gw-exp-text" className="block text-sm font-medium text-gray-700">Describe tu experiencia</label>
+              <textarea
+                id="gw-exp-text"
+                value={experienceText}
+                onChange={(e)=>setExperienceText(e.target.value)}
+                rows={4}
+                placeholder="Qué trabajos haces, en qué zonas y para qué tipo de clientes (particulares, comunidades, empresas…)"
+                className={TEXT_INPUT_CLASS}
+              />
+            </div>
+
+            {/* El dato que más ayuda a decidir la solicitud: un autónomo solo no es lo mismo que una empresa con equipo.
+                Es una estimación y no crea equipo: el modo de la cuenta cambia solo cuando acepta a su primer compañero. */}
+            <div className="space-y-3 border-t border-gray-200 pt-6" role="radiogroup" aria-labelledby="gw-team-title" aria-describedby="gw-team-help">
+              <h2 id="gw-team-title" className="text-lg font-semibold">¿Cuántas personas trabajarán desde tu perfil?</h2>
+              <p id="gw-team-help" className="text-sm text-gray-600">
+                Cuéntate a ti también. Es solo una estimación: podrás añadir o quitar gente de tu equipo cuando quieras.
+              </p>
+              {([
+                { value: 'solo', title: 'Solo yo', hint: 'Trabajo por mi cuenta' },
+                { value: 'team', title: 'Con equipo', hint: 'Trabajamos varias personas' },
+              ] as const).map((option) => (
+                <label
+                  key={option.value}
+                  className={`flex min-h-11 items-center gap-3 rounded-xl border p-3 cursor-pointer hover:bg-gray-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-green-500 ${teamChoice === option.value ? 'border-green-600 bg-green-50' : 'border-gray-200'}`}
+                >
                   <input
-                    type="checkbox"
-                    checked={canProve}
-                    onChange={() => setCanProve((v) => !v)}
-                    className="w-4 h-4 text-green-600 rounded"
+                    type="radio"
+                    name="gw-team-choice"
+                    value={option.value}
+                    checked={teamChoice === option.value}
+                    onChange={() => setTeamChoice(option.value)}
+                    className="h-4 w-4 text-green-600 focus-visible:ring-2 focus-visible:ring-green-500"
                   />
-                  <span className="text-sm text-gray-700">Puedo acreditarlo (nóminas, contratos o referencias)</span>
+                  <span className="text-sm text-gray-900"><span className="font-semibold">{option.title}</span> · {option.hint}</span>
                 </label>
+              ))}
+              {teamChoice === 'team' && (
+                <div className="flex flex-wrap items-center gap-3 pl-1">
+                  <label htmlFor="gw-team-size" className="sr-only">Personas en total, contándote a ti</label>
+                  <input
+                    id="gw-team-size"
+                    type="number"
+                    inputMode="numeric"
+                    min={MIN_TEAM_SIZE_WITH_TEAM}
+                    max={MAX_TEAM_SIZE}
+                    step={1}
+                    autoComplete="off"
+                    value={teamSizeInput}
+                    onChange={(e) => setTeamSizeInput(e.target.value)}
+                    aria-invalid={teamSizeInput.trim().length > 0 && estimatedTeamSize('team', teamSizeInput) === null}
+                    aria-describedby="gw-team-size-hint"
+                    className={`${NUMBER_INPUT_CLASS} ${teamSizeInput.trim().length > 0 && estimatedTeamSize('team', teamSizeInput) === null ? 'border-red-400 focus:ring-red-400' : ''}`}
+                  />
+                  <span className="text-sm text-gray-700">personas en total, contándote a ti</span>
+                  <p id="gw-team-size-hint" className={`w-full text-xs ${teamSizeInput.trim().length > 0 && estimatedTeamSize('team', teamSizeInput) === null ? 'text-red-600' : 'text-gray-500'}`}>
+                    Un número de {MIN_TEAM_SIZE_WITH_TEAM} a {MAX_TEAM_SIZE}.
+                  </p>
+                </div>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Adjunta fotos o documentos (opcional). Si lo tienes, añade tu CV</label>
-              
+            <div className="border-t border-gray-200 pt-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fotos de trabajos que hayas hecho (opcional)</label>
+              <p className="mb-3 text-xs text-gray-500">Ayudan a revisar tu solicitud. También puedes adjuntar un PDF, por ejemplo con tu actividad como autónomo o empresa.</p>
+
               {/* Custom File Input */}
               <div className="flex flex-wrap gap-3 mb-3">
                 {proofPhotos.map((u, i) => (
@@ -538,7 +589,7 @@ const GardenerApplicationWizard: React.FC = () => {
                      </button>
                    </div>
                 ))}
-                
+
                 {isUploadingProof && (
                   <div className={UPLOAD_BOX_CLASS}>
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
@@ -546,18 +597,18 @@ const GardenerApplicationWizard: React.FC = () => {
                     </div>
                   </div>
                 )}
-                
+
                 <label className={`${UPLOAD_BOX_CLASS} ${isUploadingProof ? 'opacity-50 cursor-not-allowed' : ''}`}>
                   <Plus className="w-8 h-8 text-gray-400" />
                   <span className="text-xs text-gray-500 mt-1">Añadir</span>
-                  <input 
-                    type="file" 
-                    accept="image/*,.pdf,.doc,.docx" 
-                    multiple 
-                    className="hidden" 
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    multiple
+                    className="hidden"
                     disabled={isUploadingProof}
-                    onChange={async (e)=>{ 
-                    const files=Array.from(e.target.files||[]); 
+                    onChange={async (e)=>{
+                    const files=Array.from(e.target.files||[]);
                     if (files.length === 0) return;
                     setIsUploadingProof(true);
                     try {

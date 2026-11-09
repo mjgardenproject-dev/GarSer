@@ -28,7 +28,7 @@ async function applyAs(label) {
   const draft = await rest('POST', '/rest/v1/gardener_applications', u.token, {
     user_id: u.id, status: 'draft', full_name: `Jardinero ${label}`, phone: '600123456', city_zone: 'Marbella',
     professional_photo_url: 'https://example.com/foto.jpg', services: ['Corte de césped'], tools_available: ['Cortacésped'],
-    experience_years: 4, experience_description: 'Comunidades y chalets', declaration_truth: true, accept_terms: true,
+    experience_years: 4, experience_description: 'Comunidades y chalets', estimated_team_size: 1, declaration_truth: true, accept_terms: true,
   });
   // PH-18: se envía por el servidor, que comprueba que está completa.
   const sent = await rpc('submit_gardener_application', {}, u.token);
@@ -114,12 +114,12 @@ async function main() {
   const empty = await rpc('submit_gardener_application', {}, half.token);
   await rest('PATCH', `/rest/v1/gardener_applications?user_id=eq.${half.id}`, half.token, {
     phone: '+34 600 12 34 56', city_zone: 'Mijas', professional_photo_url: 'https://example.com/f.jpg', services: ['Poda de setos'],
-    tools_available: ['Tijeras'], experience_years: 2, experience_description: 'Setos', declaration_truth: true, accept_terms: true,
+    tools_available: ['Tijeras'], experience_years: 2, experience_description: 'Setos', estimated_team_size: 3, declaration_truth: true, accept_terms: true,
   });
   const full = await rpc('submit_gardener_application', {}, half.token);
   const twice = await rpc('submit_gardener_application', {}, half.token);
   record('GR-09', 'Enviar el alta: ya no se puede desde el navegador a mano; el servidor dice qué falta; completa, se envía (y repetir no da error)',
-    direct.rows.length === 0 && !empty.ok && /Falta: .*teléfono válido.*foto de perfil.*servicios.*herramientas.*experiencia.*declaraciones/.test(empty.body?.message || '')
+    direct.rows.length === 0 && !empty.ok && /Falta: .*teléfono válido.*foto de perfil.*servicios.*herramientas.*experiencia.*cuántas personas trabajarán en tu perfil.*declaraciones/.test(empty.body?.message || '')
       && full.ok && twice.ok && appOf(half.id).startsWith('submitted|A medias|'),
     `a mano ${direct.rows.length} filas, incompleta «${empty.body?.message}», completa ${full.status}${why(full)}, otra vez ${twice.status}`);
 }

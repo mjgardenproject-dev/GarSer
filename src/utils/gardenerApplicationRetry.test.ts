@@ -45,14 +45,25 @@ describe('jardinero rechazado que vuelve a solicitar (PH-02)', () => {
     const state = wizardStateFromApplication({
       full_name: 'Juan', phone: '600111222', city_zone: 'Marbella', professional_photo_url: 'https://x/a.jpg',
       services: ['Corte de césped'], tools_available: ['Cortacésped'], experience_years: 5,
-      experience_description: 'Diez jardines', worked_for_companies: true, can_prove: null,
+      experience_description: 'Diez jardines', estimated_team_size: 4,
       proof_photos: ['https://x/p.jpg'], certification_text: null, certification_photos: null,
     });
     expect(state).toMatchObject({
       fullName: 'Juan', phone: '600111222', cityZone: 'Marbella', photoUrl: 'https://x/a.jpg', services: ['Corte de césped'],
-      tools: ['Cortacésped'], expYears: 5, expYearsInput: '5', experienceText: 'Diez jardines', workedForCompanies: true,
-      canProve: false, proofPhotos: ['https://x/p.jpg'], educationText: '', certPhotos: [],
+      tools: ['Cortacésped'], expYears: 5, expYearsInput: '5', experienceText: 'Diez jardines', teamChoice: 'team',
+      teamSizeInput: '4', proofPhotos: ['https://x/p.jpg'], educationText: '', certPhotos: [],
     });
+  });
+
+  it('una solicitud anterior sin nº de personas obliga a responderlo (no se inventa «solo»)', () => {
+    expect(wizardStateFromApplication({ full_name: 'Ana' })).toMatchObject({ teamChoice: null, teamSizeInput: '' });
+    expect(wizardStateFromApplication({ estimated_team_size: 1 })).toMatchObject({ teamChoice: 'solo', teamSizeInput: '' });
+  });
+
+  it('el formulario ya no restaura las preguntas de trabajo por cuenta ajena', () => {
+    const state = wizardStateFromApplication({ worked_for_companies: true, can_prove: true } as never);
+    expect(state).not.toHaveProperty('workedForCompanies');
+    expect(state).not.toHaveProperty('canProve');
   });
 
   it('un borrador recién creado no tiene datos que restaurar', () => {

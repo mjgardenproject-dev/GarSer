@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { CheckCircle, XCircle, Search, X, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { trackProviderApproved } from '../../utils/providerApproved';
+import { describeTeamSize } from '../../utils/applicationTeamSize';
 
 interface Application {
   id: string;
@@ -18,8 +19,8 @@ interface Application {
   experience_years?: number;
   experience_range?: string;
   experience_description?: string;
-  worked_for_companies?: boolean;
-  can_prove?: boolean;
+  /** Personas que trabajarán desde el perfil, contando al solicitante (1 = solo). Nulo en solicitudes anteriores. */
+  estimated_team_size?: number | null;
   proof_photos?: string[];
   test_grass_frequency?: string;
   test_hedge_season?: string;
@@ -249,6 +250,9 @@ const ApplicationsAdmin: React.FC = () => {
               <p>
                 <span className="font-medium text-gray-900">Experiencia:</span> {app.experience_range || ''} ({app.experience_years || 0} años)
               </p>
+              <p>
+                <span className="font-medium text-gray-900">Equipo:</span> {describeTeamSize(app.estimated_team_size)}
+              </p>
             </div>
             
             <div className="mt-5 flex flex-wrap items-center gap-2 pt-4 border-t border-gray-100">
@@ -354,8 +358,7 @@ const ApplicationsAdmin: React.FC = () => {
                   <h3 className="font-semibold text-gray-900 mb-3">Experiencia</h3>
                   <div className="space-y-2 text-sm text-gray-700">
                     <p><span className="font-medium text-gray-900">Años:</span> {selected.experience_years ?? 0}</p>
-                    <p><span className="font-medium text-gray-900">Trabajó para empresas:</span> {selected.worked_for_companies ? 'Sí' : 'No'}</p>
-                    <p><span className="font-medium text-gray-900">Puede demostrar:</span> {selected.can_prove ? 'Sí' : 'No'}</p>
+                    <p><span className="font-medium text-gray-900">Personas en el perfil:</span> {describeTeamSize(selected.estimated_team_size)}</p>
                   </div>
                   {selected.experience_description && (
                     <div className="mt-3 text-sm text-gray-700 whitespace-pre-line p-3 bg-white border border-gray-200 rounded-lg">
@@ -384,7 +387,7 @@ const ApplicationsAdmin: React.FC = () => {
                 </section>
 
                 <section className="bg-gray-50 rounded-xl p-5 border border-gray-100 md:col-span-2">
-                  <h3 className="font-semibold text-gray-900 mb-3">Fotos de trabajos / CV</h3>
+                  <h3 className="font-semibold text-gray-900 mb-3">Fotos de trabajos y documentos</h3>
                   {(!selected.proof_photos || selected.proof_photos.length === 0) ? (
                     <p className="text-sm text-gray-500 italic">No adjuntó archivos.</p>
                   ) : (

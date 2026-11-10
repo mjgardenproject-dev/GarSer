@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { releaseReloadScrollGuard } from '../../utils/reloadScrollGuard';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProviderMode } from '../../hooks/useProviderMode';
@@ -162,6 +163,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                   setIsRestoringScroll(false);
                   return;
               }
+
+              // Esta pantalla restaura SU scroll a propósito: la guardia de recarga (main.tsx) no debe devolverlo arriba.
+              releaseReloadScrollGuard();
 
               // Wait for render cycle to stabilize height
               setTimeout(() => {

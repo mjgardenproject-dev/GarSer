@@ -10,6 +10,8 @@ import ZoneStep from '../../components/activation/ZoneStep';
 import ServicesStep from '../../components/activation/ServicesStep';
 import QuestionScreen from '../../components/activation/QuestionScreen';
 import ServiceReview from '../../components/activation/ServiceReview';
+import PhytoStep from '../../components/activation/PhytoStep';
+import type { ManualSaveResult } from '../../hooks/useManualSave';
 import { SERVICE_QUESTIONNAIRES } from '../../activation/questionnaires';
 import {
   isQuestionAnswered,
@@ -56,6 +58,8 @@ const ActivationWizardPage: React.FC = () => {
   const [maxDistance, setMaxDistance] = useState(25);
   const [zoneError, setZoneError] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
+  // Fitosanitarios: el configurador de siempre registra aquí su «guardar».
+  const [phytoSave, setPhytoSave] = useState<(() => Promise<ManualSaveResult>) | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -267,6 +271,54 @@ const ActivationWizardPage: React.FC = () => {
     footer = (
       <button type="button" onClick={() => advance()} disabled={selected.length === 0} className={PRIMARY_BUTTON_CLASS}>
         {selected.length === 0 ? 'Marca al menos un servicio' : `Seguir con ${selected.length === 1 ? '1 servicio' : `${selected.length} servicios`}`}
+      </button>
+    );
+  } else if (serviceName === 'Servicios fitosanitarios') {
+    const serviceId = data.serviceIds[serviceName];
+    const wasActive = data.savedServices[serviceName]?.active ?? false;
+    body = (
+      <>
+        <PhytoStep
+          savedConfig={data.savedServices[serviceName]?.config}
+          licenseStatus={setup.status?.license.status ?? null}
+          registerSave={(fn) => setPhytoSave(() => fn)}
+          onSave={async (config) => {
+            if (!serviceId) return false;
+            const ok = await saveServiceConfig(user.id, serviceId, data.serviceUnits[serviceName] ?? 'area', config as unknown as Record<string, unknown>, wasActive);
+            if (ok) setData({ ...data, savedServices: { ...data.savedServices, [serviceName]: { config, active: wasActive } } });
+            return ok;
+          }}
+        />
+        {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
+        <button
+          type="button"
+          onClick={() => advance()}
+          className="mt-6 inline-flex min-h-11 items-center rounded text-sm font-semibold text-gray-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]"
+        >
+          Configurar fitosanitarios más tarde
+        </button>
+      </>
+    );
+    footer = (
+      <button
+        type="button"
+        disabled={busy || !phytoSave}
+        className={PRIMARY_BUTTON_CLASS}
+        onClick={async () => {
+          if (!phytoSave || busy) return;
+          setBusy(true);
+          setServiceError(null);
+          try {
+            const result = await phytoSave();
+            if (result === 'success') advance();
+            else setServiceError(result === 'invalid' ? 'Revisa los campos marcados en rojo: faltan tarifas o rendimientos.' : 'No se ha podido guardar. Inténtalo de nuevo.');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy && <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />}
+        {busy ? 'Guardando…' : 'Guardar y seguir'}
       </button>
     );
   } else if (serviceName && questionnaire) {

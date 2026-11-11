@@ -492,12 +492,26 @@ const weeding: ServiceQuestionnaire = {
       percentField('alta', 'Muy difícil (zarzas, mucha pendiente, piedras)', SUGGESTED.weeding.alta),
     ),
     percentQuestion('waste', 'Si el cliente quiere que te lleves los restos, ¿cuánto más cobras?', WASTE_HELP, SUGGESTED.weeding.waste),
+    {
+      id: 'herbicide', kind: 'choice', title: '¿Aplicas herbicida para que no vuelvan a salir?',
+      options: [
+        { value: 'yes', label: 'Sí', detail: 'Solo te llegarán esos trabajos con tu carnet de aplicador aprobado.' },
+        { value: 'no', label: 'No', detail: 'Solo desbroce.' },
+      ],
+    },
+    {
+      id: 'herbicidePrice', kind: 'number', title: '¿Cuánto cobras el m² de herbicida?', help: 'Se suma al precio del desbroce.',
+      unit: '€/m²', suggestions: SUGGESTED.weeding.herbicidePerM2, decimals: true, max: 20, when: (a) => a.herbicide === 'yes',
+    },
     minimumQuestion(SUGGESTED.weeding.minimum),
   ],
   fromConfig: (raw) => {
     const c = obj(raw);
     const s = obj(c.suplementos);
+    const herbicide = positive(c.precio_herbicida_m2);
     return {
+      herbicide: herbicide !== null ? 'yes' : positive(c.precio_desbroce_m2) !== null ? 'no' : null,
+      herbicidePrice: herbicide,
       perM2: positive(c.precio_desbroce_m2),
       yield: positive(c.yield_m2_per_hour),
       media: nonNegative(s.dificultad_media),
@@ -508,8 +522,10 @@ const weeding: ServiceQuestionnaire = {
   },
   toConfig: (a, previous) => {
     const prev = obj(previous) as Partial<WeedingPricingConfig>;
+    const { precio_herbicida_m2: _previousHerbicide, ...rest } = prev;
     const config: WeedingPricingConfig = {
-      ...prev,
+      ...rest,
+      ...(a.herbicide === 'yes' ? { precio_herbicida_m2: n0(a.herbicidePrice) } : {}),
       version: 'weeding_v1',
       precio_desbroce_m2: n0(a.perM2),
       yield_m2_per_hour: n0(a.yield),

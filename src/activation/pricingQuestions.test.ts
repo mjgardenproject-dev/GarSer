@@ -181,6 +181,15 @@ describe('detalles por servicio', () => {
     expect(shrub.fromConfig(config)).toMatchObject({ descuidado: 15, muyDescuidado: 45 });
   });
 
+  it('desbroce: herbicida sí → su precio; no → sin precio (no se le ofrecen esos trabajos)', () => {
+    const weeding = q('Desbroce de malas hierbas');
+    const answers = answerAll(weeding, { herbicide: 'yes', herbicidePrice: 0.2 });
+    expect(weeding.toConfig(answers, undefined).precio_herbicida_m2).toBe(0.2);
+    const without = weeding.toConfig({ ...answers, herbicide: 'no' }, SEED['Desbroce de malas hierbas']);
+    expect('precio_herbicida_m2' in without).toBe(false);
+    expect(weeding.isValid(without)).toBe(true);
+  });
+
   it('desbroce: conserva el precio del herbicida que ya tuviera (se pregunta aparte, con carnet)', () => {
     const weeding = q('Desbroce de malas hierbas');
     const config = weeding.toConfig(weeding.fromConfig(SEED['Desbroce de malas hierbas']), SEED['Desbroce de malas hierbas']);

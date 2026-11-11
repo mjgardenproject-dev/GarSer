@@ -11,6 +11,10 @@ import ServicesStep from '../../components/activation/ServicesStep';
 import QuestionScreen from '../../components/activation/QuestionScreen';
 import ServiceReview from '../../components/activation/ServiceReview';
 import PhytoStep from '../../components/activation/PhytoStep';
+import ScheduleStep from '../../components/activation/ScheduleStep';
+import { emptyWeek, rulesToRanges, scheduleProblem, rangesToMatrix, type WeekRanges } from '../../activation/scheduleModel';
+import { saveOwnRecurringSchedule } from '../../utils/recurringSchedulePersistence';
+import { notifySetupChanged } from '../../utils/setupEvents';
 import type { ManualSaveResult } from '../../hooks/useManualSave';
 import { SERVICE_QUESTIONNAIRES } from '../../activation/questionnaires';
 import {
@@ -58,6 +62,11 @@ const ActivationWizardPage: React.FC = () => {
   const [maxDistance, setMaxDistance] = useState(25);
   const [zoneError, setZoneError] = useState<string | null>(null);
   const [serviceError, setServiceError] = useState<string | null>(null);
+  // Paso 3 (horario)
+  const [week, setWeek] = useState<WeekRanges>(emptyWeek);
+  const [notice, setNotice] = useState<number | null>(null);
+  const [weeksAhead, setWeeksAhead] = useState<number | null>(null);
+  const [scheduleTouched, setScheduleTouched] = useState(false);
   // Fitosanitarios: el configurador de siempre registra aquí su «guardar».
   const [phytoSave, setPhytoSave] = useState<(() => Promise<ManualSaveResult>) | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,6 +80,9 @@ const ActivationWizardPage: React.FC = () => {
         setData(loaded);
         setAddress(loaded.address);
         setMaxDistance(loaded.maxDistance);
+        setWeek(loaded.schedule.rules.length > 0 ? rulesToRanges(loaded.schedule.rules) : emptyWeek());
+        setNotice(loaded.schedule.minNoticeHours);
+        setWeeksAhead(loaded.schedule.weeksToMaintain);
         const saved = readActivationProgress(user.id, isKnownService);
         setProgress(saved ?? { step: 'welcome', selectedServices: loaded.preselectedServices });
       })
@@ -271,6 +283,72 @@ const ActivationWizardPage: React.FC = () => {
     footer = (
       <button type="button" onClick={() => advance()} disabled={selected.length === 0} className={PRIMARY_BUTTON_CLASS}>
         {selected.length === 0 ? 'Marca al menos un servicio' : `Seguir con ${selected.length === 1 ? '1 servicio' : `${selected.length} servicios`}`}
+      </button>
+    );
+  } else if (step === 'schedule' && isTeam) {
+    // En una cuenta de equipo el horario es de cada persona: se configura en «Horario del equipo».
+    body = (
+      <div>
+        <h1 className="text-2xl font-bold leading-tight text-gray-900">El horario de tu equipo</h1>
+        <p className="mt-2 text-gray-700">
+          En una cuenta de equipo cada persona tiene su horario. Configúralo en «Horario del equipo»: los clientes solo pueden reservar cuando
+          alguien trabaja.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate('/empresa/horario')}
+          className="mt-4 inline-flex min-h-12 items-center rounded-xl border border-gray-300 bg-white px-4 font-semibold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+        >
+          Abrir el horario del equipo
+        </button>
+      </div>
+    );
+    footer = (
+      <button type="button" onClick={() => advance()} className={PRIMARY_BUTTON_CLASS}>
+        Seguir
+      </button>
+    );
+  } else if (step === 'schedule') {
+    const problem = scheduleProblem(week) || (notice === null || weeksAhead === null ? 'Elige la antelación y las semanas de agenda.' : '');
+    body = (
+      <ScheduleStep
+        week={week}
+        onWeekChange={(next) => {
+          setWeek(next);
+          setServiceError(null);
+        }}
+        notice={notice}
+        onNoticeChange={setNotice}
+        weeksAhead={weeksAhead}
+        onWeeksChange={setWeeksAhead}
+        problem={serviceError ?? problem}
+        showProblem={scheduleTouched || Boolean(serviceError)}
+      />
+    );
+    footer = (
+      <button
+        type="button"
+        disabled={busy}
+        className={PRIMARY_BUTTON_CLASS}
+        onClick={async () => {
+          setScheduleTouched(true);
+          if (problem || busy || notice === null || weeksAhead === null) return;
+          setBusy(true);
+          setServiceError(null);
+          try {
+            await saveOwnRecurringSchedule({ userId: user.id, matrix: rangesToMatrix(week), weeks: weeksAhead, minNoticeHours: notice });
+            notifySetupChanged();
+            setScheduleTouched(false);
+            advance();
+          } catch {
+            setServiceError('No se ha podido guardar el horario. Inténtalo de nuevo.');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy && <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />}
+        {busy ? 'Guardando tu horario…' : 'Guardar horario y seguir'}
       </button>
     );
   } else if (serviceName === 'Servicios fitosanitarios') {

@@ -3,6 +3,7 @@ import { getCoordinatesFromAddress } from '../utils/geolocation';
 import { getProviderCoordinates } from '../shared/bookingEligibilityCore';
 import { notifySetupChanged } from '../utils/setupEvents';
 import { sortActivationServices, toActivationServiceName, type ActivationServiceName } from './serviceCatalog';
+import type { ScheduleRule } from '../utils/recurringSchedulePersistence';
 
 // Lo que el cuestionario «Activa tu cuenta» lee al abrirse y lo que escribe en el paso de la zona
 // (2026-11-11). Escribe en las MISMAS tablas y con las MISMAS reglas que «Mi perfil → Cobertura»
@@ -22,6 +23,8 @@ export interface ActivationData {
   serviceUnits: Partial<Record<ActivationServiceName, string>>;
   /** Lo que ya tiene guardado de cada servicio (configuración y si está activo). */
   savedServices: Partial<Record<ActivationServiceName, { config: unknown; active: boolean }>>;
+  /** Su horario fijo y sus reglas de agenda, si ya los tiene. */
+  schedule: { rules: ScheduleRule[]; weeksToMaintain: number | null; minNoticeHours: number | null };
 }
 
 export const DEFAULT_MAX_DISTANCE = 25;
@@ -39,7 +42,7 @@ export function normalizeMaxDistance(value: unknown): number {
 }
 
 export async function loadActivationData(userId: string): Promise<ActivationData> {
-  const [profileRes, gardenerRes, applicationRes, pricesRes, servicesRes] = await Promise.all([
+  const [profileRes, gardenerRes, applicationRes, pricesRes, servicesRes, rulesRes, settingsRes] = await Promise.all([
     supabase.from('profiles').select('full_name').eq('user_id', userId).maybeSingle(),
     (supabase.from('gardener_profiles') as any)
       .select('full_name, address, max_distance, operational_latitude, operational_longitude')
@@ -51,6 +54,8 @@ export async function loadActivationData(userId: string): Promise<ActivationData
       .maybeSingle(),
     supabase.from('gardener_service_prices').select('service_id, additional_config, active').eq('gardener_id', userId),
     supabase.from('services').select('id, name, measurement'),
+    supabase.from('recurring_schedules').select('day_of_week, start_time, end_time').eq('gardener_id', userId),
+    supabase.from('recurring_availability_settings').select('weeks_to_maintain, min_notice_hours').eq('gardener_id', userId).maybeSingle(),
   ]);
 
   if (gardenerRes.error) throw gardenerRes.error;
@@ -93,6 +98,11 @@ export async function loadActivationData(userId: string): Promise<ActivationData
     serviceIds,
     serviceUnits,
     savedServices,
+    schedule: {
+      rules: ((rulesRes.data ?? []) as ScheduleRule[]),
+      weeksToMaintain: (settingsRes.data as { weeks_to_maintain?: number | null } | null)?.weeks_to_maintain ?? null,
+      minNoticeHours: (settingsRes.data as { min_notice_hours?: number | null } | null)?.min_notice_hours ?? null,
+    },
   };
 }
 

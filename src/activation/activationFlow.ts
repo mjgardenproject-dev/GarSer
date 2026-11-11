@@ -19,6 +19,10 @@ export interface ActivationProgress {
   step: ActivationStepId;
   /** Servicios marcados en «¿Qué servicios hace tu empresa?», en el orden de la pantalla. */
   selectedServices: ActivationServiceName[];
+  /** Respuestas de tarifas a medio contestar, por servicio (lo guardado va a su tabla al terminarlo). */
+  serviceAnswers?: Partial<Record<ActivationServiceName, Record<string, number | string | boolean | null>>>;
+  /** Pregunta en la que va dentro del servicio actual. */
+  questionIndex?: number;
 }
 
 /** Los 4 bloques que se cuentan en «Paso X de 4». */
@@ -96,7 +100,18 @@ export function readActivationProgress(
     if (!raw || typeof raw !== 'object') return null;
     const selected = Array.isArray(raw.selectedServices) ? raw.selectedServices.filter(isKnownService) : [];
     if (!isStep(raw.step, selected)) return null;
-    return { step: raw.step, selectedServices: selected };
+    const progress: ActivationProgress = { step: raw.step, selectedServices: selected };
+    if (raw.serviceAnswers && typeof raw.serviceAnswers === 'object') {
+      const answers: NonNullable<ActivationProgress['serviceAnswers']> = {};
+      for (const [name, value] of Object.entries(raw.serviceAnswers)) {
+        if (isKnownService(name) && value && typeof value === 'object') answers[name] = value as Record<string, number | string | boolean | null>;
+      }
+      progress.serviceAnswers = answers;
+    }
+    if (typeof raw.questionIndex === 'number' && Number.isInteger(raw.questionIndex) && raw.questionIndex >= 0) {
+      progress.questionIndex = raw.questionIndex;
+    }
+    return progress;
   } catch {
     return null;
   }

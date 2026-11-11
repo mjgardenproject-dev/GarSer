@@ -8,6 +8,16 @@ import ActivationShell, { PRIMARY_BUTTON_CLASS } from '../../components/activati
 import WelcomeStep from '../../components/activation/WelcomeStep';
 import ZoneStep from '../../components/activation/ZoneStep';
 import ServicesStep from '../../components/activation/ServicesStep';
+import QuestionScreen from '../../components/activation/QuestionScreen';
+import ServiceReview from '../../components/activation/ServiceReview';
+import {
+  SERVICE_QUESTIONNAIRES,
+  isQuestionAnswered,
+  previewQuotes,
+  questionCountUpperBound,
+  visibleQuestions,
+  type Answers,
+} from '../../activation/pricingQuestions';
 import {
   blockNumber,
   estimatedMinutes,
@@ -21,8 +31,8 @@ import {
   type ActivationProgress,
   type ActivationStepId,
 } from '../../activation/activationFlow';
-import { ACTIVATION_SERVICES, sortActivationServices, type ActivationServiceName } from '../../activation/serviceCatalog';
-import { loadActivationData, saveCoverage, type ActivationData } from '../../activation/activationData';
+import { ACTIVATION_SERVICES, serviceInfo, sortActivationServices, type ActivationServiceName } from '../../activation/serviceCatalog';
+import { loadActivationData, saveCoverage, saveServiceConfig, type ActivationData } from '../../activation/activationData';
 
 // Cuestionario «Activa tu cuenta» (2026-11-11). Lo abre el panel mientras al profesional le falte algo
 // para recibir reservas. Cada paso guarda en las tablas de siempre al pulsar el botón principal; aquí solo
@@ -45,6 +55,7 @@ const ActivationWizardPage: React.FC = () => {
   const [address, setAddress] = useState('');
   const [maxDistance, setMaxDistance] = useState(25);
   const [zoneError, setZoneError] = useState<string | null>(null);
+  const [serviceError, setServiceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -71,10 +82,10 @@ const ActivationWizardPage: React.FC = () => {
   }, [user?.id]);
 
   const go = useCallback(
-    (next: ActivationProgress) => {
+    (next: ActivationProgress, options: { scroll?: boolean } = {}) => {
       setProgress(next);
       if (user?.id) writeActivationProgress(user.id, next);
-      window.scrollTo({ top: 0 });
+      if (options.scroll !== false) window.scrollTo({ top: 0 });
     },
     [user?.id],
   );
@@ -114,9 +125,68 @@ const ActivationWizardPage: React.FC = () => {
 
   const advance = (patch: Partial<ActivationProgress> = {}) => {
     const nextSelected = patch.selectedServices ?? progress.selectedServices;
-    go({ ...progress, ...patch, step: nextStep(progress.step, nextSelected), selectedServices: nextSelected });
+    go({ ...progress, ...patch, step: nextStep(progress.step, nextSelected), selectedServices: nextSelected, questionIndex: 0 });
   };
-  const back = step === 'welcome' ? undefined : () => go({ ...progress, step: previousStep(progress.step, selected) });
+  // Volver a un servicio desde el paso siguiente lleva a su resumen, no a la primera pregunta.
+  const goBackOuter = () => {
+    const previous = previousStep(progress.step, selected);
+    go({ ...progress, step: previous, questionIndex: previous.startsWith('service:') ? Number.MAX_SAFE_INTEGER : 0 });
+  };
+
+  // ── Tarifas de un servicio (sub-pasos 2.1, 2.2…) ──
+  const serviceName = step.startsWith('service:') ? (step.slice('service:'.length) as ActivationServiceName) : null;
+  const questionnaire = serviceName ? SERVICE_QUESTIONNAIRES[serviceName] : undefined;
+  const serviceAnswers: Answers = serviceName && questionnaire
+    ? progress.serviceAnswers?.[serviceName] ?? questionnaire.fromConfig(data.savedServices[serviceName]?.config)
+    : {};
+  const questions = questionnaire ? visibleQuestions(questionnaire, serviceAnswers) : [];
+  const questionIndex = Math.min(progress.questionIndex ?? 0, questions.length); // == length → resumen
+  const onReview = Boolean(questionnaire) && questionIndex >= questions.length;
+  const serviceConfig = questionnaire && serviceName
+    ? questionnaire.toConfig(serviceAnswers, data.savedServices[serviceName]?.config)
+    : null;
+  const serviceValid = Boolean(questionnaire && serviceConfig && questionnaire.isValid(serviceConfig));
+
+  const setServiceAnswer = (id: string, value: Answers[string]) => {
+    if (!serviceName) return;
+    go(
+      { ...progress, serviceAnswers: { ...progress.serviceAnswers, [serviceName]: { ...serviceAnswers, [id]: value } } },
+      { scroll: false },
+    );
+  };
+  const setQuestionIndex = (index: number) => go({ ...progress, questionIndex: index });
+
+  const saveService = async () => {
+    if (!serviceName || !questionnaire || !serviceConfig || !serviceValid || busy) return;
+    const serviceId = data.serviceIds[serviceName];
+    if (!serviceId) {
+      setServiceError('Este servicio no está disponible ahora mismo. Configúralo más tarde.');
+      return;
+    }
+    setBusy(true);
+    setServiceError(null);
+    try {
+      const wasActive = data.savedServices[serviceName]?.active ?? false;
+      const ok = await saveServiceConfig(user.id, serviceId, data.serviceUnits[serviceName] ?? 'area', serviceConfig, wasActive);
+      if (!ok) {
+        setServiceError('No se ha podido guardar. Inténtalo de nuevo.');
+        return;
+      }
+      setData({ ...data, savedServices: { ...data.savedServices, [serviceName]: { config: serviceConfig, active: wasActive } } });
+      const rest = { ...progress.serviceAnswers };
+      delete rest[serviceName];
+      advance({ serviceAnswers: rest });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const back =
+    step === 'welcome'
+      ? undefined
+      : questionnaire && questionIndex > 0
+        ? () => setQuestionIndex(questionIndex - 1)
+        : goBackOuter;
 
   const confirmZone = async () => {
     if (busy) return;
@@ -185,8 +255,63 @@ const ActivationWizardPage: React.FC = () => {
         {selected.length === 0 ? 'Marca al menos un servicio' : `Seguir con ${selected.length === 1 ? '1 servicio' : `${selected.length} servicios`}`}
       </button>
     );
+  } else if (serviceName && questionnaire) {
+    const short = serviceInfo(serviceName).short;
+    const skip = (
+      <button
+        type="button"
+        onClick={() => advance()}
+        className="mt-6 inline-flex min-h-11 items-center rounded text-sm font-semibold text-gray-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]"
+      >
+        Configurar {short.toLowerCase()} más tarde
+      </button>
+    );
+    if (onReview) {
+      body = (
+        <>
+          <ServiceReview
+            questionnaire={questionnaire}
+            answers={serviceAnswers}
+            previews={serviceValid && serviceConfig ? previewQuotes(questionnaire, serviceConfig) : []}
+            valid={serviceValid}
+            onEdit={setQuestionIndex}
+          />
+          {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
+          {skip}
+        </>
+      );
+      footer = (
+        <button type="button" onClick={() => void saveService()} disabled={!serviceValid || busy} className={PRIMARY_BUTTON_CLASS}>
+          {busy && <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />}
+          {busy ? 'Guardando…' : 'Guardar y seguir'}
+        </button>
+      );
+    } else {
+      const question = questions[questionIndex];
+      body = (
+        <>
+          <QuestionScreen
+            question={question}
+            answers={serviceAnswers}
+            onChange={setServiceAnswer}
+            position={`${short} · ${questionIndex + 1} de ${questionCountUpperBound(questionnaire, serviceAnswers)}`}
+          />
+          {skip}
+        </>
+      );
+      footer = (
+        <button
+          type="button"
+          onClick={() => setQuestionIndex(questionIndex + 1)}
+          disabled={!isQuestionAnswered(question, serviceAnswers)}
+          className={PRIMARY_BUTTON_CLASS}
+        >
+          Siguiente
+        </button>
+      );
+    }
   } else {
-    // F2-F6: tarifas por servicio, horario, equipo y final.
+    // F3-F6: árboles, palmeras, fitosanitarios, horario, equipo y final.
     body = (
       <div>
         <h1 className="text-2xl font-bold text-gray-900">{step.startsWith('service:') ? step.slice('service:'.length) : step}</h1>

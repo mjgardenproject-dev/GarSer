@@ -87,6 +87,24 @@ describe('dónde se quedó', () => {
     expect(readActivationProgress('u1', known, storage)).toEqual({ step: 'zone', selectedServices: ['Corte de césped'] });
   });
 
+  it('retoma también las respuestas a medias y la pregunta en la que iba', () => {
+    const storage = memory();
+    writeActivationProgress('u1', {
+      step: 'service:Corte de césped',
+      selectedServices: ['Corte de césped'],
+      serviceAnswers: { 'Corte de césped': { method: 'per_hour', hourly: 30 } },
+      questionIndex: 2,
+    }, storage);
+    expect(readActivationProgress('u1', known, storage)).toEqual({
+      step: 'service:Corte de césped',
+      selectedServices: ['Corte de césped'],
+      serviceAnswers: { 'Corte de césped': { method: 'per_hour', hourly: 30 } },
+      questionIndex: 2,
+    });
+    storage.setItem('garser:activation:u1', JSON.stringify({ step: 'zone', selectedServices: [], serviceAnswers: { Inventado: {} }, questionIndex: -4 }));
+    expect(readActivationProgress('u1', known, storage)).toEqual({ step: 'zone', selectedServices: [], serviceAnswers: {} });
+  });
+
   it('sin almacenamiento no se rompe', () => {
     expect(readActivationProgress('u1', known, null)).toBeNull();
     expect(() => writeActivationProgress('u1', { step: 'zone', selectedServices: [] }, null)).not.toThrow();

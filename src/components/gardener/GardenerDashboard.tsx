@@ -29,6 +29,8 @@ import TeamEntryCard from '../provider/TeamEntryCard';
 import MarketingHub from '../marketing/MarketingHub';
 import { buildProviderSetupSteps, type SetupTarget } from '../../shared/providerSetup';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
+import { useActivationAutoOpen } from '../../activation/useActivationAutoOpen';
+import ActivationResumeCard from '../activation/ActivationResumeCard';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -62,6 +64,9 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   const setup = useProviderSetupStatus({ enabled: !pending });
   const setupSummary = useMemo(() => (setup.status ? buildProviderSetupSteps(setup.status) : null), [setup.status]);
   const guideFirst = Boolean(setupSummary && !setupSummary.allRequiredDone);
+  // «Activa tu cuenta» (2026-11-11): mientras le falte algo por hacer, el panel abre el cuestionario (o, si lo
+  // pausó, enseña la tarjeta para retomarlo).
+  const activationPending = useActivationAutoOpen(setup.status, !pending);
   useEffect(() => {
     if (setupSummary) localStorage.setItem(SETUP_INCOMPLETE_KEY, setupSummary.allRequiredDone ? '0' : '1');
   }, [setupSummary]);
@@ -364,6 +369,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       {/* Tab Content */}
       {activeTab === 'dashboard' && (
         <>
+          {!pending && activationPending && <ActivationResumeCard className="mb-6" />}
           {!pending && guideFirst && <ProviderSetupChecklist className="mb-6" onNavigate={handleSetupNavigate} setup={setup} />}
 
           {/* Header */}

@@ -16,6 +16,9 @@ import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryL
 import TeamMemberCard from '../../components/empresa/TeamMemberCard';
 import MarketingHub from '../../components/marketing/MarketingHub';
 import ProviderSetupChecklist from '../../components/provider/ProviderSetupChecklist';
+import ActivationResumeCard from '../../components/activation/ActivationResumeCard';
+import { useActivationAutoOpen } from '../../activation/useActivationAutoOpen';
+import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import type { SetupTarget } from '../../shared/providerSetup';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
 import { useProviderMode } from '../../hooks/useProviderMode';
@@ -51,6 +54,9 @@ const CompanyPanel: React.FC = () => {
   const [showFormer, setShowFormer] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
+  // «Activa tu cuenta» (2026-11-11): el mismo estado que la guía; si falta algo por hacer, abre el cuestionario.
+  const setup = useProviderSetupStatus();
+  const activationPending = useActivationAutoOpen(setup.status);
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
   // Solicitudes de reserva por responder (F4): la empresa es el proveedor de sus reservas.
@@ -182,7 +188,8 @@ const CompanyPanel: React.FC = () => {
       <main className={`mx-auto w-full space-y-4 px-4 py-4 ${tab === 'marketing' ? 'sm:max-w-5xl' : 'sm:max-w-xl'}`}>
         <SuspendedProviderNotice />
         {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
-        {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} />}
+        {tab === 'agenda' && activationPending && <ActivationResumeCard />}
+        {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} setup={setup} />}
         {(tab === 'agenda' || tab === 'team') && (
           <MemberSetupNotices
             members={data.members}

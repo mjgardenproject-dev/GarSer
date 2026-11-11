@@ -10,7 +10,8 @@ interface Props {
   stepLabel: string;
   percent: number;
   onBack?: () => void;
-  onPause: () => void;
+  /** «Seguir luego». Sin él (cuenta ya activada) no se enseña. */
+  onPause?: () => void;
   children: React.ReactNode;
   footer: React.ReactNode;
 }
@@ -37,6 +38,7 @@ const ActivationShell: React.FC<Props> = ({ stepLabel, percent, onBack, onPause,
         ) : (
           <span />
         )}
+        {onPause && (
         <button
           type="button"
           onClick={onPause}
@@ -44,6 +46,7 @@ const ActivationShell: React.FC<Props> = ({ stepLabel, percent, onBack, onPause,
         >
           Seguir luego
         </button>
+        )}
       </div>
       {children}
     </div>

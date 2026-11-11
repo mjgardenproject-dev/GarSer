@@ -12,7 +12,13 @@ import QuestionScreen from '../../components/activation/QuestionScreen';
 import ServiceReview from '../../components/activation/ServiceReview';
 import PhytoStep from '../../components/activation/PhytoStep';
 import ScheduleStep from '../../components/activation/ScheduleStep';
-import { emptyWeek, rulesToRanges, scheduleProblem, rangesToMatrix, type WeekRanges } from '../../activation/scheduleModel';
+import TeamStep, { type TeamAnswer } from '../../components/activation/TeamStep';
+import FinishStep from '../../components/activation/FinishStep';
+import { placeLabel } from '../../components/activation/ZoneStep';
+import { createTeamInvitation, looksLikeEmail, type TeamInvitationResult } from '../../utils/teamInvitations';
+import { isSavedServiceConfigValid, setServiceActive } from '../../utils/serviceActivation';
+import { buildProviderSetupSteps } from '../../shared/providerSetup';
+import { emptyWeek, rulesToRanges, scheduleProblem, rangesToMatrix, weeklyHours, type WeekRanges } from '../../activation/scheduleModel';
 import { saveOwnRecurringSchedule } from '../../utils/recurringSchedulePersistence';
 import { notifySetupChanged } from '../../utils/setupEvents';
 import type { ManualSaveResult } from '../../hooks/useManualSave';
@@ -26,6 +32,7 @@ import {
 } from '../../activation/pricingQuestions';
 import {
   blockNumber,
+  clearActivationProgress,
   estimatedMinutes,
   nextStep,
   pauseActivation,
@@ -67,6 +74,11 @@ const ActivationWizardPage: React.FC = () => {
   const [notice, setNotice] = useState<number | null>(null);
   const [weeksAhead, setWeeksAhead] = useState<number | null>(null);
   const [scheduleTouched, setScheduleTouched] = useState(false);
+  // Paso 4 (equipo) y final
+  const [team, setTeam] = useState<TeamAnswer>({ answer: null, emails: [], declared: false });
+  const [sentInvites, setSentInvites] = useState<TeamInvitationResult[]>([]);
+  const [emailErrors, setEmailErrors] = useState<Record<number, string>>({});
+  const [finishPhase, setFinishPhase] = useState<'review' | 'done'>('review');
   // Fitosanitarios: el configurador de siempre registra aquí su «guardar».
   const [phytoSave, setPhytoSave] = useState<(() => Promise<ManualSaveResult>) | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,6 +95,9 @@ const ActivationWizardPage: React.FC = () => {
         setWeek(loaded.schedule.rules.length > 0 ? rulesToRanges(loaded.schedule.rules) : emptyWeek());
         setNotice(loaded.schedule.minNoticeHours);
         setWeeksAhead(loaded.schedule.weeksToMaintain);
+        // Si en el alta dijo «somos 4», al elegir «Sí» salen 3 huecos para sus correos.
+        const slots = Math.max(1, (loaded.estimatedTeamSize ?? 2) - 1);
+        setTeam({ answer: null, emails: Array.from({ length: Math.min(slots, 10) }, () => ''), declared: false });
         const saved = readActivationProgress(user.id, isKnownService);
         setProgress(saved ?? { step: 'welcome', selectedServices: loaded.preselectedServices });
       })
@@ -212,7 +227,7 @@ const ActivationWizardPage: React.FC = () => {
   };
 
   const back =
-    step === 'welcome'
+    step === 'welcome' || (step === 'finish' && finishPhase === 'done')
       ? undefined
       : questionnaire && questionIndex > 0
         ? () => setQuestionIndex(questionIndex - 1)
@@ -454,23 +469,154 @@ const ActivationWizardPage: React.FC = () => {
         </button>
       );
     }
+  } else if (step === 'team') {
+    const needsLiability = !isTeam;
+    const sendInvitations = async () => {
+      setServiceError(null);
+      if (team.answer !== 'yes') {
+        advance();
+        return;
+      }
+      const errors: Record<number, string> = {};
+      const seen = new Set(sentInvites.map((s) => s.email.toLowerCase()));
+      const toSend: Array<{ email: string; index: number }> = [];
+      team.emails.forEach((raw, index) => {
+        const email = raw.trim();
+        if (!email) return;
+        if (!looksLikeEmail(email)) errors[index] = 'Este correo no parece válido.';
+        else if (seen.has(email.toLowerCase())) errors[index] = 'Este correo está repetido.';
+        else {
+          seen.add(email.toLowerCase());
+          toSend.push({ email, index });
+        }
+      });
+      if (Object.keys(errors).length > 0) {
+        setEmailErrors(errors);
+        return;
+      }
+      if (toSend.length === 0) {
+        if (sentInvites.length > 0) advance();
+        else setEmailErrors({ 0: 'Escribe al menos un correo, o elige que trabajas solo.' });
+        return;
+      }
+      if (needsLiability && !team.declared) {
+        setServiceError('Para invitar a tu equipo, marca la declaración del seguro.');
+        return;
+      }
+      setBusy(true);
+      const sent: TeamInvitationResult[] = [];
+      const failed: Record<number, string> = {};
+      for (const { email, index } of toSend) {
+        try {
+          sent.push(await createTeamInvitation(email, needsLiability));
+        } catch (error) {
+          failed[index] = (error as { message?: string })?.message || 'No se ha podido invitar a este correo.';
+        }
+      }
+      setBusy(false);
+      setSentInvites((prev) => [...prev, ...sent]);
+      // Quedan solo los correos que fallaron, para corregirlos.
+      const remaining = toSend.filter(({ index }) => failed[index]).map(({ email }) => email);
+      setTeam({ ...team, emails: remaining.length > 0 ? remaining : [''] });
+      setEmailErrors(Object.fromEntries(toSend.filter(({ index }) => failed[index]).map(({ index }, i) => [i, failed[index]])));
+      if (remaining.length === 0) advance();
+    };
+    body = (
+      <>
+        <TeamStep
+          value={team}
+          onChange={(next) => {
+            setTeam(next);
+            setEmailErrors({});
+            setServiceError(null);
+          }}
+          isTeam={isTeam}
+          needsLiability={needsLiability}
+          emailErrors={emailErrors}
+          sent={sentInvites}
+        />
+        {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
+      </>
+    );
+    footer = (
+      <button type="button" onClick={() => void sendInvitations()} disabled={busy || team.answer === null} className={PRIMARY_BUTTON_CLASS}>
+        {busy && <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />}
+        {team.answer === 'yes' ? (busy ? 'Enviando invitaciones…' : 'Enviar invitaciones y seguir') : 'Seguir'}
+      </button>
+    );
+  } else if (step === 'finish') {
+    const readyNames = selected.filter((name) => isSavedServiceConfigValid(name, data.savedServices[name]?.config));
+    const summary = {
+      zone: data.hasCoordinates ? `${placeLabel(data.address) || data.address} · ${data.maxDistance} km` : null,
+      services: selected.map((name) => ({ name, ready: readyNames.includes(name) })),
+      weeklyHours: weeklyHours(week),
+      invitations: sentInvites.length,
+    };
+    const pendingSteps = setup.status ? buildProviderSetupSteps(setup.status).required.filter((s) => s.state !== 'done') : [];
+    const activate = async () => {
+      if (busy || readyNames.length === 0) return;
+      setBusy(true);
+      setServiceError(null);
+      try {
+        const nextSaved = { ...data.savedServices };
+        for (const name of readyNames) {
+          const serviceId = data.serviceIds[name];
+          if (!serviceId || nextSaved[name]?.active) continue;
+          await setServiceActive(user.id, serviceId, true);
+          nextSaved[name] = { config: nextSaved[name]?.config, active: true };
+        }
+        setData({ ...data, savedServices: nextSaved });
+        notifySetupChanged();
+        await setup.refresh();
+        clearActivationProgress(user.id);
+        setFinishPhase('done');
+        window.scrollTo({ top: 0 });
+      } catch {
+        setServiceError('No se han podido activar tus servicios. Inténtalo de nuevo.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    body = (
+      <>
+        <FinishStep phase={finishPhase} firstName={data.firstName} summary={summary} pending={pendingSteps} providerId={user.id} />
+        {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
+      </>
+    );
+    footer =
+      finishPhase === 'review' ? (
+        <button type="button" onClick={() => void activate()} disabled={busy || readyNames.length === 0} className={PRIMARY_BUTTON_CLASS}>
+          {busy && <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />}
+          {busy ? 'Activando…' : 'Activar mi cuenta'}
+        </button>
+      ) : (
+        <button type="button" onClick={() => navigate(home)} className={PRIMARY_BUTTON_CLASS}>
+          Ir a mi panel
+        </button>
+      );
   } else {
-    // F3-F6: árboles, palmeras, fitosanitarios, horario, equipo y final.
+    // Un servicio sin preguntas (no debería pasar): se sigue sin bloquear.
     body = (
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{step.startsWith('service:') ? step.slice('service:'.length) : step}</h1>
-        <p className="mt-2 text-gray-600">Este paso se está construyendo.</p>
+        <h1 className="text-2xl font-bold text-gray-900">{serviceName ?? ''}</h1>
+        <p className="mt-2 text-gray-600">Este servicio se configura en «Mi perfil → Servicios».</p>
       </div>
     );
     footer = (
-      <button type="button" onClick={() => (step === 'finish' ? navigate(home) : advance())} className={PRIMARY_BUTTON_CLASS}>
+      <button type="button" onClick={() => advance()} className={PRIMARY_BUTTON_CLASS}>
         Seguir
       </button>
     );
   }
 
   return (
-    <ActivationShell stepLabel={stepLabel} percent={percent} onBack={back} onPause={pause} footer={footer}>
+    <ActivationShell
+      stepLabel={stepLabel}
+      percent={percent}
+      onBack={back}
+      onPause={step === 'finish' && finishPhase === 'done' ? undefined : pause}
+      footer={footer}
+    >
       {body}
     </ActivationShell>
   );

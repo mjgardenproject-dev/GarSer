@@ -76,6 +76,8 @@ const CompanyMemberSchedulePage = lazy(() => import('./pages/empresa/CompanyMemb
 const EmployeeSchedulePage = lazy(() => import('./pages/empleado/EmployeeSchedulePage'));
 const InvitationAcceptPage = lazy(() => import('./pages/empleado/InvitationAcceptPage'));
 const EmployeeHomePage = lazy(() => import('./pages/empleado/EmployeeHomePage'));
+// Bienvenida del empleado al aceptar la invitación (2026-11-11).
+const EmployeeWelcomePage = lazy(() => import('./pages/empleado/EmployeeWelcomePage'));
 
 // Funnel de reserva (el más pesado: análisis con IA, wizards manuales y checkout)
 const BookingFlow = lazy(() => import('./pages/reserva/BookingFlow'));
@@ -130,7 +132,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const isAuthPage = location.pathname === '/auth' || location.pathname === '/auth/callback' || location.pathname === '/confirmar-servicio' || location.pathname === '/invitacion';
     const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
     // Páginas de alta (jardinero o empresa): sin menú inferior, como /apply.
-    const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud' || location.pathname === '/empresa/estado' || location.pathname === '/activar';
+    const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud' || location.pathname === '/empresa/estado' || location.pathname === '/activar' || location.pathname === '/mi-trabajo/bienvenida';
     const isAdminPage = location.pathname.startsWith('/admin');
     const isMarketingPage =
       location.pathname === '/' ||
@@ -555,6 +557,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/mi-trabajo/horario" element={<ProtectedRoute><EmployeeSchedulePage /></ProtectedRoute>} />
         {/* Pública a propósito: quien recibe la invitación puede no tener cuenta todavía. */}
         <Route path="/invitacion" element={<InvitationAcceptPage />} />
+        <Route path="/mi-trabajo/bienvenida" element={<ProtectedRoute><EmployeeWelcomePage /></ProtectedRoute>} />
         <Route path="/mi-trabajo" element={<ProtectedRoute><EmployeeHomePage /></ProtectedRoute>} />
         <Route path="/activar" element={<ProtectedRoute><ActivationWizardPage /></ProtectedRoute>} />
         <Route 

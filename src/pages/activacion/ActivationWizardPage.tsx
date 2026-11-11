@@ -15,7 +15,7 @@ import ScheduleStep from '../../components/activation/ScheduleStep';
 import TeamStep, { type TeamAnswer } from '../../components/activation/TeamStep';
 import FinishStep from '../../components/activation/FinishStep';
 import { placeLabel } from '../../components/activation/ZoneStep';
-import { createTeamInvitation, looksLikeEmail, type TeamInvitationResult } from '../../utils/teamInvitations';
+import { createTeamInvitation, looksLikeEmail, presetProblem, setInvitationPreset, type TeamInvitationResult } from '../../utils/teamInvitations';
 import { isSavedServiceConfigValid, setServiceActive } from '../../utils/serviceActivation';
 import { buildProviderSetupSteps } from '../../shared/providerSetup';
 import { emptyWeek, rulesToRanges, scheduleProblem, rangesToMatrix, weeklyHours, type WeekRanges } from '../../activation/scheduleModel';
@@ -75,7 +75,7 @@ const ActivationWizardPage: React.FC = () => {
   const [weeksAhead, setWeeksAhead] = useState<number | null>(null);
   const [scheduleTouched, setScheduleTouched] = useState(false);
   // Paso 4 (equipo) y final
-  const [team, setTeam] = useState<TeamAnswer>({ answer: null, emails: [], declared: false });
+  const [team, setTeam] = useState<TeamAnswer>({ answer: null, emails: [], presets: [], declared: false });
   const [sentInvites, setSentInvites] = useState<TeamInvitationResult[]>([]);
   const [emailErrors, setEmailErrors] = useState<Record<number, string>>({});
   const [finishPhase, setFinishPhase] = useState<'review' | 'done'>('review');
@@ -97,7 +97,8 @@ const ActivationWizardPage: React.FC = () => {
         setWeeksAhead(loaded.schedule.weeksToMaintain);
         // Si en el alta dijo «somos 4», al elegir «Sí» salen 3 huecos para sus correos.
         const slots = Math.max(1, (loaded.estimatedTeamSize ?? 2) - 1);
-        setTeam({ answer: null, emails: Array.from({ length: Math.min(slots, 10) }, () => ''), declared: false });
+        const n = Math.min(slots, 10);
+        setTeam({ answer: null, emails: Array.from({ length: n }, () => ''), presets: Array.from({ length: n }, () => null), declared: false });
         const saved = readActivationProgress(user.id, isKnownService);
         setProgress(saved ?? { step: 'welcome', selectedServices: loaded.preselectedServices });
       })
@@ -483,7 +484,9 @@ const ActivationWizardPage: React.FC = () => {
       team.emails.forEach((raw, index) => {
         const email = raw.trim();
         if (!email) return;
+        const preset = team.presets[index];
         if (!looksLikeEmail(email)) errors[index] = 'Este correo no parece válido.';
+        else if (preset && presetProblem(preset)) errors[index] = presetProblem(preset);
         else if (seen.has(email.toLowerCase())) errors[index] = 'Este correo está repetido.';
         else {
           seen.add(email.toLowerCase());
@@ -506,20 +509,39 @@ const ActivationWizardPage: React.FC = () => {
       setBusy(true);
       const sent: TeamInvitationResult[] = [];
       const failed: Record<number, string> = {};
+      let presetFailed = false;
       for (const { email, index } of toSend) {
+        let result: TeamInvitationResult;
         try {
-          sent.push(await createTeamInvitation(email, needsLiability));
+          result = await createTeamInvitation(email, needsLiability);
         } catch (error) {
           failed[index] = (error as { message?: string })?.message || 'No se ha podido invitar a este correo.';
+          continue;
+        }
+        sent.push(result);
+        const preset = team.presets[index];
+        if (preset) {
+          try {
+            await setInvitationPreset(result.invitationId, preset);
+          } catch {
+            // La invitación ya salió: su configuración se podrá hacer en «Equipo» cuando acepte.
+            presetFailed = true;
+          }
         }
       }
+      if (presetFailed) setServiceError('Las invitaciones se enviaron, pero alguna configuración no se guardó: hazla en «Equipo» cuando acepten.');
       setBusy(false);
       setSentInvites((prev) => [...prev, ...sent]);
       // Quedan solo los correos que fallaron, para corregirlos.
-      const remaining = toSend.filter(({ index }) => failed[index]).map(({ email }) => email);
-      setTeam({ ...team, emails: remaining.length > 0 ? remaining : [''] });
+      const remainingSend = toSend.filter(({ index }) => failed[index]);
+      const remaining = remainingSend.map(({ email }) => email);
+      setTeam({
+        ...team,
+        emails: remaining.length > 0 ? remaining : [''],
+        presets: remaining.length > 0 ? remainingSend.map(({ index }) => team.presets[index] ?? null) : [null],
+      });
       setEmailErrors(Object.fromEntries(toSend.filter(({ index }) => failed[index]).map(({ index }, i) => [i, failed[index]])));
-      if (remaining.length === 0) advance();
+      if (remaining.length === 0 && !presetFailed) advance();
     };
     body = (
       <>
@@ -534,6 +556,10 @@ const ActivationWizardPage: React.FC = () => {
           needsLiability={needsLiability}
           emailErrors={emailErrors}
           sent={sentInvites}
+          serviceOptions={selected
+            .filter((name) => name !== 'Servicios fitosanitarios' && data.savedServices[name] && data.serviceIds[name])
+            .map((name) => ({ id: data.serviceIds[name]!, name }))}
+          offersPhyto={selected.includes('Servicios fitosanitarios') || Boolean(data.savedServices['Servicios fitosanitarios']?.active)}
         />
         {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
       </>

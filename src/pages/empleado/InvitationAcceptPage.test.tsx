@@ -33,6 +33,8 @@ const renderPage = () => render(
     <Routes>
       <Route path="/invitacion" element={<InvitationAcceptPage />} />
       <Route path="/mi-trabajo" element={<p>Panel de empleado</p>} />
+      {/* Al aceptar se pasa antes por la bienvenida del empleado (2026-11-11). */}
+      <Route path="/mi-trabajo/bienvenida" element={<p>Bienvenida de empleado</p>} />
     </Routes>
   </MemoryRouter>,
 );
@@ -61,7 +63,7 @@ describe('InvitationAcceptPage sin sesión (D21)', () => {
     fireEvent.change(screen.getByLabelText('Repite la contraseña'), { target: { value: 'ClaveSegura1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Unirme al equipo' }));
 
-    expect(await screen.findByText('Panel de empleado')).toBeTruthy();
+    expect(await screen.findByText('Bienvenida de empleado')).toBeTruthy();
     expect(mocks.invoke).toHaveBeenCalledWith('company-invitation-signup', {
       body: { token: 'tok123', fullName: 'Ana Pérez', password: 'ClaveSegura1' },
     });
@@ -102,7 +104,7 @@ describe('InvitationAcceptPage sin sesión (D21)', () => {
     fireEvent.change(screen.getByLabelText('Tu contraseña'), { target: { value: 'MiClaveDeSiempre' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar y unirme' }));
 
-    expect(await screen.findByText('Panel de empleado')).toBeTruthy();
+    expect(await screen.findByText('Bienvenida de empleado')).toBeTruthy();
     expect(mocks.signIn).toHaveBeenCalledWith('ana@correo.com', 'MiClaveDeSiempre');
     expect(mocks.rpc).toHaveBeenCalledWith('accept_company_invitation', { p_token: 'tok123' });
   });

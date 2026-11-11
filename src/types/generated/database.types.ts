@@ -1649,6 +1649,7 @@ export type Database = {
           email_sent_at: string | null
           expires_at: string
           id: string
+          preset: Json | null
           revoked_at: string | null
           token_hash: string
         }
@@ -1662,6 +1663,7 @@ export type Database = {
           email_sent_at?: string | null
           expires_at: string
           id?: string
+          preset?: Json | null
           revoked_at?: string | null
           token_hash: string
         }
@@ -1675,6 +1677,7 @@ export type Database = {
           email_sent_at?: string | null
           expires_at?: string
           id?: string
+          preset?: Json | null
           revoked_at?: string | null
           token_hash?: string
         }
@@ -3554,6 +3557,10 @@ export type Database = {
       }
       set_company_assignment_mode: { Args: { p_mode: string }; Returns: Json }
       set_company_max_crew: { Args: { p_max: number }; Returns: Json }
+      set_company_invitation_preset: {
+        Args: { p_invitation_id: string; p_preset: Json }
+        Returns: Json
+      }
       set_company_member_services: {
         Args: { p_member_id: string; p_service_ids: string[] }
         Returns: Json

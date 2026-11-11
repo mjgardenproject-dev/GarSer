@@ -104,7 +104,8 @@ const InvitationAcceptPage: React.FC = () => {
     clearPendingInvitation();
     await refresh();
     toast.success(`Ya formas parte de ${company}`);
-    navigate('/mi-trabajo', { replace: true });
+    // Primero, la bienvenida (sus datos, su carnet si hace falta, avisos); después, «Mi trabajo».
+    navigate('/mi-trabajo/bienvenida', { replace: true });
   };
 
   const accept = async () => {

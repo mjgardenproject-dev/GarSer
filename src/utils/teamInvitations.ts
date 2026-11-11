@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 // a una función para usarlo también en el cuestionario «Activa tu cuenta», que invita a varios correos.
 
 export interface TeamInvitationResult {
+  invitationId: string;
   email: string;
   /** Enlace de la invitación (por si el correo no sale: se puede copiar y mandar). */
   url: string;
@@ -35,5 +36,59 @@ export async function createTeamInvitation(email: string, liabilityDeclared: boo
     }));
     if (!mailError) break;
   }
-  return { email: result.email, url: `${origin}/invitacion?token=${result.token}`, emailed: !mailError };
+  return { invitationId: result.invitation_id, email: result.email, url: `${origin}/invitacion?token=${result.token}`, emailed: !mailError };
+}
+
+/** Lo que el titular elige para una persona al invitarla (se aplica cuando acepta). */
+export interface PersonPreset {
+  name: string;
+  serviceIds: string[];
+  schedule: 'company' | 'custom';
+  /** Para «Otro horario»: días (0 = domingo … 6 = sábado) y una franja en horas en punto. */
+  days: number[];
+  start: number;
+  end: number;
+  requestLicense: boolean;
+}
+
+export const emptyPersonPreset = (): PersonPreset => ({
+  name: '',
+  serviceIds: [],
+  schedule: 'company',
+  days: [1, 2, 3, 4, 5],
+  start: 8,
+  end: 14,
+  requestLicense: false,
+});
+
+const hhmm = (h: number) => `${String(h).padStart(2, '0')}:00:00`;
+
+/** Lo que se manda al servidor (set_company_invitation_preset), que lo valida y normaliza. */
+export function presetPayload(preset: PersonPreset): Record<string, unknown> {
+  return {
+    ...(preset.name.trim() ? { display_name: preset.name.trim() } : {}),
+    service_ids: preset.serviceIds,
+    schedule:
+      preset.schedule === 'company'
+        ? { mode: 'company' }
+        : { mode: 'custom', weeks: 4, rules: preset.days.map((day) => ({ day_of_week: day, start_time: hhmm(preset.start), end_time: hhmm(preset.end) })) },
+    ...(preset.requestLicense ? { request_license: true } : {}),
+  };
+}
+
+/** Problema de la configuración ('' si está bien) — el servidor lo vuelve a comprobar. */
+export function presetProblem(preset: PersonPreset): string {
+  if (preset.schedule === 'custom') {
+    if (preset.days.length === 0) return 'Elige al menos un día de trabajo.';
+    if (preset.end <= preset.start) return 'La hora de fin tiene que ser después de la de inicio.';
+  }
+  return '';
+}
+
+export async function setInvitationPreset(invitationId: string, preset: PersonPreset): Promise<void> {
+  const { error } = await supabase.rpc('set_company_invitation_preset', {
+    p_invitation_id: invitationId,
+    p_preset: presetPayload(preset) as never,
+  });
+  if (error) throw error;
 }

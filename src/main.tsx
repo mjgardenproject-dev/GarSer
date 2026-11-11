@@ -20,8 +20,9 @@ captureProviderLinkCodeFromUrl();
 disableBrowserScrollRestoration();
 // Solo con `?scrolldebug=1`: apunta quién mueve el scroll (src/utils/scrollDebug.ts). Sin la marca no hace nada.
 enableScrollDebugIfRequested();
-// Chrome del iPhone vuelve a aplicar por su cuenta el scroll al recargar, con el desfase de sus barras (≈ 60 px).
-// En una recarga, durante unos segundos o hasta que la persona toque, devuelve arriba un desplazamiento pequeño.
+// Chrome del iPhone (iOS 26) deja la página ≈ 60 px desplazada y sin poder volver arriba al recargar TIRANDO de la
+// pantalla (fallo de Chrome: Wikipedia también). En una recarga, intenta devolverla arriba y, si el navegador no deja,
+// pone ese mismo hueco arriba del documento para que el encabezado no tape la primera sección.
 startReloadScrollGuard();
 
 createRoot(document.getElementById('root')!).render(

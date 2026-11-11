@@ -11,6 +11,8 @@
 // scrollIntoView / focus con quién la llamó, cada cambio del scroll, y los cambios de tamaño de la ventana y
 // de la zona visible (las barras del navegador al aparecer o esconderse). El historial sobrevive a la recarga.
 
+import { FLOOR_ATTR } from './reloadScrollGuard';
+
 const FLAG_KEY = 'garser.scrolldebug';
 const LOG_KEY = 'garser.scrolldebug.log';
 const MAX_LINES = 80;
@@ -39,13 +41,23 @@ export function appendLogLine(lines: string[], line: string, max = MAX_LINES): s
   return next.length > max ? next.slice(next.length - max) : next;
 }
 
+/**
+ * Quién llamó: las 3 primeras llamadas de la pila sin las 2 internas del diagnóstico. Chrome de escritorio
+ * antepone una línea «Error»; Safari y Chrome del iPhone (WebKit) no, y con un recorte fijo se perdía al
+ * llamador (las líneas salían sin pila).
+ */
+export function trimStack(stack: string, skipInternal = 2, keep = 3): string {
+  const frames = stack.split('\n').map((l) => l.trim()).filter(Boolean);
+  const start = /^Error\b/.test(frames[0] ?? '') ? 1 : 0;
+  return frames
+    .slice(start + skipInternal, start + skipInternal + keep)
+    .map((l) => l.replace(/https?:\/\/[^/\s]+/g, '').replace(/^at\s+/, '').slice(0, 70))
+    .join(' < ');
+}
+
 const shortStack = (): string => {
   try {
-    return (new Error().stack || '')
-      .split('\n')
-      .slice(3, 6)
-      .map((l) => l.trim().replace(/https?:\/\/[^/\s]+/g, '').replace(/^at\s+/, '').slice(0, 70))
-      .join(' < ');
+    return trimStack(new Error().stack || '');
   } catch {
     return '';
   }
@@ -70,7 +82,8 @@ export function installScrollDebug(win: Window & typeof globalThis = window): ()
   const render = () => {
     if (!overlay) return;
     const body = overlay.querySelector('pre');
-    if (body) body.textContent = `y=${y()} inner=${win.innerWidth}x${win.innerHeight}\n${lines.slice(-SHOWN_LINES).join('\n')}`;
+    const floor = doc.documentElement.getAttribute(FLOOR_ATTR) ?? '0';
+    if (body) body.textContent = `y=${y()} hueco=${floor} inner=${win.innerWidth}x${win.innerHeight}\n${lines.slice(-SHOWN_LINES).join('\n')}`;
   };
   const log = (message: string) => {
     lines = appendLogLine(lines, `${stamp()} ${message}`);

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  FLOOR_ATTR,
   GUARD_MAX_MS,
   GUARD_MAX_NUDGE_PX,
+  clearScrollFloorCompensation,
   isReloadNavigation,
   releaseReloadScrollGuard,
   startReloadScrollGuard,
@@ -32,7 +34,8 @@ describe('guardia de scroll al recargar', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     y = 0;
-    scrollTo.mockClear();
+    scrollTo.mockReset();
+    scrollTo.mockImplementation((_x: number, top: number) => { y = top; });
     Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y });
     window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
     window.history.replaceState(null, '', '/');
@@ -40,6 +43,7 @@ describe('guardia de scroll al recargar', () => {
   afterEach(() => {
     stop();
     releaseReloadScrollGuard();
+    clearScrollFloorCompensation();
     vi.useRealTimers();
   });
 
@@ -168,5 +172,171 @@ describe('guardia de scroll al recargar', () => {
 
   it('releaseReloadScrollGuard sin guardia activa no falla', () => {
     expect(() => releaseReloadScrollGuard()).not.toThrow();
+  });
+
+  // Lo que hace Chrome del iPhone al recargar tirando de la pantalla: deja el scroll en 60 y no deja bajar de ahí.
+  describe('suelo de scroll que el navegador no deja bajar', () => {
+    const root = () => document.documentElement;
+    const browserRefusesToScrollUp = () => scrollTo.mockImplementation(() => { /* el navegador lo ignora */ });
+
+    it('si tras intentar subir sigue en el mismo sitio, añade ese hueco arriba para que el contenido no quede tapado', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(200);
+      expect(scrollTo).toHaveBeenCalledWith(0, 0); // primero lo intenta
+      expect(root().style.paddingTop).toBe('61px');
+      expect(root().getAttribute(FLOOR_ATTR)).toBe('61');
+    });
+
+    it('no pone hueco si la web consigue subir (en cuanto sube no hay nada que compensar)', () => {
+      setNavigationType('reload');
+      stop = startReloadScrollGuard(); // scrollTo funciona
+      y = 61;
+      vi.advanceTimersByTime(GUARD_MAX_MS);
+      expect(y).toBe(0);
+      expect(root().style.paddingTop).toBe('');
+      expect(root().hasAttribute(FLOOR_ATTR)).toBe(false);
+    });
+
+    it('no lo pone con una sola comprobación: hace falta ver el mismo desfase dos veces seguidas', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(0);
+      expect(root().style.paddingTop).toBe('');
+    });
+
+    it('si el navegador lo repite tarde (otro desfase a los 400 ms) también lo compensa', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      vi.advanceTimersByTime(400); // limpio al principio
+      expect(root().style.paddingTop).toBe('');
+      y = 60;
+      vi.advanceTimersByTime(1500);
+      expect(root().style.paddingTop).toBe('60px');
+    });
+
+    it('si el navegador cambia el suelo, ajusta el hueco a ese valor', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 60;
+      vi.advanceTimersByTime(700);
+      expect(root().style.paddingTop).toBe('60px');
+      y = 72;
+      vi.advanceTimersByTime(500);
+      expect(root().style.paddingTop).toBe('72px');
+    });
+
+    it('si el navegador se recupera y deja bajar del hueco, lo quita', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(700);
+      expect(root().style.paddingTop).toBe('61px');
+      y = 0;
+      window.dispatchEvent(new Event('scroll'));
+      expect(root().style.paddingTop).toBe('');
+      expect(root().hasAttribute(FLOOR_ATTR)).toBe(false);
+    });
+
+    it('un redondeo de un píxel no quita el hueco', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(700);
+      y = 60;
+      window.dispatchEvent(new Event('scroll'));
+      expect(root().style.paddingTop).toBe('61px');
+    });
+
+    it('el hueco sigue ahí cuando la guardia termina, y se quita igual si luego baja del hueco', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(GUARD_MAX_MS + 100);
+      expect(root().style.paddingTop).toBe('61px');
+      y = 400; // la persona lee más abajo: no pasa nada
+      window.dispatchEvent(new Event('scroll'));
+      expect(root().style.paddingTop).toBe('61px');
+      y = 10;
+      window.dispatchEvent(new Event('scroll'));
+      expect(root().style.paddingTop).toBe('');
+    });
+
+    it('no toca nada si no es una recarga', () => {
+      setNavigationType('navigate');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(GUARD_MAX_MS);
+      expect(root().style.paddingTop).toBe('');
+    });
+
+    it('no toca nada si el desplazamiento es grande (no es el desfase de las barras)', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = GUARD_MAX_NUDGE_PX + 1;
+      vi.advanceTimersByTime(GUARD_MAX_MS);
+      expect(root().style.paddingTop).toBe('');
+    });
+
+    it('no toca nada si la dirección trae un ancla', () => {
+      setNavigationType('reload');
+      window.history.replaceState(null, '', '/para-jardineros#empresas');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(GUARD_MAX_MS);
+      expect(root().style.paddingTop).toBe('');
+    });
+
+    it('si la persona ya tocó la pantalla, no decide nada (podría ser su propio scroll)', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      window.dispatchEvent(new Event('touchstart'));
+      y = 61;
+      vi.advanceTimersByTime(GUARD_MAX_MS);
+      expect(root().style.paddingTop).toBe('');
+    });
+
+    it('con la pantalla ya arriba no hay hueco', () => {
+      setNavigationType('reload');
+      stop = startReloadScrollGuard();
+      vi.advanceTimersByTime(GUARD_MAX_MS);
+      expect(root().style.paddingTop).toBe('');
+    });
+
+    it('releaseReloadScrollGuard no quita un hueco ya puesto', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(700);
+      releaseReloadScrollGuard();
+      expect(root().style.paddingTop).toBe('61px');
+    });
+
+    it('arrancar de nuevo (otra carga) empieza limpio, sin el hueco anterior', () => {
+      setNavigationType('reload');
+      browserRefusesToScrollUp();
+      stop = startReloadScrollGuard();
+      y = 61;
+      vi.advanceTimersByTime(700);
+      expect(root().style.paddingTop).toBe('61px');
+      setNavigationType('navigate');
+      stop = startReloadScrollGuard();
+      expect(root().style.paddingTop).toBe('');
+      expect(root().hasAttribute(FLOOR_ATTR)).toBe(false);
+    });
   });
 });

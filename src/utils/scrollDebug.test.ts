@@ -1,6 +1,23 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendLogLine, enableScrollDebugIfRequested, installScrollDebug, scrollDebugRequested } from './scrollDebug';
+import { appendLogLine, enableScrollDebugIfRequested, installScrollDebug, scrollDebugRequested, trimStack } from './scrollDebug';
+
+describe('trimStack', () => {
+  it('Chrome de escritorio (con línea «Error»): salta la línea y las 2 llamadas internas', () => {
+    const stack = ['Error', 'at shortStack (https://x.es/a.js:1:1)', 'at wrapper (https://x.es/a.js:2:2)', 'at pin (https://x.es/a.js:3:3)', 'at check (https://x.es/a.js:4:4)'].join('\n');
+    expect(trimStack(stack)).toBe('pin (/a.js:3:3) < check (/a.js:4:4)');
+  });
+
+  it('Safari y Chrome del iPhone (WebKit, sin línea «Error»): no se pierde al llamador', () => {
+    const stack = ['shortStack@https://x.es/a.js:1:1', 'wrapper@https://x.es/a.js:2:2', 'pin@https://x.es/a.js:3:3', 'check@https://x.es/a.js:4:4', '[native code]'].join('\n');
+    expect(trimStack(stack)).toBe('pin@/a.js:3:3 < check@/a.js:4:4 < [native code]');
+  });
+
+  it('una pila vacía o corta no rompe', () => {
+    expect(trimStack('')).toBe('');
+    expect(trimStack('Error')).toBe('');
+  });
+});
 
 const memoryStorage = () => {
   const data = new Map<string, string>();

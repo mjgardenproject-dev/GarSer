@@ -1815,9 +1815,9 @@ Requisitos previos: **migración `20261108120000_cuenta_profesional_dinamica.sql
 
 ---
 
-## Sección 35 — Alta de jardinero: actividad, nº de personas y recargar (2026-11-09)
+## Sección 35 — Alta de jardinero: actividad y nº de personas (2026-11-09)
 
-El alta de jardinero (`garser.es/apply`, 5 pasos) pensaba en empleados: el paso 3 pedía el currículum y si «has trabajado para empresas de jardinería». GarSer es para profesionales **por cuenta propia y empresas**. Ahora el paso 3 es **«Tu actividad»** y pregunta **cuántas personas trabajarán desde el perfil** (dato para aceptar o rechazar). Además, al **recargar** el móvil dejaba la pantalla a medias, con su primera sección tapada por las barras fijas.
+El alta de jardinero (`garser.es/apply`, 5 pasos) pensaba en empleados: el paso 3 pedía el currículum y si «has trabajado para empresas de jardinería». GarSer es para profesionales **por cuenta propia y empresas**. Ahora el paso 3 es **«Tu actividad»** y pregunta **cuántas personas trabajarán desde el perfil** (dato para aceptar o rechazar).
 
 Requisitos previos: **migración `20261109120000_alta_jardinero_equipo_estimado.sql`** aplicada ANTES de fusionar el front (sin la columna nueva el formulario no puede guardar) y el front en Vercel. Necesitas una **cuenta nueva de profesional** (alias de Gmail, p. ej. `tucorreo+alta@gmail.com`) y el **admin**.
 
@@ -1829,13 +1829,9 @@ Requisitos previos: **migración `20261109120000_alta_jardinero_equipo_estimado.
 - [ ] **35.4 — Lo ve el admin (bloqueante).** Termina el alta y envíala. Como admin, en **Usuarios** (solicitudes pendientes): ✅ la tarjeta dice «**Equipo:** Con equipo (4 personas contando al solicitante)» (o «Solo, sin equipo (1 persona)») y en «Ver detalle» sale «**Personas en el perfil**». ✅ Ya no salen «Trabajó para empresas» ni «Puede demostrar».
 - [ ] **35.5 — Declarar un equipo no crea equipo.** Aprueba la solicitud con «4 personas»: ✅ el profesional entra en **modo individual** (panel de siempre; el equipo se crea al aceptar su primer compañero, sección 34).
 
-**B. Recargar la página**
+**B. Problema conocido (no es de la web): recargar TIRANDO de la pantalla en Chrome del iPhone**
 
-- [ ] **35.6 — Recargar no mueve la pantalla (iPhone, Chrome).** Con el iPhone y **Chrome** (también el de dentro de Gmail), en la **portada**, **Mi cuenta**, **Reservas** y **Panel**: recarga (⋯ → Recargar, o tirando hacia abajo) **estando arriba** y también **después de bajar un poco**. ✅ La pantalla **no se mueve sola** (ni ≈ 60 px hacia abajo ni «vuelve a subir» al bajarla) y su primera sección se ve entera bajo las barras. Repite en **Safari** y con la **app instalada**.
-  - Qué se cambió (2026-11-10, 3.ª vuelta): Chrome del iPhone **vuelve a aplicar por su cuenta el scroll al recargar**, con el desfase de sus barras (≈ 60 px), y eso no lo controla la web (por eso no bastaron `scrollRestoration` ni quitar el `scrollTo` del arranque). Ahora, **solo en una recarga y sin ancla**, durante 5 s o hasta que toques la pantalla, la web devuelve arriba un desplazamiento **pequeño (1 a 160 px)**. Uno grande no se toca; «Mi perfil» sigue restaurando su propio scroll.
-  - Comprobado en local: en el navegador interno de Apple del simulador, una recarga con el desfase emulado (61 y 58 px) se corrige en ~13 ms y queda en 0; un gesto del dedo libera la guardia. **No** se pudo probar con Chrome real (no existe en el simulador): este punto **lo decide tu prueba**.
-- [ ] **35.6b — Si sigue pasando: diagnóstico (2 minutos).** En el móvil, abre `garser.es/?scrolldebug=1` (activa una franja negra con lo que mueve el scroll; no guarda datos personales), **recarga como siempre** hasta que se mueva y **haz una captura** de la franja negra. Para apagarla: `garser.es/?scrolldebug=0`. Dime también **en qué navegador** (Safari, Chrome, Gmail) y si pasa **igual en Safari**.
-- [ ] **35.7 — Navegar sigue igual.** Entre pantallas de la web (Panel → Reservas → Mi cuenta): ✅ cada una abre arriba, como antes. Los enlaces con ancla (`/para-jardineros#empresas`) siguen llevando a su sección.
+> Decidido el 2026-11-11: **no se corrige**, es un fallo de la propia app Chrome (iOS 26) y no de garser.es. Al recargar **tirando hacia abajo**, Chrome deja la página ≈ 60 px desplazada (la primera sección queda tapada por el encabezado) y **no deja volver arriba**; tirar de nuevo ya no recarga. Falla igual en **Wikipedia**; **⋯ → Actualizar** y **Safari** lo hacen bien. Se confirmó con tres pruebas del propietario y con un registro de la web (14 `scrollTo(0,0)` de la web en 5 s, ninguno surtió efecto). **Qué hacer si pasa:** recargar con **⋯ → Actualizar** (o cerrar y volver a abrir la pestaña) y, si se quiere, informar a Chrome desde su menú. No es un fallo a anotar en esta batería. Se probaron y **se retiraron** (2026-11-11) tres parches en la web (`scrollRestoration` manual, `ScrollToTop` sin `scrollTo` al arrancar, una guardia de recarga) porque no podían arreglarlo.
 
 > **Comprobado ya en local (2026-11-09):** 201 archivos y 2969 tests; build; 9 ficheros de SQL (incluido `gardener_application_team_size.test.sql`: el envío exige el dato, 1-200, un rechazo corregido lo conserva, enviar no crea equipo; con la función antigua falla); baterías `verify-gardener-reapply` (9/9) y `verify-application-ads-consent` (11/11); y el alta completa en el navegador a 375 px con la cuenta de prueba (paso 3 → envío → tarjeta y detalle del admin).
 

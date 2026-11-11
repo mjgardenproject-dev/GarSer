@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import ScrollToTop from './ScrollToTop';
 
 const scrollTo = vi.fn();
@@ -13,22 +13,6 @@ const renderAt = (url: string) =>
       <ScrollToTop />
     </MemoryRouter>,
   );
-
-// Navega a otra ruta desde dentro (como hace la web al pulsar un enlace).
-let goTo: (to: string) => void = () => {};
-const Navigator = () => {
-  const navigate = useNavigate();
-  goTo = (to) => navigate(to);
-  return null;
-};
-const renderWithNavigator = (url: string) =>
-  render(
-    <MemoryRouter initialEntries={[url]}>
-      <ScrollToTop />
-      <Navigator />
-    </MemoryRouter>,
-  );
-const setScrollY = (y: number) => Object.defineProperty(window, 'scrollY', { value: y, configurable: true });
 
 const addSection = (id: string) => {
   const el = document.createElement('section');
@@ -45,45 +29,15 @@ describe('ScrollToTop', () => {
     Element.prototype.scrollIntoView = scrollIntoView;
   });
   afterEach(() => {
-    setScrollY(0);
     cleanup();
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
 
-  it('al cargar o recargar NO toca el scroll (un documento recién cargado ya empieza arriba)', () => {
-    setScrollY(0);
+  it('sin ancla, va arriba como siempre', () => {
     renderAt('/para-jardineros');
-    expect(scrollTo).not.toHaveBeenCalled();
-    expect(scrollIntoView).not.toHaveBeenCalled();
-  });
-
-  it('tampoco lo toca al cargar aunque el navegador ya traiga un scroll: eso lo decide el navegador, no la web', () => {
-    setScrollY(240);
-    renderAt('/account');
-    expect(scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('al cambiar de pantalla desde una página scrolleada, la nueva abre arriba', async () => {
-    renderWithNavigator('/dashboard');
-    setScrollY(500);
-    await act(async () => { goTo('/bookings'); });
-    expect(scrollTo).toHaveBeenCalledTimes(1);
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
-  });
-
-  it('al cambiar de pantalla estando ya arriba, no hace nada (no hay nada que subir)', async () => {
-    renderWithNavigator('/dashboard');
-    setScrollY(0);
-    await act(async () => { goTo('/bookings'); });
-    expect(scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('cambiar solo la búsqueda o el ancla de la MISMA pantalla no sube arriba', async () => {
-    renderWithNavigator('/dashboard');
-    setScrollY(500);
-    await act(async () => { goTo('/dashboard?tab=profile'); });
-    expect(scrollTo).not.toHaveBeenCalled();
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('con ancla y la sección ya pintada, va a la sección', () => {

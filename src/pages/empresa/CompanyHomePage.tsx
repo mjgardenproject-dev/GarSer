@@ -17,6 +17,7 @@ import TeamMemberCard from '../../components/empresa/TeamMemberCard';
 import MarketingHub from '../../components/marketing/MarketingHub';
 import ProviderSetupChecklist from '../../components/provider/ProviderSetupChecklist';
 import ActivationResumeCard from '../../components/activation/ActivationResumeCard';
+import ProfessionalHelpSheet, { HelpButton } from '../../components/provider/ProfessionalHelpSheet';
 import { useActivationAutoOpen } from '../../activation/useActivationAutoOpen';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import type { SetupTarget } from '../../shared/providerSetup';
@@ -57,6 +58,7 @@ const CompanyPanel: React.FC = () => {
   // «Activa tu cuenta» (2026-11-11): el mismo estado que la guía; si falta algo por hacer, abre el cuestionario.
   const setup = useProviderSetupStatus();
   const activationPending = useActivationAutoOpen(setup.status);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
   // Solicitudes de reserva por responder (F4): la empresa es el proveedor de sus reservas.
@@ -164,7 +166,7 @@ const CompanyPanel: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AppHeader title={c.commercial_name || 'Tu empresa'}>
+      <AppHeader title={c.commercial_name || 'Tu empresa'} rightSlot={<HelpButton onClick={() => setHelpOpen(true)} />}>
         <div role="tablist" aria-label="Secciones del panel" className="flex gap-1 rounded-xl bg-gray-100 p-1">
           {([['agenda', 'Agenda'], ['team', 'Equipo'], ['marketing', 'Marketing'], ['company', 'Tu empresa']] as const).map(([key, label]) => (
             <button
@@ -189,7 +191,7 @@ const CompanyPanel: React.FC = () => {
         <SuspendedProviderNotice />
         {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
         {tab === 'agenda' && activationPending && <ActivationResumeCard />}
-        {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} setup={setup} />}
+        {tab === 'agenda' && !activationPending && <ProviderSetupChecklist onNavigate={handleSetupNavigate} setup={setup} />}
         {(tab === 'agenda' || tab === 'team') && (
           <MemberSetupNotices
             members={data.members}
@@ -335,6 +337,7 @@ const CompanyPanel: React.FC = () => {
         )}
       </main>
       {confirmDialog}
+      <ProfessionalHelpSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 };

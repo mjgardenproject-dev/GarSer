@@ -2872,6 +2872,7 @@ export type Database = {
       admin_pending_review_counts: { Args: never; Returns: Json }
       admin_phyto_license_queue: { Args: never; Returns: Json }
       admin_provider_setup_overview: { Args: never; Returns: Json }
+      admin_activation_progress: { Args: never; Returns: Json }
       admin_signup_methods: { Args: { p_days?: number }; Returns: Json }
       admin_review_company_application: {
         Args: { p_application_id: string; p_comment?: string; p_status: string }
@@ -3557,6 +3558,7 @@ export type Database = {
       }
       set_company_assignment_mode: { Args: { p_mode: string }; Returns: Json }
       set_company_max_crew: { Args: { p_max: number }; Returns: Json }
+      record_my_activation_step: { Args: { p_step: string }; Returns: undefined }
       set_company_invitation_preset: {
         Args: { p_invitation_id: string; p_preset: Json }
         Returns: Json

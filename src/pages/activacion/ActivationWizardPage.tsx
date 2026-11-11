@@ -33,6 +33,7 @@ import {
 import {
   blockNumber,
   clearActivationProgress,
+  recordedStep,
   estimatedMinutes,
   nextStep,
   pauseActivation,
@@ -46,6 +47,7 @@ import {
 } from '../../activation/activationFlow';
 import { ACTIVATION_SERVICES, serviceInfo, sortActivationServices, type ActivationServiceName } from '../../activation/serviceCatalog';
 import { loadActivationData, saveCoverage, saveServiceConfig, type ActivationData } from '../../activation/activationData';
+import { supabase } from '../../lib/supabase';
 
 // Cuestionario «Activa tu cuenta» (2026-11-11). Lo abre el panel mientras al profesional le falte algo
 // para recibir reservas. Cada paso guarda en las tablas de siempre al pulsar el botón principal; aquí solo
@@ -113,13 +115,20 @@ const ActivationWizardPage: React.FC = () => {
     };
   }, [user?.id]);
 
+  // «Admin → Profesionales» ve en qué paso va (sin esperar: si falla, el cuestionario sigue igual).
+  const recordStep = useCallback((step: string) => {
+    void supabase.rpc('record_my_activation_step', { p_step: step }).then(() => undefined, () => undefined);
+  }, []);
   const go = useCallback(
     (next: ActivationProgress, options: { scroll?: boolean } = {}) => {
-      setProgress(next);
+      setProgress((prev) => {
+        if (!prev || recordedStep(prev.step) !== recordedStep(next.step)) recordStep(recordedStep(next.step));
+        return next;
+      });
       if (user?.id) writeActivationProgress(user.id, next);
       if (options.scroll !== false) window.scrollTo({ top: 0 });
     },
-    [user?.id],
+    [user?.id, recordStep],
   );
 
   const pause = useCallback(() => {
@@ -595,6 +604,7 @@ const ActivationWizardPage: React.FC = () => {
         notifySetupChanged();
         await setup.refresh();
         clearActivationProgress(user.id);
+        recordStep('done');
         setFinishPhase('done');
         window.scrollTo({ top: 0 });
       } catch {

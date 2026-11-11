@@ -173,3 +173,20 @@ function safeSessionStorage(): KV | null {
     return null;
   }
 }
+
+/** El paso que se anota en el servidor para «Admin → Profesionales» (los servicios cuentan como uno). */
+export type RecordedActivationStep = 'welcome' | 'zone' | 'services' | 'service' | 'schedule' | 'team' | 'finish' | 'done';
+export const recordedStep = (step: ActivationStepId): RecordedActivationStep =>
+  step.startsWith('service:') ? 'service' : (step as RecordedActivationStep);
+
+/** Cómo lo lee el administrador. */
+export const ACTIVATION_STEP_LABEL: Record<RecordedActivationStep, string> = {
+  welcome: 'lo ha abierto',
+  zone: 'en su zona',
+  services: 'eligiendo servicios',
+  service: 'poniendo sus tarifas',
+  schedule: 'en el horario',
+  team: 'en el equipo',
+  finish: 'en el último paso',
+  done: 'terminado',
+};

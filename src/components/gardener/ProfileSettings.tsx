@@ -36,7 +36,6 @@ import {
 // import { isTreePruningConfigValid } from '../../domain/treePruning';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
 import { notifySetupChanged } from '../../utils/setupEvents';
-import SetupGuideBanner from '../provider/SetupGuideBanner';
 import { getCoordinatesFromAddress } from '../../utils/geolocation';
 import { getProviderCoordinates } from '../../shared/bookingEligibilityCore';
 
@@ -782,10 +781,6 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
         {/* Tab Content Area */}
         <div className="flex-1 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
-          {/* «Paso X de N» si llega desde los primeros pasos (Servicios y Zona). */}
-          {onBack && (activeTab === 'services' || activeTab === 'coverage') && (
-            <SetupGuideBanner stepId={activeTab} onBack={onBack} className="mb-5" />
-          )}
           <FormProvider {...methods}>
             <form onSubmit={handleSubmit((formData) => onSaveProfileInfo(formData), onError)}>
               {activeTab === 'personal' && (

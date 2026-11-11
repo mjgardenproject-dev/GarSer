@@ -71,6 +71,7 @@ export const SUGGESTED = {
     minimum: [45, 60, 75],
   },
   palm: {
+    hourly: [25, 30, 35],
     /** Por palmera según lo alta que sea (la primera altura de cada especie es la más baja). */
     perPalmLow: [35, 45, 55],
     perPalmMid: [80, 90, 100],

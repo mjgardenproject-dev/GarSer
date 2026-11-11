@@ -10,8 +10,8 @@ import ZoneStep from '../../components/activation/ZoneStep';
 import ServicesStep from '../../components/activation/ServicesStep';
 import QuestionScreen from '../../components/activation/QuestionScreen';
 import ServiceReview from '../../components/activation/ServiceReview';
+import { SERVICE_QUESTIONNAIRES } from '../../activation/questionnaires';
 import {
-  SERVICE_QUESTIONNAIRES,
   isQuestionAnswered,
   previewQuotes,
   questionCountUpperBound,
@@ -123,9 +123,23 @@ const ActivationWizardPage: React.FC = () => {
     );
   }
 
+  // Un servicio que ya tiene sus tarifas bien guardadas empieza en su resumen: no se le hace contestar todo otra vez.
+  const firstIndexFor = (next: ActivationStepId): number => {
+    if (!next.startsWith('service:')) return 0;
+    const name = next.slice('service:'.length) as ActivationServiceName;
+    const q = SERVICE_QUESTIONNAIRES[name];
+    const saved = data.savedServices[name]?.config;
+    if (!q || !saved || progress.serviceAnswers?.[name]) return 0;
+    try {
+      return q.isValid(q.toConfig(q.fromConfig(saved), saved)) ? Number.MAX_SAFE_INTEGER : 0;
+    } catch {
+      return 0;
+    }
+  };
   const advance = (patch: Partial<ActivationProgress> = {}) => {
     const nextSelected = patch.selectedServices ?? progress.selectedServices;
-    go({ ...progress, ...patch, step: nextStep(progress.step, nextSelected), selectedServices: nextSelected, questionIndex: 0 });
+    const next = nextStep(progress.step, nextSelected);
+    go({ ...progress, ...patch, step: next, selectedServices: nextSelected, questionIndex: firstIndexFor(next) });
   };
   // Volver a un servicio desde el paso siguiente lleva a su resumen, no a la primera pregunta.
   const goBackOuter = () => {

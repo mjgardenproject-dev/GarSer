@@ -18,6 +18,10 @@ function summaryRows(question: Question, answers: Answers): Array<{ key: string;
     return [{ key: question.id, label: title, value: question.options.find((o) => o.value === answers[question.id])?.label ?? '—' }];
   }
   if (question.kind === 'number') return [{ key: question.id, label: title, value: formatValue(question.unit, answers[question.id]) }];
+  if (question.kind === 'checklist') {
+    const chosen = question.options.filter((o) => answers[o.value] === true).map((o) => o.label);
+    return [{ key: question.id, label: title, value: chosen.join(', ') || '—' }];
+  }
   return visibleFields(question, answers).map((field) => ({
     key: field.id,
     label: `${title} · ${field.label}`,

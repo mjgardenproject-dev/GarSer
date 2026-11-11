@@ -77,7 +77,13 @@ export interface MultiNumberQuestion extends BaseQuestion {
   fields: NumberField[];
 }
 
-export type Question = ChoiceQuestion | NumberQuestion | MultiNumberQuestion;
+/** Marcar varias opciones (p. ej. especies de palmera). Cada opción guarda `true`/`false` en su propia clave. */
+export interface ChecklistQuestion extends BaseQuestion {
+  kind: 'checklist';
+  options: ChoiceOption[];
+}
+
+export type Question = ChoiceQuestion | NumberQuestion | MultiNumberQuestion | ChecklistQuestion;
 
 export interface QuoteExample {
   label: string;
@@ -92,25 +98,26 @@ export interface ServiceQuestionnaire {
   /** Configuración completa a guardar: la anterior + lo respondido. */
   toConfig: (answers: Answers, previous: unknown) => Record<string, unknown>;
   isValid: (config: Record<string, unknown>) => boolean;
-  examples: QuoteExample[];
+  /** Presupuestos de ejemplo (pueden depender de lo respondido, p. ej. las especies elegidas). */
+  examples: (config: Record<string, unknown>) => QuoteExample[];
 }
 
 // ── Utilidades ─────────────────────────────────────────────────────────────────────────────────────
 
-const num = (value: unknown): number | null => {
+export const num = (value: unknown): number | null => {
   const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
   return Number.isFinite(n) ? n : null;
 };
-const positive = (value: unknown): number | null => {
+export const positive = (value: unknown): number | null => {
   const n = num(value);
   return n !== null && n > 0 ? n : null;
 };
-const nonNegative = (value: unknown): number | null => {
+export const nonNegative = (value: unknown): number | null => {
   const n = num(value);
   return n !== null && n >= 0 ? n : null;
 };
-const obj = (value: unknown): Record<string, unknown> => (value && typeof value === 'object' ? (value as Record<string, unknown>) : {});
-const n0 = (value: Answer | undefined): number => (typeof value === 'number' ? value : 0);
+export const obj = (value: unknown): Record<string, unknown> => (value && typeof value === 'object' ? (value as Record<string, unknown>) : {});
+export const n0 = (value: Answer | undefined): number => (typeof value === 'number' ? value : 0);
 
 export const isQuestionVisible = (question: Question, answers: Answers): boolean => (question.when ? question.when(answers) : true);
 
@@ -152,13 +159,14 @@ export const visibleFields = (question: MultiNumberQuestion, answers: Answers): 
 /** ¿Está bien contestada la pantalla entera (en una de varios números, todos los que se ven)? */
 export function isQuestionAnswered(question: Question, answers: Answers): boolean {
   if (question.kind === 'multi') return visibleFields(question, answers).every((field) => isNumberValid(field, answers[field.id]));
+  if (question.kind === 'checklist') return question.options.some((option) => answers[option.value] === true);
   return isAnswered(question, answers[question.id]);
 }
 
 export const textOf = (text: string | ((answers: Answers) => string) | undefined, answers: Answers): string =>
   typeof text === 'function' ? text(answers) : text ?? '';
 
-const methodQuestion = (perQuantityLabel: string, perQuantityDetail: string): ChoiceQuestion => ({
+export const methodQuestion = (perQuantityLabel: string, perQuantityDetail: string): ChoiceQuestion => ({
   id: 'method',
   kind: 'choice',
   title: '¿Cómo cobras este servicio?',
@@ -168,10 +176,10 @@ const methodQuestion = (perQuantityLabel: string, perQuantityDetail: string): Ch
   ],
 });
 
-const isPerHour = (a: Answers) => a.method === 'per_hour';
-const isPerQuantity = (a: Answers) => a.method === 'per_quantity';
+export const isPerHour = (a: Answers) => a.method === 'per_hour';
+export const isPerQuantity = (a: Answers) => a.method === 'per_quantity';
 
-const hourlyQuestion = (suggestions: readonly number[]): NumberQuestion => ({
+export const hourlyQuestion = (suggestions: readonly number[]): NumberQuestion => ({
   id: 'hourly',
   kind: 'number',
   title: '¿Cuánto cobras la hora?',
@@ -182,12 +190,12 @@ const hourlyQuestion = (suggestions: readonly number[]): NumberQuestion => ({
   when: isPerHour,
 });
 
-const WHY_YIELD = (a: Answers) =>
+export const WHY_YIELD = (a: Answers) =>
   isPerHour(a)
     ? 'Lo usamos para calcular cuánto dura cada trabajo (y su precio, porque cobras por hora) y no llenarte la agenda de más.'
     : 'Lo usamos para calcular cuánto dura cada trabajo y reservarte ese tiempo en la agenda, ni más ni menos.';
 
-const percentQuestion = (id: string, title: string, help: string | undefined, suggestions: readonly number[] = PERCENT_CHIPS): NumberQuestion => ({
+export const percentQuestion = (id: string, title: string, help: string | undefined, suggestions: readonly number[] = PERCENT_CHIPS): NumberQuestion => ({
   id,
   kind: 'number',
   title,
@@ -198,19 +206,19 @@ const percentQuestion = (id: string, title: string, help: string | undefined, su
   max: 300,
 });
 
-const STATE_HELP = 'Ese % sube a la vez el tiempo que te reservamos y el precio. Ejemplo: con un 20 %, 1 h pasa a 1 h 12 min y 40 € a 48 €.';
+export const STATE_HELP = 'Ese % sube a la vez el tiempo que te reservamos y el precio. Ejemplo: con un 20 %, 1 h pasa a 1 h 12 min y 40 € a 48 €.';
 
-const percentField = (id: string, label: string, suggestions: readonly number[] = PERCENT_CHIPS): NumberField => ({
+export const percentField = (id: string, label: string, suggestions: readonly number[] = PERCENT_CHIPS): NumberField => ({
   id, label, unit: '%', suggestions, allowZero: true, max: 300,
 });
 
 /** Los dos recargos de estado/dificultad en una sola pantalla. */
-const statesQuestion = (title: string, low: NumberField, high: NumberField): MultiNumberQuestion => ({
+export const statesQuestion = (title: string, low: NumberField, high: NumberField): MultiNumberQuestion => ({
   id: 'states', kind: 'multi', title, help: STATE_HELP, fields: [low, high],
 });
-const WASTE_HELP = 'Pon 0 % si te los llevas sin coste extra.';
+export const WASTE_HELP = 'Pon 0 % si te los llevas sin coste extra.';
 
-const minimumQuestion = (suggestions: readonly number[]): NumberQuestion => ({
+export const minimumQuestion = (suggestions: readonly number[]): NumberQuestion => ({
   id: 'minimum',
   kind: 'number',
   title: '¿Cuál es lo mínimo que cobras por un trabajo?',
@@ -275,7 +283,7 @@ const lawn: ServiceQuestionnaire = {
     return config as unknown as Record<string, unknown>;
   },
   isValid: (c) => isLawnConfigValid(c as unknown as LawnPricingConfig),
-  examples: [
+  examples: () => [
     { label: 'Césped de 400 m² en buen estado', bookingData: { lawnZones: [{ quantity: 400, state: 'normal' }], wasteRemoval: false } },
     { label: 'El mismo, descuidado', bookingData: { lawnZones: [{ quantity: 400, state: 'descuidado' }], wasteRemoval: false } },
     { label: 'En buen estado y llevándote los restos', bookingData: { lawnZones: [{ quantity: 400, state: 'normal' }], wasteRemoval: true } },
@@ -376,7 +384,7 @@ const hedge: ServiceQuestionnaire = {
     return config as unknown as Record<string, unknown>;
   },
   isValid: (c) => isHedgeConfigValid(c as unknown as HedgePricingConfig),
-  examples: [
+  examples: () => [
     { label: '30 m de seto de hasta 2 m, una cara', bookingData: { hedgeZones: [{ type: 'seto', height: '0-2m', length: 30, state: 'normal', faces_to_trim: 1 }], wasteRemoval: false } },
     { label: '30 m de seto de 2 a 4 m, una cara', bookingData: { hedgeZones: [{ type: 'seto', height: '2-4m', length: 30, state: 'normal', faces_to_trim: 1 }], wasteRemoval: false } },
     { label: '30 m de hasta 2 m, algo difícil y con restos', bookingData: { hedgeZones: [{ type: 'seto', height: '0-2m', length: 30, state: 'media', faces_to_trim: 1 }], wasteRemoval: true } },
@@ -460,7 +468,7 @@ const shrub: ServiceQuestionnaire = {
     return config as unknown as Record<string, unknown>;
   },
   isValid: (c) => isShrubConfigValid(c as unknown as ShrubPricingConfig),
-  examples: [
+  examples: () => [
     { label: '25 m² de arbustos medianos', bookingData: { shrubGroups: [{ id: 'ej1', area: 25, size: 'medianas', state: 'normal' }], wasteRemoval: false } },
     { label: 'Los mismos, descuidados', bookingData: { shrubGroups: [{ id: 'ej2', area: 25, size: 'medianas', state: 'descuidado' }], wasteRemoval: false } },
     { label: '25 m² medianos, llevándote los restos', bookingData: { shrubGroups: [{ id: 'ej3', area: 25, size: 'medianas', state: 'normal' }], wasteRemoval: true } },
@@ -511,14 +519,15 @@ const weeding: ServiceQuestionnaire = {
     return config as unknown as Record<string, unknown>;
   },
   isValid: (c) => isWeedingConfigValid(c as unknown as WeedingPricingConfig),
-  examples: [
+  examples: () => [
     { label: '400 m² de terreno normal', bookingData: { weedingZones: [{ id: 'ej1', area: 400, state: 'normal' }], wasteRemoval: false } },
     { label: 'Los mismos, muy difíciles', bookingData: { weedingZones: [{ id: 'ej2', area: 400, state: 'dificultad_alta' }], wasteRemoval: false } },
     { label: '400 m² normales, llevándote los restos', bookingData: { weedingZones: [{ id: 'ej3', area: 400, state: 'normal' }], wasteRemoval: true } },
   ],
 };
 
-export const SERVICE_QUESTIONNAIRES: Partial<Record<ActivationServiceName, ServiceQuestionnaire>> = {
+/** Servicios por superficie o longitud (los de unidades, en unitQuestionnaires.ts; todos juntos, en questionnaires.ts). */
+export const AREA_QUESTIONNAIRES: Partial<Record<ActivationServiceName, ServiceQuestionnaire>> = {
   'Corte de césped': lawn,
   'Poda de setos': hedge,
   'Poda de plantas y arbustos': shrub,
@@ -541,7 +550,7 @@ const minimumOf = (config: Record<string, unknown>): number =>
 
 /** Presupuestos de ejemplo con la configuración que va saliendo. Los que el motor no puede calcular, fuera. */
 export function previewQuotes(questionnaire: ServiceQuestionnaire, config: Record<string, unknown>): QuotePreview[] {
-  return questionnaire.examples.flatMap((example) => {
+  return questionnaire.examples(config).flatMap((example) => {
     try {
       const quote = buildAuthoritativeBookingQuote({ bookingData: example.bookingData, providerConfig: config });
       if (!quote.eligibility.isEligible || !(quote.totalPrice > 0)) return [];

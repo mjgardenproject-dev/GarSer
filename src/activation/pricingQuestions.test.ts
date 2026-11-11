@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { SERVICE_QUESTIONNAIRES } from './questionnaires';
 import {
-  SERVICE_QUESTIONNAIRES,
   isAnswered,
   isNumberValid,
   isQuestionAnswered,
@@ -33,6 +33,33 @@ const SEED: Record<string, Record<string, unknown>> = {
     version: 'weeding_v1', precio_desbroce_m2: 0.35, precio_herbicida_m2: 0.15, yield_m2_per_hour: 120,
     suplementos: { dificultad_media: 20, dificultad_alta: 50, retirada_restos: 20 }, importe_minimo: 60,
   },
+  'Poda de árboles': {
+    pricing_method: 'per_quantity',
+    formacion: { small: 35, medium: 60, large: 110 },
+    estructural: { small: 45, medium: 80, large: 150 },
+    yield_units_per_hour: {
+      formacion: { small: 2.5, medium: 1.5, large: 0.8 },
+      estructural: { small: 2.0, medium: 1.2, large: 0.6 },
+    },
+    difficultyIncrease: 30, wasteRemovalMultiplier: 15, minimumPrice: 60,
+  },
+  // El de la base de pruebas, con las especies elegidas (el configurador las guarda; el seed no).
+  'Poda de palmeras': {
+    pricing_method: 'per_quantity',
+    selected_species: ['Phoenix canariensis', 'Washingtonia robusta/filifera'],
+    height_prices: {
+      'Phoenix canariensis': { '0-4': 45, '4-10': 90, '>10': 150 },
+      'Washingtonia robusta/filifera': { '0-4': 40, '4-12': 85, '12-20': 140, '>20': 200 },
+    },
+    yield_units_per_hour: {
+      'Phoenix canariensis': { '0-4': 1.5, '4-10': 0.8, '>10': 0.5 },
+      'Washingtonia robusta/filifera': { '0-4': 1.6, '4-12': 0.9, '12-20': 0.55, '>20': 0.4 },
+    },
+    precioPorHora: 35,
+    condition_surcharges: { normal: 0, descuidado: 20, muy_descuidado: 50 },
+    waste_removal: { percentage: 15 },
+    phytosanitary: 18, trunk_finish: 20, access_difficulty: 25, minimum_price: 60,
+  },
 };
 
 const q = (name: string) => SERVICE_QUESTIONNAIRES[name as keyof typeof SERVICE_QUESTIONNAIRES] as ServiceQuestionnaire;
@@ -45,6 +72,7 @@ function answerAll(questionnaire: ServiceQuestionnaire, start: Answers = {}): An
     if (!pending) return answers;
     if (pending.kind === 'choice') answers[pending.id] = pending.options[0].value;
     else if (pending.kind === 'number') answers[pending.id] = pending.suggestions.find((v) => v > 0) ?? 1;
+    else if (pending.kind === 'checklist') answers[pending.options[0].value] = true;
     else {
       for (const field of visibleFields(pending, answers)) {
         if (!isNumberValid(field, answers[field.id])) answers[field.id] = field.suggestions.find((v) => v > 0) ?? 1;
@@ -85,7 +113,7 @@ describe.each(Object.keys(SEED))('%s', (name) => {
   it('con mínimo 0 o sin rendimiento NO es válida (el configurador tampoco la aceptaría)', () => {
     const answers = answerAll(questionnaire);
     expect(questionnaire.isValid(questionnaire.toConfig({ ...answers, minimum: 0 }, undefined))).toBe(false);
-    const yieldKey = Object.keys(answers).find((key) => key.startsWith('yield'))!;
+    const yieldKey = Object.keys(answers).find((key) => key.startsWith('yield') || key.startsWith('min:') || key.startsWith('minFormacion'))!;
     expect(questionnaire.isValid(questionnaire.toConfig({ ...answers, [yieldKey]: 0 }, undefined))).toBe(false);
   });
 });
@@ -163,7 +191,8 @@ describe('detalles por servicio', () => {
   it('una configuración rara o vacía no rompe: no hay respuestas inventadas', () => {
     for (const questionnaire of Object.values(SERVICE_QUESTIONNAIRES)) {
       const answers = questionnaire!.fromConfig({ pricing_method: 'otra', yield_m2_per_hour: -3, minimum_price: 'x' });
-      expect(Object.values(answers).every((v) => v === null)).toBe(true);
+      // Nada inventado: ni números ni elecciones (las especies sin marcar valen `false`).
+      expect(Object.values(answers).every((v) => v === null || v === false)).toBe(true);
       expect(questionnaire!.fromConfig(null)).toBeTruthy();
     }
   });

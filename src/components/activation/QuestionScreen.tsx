@@ -143,6 +143,39 @@ const QuestionScreen: React.FC<Props> = ({ question, answers, onChange, position
         </div>
       )}
 
+      {question.kind === 'checklist' && (
+        <div className="mt-5 space-y-2" role="group" aria-label={title}>
+          {question.options.map((option) => {
+            const checked = answers[option.value] === true;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="checkbox"
+                aria-checked={checked}
+                onClick={() => onChange(option.value, !checked)}
+                className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left [touch-action:manipulation] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                  checked ? 'border-emerald-700 bg-emerald-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 text-sm font-bold ${
+                    checked ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-gray-300 bg-white'
+                  }`}
+                >
+                  {checked ? '✓' : ''}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-lg font-bold text-gray-900">{option.label}</span>
+                  {option.detail && <span className="block text-sm italic text-gray-600">{option.detail}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {question.kind === 'number' && (
         <NumberInput
           field={{ ...question, label: title }}

@@ -1,0 +1,83 @@
+# Pruebas importantes antes de subir a producción
+
+Solo lo imprescindible para que una **primera versión funcione bien** con anuncios en marcha: que se pueda entrar, reservar,
+pagar lo justo, que el profesional acepte o rechace, que el dinero se cobre o se devuelva cuando toca y que nadie se quede
+con un cargo sin reserva. El detalle de cada caso está en `docs/audit/2026-07-12/PRUEBAS-PRODUCCION.md` (sección indicada).
+
+Cómo pasarlas: en **garser.es**, desde un **móvil** (iPhone a ser posible), con una cuenta de cliente y otra de profesional
+de prueba. Donde haya cobro, con una tarjeta real e importe pequeño; lo cobrado se devuelve cancelando con 24 h o más.
+Marca cada línea: ✅ bien · ❌ mal (apunta qué viste).
+
+## 1. Entrar en la web
+
+| # | Prueba | Debe pasar |
+|---|---|---|
+| 1.1 | Crear cuenta de cliente con un correo nuevo | Llega el correo de confirmación; al confirmarlo puedes entrar |
+| 1.2 | Entrar con una cuenta sin confirmar | Mensaje en español y forma de reenviar el correo (QA-039, paquete 1.11) |
+| 1.3 | «¿Has olvidado tu contraseña?» | Llega el correo, cambias la contraseña y entras con la nueva |
+| 1.4 | «Continuar con Google» (cliente y profesional) | Entra con el tipo de cuenta correcto |
+| 1.5 | Cerrar sesión y entrar con OTRA cuenta en el mismo móvil | Aterriza en su inicio, no en una pantalla de la cuenta anterior (QA-155, paquete 1.10) |
+
+## 2. Reservar y pagar (cliente)
+
+| # | Prueba | Debe pasar |
+|---|---|---|
+| 2.1 | Reserva completa de «Corte de césped» escribiendo los datos a mano, hasta pagar | Antes de pagar ves cuánto pagas hoy (gastos de gestión) y cuánto al profesional; en Stripe aparece **exactamente** ese importe de gastos, **retenido, no cobrado** |
+| 2.2 | La reserva aparece en «Mis reservas» | Una sola vez, «Pendiente», con su importe |
+| 2.3 | Llega el correo de confirmación | Al cliente y al profesional |
+| 2.4 | Pulsar «Pagar» dos veces muy seguidas | Una sola reserva y un solo pago en Stripe |
+| 2.5 | Reservar por el enlace o QR del profesional | Paga la tarifa del enlace (la que diga Ajustes → Comisiones), no la general |
+
+### Nuevas de la fase 1.1 — pago con el horario caducado y tarjeta rechazada (sección 39)
+
+| # | Prueba | Debe pasar |
+|---|---|---|
+| 2.6 | Abre el pago, escribe una tarjeta y **cierra la hoja con la X** | Recuadro «Pago listo» con «**Aún no se te ha cobrado nada.**» |
+| 2.7 | Deja la hoja de pago abierta **31 minutos** sin pagar | La hoja se cierra sola: «Tiempo agotado · **No se te ha cobrado nada.**»; en el banco no hay cargo ni retención |
+| 2.8 | Paga con una tarjeta que el banco rechace y después, en el mismo formulario, con una buena | Con la rechazada, aviso arriba «No se ha completado el pago… No se te ha cobrado nada»; con la buena, «Pago confirmado y reserva creada» y la reserva sale **una sola vez** |
+| 2.9 | Editor SQL de Supabase: `select has_function_privilege('authenticated', 'public.release_booking_payment_attempt(uuid, text, text, text, jsonb)', 'EXECUTE');` | `false` |
+| 2.10 | Editor SQL: `select count(*) from public.list_orphan_payment_authorizations(200);` una hora después de desplegar | `0` (ningún pago retenido sin reserva) |
+| 2.11 | Stripe → Desarrolladores → Webhooks → endpoint `booking-payment-webhook` | Suscrito a `payment_intent.payment_failed` y `payment_intent.canceled` además de `amount_capturable_updated` y `succeeded` |
+| 2.12 | 48 h después de publicar, Stripe → Pagos → «No capturados» | Todos tienen reserva; ninguno sin reserva de más de 10 minutos |
+
+## 3. El profesional
+
+| # | Prueba | Debe pasar |
+|---|---|---|
+| 3.1 | Alta de profesional nueva → el admin la aprueba | Le llega el aviso; al entrar ve su panel y el cuestionario «Activa tu cuenta» |
+| 3.2 | Completar la activación (servicio, zona, horario) | Al terminar va a su panel (QA-196, paquete 1.12) y aparece a los clientes de su zona |
+| 3.3 | Un servicio activado en una cuenta con equipo | Los clientes pueden reservarlo (QA-044, paquete 1.3) |
+| 3.4 | **Aceptar** la solicitud de 2.1 | Reserva «Confirmada»; en Stripe los gastos pasan de retenidos a **cobrados** |
+| 3.5 | **Rechazar** otra solicitud | Reserva rechazada; en Stripe la retención se **libera** (0 € cobrados) |
+
+## 4. Cancelar y devolver
+
+| # | Prueba | Debe pasar |
+|---|---|---|
+| 4.1 | El cliente cancela con **24 h o más** una reserva ya aceptada | Stripe **devuelve** los gastos enteros |
+| 4.2 | El cliente cancela una solicitud aún sin aceptar | La retención se libera, nada cobrado |
+| 4.3 | El profesional cancela una reserva aceptada | El cliente recupera los gastos enteros |
+| 4.4 | Una solicitud que el profesional no responde en 24 h | Caduca sola y la retención se libera |
+
+## 5. Después del servicio
+
+| # | Prueba | Debe pasar |
+|---|---|---|
+| 5.1 | Pasada la hora del servicio | Al cliente le llega el correo para confirmar que se hizo y la reserva acaba «Completada» |
+| 5.2 | El cliente envía una **incidencia desde el móvil** | El botón «Enviar incidencia» se puede pulsar (QA-187, paquete 1.2) y el admin la ve |
+| 5.3 | El admin la resuelve con devolución | Pide doble confirmación (QA-189, paquete 1.2) y Stripe devuelve el importe una sola vez |
+| 5.4 | El cliente deja una valoración | Aparece en el perfil del profesional |
+
+## 6. Lo legal y la primera impresión
+
+| # | Prueba | Debe pasar |
+|---|---|---|
+| 6.1 | Primera visita a la web | Sale el aviso de cookies; «Rechazar» no carga Meta Pixel; se puede cambiar después (QA-007, paquete 1.9) |
+| 6.2 | /privacidad y /terminos | Se abren y se leen bien en el móvil |
+| 6.3 | /para-jardineros (la página de los anuncios) | Sin fechas pasadas ni textos internos (paquete 1.18) |
+| 6.4 | Ningún extra con coste llega marcado de antemano | «Retirar restos» sin marcar (QA-065, paquete 1.6) |
+
+## Criterio para subir
+
+Todas las líneas en ✅. Las que citan un paquete pendiente solo se pueden pasar cuando ese paquete esté desplegado; hasta
+entonces se marcan «pendiente de paquete».

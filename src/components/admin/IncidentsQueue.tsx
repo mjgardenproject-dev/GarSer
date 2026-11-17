@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { formatEuro } from '../../shared/bookingAmounts';
 import { fetchProfileNames } from '../../utils/profileNames';
 import { resolveBookingIncident } from '../../utils/bookingIncidentService';
+import { useConfirmDialog } from '../common/ConfirmDialog';
 
 /**
  * Cola de incidencias del administrador.
@@ -37,6 +38,14 @@ interface IncidentRow {
   } | null;
 }
 
+const formatIncidentDate = (iso: string) => {
+  try {
+    return new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${iso}T12:00:00`));
+  } catch {
+    return iso;
+  }
+};
+
 const KIND_LABELS: Record<string, string> = {
   gardener_no_show: 'El profesional no vino',
   service_not_done: 'Vino, pero no hizo el trabajo',
@@ -63,6 +72,7 @@ const IncidentsQueue = () => {
   const [filter, setFilter] = useState<Filter>('open');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
+  const { openConfirm, confirmDialog } = useConfirmDialog();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,12 +117,7 @@ const IncidentsQueue = () => {
     await load();
   };
 
-  const resolve = async (incident: IncidentRow, outcome: 'refund' | 'no_action' | 'reject') => {
-    const note = (noteDraft[incident.id] || '').trim();
-    if (outcome !== 'refund' && note.length < 5) {
-      toast.error('Explica el motivo de la resolución.');
-      return;
-    }
+  const runResolve = async (incident: IncidentRow, outcome: 'refund' | 'no_action' | 'reject', note: string) => {
     setBusyId(incident.id);
     try {
       const result = await resolveBookingIncident(incident.id, outcome, note || undefined);
@@ -129,6 +134,56 @@ const IncidentsQueue = () => {
     } finally {
       setBusyId(null);
     }
+  };
+
+  // QA-189: nada se resuelve al primer toque. Devolver dinero pide doble comprobación (resumen +
+  // casilla + botón con el importe); cerrar sin acción o rechazar, una confirmación que dice qué pasa.
+  const resolve = (incident: IncidentRow, outcome: 'refund' | 'no_action' | 'reject') => {
+    const note = (noteDraft[incident.id] || '').trim();
+    const retrying = incident.money_status === 'failed';
+    if (!retrying && note.length < 5) {
+      toast.error('Escribe en la nota el motivo de la resolución (mínimo 5 caracteres).');
+      return;
+    }
+    const clientName = (incident.bookings ? names[incident.bookings.client_id]?.full_name : null) || 'el cliente';
+    const service = incident.bookings?.services?.name || 'Servicio';
+    const date = incident.bookings?.date ? formatIncidentDate(incident.bookings.date) : '';
+    const fee = Number(incident.bookings?.management_fee || 0);
+    const bookingLine = `Reserva: ${service}${date ? `, ${date}` : ''}.`;
+
+    if (outcome === 'refund') {
+      const amount = fee > 0 ? formatEuro(fee) : null;
+      openConfirm({
+        tone: 'danger',
+        title: amount ? `¿Devolver ${amount} a ${clientName}?` : `¿Aceptar la incidencia de ${clientName}?`,
+        message: [
+          bookingLine,
+          amount
+            ? `Se devuelven en Stripe los gastos de gestión (${amount}) a la tarjeta de ${clientName}. No se puede deshacer.`
+            : 'Esta reserva no tiene gastos de gestión cobrados: no se mueve dinero.',
+          retrying ? 'Es un reintento: Stripe no devuelve dos veces el mismo pago.' : 'La incidencia queda resuelta a favor del cliente.',
+          note ? `Nota: «${note}»` : '',
+        ].filter(Boolean).join('\n'),
+        acknowledgement: amount ? 'He revisado el importe, el cliente y la reserva' : 'He revisado la reserva',
+        confirmLabel: amount ? `Devolver ${amount} a ${clientName}` : 'Aceptar la incidencia',
+        cancelLabel: 'No, volver',
+        onConfirm: () => runResolve(incident, 'refund', note),
+      });
+      return;
+    }
+
+    openConfirm({
+      tone: outcome === 'reject' ? 'danger' : 'warning',
+      title: outcome === 'reject' ? '¿Rechazar la incidencia?' : '¿Resolver sin acción?',
+      message: [
+        bookingLine,
+        'No se devuelve dinero. Se avisa al cliente por correo con tu nota:',
+        `«${note}»`,
+      ].join('\n'),
+      confirmLabel: outcome === 'reject' ? 'Sí, rechazarla' : 'Sí, resolver sin acción',
+      cancelLabel: 'No, volver',
+      onConfirm: () => runResolve(incident, outcome, note),
+    });
   };
 
   if (loading) return <div className="py-8 text-center text-sm text-gray-500">Cargando incidencias…</div>;
@@ -233,7 +288,7 @@ const IncidentsQueue = () => {
                   <textarea
                     value={noteDraft[incident.id] || ''}
                     onChange={(event) => setNoteDraft((prev) => ({ ...prev, [incident.id]: event.target.value }))}
-                    placeholder="Nota de resolución (obligatoria si no hay devolución)"
+                    placeholder="Nota de resolución (obligatoria): qué has comprobado y por qué decides así"
                     rows={2}
                     className="w-full p-2.5 border border-gray-300 rounded-lg text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                   />
@@ -241,7 +296,7 @@ const IncidentsQueue = () => {
                   <div className="flex flex-col sm:flex-row gap-2">
                     <button
                       type="button"
-                      onClick={() => void resolve(incident, 'refund')}
+                      onClick={() => resolve(incident, 'refund')}
                       disabled={busyId === incident.id}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                     >
@@ -254,7 +309,7 @@ const IncidentsQueue = () => {
                       <>
                         <button
                           type="button"
-                          onClick={() => void resolve(incident, 'no_action')}
+                          onClick={() => resolve(incident, 'no_action')}
                           disabled={busyId === incident.id}
                           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
                         >
@@ -262,7 +317,7 @@ const IncidentsQueue = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => void resolve(incident, 'reject')}
+                          onClick={() => resolve(incident, 'reject')}
                           disabled={busyId === incident.id}
                           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                         >
@@ -285,6 +340,7 @@ const IncidentsQueue = () => {
           );
         })}
       </ul>
+      {confirmDialog}
     </div>
   );
 };

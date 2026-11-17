@@ -10,6 +10,7 @@ import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
 import MemberSetupNotices from '../../components/empresa/MemberSetupNotices';
 import SuspendedProviderNotice from '../../components/common/SuspendedProviderNotice';
+import OpenIncidentsNotice from '../../components/provider/OpenIncidentsNotice';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
@@ -181,6 +182,8 @@ const CompanyPanel: React.FC = () => {
       {/* Marketing usa todo el ancho en escritorio (materiales y mensajes en columnas). */}
       <main className={`mx-auto w-full space-y-4 px-4 py-4 ${tab === 'marketing' ? 'sm:max-w-5xl' : 'sm:max-w-xl'}`}>
         <SuspendedProviderNotice />
+        {/* QA-192: también en el panel de empresa (el dueño responde por su equipo). */}
+        {tab === 'agenda' && <OpenIncidentsNotice userId={user?.id} />}
         {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
         {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} />}
         {(tab === 'agenda' || tab === 'team') && (

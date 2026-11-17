@@ -361,6 +361,10 @@ const GardenerBookings: React.FC = () => {
                     <p className="mt-1 text-sm text-amber-800 break-words whitespace-pre-line">
                       {booking.incident.description}
                     </p>
+                    {/* QA-192: qué supone para él mientras se revisa. */}
+                    <p className="mt-2 text-xs text-amber-900">
+                      Lo revisa el equipo de GarSer. Mientras tanto, esta reserva no se cierra ni se cobra sola; te avisaremos de lo que se decida.
+                    </p>
 
                     {booking.incident.gardener_response ? (
                       <div className="mt-3 rounded-lg bg-white/70 p-3">

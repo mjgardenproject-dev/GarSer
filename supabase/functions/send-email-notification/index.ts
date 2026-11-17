@@ -67,6 +67,8 @@ type EmailType =
   | 'booking_client_confirmation_request'
   | 'booking_incident_received'
   | 'booking_incident_resolved'
+  // QA-192: al PROFESIONAL, cuando un cliente abre una incidencia sobre su trabajo.
+  | 'booking_incident_opened'
   // GarSer Empresas (F3.4). Todo se resuelve en el servidor: destinatario, nombre y motivo
   // salen de la base de datos, nunca del navegador.
   | 'company_approved'
@@ -154,7 +156,18 @@ const BOOKING_EMAIL_TYPES = new Set<EmailType>([
   'booking_price_change_proposed', 'booking_price_change_accepted',
   'booking_price_change_rejected', 'booking_price_change_expired',
   'booking_client_confirmation_request', 'booking_incident_received', 'booking_incident_resolved',
+  'booking_incident_opened',
 ]);
+
+// Motivo de la incidencia en lenguaje llano (mismas etiquetas que la cola del admin).
+const INCIDENT_KIND_LABELS_FOR_EMAIL: Record<string, string> = {
+  gardener_no_show: 'El profesional no fue',
+  service_not_done: 'Fue, pero no hizo el trabajo',
+  service_incomplete: 'El trabajo quedó incompleto',
+  billing: 'Problema con el cobro',
+  behaviour: 'Problema de trato',
+  other: 'Otro',
+};
 
 // Quién recibe cada aviso de cambio de precio: la propuesta la sufre el CLIENTE (es quien
 // decide), y el desenlace le importa al JARDINERO (es quien lo pidió).
@@ -174,7 +187,7 @@ export const SERVER_MANAGED_TYPES = new Set<string>([
   'booking_accepted', 'booking_rejected',
   'booking_price_change_proposed', 'booking_price_change_accepted', 'booking_price_change_rejected',
   'booking_reschedule_proposed', 'booking_reschedule_answered',
-  'booking_incident_received',
+  'booking_incident_received', 'booking_incident_opened',
   'gardener_approved', 'gardener_rejected', 'company_approved', 'company_rejected',
   // F4 (R-07): quién va a cada trabajo lo compara el servidor al final de cada cambio.
   'job_assigned', 'job_unassigned',
@@ -353,7 +366,8 @@ Deno.serve(async (req) => {
       // cliente, de modo que un jardinero podia perder el trabajo sin enterarse.
       const cancelledByClient =
         type === 'booking_cancelled' && details.booking.cancellation_actor === 'client';
-      if (PRICE_CHANGE_TO_GARDENER.has(type) || cancelledByClient) {
+      // QA-192: la incidencia que abre el cliente se la contamos al profesional (es quien responde).
+      if (PRICE_CHANGE_TO_GARDENER.has(type) || cancelledByClient || type === 'booking_incident_opened') {
         // El jardinero propuso el cambio: es a él a quien le importa el desenlace, y ve su
         // propio importe (íntegro), no el total del cliente.
         to = details.gardener.email ?? undefined;
@@ -1390,6 +1404,31 @@ Deno.serve(async (req) => {
         footerNote: bookingFeeWaived
           ? 'Mientras la revisamos, esta reserva no se cerrará de forma automática.'
           : 'Mientras la revisamos, esta reserva no se cerrará ni se cobrará de forma automática.',
+      };
+    } else if (type === 'booking_incident_opened') {
+      // Qué ha contado el cliente: sale de la incidencia (la última abierta de esta reserva), nunca
+      // del navegador. Sin el motivo el profesional no puede preparar su versión.
+      const { data: incident } = admin
+        ? await admin
+          .from('booking_incidents')
+          .select('kind, description')
+          .eq('booking_id', bookingId)
+          .eq('reporter_role', 'client')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        : { data: null };
+      const kindLabel = INCIDENT_KIND_LABELS_FOR_EMAIL[String(incident?.kind || '')] || 'Problema con el servicio';
+      const description = String(incident?.description || '').trim();
+      subject = 'Un cliente ha abierto una incidencia sobre tu trabajo';
+      detailPairs = [...bookingPairs, ['Motivo', kindLabel], ...(description ? [['Lo que cuenta', description.length > 400 ? `${description.slice(0, 400)}…` : description] as [string, string]] : [])];
+      opts = {
+        title: subject,
+        heading: `Hola ${name}`,
+        intro: `${counterpartName || 'El cliente'} ha abierto una incidencia sobre esta reserva. La revisa el equipo de GarSer y tu versión es importante para decidir: cuéntanosla desde la app.`,
+        bodyHtml: detailRows(detailPairs),
+        cta: { label: 'Contar mi versión', url: `${BRAND.site}/bookings` },
+        footerNote: 'Mientras la revisamos, esta reserva no se cierra ni se cobra de forma automática. Te avisaremos de lo que decidamos.',
       };
     } else if (type === 'booking_incident_resolved') {
       subject = 'Ya hemos revisado tu incidencia';

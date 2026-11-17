@@ -70,6 +70,8 @@ tiene que estar desplegado antes de pasarla.
 | T5.1 | Pasada la hora del servicio | Al cliente le llega el correo para confirmar que se hizo y la reserva acaba «Completada» | Ya hecho |
 | T5.2 | El cliente envía una **incidencia desde el móvil** | El botón «Enviar incidencia» se puede pulsar (QA-187) y el admin la ve | 1.2 |
 | T5.3 | El admin la resuelve con devolución | Pide doble confirmación (QA-189) y Stripe devuelve el importe una sola vez | 1.2 |
+| T5.5 | Cuando el cliente abre la incidencia de T5.2, el profesional | Recibe un correo «Un cliente ha abierto una incidencia sobre tu trabajo» con el motivo, y al entrar ve en su Panel el aviso «Contar mi versión» | 1.2 |
+| T5.6 | En «Resolver sin acción» o «Rechazar» del admin, y al devolver sin escribir nota | Pide confirmación antes de cerrar; sin nota no deja resolver | 1.2 |
 | T5.4 | El cliente deja una valoración | Aparece en el perfil del profesional | Ya hecho |
 
 ## 6. Lo legal y la primera impresión

@@ -127,7 +127,7 @@ const BookingIncidentPage = () => {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-4 sm:px-6 sm:py-6 pb-28 sm:pb-6">
+    <div className="mx-auto max-w-lg px-4 py-4 sm:px-6 sm:py-6 pb-8">
       <button
         type="button"
         onClick={() => navigate(-1)}
@@ -202,12 +202,14 @@ const BookingIncidentPage = () => {
         </p>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 sm:static bg-white sm:bg-transparent border-t sm:border-0 border-gray-200 p-4 sm:p-0">
+      {/* QA-187: el botón va DENTRO del formulario, no fijo abajo. Fijo lo tapaba la barra inferior
+          y, con el teclado abierto en iOS, quedaba detrás del teclado sin forma de llegar. */}
+      <div>
         <button
           type="button"
           onClick={() => void submit()}
           disabled={!canSubmit}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+          className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
         >
           <MessageCircle className="w-4 h-4" aria-hidden="true" />
           {submitting ? 'Enviando…' : 'Enviar incidencia'}

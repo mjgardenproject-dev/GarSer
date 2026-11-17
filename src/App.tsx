@@ -9,6 +9,7 @@ import ResetPassword from './components/auth/ResetPassword';
 import AdminRoute from './components/auth/AdminRoute';
 import Navbar from './components/layout/Navbar';
 import BottomNav from './components/layout/BottomNav';
+import { isAdminPath, isApplyPath, isAuthPath, isBookingPath, isFocusedTaskPath, isMarketingPath, shouldShowBottomNav } from './utils/bottomNavVisibility';
 import SessionEndedNotice from './components/auth/SessionEndedNotice';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ScrollToTop from './components/common/ScrollToTop';
@@ -125,19 +126,13 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const { isTeam } = useProviderMode();
     const location = useLocation();
     const navigate = useNavigate();
-    const isAuthPage = location.pathname === '/auth' || location.pathname === '/auth/callback' || location.pathname === '/confirmar-servicio' || location.pathname === '/invitacion';
-    const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
+    // Qué tipo de pantalla es: fuente única en utils/bottomNavVisibility (también decide la barra inferior).
+    const isAuthPage = isAuthPath(location.pathname);
+    const isBookingPage = isBookingPath(location.pathname);
     // Páginas de alta (jardinero o empresa): sin menú inferior, como /apply.
-    const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud' || location.pathname === '/empresa/estado';
-    const isAdminPage = location.pathname.startsWith('/admin');
-    const isMarketingPage =
-      location.pathname === '/' ||
-      location.pathname === '/marbella' ||
-      location.pathname === '/costa-del-sol' ||
-      location.pathname === '/para-jardineros' ||
-      location.pathname === '/privacidad' ||
-      location.pathname === '/terminos' ||
-      location.pathname === '/cookies';
+    const isApplyPage = isApplyPath(location.pathname);
+    const isAdminPage = isAdminPath(location.pathname);
+    const isMarketingPage = isMarketingPath(location.pathname);
   
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
@@ -290,6 +285,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             // blanca bajo el pie en el móvil.
             isMarketingPage
               ? 'w-full'
+              // Incidencia (QA-187): sin barra inferior, así que tampoco su hueco de 64 px.
+              : isFocusedTaskPath(location.pathname)
+                ? 'mx-auto max-w-full px-3 sm:max-w-7xl sm:px-6 lg:px-8'
               : isBookingPage || isAuthPage
                 ? 'w-full pb-16 sm:pb-0'
                 : isApplyPage
@@ -597,7 +595,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         </Suspense>
         </main>
       )}
-      {!isAuthPage && !isBookingPage && !isApplyPage && !isAdminPage && !isMarketingPage && user && <BottomNav />}
+      {/* QA-187: tampoco sobre la incidencia (formulario de un solo paso con su propio botón de enviar). */}
+      {shouldShowBottomNav(location.pathname, Boolean(user)) && <BottomNav />}
     </div>
   );
 };

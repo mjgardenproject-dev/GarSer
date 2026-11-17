@@ -1860,6 +1860,24 @@ La prueba de «pagar justo después de caducar» (el cliente paga y el servidor 
 producción sin tocar la base de datos: está cubierta en local con Stripe de pruebas (`scripts/qa/verify-orphan-payments.mjs`,
 9/9) y con un agente en el iPhone SE.
 
+## Sección 40 — Incidencias desde el móvil, aviso al profesional y doble comprobación (FASE 4, paquete 1.2, 2026-11-17)
+
+Qué se arregló: el botón «Enviar incidencia» quedaba tapado por la barra inferior en cualquier móvil en vertical (QA-187);
+el profesional no se enteraba de que le habían abierto una incidencia (QA-192); el admin devolvía dinero en Stripe al
+primer toque (QA-189); y el diálogo de confirmación de toda la web ejecutaba dos veces la acción con un doble toque.
+Antes de empezar: migración `20261117130000` aplicada y funciones `send-email-notification` y `notification-dispatch`
+desplegadas (la primera redacta el aviso nuevo).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 40.1 | En un iPhone en vertical, como cliente, abre una incidencia sobre una reserva terminada y envíala sin girar el móvil | No hay barra inferior en esa pantalla; «Enviar incidencia» se ve entero y se pulsa a la primera, también con el teclado abierto |
+| 40.2 | Al profesional de esa reserva | Le llega el correo «Un cliente ha abierto una incidencia sobre tu trabajo» con el motivo y lo que cuenta el cliente, y la notificación push si la tiene activada |
+| 40.3 | El profesional entra en la app | En el Panel ve «Un cliente ha abierto una incidencia sobre tu trabajo» con «Contar mi versión», que le lleva a la reserva; al enviar su versión el aviso desaparece |
+| 40.4 | Como admin, en Incidencias, pulsa «Aceptar y devolver» sin nota | No hace nada salvo pedir la nota |
+| 40.5 | Con nota, «Aceptar y devolver» | Diálogo con la reserva, el importe y el cliente; el botón de devolver está desactivado hasta marcar «He revisado el importe, el cliente y la reserva»; «No, volver» no mueve nada |
+| 40.6 | Marca la casilla y pulsa «Devolver …» dos veces seguidas | En Stripe aparece UNA sola devolución por el importe de los gastos; la incidencia pasa a «Resuelta · devuelta» y al cliente le llega el correo |
+| 40.7 | «Resolver sin acción» y «Rechazar» | Piden confirmación con la nota que verá el cliente; no se devuelve dinero |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

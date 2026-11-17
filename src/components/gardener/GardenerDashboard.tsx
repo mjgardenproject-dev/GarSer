@@ -25,6 +25,7 @@ import { getBookingStatusLabel, getBookingStatusTone } from '../../shared/bookin
 import { BOOKING_ITEMS_SELECT, bookingServiceLabel } from '../../utils/bookingServiceLabel';
 import SuspendedProviderNotice from '../common/SuspendedProviderNotice';
 import ProviderSetupChecklist from '../provider/ProviderSetupChecklist';
+import OpenIncidentsNotice from '../provider/OpenIncidentsNotice';
 import TeamEntryCard from '../provider/TeamEntryCard';
 import MarketingHub from '../marketing/MarketingHub';
 import { buildProviderSetupSteps, type SetupTarget } from '../../shared/providerSetup';
@@ -364,6 +365,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       {/* Tab Content */}
       {activeTab === 'dashboard' && (
         <>
+          {/* QA-192: lo primero que ve si un cliente ha abierto una incidencia sobre su trabajo. */}
+          <OpenIncidentsNotice userId={user?.id} />
           {!pending && guideFirst && <ProviderSetupChecklist className="mb-6" onNavigate={handleSetupNavigate} setup={setup} />}
 
           {/* Header */}

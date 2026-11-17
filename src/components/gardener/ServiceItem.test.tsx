@@ -36,4 +36,17 @@ describe('ServiceItem (fallo 7.1: el círculo mudo pasa a «Activar»)', () => {
     expect(base.onConfigClick).toHaveBeenCalledTimes(1);
     expect(base.onToggle).toHaveBeenCalledTimes(1);
   });
+
+  // QA-044: en una cuenta con equipo, activo pero sin nadie que lo haga no se puede reservar.
+  it('activo en un equipo sin nadie asignado: dice qué falta y no promete reservas', () => {
+    render(<ServiceItem {...base} isActive canActivate noTeamMember />);
+    expect(screen.queryByText('Activado: los clientes pueden reservarlo')).toBeNull();
+    expect(screen.getByText(/nadie de tu equipo lo hace/)).toBeTruthy();
+    expect(screen.getByText(/Asígnalo en «Equipo»/)).toBeTruthy();
+  });
+
+  it('fitosanitarios sin nadie: además dice que hace falta el carnet aprobado', () => {
+    render(<ServiceItem {...base} service={{ id: 'p', name: 'Servicios fitosanitarios' } as never} isActive canActivate noTeamMember />);
+    expect(screen.getByText(/carnet fitosanitario aprobado/)).toBeTruthy();
+  });
 });

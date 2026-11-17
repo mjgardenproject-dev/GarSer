@@ -11,6 +11,7 @@ import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
 import MemberSetupNotices from '../../components/empresa/MemberSetupNotices';
 import SuspendedProviderNotice from '../../components/common/SuspendedProviderNotice';
 import OpenIncidentsNotice from '../../components/provider/OpenIncidentsNotice';
+import { useTeamUpcomingJobs } from '../../hooks/useTeamUpcomingJobs';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
@@ -51,6 +52,8 @@ const CompanyPanel: React.FC = () => {
   const [tab, setTab] = useState<Tab>(() => (TABS.includes(params.get('tab') as Tab) ? (params.get('tab') as Tab) : 'agenda'));
   const [showFormer, setShowFormer] = useState(false);
   const { user } = useAuth();
+  // QA-070: quién va a qué, también en la pestaña «Equipo» (antes solo en la agenda).
+  const upcomingByPerson = useTeamUpcomingJobs(user?.id);
   const navigate = useNavigate();
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
@@ -250,6 +253,7 @@ const CompanyPanel: React.FC = () => {
                     offersChemical={offersChemical}
                     onChanged={() => void refresh()}
                     onAskDeactivate={askDeactivate}
+                    upcoming={upcomingByPerson[m.user_id] ?? null}
                   />
                 ))}
               </ul>

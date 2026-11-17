@@ -21,6 +21,8 @@ interface ServicesTabProps {
   watchedServices: string[];
   expandedServiceId: string | null;
   handleToggleService: (id: string) => void;
+  /** QA-044: servicios activos que nadie del equipo puede hacer (solo cuentas con equipo). */
+  uncoveredServiceIds?: string[];
   /** ¿Se puede activar este servicio (su configuración es válida)? Lo decide ProfileSettings. */
   canActivateService: (id: string) => boolean;
   handleExpand: (id: string) => void;
@@ -72,6 +74,7 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
   sortedServices,
   watchedServices,
   handleToggleService,
+  uncoveredServiceIds: uncoveredServiceIdsProp,
   canActivateService,
   handleExpand,
   handleWrapperSave,
@@ -81,6 +84,8 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
   licenseStatus,
   onGoToLicense
 }) => {
+  const uncoveredServiceIds = new Set(uncoveredServiceIdsProp || []);
+
   const [slideOverService, setSlideOverService] = useState<any>(null);
   // Guardado manual (fallo 10): cada configurador registra aquí su propia función de
   // guardado (con la transformación que le corresponda) y su estado "hay cambios sin
@@ -210,6 +215,7 @@ const ServicesTab: React.FC<ServicesTabProps> = ({
               isActive={isSelected}
               hasError={false}
               canActivate={canActivateService(service.id)}
+              noTeamMember={uncoveredServiceIds.has(service.id)}
               onToggle={() => {
                 // Sin precio todavía no se puede activar: en vez de un error, se explica y se abre su
                 // configuración (el botón «Activar» claro no es un botón muerto).

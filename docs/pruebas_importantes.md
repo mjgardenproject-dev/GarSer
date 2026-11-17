@@ -50,7 +50,9 @@ tiene que estar desplegado antes de pasarla.
 |---|---|---|---|
 | T3.1 | Alta de profesional nueva → el admin la aprueba | Le llega el aviso; al entrar ve su panel y el cuestionario «Activa tu cuenta» | Ya hecho |
 | T3.2 | Completar la activación (servicio, zona, horario) | Al terminar va a su panel (QA-196) y aparece a los clientes de su zona | 1.12 |
-| T3.3 | Un servicio activado en una cuenta con equipo | Los clientes pueden reservarlo (QA-044) | 1.3 |
+| T3.3 | En una cuenta con equipo en la que el titular trabaja, activar un servicio nuevo | Queda asignado al titular, el perfil público lo lista y un cliente puede reservarlo; si nadie puede hacerlo (p. ej. fitosanitarios sin carnet), la fila dice «nadie de tu equipo lo hace… Asígnalo en «Equipo»» en vez de «los clientes pueden reservarlo» | 1.3 |
+| T3.6 | Pestaña «Equipo» de una empresa | Cada persona muestra sus próximos trabajos (o «Sin trabajos asignados próximamente») | 1.3 |
+| T3.7 | Editor SQL: `select has_table_privilege('authenticated', 'public.public_gardener_directory', 'UPDATE');` | `false` (antes cualquier usuario podía reescribir el perfil de cualquier profesional) | 1.3 |
 | T3.4 | **Aceptar** la solicitud de 2.1 | Reserva «Confirmada»; en Stripe los gastos pasan de retenidos a **cobrados** | Ya hecho |
 | T3.5 | **Rechazar** otra solicitud | Reserva rechazada; en Stripe la retención se **libera** (0 € cobrados) | Ya hecho |
 

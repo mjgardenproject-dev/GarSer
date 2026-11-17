@@ -1878,6 +1878,21 @@ desplegadas (la primera redacta el aviso nuevo).
 | 40.6 | Marca la casilla y pulsa «Devolver …» dos veces seguidas | En Stripe aparece UNA sola devolución por el importe de los gastos; la incidencia pasa a «Resuelta · devuelta» y al cliente le llega el correo |
 | 40.7 | «Resolver sin acción» y «Rechazar» | Piden confirmación con la nota que verá el cliente; no se devuelve dinero |
 
+## Sección 41 — Servicios en cuentas con equipo y perfiles públicos de solo lectura (FASE 4, paquete 1.3, 2026-11-17)
+
+Qué se arregló: en una cuenta con equipo, activar un servicio lo dejaba invisible (nadie asignado) mientras la web decía que
+se podía reservar (QA-044); la pestaña «Equipo» no decía quién iba a qué (QA-070); y **cualquier usuario con sesión podía
+reescribir el perfil público de cualquier profesional** a través de la vista `public_gardener_directory` (QA-215, seguridad).
+Antes de empezar: migración `20261117140000` aplicada (no hay funciones que desplegar).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 41.1 | Editor SQL: `select has_table_privilege('authenticated', 'public.public_gardener_directory', 'UPDATE'), has_table_privilege('anon', 'public.public_gardener_directory', 'SELECT');` | `false`, `true` |
+| 41.2 | En el móvil, sin sesión, abre el perfil público de un profesional y la búsqueda de profesionales de la reserva | Se ven igual que antes (la vista sigue leyéndose) |
+| 41.3 | Con una cuenta de equipo cuyo titular trabaja, activa un servicio que nadie del equipo hacía | En «Equipo» aparece marcado para el titular; la fila del servicio dice «Activado: los clientes pueden reservarlo» y un cliente lo encuentra con horas |
+| 41.4 | Activa fitosanitarios en una cuenta de equipo sin nadie con carnet aprobado | La fila dice que nadie del equipo lo hace y que hay que asignarlo; el perfil público NO lo lista |
+| 41.5 | Pestaña «Equipo» | Cada persona muestra sus próximos trabajos o «Sin trabajos asignados próximamente» |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

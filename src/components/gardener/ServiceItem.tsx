@@ -12,6 +12,8 @@ interface ServiceItemProps {
   canActivate: boolean;
   onToggle: () => void;
   onConfigClick: () => void;
+  /** QA-044: cuenta con equipo y nadie que trabaje tiene asignado este servicio (no se puede reservar). */
+  noTeamMember?: boolean;
 }
 
 // Una fila por servicio (2026-11-05): nombre + qué le falta, el botón «Activar» (tres estados) y el
@@ -23,11 +25,17 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
   hasError,
   canActivate,
   onToggle,
-  onConfigClick
+  onConfigClick,
+  noTeamMember = false,
 }) => {
   const state = serviceActivationState(isActive, canActivate);
+  const missingWorker = state === 'active' && noTeamMember;
   const hint = hasError
     ? 'Configuración incompleta'
+    : missingWorker
+      ? `Activado, pero nadie de tu equipo lo hace y los clientes no pueden reservarlo. Asígnalo en «Equipo»${
+          service.name === 'Servicios fitosanitarios' ? ' a alguien con el carnet fitosanitario aprobado' : ''
+        }.`
     : state === 'active'
       ? 'Activado: los clientes pueden reservarlo'
       : state === 'ready'
@@ -39,6 +47,8 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
       className={`border-2 rounded-xl transition-colors duration-300 overflow-hidden ${
         hasError
           ? 'border-red-300 bg-red-50 shadow-sm'
+          : missingWorker
+            ? 'border-amber-400 bg-white shadow-sm'
           : isActive
             ? 'border-green-500 bg-white shadow-md ring-1 ring-green-100'
             : 'border-gray-200 bg-white hover:border-gray-300'
@@ -46,7 +56,7 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
     >
       {/* Dos filas, para que en el móvil el nombre no quede en una columna estrecha:
           arriba el nombre y el engranaje; debajo, qué le falta y el botón «Activar». */}
-      <div className={`space-y-3 p-4 ${isActive ? 'bg-green-50/50' : ''}`}>
+      <div className={`space-y-3 p-4 ${missingWorker ? 'bg-amber-50/60' : isActive ? 'bg-green-50/50' : ''}`}>
         <div className="flex items-start justify-between gap-3">
           <span className={`min-w-0 flex-1 pt-2 font-bold text-base md:text-lg transition-colors ${isActive ? 'text-green-900' : 'text-gray-700'}`}>
             {service.name}
@@ -69,7 +79,7 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <span className={`min-w-0 flex-1 text-sm leading-snug ${hasError ? 'text-red-600' : state === 'active' ? 'text-green-700' : 'text-gray-500'}`}>
+          <span className={`min-w-0 flex-1 text-sm leading-snug ${hasError ? 'text-red-600' : missingWorker ? 'font-medium text-amber-700' : state === 'active' ? 'text-green-700' : 'text-gray-500'}`}>
             {hint}
           </span>
           <ServiceActivateButton state={state} serviceName={service.name} onClick={onToggle} />

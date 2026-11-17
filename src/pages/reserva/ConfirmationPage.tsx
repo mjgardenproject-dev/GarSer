@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import EmbeddedStripePaymentForm, { type EmbeddedStripePaymentFormHandle } from '../../components/booking/EmbeddedStripePaymentForm';
 import { useBooking } from "../../contexts/BookingContext";
 import {
   MapPin,
@@ -50,9 +51,10 @@ import {
 } from '../../shared/bookingAuthoritativeSnapshot';
 import type { BookingPaymentAttemptSummary } from '../../shared/bookingPaymentCore';
 import {
-  buildBookingPaymentReturnUrl,
   getBookingPaymentStatusCopy,
+  getUnbookedPaymentCopy,
   isInFlightPaymentAttemptStatus,
+  paymentStatusNeedsExplanation,
 } from '../../shared/bookingPaymentCore';
 import { describeJobShape } from '../../utils/jobShape';
 
@@ -78,6 +80,9 @@ type PaymentExperienceState = {
   actions: PaymentExperienceAction[];
   eyebrow?: string;
   meta?: string;
+  // Qué pasa con el dinero del cliente. Se pinta siempre que exista, en negrita, bajo el detalle
+  // (QA-139/QA-140: «no se te ha cobrado nada» no puede quedar escondido en una instrucción).
+  moneyNote?: string;
 };
 
 type PreCheckoutFailureCta = 'retry' | 'refresh' | 'reload' | 'slots';
@@ -93,101 +98,7 @@ type PreCheckoutFailureState = {
   meta?: string;
 };
 
-type EmbeddedStripePaymentFormProps = {
-  attemptId: string;
-  disabled?: boolean;
-  onSubmittingChange: (value: boolean) => void;
-  onReadyChange: (value: boolean) => void;
-  onConfirmed: () => Promise<void>;
-};
-
-type EmbeddedStripePaymentFormHandle = {
-  submitPayment: () => Promise<void>;
-};
-
-const EmbeddedStripePaymentForm = React.forwardRef<EmbeddedStripePaymentFormHandle, EmbeddedStripePaymentFormProps>(({
-  attemptId,
-  disabled = false,
-  onSubmittingChange,
-  onReadyChange,
-  onConfirmed,
-}, ref) => {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [submitError, setSubmitError] = useState('');
-  const [isElementReady, setIsElementReady] = useState(false);
-
-  useEffect(() => {
-    onReadyChange(false);
-    return () => onReadyChange(false);
-  }, [onReadyChange]);
-
-  const submitPayment = async () => {
-    if (disabled) {
-      return;
-    }
-    if (!stripe || !elements) {
-      setSubmitError('Stripe aun no ha terminado de cargar el formulario de pago.');
-      return;
-    }
-
-    setSubmitError('');
-    onSubmittingChange(true);
-
-    try {
-      const submitted = await elements.submit();
-      if (submitted.error) {
-        throw new Error(submitted.error.message || 'No se pudo validar el formulario de pago.');
-      }
-
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: buildBookingPaymentReturnUrl({
-            appBaseUrl: window.location.origin,
-            attemptId,
-          }),
-        },
-        redirect: 'if_required',
-      });
-
-      if (result.error) {
-        throw new Error(result.error.message || 'Stripe no ha podido confirmar el pago.');
-      }
-
-      await onConfirmed();
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'No se pudo confirmar el pago.');
-    } finally {
-      onSubmittingChange(false);
-    }
-  };
-
-  useEffect(() => {
-    onReadyChange(isElementReady);
-  }, [isElementReady, onReadyChange]);
-
-  useImperativeHandle(ref, () => ({
-    submitPayment,
-  }), [submitPayment]);
-
-  return (
-    <div className="space-y-4">
-      <PaymentElement
-        options={{ layout: 'tabs' }}
-        onReady={() => setIsElementReady(true)}
-      />
-
-      {submitError ? (
-        <div className="text-sm text-red-700" aria-live="polite">
-          {submitError}
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
-EmbeddedStripePaymentForm.displayName = 'EmbeddedStripePaymentForm';
+// El formulario de Stripe vive en su propio componente (probado en EmbeddedStripePaymentForm.test.tsx).
 
 const parseIsoTimestamp = (value?: string | null) => {
   const normalized = String(value || '').trim();
@@ -296,9 +207,21 @@ const ConfirmationPage: React.FC = () => {
   );
   const quoteExpiresAt = authoritativeQuoteSnapshot?.expiresAt || bookingData.quoteExpiresAt;
   const quoteExpired = authoritativeSnapshotReady && isExpiredTimestamp(quoteExpiresAt);
+  // `holdExpired` se calcula con la hora del render: este temporizador fuerza un render justo al
+  // caducar el horario, para que la pantalla cambie aunque el cliente no toque nada.
+  const [, forceExpiryRender] = useReducer((value: number) => value + 1, 0);
+  useEffect(() => {
+    const expiresMs = parseIsoTimestamp(paymentAttempt?.holdExpiresAt);
+    if (expiresMs === null || paymentAttempt?.status === 'booking_created') return;
+    const delay = expiresMs - Date.now();
+    if (delay <= 0) return;
+    const timeoutId = window.setTimeout(forceExpiryRender, Math.min(delay + 250, 2_147_000_000));
+    return () => window.clearTimeout(timeoutId);
+  }, [paymentAttempt?.holdExpiresAt, paymentAttempt?.status]);
   const holdExpired =
     paymentAttempt?.status !== 'booking_created' &&
     Boolean(paymentAttempt?.holdExpiresAt && isExpiredTimestamp(paymentAttempt.holdExpiresAt));
+  const [isFinalizingBooking, setIsFinalizingBooking] = useState(false);
   const successfulPaymentReturn = paymentReturnRequested && Boolean(paymentReturnAttemptId);
 
   useEffect(() => {
@@ -821,12 +744,14 @@ const ConfirmationPage: React.FC = () => {
         return;
       }
 
-      if (latest.status === 'processing' || latest.status === 'reconciliation_required') {
+      if (latest.status === 'processing') {
         toast.success('Seguimos comprobando el cobro y consolidando la reserva.');
         return;
       }
 
-      toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage).detail);
+      const statusCopy = getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage, latest.lastErrorCode);
+      // «Sin reserva»: el resumen ya lo explica entero; el aviso solo da el titular.
+      toast.error(latest.status === 'reconciliation_required' ? statusCopy.title : statusCopy.detail);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo actualizar el estado del pago.';
       console.warn('Error refreshing payment status:', message);
@@ -1203,9 +1128,14 @@ const ConfirmationPage: React.FC = () => {
     paymentAttempt?.status === 'payment_pending' &&
     !quoteExpired &&
     !holdExpired;
+  // El formulario de Stripe sigue montado mientras haya un pago en marcha aunque el horario caduque
+  // en ese momento: el resultado (reserva creada o pago sin reserva) se enseña al terminar.
+  const keepPaymentFormMounted =
+    showInlinePaymentForm ||
+    (Boolean(paymentClientSecret) && (isSubmittingInlinePayment || isFinalizingBooking));
   const stripePromise = useMemo(
-    () => (showInlinePaymentForm ? getStripePromise({ publishableKey: paymentPublishableKey }) : null),
-    [paymentPublishableKey, showInlinePaymentForm]
+    () => (keepPaymentFormMounted ? getStripePromise({ publishableKey: paymentPublishableKey }) : null),
+    [paymentPublishableKey, keepPaymentFormMounted]
   );
   const stripeElementsOptions = useMemo(
     () =>
@@ -1226,7 +1156,7 @@ const ConfirmationPage: React.FC = () => {
         : null,
     [paymentClientSecret]
   );
-  const canClosePaymentSheet = !isSubmittingInlinePayment && !isResolvingPaymentReturn && !isPaymentSheetSuccess;
+  const canClosePaymentSheet = !isSubmittingInlinePayment && !isFinalizingBooking && !isResolvingPaymentReturn && !isPaymentSheetSuccess;
 
   const closePaymentSheet = () => {
     if (!canClosePaymentSheet) return;
@@ -1280,10 +1210,13 @@ const ConfirmationPage: React.FC = () => {
 
   useEffect(() => {
     if (showInlinePaymentForm || !isPaymentSheetOpen || isPaymentSheetSuccess || isPreparingPayment) return;
+    // Nunca se cierra con un pago en marcha (p. ej. el horario caduca durante el paso del banco):
+    // desmontar el formulario a mitad dejaría al cliente sin saber qué ha pasado.
+    if (isSubmittingInlinePayment || isFinalizingBooking) return;
     if (paymentAttempt?.status === 'booking_created') return;
     setIsPaymentSheetOpen(false);
     setIsPaymentFormReady(false);
-  }, [isPaymentSheetOpen, isPaymentSheetSuccess, isPreparingPayment, paymentAttempt?.status, showInlinePaymentForm]);
+  }, [isFinalizingBooking, isPaymentSheetOpen, isPaymentSheetSuccess, isPreparingPayment, isSubmittingInlinePayment, paymentAttempt?.status, showInlinePaymentForm]);
 
   useEffect(() => {
     if (!isPaymentSheetOpen || paymentAttempt?.status !== 'booking_created' || !paymentAttempt?.bookingId) {
@@ -1397,6 +1330,38 @@ const ConfirmationPage: React.FC = () => {
         detail: preCheckoutFailure.detail,
         instructions: preCheckoutFailure.instructions.slice(0, 2),
         actions: [action],
+      };
+    }
+
+    if (paymentAttempt?.status === 'reconciliation_required') {
+      // QA-139: pagado pero sin reserva. El servidor ya ha anulado la retención de la tarjeta. Va antes
+      // que «presupuesto caducado»: si pagó tarde, lo primero que necesita saber es qué pasó con su dinero.
+      const unbooked = getUnbookedPaymentCopy(
+        paymentAttempt.lastErrorCode,
+        formatEuro(paymentAttempt.payableNowAmount),
+      );
+      return {
+        tone: unbooked.kind === 'review' ? 'amber' : 'red',
+        eyebrow: 'Reserva no creada',
+        title: unbooked.title,
+        detail: unbooked.detail,
+        instructions: [unbooked.moneyLine],
+        moneyNote: unbooked.moneyLine,
+        actions: unbooked.canChooseAnotherSlot
+          ? [
+              {
+                label: 'Elegir otro horario',
+                onClick: goBackToSlotSelection,
+                variant: 'primary',
+              },
+            ]
+          : [
+              {
+                label: 'Ver mis reservas',
+                onClick: handleGoToBookings,
+                variant: 'primary',
+              },
+            ],
       };
     }
 
@@ -1525,6 +1490,7 @@ const ConfirmationPage: React.FC = () => {
         instructions: [
           'Si este horario ya no encaja, vuelve a elegir otro.',
         ],
+        moneyNote: 'No se te ha cobrado nada.',
         actions: [
           {
             label: 'Actualizar reserva',
@@ -1555,6 +1521,7 @@ const ConfirmationPage: React.FC = () => {
         eyebrow: 'Pago listo',
         title: 'Tu pago sigue preparado',
         detail: 'Puedes volver al formulario seguro sin recargar ni iniciar otro intento.',
+        moneyNote: 'Aún no se te ha cobrado nada.',
         instructions: [
           paymentHoldLabel
             ? `Reabre el pago antes del ${paymentHoldLabel} para mantener este horario.`
@@ -1631,6 +1598,8 @@ const ConfirmationPage: React.FC = () => {
   }, [
     authoritativeSnapshotReady,
     goBackToSlotSelection,
+    paymentAttempt?.lastErrorCode,
+    paymentAttempt?.payableNowAmount,
     handleGoToBookings,
     handleRefreshPaymentStatus,
     handleRefreshQuote,
@@ -1709,11 +1678,10 @@ const ConfirmationPage: React.FC = () => {
     Boolean(preCheckoutFailure) ||
     quoteExpired ||
     isResolvingPaymentReturn ||
-    paymentAttempt?.status === 'processing' ||
-    paymentAttempt?.status === 'failed' ||
-    paymentAttempt?.status === 'cancelled' ||
-    paymentAttempt?.status === 'expired' ||
+    paymentStatusNeedsExplanation(paymentAttempt?.status) ||
     holdExpired ||
+    // QA-140: con la hoja cerrada y el pago preparado, el cliente tiene que leer que aún no ha pagado.
+    (showInlinePaymentForm && !isPaymentSheetOpen) ||
     isPostPaymentSettlementPending;
   const showSuccessView = paymentAttempt?.status === 'booking_created' && !isPaymentSheetOpen;
   const paymentActionLabel = primaryFooterAction?.label
@@ -1728,6 +1696,11 @@ const ConfirmationPage: React.FC = () => {
     ? 'Reserva completada'
     : feeWaived && isPreparingPayment
       ? 'Enviando reserva…'
+    // QA-137: tras el banco hay unos segundos hasta que la reserva queda creada; se dice qué pasa.
+    : isFinalizingBooking
+      ? 'Creando tu reserva…'
+    : isSubmittingInlinePayment
+      ? 'Confirmando el pago…'
     : showPaymentSheetPayAction
       ? `Pagar ${payableNowLabel}`
       : isPreparingPayment && isPaymentSheetOpen
@@ -1739,6 +1712,7 @@ const ConfirmationPage: React.FC = () => {
     (showPaymentSheetPayAction ? !isPaymentFormReady : (!primaryFooterAction || Boolean(primaryFooterAction.disabled))) ||
     isPreparingPayment ||
     isSubmittingInlinePayment ||
+    isFinalizingBooking ||
     isRefreshingQuote ||
     isResolvingPaymentReturn ||
     isPaymentSheetSuccess;
@@ -2109,6 +2083,9 @@ const ConfirmationPage: React.FC = () => {
                 ) : null}
                 <p className={`mt-2 text-sm font-semibold ${paymentExperienceStyle.title}`}>{paymentExperience.title}</p>
                 <p className={`mt-1 text-sm ${paymentExperienceStyle.detail}`}>{paymentExperience.detail}</p>
+                {paymentExperience.moneyNote ? (
+                  <p className={`mt-2 text-sm font-semibold ${paymentExperienceStyle.title}`}>{paymentExperience.moneyNote}</p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -2139,7 +2116,11 @@ const ConfirmationPage: React.FC = () => {
                 )}
               </div>
               <p className="max-w-[12rem] text-right text-xs text-gray-500">
-                {feeWaived ? 'No pagas nada online' : 'Pago seguro con Stripe dentro de GarSer'}
+                {feeWaived
+                  ? 'No pagas nada online'
+                  : paymentAttempt?.status === 'reconciliation_required'
+                    ? 'No se ha cobrado: la reserva no se creó'
+                    : 'Pago seguro con Stripe dentro de GarSer'}
               </p>
             </div>
             <button
@@ -2222,7 +2203,7 @@ const ConfirmationPage: React.FC = () => {
                   </div>
                 ) : null}
 
-                {showInlinePaymentForm && stripePromise && stripeElementsOptions && paymentAttempt?.attemptId ? (
+                {keepPaymentFormMounted && stripePromise && stripeElementsOptions && paymentAttempt?.attemptId ? (
                   <div className="mx-auto max-w-md pt-1">
                     <Elements key={paymentClientSecret || 'stripe-elements'} stripe={stripePromise} options={stripeElementsOptions}>
                       <EmbeddedStripePaymentForm
@@ -2231,7 +2212,15 @@ const ConfirmationPage: React.FC = () => {
                         disabled={isPreparingPayment || isResolvingPaymentReturn || isPaymentSheetSuccess}
                         onReadyChange={setIsPaymentFormReady}
                         onSubmittingChange={setIsSubmittingInlinePayment}
+                        holdExpiresAt={paymentAttempt.holdExpiresAt}
+                        onHoldExpired={() => {
+                          // QA-139: no se lanza un pago que ya no podría convertirse en reserva. El
+                          // temporizador de caducidad cierra la hoja y el resumen ofrece otro horario.
+                          forceExpiryRender();
+                        }}
                         onConfirmed={async () => {
+                          setIsFinalizingBooking(true);
+                          try {
                           const latest = await resolveAttemptStatus(paymentAttempt.attemptId, true, true);
                           setPaymentAttempt(latest);
                           if (!latest || latest.status !== 'payment_pending') {
@@ -2249,8 +2238,16 @@ const ConfirmationPage: React.FC = () => {
                             return;
                           }
 
+                          if (latest?.status === 'reconciliation_required') {
+                            // Pagado pero sin reserva: el servidor ya ha anulado la retención. La
+                            // hoja se cierra y el resumen explica qué ha pasado y qué hacer.
+                            toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage, latest.lastErrorCode).title);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            return;
+                          }
+
                           if (latest?.status && latest.status !== 'payment_pending') {
-                            toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage).detail);
+                            toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage, latest.lastErrorCode).detail);
                             return;
                           }
 
@@ -2267,6 +2264,9 @@ const ConfirmationPage: React.FC = () => {
                               'Seguimos esperando la confirmación de Stripe. Si no se confirma en unos segundos, actualiza la página antes de volver a intentarlo.',
                               { icon: 'ℹ️', duration: 6000 },
                             );
+                          }
+                          } finally {
+                            setIsFinalizingBooking(false);
                           }
                         }}
                       />
@@ -2287,7 +2287,7 @@ const ConfirmationPage: React.FC = () => {
                       <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
                       {footerActionLabel}
                     </div>
-                  ) : isPreparingPayment || isRefreshingQuote || isResolvingPaymentReturn || isSubmittingInlinePayment ? (
+                  ) : isPreparingPayment || isRefreshingQuote || isResolvingPaymentReturn || isSubmittingInlinePayment || isFinalizingBooking ? (
                     <div className="flex items-center justify-center" aria-live="polite" role="status">
                       <div className="mr-2 h-5 w-5 animate-spin rounded-full border-b-2 border-white" />
                       {footerActionLabel}

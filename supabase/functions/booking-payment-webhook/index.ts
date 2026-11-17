@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { validateBookingStripeMetadataIntegrity } from '../../../src/shared/bookingPaymentCore.ts';
+import { releaseOrphanAuthorization } from '../_shared/orphanPaymentRelease.ts';
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
@@ -631,6 +632,19 @@ async function processStripeEvent(
     if (error) throw error;
     const summaryStatus = String(data?.status || '');
 
+    // Autorizado pero sin reserva (hueco caducado u ocupado mientras pagaba, QA-139): se anula la
+    // retención de la tarjeta en el acto. Si no hay clave de Stripe aquí o Stripe falla, el reloj
+    // del servidor (booking-lifecycle-tick) lo repite.
+    const stripeSecret = Deno.env.get('STRIPE_SECRET_KEY') || '';
+    if (summaryStatus !== 'booking_created' && !asString(asRecord(data).bookingId) && stripeSecret) {
+      await releaseOrphanAuthorization(admin, {
+        attemptId,
+        stripeSecret,
+        source: `booking-payment-webhook:${eventType}`,
+        log: (level, event, context) => persistServerTelemetry(admin, { level, event, context }),
+      });
+    }
+
     // Emails transaccionales de confirmación (cliente + jardinero).
     // Estrictamente NO bloqueante: cualquier fallo se traga aquí y NUNCA
     // afecta al procesamiento del pago ni a la respuesta del webhook.
@@ -692,11 +706,15 @@ async function processStripeEvent(
   }
 
   if (eventType === 'payment_intent.payment_failed') {
-    const { data, error } = await admin.rpc('release_booking_payment_attempt', {
+    // Una tarjeta rechazada NO cierra el intento si el hueco sigue vigente: el mismo PaymentIntent
+    // admite otra tarjeta en el formulario abierto. Antes se soltaba el hueco aquí y, si el cliente
+    // probaba otra tarjeta, Stripe la autorizaba sin que la reserva se pudiera crear.
+    const lastPaymentError = asRecord(object.last_payment_error);
+    const { data, error } = await admin.rpc('mark_booking_payment_attempt_declined', {
       p_attempt_id: attemptId,
-      p_next_status: 'failed',
-      p_reason: 'stripe_payment_failed',
       p_stripe_payment_intent_id: paymentIntentId || null,
+      p_error_code: asString(lastPaymentError.decline_code) || asString(lastPaymentError.code) || 'card_declined',
+      p_error_message: asString(lastPaymentError.message) || null,
       p_gateway_payload: {
         webhookEventId: asString(params.event.id),
         webhookType: eventType,
@@ -710,7 +728,9 @@ async function processStripeEvent(
       status: 'processed' as const,
       attemptId,
       summary: data,
-      message: 'Intento marcado como fallido.',
+      message: String(asRecord(data).status || '') === 'payment_pending'
+        ? 'Tarjeta rechazada: el intento sigue abierto para otra tarjeta.'
+        : 'Intento marcado como fallido.',
     };
   }
 

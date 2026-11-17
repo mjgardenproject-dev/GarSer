@@ -21,6 +21,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { isInternalServiceCaller, resolveServiceRoleKey } from '../_shared/functionAuth.ts';
 import { cleanupBookingMedia } from '../_shared/bookingMediaCleanup.ts';
 import { retryPendingAccountStorageCleanup } from '../_shared/accountClosure.ts';
+import { releaseOrphanAuthorization } from '../_shared/orphanPaymentRelease.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -374,6 +375,40 @@ async function reconcileStuckPayments(admin: any, stripeSecret: string | undefin
   return { candidates: candidates.length, captured, released, alreadySettled, needsAttention, failed };
 }
 
+/**
+ * QA-139 (PH-37) — respaldo de la anulación de retenciones SIN reserva.
+ *
+ * booking-payment y el webhook anulan al momento la autorización de un pago que acabó sin reserva
+ * (hueco caducado u ocupado mientras el cliente pagaba). Si Stripe no respondió o el navegador se
+ * cerró antes, aquí se repasa la lista (list_orphan_payment_authorizations) y se anula. Idempotente:
+ * cada intento queda marcado con `settlement` y no vuelve a la lista.
+ */
+// deno-lint-ignore no-explicit-any
+async function releaseOrphanAuthorizations(admin: any, stripeSecret: string | undefined) {
+  if (!stripeSecret) {
+    return { skipped: 'no_stripe_secret' as const };
+  }
+  // Primero se caducan los horarios vencidos de TODOS los profesionales: si el cliente se fue sin
+  // volver a la web, nadie más lo haría y su intento seguiría «pendiente» con el pago preparado.
+  const { data: expired, error: cleanupError } = await admin.rpc('cleanup_expired_booking_payment_state', {});
+  if (cleanupError) throw new Error(`cleanup_expired_booking_payment_state: ${cleanupError.message}`);
+
+  const { data: rows, error } = await admin.rpc('list_orphan_payment_authorizations', { p_limit: BATCH_LIMIT });
+  if (error) throw new Error(`list_orphan_payment_authorizations: ${error.message}`);
+
+  const counts: Record<string, number> = {};
+  for (const row of (rows || []) as Array<{ attempt_id: string }>) {
+    const { outcome } = await releaseOrphanAuthorization(admin, {
+      attemptId: row.attempt_id,
+      stripeSecret,
+      source: 'booking-lifecycle-tick',
+      log: (level, event, context) => logEvent(admin, level, event, context),
+    });
+    counts[outcome] = (counts[outcome] || 0) + 1;
+  }
+  return { expiredAttempts: Number((expired as { expired_attempts?: number } | null)?.expired_attempts || 0), candidates: (rows || []).length, ...counts };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -404,6 +439,7 @@ Deno.serve(async (req) => {
     ['dueBookings', (a: unknown) => closeDueBookings(a, supabaseUrl, serviceKey)],
     ['staleRequests', (a: unknown) => expireStaleRequests(a)],
     ['stuckPayments', (a: unknown) => reconcileStuckPayments(a, stripeSecret)],
+    ['orphanAuthorizations', (a: unknown) => releaseOrphanAuthorizations(a, stripeSecret)],
     ['phytosanitaryLicenses', (a: unknown) => expirePhytosanitaryLicenses(a)],
     ['maintenanceNotifications', (a: unknown) => sendMaintenanceNotifications(a, supabaseUrl, serviceKey)],
     // PH-04: ficheros de cuentas dadas de baja que no se pudieron borrar al momento.

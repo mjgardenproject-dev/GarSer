@@ -1837,6 +1837,29 @@ Requisitos previos: **migración `20261109120000_alta_jardinero_equipo_estimado.
 
 ---
 
+## Sección 39 — Pago con el horario caducado y tarjeta rechazada (FASE 4, paquete 1.1, QA-139, 2026-11-17)
+
+Qué se arregló: si un pago llega cuando el horario ya no está guardado (30 min), o el hueco se ocupa mientras se paga,
+no hay reserva y **la retención de la tarjeta se anula en el acto** (antes quedaba retenida hasta 7 días); una tarjeta
+rechazada ya no suelta el horario (antes, probar otra tarjeta en el mismo formulario dejaba el dinero retenido sin
+reserva); desde el navegador ya no se pueden liberar pagos ajenos. Antes de empezar: migración `20261117120000` aplicada
+y funciones `booking-payment`, `booking-payment-webhook` y `booking-lifecycle-tick` desplegadas.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 39.1 | En el editor SQL de Supabase: `select has_function_privilege('authenticated', 'public.release_booking_payment_attempt(uuid, text, text, text, jsonb)', 'EXECUTE');` | `false` |
+| 39.2 | En el editor SQL: `select count(*) from public.list_orphan_payment_authorizations(200);` justo después del despliegue y otra vez a la hora | La primera vez puede dar >0 (pagos antiguos que se quedaron retenidos); a la hora, **0** (el reloj los ha anulado) |
+| 39.3 | En Stripe → Desarrolladores → Webhooks → el endpoint de `booking-payment-webhook`: eventos suscritos | Incluye `payment_intent.payment_failed` y `payment_intent.canceled` además de `amount_capturable_updated` y `succeeded` |
+| 39.4 | En el móvil, como cliente: llega al resumen, pulsa pagar, escribe una tarjeta y **cierra la hoja con la X** | Recuadro «Pago listo · Tu pago sigue preparado» con «**Aún no se te ha cobrado nada.**» |
+| 39.5 | Igual, pero deja la hoja de pago abierta sin pagar **31 minutos** | La hoja se cierra sola y sale «Tiempo agotado · El horario ya no está retenido · **No se te ha cobrado nada.**» con «Actualizar reserva»; en tu banco no aparece ningún cargo ni retención |
+| 39.6 | (Si tienes una tarjeta que el banco rechace, p. ej. una virtual sin saldo) paga con ella y después, en el mismo formulario, con una buena | Con la rechazada: aviso arriba «No se ha completado el pago… No se te ha cobrado nada»; con la buena: «Pago confirmado y reserva creada» y la reserva aparece **una sola vez** en «Mis reservas» |
+| 39.7 | Pulsa «Pagar» dos veces muy seguidas en un pago real | Una sola reserva y un solo PaymentIntent en Stripe |
+| 39.8 | 48 h después de publicar, en Stripe → Pagos, filtro «No capturados»: cada uno debe tener reserva | Ningún pago autorizado sin reserva de más de 10 minutos (si hay alguno, el editor SQL de 39.2 lo debe listar y el reloj anularlo) |
+
+La prueba de «pagar justo después de caducar» (el cliente paga y el servidor ya no tiene el horario) no se puede forzar en
+producción sin tocar la base de datos: está cubierta en local con Stripe de pruebas (`scripts/qa/verify-orphan-payments.mjs`,
+9/9) y con un agente en el iPhone SE.
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

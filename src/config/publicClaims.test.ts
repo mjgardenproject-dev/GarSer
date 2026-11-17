@@ -54,7 +54,22 @@ describe('afirmaciones que no pueden volver', () => {
   });
 
   it('«No se te ha cobrado nada» tras cancelar: depende de quién cancela y de la antelación', () => {
-    expect(offenders(/No se te ha cobrado nada|queda liberada/, (f) => f.startsWith('src/'))).toEqual([]);
+    // Excepción deliberada (QA-139): el pago que NO llega a crear reserva. Ahí no hay nada que
+    // cancelar ni ninguna política de antelación: la retención de la tarjeta se anula siempre
+    // (booking-payment, webhook y reloj, `_shared/orphanPaymentRelease.ts`), así que la frase es
+    // cierta. Solo vale en la pantalla de pago y en sus textos; en reservas existentes sigue prohibida.
+    // Las apariciones permitidas se cuentan una a una: una frase nueva en esos archivos hace fallar
+    // la guardia y obliga a comprobar que también es cierta.
+    const allowed: Record<string, number> = {
+      'src/shared/bookingPaymentCore.ts': 2, // pago sin reserva: retención anulada (específico y genérico)
+      'src/pages/reserva/ConfirmationPage.tsx': 1, // «Tiempo agotado» antes de pagar
+      'src/components/booking/EmbeddedStripePaymentForm.tsx': 1, // el banco rechazó la tarjeta
+    };
+    expect(offenders(/No se te ha cobrado nada|queda liberada/, (f) => f.startsWith('src/') && !(f in allowed))).toEqual([]);
+    for (const [file, count] of Object.entries(allowed)) {
+      const found = withoutComments(read(path.join(ROOT, file))).match(/No se te ha cobrado nada|queda liberada/g) ?? [];
+      expect({ file, count: found.length }).toEqual({ file, count });
+    }
   });
 
   it('«Hay más profesionales disponibles»: no se sabe si los hay', () => {

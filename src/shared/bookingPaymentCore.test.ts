@@ -7,6 +7,9 @@ import {
   buildBookingPaymentGatewaySyncEventId,
   buildBookingStripeLineItemProductCode,
   getBookingPaymentStatusCopy,
+  getUnbookedPaymentCopy,
+  isPaymentHoldExpiringSoon,
+  paymentStatusNeedsExplanation,
   validateBookingStripeMetadataIntegrity,
 } from './bookingPaymentCore'
 
@@ -187,5 +190,79 @@ describe('attemptRequiresStripePayment', () => {
 
   it('el evento de confirmación sin pago es estable por intento (idempotente)', () => {
     expect(buildBookingNoPaymentEventId('att-1')).toBe('no_payment:att-1')
+  })
+})
+
+// QA-139: un pago que acaba SIN reserva (hueco caducado u ocupado mientras pagaba) tiene que decir
+// qué ha pasado y que no se cobra nada, nunca «Pago en revisión» ni el mensaje de otro estado.
+describe('pago sin reserva (QA-139)', () => {
+  it('hueco caducado: explica el tiempo y que no se cobra nada', () => {
+    const copy = getUnbookedPaymentCopy('hold_unavailable_after_payment', '9,00 €')
+    expect(copy.kind).toBe('time_expired')
+    expect(copy.title).toBe('Se acabó el tiempo para este horario')
+    expect(copy.moneyLine).toContain('No se te ha cobrado nada')
+    expect(copy.moneyLine).toContain('9,00 €')
+    expect(copy.canChooseAnotherSlot).toBe(true)
+  })
+
+  it('hueco ocupado mientras pagaba', () => {
+    for (const code of ['availability_conflict_after_payment', 'conflicting_hold_after_payment']) {
+      const copy = getUnbookedPaymentCopy(code, '9,00 €')
+      expect(copy.kind).toBe('slot_taken')
+      expect(copy.title).toBe('Ese horario se ha ocupado mientras pagabas')
+      expect(copy.moneyLine).toContain('No se te ha cobrado nada')
+    }
+  })
+
+  it('PaymentIntent que no cuadra: no promete la anulación ni invita a pagar otra vez', () => {
+    const copy = getUnbookedPaymentCopy('stripe_metadata_mismatch', '9,00 €')
+    expect(copy.kind).toBe('review')
+    expect(copy.moneyLine).not.toContain('No se te ha cobrado nada')
+    expect(copy.moneyLine).toContain('No repitas el pago')
+    expect(copy.canChooseAnotherSlot).toBe(false)
+  })
+
+  it('cualquier otro motivo: no se ha podido crear la reserva', () => {
+    const copy = getUnbookedPaymentCopy('booking_creation_failed', '9,00 €')
+    expect(copy.kind).toBe('generic')
+    expect(copy.title).toBe('No hemos podido crear la reserva')
+    expect(copy.moneyLine).toContain('No se te ha cobrado nada')
+    expect(getUnbookedPaymentCopy(undefined, '9,00 €').kind).toBe('generic')
+  })
+
+  it('el estado en revisión usa ese texto y no el mensaje guardado de otro estado', () => {
+    const copy = getBookingPaymentStatusCopy(
+      'reconciliation_required',
+      'El tiempo del pago ha expirado. Puedes reintentarlo.',
+      'hold_unavailable_after_payment',
+    )
+    expect(copy.title).toBe('Se acabó el tiempo para este horario')
+    expect(copy.detail).not.toContain('Puedes reintentarlo')
+  })
+})
+
+describe('pagar con el horario a punto de caducar (QA-139)', () => {
+  const now = Date.parse('2026-11-17T10:00:00Z')
+  it('bloquea el pago si quedan menos de 20 segundos o ya ha caducado', () => {
+    expect(isPaymentHoldExpiringSoon('2026-11-17T10:00:10Z', now)).toBe(true)
+    expect(isPaymentHoldExpiringSoon('2026-11-17T09:59:00Z', now)).toBe(true)
+  })
+  it('deja pagar con margen suficiente o sin fecha conocida', () => {
+    expect(isPaymentHoldExpiringSoon('2026-11-17T10:05:00Z', now)).toBe(false)
+    expect(isPaymentHoldExpiringSoon(undefined, now)).toBe(false)
+    expect(isPaymentHoldExpiringSoon('no-es-fecha', now)).toBe(false)
+  })
+})
+
+describe('qué estados explica la tarjeta del resumen (QA-139)', () => {
+  it('«sin reserva» se explica, igual que fallido, cancelado, caducado y en proceso', () => {
+    for (const status of ['reconciliation_required', 'failed', 'cancelled', 'expired', 'processing']) {
+      expect(paymentStatusNeedsExplanation(status)).toBe(true)
+    }
+  })
+  it('no hace falta tarjeta antes de pagar ni con la reserva hecha', () => {
+    for (const status of ['created', 'payment_pending', 'booking_created', undefined]) {
+      expect(paymentStatusNeedsExplanation(status)).toBe(false)
+    }
   })
 })

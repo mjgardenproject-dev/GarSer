@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { releaseOrphanAuthorization } from '../_shared/orphanPaymentRelease.ts';
 import {
   bookingRequiresPhytosanitaryLicense,
   buildProviderWorkerIndex,
@@ -1051,6 +1052,11 @@ async function releaseAttempt(
     reason: string;
     paymentIntentId?: string | null;
     gatewayPayload?: Record<string, unknown>;
+    // Con la clave de Stripe, además de cerrar el intento se anula en el acto la retención de la
+    // tarjeta si no hay reserva (QA-139). Sin ella (p. ej. un PaymentIntent que no cuadra con el
+    // intento) solo se cierra y la retención la revisa una persona.
+    stripeSecret?: string | null;
+    source?: string;
   },
 ) {
   const { data, error } = await admin.rpc('release_booking_payment_attempt', {
@@ -1062,7 +1068,26 @@ async function releaseAttempt(
   });
 
   if (error) throw error;
+  if (params.stripeSecret) {
+    await settleOrphanAuthorization(admin, params.attemptId, params.stripeSecret, params.source || 'booking-payment');
+  }
   return data as AttemptSummary;
+}
+
+// Anula la retención de la tarjeta de un intento que ha quedado cerrado SIN reserva. Nunca hace
+// fallar la petición: si Stripe no responde, el reloj del servidor lo reintenta.
+async function settleOrphanAuthorization(
+  admin: ReturnType<typeof createClient>,
+  attemptId: string,
+  stripeSecret: string,
+  source: string,
+) {
+  await releaseOrphanAuthorization(admin, {
+    attemptId,
+    stripeSecret,
+    source,
+    log: (level, event, context) => persistServerTelemetry(admin, { level, event, context }),
+  });
 }
 
 async function syncAttemptWithStripePaymentIntent(
@@ -1156,8 +1181,18 @@ async function syncAttemptWithStripePaymentIntent(
     });
 
     if (error) throw error;
+    const confirmed = data as AttemptSummary;
+    if (confirmed?.status !== 'booking_created' && !confirmed?.bookingId) {
+      // Pagado pero sin reserva (hueco caducado u ocupado mientras pagaba): se anula ya la
+      // retención y el cliente ve el resumen actualizado.
+      await settleOrphanAuthorization(admin, attempt.id, stripeSecret, source);
+      return {
+        attempt: await getAttemptSummary(admin, attempt.id),
+        publishableKey: stripePublishableKey || undefined,
+      };
+    }
     return {
-      attempt: data as AttemptSummary,
+      attempt: confirmed,
       publishableKey: stripePublishableKey || undefined,
     };
   }
@@ -1186,6 +1221,8 @@ async function syncAttemptWithStripePaymentIntent(
         nextStatus: 'cancelled',
         reason: asString(paymentIntent.cancellation_reason) || 'stripe_payment_intent_canceled',
         paymentIntentId: resolvedPaymentIntentId,
+        stripeSecret,
+        source,
         gatewayPayload: {
           syncedFrom: source,
           paymentIntentId: resolvedPaymentIntentId,
@@ -1350,6 +1387,8 @@ Deno.serve(async (req: Request) => {
           reason: 'payment_expired_client_poll',
           paymentIntentId: attempt.stripe_payment_intent_id || null,
           gatewayPayload: { expiredFrom: 'booking-payment:get_attempt_status' },
+          stripeSecret,
+          source: 'booking-payment:get_attempt_status',
         });
       }
 
@@ -1416,6 +1455,8 @@ Deno.serve(async (req: Request) => {
         reason: 'cancelled_by_client',
         paymentIntentId: attempt.stripe_payment_intent_id || null,
         gatewayPayload: { cancelledFrom: 'booking-payment:cancel_attempt' },
+        stripeSecret,
+        source: 'booking-payment:cancel_attempt',
       });
       await persistServerTelemetry(dbAdmin, {
         level: 'info',
@@ -1992,6 +2033,12 @@ Deno.serve(async (req: Request) => {
       contextServiceId = attempt.service_id;
 
       if (!isInFlightPaymentAttemptStatus(attempt.status)) {
+        // El intento ya se cerró (p. ej. caducó) pero el cliente pudo pagar después en la hoja que
+        // tenía abierta: si Stripe tiene una autorización sin reserva, se anula ahora.
+        // (releaseOrphanAuthorization vuelve a leer el intento y no toca nada si tiene reserva.)
+        if (attempt.status !== 'booking_created') {
+          await settleOrphanAuthorization(dbAdmin, attempt.id, stripeSecret, 'booking-payment:sync_payment_state');
+        }
         return jsonResponse({ attempt: await getAttemptSummary(dbAdmin, attempt.id) });
       }
 
@@ -2114,6 +2161,8 @@ Deno.serve(async (req: Request) => {
             revalidationCode: classified.code,
             revalidationMessage: classified.message,
           },
+          stripeSecret,
+          source: 'booking-payment:prepare_payment',
         });
       }
       throw classified;
@@ -2126,6 +2175,8 @@ Deno.serve(async (req: Request) => {
         reason: 'payment_expired_before_prepare',
         paymentIntentId: attempt.stripe_payment_intent_id || null,
         gatewayPayload: { expiredFrom: 'booking-payment:prepare_payment' },
+        stripeSecret,
+        source: 'booking-payment:prepare_payment',
       });
       return jsonResponse({ attempt: summary });
     }

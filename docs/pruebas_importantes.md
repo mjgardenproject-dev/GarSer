@@ -44,6 +44,15 @@ tiene que estar desplegado antes de pasarla.
 | T2.11 | Stripe → Desarrolladores → Webhooks → endpoint `booking-payment-webhook` | Suscrito a `payment_intent.payment_failed` y `payment_intent.canceled` además de `amount_capturable_updated` y `succeeded` | 1.1 |
 | T2.12 | 48 h después de publicar, Stripe → Pagos → «No capturados» | Todos tienen reserva; ninguno sin reserva de más de 10 minutos | 1.1 |
 
+### Nuevas de la fase 1.4 — primera reserva una a la vez y clave del enlace (sección 42)
+
+| # | Prueba | Debe pasar | Paquete |
+|---|---|---|---|
+| T2.13 | Antes de aplicar la migración del 1.4, la consulta 42.0 en el editor SQL | Ninguna fila (si sale alguna, no se aplica y se avisa) | 1.4 |
+| T2.14 | Con la misma cuenta, dos reservas seguidas con el mismo profesional sin que acepte la primera | La segunda lleva la tarifa de «siguientes» y el aviso «Ya tienes otra reserva en curso con …»; si cancelas la primera, vuelve la de primera | 1.4 |
+| T2.15 | En el mismo móvil, «Cerrar sesión» y entrar con otra cuenta; abrir la dirección del profesional sin `?c=` | Paga la tarifa de GarSer (no la del enlace) y ve el aviso de que no es el enlace personal | 1.4 |
+| T2.16 | Abrir un enlace antiguo después de «Cambiar mi enlace» | Aviso «Este enlace ya no es el vigente…» en vez de un precio distinto sin explicación | 1.4 |
+
 ## 3. El profesional
 
 | # | Prueba | Debe pasar | Paquete |

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearBookingResumeStorage } from '../utils/bookingResumeStorage';
+import { bindProviderLinkCodesToUser, clearProviderLinkCodes } from '../utils/providerLinkCode';
 import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
 import { forgetThisDevicePush } from '../utils/pushNotifications';
 import { startSessionLiveness } from '../utils/sessionLiveness';
@@ -138,6 +139,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Entrar con Google (2026-10-21): completa nombre y foto de un cliente si están vacíos.
           // Vale para el botón de la web y para la redirección; una vez por sesión.
           if (event === 'SIGNED_IN' && u) void syncProfileFromGoogle(u);
+          // QA-101: la clave del enlace de un profesional es de quien llegó con ella. Al entrar, las
+          // de visitante pasan a esta cuenta y las de otra cuenta se olvidan.
+          if (u && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) bindProviderLinkCodesToUser(u.id);
           lastKnownUserId = u?.id ?? null;
           // Una marca de cierre que no llegó a consumirse (p. ej. el signOut falló) no puede
           // tapar un cierre inesperado posterior.
@@ -160,6 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (!intentionalSignOut && lastKnownUserId) {
             setSessionEndedAt(`${window.location.pathname}${window.location.search}`);
           }
+          const signOutWasRequested = intentionalSignOut;
           intentionalSignOut = false;
           
           // Limpiar progreso del wizard de jardineros
@@ -174,6 +179,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             keysToRemove.forEach(k => localStorage.removeItem(k));
             
             clearBookingResumeStorage({ userId: lastKnownUserId, flow: 'wizard', includeAnonFallback: true });
+            // QA-101: «Cerrar sesión» olvida las claves de enlace. Si la sesión caduca sola (p. ej. al
+            // abrir la web por el enlace con una sesión vieja) se conservan: siguen ligadas a su
+            // cuenta y no valen para otra.
+            if (signOutWasRequested) clearProviderLinkCodes();
           } catch (e) {
             console.error('Error cleaning up wizard progress:', e);
           }
@@ -291,6 +300,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.auth.signOut({ scope });
       clearAuthStorage();
       clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
+      clearProviderLinkCodes();
       try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
       setUser(null);
       debugLog('✅ Signed out');

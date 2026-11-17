@@ -33,7 +33,8 @@ import {
   type ProviderLinkBlockReason,
 } from '../../utils/providerLink';
 import ProviderLinkBlockedState from './ProviderLinkBlockedState';
-import StaleProviderLinkNotice from './StaleProviderLinkNotice';
+import BookingRateNotice from './BookingRateNotice';
+import { describeBookingRateNotice } from '../../utils/bookingRateNotice';
 
 // provider_kind (GarSer Empresas F4): 'company' pinta el distintivo «Empresa».
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number; provider_kind?: string | null }
@@ -714,16 +715,19 @@ const ProvidersPage: React.FC = () => {
     setProvidersReloadToken((prev) => prev + 1);
   };
 
-  // La clave del enlace que traía el cliente ya no vale (el profesional la cambió o el enlace está
-  // incompleto): se le explica por qué paga gastos de gestión. Solo si traía una clave (si no, no se le
-  // ha prometido nada) y si de verdad hay gastos que pagar.
+  // Por qué el profesional del enlace sale con la tarifa que sale cuando el cliente podría esperar
+  // otra (QA-100 / QA-102): otra reserva en curso con tarifa de primera, clave antigua o ausente, o
+  // cliente que ya llegó por GarSer.
   const linkedEconomics = linkedProviderId ? previewQuotes[linkedProviderId]?.economics : undefined;
-  const showStaleLinkNotice = Boolean(
-    linkedProviderId
-    && bookingData.providerLinkCode
-    && linkedEconomics?.commission?.linkClaim === 'rejected'
-    && Number(linkedEconomics.managementFee) > 0,
-  );
+  const linkRateNotice = linkedEconomics
+    ? describeBookingRateNotice({
+        commission: linkedEconomics.commission ?? null,
+        managementFee: Number(linkedEconomics.managementFee),
+        cameFromProviderLink: true,
+        hadLinkCode: Boolean(bookingData.providerLinkCode),
+        providerName: linkedProfile?.fullName,
+      })
+    : null;
 
   const handleRetryAvailability = () => {
     if (!selectedProvider) return;
@@ -833,7 +837,7 @@ const ProvidersPage: React.FC = () => {
             </div>
         )}
 
-        {showStaleLinkNotice && <StaleProviderLinkNotice providerName={linkedProfile?.fullName} />}
+        <BookingRateNotice notice={linkRateNotice} className="mb-4" />
 
         {/* Primera carga: esqueleto sólo en el hueco de la lista, con la misma forma que
             las tarjetas reales para que no salte el layout al llegar los datos. */}

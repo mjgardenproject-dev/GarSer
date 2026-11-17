@@ -44,6 +44,8 @@ import type {
   BookingQuoteSlotSelection,
 } from '../../shared/bookingQuoteCore';
 import { BOOKING_AMOUNT_LABELS, feeWaiverReasonText, formatEuro, getQuoteAmounts } from '../../shared/bookingAmounts';
+import BookingRateNotice from './BookingRateNotice';
+import { describeBookingRateNotice } from '../../utils/bookingRateNotice';
 import {
   buildAuthoritativeQuoteSnapshot,
   hasAuthoritativeQuoteSnapshot,
@@ -199,6 +201,18 @@ const ConfirmationPage: React.FC = () => {
   const quoteEconomics: BookingQuoteEconomicBreakdown | null = useMemo(
     () => authoritativeQuoteSnapshot?.economics || null,
     [authoritativeQuoteSnapshot],
+  );
+  // QA-100 / QA-102: por qué esta reserva lleva la tarifa que lleva, si el cliente podría esperar otra.
+  const rateNotice = useMemo(
+    () => describeBookingRateNotice({
+      commission: quoteEconomics?.commission ?? null,
+      managementFee: Number(quoteEconomics?.managementFee ?? 0),
+      cameFromProviderLink: Boolean(bookingData.restrictedGardenerId)
+        && bookingData.restrictedGardenerId === bookingData.providerId,
+      hadLinkCode: Boolean(bookingData.providerLinkCode),
+      providerName: gardenerName,
+    }),
+    [quoteEconomics, bookingData.restrictedGardenerId, bookingData.providerId, bookingData.providerLinkCode, gardenerName],
   );
   const authoritativeSnapshotReady = Boolean(
     bookingData.providerId &&
@@ -1964,7 +1978,7 @@ const ConfirmationPage: React.FC = () => {
                     </p>
                     <p className="mt-2 max-w-[22rem] text-xs leading-5 text-gray-500">
                       {customerPaymentSummary?.feeWaived
-                        ? `${feeWaiverReasonText(customerPaymentSummary.feeWaiverReason, gardenerName)} Se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
+                        ? `${feeWaiverReasonText(customerPaymentSummary.feeWaiverReason, gardenerName, { firstRateInUse: Boolean(quoteEconomics?.commission?.firstRateInUse) })} Se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
                         : customerPaymentSummary
                         ? `Ahora pagas ${formatEuro(customerPaymentSummary.managementFee)} de gastos de gestión. El resto se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
                         : 'El profesional cobrará este importe al completar el servicio de la manera que acordéis.'}
@@ -1975,6 +1989,7 @@ const ConfirmationPage: React.FC = () => {
                   </p>
                 </div>
               </div>
+              <BookingRateNotice notice={rateNotice} />
             </div>
           </div>
         </div>

@@ -2,8 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  bindProviderLinkCodesToUser,
   captureProviderLinkCodeFromUrl,
+  clearProviderLinkCodes,
   forgetProviderLinkCode,
+  readStoredSessionUserId,
   recallProviderLinkCode,
   rememberProviderLinkCode,
 } from './providerLinkCode';
@@ -39,12 +42,12 @@ describe('guardar y recordar la clave', () => {
     expect(recallProviderLinkCode(ID)).toBe(CODE2);
   });
 
-  it('caduca a los 180 días y olvida lo viejo al guardar otra', () => {
+  it('caduca a los 30 días (ventana de atribución, QA-101) y olvida lo viejo al guardar otra', () => {
     const t0 = 1_700_000_000_000;
-    rememberProviderLinkCode(ID, CODE, t0);
-    expect(recallProviderLinkCode(ID, t0 + 179 * DAY)).toBe(CODE);
-    expect(recallProviderLinkCode(ID, t0 + 181 * DAY)).toBeNull();
-    rememberProviderLinkCode(OTHER, CODE2, t0 + 200 * DAY);
+    rememberProviderLinkCode(ID, CODE, { now: t0 });
+    expect(recallProviderLinkCode(ID, { now: t0 + 29 * DAY })).toBe(CODE);
+    expect(recallProviderLinkCode(ID, { now: t0 + 31 * DAY })).toBeNull();
+    rememberProviderLinkCode(OTHER, CODE2, { now: t0 + 40 * DAY });
     expect(JSON.parse(localStorage.getItem('garser.providerLinkCodes.v1') as string)).not.toHaveProperty(ID);
   });
 
@@ -69,6 +72,59 @@ describe('guardar y recordar la clave', () => {
     const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
     expect(() => rememberProviderLinkCode(ID, CODE)).not.toThrow();
     spy.mockRestore();
+  });
+});
+
+describe('la clave es de quien llegó con ella (QA-101)', () => {
+  const ANA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const LUIS = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  it('la que guardó una cuenta no vale para otra, y en ese navegador se borra', () => {
+    rememberProviderLinkCode(ID, CODE, { userId: ANA });
+    expect(recallProviderLinkCode(ID, { userId: LUIS })).toBeNull();
+    expect(recallProviderLinkCode(ID, { userId: ANA })).toBeNull();
+  });
+
+  it('tampoco vale sin sesión si era de una cuenta', () => {
+    rememberProviderLinkCode(ID, CODE, { userId: ANA });
+    expect(recallProviderLinkCode(ID, { userId: null })).toBeNull();
+    expect(recallProviderLinkCode(ID, { userId: ANA })).toBe(CODE);
+  });
+
+  it('la de un visitante sin sesión pasa a la primera cuenta que la usa', () => {
+    rememberProviderLinkCode(ID, CODE);
+    expect(recallProviderLinkCode(ID, { userId: null })).toBe(CODE);
+    expect(recallProviderLinkCode(ID, { userId: ANA })).toBe(CODE);
+    expect(recallProviderLinkCode(ID, { userId: LUIS })).toBeNull();
+  });
+
+  it('al iniciar sesión: las de visitante pasan a esa cuenta y las de otra cuenta se borran', () => {
+    rememberProviderLinkCode(ID, CODE);
+    rememberProviderLinkCode(OTHER, CODE2, { userId: LUIS });
+    bindProviderLinkCodesToUser(ANA);
+    expect(recallProviderLinkCode(ID, { userId: ANA })).toBe(CODE);
+    expect(JSON.parse(localStorage.getItem('garser.providerLinkCodes.v1') as string)).not.toHaveProperty(OTHER);
+  });
+
+  it('al cerrar sesión se olvidan todas', () => {
+    rememberProviderLinkCode(ID, CODE, { userId: ANA });
+    rememberProviderLinkCode(OTHER, CODE2);
+    clearProviderLinkCodes();
+    expect(localStorage.getItem('garser.providerLinkCodes.v1')).toBeNull();
+    expect(recallProviderLinkCode(OTHER)).toBeNull();
+  });
+
+  it('al llegar por el enlace con sesión abierta, la clave queda ligada a esa cuenta', () => {
+    localStorage.setItem('sb-abc-auth-token', JSON.stringify({ access_token: 'x', user: { id: ANA } }));
+    expect(readStoredSessionUserId()).toBe(ANA);
+    const { win } = fakeWindow(`/reservar/${ID}`, `?c=${CODE}`);
+    captureProviderLinkCodeFromUrl(win as never);
+    expect(recallProviderLinkCode(ID, { userId: LUIS })).toBeNull();
+  });
+
+  it('una sesión guardada ilegible cuenta como visitante', () => {
+    localStorage.setItem('sb-abc-auth-token', '{roto');
+    expect(readStoredSessionUserId()).toBeNull();
   });
 });
 

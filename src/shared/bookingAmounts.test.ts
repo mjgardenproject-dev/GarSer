@@ -303,6 +303,9 @@ describe('reservas sin gastos de gestión (lanzamiento)', () => {
   it('explica el motivo al cliente, con o sin el nombre del profesional', () => {
     expect(feeWaiverReasonText('provider_link', 'Miguel')).toBe('Reservas con Miguel desde su enlace: sin gastos de gestión.');
     expect(feeWaiverReasonText('returning_client', '')).toBe('Ya has trabajado con este profesional: sin gastos de gestión.');
+    // QA-100: 0 € porque hay otra reserva en curso, no porque ya haya trabajado con él.
+    expect(feeWaiverReasonText('returning_client', 'Antonio', { firstRateInUse: true })).toBe('Esta reserva con Antonio no lleva gastos de gestión.');
+    expect(feeWaiverReasonText('returning_client', 'Antonio', { firstRateInUse: true })).not.toContain('Ya has trabajado');
     expect(feeWaiverReasonText('maintenance_plan')).toBe('Visita de tu plan de mantenimiento: sin gastos de gestión.');
     expect(feeWaiverReasonText('zero_commission')).toBe('Esta reserva va sin gastos de gestión.');
     expect(feeWaiverReasonText(null)).toBe('');

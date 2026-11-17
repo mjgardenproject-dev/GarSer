@@ -1893,6 +1893,27 @@ Antes de empezar: migración `20261117140000` aplicada (no hay funciones que des
 | 41.4 | Activa fitosanitarios en una cuenta de equipo sin nadie con carnet aprobado | La fila dice que nadie del equipo lo hace y que hay que asignarlo; el perfil público NO lo lista |
 | 41.5 | Pestaña «Equipo» | Cada persona muestra sus próximos trabajos o «Sin trabajos asignados próximamente» |
 
+## Sección 42 — Primera reserva una a la vez y clave del enlace (FASE 4, paquete 1.4, 2026-11-17)
+
+Qué se arregló: la tarifa de «primera reserva» se aplicaba a todas las reservas de un cliente con un profesional hasta que
+una se completaba (QA-100); la clave `?c=` del enlace se guardaba 180 días en el navegador y valía para cualquier cuenta
+de ese móvil (QA-101); y un enlace sin clave o con una clave antigua cambiaba el precio sin explicación (QA-102).
+Antes de empezar: migración `20261117150000` aplicada **después** de comprobar 42.0, y desplegados `booking-payment` y
+`booking-authority` (`--use-api`). Ten a mano los porcentajes de Admin → Ajustes → Comisiones: los importes esperados
+salen de ellos («primera por GarSer», «primera por enlace», «siguientes»).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 42.0 | ANTES de aplicar la migración, editor SQL: `select client_id, gardener_id, count(*) from bookings where status in ('pending','confirmed','disputed') and commission_rule in ('garser_first','link_first') group by 1,2 having count(*) > 1;` | Ninguna fila. Si sale alguna, no apliques la migración y avisa (son reservas que hoy llevan dos veces la tarifa de primera) |
+| 42.1 | Editor SQL tras aplicarla: `select indexname from pg_indexes where indexname = 'bookings_one_live_first_rate_per_client_provider';` | Una fila |
+| 42.2 | Cliente nuevo, por GarSer: reserva y paga con un profesional; sin que la acepte, haz otra con el mismo profesional | La primera lleva «primera por GarSer»; la segunda lleva «siguientes» y, antes de pagar, el aviso «Ya tienes otra reserva en curso con …» |
+| 42.3 | Cancela la primera y empieza otra (sin pagar) | Vuelve la tarifa de primera y desaparece el aviso |
+| 42.4 | Cliente nuevo que abre el enlace con clave **sin sesión** y entra al reservar | Lleva «primera por enlace»; en `client_provider_relationships` queda `origin = provider_link` |
+| 42.5 | Ese cliente, desde OTRO dispositivo y sin la clave, reserva con el mismo profesional | Sigue con la tarifa del enlace (la relación está en su cuenta); si la primera aún está en curso, «siguientes por enlace» con el aviso |
+| 42.6 | En el mismo móvil: «Cerrar sesión», entra con otra cuenta de cliente y abre la dirección del profesional sin `?c=` | Paga «primera por GarSer» y ve el aviso «Esta dirección no es el enlace personal de reserva de …» |
+| 42.7 | El profesional pulsa «Cambiar mi enlace»; un cliente nuevo abre el enlace ANTIGUO | Aviso «Este enlace ya no es el vigente de …» y tarifa de GarSer; con el enlace nuevo, tarifa del enlace sin aviso |
+| 42.8 | Stripe → Pagos: los gastos retenidos de 42.2 y 42.4 | Cada importe es exactamente el porcentaje de su regla sobre el precio del servicio |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

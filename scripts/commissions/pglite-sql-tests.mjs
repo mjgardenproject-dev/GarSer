@@ -46,6 +46,7 @@ const MIGRATIONS_NEW = [
   'supabase/migrations/20261102150000_commission_bookings_and_plans.sql',
   'supabase/migrations/20261104130000_provider_link_codes.sql',
   'supabase/migrations/20261104140000_public_billing_terms.sql',
+  'supabase/migrations/20261117150000_first_booking_one_at_a_time.sql',
 ];
 
 let failures = 0;

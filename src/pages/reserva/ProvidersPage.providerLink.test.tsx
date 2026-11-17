@@ -156,15 +156,15 @@ describe('ProvidersPage — reserva desde el enlace de un profesional', () => {
     expect(screen.queryByText('Otro Profesional')).toBeNull();
   });
 
-  describe('aviso cuando la clave del enlace ya no vale', () => {
+  describe('aviso cuando el enlace no lleva la tarifa esperada (QA-102 / QA-100)', () => {
     const CODE = '0123456789abcdef0123456789abcdef';
-    const withClaim = (linkClaim: 'verified' | 'rejected' | null, managementFee = 11.25) => {
+    const withCommission = (commission: Record<string, unknown> | null, managementFee = 11.25) => {
       const quote = quoteFor('gardener-B');
       mocks.previewProviderQuotes.mockResolvedValue({
         quotes: {
           'gardener-B': {
             ...quote,
-            economics: { ...quote.economics, managementFee, payableNow: managementFee, commission: { linkClaim } },
+            economics: { ...quote.economics, managementFee, payableNow: managementFee, ...(commission ? { commission } : {}) },
           },
         },
         eligibleProviderIds: ['gardener-B'],
@@ -174,26 +174,39 @@ describe('ProvidersPage — reserva desde el enlace de un profesional', () => {
 
     it('traía clave, el servidor la rechazó y paga gastos: se le explica por qué', async () => {
       useLinkedBooking({ providerLinkCode: CODE });
-      withClaim('rejected');
+      withCommission({ origin: 'garser', linkClaim: 'rejected' });
       render(<ProvidersPage />);
-      expect(await screen.findByText(/Este enlace ya no es el directo de Ana Jardines/)).toBeTruthy();
+      expect(await screen.findByText(/Este enlace ya no es el vigente de Ana Jardines/)).toBeTruthy();
       // La clave viaja al servidor para que decida él.
       expect(mocks.previewProviderQuotes).toHaveBeenCalledWith(
         expect.objectContaining({ bookingData: expect.objectContaining({ providerLinkCode: CODE }) }),
       );
     });
 
+    it('enlace SIN clave y paga gastos: también se le explica (antes el precio cambiaba en silencio)', async () => {
+      useLinkedBooking({});
+      withCommission({ origin: 'garser', linkClaim: 'rejected' });
+      render(<ProvidersPage />);
+      expect(await screen.findByText(/no es el enlace personal de reserva de Ana Jardines/)).toBeTruthy();
+    });
+
+    it('ya tiene otra reserva en curso con tarifa de primera: se le dice', async () => {
+      useLinkedBooking({ providerLinkCode: CODE });
+      withCommission({ origin: 'provider_link', linkClaim: 'verified', rule: 'link_repeat', firstRateInUse: true }, 0);
+      render(<ProvidersPage />);
+      expect(await screen.findByText(/Ya tienes otra reserva en curso con Ana Jardines/)).toBeTruthy();
+    });
+
     it.each([
-      ['la clave era buena', { providerLinkCode: CODE }, 'verified' as const, 11.25],
-      ['no traía clave (no se le prometió nada)', {}, 'rejected' as const, 11.25],
-      ['no paga gastos de gestión', { providerLinkCode: CODE }, 'rejected' as const, 0],
+      ['la clave era buena', { providerLinkCode: CODE }, { origin: 'provider_link', linkClaim: 'verified' }, 11.25],
+      ['no paga gastos de gestión', { providerLinkCode: CODE }, { origin: 'garser', linkClaim: 'rejected' }, 0],
       ['el servidor no se pronunció', { providerLinkCode: CODE }, null, 11.25],
-    ])('no avisa si %s', async (_label, booking, claim, fee) => {
+    ])('no avisa si %s', async (_label, booking, commission, fee) => {
       useLinkedBooking(booking);
-      withClaim(claim, fee);
+      withCommission(commission as Record<string, unknown> | null, fee);
       render(<ProvidersPage />);
       expect(await screen.findByText('Ana Jardines')).toBeTruthy();
-      expect(screen.queryByText(/ya no es el directo/)).toBeNull();
+      expect(document.querySelector('[data-notice]')).toBeNull();
     });
   });
 

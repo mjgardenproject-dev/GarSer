@@ -220,8 +220,14 @@ export const BOOKING_AMOUNT_LABELS = {
 export function feeWaiverReasonText(
   reason: ManagementFeeWaiverReason | null | undefined,
   providerName?: string | null,
+  options: { firstRateInUse?: boolean } = {},
 ): string {
   const who = String(providerName || '').trim();
+  // QA-100 (R3-1.4, OBS-05): la tarifa de «siguientes» puede tocar porque hay OTRA reserva en curso
+  // con ese profesional, no porque ya haya trabajado con él. Entonces no se dice que ya trabajó.
+  if (reason === 'returning_client' && options.firstRateInUse) {
+    return who ? `Esta reserva con ${who} no lleva gastos de gestión.` : 'Esta reserva no lleva gastos de gestión.';
+  }
   switch (reason) {
     case 'provider_link':
       return who

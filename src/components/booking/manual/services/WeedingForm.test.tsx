@@ -61,7 +61,7 @@ describe('desbroce · opciones del servicio (herbicida + retirada)', () => {
     return onStepComplete;
   };
 
-  it('una pantalla con el coste dicho una vez: herbicida apagado y retirada en «Sí»', () => {
+  it('una pantalla con el coste dicho una vez: herbicida apagado y retirada SIN marcar (QA-065)', () => {
     toOptions();
     expect(heading()).toBe('Opciones del servicio');
     expect(eyebrow()).toBe('Desbroce de malas hierbas · Pregunta 3 de 3');
@@ -70,13 +70,14 @@ describe('desbroce · opciones del servicio (herbicida + retirada)', () => {
     expect(herbicide.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByText('Se aplica sobre toda la superficie desbrozada.')).toBeTruthy();
     const waste = Array.from(group('Retirada de restos').querySelectorAll('[role="radio"]'));
-    expect(waste.map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    expect(waste.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false']);
     // El botón lleva directamente a la revisión: ya no hay pantalla aparte de retirada.
     expect(screen.getByRole('button', { name: 'Revisar mis datos' })).toBeTruthy();
   });
 
   it('emite area, state y herbicide como antes (la retirada nunca emitió stepId)', () => {
     const onStepComplete = toOptions();
+    fireEvent.click(Array.from(group('Retirada de restos').querySelectorAll('[role="radio"]'))[0]);
     click('Revisar mis datos');
     expect(onStepComplete.mock.calls.map((call) => call[0])).toEqual(['area', 'state', 'herbicide']);
     expect(heading()).toBe('Revisa tus datos antes de continuar');

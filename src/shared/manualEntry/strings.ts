@@ -46,6 +46,7 @@ export const MANUAL_ENTRY_STRINGS = {
     back: 'Atrás',
     next: 'Siguiente',
     continueToSummary: 'Revisar mis datos',
+    wasteRequired: 'Elige si quieres que retiremos los restos.',
     addItem: 'Añadir otro',
     finishItems: 'Continuar',
     edit: 'Editar',
@@ -60,6 +61,7 @@ export const MANUAL_ENTRY_STRINGS = {
   waste: {
     yes: { label: 'Sí, que se lleven los restos', help: 'Puede tener un coste adicional según el profesional.' },
     no: { label: 'No, me encargo yo', help: 'Te haces cargo de los restos que deje el trabajo.' },
+    unanswered: 'Sin contestar',
   },
   summary: {
     title: 'Revisa tus datos antes de continuar',

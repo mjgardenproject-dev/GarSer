@@ -20,7 +20,8 @@ import { ReviewList, type ReviewSection } from './ui/ReviewList';
 interface Props {
   survey: ManualServiceSurvey;
   items: ManualAnswers[];
-  wasteRemoval: boolean;
+  /** null = aún sin contestar (QA-065). */
+  wasteRemoval: boolean | null;
   /** «Cambiar» de una fila: el elemento y la pantalla (de sus pantallas visibles) a la que ir. */
   onChangeAnswer: (itemIndex: number, screenIndex: number) => void;
   onChangeWaste: () => void;
@@ -84,7 +85,9 @@ export const ManualEntrySummary: React.FC<Props> = ({
         {
           key: 'waste',
           label: MANUAL_GLOBAL_WASTE_FIELD.label,
-          value: wasteRemoval ? MANUAL_ENTRY_STRINGS.waste.yes.label : MANUAL_ENTRY_STRINGS.waste.no.label,
+          value: wasteRemoval === null
+            ? MANUAL_ENTRY_STRINGS.waste.unanswered
+            : wasteRemoval ? MANUAL_ENTRY_STRINGS.waste.yes.label : MANUAL_ENTRY_STRINGS.waste.no.label,
           onChange: onChangeWaste,
         },
       ],

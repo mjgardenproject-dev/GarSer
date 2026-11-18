@@ -1930,6 +1930,22 @@ terminar**.
 | 43.5 | Editor SQL: `select public.generate_maintenance_proposals();` | Responde sin error aunque haya planes de ese servicio (se saltan) |
 | 43.6 | Reactiva el servicio | Vuelve a salir al cliente y se puede llegar a la confirmación con un profesional |
 
+## Sección 44 — Nada con coste marcado de antemano y valoración sin nota puesta (FASE 4, paquete 1.6, 2026-11-18)
+
+Qué se arregló: «Retirar restos» (puede costar más) llegaba marcado en la reserva con datos a mano y se cobraba sin
+preguntar en césped y setos por fotos; el motor de precios lo cobraba si la respuesta faltaba (QA-065, QA-086); la
+valoración arrancaba con 5 estrellas puestas y no se podía volver a abrir (QA-116). Antes de empezar: desplegadas
+`booking-authority` y `booking-payment` (`--use-api`; usan el motor de precios). No hay migración.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 44.1 | Reserva de césped con datos a mano hasta la pregunta de los restos | Ninguna opción marcada; «Revisar mis datos» sin elegir dice «Elige si quieres que retiremos los restos.» y no avanza |
+| 44.2 | Elige «No» y mira el precio; vuelve y elige «Sí» | Con «Sí» el precio de cada profesional sube (si cobra la retirada); con «No», no |
+| 44.3 | Reserva de césped o setos con fotos | El interruptor «Incluir retirada de restos» aparece apagado y dice que puede tener coste |
+| 44.4 | En la pregunta del estado, «Siguiente» sin elegir | No avanza |
+| 44.5 | Valorar un trabajo terminado | Estrellas vacías («Sin puntuar»), «Enviar valoración» desactivado hasta tocar una estrella; la nota mínima es 1 |
+| 44.6 | Tras enviarla, «Ver o editar mi valoración» en la tarjeta | Se abre con la nota y el comentario; dentro de 48 h se puede cambiar y la tarjeta lo refleja |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

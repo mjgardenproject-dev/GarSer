@@ -800,6 +800,8 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
                   requireConsent={false}
                   showSwitchToPhotos={false}
                   submitLabel="Recalcular precio"
+                  // QA-065: arranca con la retirada que declaró el cliente, no con un «sí» que nadie eligió.
+                  initialWasteRemoval={correctionFor.declared_variables?.wasteRemoval}
                   onSubmit={(payload) => handleCorrectionSubmit(correctionFor, payload)}
                 />
               </div>

@@ -43,3 +43,22 @@ describe('ClientBookingCard: hora de fin (H-44)', () => {
     expect(t).not.toContain('de 12:00 a');
   });
 });
+
+describe('ClientBookingCard: valoración enviada (QA-116)', () => {
+  afterEach(() => cleanup());
+
+  it('se puede abrir para verla y corregirla', async () => {
+    const { fireEvent, screen } = await import('@testing-library/react');
+    const onReview = vi.fn();
+    render(<ClientBookingCard booking={{ ...base, status: 'completed', review_rating: 4 }} onReview={onReview} />);
+    expect(screen.queryByText('Dejar mi valoración')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Ver o editar mi valoración/ }));
+    expect(onReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('sin valorar ofrece «Dejar mi valoración»', async () => {
+    const { screen } = await import('@testing-library/react');
+    render(<ClientBookingCard booking={{ ...base, status: 'completed', review_rating: null }} onReview={vi.fn()} />);
+    expect(screen.getByText('Dejar mi valoración')).toBeTruthy();
+  });
+});

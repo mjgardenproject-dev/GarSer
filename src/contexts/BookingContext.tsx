@@ -404,7 +404,8 @@ const initialBookingData: BookingData = {
   palmSpecies: '',
   palmGroups: [],
   lawnZones: [],
-  wasteRemoval: true, // Default to true
+  // QA-065: sin elegir (no se cobra). La retirada de restos tiene coste: la marca el cliente.
+  wasteRemoval: undefined,
   uploadedPhotoUrls: [],
   isAnalyzing: false,
   servicesData: {},

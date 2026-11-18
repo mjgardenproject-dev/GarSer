@@ -40,6 +40,12 @@ export interface ManualWizardSubmitPayload {
   wasteRemoval: boolean;
 }
 
+/** Borrador mientras se contesta: la retirada puede no estar elegida todavía (QA-065). */
+export interface ManualWizardDraft {
+  items: ManualAnswers[];
+  wasteRemoval?: boolean;
+}
+
 interface Props {
   survey: ManualServiceSurvey;
   submitting?: boolean;
@@ -67,7 +73,7 @@ interface Props {
    * ella («Servicio 2 de 5: Poda de palmeras»), para no repetirlo.
    */
   showServiceName?: boolean;
-  onDraftChange?: (payload: ManualWizardSubmitPayload) => void;
+  onDraftChange?: (payload: ManualWizardDraft) => void;
   onStepComplete?: (stepId: string) => void;
   onConsentAccepted?: () => void;
   onSubmit: (payload: ManualWizardSubmitPayload) => void;
@@ -97,9 +103,10 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const [items, setItems] = useState<ManualAnswers[]>(
     initialItems && initialItems.length > 0 ? initialItems : [createEmptyManualItem(survey)],
   );
-  const [wasteRemoval, setWasteRemoval] = useState<boolean>(
-    initialWasteRemoval ?? (MANUAL_GLOBAL_WASTE_FIELD.defaultValue === true),
-  );
+  // QA-065 / QA-086: la retirada de restos puede costar más, así que nunca llega marcada: null =
+  // sin contestar, y no se puede seguir sin elegir (consentimiento expreso para pagos adicionales).
+  const [wasteRemoval, setWasteRemoval] = useState<boolean | null>(initialWasteRemoval ?? null);
+  const [showWasteError, setShowWasteError] = useState(false);
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [phase, setPhase] = useState<WizardPhase>(initialPhase);
@@ -134,7 +141,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const currentStep = visibleSteps[activeStepIndex];
 
   useEffect(() => {
-    onDraftChange?.({ items, wasteRemoval });
+    onDraftChange?.({ items, ...(wasteRemoval === null ? {} : { wasteRemoval }) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, wasteRemoval]);
 
@@ -240,12 +247,21 @@ export const ManualEntryWizard: React.FC<Props> = ({
 
   const afterItem = () => setPhase(survey.repeatable ? 'interstitial' : asksWasteApart ? 'waste' : 'summary');
 
+  // Sin contestar la retirada no se sigue: se dice y se lleva el foco a la pregunta.
+  const requireWasteAnswer = () => {
+    if (wasteRemoval !== null) return true;
+    setShowWasteError(true);
+    setFocusErrorKey(MANUAL_GLOBAL_WASTE_FIELD.key);
+    return false;
+  };
+
   const goNextFromItem = () => {
     if (currentStepErrors.length > 0) {
       setShowErrors(true);
       setFocusErrorKey(currentStepErrors[0].field);
       return;
     }
+    if (wasteOnItemScreen && !requireWasteAnswer()) return;
     setShowErrors(false);
     // Una pantalla puede reunir varios pasos: cada uno sigue emitiendo su `stepId`, en orden.
     currentStep?.stepIds.forEach((stepId) => onStepComplete?.(stepId));
@@ -361,9 +377,16 @@ export const ManualEntryWizard: React.FC<Props> = ({
 
   const confirm = () => {
     if (firstIncompleteItem !== -1) return;
+    // Retirada sin contestar (p. ej. al repetir o corregir sin el dato): se pregunta antes de enviar.
+    if (asksWaste && wasteRemoval === null) {
+      setShowWasteError(true);
+      changeWaste();
+      return;
+    }
     if (requireConsent && !consentChecked) return;
     if (requireConsent) onConsentAccepted?.();
-    onSubmit({ items, wasteRemoval });
+    // Un servicio que no pregunta la retirada (fitosanitarios) no la factura: false.
+    onSubmit({ items, wasteRemoval: wasteRemoval === true });
   };
 
   const switchToPhotos =
@@ -409,6 +432,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
           primary={{
             label: W.continueToSummary,
             onClick: () => {
+              if (!requireWasteAnswer()) return;
               setReturnToReview(false);
               setPhase('summary');
             },
@@ -488,8 +512,9 @@ export const ManualEntryWizard: React.FC<Props> = ({
                   { value: 'true', label: WASTE.yes.label },
                   { value: 'false', label: WASTE.no.label, help: WASTE.no.help },
                 ]}
-                selected={wasteRemoval ? 'true' : 'false'}
-                onSelect={(value) => setWasteRemoval(value === 'true')}
+                selected={wasteRemoval === null ? '' : wasteRemoval ? 'true' : 'false'}
+                onSelect={(value) => { setWasteRemoval(value === 'true'); setShowWasteError(false); }}
+                error={showWasteError && wasteRemoval === null ? W.wasteRequired : null}
               />
             </div>
           ) : null}
@@ -554,8 +579,9 @@ export const ManualEntryWizard: React.FC<Props> = ({
               { value: 'true', label: WASTE.yes.label, help: WASTE.yes.help },
               { value: 'false', label: WASTE.no.label, help: WASTE.no.help },
             ]}
-            selected={wasteRemoval ? 'true' : 'false'}
-            onSelect={(value) => setWasteRemoval(value === 'true')}
+            selected={wasteRemoval === null ? '' : wasteRemoval ? 'true' : 'false'}
+            onSelect={(value) => { setWasteRemoval(value === 'true'); setShowWasteError(false); }}
+            error={showWasteError && wasteRemoval === null ? W.wasteRequired : null}
           />
         </div>
       )}

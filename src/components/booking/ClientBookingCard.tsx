@@ -395,11 +395,23 @@ const ClientBookingCard = ({
       )}
 
       {/* Nota de la valoración propia: cierra el ciclo sin ocupar sitio. */}
+      {/* QA-116: la valoración enviada se puede abrir para ver el comentario y, en las 48 h, corregirla. */}
       {isCompleted && booking.review_rating != null && (
-        <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
-          <Stars value={Number(booking.review_rating)} />
-          <span>Tu valoración</span>
-        </div>
+        onReview ? (
+          <button
+            type="button"
+            onClick={() => onReview(booking)}
+            className="mt-3 flex min-h-[44px] items-center gap-2 rounded-lg text-sm text-gray-600 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]"
+          >
+            <Stars value={Number(booking.review_rating)} />
+            <span className="underline underline-offset-2">Ver o editar mi valoración</span>
+          </button>
+        ) : (
+          <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+            <Stars value={Number(booking.review_rating)} />
+            <span>Tu valoración</span>
+          </div>
+        )
       )}
 
       {compact && (

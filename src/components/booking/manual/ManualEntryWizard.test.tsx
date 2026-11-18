@@ -44,7 +44,9 @@ describe('ManualEntryWizard', () => {
     fireEvent.click(screen.getByText('Dificultad media'));
     fireEvent.click(screen.getByText('Siguiente'));
 
-    // Step 3 (F9): «Opciones del servicio» — herbicida y retirada juntos -> revisión
+    // Step 3 (F9): «Opciones del servicio» — herbicida y retirada juntos -> revisión. La retirada
+    // llega sin marcar (QA-065): se elige.
+    fireEvent.click(screen.getByText('Sí, que se lleven los restos'));
     fireEvent.click(screen.getByText('Revisar mis datos'));
 
     // El resumen ya es la última pantalla: datos, casilla y botón de envío juntos.
@@ -80,6 +82,7 @@ describe('ManualEntryWizard', () => {
     renderWeeding({ initialItems: [{ area: 50, state: 'normal' }] });
     fireEvent.click(screen.getByText('Siguiente')); // area -> state
     fireEvent.click(screen.getByText('Siguiente')); // state -> herbicide
+    fireEvent.click(screen.getByText('No, me encargo yo')); // la retirada se elige (QA-065)
     fireEvent.click(screen.getByText('Revisar mis datos')); // opciones (herbicida + retirada) -> summary
     expect(screen.getByText(MANUAL_ENTRY_CONSENT_TEXT)).toBeTruthy();
     expect(screen.getByText('Leer el texto completo')).toBeTruthy();

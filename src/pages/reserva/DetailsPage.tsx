@@ -96,7 +96,7 @@ import {
   type HedgeState,
 } from '../../domain/hedgeBusinessRules';
 import { ManualEntryChoice, type DataInputMode } from '../../components/booking/manual/ManualEntryChoice';
-import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../../components/booking/manual/ManualEntryWizard';
+import { ManualEntryWizard, type ManualWizardDraft, type ManualWizardSubmitPayload } from '../../components/booking/manual/ManualEntryWizard';
 import {
   MANUAL_ENTRY_SURVEYS,
   resolveManualServiceKey,
@@ -830,7 +830,7 @@ const DetailsPage: React.FC = () => {
     isServiceResolved && !isManualActive && (!manualChoiceAvailable || selectedInputMode === 'photos');
 
   const [manualSubmitting, setManualSubmitting] = useState(false);
-  const [manualDraft, setManualDraft] = useState<ManualWizardSubmitPayload | null>(null);
+  const [manualDraft, setManualDraft] = useState<ManualWizardDraft | null>(null);
   /**
    * Se incrementa SOLO cuando los extras se cambian desde la tarjeta. Va en el `key` del
    * asistente para remontarlo y que relea `initialItems`: sus toggles son estado interno y,
@@ -1008,7 +1008,7 @@ const DetailsPage: React.FC = () => {
   }, [bookingData]);
 
   const [, setDebugLogs] = useState<AnalysisDebugInfo | null>(null);
-  const persistedManualDraft = (bookingData.servicesData?.[activeServiceId] as { manualDraft?: ManualWizardSubmitPayload } | undefined)?.manualDraft;
+  const persistedManualDraft = (bookingData.servicesData?.[activeServiceId] as { manualDraft?: ManualWizardDraft } | undefined)?.manualDraft;
   /**
    * El asistente arranca en su resumen: hay respuestas que revisar, no que rellenar.
    *
@@ -1020,7 +1020,7 @@ const DetailsPage: React.FC = () => {
     Boolean(!manualDraft && !persistedManualDraft && rebookManualItems?.length),
   );
 
-  const handleManualDraftChange = (payload: ManualWizardSubmitPayload) => {
+  const handleManualDraftChange = (payload: ManualWizardDraft) => {
     setManualDraft(payload);
     if (activeServiceId) {
       updateServiceData(activeServiceId, { manualDraft: payload });
@@ -2743,15 +2743,14 @@ const DetailsPage: React.FC = () => {
         analyzedIndices: []
     };
     const newZones = [...(bookingData.lawnZones || []), newZone];
+    // QA-065: añadir una zona ya no activa la retirada de restos (tiene coste): la elige el cliente.
     setBookingData({ 
         lawnZones: newZones,
-        wasteRemoval: true 
     });
     
     if (activeServiceId) {
          updateServiceData(activeServiceId, {
              lawnZones: newZones,
-             wasteRemoval: true
          });
     }
     
@@ -6635,9 +6634,16 @@ const analyzeTreeGroup = async (id: string) => {
         (bookingData.palmGroups && bookingData.palmGroups.length > 0) || 
         (bookingData.shrubGroups && bookingData.shrubGroups.length > 0) ||
         (bookingData.weedingZones && bookingData.weedingZones.length > 0) ||
+        // QA-065: césped y setos por fotos también cobran la retirada; antes no tenían interruptor y
+        // se cobraba siempre sin preguntar.
+        (bookingData.lawnZones && bookingData.lawnZones.length > 0) ||
+        (bookingData.hedgeZones && bookingData.hedgeZones.length > 0) ||
         ((bookingData.aiQuantity || 0) > 0)) && (
           <div className="flex items-center justify-between p-4 bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
-              <span className="text-gray-700 font-medium text-sm">Incluir retirada de restos</span>
+              <span className="min-w-0 pr-3 text-sm">
+                <span className="block font-medium text-gray-700">Incluir retirada de restos</span>
+                <span className="block text-xs text-gray-500">Puede tener un coste adicional según el profesional.</span>
+              </span>
               <button 
                   type="button"
                   role="switch"

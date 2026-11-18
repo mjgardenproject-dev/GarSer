@@ -6,6 +6,7 @@ import { PUBLIC_CONTACT_ANCHOR, PUBLIC_WHATSAPP_NUMBER, PUBLIC_WHATSAPP_URL } fr
 import { COOKIES_PATH, PRIVACY_PATH, TERMS_PATH } from '../../config/legal';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { clearWizardDraftsForFreshStart } from '../../utils/bookingResumeStorage';
+import CookieSettingsButton from '../common/CookieSettingsButton';
 
 const PublicFooter: React.FC = () => {
   const { settings } = useAppSettings();
@@ -93,6 +94,8 @@ const PublicFooter: React.FC = () => {
             <Link to={COOKIES_PATH} className="hover:text-white">
               Cookies
             </Link>
+            {/* QA-007: siempre a mano, para cambiar o retirar lo que se aceptó. */}
+            <CookieSettingsButton className="min-h-[44px] text-left hover:text-white" />
           </div>
         </div>
       </div>

@@ -105,7 +105,7 @@ tiene que estar desplegado antes de pasarla.
 
 | # | Prueba | Debe pasar | Paquete |
 |---|---|---|---|
-| T6.1 | Primera visita a la web | Sale el aviso de cookies; «Rechazar» no carga Meta Pixel; se puede cambiar después (QA-007) | 1.9 |
+| T6.1 | Primera visita a la web | Sale el aviso de cookies con «Aceptar» y «Rechazar» iguales; «Rechazar» no carga Meta Pixel; «Configurar cookies» del pie permite cambiarlo y retirarlo (se borran `_fbp`/`_gcl_*` y no sale tráfico a Meta/Google) (QA-007, sección 47) | 1.9 |
 | T6.2 | /privacidad y /terminos | Se abren y se leen bien en el móvil | Ya hecho |
 | T6.3 | /para-jardineros (la página de los anuncios) | Sin fechas pasadas ni textos internos | 1.18 |
 | T6.6 | Marketing del profesional y FAQ de /para-jardineros | Ningún flyer ni mensaje promete «pagas al terminar»; la FAQ no dice «GarSer no toca tu dinero» (sección 45) | 1.7 |

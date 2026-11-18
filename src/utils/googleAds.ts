@@ -9,6 +9,7 @@
 // en el momento en que se carga la etiqueta.
 
 import { getGoogleAdsId, googleAdsConfigured } from '../config/analytics';
+import { deleteTrackingCookies } from './trackingCookies';
 
 type GtagFn = (...args: unknown[]) => void;
 
@@ -21,20 +22,25 @@ declare global {
 
 let loaded = false;
 
+const CONSENT_GRANTED = { ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted', analytics_storage: 'granted' };
+const CONSENT_DENIED = { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied' };
+
 export function loadGoogleAdsTag(): void {
   if (loaded || !googleAdsConfigured()) return;
   const id = getGoogleAdsId();
+
+  // Ya se cargó antes y se retiró el consentimiento (QA-007): el script sigue en memoria; se vuelve a conceder.
+  if (window.gtag && document.querySelector('script[src*="googletagmanager.com/gtag/js"]')) {
+    window.gtag('consent', 'update', CONSENT_GRANTED);
+    loaded = true;
+    return;
+  }
 
   window.dataLayer ||= [];
   const gtag: GtagFn = (...args) => { window.dataLayer!.push(args); };
   window.gtag = gtag;
 
-  gtag('consent', 'default', {
-    ad_storage: 'granted',
-    ad_user_data: 'granted',
-    ad_personalization: 'granted',
-    analytics_storage: 'granted',
-  });
+  gtag('consent', 'default', CONSENT_GRANTED);
   gtag('js', new Date());
   gtag('config', id);
 
@@ -44,6 +50,17 @@ export function loadGoogleAdsTag(): void {
   document.head.appendChild(script);
 
   loaded = true;
+}
+
+/**
+ * Retirar el consentimiento de «Publicidad» (QA-007): Consent Mode pasa a denegado, no salen más
+ * conversiones y se borran las cookies de Google. Si la etiqueta nunca se cargó, no hace nada.
+ */
+export function revokeGoogleAdsTag(): void {
+  if (!loaded) return;
+  window.gtag?.('consent', 'update', CONSENT_DENIED);
+  loaded = false;
+  deleteTrackingCookies();
 }
 
 export function isGoogleAdsTagLoaded(): boolean {

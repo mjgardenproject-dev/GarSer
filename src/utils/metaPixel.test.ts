@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadMetaPixel, isMetaPixelLoaded, trackMetaEvent, resetMetaPixelForTests } from './metaPixel';
+import { loadMetaPixel, isMetaPixelLoaded, revokeMetaPixel, trackMetaEvent, resetMetaPixelForTests } from './metaPixel';
 
 describe('metaPixel', () => {
   beforeEach(() => {
@@ -60,5 +60,37 @@ describe('metaPixel', () => {
     window.fbq = (...args: unknown[]) => { calls.push(args); };
     trackMetaEvent('Lead', undefined, 'evt-123');
     expect(calls).toContainEqual(['track', 'Lead', {}, { eventID: 'evt-123' }]);
+  });
+
+  it('QA-007 · retirar el consentimiento: avisa a Meta (revoke), borra sus cookies y deja de mandar eventos', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    loadMetaPixel();
+    document.cookie = '_fbp=fb.1.123; path=/';
+    const calls: unknown[][] = [];
+    window.fbq = (...args: unknown[]) => { calls.push(args); };
+    revokeMetaPixel();
+    expect(calls).toContainEqual(['consent', 'revoke']);
+    expect(document.cookie).not.toContain('_fbp');
+    expect(isMetaPixelLoaded()).toBe(false);
+    calls.length = 0;
+    trackMetaEvent('Lead');
+    expect(calls).toEqual([]);
+  });
+
+  it('QA-007 · sin haberlo cargado nunca, retirar no rompe nada', () => {
+    expect(() => revokeMetaPixel()).not.toThrow();
+  });
+
+  it('QA-007 · volver a aceptar después de retirar vuelve a conceder y manda el PageView, sin duplicar el script', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    loadMetaPixel();
+    const calls: unknown[][] = [];
+    window.fbq = (...args: unknown[]) => { calls.push(args); };
+    revokeMetaPixel();
+    calls.length = 0;
+    loadMetaPixel();
+    expect(calls.map((c) => c.slice(0, 2).join(':'))).toEqual(['consent:grant', 'init:2034090553963036', 'track:PageView']);
+    expect(isMetaPixelLoaded()).toBe(true);
+    expect(document.head.querySelectorAll('script[src*="fbevents.js"]').length).toBe(1);
   });
 });

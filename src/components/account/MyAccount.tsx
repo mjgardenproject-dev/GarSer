@@ -9,7 +9,8 @@ import { useProviderMode } from '../../hooks/useProviderMode';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
 import { Camera, Lock, Trash2, AlertTriangle, CheckCircle2, UploadCloud, CheckCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import CookieSettingsButton from '../common/CookieSettingsButton';
 import AppHeader from '../common/AppHeader';
 import InstallAppPrompt from '../common/InstallAppPrompt';
 import { useConfirmDialog } from '../common/ConfirmDialog';
@@ -235,6 +236,19 @@ function MyAccount() {
             >
               Cerrar todas
             </button>
+          </div>
+        </div>
+
+        {/* QA-007: quien ya tiene la sesión abierta no ve el pie de la web pública: «Configurar cookies» también aquí. */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 shadow-sm">
+          <div className="text-lg font-semibold text-gray-900 mb-3">Cookies y privacidad</div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-gray-700">Cambia o retira lo que aceptaste sobre las cookies de publicidad.</div>
+            <CookieSettingsButton className="shrink-0 min-h-11 px-3 py-3 sm:py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium" />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-100 pt-3 text-sm">
+            <Link to="/privacidad" className="min-h-11 inline-flex items-center font-medium text-green-700 underline">Política de privacidad</Link>
+            <Link to="/cookies" className="min-h-11 inline-flex items-center font-medium text-green-700 underline">Política de cookies</Link>
           </div>
         </div>
 

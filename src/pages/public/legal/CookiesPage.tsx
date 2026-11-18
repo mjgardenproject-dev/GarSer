@@ -1,5 +1,6 @@
 import React from 'react';
 import LegalLayout, { Section } from './LegalLayout';
+import CookieSettingsButton from '../../../components/common/CookieSettingsButton';
 import { PRIVACY_PATH } from '../../../config/legal';
 import { Link } from 'react-router-dom';
 
@@ -32,7 +33,9 @@ const CookiesPage: React.FC = () => {
       </Section>
 
       <Section id="cambiar" title="4. Cómo cambiar tu decisión">
-        <p>Borra los datos de navegación de garser.es en tu navegador (o el almacenamiento local del sitio) y recarga la página: el aviso de cookies vuelve a salir. En el móvil suele estar en Ajustes del navegador → Privacidad → Datos de sitios web.</p>
+        <p>Puedes cambiar o retirar lo que aceptaste cuando quieras, en cualquier momento: pulsa «Configurar cookies» (aquí debajo o en el pie de cualquier página), apaga «Publicidad» y guarda. Dejamos de usar las cookies de publicidad en el acto y borramos las que ya se hubieran guardado.</p>
+        <p><CookieSettingsButton className="inline-flex min-h-[44px] items-center rounded-full border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-900 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500" /></p>
+        <p>También puedes borrar los datos de navegación de garser.es en tu navegador (o el almacenamiento local del sitio) y recargar la página: el aviso de cookies vuelve a salir. En el móvil suele estar en Ajustes del navegador → Privacidad → Datos de sitios web.</p>
       </Section>
 
       <Section id="mas" title="5. Más información">

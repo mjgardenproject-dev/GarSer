@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { MemoryRouter } from 'react-router-dom';
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import PublicFooter from './PublicFooter';
+import { CookieConsentProvider } from '../../contexts/CookieConsentContext';
 
 describe('PublicFooter', () => {
   afterEach(cleanup);
@@ -46,5 +47,18 @@ describe('PublicFooter', () => {
 
     expect(screen.queryByText('Cobertura orientativa')).toBeNull();
     expect(screen.queryByText('Estepona')).toBeNull();
+  });
+
+  it('QA-007 · el pie lleva «Configurar cookies» siempre a mano', async () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    window.localStorage.setItem('garser.cookie-consent.v1', JSON.stringify({ advertising: true, decidedAt: new Date().toISOString() }));
+    render(
+      <MemoryRouter>
+        <CookieConsentProvider><PublicFooter /></CookieConsentProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('button', { name: 'Configurar cookies' })).toBeTruthy();
+    vi.unstubAllEnvs();
+    window.localStorage.clear();
   });
 });

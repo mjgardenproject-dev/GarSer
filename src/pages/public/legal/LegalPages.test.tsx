@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { missingLegalFields, type LegalInfo } from '../../../config/legal';
+import { CookieConsentProvider } from '../../../contexts/CookieConsentContext';
 
 vi.mock('../../../hooks/useAppSettings', () => ({ useAppSettings: () => ({ settings: { contactEmail: 'info@garser.es', contactPhone: '' } }) }));
 
@@ -62,6 +63,20 @@ describe('páginas legales', () => {
 
     renderPage(<TermsPage />);
     expect(screen.queryByRole('heading', { name: /Quiénes somos/ })).toBeNull();
+  });
+
+  it('QA-007 · cookies: explica cómo cambiar o retirar lo aceptado y ofrece «Configurar cookies»', async () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    render(
+      <MemoryRouter>
+        <CookieConsentProvider><CookiesPage /></CookieConsentProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('heading', { name: '4. Cómo cambiar tu decisión' })).toBeTruthy();
+    expect(document.body.textContent).toContain('cuando quieras, en cualquier momento');
+    expect(document.body.textContent).toContain('borramos las que ya se hubieran guardado');
+    expect((await screen.findAllByRole('button', { name: 'Configurar cookies' })).length).toBeGreaterThan(0);
+    vi.unstubAllEnvs();
   });
 
   it('cookies: explica las dos categorías y enlaza a privacidad', () => {

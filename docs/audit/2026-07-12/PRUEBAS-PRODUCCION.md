@@ -1986,6 +1986,24 @@ plataforma de gestión de reservas, no un inspector; el producto, la dosis y los
 | 46.7 | Profesional → subir el carnet fitosanitario | La declaración nombra el Real Decreto 1311/2012 y que responde de los tratamientos que aplique |
 | 46.8 | Editor SQL: `select input_payload -> 'phytosanitaryAck' ->> 'legalVersion' from booking_quotes where service_id in (select id from services where name ilike '%fitosanit%') order by generated_at desc limit 1;` | `phytosanitary_notice_v1` para una reserva nueva con producto convencional (el registro de lo aceptado viaja con el presupuesto) |
 
+## Sección 47 — Cambiar o retirar el consentimiento de cookies (FASE 4, paquete 1.9, 2026-11-18)
+
+Qué se arregló: una vez aceptado o rechazado el aviso de cookies no había forma de cambiarlo (la política mandaba borrar los
+datos del navegador) y «Aceptar» estaba resaltado sobre «Rechazar» (QA-007). Con anuncios en marcha es obligatorio poder
+retirar el consentimiento tan fácil como se da. No hay migración ni funciones. Haz estas pruebas en un navegador **sin**
+decisión guardada, desde el móvil, y con las herramientas de desarrollo del navegador abiertas si puedes (Application →
+Cookies y Network).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 47.1 | Primera visita a garser.es | Sale el aviso; «Rechazar todo» y «Aceptar todo» son iguales (mismo color y tamaño); antes de decidir no hay cookies `_fbp` ni `_gcl_*` ni peticiones a facebook.com/googletagmanager.com |
+| 47.2 | «Aceptar todo» | El aviso desaparece; ahora sí aparece `_fbp` y se cargan Meta/Google |
+| 47.3 | Pie de la portada → «Configurar cookies» | Se abre el panel desplegado con «Cookies de publicidad» ENCENDIDO y una X para cerrar sin cambiar nada |
+| 47.4 | Apaga «Cookies de publicidad» → «Guardar preferencias» | El panel se cierra; las cookies `_fbp`, `_fbc` y `_gcl_*` desaparecen en el acto y NO sale ninguna petición nueva a Meta ni a Google al navegar (sin recargar) |
+| 47.5 | Recarga y vuelve a abrir «Configurar cookies» | El interruptor sigue apagado; no se vuelve a cargar el píxel |
+| 47.6 | /cookies → sección 4 | Explica cómo cambiarlo cuando quieras y tiene el botón «Configurar cookies» |
+| 47.7 | Facebook Events Manager (o Test Events) con una cuenta nueva que rechace | Ningún evento de ese navegador llega a Meta tras rechazar, tampoco por la vía del servidor (Conversions API) |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

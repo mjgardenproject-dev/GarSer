@@ -22,6 +22,7 @@ import {
   createAuthoritativeQuote,
   fetchProviderMonthDays,
   fetchProviderValidHours,
+  previewProviderQuotes,
 } from './bookingAuthorityService';
 
 function createFunctionsHttpError(status: number, body: Record<string, unknown> | string) {
@@ -203,5 +204,22 @@ describe('buildBookingOriginPayload', () => {
     expect(invokeMock.mock.calls[invokeMock.mock.calls.length - 1][1].body).toMatchObject({
       action: 'month_days', bookingOrigin: 'provider_link', originProviderId: 'prov-1', clientCapabilities: { feeWaiver: 1 },
     });
+  });
+
+  it('QA-181: conserva el código de negocio del servidor (service_unavailable) y su mensaje', async () => {
+    invokeMock.mockResolvedValueOnce({
+      data: null,
+      error: createFunctionsHttpError(409, { code: 'service_unavailable', error: '«Poda de palmeras» ya no se puede reservar. Elige otro servicio.' }),
+    });
+    const failure = await previewProviderQuotes({
+      bookingData: { serviceIds: ['s1'] } as never,
+      serviceId: 's1',
+      providerIds: ['p1'],
+      selectedDate: '2026-12-01',
+    }).catch((error) => error);
+    expect(failure).toBeInstanceOf(BookingAuthorityError);
+    expect(failure.code).toBe('service_unavailable');
+    expect(failure.status).toBe(409);
+    expect(failure.message).toContain('ya no se puede reservar');
   });
 });

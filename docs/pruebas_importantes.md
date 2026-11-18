@@ -65,6 +65,12 @@ tiene que estar desplegado antes de pasarla.
 | T3.4 | **Aceptar** la solicitud de 2.1 | Reserva «Confirmada»; en Stripe los gastos pasan de retenidos a **cobrados** | Ya hecho |
 | T3.5 | **Rechazar** otra solicitud | Reserva rechazada; en Stripe la retención se **libera** (0 € cobrados) | Ya hecho |
 
+### Nueva de la fase 1.5 — servicio desactivado (sección 43)
+
+| # | Prueba | Debe pasar | Paquete |
+|---|---|---|---|
+| T3.8 | El admin desactiva un servicio mientras un cliente lo tiene a medias en la confirmación | Al pulsar «Continuar al pago»: «Este servicio ya no se puede reservar», sin cobro, y el servicio ya no sale ni en la lista ni en los perfiles; al reactivarlo vuelve | 1.5 |
+
 ## 4. Cancelar y devolver
 
 | # | Prueba | Debe pasar | Paquete |

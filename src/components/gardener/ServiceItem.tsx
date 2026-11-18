@@ -29,9 +29,13 @@ const ServiceItem: React.FC<ServiceItemProps> = ({
   noTeamMember = false,
 }) => {
   const state = serviceActivationState(isActive, canActivate);
-  const missingWorker = state === 'active' && noTeamMember;
+  // QA-181: GarSer ha pausado el servicio para todos: aunque esté activado, nadie puede reservarlo.
+  const pausedByGarser = service.is_active === false;
+  const missingWorker = state === 'active' && (noTeamMember || pausedByGarser);
   const hint = hasError
     ? 'Configuración incompleta'
+    : pausedByGarser
+      ? 'GarSer ha pausado este servicio: ahora mismo los clientes no pueden reservarlo. Tu configuración se conserva.'
     : missingWorker
       ? `Activado, pero nadie de tu equipo lo hace y los clientes no pueden reservarlo. Asígnalo en «Equipo»${
           service.name === 'Servicios fitosanitarios' ? ' a alguien con el carnet fitosanitario aprobado' : ''

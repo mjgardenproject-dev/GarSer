@@ -1914,6 +1914,22 @@ salen de ellos («primera por GarSer», «primera por enlace», «siguientes»).
 | 42.7 | El profesional pulsa «Cambiar mi enlace»; un cliente nuevo abre el enlace ANTIGUO | Aviso «Este enlace ya no es el vigente de …» y tarifa de GarSer; con el enlace nuevo, tarifa del enlace sin aviso |
 | 42.8 | Stripe → Pagos: los gastos retenidos de 42.2 y 42.4 | Cada importe es exactamente el porcentaje de su regla sobre el precio del servicio |
 
+## Sección 43 — Un servicio desactivado no se puede reservar (FASE 4, paquete 1.5, 2026-11-18)
+
+Qué se arregló: desactivar un servicio en Admin → Servicios solo lo ocultaba en la web; el servidor seguía ofreciendo
+profesionales, firmando presupuestos y dejando pagar ese servicio (QA-181). Antes de empezar: migración `20261118120000`
+aplicada y `booking-authority` y `booking-payment` desplegadas (`--use-api`). Usa un servicio poco usado y **reactívalo al
+terminar**.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 43.1 | Como cliente, deja una reserva de ese servicio en la pantalla de «Continuar al pago», sin pagar | — |
+| 43.2 | Como admin, desactiva el servicio. El cliente pulsa «Continuar al pago» | «Este servicio ya no se puede reservar», «No se te ha cobrado nada» y botón «Elegir otro servicio»; en Stripe no aparece ningún pago nuevo |
+| 43.3 | «Elegir otro servicio» y el perfil público de un profesional que lo tenía | El servicio no aparece en ninguno de los dos |
+| 43.4 | El profesional abre sus servicios | La fila dice «GarSer ha pausado este servicio: ahora mismo los clientes no pueden reservarlo» |
+| 43.5 | Editor SQL: `select public.generate_maintenance_proposals();` | Responde sin error aunque haya planes de ese servicio (se saltan) |
+| 43.6 | Reactiva el servicio | Vuelve a salir al cliente y se puede llegar a la confirmación con un profesional |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

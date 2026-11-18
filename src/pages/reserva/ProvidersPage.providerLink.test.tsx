@@ -21,6 +21,7 @@ vi.mock('../../contexts/BookingContext', () => ({
 }));
 
 vi.mock('../../utils/bookingAuthorityService', () => ({
+  isBookingAuthorityError: () => false,
   previewProviderQuotes: mocks.previewProviderQuotes,
   fetchProviderMonthDays: mocks.fetchProviderMonthDays,
   fetchProviderValidHours: mocks.fetchProviderValidHours,

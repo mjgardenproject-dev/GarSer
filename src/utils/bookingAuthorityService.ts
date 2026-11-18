@@ -221,7 +221,11 @@ async function normalizeAuthorityError(error: unknown) {
   return new BookingAuthorityError({
     message: safeMessage,
     status,
-    code: candidate?.code || candidate?.name,
+    // El código de negocio que manda el servidor (p. ej. service_unavailable) manda sobre el nombre
+    // técnico del error del cliente HTTP (FunctionsHttpError).
+    code: (responseBody && typeof (responseBody as { code?: unknown }).code === 'string'
+      ? String((responseBody as { code: string }).code)
+      : undefined) || candidate?.code || candidate?.name,
     backendMessage: backendMessage || undefined,
     responseBody: responseBody || undefined,
   });

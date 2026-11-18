@@ -49,4 +49,10 @@ describe('ServiceItem (fallo 7.1: el círculo mudo pasa a «Activar»)', () => {
     render(<ServiceItem {...base} service={{ id: 'p', name: 'Servicios fitosanitarios' } as never} isActive canActivate noTeamMember />);
     expect(screen.getByText(/carnet fitosanitario aprobado/)).toBeTruthy();
   });
+
+  it('QA-181: servicio que GarSer ha pausado: no promete reservas y lo explica', () => {
+    render(<ServiceItem {...base} service={{ id: 'x', name: 'Poda de palmeras', is_active: false } as never} isActive canActivate />);
+    expect(screen.queryByText('Activado: los clientes pueden reservarlo')).toBeNull();
+    expect(screen.getByText(/GarSer ha pausado este servicio/)).toBeTruthy();
+  });
 });

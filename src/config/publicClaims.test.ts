@@ -62,7 +62,9 @@ describe('afirmaciones que no pueden volver', () => {
     // la guardia y obliga a comprobar que también es cierta.
     const allowed: Record<string, number> = {
       'src/shared/bookingPaymentCore.ts': 2, // pago sin reserva: retención anulada (específico y genérico)
-      'src/pages/reserva/ConfirmationPage.tsx': 1, // «Tiempo agotado» antes de pagar
+      // «Tiempo agotado» antes de pagar, y servicio desactivado (QA-181: el intento de pago no llega a
+      // crearse, la base de datos lo rechaza antes de hablar con Stripe): instrucción y aviso.
+      'src/pages/reserva/ConfirmationPage.tsx': 3,
       'src/components/booking/EmbeddedStripePaymentForm.tsx': 1, // el banco rechazó la tarjeta
     };
     expect(offenders(/No se te ha cobrado nada|queda liberada/, (f) => f.startsWith('src/') && !(f in allowed))).toEqual([]);

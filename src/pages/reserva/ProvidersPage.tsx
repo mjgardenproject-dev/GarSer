@@ -19,6 +19,7 @@ import { PartialServiceModal } from './PartialServiceModal';
 import {
   fetchProviderMonthDays,
   fetchProviderValidHours,
+  isBookingAuthorityError,
   previewProviderQuotes,
   type ProviderMonthDay,
   type ProviderQuotePreview,
@@ -91,6 +92,7 @@ const ProvidersPage: React.FC = () => {
   const [previewQuotes, setPreviewQuotes] = useState<Record<string, ProviderQuotePreview>>({});
   const [earliestByProvider, setEarliestByProvider] = useState<Record<string, { date: string; startHour: number } | null>>({});
   const [loadError, setLoadError] = useState('');
+  const [serviceUnavailable, setServiceUnavailable] = useState('');
   const [availabilityError, setAvailabilityError] = useState('');
   const [providersReloadToken, setProvidersReloadToken] = useState(0);
   const [emptyStateHint, setEmptyStateHint] = useState('');
@@ -455,6 +457,7 @@ const ProvidersPage: React.FC = () => {
     const fetchProviders = async () => {
       setLoading(true);
       setLoadError('');
+      setServiceUnavailable('');
       setEmptyStateHint('');
       setLinkBlock(null);
       try {
@@ -630,7 +633,14 @@ const ProvidersPage: React.FC = () => {
         setPreviewQuotes({});
         setEarliestByProvider({});
         setEmptyStateHint('');
-        setLoadError('No se pudieron cargar los profesionales. Reintenta.');
+        // QA-181: si el administrador desactivó el servicio, reintentar no sirve: se dice y se ofrece otro.
+        if (isBookingAuthorityError(e) && e.code === 'service_unavailable') {
+          setServiceUnavailable(e.backendMessage || e.message || 'Este servicio ya no se puede reservar.');
+          setLoadError('');
+        } else {
+          setServiceUnavailable('');
+          setLoadError('No se pudieron cargar los profesionales. Reintenta.');
+        }
       } finally {
         setLoading(false);
       }
@@ -808,6 +818,20 @@ const ProvidersPage: React.FC = () => {
       <main className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md" id="providers-main">
         {/* Carrusel de jardineros */}
       <div className="mb-4">
+        {serviceUnavailable && (
+          <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-medium text-red-900">Este servicio ya no se puede reservar</p>
+            <p className="mt-1">{serviceUnavailable}</p>
+            <button
+              type="button"
+              onClick={() => { setBookingData({ serviceIds: [] }); setCurrentStep(1); }}
+              className="mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+            >
+              Elegir otro servicio
+            </button>
+          </div>
+        )}
+
         {loadError && (
           <div aria-live="polite" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             <p className="font-medium text-red-900">No se ha podido cargar la lista de profesionales.</p>

@@ -87,7 +87,7 @@ type PaymentExperienceState = {
   moneyNote?: string;
 };
 
-type PreCheckoutFailureCta = 'retry' | 'refresh' | 'reload' | 'slots';
+type PreCheckoutFailureCta = 'retry' | 'refresh' | 'reload' | 'slots' | 'services';
 
 type PreCheckoutFailureState = {
   tone: Extract<PaymentExperienceTone, 'amber' | 'red'>;
@@ -314,6 +314,21 @@ const ConfirmationPage: React.FC = () => {
   const resolvePreCheckoutFailure = (error: unknown): PreCheckoutFailureState | null => {
     const message = error instanceof Error ? error.message.trim() : '';
     const lowerMessage = message.toLowerCase();
+
+    // QA-181: el administrador desactivó el servicio mientras el cliente reservaba. Ni el horario ni
+    // reintentar lo arreglan: hay que elegir otro servicio.
+    const failureCode = String((error as { code?: unknown } | null)?.code || '').trim().toLowerCase();
+    if ((isBookingAuthorityError(error) || isBookingPaymentError(error)) && failureCode === 'service_unavailable') {
+      const backend = String((error as { backendMessage?: unknown }).backendMessage || message).trim();
+      return {
+        tone: 'red',
+        title: 'Este servicio ya no se puede reservar',
+        detail: backend || 'El servicio que elegiste ya no está disponible.',
+        instructions: ['No se te ha cobrado nada.', 'Elige otro servicio para continuar.'],
+        toastMessage: 'Este servicio ya no se puede reservar. No se te ha cobrado nada.',
+        preferredCta: 'services',
+      };
+    }
 
     if (isBookingAuthorityError(error)) {
       const status = error.status;
@@ -1264,6 +1279,14 @@ const ConfirmationPage: React.FC = () => {
     }
   };
 
+  const goBackToServiceSelection = () => {
+    setBookingData({ serviceIds: [] });
+    setCurrentStep(1);
+    if (location.pathname.startsWith('/reserva/confirmacion')) {
+      navigate('/reservar');
+    }
+  };
+
   const isPostPaymentSettlementPending =
     successfulPaymentReturn &&
     !isResolvingPaymentReturn &&
@@ -1317,6 +1340,12 @@ const ConfirmationPage: React.FC = () => {
               onClick: reloadCurrentPage,
               variant: 'primary',
             }
+          : preCheckoutFailure.preferredCta === 'services'
+            ? {
+                label: 'Elegir otro servicio',
+                onClick: goBackToServiceSelection,
+                variant: 'primary',
+              }
           : preCheckoutFailure.preferredCta === 'slots'
             ? {
                 label: 'Elegir otro horario',

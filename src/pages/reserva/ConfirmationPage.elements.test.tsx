@@ -49,7 +49,7 @@ vi.mock('../../contexts/AuthContext', () => ({
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mocks.navigate,
-  useLocation: () => ({ search: mocks.locationSearch }),
+  useLocation: () => ({ pathname: '/reservar', search: mocks.locationSearch }),
 }))
 
 vi.mock('../../utils/bookingAuthorityService', () => ({
@@ -356,6 +356,27 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(mocks.toast.error).toHaveBeenCalledWith(
       'La franja seleccionada ya no está disponible. Elige otro horario antes de pagar.',
     )
+  })
+
+  it('QA-181: servicio desactivado tras firmar el presupuesto: lo dice, que no se ha cobrado y ofrece elegir otro servicio', async () => {
+    mocks.prepareBookingPayment.mockRejectedValueOnce(
+      createBookingPaymentError({
+        status: 409,
+        code: 'service_unavailable',
+        message: 'Poda de palmeras ya no se puede reservar. No se te ha cobrado nada. Elige otro servicio.',
+        backendMessage: 'Poda de palmeras ya no se puede reservar. No se te ha cobrado nada. Elige otro servicio.',
+      }),
+    )
+
+    render(<ConfirmationPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar al pago' }))
+
+    expect(await screen.findByText('Este servicio ya no se puede reservar')).toBeTruthy()
+    expect(screen.queryByText('Ese horario ya no está disponible')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir otro servicio' }))
+    expect(mocks.setBookingData).toHaveBeenCalledWith({ serviceIds: [] })
+    expect(mocks.setCurrentStep).toHaveBeenCalledWith(1)
   })
 
   it('mantiene la UX de presupuesto inválido cuando backend devuelve quote_expired', async () => {

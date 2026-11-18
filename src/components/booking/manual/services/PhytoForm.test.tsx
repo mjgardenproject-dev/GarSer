@@ -6,6 +6,7 @@ import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../ManualEntr
 import { MANUAL_ENTRY_SURVEYS, type ManualAnswers } from '../../../../shared/manualEntry/manualEntrySchema';
 import { MANUAL_PARITY_FIXTURES } from '../../../../pages/reserva/manualEntryParityFixtures';
 import { buildManualBookingPatch } from '../../../../pages/reserva/manualEntryBuilders';
+import { PHYTOSANITARY_ACK_TEXT } from '../../../../shared/manualEntry/legalCopy';
 
 afterEach(() => cleanup());
 
@@ -117,6 +118,7 @@ describe('fitosanitarios · tratamiento, producto y extras', () => {
     pickIn('Tipo de tratamiento', 'Preventivo');
     click('Siguiente');
     pickIn('Tipo de producto', 'Convencional');
+    fireEvent.click(screen.getByLabelText(PHYTOSANITARY_ACK_TEXT));  // QA-170: el aviso del producto convencional se acepta para seguir
     click('Siguiente');
     expect(heading()).toBe('¿Son setos altos?');
     expect(eyebrow()).toBe('Servicios fitosanitarios · Pregunta 5 de 5');
@@ -174,6 +176,10 @@ describe('fitosanitarios · recorridos de referencia por la interfaz', () => {
     if (item.intent === 'curative') pickIn('Plaga o enfermedad a combatir', TARGET[item.curativeTarget as string]);
     click('Siguiente');
     pickIn('Tipo de producto', item.productPreference === 'ecological' ? 'Ecológico' : 'Convencional');
+    if (item.productPreference !== 'ecological') {
+      const ack = screen.getByLabelText(PHYTOSANITARY_ACK_TEXT) as HTMLInputElement;
+      if (!ack.checked) fireEvent.click(ack); // se acepta una vez por reserva
+    }
     click('Siguiente');
     for (const [key, label] of [
       ['aboveThreeMeters', 'Supera los 2,5 m de altura'],

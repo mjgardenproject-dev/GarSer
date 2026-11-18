@@ -6,6 +6,7 @@ import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../ManualEntr
 import { MANUAL_ENTRY_SURVEYS } from '../../../../shared/manualEntry/manualEntrySchema';
 import { MANUAL_PARITY_FIXTURES } from '../../../../pages/reserva/manualEntryParityFixtures';
 import { buildManualBookingPatch } from '../../../../pages/reserva/manualEntryBuilders';
+import { PHYTOSANITARY_ACK_TEXT } from '../../../../shared/manualEntry/legalCopy';
 
 afterEach(() => cleanup());
 
@@ -127,7 +128,10 @@ describe('desbroce · recorridos de referencia por la interfaz', () => {
       click('Siguiente');
       pickIn('Dificultad del desbroce', STATE_LABEL[item.state as string]);
       click('Siguiente');
-      if (item.applyHerbicide) fireEvent.click(screen.getByRole('switch', { name: 'Aplicar herbicida' }));
+      if (item.applyHerbicide) {
+        fireEvent.click(screen.getByRole('switch', { name: 'Aplicar herbicida' }));
+        fireEvent.click(screen.getByLabelText(PHYTOSANITARY_ACK_TEXT)); // QA-170
+      }
       pickIn('Retirada de restos', fixture.wasteRemoval ? 'Sí, que se lleven' : 'No, me encargo');
       click('Revisar mis datos');
       fireEvent.click(screen.getByRole('checkbox'));

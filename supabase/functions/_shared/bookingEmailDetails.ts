@@ -16,6 +16,7 @@ import {
   gardenerAmountNote,
   getBookingAmounts,
 } from '../../../src/shared/bookingAmounts.ts';
+import { PHYTOSANITARY_SHORT_NOTE } from '../../../src/shared/manualEntry/legalCopy.ts';
 import { formatBookingWhen } from './emailBrand.ts';
 import { proposedDurationText } from './bookingEmailCopy.ts';
 
@@ -75,6 +76,16 @@ const BOOKING_COLUMNS =
 
 // deno-lint-ignore no-explicit-any
 type AdminClient = any;
+
+/**
+ * QA-170: en una reserva de fitosanitarios, el correo al cliente repite la frase corta del resumen
+ * (GarSer solo gestiona la reserva; el producto, la dosis y los plazos los asume el profesional con
+ * carnet). Se añade a la nota existente, sin sustituirla.
+ */
+export function withPhytosanitaryNote(note: string, serviceName: string): string {
+  if (!/fitosanit/i.test(serviceName)) return note;
+  return [note, PHYTOSANITARY_SHORT_NOTE].filter(Boolean).join(' ');
+}
 
 // PH-15: el nombre se buscaba con `profiles.id`, que nunca es el usuario (la clave es `user_id`),
 // así que los correos salían siempre sin nombre («Hola jardinero»). Al cliente se le nombra por
@@ -225,7 +236,7 @@ export async function buildBookingEmailDetails(
     gardenerPairs,
     priceChangeClientPairs,
     priceChangeGardenerPairs,
-    clientFeeNote: clientAmountsNote(amounts),
+    clientFeeNote: withPhytosanitaryNote(clientAmountsNote(amounts), serviceName),
     feeWaived: amounts.feeWaived,
     gardenerFeeNote: gardenerAmountNote(amounts),
   };

@@ -63,3 +63,51 @@ export function buildConsentRecord(now: Date = new Date()): ManualEntryConsentRe
     acceptedAt: now.toISOString(),
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Tratamientos con producto fitosanitario (QA-170, decisión del dueño 2026-11-17) */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * GarSer es una plataforma de gestión de reservas, no un inspector: la aplicación, el producto, las
+ * dosis y los plazos de seguridad son responsabilidad del profesional con carnet.
+ *
+ * ⚠️ REVISIÓN LEGAL RECOMENDADA antes (o justo después) de publicar. Los textos están aquí, en un único
+ * sitio, para que sean fáciles de cambiar; si se cambia `PHYTOSANITARY_ACK_TEXT`, hay que subir
+ * `PHYTOSANITARY_NOTICE_VERSION`.
+ */
+export const PHYTOSANITARY_NOTICE_VERSION = 'phytosanitary_notice_v1';
+
+export const PHYTOSANITARY_NOTICE_TITLE = 'Tratamiento con producto fitosanitario';
+
+export const PHYTOSANITARY_NOTICE_BODY =
+  'Un tratamiento con producto fitosanitario lo aplica un profesional con carnet de aplicador en vigor. ' +
+  'El producto, la dosis, las precauciones y los plazos de seguridad los decide y asume ese profesional. ' +
+  'GarSer es una plataforma de gestión de reservas: no aplica, supervisa ni inspecciona el tratamiento.';
+
+export const PHYTOSANITARY_ACK_TEXT =
+  'He leído este aviso: el producto, la dosis y los plazos de seguridad los decide y asume el profesional ' +
+  'con carnet que realice el tratamiento, y GarSer solo gestiona la reserva.';
+
+export const PHYTOSANITARY_ACK_REQUIRED = 'Marca la casilla para poder continuar con este tratamiento.';
+
+/** La frase corta del resumen y del correo de confirmación. */
+export const PHYTOSANITARY_SHORT_NOTE =
+  'Tratamiento aplicado por un profesional con carnet fitosanitario, que responde del producto, la dosis y ' +
+  'los plazos de seguridad. GarSer solo gestiona la reserva.';
+
+export interface PhytosanitaryAckRecord {
+  legalVersion: string;
+  legalHash: string;
+  acceptedText: string;
+  acceptedAt: string;
+}
+
+export function buildPhytosanitaryAckRecord(now: Date = new Date()): PhytosanitaryAckRecord {
+  return {
+    legalVersion: PHYTOSANITARY_NOTICE_VERSION,
+    legalHash: hashConsentText(PHYTOSANITARY_ACK_TEXT),
+    acceptedText: PHYTOSANITARY_ACK_TEXT,
+    acceptedAt: now.toISOString(),
+  };
+}

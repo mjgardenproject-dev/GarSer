@@ -29,6 +29,12 @@ import { ItemList } from './ui/ItemList';
 import { ManualStepHeader } from './ui/ManualStepHeader';
 import { OptionList } from './ui/OptionList';
 import { WizardFooter } from './ui/WizardFooter';
+import { PhytosanitaryNotice } from './ui/PhytosanitaryNotice';
+import {
+  buildPhytosanitaryAckRecord,
+  PHYTOSANITARY_SHORT_NOTE,
+  type PhytosanitaryAckRecord,
+} from '../../../shared/manualEntry/legalCopy';
 
 // La fase 'consent' se retiró: ocupaba una pantalla entera al final para una sola frase, y
 // además separaba la declaración de veracidad de los datos a los que se refiere. Ahora se
@@ -38,7 +44,15 @@ type WizardPhase = 'item' | 'interstitial' | 'waste' | 'summary';
 export interface ManualWizardSubmitPayload {
   items: ManualAnswers[];
   wasteRemoval: boolean;
+  /** QA-170: lo que aceptó el cliente sobre el tratamiento con producto fitosanitario (si lo hay). */
+  phytosanitaryAck?: PhytosanitaryAckRecord;
 }
+
+/** El campo de la pantalla que dispara el aviso de fitosanitarios, y cuándo (QA-170, QA-168). */
+const PHYTO_NOTICE_TRIGGERS: Record<string, { field: string; applies: (item: ManualAnswers) => boolean } | undefined> = {
+  phytosanitary: { field: 'productPreference', applies: (item) => item.productPreference === 'chemical' },
+  weeding: { field: 'applyHerbicide', applies: (item) => item.applyHerbicide === true },
+};
 
 /** Borrador mientras se contesta: la retirada puede no estar elegida todavía (QA-065). */
 export interface ManualWizardDraft {
@@ -81,6 +95,7 @@ interface Props {
 }
 
 const W = MANUAL_ENTRY_STRINGS.wizard;
+const PHYTO_NOTICE_FOCUS_KEY = 'phytosanitaryNotice';
 const WASTE = MANUAL_ENTRY_STRINGS.waste;
 
 export const ManualEntryWizard: React.FC<Props> = ({
@@ -107,6 +122,9 @@ export const ManualEntryWizard: React.FC<Props> = ({
   // sin contestar, y no se puede seguir sin elegir (consentimiento expreso para pagos adicionales).
   const [wasteRemoval, setWasteRemoval] = useState<boolean | null>(initialWasteRemoval ?? null);
   const [showWasteError, setShowWasteError] = useState(false);
+  // QA-170: el aviso de fitosanitarios llega SIN aceptar y sin aceptarlo no se sigue.
+  const [phytoAck, setPhytoAck] = useState(false);
+  const [showPhytoError, setShowPhytoError] = useState(false);
   const [activeItemIndex, setActiveItemIndex] = useState(0);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [phase, setPhase] = useState<WizardPhase>(initialPhase);
@@ -213,6 +231,14 @@ export const ManualEntryWizard: React.FC<Props> = ({
   const wasteOnItemScreen = phase === 'item' && !!wasteScreenId && currentStep?.id === wasteScreenId;
   const asksWasteApart = asksWaste && !wasteScreenId;
 
+  const phytoTrigger = PHYTO_NOTICE_TRIGGERS[survey.serviceKey as string];
+  const itemNeedsPhytoNotice = (item: ManualAnswers) => Boolean(phytoTrigger?.applies(item));
+  const needsPhytoAck = items.some(itemNeedsPhytoNotice);
+  // El aviso se enseña en la misma pantalla que la pregunta que lo provoca, cuando la respuesta lo provoca.
+  const phytoNoticeOnScreen = Boolean(
+    phase === 'item' && phytoTrigger && currentStep?.fields.some((field) => field.key === phytoTrigger.field) && itemNeedsPhytoNotice(activeItem),
+  );
+
   // Primer elemento que no está completo (P-01): con él pendiente no se puede confirmar.
   const firstIncompleteItem = useMemo(
     () => items.findIndex((item) => firstIncompleteScreenIndex(survey, presentation, item) !== -1),
@@ -259,6 +285,11 @@ export const ManualEntryWizard: React.FC<Props> = ({
     if (currentStepErrors.length > 0) {
       setShowErrors(true);
       setFocusErrorKey(currentStepErrors[0].field);
+      return;
+    }
+    if (phytoNoticeOnScreen && !phytoAck) {
+      setShowPhytoError(true);
+      setFocusErrorKey(PHYTO_NOTICE_FOCUS_KEY);
       return;
     }
     if (wasteOnItemScreen && !requireWasteAnswer()) return;
@@ -377,6 +408,16 @@ export const ManualEntryWizard: React.FC<Props> = ({
 
   const confirm = () => {
     if (firstIncompleteItem !== -1) return;
+    // Convencional / herbicida sin haber leído el aviso (p. ej. al repetir una reserva): se lleva a él.
+    if (needsPhytoAck && !phytoAck && phytoTrigger) {
+      const itemIndex = items.findIndex(itemNeedsPhytoNotice);
+      const screens = getVisibleScreens(survey, presentation, items[itemIndex] || {});
+      const screenIndex = screens.findIndex((screen) => screen.fields.some((field) => field.key === phytoTrigger.field));
+      setShowPhytoError(true);
+      changeAnswer(Math.max(0, itemIndex), Math.max(0, screenIndex));
+      setFocusErrorKey(PHYTO_NOTICE_FOCUS_KEY);
+      return;
+    }
     // Retirada sin contestar (p. ej. al repetir o corregir sin el dato): se pregunta antes de enviar.
     if (asksWaste && wasteRemoval === null) {
       setShowWasteError(true);
@@ -386,7 +427,11 @@ export const ManualEntryWizard: React.FC<Props> = ({
     if (requireConsent && !consentChecked) return;
     if (requireConsent) onConsentAccepted?.();
     // Un servicio que no pregunta la retirada (fitosanitarios) no la factura: false.
-    onSubmit({ items, wasteRemoval: wasteRemoval === true });
+    onSubmit({
+      items,
+      wasteRemoval: wasteRemoval === true,
+      ...(needsPhytoAck ? { phytosanitaryAck: buildPhytosanitaryAckRecord() } : {}),
+    });
   };
 
   const switchToPhotos =
@@ -501,6 +546,17 @@ export const ManualEntryWizard: React.FC<Props> = ({
               />
             ))}
           </div>
+          {phytoNoticeOnScreen ? (
+            <div className="mt-5">
+              <PhytosanitaryNotice
+                id={manualFieldId(PHYTO_NOTICE_FOCUS_KEY)}
+                checked={phytoAck}
+                onChange={(checked) => { setPhytoAck(checked); setShowPhytoError(false); }}
+                showError={showPhytoError}
+                costNote={survey.serviceKey === 'weeding' ? 'Aplicar herbicida puede encarecer el servicio, según el precio de cada profesional.' : null}
+              />
+            </div>
+          ) : null}
           {wasteOnItemScreen ? (
             <div className="mt-5">
               <OptionList
@@ -599,6 +655,7 @@ export const ManualEntryWizard: React.FC<Props> = ({
             survey={survey}
             items={items}
             wasteRemoval={wasteRemoval}
+            phytosanitaryNote={needsPhytoAck ? PHYTOSANITARY_SHORT_NOTE : null}
             onChangeAnswer={changeAnswer}
             onChangeWaste={changeWaste}
             onRemoveItem={removeItem}

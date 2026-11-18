@@ -74,6 +74,13 @@ tiene que estar desplegado antes de pasarla.
 |---|---|---|---|
 | T3.8 | El admin desactiva un servicio mientras un cliente lo tiene a medias en la confirmación | Al pulsar «Continuar al pago»: «Este servicio ya no se puede reservar», sin cobro, y el servicio ya no sale ni en la lista ni en los perfiles; al reactivarlo vuelve | 1.5 |
 
+### Nueva de la fase 1.8 — avisos legales de fitosanitarios (sección 46)
+
+| # | Prueba | Debe pasar | Paquete |
+|---|---|---|---|
+| T3.9 | Reservar fitosanitarios con producto convencional (o desbroce con herbicida) | Sale el aviso «Tratamiento con producto fitosanitario» con la casilla sin marcar y no se avanza sin marcarla; con ecológico no sale | 1.8 |
+| T3.10 | /terminos y la subida del carnet del profesional | Los términos tienen las secciones 8 y 9 de fitosanitarios y responsabilidad; la declaración del carnet nombra el RD 1311/2012. **Textos pendientes de revisión legal** | 1.8 |
+
 ## 4. Cancelar y devolver
 
 | # | Prueba | Debe pasar | Paquete |

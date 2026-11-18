@@ -1965,6 +1965,27 @@ y la FAQ «GarSer no toca tu dinero» (QA-087). Antes de empezar: desplegadas `s
 | 45.6 | Profesional → Marketing (flyers y mensajes) | Ninguno dice «pagas al terminar»; el tercer paso del flyer es «Ves el precio antes de reservar» |
 | 45.7 | /para-jardineros → «¿Cómo me pagan mis clientes?» | Sin «GarSer no toca tu dinero»; dice que los gastos de gestión, cuando los hay, los paga el cliente aparte a GarSer |
 
+## Sección 46 — Avisos legales de los tratamientos con producto fitosanitario (FASE 4, paquete 1.8, 2026-11-18)
+
+Qué se arregló: en todo el flujo no había ni una palabra sobre carnet, plazos de seguridad ni responsabilidad en los
+tratamientos con producto convencional ni con herbicida (QA-170, QA-168). Decisión del dueño (2026-11-17): GarSer es una
+plataforma de gestión de reservas, no un inspector; el producto, la dosis y los plazos los asume el profesional con carnet.
+**Los textos se escriben para revisarlos con un abogado antes (o justo después) de publicar:** están en
+`src/shared/manualEntry/legalCopy.ts` (aviso y casilla), `PhytosanitaryLicenseUpload.tsx` (declaración del profesional) y
+`TermsPage.tsx` (secciones 8 y 9). Antes de empezar: desplegadas `booking-confirmation-email` y `send-email-notification`
+(`--use-api`). No hay migración.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 46.1 | Fitosanitarios a mano, producto «Convencional» | Aviso «Tratamiento con producto fitosanitario» con la casilla SIN marcar; sin marcarla no se avanza y lo dice; con «Ecológico» no hay aviso |
+| 46.2 | La revisión final de ese tratamiento | Lleva la frase «Tratamiento aplicado por un profesional con carnet fitosanitario, que responde del producto, la dosis y los plazos de seguridad. GarSer solo gestiona la reserva.» |
+| 46.3 | Desbroce, «Aplicar herbicida» | Mismo aviso, con «Aplicar herbicida encarece el servicio…»; no deja pasar a la revisión sin marcar la casilla |
+| 46.4 | Fitosanitarios por FOTOS con una zona convencional | El aviso sale encima de «Continuar» y «Continuar» no pasa sin marcarlo |
+| 46.5 | Correo de confirmación de una reserva de fitosanitarios | La nota del pie incluye la frase corta |
+| 46.6 | /terminos | Sección «8. Tratamientos con productos fitosanitarios» y «9. Responsabilidad» (servicio de intermediación; no es parte del contrato de servicio) |
+| 46.7 | Profesional → subir el carnet fitosanitario | La declaración nombra el Real Decreto 1311/2012 y que responde de los tratamientos que aplique |
+| 46.8 | Editor SQL: `select input_payload -> 'phytosanitaryAck' ->> 'legalVersion' from booking_quotes where service_id in (select id from services where name ilike '%fitosanit%') order by generated_at desc limit 1;` | `phytosanitary_notice_v1` para una reserva nueva con producto convencional (el registro de lo aceptado viaja con el presupuesto) |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

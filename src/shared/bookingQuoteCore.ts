@@ -165,6 +165,8 @@ export interface SerializableBookingData {
     acceptedAt: string;
     declaredVariables: Record<string, unknown>;
   };
+  /** QA-170: registro del aviso de tratamiento con producto fitosanitario aceptado por el cliente. */
+  phytosanitaryAck?: { legalVersion: string; legalHash: string; acceptedText: string; acceptedAt: string };
   wasteRemoval?: boolean;
   aiQuantity?: number;
   lawnSpecies?: string;

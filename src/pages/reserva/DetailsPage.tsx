@@ -96,6 +96,8 @@ import {
   type HedgeState,
 } from '../../domain/hedgeBusinessRules';
 import { ManualEntryChoice, type DataInputMode } from '../../components/booking/manual/ManualEntryChoice';
+import { PhytosanitaryNotice } from '../../components/booking/manual/ui/PhytosanitaryNotice';
+import { buildPhytosanitaryAckRecord } from '../../shared/manualEntry/legalCopy';
 import { ManualEntryWizard, type ManualWizardDraft, type ManualWizardSubmitPayload } from '../../components/booking/manual/ManualEntryWizard';
 import {
   MANUAL_ENTRY_SURVEYS,
@@ -830,6 +832,8 @@ const DetailsPage: React.FC = () => {
     isServiceResolved && !isManualActive && (!manualChoiceAvailable || selectedInputMode === 'photos');
 
   const [manualSubmitting, setManualSubmitting] = useState(false);
+  const [phytoPhotoAck, setPhytoPhotoAck] = useState(false);
+  const [showPhytoPhotoError, setShowPhytoPhotoError] = useState(false);
   const [manualDraft, setManualDraft] = useState<ManualWizardDraft | null>(null);
   /**
    * Se incrementa SOLO cuando los extras se cambian desde la tarjeta. Va en el `key` del
@@ -1797,6 +1801,7 @@ const DetailsPage: React.FC = () => {
         ...patch,
         manualDeclarationId: declarationId,
         manualConsent: { ...consent, declaredVariables },
+        ...(payload.phytosanitaryAck ? { phytosanitaryAck: payload.phytosanitaryAck } : {}),
         photos: [],
         description: descriptionRef.current,
       };
@@ -1830,6 +1835,12 @@ const DetailsPage: React.FC = () => {
   const handleContinue = () => {
     if (serviceFlags.isPhytosanitary) {
       const zones = bookingData.phytosanitaryZones || [];
+      // QA-170: con producto convencional hay que haber leído el aviso (GarSer solo gestiona la reserva).
+      if (zones.some((zone) => !(zone as { wantsEco?: boolean }).wantsEco) && !phytoPhotoAck) {
+        setShowPhytoPhotoError(true);
+        toast.error('Marca la casilla del aviso del tratamiento para continuar.');
+        return;
+      }
       if (zones.length === 0) {
         toast.error('Añade al menos una zona para continuar.');
         return;
@@ -1901,6 +1912,7 @@ const DetailsPage: React.FC = () => {
     setBookingData({
       photos: filePhotos,
       description: descriptionRef.current,
+      ...(serviceFlags.isPhytosanitary && phytoPhotoAck ? { phytosanitaryAck: buildPhytosanitaryAckRecord() } : {}),
     });
     
     // Explicit persist before leaving
@@ -6662,6 +6674,19 @@ const analyzeTreeGroup = async (id: string) => {
                   />
               </button>
           </div>
+      )}
+
+      {/* QA-170: aviso del tratamiento con producto convencional en el flujo de fotos. */}
+      {isPhotoFlowActive && serviceFlags.isPhytosanitary
+        && (bookingData.phytosanitaryZones || []).some((zone) => !(zone as { wantsEco?: boolean }).wantsEco) && (
+        <div className="mb-6">
+          <PhytosanitaryNotice
+            id="phytosanitary-photo-notice"
+            checked={phytoPhotoAck}
+            onChange={(checked) => { setPhytoPhotoAck(checked); setShowPhytoPhotoError(false); }}
+            showError={showPhytoPhotoError}
+          />
+        </div>
       )}
 
       {/* Gardener Note (Moved to bottom) */}

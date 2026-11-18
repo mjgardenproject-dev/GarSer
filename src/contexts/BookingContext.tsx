@@ -93,6 +93,8 @@ export interface BookingData {
   palmState?: string;
   palmWasteRemoval?: boolean; // Legacy field, kept for compatibility but now superseded by global wasteRemoval
   wasteRemoval?: boolean; // New global field for all services
+  /** QA-170: aviso de tratamiento con producto fitosanitario que aceptó el cliente (registro auditable). */
+  phytosanitaryAck?: { legalVersion: string; legalHash: string; acceptedText: string; acceptedAt: string };
   // Manual entry flow (alternativa a fotos)
   dataInputMode?: 'photos' | 'manual'; // How the service variables were captured
   manualDeclarationId?: string; // Links to booking_manual_declarations audit row

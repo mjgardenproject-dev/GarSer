@@ -146,9 +146,11 @@ const PhytosanitaryLicenseUpload: React.FC<Props> = ({ forMember, summary: summa
     ? `Si tienes su carnet, puedes enviarlo tú. Le avisaremos de que lo has enviado.`
     : 'Para aplicar insecticidas, fungicidas o herbicidas, la ley pide el carnet de aplicador de productos fitosanitarios. GarSer lo revisa.';
   const hasDraft = Boolean(pdf) || images.length > 0;
+  // QA-170: declaración responsable. GarSer es una plataforma de gestión de reservas, no un inspector:
+  // quien aplica responde de su aplicación. ⚠️ Revisión legal recomendada (textos fáciles de cambiar).
   const declaration = forMember
-    ? `Declaro que es el carnet de ${forMember.name}, que está en vigor y que tengo su permiso para enviarlo a GarSer.`
-    : 'Declaro que es mi carnet de aplicador de productos fitosanitarios, que está en vigor y que los datos son ciertos.';
+    ? `Declaro que es el carnet de ${forMember.name}, que está en vigor y que tengo su permiso para enviarlo a GarSer. ${forMember.name} responde de los tratamientos que aplique (producto, dosis y plazos de seguridad) y debe cumplir el Real Decreto 1311/2012. GarSer solo gestiona la reserva.`
+    : 'Declaro que es mi carnet de aplicador de productos fitosanitarios, que está en vigor y que los datos son ciertos. Me comprometo a cumplir el Real Decreto 1311/2012 de uso sostenible de productos fitosanitarios y respondo de los tratamientos que aplique (producto, dosis y plazos de seguridad). GarSer solo gestiona la reserva.';
   const btn = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 [touch-action:manipulation]';
 
   return (

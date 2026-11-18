@@ -161,6 +161,31 @@ describe('DetailsPage', () => {
     expect(contextValue.setBookingData).not.toHaveBeenCalled()
   })
 
+  it('QA-170 · fitosanitarios por fotos con producto convencional: el aviso sale sin marcar y «Continuar» no pasa sin marcarlo', async () => {
+    mocks.serviceName = 'Servicios fitosanitarios'
+    contextValue.bookingData.phytosanitaryZones = [
+      { id: 'z1', type: 'preventivo', area: 100, affectedType: 'Césped', scope: ['Césped'], intent: 'preventive', wantsEco: false, photoIds: ['p1'], photoUrls: ['https://cdn.example.com/p1.jpg'] },
+    ]
+    render(<DetailsPage />)
+    const box = (await screen.findByLabelText(/El producto, la dosis y los plazos de seguridad|He leído este aviso/)) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    expect(document.body.textContent).toContain('GarSer es una plataforma de gestión de reservas')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+    expect(mocks.toast.error).toHaveBeenCalledWith('Marca la casilla del aviso del tratamiento para continuar.')
+    expect(contextValue.setBookingData).not.toHaveBeenCalledWith(expect.objectContaining({ photos: expect.anything() }))
+  })
+
+  it('QA-170 · con la opción ecológica en todas las zonas no hay aviso', async () => {
+    mocks.serviceName = 'Servicios fitosanitarios'
+    contextValue.bookingData.phytosanitaryZones = [
+      { id: 'z1', type: 'ecologico_preventivo', area: 100, affectedType: 'Césped', wantsEco: true, photoIds: [], photoUrls: [] },
+    ]
+    render(<DetailsPage />)
+    await screen.findByRole('button', { name: 'Continuar' })
+    expect(screen.queryByText('Tratamiento con producto fitosanitario')).toBeNull()
+  })
+
   it('mientras llega el nombre del servicio no pinta la pantalla genérica de fotos (sin parpadeo)', async () => {
     let resolveName: (value: unknown) => void = () => {}
     mocks.nameQuery = () => new Promise((resolve) => { resolveName = resolve })

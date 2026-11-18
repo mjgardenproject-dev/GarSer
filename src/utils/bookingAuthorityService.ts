@@ -72,6 +72,8 @@ function pickSerializableBookingInput(bookingData: BookingData) {
     dataInputMode: bookingData.dataInputMode,
     manualDeclarationId: bookingData.manualDeclarationId,
     manualConsent: bookingData.manualConsent,
+    // QA-170: el aviso de fitosanitarios que aceptó el cliente viaja con el presupuesto (queda registrado).
+    phytosanitaryAck: bookingData.phytosanitaryAck,
     wasteRemoval: bookingData.wasteRemoval,
     aiQuantity: bookingData.aiQuantity,
     aiDifficulty: bookingData.aiDifficulty,

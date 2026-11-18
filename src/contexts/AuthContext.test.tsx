@@ -62,6 +62,39 @@ describe('AuthContext: cierre de sesión (R-06)', () => {
     expect(ctx.sessionEndedAt).toBeNull();
   });
 
+  it('QA-155 · tras «Cerrar sesión» queda marcado que lo pidió el usuario (las páginas protegidas no deben «recordar» su ruta), hasta que alguien entra', async () => {
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+    expect(ctx.signedOutByUser).toBe(false);
+    await act(async () => { await ctx.signOut(); });
+    await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+    expect(ctx.signedOutByUser).toBe(true);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u2' } }); });
+    expect(ctx.signedOutByUser).toBe(false);
+  });
+
+  it('QA-155 · si la sesión se cierra sola NO se marca como pedida por el usuario', async () => {
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+    await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+    expect(ctx.signedOutByUser).toBe(false);
+  });
+
+  it('QA-155 · recuerda DE QUIÉN era la sesión cerrada, para que otra cuenta no herede su página', async () => {
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+    await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+    expect(ctx.sessionEndedAt).toBe('/empresa/solicitudes?x=1');
+    expect(ctx.sessionEndedUserId).toBe('u1');
+    // Quitar el aviso no borra de quién era: la pantalla de entrar lo lee después.
+    await act(async () => { ctx.clearSessionEnded(); });
+    expect(ctx.sessionEndedAt).toBeNull();
+    expect(ctx.sessionEndedUserId).toBe('u1');
+    // Hasta que alguien entra.
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'otra' } }); });
+    expect(ctx.sessionEndedUserId).toBeNull();
+  });
+
   it('sin nadie dentro, un SIGNED_OUT no avisa', async () => {
     render(<AuthProvider><Probe /></AuthProvider>);
     await act(async () => { mocks.listener?.('SIGNED_OUT', null); });

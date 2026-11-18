@@ -18,7 +18,7 @@ import { NewAccountChooser, RoleProblemPanel } from './GoogleAccountPanels';
 import { LegalConsentNote, OrWithEmail } from './SocialAuthBits';
 import { welcomeMessage, type OAuthSignInResult } from '../../lib/oauthAccount';
 import { getGoogleClientId } from '../../utils/googleIdentity';
-import { setPendingAuthStep, usePendingAuthStep } from '../../lib/pendingAuthStep';
+import { getPendingAuthStep, setPendingAuthStep, usePendingAuthStep } from '../../lib/pendingAuthStep';
 
 // Pantalla de acceso (/auth), pensada primero para el móvil (2026-11-04).
 //
@@ -82,16 +82,36 @@ const Field: React.FC<FieldProps> = ({ id, label, error, registration, type = 't
   </div>
 );
 
+/** La cuenta que acaba de entrar, leída de la sesión; undefined si no se puede saber (la ruta de vuelta de
+ * una sesión anterior entonces se ignora: es más seguro que mandar a ciegas a otra persona a la página de otra). */
+async function currentUserId(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Para la ruta de vuelta: solo hace falta saber QUIÉN entró cuando esa ruta viene de la sesión de otra cuenta.
+ * En el caso normal (nada que comprobar) NO se espera nada: navegar justo al iniciar sesión, sin una
+ * petición de por medio, es lo que hacía antes (con la espera, el panel del profesional salía en blanco). */
+async function redirectContext(redirectUserId: string): Promise<{ redirectUserId?: string | null; userId?: string | null }> {
+  return { redirectUserId, userId: await currentUserId() };
+}
+
 const AuthForm = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user, signIn, signUp, signOut } = useAuth();
+  const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
   const { refresh: refreshAccount } = useAccount();
 
-  const state = (location.state ?? {}) as { forceClientOnly?: boolean; redirectTo?: unknown; initialMode?: string; preselectedRole?: unknown };
+  const state = (location.state ?? {}) as { forceClientOnly?: boolean; redirectTo?: unknown; redirectUserId?: unknown; initialMode?: string; preselectedRole?: unknown };
   const forceClientOnly = Boolean(state.forceClientOnly);
   const redirectTo: string | null = typeof state.redirectTo === 'string' ? state.redirectTo : null;
+  // La cuenta de la sesión anterior de la que viene la ruta de vuelta (QA-155); null = no es de una sesión.
+  const redirectUserId: string | null = typeof state.redirectUserId === 'string' ? state.redirectUserId : null;
   const requestedInitialMode = state.initialMode ?? searchParams.get('mode') ?? undefined;
   const requestedRoleRaw = state.preselectedRole ?? searchParams.get('role');
   // Un enlace antiguo con ?role=company se registra como profesional (D31).
@@ -127,6 +147,17 @@ const AuthForm = () => {
   useEffect(() => {
     if (!user) setPendingAuthStep(null);
   }, [user]);
+
+  // QA-012: quien llega a /auth (con «Atrás», un favorito…) cuando YA tiene la sesión iniciada va a su
+  // inicio y no al formulario de entrar. Solo cuenta la sesión que ya existía al abrir la pantalla: si
+  // la sesión se inicia aquí (Google, alta nueva), el flujo sigue su curso y decide a dónde ir.
+  const initialSessionChecked = useRef(false);
+  useEffect(() => {
+    if (authLoading || initialSessionChecked.current) return;
+    initialSessionChecked.current = true;
+    if (user && !getPendingAuthStep()) navigate('/dashboard', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading]);
 
   useEffect(() => {
     const flag = localStorage.getItem('passwordChanged');
@@ -187,7 +218,7 @@ const AuthForm = () => {
     if (result.requestedRole) await refreshAccount().catch(() => undefined);
     setGoogleOutcome(null);
     toast.success(welcomeMessage(result));
-    navigate(postLoginPath(result.role, redirectTo));
+    navigate(postLoginPath(result.role, redirectTo, (redirectUserId ? await redirectContext(redirectUserId) : {})));
   };
 
   // «Usar otro correo»: cierre de sesión de verdad (el de AuthContext: no sale el aviso de «sesión
@@ -221,7 +252,7 @@ const AuthForm = () => {
       if (view === 'login') {
         const accountRole = await signIn(data.email, data.password);
         toast.success('¡Bienvenido de vuelta!');
-        navigate(postLoginPath(accountRole, redirectTo));
+        navigate(postLoginPath(accountRole, redirectTo, (redirectUserId ? await redirectContext(redirectUserId) : {})));
       } else {
         if (!data.confirmPassword || data.confirmPassword !== data.password) {
           setError('confirmPassword', { type: 'validate', message: 'Las contraseñas no coinciden' });
@@ -282,10 +313,10 @@ const AuthForm = () => {
         <RoleProblemPanel
           result={googleOutcome.result}
           onResolved={(result) => void finishGoogle(result, true)}
-          onContinue={() => {
+          onContinue={async () => {
             setGoogleOutcome(null);
             toast.success(welcomeMessage(googleOutcome.result));
-            navigate(postLoginPath(googleOutcome.result.role, redirectTo));
+            navigate(postLoginPath(googleOutcome.result.role, redirectTo, (redirectUserId ? await redirectContext(redirectUserId) : {})));
           }}
           onSwitchAccount={switchGoogleAccount}
         />

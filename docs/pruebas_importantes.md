@@ -20,7 +20,7 @@ tiene que estar desplegado antes de pasarla.
 | T1.2 | Entrar con una cuenta sin confirmar | Mensaje en español y forma de reenviar el correo (QA-039) | 1.11 |
 | T1.3 | «¿Has olvidado tu contraseña?» | Llega el correo, cambias la contraseña y entras con la nueva | Ya hecho |
 | T1.4 | «Continuar con Google» (cliente y profesional) | Entra con el tipo de cuenta correcto | Ya hecho |
-| T1.5 | Cerrar sesión y entrar con OTRA cuenta en el mismo móvil | Aterriza en su inicio, no en una pantalla de la cuenta anterior (QA-155) | 1.10 |
+| T1.5 | Cerrar sesión (o que se cierre desde otro dispositivo) y entrar con OTRA cuenta en el mismo móvil; con la sesión iniciada, abrir /auth | Aterriza en su inicio, no en una pantalla de la cuenta anterior ni en «Acceso denegado»; /auth lleva al inicio (QA-155, QA-012, sección 48) | 1.10 |
 
 ## 2. Reservar y pagar (cliente)
 

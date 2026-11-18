@@ -8,6 +8,9 @@ type GoogleResult = { role: string | null; isNew: boolean; firstName: string; re
 const mocks = vi.hoisted(() => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
   user: null as null | { id: string },
+  loading: false,
+  authUserId: undefined as string | undefined,
+  getUserCalls: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
   signOut: vi.fn(async () => ({ error: null })),
@@ -16,10 +19,10 @@ const mocks = vi.hoisted(() => ({
   lastGoogleProps: null as null | { context: string; signupRole?: string; oneTap?: boolean; onSignedIn: (r: GoogleResult) => void },
 }));
 
-vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, signIn: mocks.signIn, signUp: mocks.signUp, signOut: mocks.signOut }) }));
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, loading: mocks.loading, signIn: mocks.signIn, signUp: mocks.signUp, signOut: mocks.signOut }) }));
 vi.mock('../../contexts/AccountContext', () => ({ useAccount: () => ({ refresh: mocks.refreshAccount }) }));
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }));
-vi.mock('../../lib/supabase', () => ({ supabase: { auth: {} } }));
+vi.mock('../../lib/supabase', () => ({ supabase: { auth: { getUser: (...a: unknown[]) => { mocks.getUserCalls(...a); return Promise.resolve({ data: { user: mocks.authUserId ? { id: mocks.authUserId } : null } }); } } } }));
 vi.mock('../../lib/oauthAccount', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/oauthAccount')>()),
   declareSignupRoleIfNeeded: mocks.declare,
@@ -34,16 +37,29 @@ vi.mock('./GoogleSignInButton', () => ({
 import AuthForm from './AuthForm';
 import { getPendingAuthStep, setPendingAuthStep } from '../../lib/pendingAuthStep';
 
-const renderAuth = (entry: string | { pathname: string; state?: unknown } = '/auth') => render(
+const authTree = (entry: string | { pathname: string; state?: unknown }) => (
   <MemoryRouter initialEntries={[entry]}>
     <Routes>
       <Route path="/auth" element={<AuthForm />} />
       <Route path="/dashboard" element={<p>Panel del cliente</p>} />
+      <Route path="/chats" element={<p>Chats de Antonio</p>} />
+      <Route path="/admin/dashboard" element={<p>Panel de administrador</p>} />
       <Route path="/empresa" element={<p>Panel de empresa</p>} />
       <Route path="/" element={<p>Inicio</p>} />
     </Routes>
-  </MemoryRouter>,
+  </MemoryRouter>
 );
+
+const renderAuth = (entry: string | { pathname: string; state?: unknown } = '/auth') => render(authTree(entry));
+
+/** Como en la vida real: la pantalla de entrar ya estaba abierta y la sesión se inicia DESPUÉS (Google). */
+const renderThenSignIn = (userId: string, entry: string | { pathname: string; state?: unknown } = '/auth') => {
+  mocks.user = null;
+  const result = render(authTree(entry));
+  mocks.user = { id: userId };
+  result.rerender(authTree(entry));
+  return result;
+};
 
 const optionNames = () => screen.getAllByRole('button').map((b) => b.textContent ?? '');
 
@@ -52,12 +68,78 @@ describe('AuthForm · acceso y registro', () => {
     vi.clearAllMocks();
     setPendingAuthStep(null);
     mocks.user = null;
+    mocks.loading = false;
+    mocks.authUserId = undefined;
     vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'client-123');
     mocks.declare.mockImplementation(async (result: GoogleResult, role?: string) => (role ? { ...result, role, requestedRole: role } : result));
   });
   afterEach(() => {
     cleanup();
     vi.unstubAllEnvs();
+  });
+
+  describe('a dónde vuelve quien entra (QA-155, QA-085, QA-012)', () => {
+    const login = async () => {
+      fireEvent.change(screen.getByLabelText('Correo electrónico'), { target: { value: 'ana@ejemplo.com' } });
+      fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'secreto1' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+    };
+
+    it('el inicio de sesión normal NO espera ninguna petición antes de navegar (esa espera dejaba el panel del profesional en blanco)', async () => {
+      mocks.signIn.mockResolvedValue('gardener');
+      renderAuth();
+      await login();
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+      expect(mocks.getUserCalls).not.toHaveBeenCalled();
+    });
+
+    it('la misma cuenta, tras cerrarse su sesión, vuelve a la página en la que estaba', async () => {
+      mocks.signIn.mockResolvedValue('gardener');
+      mocks.authUserId = 'antonio';
+      renderAuth({ pathname: '/auth', state: { redirectTo: '/chats', redirectUserId: 'antonio' } });
+      await login();
+      expect(await screen.findByText('Chats de Antonio')).toBeTruthy();
+    });
+
+    it('OTRA cuenta en el mismo móvil NO hereda la página de la anterior: va a su inicio', async () => {
+      mocks.signIn.mockResolvedValue('gardener');
+      mocks.authUserId = 'miguel';
+      renderAuth({ pathname: '/auth', state: { redirectTo: '/chats', redirectUserId: 'antonio' } });
+      await login();
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+      expect(screen.queryByText('Chats de Antonio')).toBeNull();
+    });
+
+    it('si no se puede saber quién entró, la ruta de una sesión anterior se ignora', async () => {
+      mocks.signIn.mockResolvedValue('gardener');
+      mocks.authUserId = undefined;
+      renderAuth({ pathname: '/auth', state: { redirectTo: '/chats', redirectUserId: 'antonio' } });
+      await login();
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+    });
+
+    it('una página de administrador nunca se le ofrece a un cliente (antes: «Acceso denegado»)', async () => {
+      mocks.signIn.mockResolvedValue('client');
+      mocks.authUserId = 'ana';
+      renderAuth({ pathname: '/auth', state: { redirectTo: '/admin/dashboard' } });
+      await login();
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+      expect(screen.queryByText('Panel de administrador')).toBeNull();
+    });
+
+    it('quien abre /auth con la sesión ya iniciada va a su inicio, no al formulario (QA-012)', async () => {
+      mocks.user = { id: 'ana' };
+      renderAuth();
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Entrar' })).toBeNull();
+    });
+
+    it('mientras se comprueba la sesión no decide nada', () => {
+      mocks.user = null;
+      mocks.loading = true;
+      renderAuth();
+      expect(screen.queryByText('Panel del cliente')).toBeNull();
+    });
   });
 
   describe('Entrar', () => {
@@ -229,24 +311,25 @@ describe('AuthForm · acceso y registro', () => {
 
   describe('Después de Google', () => {
     // Con sesión, como en la vida real: sin ella no hay nada pendiente.
-    beforeEach(() => { mocks.user = { id: 'u-1' }; });
+    // La sesión se inicia con la pantalla ya abierta (renderThenSignIn).
+    beforeEach(() => { mocks.user = null; });
 
     it('cuenta de siempre: saluda y va a su panel, sin preguntar nada', async () => {
-      renderAuth();
+      renderThenSignIn('u-1');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: false, firstName: 'Ana' });
       expect(mocks.toast.success).toHaveBeenCalledWith('¡Hola de nuevo, Ana!');
       expect(await screen.findByText('Panel del cliente')).toBeTruthy();
     });
 
     it('registro con Cliente elegido: bienvenida y panel, sin repreguntar', async () => {
-      renderAuth('/auth?mode=signup&role=client');
+      renderThenSignIn('u-1', '/auth?mode=signup&role=client');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana' });
       expect(mocks.toast.success).toHaveBeenCalledWith('¡Bienvenido a GarSer, Ana!');
       expect(await screen.findByText('Panel del cliente')).toBeTruthy();
     });
 
     it('registro como profesional: la cuenta ya es de profesional y va a su panel (/dashboard decide el modo)', async () => {
-      renderAuth('/auth?mode=signup&role=gardener');
+      renderThenSignIn('u-1', '/auth?mode=signup&role=gardener');
       mocks.lastGoogleProps!.onSignedIn({ role: 'gardener', isNew: true, firstName: 'Ana', requestedRole: 'gardener' });
       expect(await screen.findByText('Panel del cliente')).toBeTruthy();
     });
@@ -254,7 +337,7 @@ describe('AuthForm · acceso y registro', () => {
     it('al cambiar el tipo de cuenta, la app relee el tipo ANTES de navegar (si no, se ve el panel de cliente)', async () => {
       const order: string[] = [];
       mocks.refreshAccount.mockImplementation(async () => { order.push('refresh'); });
-      renderAuth('/auth?mode=signup&role=gardener');
+      renderThenSignIn('u-1', '/auth?mode=signup&role=gardener');
       mocks.lastGoogleProps!.onSignedIn({ role: 'gardener', isNew: true, firstName: 'Ana', requestedRole: 'gardener' });
       await screen.findByText('Panel del cliente');
       expect(order).toEqual(['refresh']);
@@ -262,14 +345,14 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('entrar con una cuenta de siempre no relee nada de más', async () => {
-      renderAuth();
+      renderThenSignIn('u-1');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: false, firstName: 'Ana' });
       await screen.findByText('Panel del cliente');
       expect(mocks.refreshAccount).not.toHaveBeenCalled();
     });
 
     it('«Entrar» con Google que CREA una cuenta nueva: antes de seguir pregunta el tipo', async () => {
-      renderAuth();
+      renderThenSignIn('u-1');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana' });
       expect(await screen.findByRole('heading', { name: 'Te damos la bienvenida, Ana' })).toBeTruthy();
       expect(screen.getByText('Hemos creado tu cuenta. ¿Cómo vas a usar GarSer?')).toBeTruthy();
@@ -278,21 +361,24 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('la pregunta SOBREVIVE a que la pantalla se desmonte (App enseña «Cargando…» al haber sesión)', async () => {
-      const first = renderAuth();
+      const first = renderThenSignIn('u-1');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana' });
       expect(await screen.findByRole('heading', { name: 'Te damos la bienvenida, Ana' })).toBeTruthy();
       first.unmount();
       expect(getPendingAuthStep()?.kind).toBe('chooser');
 
+      // Al remontar, la sesión ya existe (y el paso pendiente impide que se la lleve al inicio).
+      mocks.user = { id: 'u-1' };
       renderAuth();
       expect(await screen.findByRole('heading', { name: 'Te damos la bienvenida, Ana' })).toBeTruthy();
     });
 
     it('si el aviso llega cuando la pantalla ya se había desmontado, la nueva lo enseña igual', async () => {
-      renderAuth();
+      renderThenSignIn('u-1');
       const onSignedIn = mocks.lastGoogleProps!.onSignedIn;
       cleanup();
       onSignedIn({ role: 'client', isNew: false, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'has_activity' });
+      mocks.user = { id: 'u-1' };
       renderAuth();
       expect(await screen.findByRole('heading', { name: 'Este correo ya tiene una cuenta de cliente' })).toBeTruthy();
     });
@@ -306,7 +392,7 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('…y si dice Cliente, sigue como cliente', async () => {
-      renderAuth();
+      renderThenSignIn('u-1');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana' });
       fireEvent.click(await screen.findByRole('button', { name: /Cliente/ }));
       expect(await screen.findByText('Panel del cliente')).toBeTruthy();
@@ -314,7 +400,7 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('…y si dice Profesional, se declara al servidor y va a su panel; no hay opción «Empresa»', async () => {
-      renderAuth();
+      renderThenSignIn('u-1');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana' });
       expect(await screen.findByRole('button', { name: /Profesional/ })).toBeTruthy();
       expect(screen.queryByRole('button', { name: /Empresa/ })).toBeNull();
@@ -324,13 +410,13 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('si Google crea la cuenta desde una invitación de empleado (solo cliente), no pregunta', async () => {
-      renderAuth({ pathname: '/auth', state: { initialMode: 'login', forceClientOnly: true } });
+      renderThenSignIn('u-1', { pathname: '/auth', state: { initialMode: 'login', forceClientOnly: true } });
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana' });
       expect(await screen.findByText('Panel del cliente')).toBeTruthy();
     });
 
     it('eligió jardinero y la cuenta ya tiene reservas de cliente: lo explica, no entra como cliente en silencio', async () => {
-      renderAuth('/auth?mode=signup&role=gardener');
+      renderThenSignIn('u-1', '/auth?mode=signup&role=gardener');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: false, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'has_activity' });
       expect(await screen.findByRole('heading', { name: 'Este correo ya tiene una cuenta de cliente' })).toBeTruthy();
       expect(screen.getByRole('alert').textContent).toMatch(/reservas o solicitudes/);
@@ -341,7 +427,7 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('«Usar otro correo» cierra la sesión de Google y vuelve al formulario', async () => {
-      renderAuth('/auth?mode=signup&role=gardener');
+      renderThenSignIn('u-1', '/auth?mode=signup&role=gardener');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: false, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'has_activity' });
       fireEvent.click(await screen.findByRole('button', { name: 'Usar otro correo' }));
       await waitFor(() => expect(mocks.signOut).toHaveBeenCalled());
@@ -349,7 +435,7 @@ describe('AuthForm · acceso y registro', () => {
     });
 
     it('si falló al declarar el tipo, ofrece Reintentar y, si sale bien, sigue al panel', async () => {
-      renderAuth('/auth?mode=signup&role=gardener');
+      renderThenSignIn('u-1', '/auth?mode=signup&role=gardener');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'failed' });
       expect(await screen.findByRole('heading', { name: 'No hemos podido crear tu cuenta de profesional' })).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
@@ -359,7 +445,7 @@ describe('AuthForm · acceso y registro', () => {
 
     it('si Reintentar vuelve a fallar, sigue en el aviso (no se escapa al panel)', async () => {
       mocks.declare.mockImplementation(async (result: GoogleResult) => ({ ...result, roleProblem: 'failed' }));
-      renderAuth('/auth?mode=signup&role=gardener');
+      renderThenSignIn('u-1', '/auth?mode=signup&role=gardener');
       mocks.lastGoogleProps!.onSignedIn({ role: 'client', isNew: true, firstName: 'Ana', requestedRole: 'gardener', roleProblem: 'failed' });
       fireEvent.click(await screen.findByRole('button', { name: 'Reintentar' }));
       await waitFor(() => expect(mocks.declare).toHaveBeenCalled());

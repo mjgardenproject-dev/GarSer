@@ -2004,6 +2004,23 @@ Cookies y Network).
 | 47.6 | /cookies → sección 4 | Explica cómo cambiarlo cuando quieras y tiene el botón «Configurar cookies» |
 | 47.7 | Facebook Events Manager (o Test Events) con una cuenta nueva que rechace | Ningún evento de ese navegador llega a Meta tras rechazar, tampoco por la vía del servidor (Conversions API) |
 
+## Sección 48 — Entrar con el usuario correcto (FASE 4, paquete 1.10, 2026-11-18)
+
+Qué se arregló: la web recordaba la página de la sesión anterior y la usaba tras el siguiente inicio de sesión aunque entrara
+OTRA persona en el mismo móvil: el profesional aterrizaba en «Mis chats» o «Solicitudes» de otro, el cliente en «Mis
+reservas» o «Mi cuenta», y un cliente veía «Acceso denegado» al caer en una página de administración (QA-155, QA-085,
+QA-122, QA-130); y con la sesión iniciada, «Atrás» llevaba al formulario de entrar (QA-012). Solo web, sin migración.
+Hazlo en UN mismo móvil con dos cuentas de prueba (A y B).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 48.1 | Entra con A (profesional), abre «Chat» o «Solicitudes», y desde otro dispositivo pulsa «Cerrar todas» en «Mi cuenta» (o cierra la sesión de A en Supabase). Vuelve al móvil, que muestra «Tu sesión se ha cerrado…». Entra con B | B va a SU inicio, no a la página de A |
+| 48.2 | Lo mismo pero entra de nuevo con A | A vuelve a la página en la que estaba |
+| 48.3 | Sin sesión, abre garser.es/admin/dashboard y entra con una cuenta de cliente | Va al inicio del cliente; nunca «Acceso denegado» |
+| 48.4 | Sin sesión, abre garser.es/bookings y entra | Vuelve a «Mis reservas» (la misma persona sigue a donde iba) |
+| 48.5 | Con la sesión iniciada, abre garser.es/auth o pulsa «Atrás» hasta llegar a /auth | Va al inicio, no al formulario «Entra en tu cuenta» |
+| 48.6 | Cierra sesión con A y entra con B (cierre normal, no forzado) | B va a su inicio |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

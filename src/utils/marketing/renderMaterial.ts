@@ -290,7 +290,7 @@ function drawServices(ctx: Ctx, b: Box, services: string[], palette: Palette, mo
 }
 
 /**
- * La valoración o, si no hay ninguna, cómo se paga el servicio. Nunca dice nada de los gastos de
+ * La valoración o, si no hay ninguna, «Ves el precio antes de reservar». Nunca dice nada de los gastos de
  * gestión: un material impreso o descargado no se puede corregir cuando cambian los ajustes.
  */
 function drawMeta(ctx: Ctx, b: Box, content: MarketingContent, palette: Palette, align: 'left' | 'center') {

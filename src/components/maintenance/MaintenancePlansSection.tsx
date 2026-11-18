@@ -87,6 +87,12 @@ const MaintenancePlansSection: React.FC<Props> = ({ plans, onPayVisit, onChanged
                       {busyPlanId === plan.id && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar la visita
                     </button>
                   )}
+                  {/* QA-129: antes de pulsar, qué hace «Confirmar» y qué pasa con el dinero. */}
+                  {plan.role === 'client' && onPayVisit && (
+                    <p className="mt-2 text-xs leading-5 text-amber-900/80">
+                      Confirmar envía la solicitud al profesional. Si la visita lleva gastos de gestión, se retienen en tu tarjeta y solo se cobran si la acepta; si no, se liberan.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="mt-3 text-sm text-gray-600">

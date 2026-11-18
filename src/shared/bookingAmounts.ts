@@ -31,7 +31,13 @@
  * profesional acepta. Se deriva del estado de la reserva porque la captura ocurre en la misma
  * transicion que lo pone en `confirmed`.
  */
-export type BookingFeeState = 'held' | 'charged' | 'void';
+/**
+ * held: retenidos (pendiente de que el profesional acepte) · charged: cobrados · void: cancelada o
+ * rechazada · released: la solicitud caducó sin respuesta y la retención se anuló (QA-161) ·
+ * refunded: el profesional no se presentó y se devuelven (report_booking_no_show → refund) ·
+ * kept: el cliente no estaba; los gastos no se devuelven (report_booking_no_show → none).
+ */
+export type BookingFeeState = 'held' | 'charged' | 'void' | 'released' | 'refunded' | 'kept';
 
 /**
  * Por qué una reserva va SIN gastos de gestión. Lo decide el servidor al firmar el presupuesto
@@ -121,6 +127,10 @@ const resolveFeeState = (status?: string | null): BookingFeeState => {
     return 'void';
   }
   if (normalized === 'pending') return 'held';
+  // Caducada sin respuesta del profesional: el reloj anula la retención (nunca se capturó).
+  if (normalized === 'expired') return 'released';
+  if (normalized === 'no_show_gardener') return 'refunded';
+  if (normalized === 'no_show_client') return 'kept';
   return 'charged';
 };
 
@@ -206,7 +216,8 @@ export function formatEuro(value: number | string | null | undefined): string {
 export const BOOKING_AMOUNT_LABELS = {
   clientTotal: 'Total de la reserva',
   pendingToGardener: 'Pendiente de pagar al profesional',
-  paidToGardener: 'Pagado al profesional',
+  // QA-067 / QA-118: el pago al profesional es fuera de GarSer y no consta: no se afirma «pagado».
+  serviceToGardener: 'Precio del servicio (al profesional)',
   managementFee: 'Gastos de gestión',
   servicePrice: 'Precio del servicio',
   gardenerReceives: 'Cobrarás',
@@ -250,7 +261,27 @@ export function feeWaiverReasonText(
  * Nota que acompaña a las cifras del cliente. Explica donde fueron los gastos de gestion,
  * que es exactamente la duda que genera el desglose sin contexto.
  */
-export function clientAmountsNote(amounts: BookingAmounts): string {
+export function clientAmountsNote(amounts: BookingAmounts, options: { completed?: boolean } = {}): string {
+  if (amounts.feeState === 'released') {
+    return amounts.feeIsKnown
+      ? `La solicitud caducó sin respuesta del profesional. Los ${formatEuro(amounts.managementFee)} de gastos de gestión no se llegaron a cobrar: la retención de tu tarjeta se anuló.`
+      : 'La solicitud caducó sin respuesta del profesional.';
+  }
+  if (amounts.feeState === 'refunded') {
+    return amounts.feeIsKnown
+      ? `El profesional no se presentó. Los ${formatEuro(amounts.managementFee)} de gastos de gestión se te devuelven.`
+      : 'El profesional no se presentó.';
+  }
+  if (amounts.feeState === 'kept') {
+    return amounts.feeIsKnown
+      ? `No estabas cuando llegó el profesional. Los ${formatEuro(amounts.managementFee)} de gastos de gestión no se devuelven.`
+      : 'No estabas cuando llegó el profesional.';
+  }
+  if (options.completed) {
+    return amounts.feeIsKnown
+      ? `Los ${formatEuro(amounts.managementFee)} de gastos de gestión se cobraron online. El precio del servicio se paga directamente al profesional, fuera de GarSer.`
+      : 'El precio del servicio se paga directamente al profesional, fuera de GarSer.';
+  }
   if (amounts.feeWaived) {
     // La fila «Gastos de gestión: Sin gastos de gestión» ya lo dice; la nota no lo repite.
     return 'El servicio se lo pagas directamente al profesional.';
@@ -267,6 +298,37 @@ export function clientAmountsNote(amounts: BookingAmounts): string {
     default:
       return `Los ${fee} de gastos de gestión ya están pagados online. El resto se lo abonas directamente al profesional.`;
   }
+}
+
+/**
+ * Qué son los gastos de gestión de ESTA cotización, dicho ANTES de pagar (QA-055 / QA-084 / QA-129):
+ * de quién son, qué porcentaje del servicio y que se retienen y solo se cobran si el profesional
+ * acepta. El porcentaje sale de la comisión firmada por el servidor (lo configura el administrador),
+ * nunca de una constante. null si no hay gastos que explicar.
+ */
+export function managementFeeExplanation(
+  economics:
+    | {
+        managementFee?: number | null;
+        feeWaiver?: unknown;
+        commission?: { ratePercent?: number | null; adjustment?: string | null } | null;
+      }
+    | null
+    | undefined,
+  providerName?: string | null,
+): string | null {
+  const fee = toAmount(economics?.managementFee);
+  if (!economics || economics.feeWaiver || fee <= 0) return null;
+  const who = String(providerName || '').trim() || 'el profesional';
+  const pct = Number(economics.commission?.ratePercent);
+  const pctText = Number.isFinite(pct) && pct > 0
+    ? `${String(Math.round(pct * 100) / 100).replace('.', ',')} % del precio del servicio`
+    : null;
+  const minimum = economics.commission?.adjustment === 'minimum_charge'
+    ? ` (el mínimo es ${formatEuro(fee)})`
+    : '';
+  const what = pctText ? `son el ${pctText}${minimum}` : `son ${formatEuro(fee)}`;
+  return `Los gastos de gestión de GarSer ${what}. Al enviar la solicitud se retienen en tu tarjeta y solo se cobran si ${who} la acepta; si no la acepta, se liberan sin cobrarte nada.`;
 }
 
 /** Nota fija para el jardinero: su importe es integro. */

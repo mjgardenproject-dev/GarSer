@@ -138,7 +138,10 @@ export function buildMarketingContent(params: {
     qrUrl: bookingUrl(profile.providerId, params.source, profile.linkCode),
     site: SITE_LABEL,
     cta: 'Escanea y reserva online',
-    paymentNote: profile.kind === 'company' ? 'Pagas al terminar el servicio' : 'Pagas al profesional al terminar',
+    // QA-096: sin promesas sobre cuándo o a quién se paga (con gastos de gestión una parte se paga
+    // online al reservar, y un papel impreso no se corrige si cambian los ajustes). El tercer paso
+    // dice algo que es cierto siempre.
+    paymentNote: 'Ves el precio antes de reservar',
     theme: options.theme,
   };
 }
@@ -174,12 +177,11 @@ export interface ClientMessage {
 export function clientMessages(params: { kind: 'solo' | 'company'; link: string; date: Date }): ClientMessage[] {
   const company = params.kind === 'company';
   const withUs = company ? 'con nosotros' : 'conmigo';
-  const toUs = company ? 'a nosotros' : 'a mí';
   return [
     {
       id: 'online',
       title: 'Ya puedes reservar online',
-      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en pocos minutos, y pagas al terminar, directamente ${toUs}. ${params.link}`,
+      text: `Hola, ahora puedes reservar ${withUs} online en GarSer: eliges el día y la hora en pocos minutos y ves el precio antes de reservar. ${params.link}`,
     },
     {
       id: 'season',

@@ -88,6 +88,7 @@ const ClientBookingLauncher = () => {
             ...payload,
             rebookReviewPending: true,
             rebookSourceDate: booking.date,
+            rebookSourceStatus: booking.status,
             rebookSourceService: booking.service_name,
             rebookSourceGardener: booking.gardener_name,
           },

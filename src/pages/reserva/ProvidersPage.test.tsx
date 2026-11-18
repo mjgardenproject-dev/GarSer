@@ -217,7 +217,9 @@ describe('ProvidersPage', () => {
     // Ya desde la elección de profesional se separan los dos importes: antes solo se decía
     // "Incluye tarifa de reserva de X", sin indicar cuánto acababa cobrando el jardinero.
     const rendered = document.body.textContent || '';
-    expect(rendered).toContain('Pagas hoy 19,75 € de gastos de gestión');
+    expect(rendered).toContain('Hoy se retienen 19,75 € de gastos de gestión');
+    // QA-055: antes de pagar se explica qué son y que se liberan si no acepta.
+    expect(rendered).toContain('solo se cobran si el profesional acepta');
     expect(rendered).toContain('158,00 € al profesional');
     expect(rendered).not.toContain('Incluye tarifa de reserva');
   });

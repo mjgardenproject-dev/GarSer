@@ -863,6 +863,13 @@ const ProvidersPage: React.FC = () => {
 
         <BookingRateNotice notice={linkRateNotice} className="mb-4" />
 
+        {/* QA-055: antes de elegir, qué son los gastos de gestión y que no se cobran si no acepta. */}
+        {Object.values(previewQuotes).some((q) => Number(q?.economics?.managementFee) > 0) && (
+          <p className="mb-3 text-xs leading-5 text-gray-500">
+            Los gastos de gestión de GarSer se retienen en tu tarjeta al enviar la solicitud y solo se cobran si el profesional acepta; si no, se liberan sin cobrarte nada.
+          </p>
+        )}
+
         {/* Primera carga: esqueleto sólo en el hueco de la lista, con la misma forma que
             las tarjetas reales para que no salte el layout al llegar los datos. */}
         {isFirstProvidersLoad ? (
@@ -1008,7 +1015,7 @@ const ProvidersPage: React.FC = () => {
                               </div>
                             ) : paymentSummary ? (
                               <div className="mt-1 text-xs text-gray-500">
-                                Pagas hoy {formatEuro(paymentSummary.managementFee)} de gastos de gestión ·{' '}
+                                Hoy se retienen {formatEuro(paymentSummary.managementFee)} de gastos de gestión ·{' '}
                                 {formatEuro(paymentSummary.pendingToGardener)} al profesional
                               </div>
                             ) : null}

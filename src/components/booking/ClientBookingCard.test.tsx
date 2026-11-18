@@ -62,3 +62,21 @@ describe('ClientBookingCard: valoración enviada (QA-116)', () => {
     expect(screen.getByText('Dejar mi valoración')).toBeTruthy();
   });
 });
+
+describe('ClientBookingCard: solicitud caducada (QA-161)', () => {
+  afterEach(() => cleanup());
+
+  it('ofrece volver a reservar y no habla de dinero pendiente', async () => {
+    const { fireEvent, screen } = await import('@testing-library/react');
+    const onRebook = vi.fn();
+    render(
+      <ClientBookingCard
+        booking={{ ...base, status: 'expired', total_price: 180, management_fee: 3.6, management_fee_source: 'payment_attempt' } as never}
+        onRebook={onRebook}
+      />,
+    );
+    expect(screen.queryByText('Pendiente de pagar al profesional')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Volver a reservar/ }));
+    expect(onRebook).toHaveBeenCalledTimes(1);
+  });
+});

@@ -43,7 +43,7 @@ import type {
   BookingQuoteEconomicBreakdown,
   BookingQuoteSlotSelection,
 } from '../../shared/bookingQuoteCore';
-import { BOOKING_AMOUNT_LABELS, feeWaiverReasonText, formatEuro, getQuoteAmounts } from '../../shared/bookingAmounts';
+import { BOOKING_AMOUNT_LABELS, feeWaiverReasonText, formatEuro, getQuoteAmounts, managementFeeExplanation } from '../../shared/bookingAmounts';
 import BookingRateNotice from './BookingRateNotice';
 import { describeBookingRateNotice } from '../../utils/bookingRateNotice';
 import {
@@ -214,6 +214,11 @@ const ConfirmationPage: React.FC = () => {
     }),
     [quoteEconomics, bookingData.restrictedGardenerId, bookingData.providerId, bookingData.providerLinkCode, gardenerName],
   );
+  // QA-055 / QA-084 / QA-129: qué son los gastos de gestión, su porcentaje y que se retienen, ANTES de pagar.
+  const feeExplanation = useMemo(
+    () => managementFeeExplanation(quoteEconomics, gardenerName),
+    [quoteEconomics, gardenerName],
+  );
   const authoritativeSnapshotReady = Boolean(
     bookingData.providerId &&
     bookingData.serviceIds?.[0] &&
@@ -308,7 +313,7 @@ const ConfirmationPage: React.FC = () => {
 
     bookingCreatedHandledRef.current = dedupeKey;
     clearBookingResumeStorage({ userId: user?.id, includeAnonFallback: true, includeLegacy: true });
-    toast.success(feeWaivedRef.current ? 'Reserva enviada al profesional' : 'Pago confirmado y reserva creada correctamente');
+    toast.success(feeWaivedRef.current ? 'Reserva enviada al profesional' : 'Solicitud enviada. Los gastos de gestión quedan retenidos hasta que el profesional acepte.');
   };
 
   const resolvePreCheckoutFailure = (error: unknown): PreCheckoutFailureState | null => {
@@ -1745,7 +1750,8 @@ const ConfirmationPage: React.FC = () => {
     : isSubmittingInlinePayment
       ? 'Confirmando el pago…'
     : showPaymentSheetPayAction
-      ? `Pagar ${payableNowLabel}`
+      // QA-088: es una retención, no un cobro: el botón lo dice.
+      ? `Retener ${payableNowLabel} y enviar`
       : isPreparingPayment && isPaymentSheetOpen
         ? 'Preparando pago…'
       : isSubmittingInlinePayment
@@ -1817,7 +1823,7 @@ const ConfirmationPage: React.FC = () => {
                 <CheckCircle2 aria-hidden="true" className="h-9 w-9 text-emerald-600" />
               </div>
               <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
-                {feeWaived ? 'Reserva enviada' : 'Pago confirmado'}
+                {feeWaived ? 'Reserva enviada' : 'Solicitud enviada · importe retenido'}
               </p>
               <h1 id="booking-success-title" className="mt-3 text-2xl font-semibold text-gray-950 text-balance">
                 Hemos enviado tu reserva al profesional
@@ -2009,7 +2015,7 @@ const ConfirmationPage: React.FC = () => {
                       {customerPaymentSummary?.feeWaived
                         ? `${feeWaiverReasonText(customerPaymentSummary.feeWaiverReason, gardenerName, { firstRateInUse: Boolean(quoteEconomics?.commission?.firstRateInUse) })} Se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
                         : customerPaymentSummary
-                        ? `Ahora pagas ${formatEuro(customerPaymentSummary.managementFee)} de gastos de gestión. El resto se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
+                        ? `Ahora se retienen ${formatEuro(customerPaymentSummary.managementFee)} de gastos de gestión. El resto se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
                         : 'El profesional cobrará este importe al completar el servicio de la manera que acordéis.'}
                     </p>
                   </div>
@@ -2018,6 +2024,9 @@ const ConfirmationPage: React.FC = () => {
                   </p>
                 </div>
               </div>
+              {feeExplanation ? (
+                <p className="rounded-xl bg-gray-50 p-3 text-xs leading-5 text-gray-600">{feeExplanation}</p>
+              ) : null}
               <BookingRateNotice notice={rateNotice} />
             </div>
           </div>
@@ -2164,7 +2173,7 @@ const ConfirmationPage: React.FC = () => {
                   ? 'No pagas nada online'
                   : paymentAttempt?.status === 'reconciliation_required'
                     ? 'No se ha cobrado: la reserva no se creó'
-                    : 'Pago seguro con Stripe dentro de GarSer'}
+                    : 'Se retienen ahora; solo se cobran si el profesional acepta'}
               </p>
             </div>
             <button
@@ -2231,8 +2240,8 @@ const ConfirmationPage: React.FC = () => {
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Gastos de gestión</p>
                     <p className="mt-1 text-4xl font-bold leading-none text-gray-950 tabular-nums">{payableNowLabel}</p>
                   </div>
-                  <p className="max-w-[9rem] text-right text-xs leading-5 text-gray-500" translate="no">
-                    Pago procesado con Stripe
+                  <p className="max-w-[10rem] text-right text-xs leading-5 text-gray-500">
+                    Se retiene con Stripe y solo se cobra si el profesional acepta
                   </p>
                 </div>
               </div>

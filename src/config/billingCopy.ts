@@ -178,6 +178,20 @@ function newClientsAnswer(terms: BillingTermsInput): string {
   return 'Esos pagan unos gastos de gestión a GarSer al reservar. Los paga el cliente, aparte: a ti no se te descuenta nada.';
 }
 
+/**
+ * QA-087: tu precio te lo pagan a ti; si algún cliente paga gastos de gestión, se dice que esos los
+ * paga aparte a GarSer al reservar (antes decía «GarSer no toca tu dinero» sin más). Sin ajustes
+ * conocidos se dice igualmente («cuando los hay»): es cierto en cualquier configuración.
+ */
+export function howClientsPayAnswer(terms: BillingTermsInput): string {
+  const base = 'Tu precio te lo pagan directamente a ti al terminar el trabajo, de la manera que acordéis: GarSer no cobra ni se queda nada de él.';
+  const nobodyPays = Boolean(terms) && [terms!.garserFirst, terms!.linkFirst, terms!.garserRepeat, terms!.linkRepeat, terms!.maintenanceVisit]
+    .every((level) => level === 'none');
+  return nobodyPays
+    ? base
+    : `${base} Los gastos de gestión, cuando los hay, los paga el cliente aparte a GarSer al reservar.`;
+}
+
 /** Las preguntas frecuentes de /para-jardineros (las que dependen de los ajustes se recalculan). */
 export function gardenersFaqs(terms: BillingTermsInput): BillingFaqItem[] {
   return [
@@ -195,7 +209,7 @@ export function gardenersFaqs(terms: BillingTermsInput): BillingFaqItem[] {
     },
     {
       question: '¿Cómo me pagan mis clientes?',
-      answer: 'Directamente a ti al terminar el trabajo, de la manera que acordéis. GarSer no toca tu dinero.',
+      answer: howClientsPayAnswer(terms),
     },
     {
       question: '¿Mis clientes tienen que registrarse?',

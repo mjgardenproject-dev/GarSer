@@ -26,13 +26,14 @@ interface ClientBookingAmountsProps {
 
 export function ClientBookingAmounts({ booking, variant = 'card', className = '' }: ClientBookingAmountsProps) {
   const amounts = getBookingAmounts(booking);
-  const note = clientAmountsNote(amounts);
-  const isCheckout = variant === 'checkout';
   const isSettled = String(booking.status || '').toLowerCase() === 'completed';
-  const isVoid = amounts.feeState === 'void';
+  const note = clientAmountsNote(amounts, { completed: isSettled });
+  const isCheckout = variant === 'checkout';
+  // Cancelada, rechazada, caducada o sin servicio (nadie se presentó): no queda nada que pagar.
+  const isVoid = amounts.feeState === 'void' || amounts.feeState === 'released' || amounts.feeState === 'refunded' || amounts.feeState === 'kept';
 
   const pendingLabel = isSettled
-    ? BOOKING_AMOUNT_LABELS.paidToGardener
+    ? BOOKING_AMOUNT_LABELS.serviceToGardener
     : BOOKING_AMOUNT_LABELS.pendingToGardener;
 
   return (
@@ -42,7 +43,7 @@ export function ClientBookingAmounts({ booking, variant = 'card', className = ''
           {amounts.feeIsKnown || amounts.feeWaived ? BOOKING_AMOUNT_LABELS.clientTotal : BOOKING_AMOUNT_LABELS.servicePrice}
         </span>
         <span
-          className={`font-bold tabular-nums text-gray-900 ${isCheckout ? 'text-2xl sm:text-[2rem] leading-none' : 'text-lg'}`}
+          className={`shrink-0 whitespace-nowrap font-bold tabular-nums text-gray-900 ${isCheckout ? 'text-2xl sm:text-[2rem] leading-none' : 'text-lg'}`}
         >
           {formatEuro(amounts.clientTotal)}
         </span>
@@ -51,13 +52,14 @@ export function ClientBookingAmounts({ booking, variant = 'card', className = ''
       {/* Se omite cuando no queda nada pendiente (reserva cancelada) y cuando no consta
           comision fiable, porque entonces esta cifra seria identica a la de arriba: repetir
           el mismo importe con dos nombres es justo la ambiguedad que este bloque elimina. */}
-      {!isVoid && amounts.feeIsKnown && (
+      {/* QA-095: también sin gastos de gestión, para que la tarjeta tenga la misma forma en los dos casos. */}
+      {!isVoid && (amounts.feeIsKnown || amounts.feeWaived) && (
         <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-200 pt-2">
-          <span className={`text-gray-600 ${isCheckout ? 'text-sm font-medium' : 'text-xs sm:text-sm'}`}>
+          <span className={`min-w-0 text-gray-600 ${isCheckout ? 'text-sm font-medium' : 'text-xs sm:text-sm'}`}>
             {pendingLabel}
           </span>
           <span
-            className={`font-semibold tabular-nums text-green-700 ${isCheckout ? 'text-xl sm:text-2xl leading-none' : 'text-base'}`}
+            className={`shrink-0 whitespace-nowrap font-semibold tabular-nums text-green-700 ${isCheckout ? 'text-xl sm:text-2xl leading-none' : 'text-base'}`}
           >
             {formatEuro(amounts.pendingToGardener)}
           </span>

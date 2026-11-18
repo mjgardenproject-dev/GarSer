@@ -1946,6 +1946,25 @@ valoración arrancaba con 5 estrellas puestas y no se podía volver a abrir (QA-
 | 44.5 | Valorar un trabajo terminado | Estrellas vacías («Sin puntuar»), «Enviar valoración» desactivado hasta tocar una estrella; la nota mínima es 1 |
 | 44.6 | Tras enviarla, «Ver o editar mi valoración» en la tarjeta | Se abre con la nota y el comentario; dentro de 48 h se puede cambiar y la tarjeta lo refleja |
 
+## Sección 45 — El dinero explicado antes de pagar y sin promesas falsas (FASE 4, paquete 1.7, 2026-11-18)
+
+Qué se arregló: antes de pagar no se explicaba qué son los gastos de gestión ni que se retienen (QA-055, QA-084, QA-129);
+tras pagar ponía «Pago confirmado» aunque solo se retiene (QA-088); las tarjetas de «Mis reservas» decían «Pagado al
+profesional» en una completada (QA-067, QA-118), dinero pendiente en una caducada sin salida (QA-161) o en una en la que nadie
+se presentó, y cambiaban de forma con 0 % (QA-095); los flyers y el mensaje de WhatsApp prometían «pagas al terminar» (QA-096)
+y la FAQ «GarSer no toca tu dinero» (QA-087). Antes de empezar: desplegadas `send-email-notification` y
+`booking-confirmation-email` (`--use-api`; comparten las etiquetas de importes). No hay migración.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 45.1 | Paso «Elige profesional» de una reserva con gastos | «Hoy se retienen X € de gastos de gestión» y la línea «…se retienen en tu tarjeta… solo se cobran si el profesional acepta…» |
+| 45.2 | Confirmación antes de pagar | Dice el porcentaje que fijan los Ajustes y que se retienen y se liberan si no acepta; el botón de la hoja es «Retener X € y enviar» |
+| 45.3 | Tras enviar | «Solicitud enviada · importe retenido»; en ningún sitio «Pago confirmado» |
+| 45.4 | «Mis reservas»: una caducada | «…no se llegaron a cobrar…», sin «Pendiente de pagar al profesional» y con «Volver a reservar» |
+| 45.5 | «Mis reservas»: una completada | «Precio del servicio (al profesional)» y la nota de que ese pago es fuera de GarSer; nunca «Pagado al profesional» |
+| 45.6 | Profesional → Marketing (flyers y mensajes) | Ninguno dice «pagas al terminar»; el tercer paso del flyer es «Ves el precio antes de reservar» |
+| 45.7 | /para-jardineros → «¿Cómo me pagan mis clientes?» | Sin «GarSer no toca tu dinero»; dice que los gastos de gestión, cuando los hay, los paga el cliente aparte a GarSer |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

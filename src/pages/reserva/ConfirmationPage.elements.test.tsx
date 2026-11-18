@@ -328,8 +328,11 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(screen.getByText('Pendiente de pagar al profesional')).toBeTruthy()
     expect(screen.getAllByText('158,00 €').length).toBeGreaterThanOrEqual(1)
     expect(
-      screen.getByText(/Ahora pagas 19,75 € de gastos de gestión\. El resto se lo abonas directamente al profesional/),
+      screen.getByText(/Ahora se retienen 19,75 € de gastos de gestión\. El resto se lo abonas directamente al profesional/),
     ).toBeTruthy()
+    // QA-055 / QA-084: qué son, y que solo se cobran si acepta (antes solo se leía después de pagar).
+    expect(document.body.textContent).toContain('Los gastos de gestión de GarSer son')
+    expect(document.body.textContent).toContain('solo se cobran si')
 
     // El vocabulario antiguo mostraba el mismo importe dos veces con nombres distintos.
     expect(screen.queryByText('Adelanto de confirmación')).toBeNull()
@@ -436,14 +439,14 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(await screen.findByRole('dialog', { name: 'Pago seguro' })).toBeTruthy()
     expect(await screen.findByTestId('payment-element')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Continuar al pago' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Pagar 19,75 €' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Retener 19,75 € y enviar' })).toBeTruthy()
   })
 
   it('confirma el pago inline y sincroniza el estado autoritativo', async () => {
     render(<ConfirmationPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continuar al pago' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Pagar 19,75 €' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Retener 19,75 € y enviar' }))
 
     await waitFor(() => {
       expect(mocks.stripeSubmit).toHaveBeenCalledTimes(1)
@@ -481,7 +484,7 @@ describe('ConfirmationPage embedded payment flow', () => {
     render(<ConfirmationPage />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continuar al pago' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Pagar 19,75 €' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Retener 19,75 € y enviar' }))
 
     await waitFor(() => {
       expect(mocks.stripeSubmit).toHaveBeenCalledTimes(1)
@@ -495,7 +498,7 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ir a mis reservas' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ir al inicio' })).toBeTruthy()
-    expect(mocks.toast.success).toHaveBeenCalledWith('Pago confirmado y reserva creada correctamente')
+    expect(mocks.toast.success).toHaveBeenCalledWith('Solicitud enviada. Los gastos de gestión quedan retenidos hasta que el profesional acepte.')
   })
 
   // Lanzamiento (2026-10): presupuesto firmado SIN gastos de gestión (cliente del enlace, cliente
@@ -523,7 +526,7 @@ describe('ConfirmationPage embedded payment flow', () => {
     render(<ConfirmationPage />)
 
     expect(screen.queryByRole('button', { name: 'Continuar al pago' })).toBeNull()
-    expect(screen.queryByText(/Ahora pagas/)).toBeNull()
+    expect(screen.queryByText(/Ahora se retienen/)).toBeNull()
     expect(screen.getAllByText(/sin gastos de gestión/i).length).toBeGreaterThanOrEqual(1)
     // El total es el precio del servicio: ni 177,75 € ni «0,00 € de gastos de gestión».
     expect(screen.queryByText('177,75 €')).toBeNull()
@@ -598,7 +601,7 @@ describe('ConfirmationPage embedded payment flow', () => {
       expect(await screen.findByRole('button', { name: 'Confirmar reserva' })).toBeTruthy()
       expect(mocks.createAuthoritativeQuote).toHaveBeenCalledTimes(1)
       expect(screen.queryByRole('button', { name: 'Continuar al pago' })).toBeNull()
-      expect(screen.queryByText(/Ahora pagas/)).toBeNull()
+      expect(screen.queryByText(/Ahora se retienen/)).toBeNull()
       expect(screen.getByText(/Ya has trabajado con/)).toBeTruthy()
 
       fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }))
@@ -646,7 +649,7 @@ describe('ConfirmationPage embedded payment flow', () => {
 
       expect(await screen.findByRole('dialog', { name: 'Pago seguro' })).toBeTruthy()
       expect(await screen.findByTestId('payment-element')).toBeTruthy()
-      expect(screen.getByRole('button', { name: 'Pagar 19,75 €' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Retener 19,75 € y enviar' })).toBeTruthy()
       expect(mocks.toast).toHaveBeenCalledWith('Esta reserva lleva gastos de gestión. Revisa el importe antes de pagar.')
     })
 
@@ -698,7 +701,7 @@ describe('ConfirmationPage embedded payment flow', () => {
     expect(screen.getByRole('button', { name: 'Ir al inicio' })).toBeTruthy()
     expect(mocks.navigate).not.toHaveBeenCalled()
     expect(mocks.clearBookingResumeStorage).toHaveBeenCalled()
-    expect(mocks.toast.success).toHaveBeenCalledWith('Pago confirmado y reserva creada correctamente')
+    expect(mocks.toast.success).toHaveBeenCalledWith('Solicitud enviada. Los gastos de gestión quedan retenidos hasta que el profesional acepte.')
   })
 
   it('limpia la reanudacion de reserva antes de ir al inicio tras completar el pago', async () => {

@@ -5,6 +5,7 @@ import { useBooking } from '../../contexts/BookingContext';
 import ServiceDetailCard from '../../components/booking/ServiceDetailCard';
 import { buildConsentRecord } from '../../shared/manualEntry/legalCopy';
 import type { BookingServiceInput } from '../../utils/bookingServiceDetails';
+import { describeRebookSource } from '../../utils/rebookService';
 
 /**
  * Resumen previo al repetir un servicio.
@@ -35,6 +36,7 @@ const RebookSummaryPage = () => {
     rebookSourceDate?: string;
     rebookSourceService?: string;
     rebookSourceGardener?: string;
+    rebookSourceStatus?: string;
     dataInputMode?: string;
   };
 
@@ -100,7 +102,7 @@ const RebookSummaryPage = () => {
           {previousDate && (
             <div className="flex items-start gap-2 text-gray-700">
               <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
-              <dd className="min-w-0 break-words">Lo contrataste el {previousDate}</dd>
+              <dd className="min-w-0 break-words">{describeRebookSource(source.rebookSourceStatus, previousDate)}</dd>
             </div>
           )}
           {source.address && (

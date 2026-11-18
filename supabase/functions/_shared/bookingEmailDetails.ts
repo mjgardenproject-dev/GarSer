@@ -154,7 +154,7 @@ export async function buildBookingEmailDetails(
         [BOOKING_AMOUNT_LABELS.managementFee, BOOKING_AMOUNT_LABELS.managementFeeWaived],
         [
           booking.status === 'completed'
-            ? BOOKING_AMOUNT_LABELS.paidToGardener
+            ? BOOKING_AMOUNT_LABELS.serviceToGardener
             : BOOKING_AMOUNT_LABELS.pendingToGardener,
           formatEuro(amounts.pendingToGardener),
         ],
@@ -165,7 +165,7 @@ export async function buildBookingEmailDetails(
         [BOOKING_AMOUNT_LABELS.clientTotal, formatEuro(amounts.clientTotal)],
         [
           booking.status === 'completed'
-            ? BOOKING_AMOUNT_LABELS.paidToGardener
+            ? BOOKING_AMOUNT_LABELS.serviceToGardener
             : BOOKING_AMOUNT_LABELS.pendingToGardener,
           formatEuro(amounts.pendingToGardener),
         ],

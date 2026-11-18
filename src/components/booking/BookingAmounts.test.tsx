@@ -41,10 +41,34 @@ describe('ClientBookingAmounts', () => {
     expect(document.body.textContent).toContain('con 24 h o más de antelación');
   });
 
-  it('dice "Pagado al profesional" cuando el servicio ya se completó', () => {
+  it('completada: no afirma «Pagado al profesional» (ese pago es fuera de GarSer y no consta) (QA-067/QA-118)', () => {
     render(<ClientBookingAmounts booking={{ ...booking, status: 'completed' }} />);
-    expect(screen.getByText('Pagado al profesional')).toBeTruthy();
+    expect(screen.queryByText('Pagado al profesional')).toBeNull();
     expect(screen.queryByText('Pendiente de pagar al profesional')).toBeNull();
+    expect(screen.getByText('Precio del servicio (al profesional)')).toBeTruthy();
+    expect(document.body.textContent).toContain('se paga directamente al profesional, fuera de GarSer');
+    expect(document.body.textContent).toContain('19,75 € de gastos de gestión se cobraron online');
+  });
+
+  it('el profesional no se presentó: nada pendiente y se devuelven los gastos', () => {
+    render(<ClientBookingAmounts booking={{ ...booking, status: 'no_show_gardener' }} />);
+    expect(screen.queryByText('Pendiente de pagar al profesional')).toBeNull();
+    expect(document.body.textContent).toContain('El profesional no se presentó');
+    expect(document.body.textContent).toContain('se te devuelven');
+    expect(document.body.textContent).not.toContain('ya están pagados');
+  });
+
+  it('el cliente no estaba: nada pendiente con el profesional y los gastos no se devuelven', () => {
+    render(<ClientBookingAmounts booking={{ ...booking, status: 'no_show_client' }} />);
+    expect(screen.queryByText('Pendiente de pagar al profesional')).toBeNull();
+    expect(document.body.textContent).toContain('no se devuelven');
+  });
+
+  it('caducada sin respuesta: nada pendiente y dice que los gastos no se cobraron (QA-161)', () => {
+    render(<ClientBookingAmounts booking={{ ...booking, status: 'expired' }} />);
+    expect(screen.queryByText('Pendiente de pagar al profesional')).toBeNull();
+    expect(document.body.textContent).not.toContain('ya están pagados');
+    expect(document.body.textContent).toContain('no se llegaron a cobrar');
   });
 
   it('no inventa un total cuando la comisión no es fiable', () => {
@@ -102,11 +126,24 @@ describe('reservas sin gastos de gestión', () => {
     expect(screen.getAllByText('158,00 €').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Sin gastos de gestión')).toBeTruthy();
     expect(document.body.textContent).not.toContain('0,00 €');
+    // QA-095: la misma fila que con gastos, para que las tarjetas no cambien de forma según el caso.
+    expect(screen.getByText('Pendiente de pagar al profesional')).toBeTruthy();
   });
 
   it('al jardinero no se le habla de los gastos del cliente', () => {
     render(<GardenerBookingAmount booking={waived} variant="hero" />);
     expect(document.body.textContent).toContain('Íntegro para ti. Tu cliente no paga gastos de gestión.');
     expect(document.body.textContent).not.toContain('GarSer cobra sus gastos de gestión');
+  });
+});
+
+describe('importes que no se parten (R3-1.7 OBS-01)', () => {
+  it('el importe no se parte en dos líneas aunque la etiqueta sea larga', () => {
+    render(<ClientBookingAmounts booking={booking} />);
+    for (const text of ['177,75 €', '158,00 €']) {
+      const el = screen.getByText(text);
+      expect(el.className).toContain('whitespace-nowrap');
+      expect(el.className).toContain('shrink-0');
+    }
   });
 });

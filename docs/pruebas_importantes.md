@@ -32,6 +32,9 @@ tiene que estar desplegado antes de pasarla.
 | T2.4 | Pulsar «Pagar» dos veces muy seguidas | Una sola reserva y un solo pago en Stripe | Ya hecho |
 | T2.5 | Reservar por el enlace o QR del profesional | Paga la tarifa del enlace (la que diga Ajustes → Comisiones), no la general | Ya hecho |
 
+| T2.17 | Antes de pagar una reserva con gastos | Se explica qué son, su porcentaje y que se retienen y se liberan si no acepta; el botón dice «Retener X € y enviar» y al terminar «Solicitud enviada · importe retenido» (sección 45) | 1.7 |
+| T2.18 | «Mis reservas» con una caducada y una completada | La caducada dice que no se cobró y ofrece «Volver a reservar»; la completada no dice «Pagado al profesional» | 1.7 |
+
 ### Nuevas de la fase 1.1 — pago con el horario caducado y tarjeta rechazada (sección 39)
 
 | # | Prueba | Debe pasar | Paquete |
@@ -98,6 +101,7 @@ tiene que estar desplegado antes de pasarla.
 | T6.1 | Primera visita a la web | Sale el aviso de cookies; «Rechazar» no carga Meta Pixel; se puede cambiar después (QA-007) | 1.9 |
 | T6.2 | /privacidad y /terminos | Se abren y se leen bien en el móvil | Ya hecho |
 | T6.3 | /para-jardineros (la página de los anuncios) | Sin fechas pasadas ni textos internos | 1.18 |
+| T6.6 | Marketing del profesional y FAQ de /para-jardineros | Ningún flyer ni mensaje promete «pagas al terminar»; la FAQ no dice «GarSer no toca tu dinero» (sección 45) | 1.7 |
 | T6.4 | Ningún extra con coste llega marcado de antemano | «Retirar restos» sin marcar en la reserva a mano (no deja seguir sin elegir) y apagado en la de fotos; sin elegir no se cobra (QA-065, sección 44) | 1.6 |
 | T6.5 | Valorar un trabajo terminado | Las estrellas empiezan vacías y no se puede enviar sin puntuar; después se puede abrir y corregir (QA-116) | 1.6 |
 

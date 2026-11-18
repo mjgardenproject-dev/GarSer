@@ -485,8 +485,9 @@ const ClientBookingCard = ({
           </button>
         )}
 
-        {/* Repetir: disponible en CUALQUIER servicio completado, se haya valorado o no. */}
-        {isCompleted && onRebook && (
+        {/* Repetir: disponible en CUALQUIER servicio completado, se haya valorado o no, y en una
+            solicitud que caducó sin respuesta (QA-161: antes era un callejón sin salida). */}
+        {(isCompleted || booking.status === 'expired') && onRebook && (
           <button
             type="button"
             onClick={() => onRebook(booking)}

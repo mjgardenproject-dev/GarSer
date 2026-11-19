@@ -261,6 +261,7 @@ function createBookingPaymentError(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ConfirmationPage embedded payment flow', () => {
+  beforeEach(() => { window.scrollTo = vi.fn() as unknown as typeof window.scrollTo })
   const originalLocation = window.location
   let bookingData: ReturnType<typeof createBookingData>
 
@@ -496,6 +497,8 @@ describe('ConfirmationPage embedded payment flow', () => {
     }, { timeout: 1500 })
 
     expect(await screen.findByRole('heading', { name: 'Hemos enviado tu reserva al profesional' })).toBeTruthy()
+    // QA-136: la confirmación empieza arriba (no a mitad de página con «Salir» flotando sobre la tarjeta).
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0 })
     expect(screen.getByRole('button', { name: 'Ir a mis reservas' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ir al inicio' })).toBeTruthy()
     expect(mocks.toast.success).toHaveBeenCalledWith('Solicitud enviada. Los gastos de gestión quedan retenidos hasta que el profesional acepte.')

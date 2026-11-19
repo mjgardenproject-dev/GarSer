@@ -2137,6 +2137,28 @@ cliente, a un profesional o a un admin. **Sin migración ni función: solo web.*
 
 ---
 
+## Sección 54 — Pagar en el iPhone SE sin que estorbe Safari (FASE 4, paquete 1.16, 2026-11-19)
+
+Qué se arregló: (QA-103) el botón fijo inferior de la confirmación quedaba parcialmente bajo la barra de Safari y un toque en su
+parte baja abría el menú «…» en vez de pagar; (QA-135) la hoja «Pago seguro» dejaba ~320 pt útiles: los errores de caducidad y
+CVC quedaban tapados por el pie y con el teclado abierto «Pagar» desaparecía hasta cerrarlo; (QA-136) la confirmación aparecía
+desplazada a mitad de página. Ahora: más margen bajo el botón; la hoja mide lo que el cliente ve (el teclado la encoge y el pie
+queda justo encima), el pie ya no es fijo y la cabecera es más compacta; la confirmación empieza arriba.
+**Sin migración ni función: solo web.**
+
+| # | Qué haces (en un iPhone pequeño, Safari, barra inferior visible; luego en uno grande) | Debe pasar |
+|---|---|---|
+| 54.1 | Llega a la confirmación de una reserva con gastos de gestión | El botón de pago se ve entero por encima de la barra de Safari; pulsar su borde inferior paga/continúa, no abre el menú «…» |
+| 54.2 | Pulsa «Continuar al pago» | La hoja «Pago seguro» deja sitio al formulario (cabecera compacta) y «Pagar» está visible |
+| 54.3 | Toca el número de tarjeta con el teclado abierto | «Pagar» sigue visible justo encima del teclado y el campo que escribes también |
+| 54.4 | Caducidad pasada o CVC incompleto | El error se ve entero, no queda bajo el pie ni el teclado |
+| 54.5 | Paga con la tarjeta de prueba 4242 4242 4242 4242 | La confirmación sale arriba del todo (título a la vista) y «Ir a mis reservas» se alcanza sin dos desplazamientos |
+| 54.6 | Lo mismo en el ordenador | La hoja sigue siendo una ventana centrada; nada cambia |
+
+> **Acción manual tuya:** ninguna (sin migración ni función).
+
+---
+
 ## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
 
 Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.

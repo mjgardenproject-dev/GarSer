@@ -55,6 +55,7 @@ tiene que estar desplegado antes de pasarla.
 | T2.14 | Con la misma cuenta, dos reservas seguidas con el mismo profesional sin que acepte la primera | La segunda lleva la tarifa de «siguientes» y el aviso «Ya tienes otra reserva en curso con …»; si cancelas la primera, vuelve la de primera | 1.4 |
 | T2.15 | En el mismo móvil, «Cerrar sesión» y entrar con otra cuenta; abrir la dirección del profesional sin `?c=` | Paga la tarifa de GarSer (no la del enlace) y ve el aviso de que no es el enlace personal | 1.4 |
 | T2.16 | Abrir un enlace antiguo después de «Cambiar mi enlace» | Aviso «Este enlace ya no es el vigente…» en vez de un precio distinto sin explicación | 1.4 |
+| T2.20 | En un iPhone pequeño, pagar la reserva: botón de pago, hoja «Pago seguro» con teclado y con un error de caducidad, y la confirmación | El botón no queda bajo Safari, «Pagar» y los errores se ven con el teclado abierto y la confirmación sale arriba (QA-103, QA-135, QA-136) | 1.16 |
 
 ## 3. El profesional
 

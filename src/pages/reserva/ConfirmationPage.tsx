@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Elements } from '@stripe/react-stripe-js';
+import PaymentSheetShell from '../../components/booking/PaymentSheetShell';
 import EmbeddedStripePaymentForm, { type EmbeddedStripePaymentFormHandle } from '../../components/booking/EmbeddedStripePaymentForm';
 import { useBooking } from "../../contexts/BookingContext";
 import {
@@ -1190,6 +1191,13 @@ const ConfirmationPage: React.FC = () => {
         : null,
     [paymentClientSecret]
   );
+  // QA-136: al cerrarse la hoja de pago con la reserva creada, la confirmación salía desplazada a mitad de
+  // página (con «Salir» flotando sobre la tarjeta) y hacían falta dos desplazamientos para llegar a
+  // «Ir a mis reservas». La confirmación empieza arriba.
+  useEffect(() => {
+    if (paymentAttempt?.status === 'booking_created' && !isPaymentSheetOpen) window.scrollTo({ top: 0 });
+  }, [paymentAttempt?.status, isPaymentSheetOpen]);
+
   const canClosePaymentSheet = !isSubmittingInlinePayment && !isFinalizingBooking && !isResolvingPaymentReturn && !isPaymentSheetSuccess;
 
   const closePaymentSheet = () => {
@@ -2157,7 +2165,7 @@ const ConfirmationPage: React.FC = () => {
       </main>
 
       {showStickyFooter ? (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-3 pb-[calc(0.875rem+env(safe-area-inset-bottom))] z-50">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
           <div className="mx-auto w-full sm:max-w-lg">
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
@@ -2210,43 +2218,40 @@ const ConfirmationPage: React.FC = () => {
             onClick={closePaymentSheet}
             className="fixed inset-0 z-40 hidden bg-gray-950/16 backdrop-blur-[2px] sm:block"
           />
-          <div className="fixed inset-0 z-50 bg-white sm:bg-transparent sm:p-4">
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="payment-sheet-title"
-              className="mx-auto flex h-full max-w-lg flex-col bg-white overscroll-contain sm:max-h-[calc(100vh-2rem)] sm:overflow-hidden sm:rounded-[32px] sm:shadow-2xl"
-            >
-              <div className="border-b border-gray-100 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] sm:px-5 sm:pt-4">
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    ref={paymentSheetCloseButtonRef}
-                    type="button"
-                    onClick={closePaymentSheet}
-                    aria-label="Cerrar pago"
-                    disabled={!canClosePaymentSheet}
-                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
-                  >
-                    <X aria-hidden="true" className="h-5 w-5" />
-                  </button>
-                  <p id="payment-sheet-title" className="min-w-0 flex-1 text-center text-base font-semibold text-gray-950 text-balance">
-                    Pago seguro
-                  </p>
-                  <div aria-hidden="true" className="h-9 w-9 shrink-0" />
-                </div>
-
-                <div className="mt-4 flex items-end justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Gastos de gestión</p>
-                    <p className="mt-1 text-4xl font-bold leading-none text-gray-950 tabular-nums">{payableNowLabel}</p>
-                  </div>
-                  <p className="max-w-[10rem] text-right text-xs leading-5 text-gray-500">
-                    Se retiene con Stripe y solo se cobra si el profesional acepta
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-4 pb-32 pt-5 sm:px-5">
+          <PaymentSheetShell
+            title="Pago seguro"
+            amountCaption="Gastos de gestión"
+            amount={payableNowLabel}
+            amountNote="Se retiene con Stripe y solo se cobra si el profesional acepta"
+            onClose={closePaymentSheet}
+            canClose={canClosePaymentSheet}
+            closeButtonRef={paymentSheetCloseButtonRef}
+            footer={
+              <>
+                <button
+                  type="button"
+                  onClick={ctaOnClick}
+                  disabled={ctaDisabled}
+                  className="w-full rounded-2xl bg-emerald-700 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 group-data-[compact=true]:py-2.5 group-data-[compact=true]:text-base hover:scale-[1.01] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+                >
+                  {isPaymentSheetSuccess ? (
+                    <div className="flex items-center justify-center gap-2" aria-live="polite" role="status">
+                      <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
+                      {footerActionLabel}
+                    </div>
+                  ) : isPreparingPayment || isRefreshingQuote || isResolvingPaymentReturn || isSubmittingInlinePayment || isFinalizingBooking ? (
+                    <div className="flex items-center justify-center" aria-live="polite" role="status">
+                      <div className="mr-2 h-5 w-5 animate-spin rounded-full border-b-2 border-white" />
+                      {footerActionLabel}
+                    </div>
+                  ) : (
+                    footerActionLabel
+                  )}
+                </button>
+              
+              </>
+            }
+          >
                 {isPreparingPayment && !showInlinePaymentForm ? (
                   <div className="flex min-h-[16rem] items-center justify-center">
                     <div className="flex items-center gap-3 text-sm text-gray-600" aria-live="polite" role="status">
@@ -2326,32 +2331,8 @@ const ConfirmationPage: React.FC = () => {
                     </Elements>
                   </div>
                 ) : null}
-              </div>
-
-              <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-100 bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:static sm:px-5">
-                <button
-                  type="button"
-                  onClick={ctaOnClick}
-                  disabled={ctaDisabled}
-                  className="w-full rounded-2xl bg-emerald-700 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.01] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
-                >
-                  {isPaymentSheetSuccess ? (
-                    <div className="flex items-center justify-center gap-2" aria-live="polite" role="status">
-                      <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
-                      {footerActionLabel}
-                    </div>
-                  ) : isPreparingPayment || isRefreshingQuote || isResolvingPaymentReturn || isSubmittingInlinePayment || isFinalizingBooking ? (
-                    <div className="flex items-center justify-center" aria-live="polite" role="status">
-                      <div className="mr-2 h-5 w-5 animate-spin rounded-full border-b-2 border-white" />
-                      {footerActionLabel}
-                    </div>
-                  ) : (
-                    footerActionLabel
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
+              
+          </PaymentSheetShell>
         </>
       ) : null}
     </div>

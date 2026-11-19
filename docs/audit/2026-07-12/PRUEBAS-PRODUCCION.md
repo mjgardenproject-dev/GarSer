@@ -2042,6 +2042,23 @@ inglés). La web no necesita migración ni funciones.
 | 49.8 | Abre otra vez el mismo enlace | «Enlace caducado» con «Pedir un enlace nuevo» que lleva a recuperar contraseña |
 | 49.9 | Supabase → Authentication → SMTP / límites (decisión tuya) | Con anuncios en marcha, un remitente propio y un límite de correos por hora suficiente; con el de Supabase por defecto el límite es muy bajo |
 
+## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
+
+Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.
+
+- [ ] **36.1 — Se abre solo (bloqueante).** Entra con la cuenta aprobada sin configurar. ✅ Se abre «Activa tu cuenta» con «Hola {nombre}…». «Seguir luego» vuelve al panel con «Te falta poco… Continuar donde lo dejé» y lo retoma en el mismo paso.
+- [ ] **36.2 — Zona.** Dirección + 30 km. ✅ En «Mi perfil → Cobertura» sale la misma dirección y radio, confirmada.
+- [ ] **36.3 — Tarifas (bloqueante).** Marca césped y setos y contesta. ✅ El resumen «Así le saldría a un cliente» da precios coherentes; en «Mi perfil → Servicios» salen los mismos valores y «Guardar cambios» está desactivado (sin diferencias).
+- [ ] **36.4 — Horario.** Plantilla «Lunes a viernes, 8-14 y 16-19», 24 h, 4 semanas. ✅ En «Horario» salen esas horas.
+- [ ] **36.5 — Equipo.** Invita a `+empleado` con «Configurar a esta persona» (nombre, césped, mismo horario). ✅ Llega el correo de invitación.
+- [ ] **36.6 — Activar (bloqueante).** «Activar mi cuenta». ✅ «¡Listo! Ya apareces a los clientes»; una reserva de prueba en tu zona te encuentra.
+- [ ] **36.7 — Empleado.** Acepta la invitación con `+empleado`. ✅ Va a la bienvenida con su nombre, césped asignado y el horario de la empresa; «Empezar» lleva a «Mi trabajo».
+- [ ] **36.8 — Ayuda y admin.** «Ayuda» en el panel abre contacto y preguntas. Como admin, «Profesionales» enseña «Cuestionario de activación: …».
+
+> **Comprobado ya en local (2026-11-11):** 202 archivos y 2998 tests; build; SQL `invitation_preset.test.sql` y `activation_progress.test.sql` (con mutación) + `professional_mode`, `phyto_licenses_for_teams`, `provider_setup_status`; flujo completo a 390 px con cuentas de prueba locales.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:
@@ -2061,6 +2078,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 33 verde — alta y primeros pasos en el móvil (33.1 y 33.2, con el iPhone, son bloqueantes: un profesional no puede quedarse sin ver su progreso ni su estado) |
 | [ ] | Sección 34 verde — cuenta de profesional única y dinámica (34.4 y 34.6 son bloqueantes: al pasar a equipo y al volver no se puede perder ni cambiar nada: reservas, reseñas, enlace, precios) |
 | [ ] | Sección 35 verde — alta de jardinero: sin preguntas de empleado y con el nº de personas (35.2 y 35.4 son bloqueantes: sin ese dato el admin decide a ciegas) |
+| [ ] | Sección 36 verde — cuestionario de activación (36.1, 36.3 y 36.6 son bloqueantes: un profesional nuevo tiene que poder activarse solo y cobrar lo que configuró) |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

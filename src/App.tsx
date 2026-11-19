@@ -60,6 +60,8 @@ const IncidentsManagement = lazy(() => import('./pages/admin/IncidentsManagement
 const GardenerDashboard = lazy(() => import('./components/gardener/GardenerDashboard'));
 const GardenerBookings = lazy(() => import('./components/gardener/GardenerBookings'));
 const GardenerApplicationWizard = lazy(() => import('./components/gardener/GardenerApplicationWizard'));
+// Cuestionario «Activa tu cuenta» del profesional (2026-11-11).
+const ActivationWizardPage = lazy(() => import('./pages/activacion/ActivationWizardPage'));
 const GardenerStatusPage = lazy(() => import('./components/gardener/GardenerStatusPage'));
 // GarSer Empresas (F3.2): alta y panel de empresa.
 const CompanyApplicationPage = lazy(() => import('./pages/empresa/CompanyApplicationPage'));
@@ -75,6 +77,8 @@ const CompanyMemberSchedulePage = lazy(() => import('./pages/empresa/CompanyMemb
 const EmployeeSchedulePage = lazy(() => import('./pages/empleado/EmployeeSchedulePage'));
 const InvitationAcceptPage = lazy(() => import('./pages/empleado/InvitationAcceptPage'));
 const EmployeeHomePage = lazy(() => import('./pages/empleado/EmployeeHomePage'));
+// Bienvenida del empleado al aceptar la invitación (2026-11-11).
+const EmployeeWelcomePage = lazy(() => import('./pages/empleado/EmployeeWelcomePage'));
 
 // Funnel de reserva (el más pesado: análisis con IA, wizards manuales y checkout)
 const BookingFlow = lazy(() => import('./pages/reserva/BookingFlow'));
@@ -551,7 +555,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/mi-trabajo/horario" element={<ProtectedRoute><EmployeeSchedulePage /></ProtectedRoute>} />
         {/* Pública a propósito: quien recibe la invitación puede no tener cuenta todavía. */}
         <Route path="/invitacion" element={<InvitationAcceptPage />} />
+        <Route path="/mi-trabajo/bienvenida" element={<ProtectedRoute><EmployeeWelcomePage /></ProtectedRoute>} />
         <Route path="/mi-trabajo" element={<ProtectedRoute><EmployeeHomePage /></ProtectedRoute>} />
+        <Route path="/activar" element={<ProtectedRoute><ActivationWizardPage /></ProtectedRoute>} />
         <Route 
           path="/apply" 
           element={

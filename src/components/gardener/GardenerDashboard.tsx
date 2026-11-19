@@ -30,6 +30,9 @@ import TeamEntryCard from '../provider/TeamEntryCard';
 import MarketingHub from '../marketing/MarketingHub';
 import { buildProviderSetupSteps, type SetupTarget } from '../../shared/providerSetup';
 import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
+import { useActivationAutoOpen } from '../../activation/useActivationAutoOpen';
+import ActivationResumeCard from '../activation/ActivationResumeCard';
+import ProfessionalHelpSheet, { HelpButton } from '../provider/ProfessionalHelpSheet';
 // Eliminado PromotionalFlyer
 
 interface GardenerDashboardProps {
@@ -63,6 +66,10 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   const setup = useProviderSetupStatus({ enabled: !pending });
   const setupSummary = useMemo(() => (setup.status ? buildProviderSetupSteps(setup.status) : null), [setup.status]);
   const guideFirst = Boolean(setupSummary && !setupSummary.allRequiredDone);
+  // «Activa tu cuenta» (2026-11-11): mientras le falte algo por hacer, el panel abre el cuestionario (o, si lo
+  // pausó, enseña la tarjeta para retomarlo).
+  const activationPending = useActivationAutoOpen(setup.status, !pending);
+  const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
     if (setupSummary) localStorage.setItem(SETUP_INCOMPLETE_KEY, setupSummary.allRequiredDone ? '0' : '1');
   }, [setupSummary]);
@@ -367,7 +374,9 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
         <>
           {/* QA-192: lo primero que ve si un cliente ha abierto una incidencia sobre su trabajo. */}
           <OpenIncidentsNotice userId={user?.id} />
-          {!pending && guideFirst && <ProviderSetupChecklist className="mb-6" onNavigate={handleSetupNavigate} setup={setup} />}
+          {!pending && activationPending && <ActivationResumeCard className="mb-6" />}
+          {/* Mientras falte activarse, manda el cuestionario (la guía de pasos ya no es la forma de empezar, D4). */}
+          {!pending && guideFirst && !activationPending && <ProviderSetupChecklist className="mb-6" onNavigate={handleSetupNavigate} setup={setup} />}
 
           {/* Header */}
           <div className="bg-white rounded-2xl shadow-lg p-5 sm:p-8 mb-8">
@@ -378,6 +387,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
                 </h1>
                 <p className="text-gray-600">Gestiona tus servicios y reservas</p>
               </div>
+              {!pending && <HelpButton onClick={() => setHelpOpen(true)} className="shrink-0 self-start" />}
             </div>
 
             {!pending && <SuspendedProviderNotice className="mt-4" />}
@@ -454,7 +464,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
           </div>
 
           {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
-          {!pending && !guideFirst && <ProviderSetupChecklist className="mb-8" onNavigate={handleSetupNavigate} setup={setup} />}
+          {!pending && !guideFirst && !activationPending && <ProviderSetupChecklist className="mb-8" onNavigate={handleSetupNavigate} setup={setup} />}
 
           {/* «¿Trabajas con más gente?» (D31): la única pista de equipo del modo individual. Va debajo de los
               accesos del panel y de la guía (que, si falta algo obligatorio, ya sale arriba del todo). */}
@@ -634,6 +644,7 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
       )}
 
       {confirmDialog}
+      <ProfessionalHelpSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 };

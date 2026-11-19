@@ -8,7 +8,7 @@
  */
 
 const AUTH_PATHS = new Set(['/auth', '/auth/callback', '/confirmar-servicio', '/invitacion']);
-const APPLY_PATHS = new Set(['/apply', '/empresa/solicitud', '/empresa/estado']);
+const APPLY_PATHS = new Set(['/apply', '/empresa/solicitud', '/empresa/estado', '/activar', '/mi-trabajo/bienvenida']);
 const MARKETING_PATHS = new Set(['/', '/marbella', '/costa-del-sol', '/para-jardineros', '/privacidad', '/terminos', '/cookies']);
 
 export const isAuthPath = (pathname: string) => AUTH_PATHS.has(pathname);

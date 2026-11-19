@@ -133,6 +133,89 @@ export function clearActivationProgress(userId: string, storage: KV | null = saf
   }
 }
 
+// ── Terminado ───────────────────────────────────────────────────────────────────────────────────
+//
+// QA-196 / QA-108: un profesional que activó su cuenta pero tiene un paso obligatorio pendiente que NO
+// depende del cuestionario (el carnet, que lo aprueba GarSer) volvía a la Bienvenida en cada inicio de
+// sesión, y «Ir a mi panel» le devolvía al cuestionario. Terminarlo se recuerda aquí (este navegador, al
+// instante) y en el servidor (`activation_step = 'done'`, para otros dispositivos).
+
+const doneKey = (userId: string) => `garser:activation:done:${userId}`;
+
+export function markActivationDone(userId: string, storage: KV | null = safeLocalStorage()): void {
+  try {
+    storage?.setItem(doneKey(userId), '1');
+  } catch {
+    /* sin almacenamiento: queda lo que anota el servidor */
+  }
+}
+
+export function isActivationDoneLocally(userId: string, storage: KV | null = safeLocalStorage()): boolean {
+  try {
+    return storage?.getItem(doneKey(userId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+// ── Borrador de las invitaciones (paso «Equipo») ────────────────────────────────────────────────────
+//
+// QA-026: recargar la página (cambio de app, tirar para recargar) vaciaba los correos, nombres, servicios y
+// horarios ya escritos. Se guarda en este navegador hasta terminar el cuestionario.
+
+export interface TeamDraft {
+  /** Cuándo se guardó (ms). Pasados 14 días se olvida: son correos de otras personas. */
+  at?: number;
+  team: {
+    answer: 'no' | 'yes' | null;
+    emails: string[];
+    presets: Array<unknown | null>;
+    declared: boolean;
+  };
+  sent: Array<{ invitationId: string; email: string; url: string; emailed: boolean }>;
+}
+
+const teamDraftKey = (userId: string) => `garser:activation:team:${userId}`;
+const TEAM_DRAFT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
+export function readTeamDraft(userId: string, storage: KV | null = safeLocalStorage(), now: number = Date.now()): TeamDraft | null {
+  if (!storage) return null;
+  try {
+    const raw = JSON.parse(storage.getItem(teamDraftKey(userId)) || 'null') as Partial<TeamDraft> | null;
+    const team = raw?.team;
+    if (!team || typeof team !== 'object') return null;
+    if (typeof raw?.at === 'number' && now - raw.at > TEAM_DRAFT_MAX_AGE_MS) return null;
+    if (!Array.isArray(team.emails) || !team.emails.every((e) => typeof e === 'string')) return null;
+    if (!Array.isArray(team.presets) || team.presets.length !== team.emails.length) return null;
+    const answer = team.answer === 'yes' || team.answer === 'no' ? team.answer : null;
+    const sent = Array.isArray(raw?.sent)
+      ? raw!.sent.filter(
+          (s): s is TeamDraft['sent'][number] =>
+            Boolean(s) && typeof s.invitationId === 'string' && typeof s.email === 'string' && typeof s.url === 'string',
+        ).map((s) => ({ ...s, emailed: Boolean(s.emailed) }))
+      : [];
+    return { team: { answer, emails: team.emails, presets: team.presets, declared: team.declared === true }, sent };
+  } catch {
+    return null;
+  }
+}
+
+export function writeTeamDraft(userId: string, draft: TeamDraft, storage: KV | null = safeLocalStorage()): void {
+  try {
+    storage?.setItem(teamDraftKey(userId), JSON.stringify({ ...draft, at: Date.now() }));
+  } catch {
+    /* sin almacenamiento: se rellena otra vez, como antes */
+  }
+}
+
+export function clearTeamDraft(userId: string, storage: KV | null = safeLocalStorage()): void {
+  try {
+    storage?.removeItem(teamDraftKey(userId));
+  } catch {
+    /* nada que borrar */
+  }
+}
+
 /** «Seguir luego»: el panel no lo vuelve a abrir solo en esta sesión del navegador. */
 export function pauseActivation(storage: KV | null = safeSessionStorage()): void {
   try {

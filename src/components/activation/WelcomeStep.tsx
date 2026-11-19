@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarClock, Euro, MapPin, Users } from 'lucide-react';
+import { BadgeCheck, CalendarClock, Euro, MapPin, Users } from 'lucide-react';
 
 // Bienvenida del cuestionario «Activa tu cuenta». El texto es el que pidió el propietario (2026-11-11);
 // para un autónomo, «tu empresa» pasa a «tu negocio».
@@ -21,7 +21,12 @@ const WelcomeStep: React.FC<Props> = ({ firstName, isCompany, minutes }) => {
   const business = isCompany ? 'tu empresa' : 'tu negocio';
   return (
     <div>
-      <h1 className="text-2xl font-bold leading-tight text-gray-900">
+      {/* QA-024: nadie decía que la solicitud estaba aceptada (solo el correo). */}
+      <p className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-bold text-emerald-800">
+        <BadgeCheck className="h-5 w-5" aria-hidden="true" />
+        Te hemos aprobado
+      </p>
+      <h1 className="mt-3 text-2xl font-bold leading-tight text-gray-900">
         Hola{firstName ? ` ${firstName}` : ''}, configura todo lo necesario para que {business} funcione en GarSer a la perfección
       </h1>
       <p className="mt-3 text-base text-gray-700">

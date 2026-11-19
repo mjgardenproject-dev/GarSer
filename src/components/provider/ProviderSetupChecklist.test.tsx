@@ -135,6 +135,22 @@ describe('ProviderSetupChecklist', () => {
     expect(screen.getByRole('button', { name: 'Subir foto' })).toBeTruthy();
   });
 
+  it('QA-200 · con lo obligatorio hecho y algo recomendado por hacer, se llama «Completa tu cuenta profesional» y lo que falta es «Recomendado»', async () => {
+    answer(status()); // sin foto: recomendado pendiente
+    render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+    expect(await screen.findByText('Completa tu cuenta profesional')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Para conseguir más reservas/ }));
+    expect(screen.getByText('Foto de perfil').parentElement?.textContent).toContain('Recomendado');
+    expect(screen.queryByText('Pendiente:')).toBeNull();
+  });
+
+  it('QA-200 · sin nada recomendado pendiente no hay título de «completa» (todo está hecho)', async () => {
+    answer(status({ profile: { full_name: 'Miguel', address: 'Marbella', max_distance: 25, has_coordinates: true, has_description: true, has_photo: true } }));
+    render(<ProviderSetupChecklist onNavigate={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Ya apareces a los clientes' })).toBeTruthy();
+    expect(screen.queryByText('Completa tu cuenta profesional')).toBeNull();
+  });
+
   it('todo lo obligatorio hecho: tarjeta pequeña con el enlace, que se puede cerrar', async () => {
     answer(status());
     render(<ProviderSetupChecklist onNavigate={vi.fn()} />);

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { ProviderSetupStatus } from '../shared/providerSetup';
 import { useRefreshOnReturn } from './useRefreshOnReturn';
 import { loadServiceActivation } from '../utils/serviceActivation';
+import { isActivationDoneLocally } from '../activation/activationFlow';
 import { SETUP_CHANGED_EVENT } from '../utils/setupEvents';
 
 // Completar la cuenta profesional: el estado real de la cuenta proveedora con sesión
@@ -49,6 +50,25 @@ export function useProviderSetupStatus({ enabled = true }: { enabled?: boolean }
           // sin dato: paso de siempre
         }
         if (mine !== seq.current) return;
+      }
+      // ¿Terminó el cuestionario «Activa tu cuenta»? Este navegador lo sabe al instante; el servidor lo
+      // sabe desde cualquier dispositivo (`activation_step = 'done'`).
+      if (next) {
+        let done = isActivationDoneLocally(next.provider_id);
+        if (!done) {
+          try {
+            const { data: profile } = await supabase
+              .from('gardener_profiles')
+              .select('activation_step')
+              .eq('user_id', next.provider_id)
+              .maybeSingle();
+            done = (profile as { activation_step?: string | null } | null)?.activation_step === 'done';
+          } catch {
+            // sin dato: se trata como no terminado, que es el comportamiento de siempre
+          }
+          if (mine !== seq.current) return;
+        }
+        next.activation_done = done;
       }
       setStatus(next);
       setError(null);

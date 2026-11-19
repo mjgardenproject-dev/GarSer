@@ -14,6 +14,13 @@ interface Props {
   onPause?: () => void;
   children: React.ReactNode;
   footer: React.ReactNode;
+  /**
+   * Qué ha impedido seguir. Va DENTRO del pie fijo, justo encima del botón: así se ve siempre, sin tener
+   * que buscarlo al final de una página larga ni quedar tapado por el botón fijo (QA-025).
+   */
+  error?: string | null;
+  /** Aviso que no puede esperar (p. ej. solicitudes de reserva sin responder, QA-062), bajo «Atrás». */
+  notice?: React.ReactNode;
 }
 
 export const PRIMARY_BUTTON_CLASS =
@@ -22,7 +29,7 @@ export const PRIMARY_BUTTON_CLASS =
 export const SECONDARY_BUTTON_CLASS =
   'inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-5 py-3 text-base font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [touch-action:manipulation]';
 
-const ActivationShell: React.FC<Props> = ({ stepLabel, percent, onBack, onPause, children, footer }) => (
+const ActivationShell: React.FC<Props> = ({ stepLabel, percent, onBack, onPause, children, footer, error, notice }) => (
   <div className="flex min-h-[calc(100dvh-var(--app-navbar-h,4rem))] flex-col">
     <StickyStepProgress title="Activa tu cuenta" stepLabel={stepLabel} percent={percent} />
     <div className="mx-auto w-full max-w-xl flex-1 px-1 pb-6 pt-3 sm:px-4">
@@ -48,13 +55,21 @@ const ActivationShell: React.FC<Props> = ({ stepLabel, percent, onBack, onPause,
         </button>
         )}
       </div>
+      {notice}
       {children}
     </div>
     <div
       className="sticky bottom-0 z-20 border-t border-gray-200 bg-white/95 px-1 pt-3 backdrop-blur sm:px-4"
       style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
     >
-      <div className="mx-auto w-full max-w-xl">{footer}</div>
+      <div className="mx-auto w-full max-w-xl">
+        {error && (
+          <p role="alert" className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">
+            {error}
+          </p>
+        )}
+        {footer}
+      </div>
     </div>
   </div>
 );

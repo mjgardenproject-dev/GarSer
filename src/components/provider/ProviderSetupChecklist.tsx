@@ -49,7 +49,7 @@ const STATE_LABEL: Record<SetupStepState, string> = {
   blocked: 'Falta un paso anterior',
 };
 
-const StateIcon: React.FC<{ state: SetupStepState }> = ({ state }) => {
+const StateIcon: React.FC<{ state: SetupStepState; label?: string }> = ({ state, label }) => {
   const common = 'mt-0.5 h-5 w-5 shrink-0';
   const icon = {
     done: <CheckCircle2 className={`${common} text-emerald-600`} aria-hidden="true" />,
@@ -61,7 +61,7 @@ const StateIcon: React.FC<{ state: SetupStepState }> = ({ state }) => {
   return (
     <>
       {icon}
-      <span className="sr-only">{STATE_LABEL[state]}: </span>
+      <span className="sr-only">{label ?? STATE_LABEL[state]}: </span>
     </>
   );
 };
@@ -81,8 +81,13 @@ export const SetupStepList: React.FC<{
   onActivateService?: (service: SetupStepService) => void;
   busyServiceId?: string | null;
   guided?: boolean;
+  /**
+   * Los pasos «para conseguir más reservas»: lo que falta no es obligatorio, así que se llama
+   * «Recomendado», no «Pendiente» (QA-200: el panel decía una cosa y «Profesionales» otra).
+   */
+  recommended?: boolean;
   label: string;
-}> = ({ steps, nextStepId, onNavigate, onActivateService, busyServiceId = null, guided = false, label }) => {
+}> = ({ steps, nextStepId, onNavigate, onActivateService, busyServiceId = null, guided = false, recommended = false, label }) => {
   const [openId, setOpenId] = useState<string | null>(null);
   return (
     <ol className="space-y-1" aria-label={label}>
@@ -130,13 +135,16 @@ export const SetupStepList: React.FC<{
             className={`flex gap-3 rounded-xl px-3 py-3 ${isNext ? 'bg-emerald-50 ring-1 ring-emerald-200' : ''}`}
             aria-current={isNext ? 'step' : undefined}
           >
-            <StateIcon state={step.state} />
+            <StateIcon state={step.state} label={recommended && step.state === 'todo' ? 'Recomendado' : undefined} />
             <div className="min-w-0 flex-1">
               {guided && isNext && (
                 <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Paso {index + 1} de {steps.length} · ahora</p>
               )}
               <p className={`font-semibold ${step.state === 'done' || step.state === 'blocked' ? 'text-gray-500' : 'text-gray-900'}`}>
                 {step.title}
+                {recommended && step.state === 'todo' && (
+                  <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 align-middle text-xs font-semibold text-emerald-800">Recomendado</span>
+                )}
               </p>
               <p className="mt-0.5 text-sm text-gray-600">{step.detail}</p>
               {guided && pending && step.howTo && step.howTo.length > 0 && (
@@ -278,7 +286,7 @@ const Extras: React.FC<{
       </span>
       <ChevronDown className={`h-5 w-5 shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
     </button>
-    {open && <SetupStepList steps={steps} onNavigate={onNavigate} label="Pasos recomendados" />}
+    {open && <SetupStepList steps={steps} onNavigate={onNavigate} recommended label="Pasos recomendados" />}
   </div>
 );
 
@@ -366,6 +374,8 @@ const ProviderSetupChecklist: React.FC<{
         <div className="flex items-start gap-3">
           {headline.icon}
           <div className="min-w-0 flex-1">
+            {/* QA-200: con lo obligatorio hecho también es «Completa tu cuenta profesional»: lo que queda es recomendado. */}
+            {recommendedPending > 0 && <p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Completa tu cuenta profesional</p>}
             <h2 id="provider-setup-title" className={`text-lg font-bold ${headline.title}`}>{summary.headline.title}</h2>
             <p className="mt-0.5 text-sm text-emerald-900">{summary.headline.detail}</p>
           </div>

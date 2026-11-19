@@ -518,7 +518,7 @@ const BookingRequestsManager: React.FC<BookingRequestsManagerProps> = ({ onBack 
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <div className="bg-green-100 px-4 py-2 rounded-lg">
-            <span className="text-green-800 font-semibold">{requests.length} solicitudes pendientes</span>
+            <span className="text-green-800 font-semibold">{requests.length === 1 ? '1 solicitud pendiente' : `${requests.length} solicitudes pendientes`}</span>
           </div>
           <RefreshButton onRefresh={refreshSilently} />
         </div>

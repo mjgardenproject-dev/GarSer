@@ -3,6 +3,7 @@ import PhytosanitaryLicenseUpload from '../gardener/PhytosanitaryLicenseUpload';
 import PhytosanitaryPricingConfigurator from '../gardener/PhytosanitaryPricingConfigurator';
 import type { PhytosanitaryPricingConfig } from '../../types';
 import type { ManualSaveResult } from '../../hooks/useManualSave';
+import { notifySetupChanged } from '../../utils/setupEvents';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
 
 // Fitosanitarios dentro del cuestionario «Activa tu cuenta» (2026-11-11). Es el servicio más técnico: usa
@@ -37,7 +38,8 @@ const PhytoStep: React.FC<Props> = ({ savedConfig, licenseStatus, onSave, regist
       </p>
 
       <div className="mt-5" id="activation-license">
-        <PhytosanitaryLicenseUpload intro="Sin el carnet aprobado puedes guardar tus tarifas, pero solo te llegarán los tratamientos ecológicos. GarSer lo revisa y te avisa." />
+        {/* Al enviar el carnet se relee el estado de la cuenta: si no, el bloque «subir tu carnet» seguía a la vista (QA-202). */}
+        <PhytosanitaryLicenseUpload onSubmitted={notifySetupChanged} intro="Sin el carnet aprobado puedes guardar tus tarifas, pero solo te llegarán los tratamientos ecológicos. GarSer lo revisa y te avisa." />
       </div>
 
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-3 sm:p-4">

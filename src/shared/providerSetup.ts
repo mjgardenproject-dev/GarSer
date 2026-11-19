@@ -76,6 +76,12 @@ export interface ProviderSetupStatus {
    * uno configurado y sin activar existe: lo añade el navegador. Sin él, el paso es el de siempre.
    */
   service_activation?: Array<{ id: string; name: string; active: boolean; can_activate: boolean }>;
+  /**
+   * Ya terminó el cuestionario «Activa tu cuenta» (QA-196/QA-108). Lo añade el navegador, no el servidor
+   * de estado. Terminado, un paso pendiente que ya no depende del cuestionario (el carnet, que lo aprueba
+   * GarSer) lo explica «Completa tu cuenta profesional», no se le reabre el cuestionario en cada sesión.
+   */
+  activation_done?: boolean;
 }
 
 export type SetupStepId =

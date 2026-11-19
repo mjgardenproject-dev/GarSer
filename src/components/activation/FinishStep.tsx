@@ -24,6 +24,8 @@ interface Props {
   /** Pasos obligatorios que aún faltan según el servidor (vacío = ya aparece). */
   pending: SetupStep[];
   providerId: string;
+  /** Ya tiene foto o logo: no se le vuelve a sugerir subirla (QA-197). */
+  hasPhoto?: boolean;
 }
 
 const Row: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({ icon, title, children }) => (
@@ -68,7 +70,7 @@ const ShareLinkButton: React.FC<{ providerId: string }> = ({ providerId }) => {
   );
 };
 
-const FinishStep: React.FC<Props> = ({ phase, firstName, summary, pending, providerId }) => {
+const FinishStep: React.FC<Props> = ({ phase, firstName, summary, pending, providerId, hasPhoto = false }) => {
   const navigate = useNavigate();
   const ready = summary.services.filter((s) => s.ready);
 
@@ -144,13 +146,15 @@ const FinishStep: React.FC<Props> = ({ phase, firstName, summary, pending, provi
       <div className="mt-3 space-y-3">
         <PushNotificationsCard />
         <ShareLinkButton providerId={providerId} />
-        <button
-          type="button"
-          onClick={() => navigate('/account')}
-          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 font-semibold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-        >
-          <Camera className="h-5 w-5" aria-hidden="true" /> Sube tu foto o tu logo
-        </button>
+        {!hasPhoto && (
+          <button
+            type="button"
+            onClick={() => navigate('/account')}
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 font-semibold text-gray-900 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+          >
+            <Camera className="h-5 w-5" aria-hidden="true" /> Sube tu foto o tu logo
+          </button>
+        )}
       </div>
     </div>
   );

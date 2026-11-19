@@ -14,8 +14,10 @@ import PhytoStep from '../../components/activation/PhytoStep';
 import ScheduleStep from '../../components/activation/ScheduleStep';
 import TeamStep, { type TeamAnswer } from '../../components/activation/TeamStep';
 import FinishStep from '../../components/activation/FinishStep';
+import PendingRequestsNotice from '../../components/activation/PendingRequestsNotice';
+import { usePendingRequestCount } from '../../hooks/usePendingRequestCount';
 import { placeLabel } from '../../components/activation/ZoneStep';
-import { createTeamInvitation, looksLikeEmail, presetProblem, setInvitationPreset, type TeamInvitationResult } from '../../utils/teamInvitations';
+import { createTeamInvitation, looksLikeEmail, presetProblem, setInvitationPreset, type PersonPreset, type TeamInvitationResult } from '../../utils/teamInvitations';
 import { isSavedServiceConfigValid, setServiceActive } from '../../utils/serviceActivation';
 import { buildProviderSetupSteps } from '../../shared/providerSetup';
 import { emptyWeek, rulesToRanges, scheduleProblem, rangesToMatrix, weeklyHours, type WeekRanges } from '../../activation/scheduleModel';
@@ -33,6 +35,10 @@ import {
 import {
   blockNumber,
   clearActivationProgress,
+  clearTeamDraft,
+  markActivationDone,
+  readTeamDraft,
+  writeTeamDraft,
   recordedStep,
   estimatedMinutes,
   nextStep,
@@ -60,6 +66,7 @@ const ActivationWizardPage: React.FC = () => {
   const navigate = useNavigate();
   const { isTeam } = useProviderMode();
   const setup = useProviderSetupStatus();
+  const pendingRequests = usePendingRequestCount(user?.id);
   const home = isTeam ? '/empresa' : '/dashboard';
 
   const [data, setData] = useState<ActivationData | null>(null);
@@ -100,7 +107,14 @@ const ActivationWizardPage: React.FC = () => {
         // Si en el alta dijo «somos 4», al elegir «Sí» salen 3 huecos para sus correos.
         const slots = Math.max(1, (loaded.estimatedTeamSize ?? 2) - 1);
         const n = Math.min(slots, 10);
-        setTeam({ answer: null, emails: Array.from({ length: n }, () => ''), presets: Array.from({ length: n }, () => null), declared: false });
+        // QA-026: si recargó a medias, vuelve lo que ya había escrito (correos, nombres, servicios, horario).
+        const draft = readTeamDraft(user.id);
+        if (draft) {
+          setTeam({ ...draft.team, presets: draft.team.presets as Array<PersonPreset | null> });
+          setSentInvites(draft.sent);
+        } else {
+          setTeam({ answer: null, emails: Array.from({ length: n }, () => ''), presets: Array.from({ length: n }, () => null), declared: false });
+        }
         const saved = readActivationProgress(user.id, isKnownService);
         setProgress(saved ?? { step: 'welcome', selectedServices: loaded.preselectedServices });
       })
@@ -115,12 +129,21 @@ const ActivationWizardPage: React.FC = () => {
     };
   }, [user?.id]);
 
+  // El borrador del equipo se guarda al escribirlo (no al pulsar «Siguiente»): recargar no lo pierde.
+  useEffect(() => {
+    if (!data || !user?.id || finishPhase === 'done') return;
+    writeTeamDraft(user.id, { team, sent: sentInvites });
+  }, [data, user?.id, team, sentInvites, finishPhase]);
+
   // «Admin → Profesionales» ve en qué paso va (sin esperar: si falla, el cuestionario sigue igual).
   const recordStep = useCallback((step: string) => {
     void supabase.rpc('record_my_activation_step', { p_step: step }).then(() => undefined, () => undefined);
   }, []);
   const go = useCallback(
     (next: ActivationProgress, options: { scroll?: boolean } = {}) => {
+      // Un aviso de error es de LA pantalla donde ocurrió: ya sale junto al botón de cualquier paso (QA-025), así que
+      // no puede viajar con el profesional al paso siguiente o anterior.
+      setServiceError(null);
       setProgress((prev) => {
         if (!prev || recordedStep(prev.step) !== recordedStep(next.step)) recordStep(recordedStep(next.step));
         return next;
@@ -346,8 +369,8 @@ const ActivationWizardPage: React.FC = () => {
         onNoticeChange={setNotice}
         weeksAhead={weeksAhead}
         onWeeksChange={setWeeksAhead}
-        problem={serviceError ?? problem}
-        showProblem={scheduleTouched || Boolean(serviceError)}
+        problem=""
+        showProblem={false}
       />
     );
     footer = (
@@ -392,7 +415,6 @@ const ActivationWizardPage: React.FC = () => {
             return ok;
           }}
         />
-        {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
         <button
           type="button"
           onClick={() => advance()}
@@ -445,7 +467,6 @@ const ActivationWizardPage: React.FC = () => {
             valid={serviceValid}
             onEdit={setQuestionIndex}
           />
-          {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
           {skip}
         </>
       );
@@ -504,11 +525,15 @@ const ActivationWizardPage: React.FC = () => {
       });
       if (Object.keys(errors).length > 0) {
         setEmailErrors(errors);
+        setServiceError('Revisa los correos marcados en rojo.');
         return;
       }
       if (toSend.length === 0) {
         if (sentInvites.length > 0) advance();
-        else setEmailErrors({ 0: 'Escribe al menos un correo, o elige que trabajas solo.' });
+        else {
+          setEmailErrors({ 0: 'Escribe al menos un correo, o elige que trabajas solo.' });
+          setServiceError('Escribe al menos un correo, o elige que trabajas solo.');
+        }
         return;
       }
       if (needsLiability && !team.declared) {
@@ -550,6 +575,7 @@ const ActivationWizardPage: React.FC = () => {
         presets: remaining.length > 0 ? remainingSend.map(({ index }) => team.presets[index] ?? null) : [null],
       });
       setEmailErrors(Object.fromEntries(toSend.filter(({ index }) => failed[index]).map(({ index }, i) => [i, failed[index]])));
+      if (remaining.length > 0 && !presetFailed) setServiceError('No se han podido enviar todas las invitaciones: revisa los correos marcados en rojo.');
       if (remaining.length === 0 && !presetFailed) advance();
     };
     body = (
@@ -570,7 +596,6 @@ const ActivationWizardPage: React.FC = () => {
             .map((name) => ({ id: data.serviceIds[name]!, name }))}
           offersPhyto={selected.includes('Servicios fitosanitarios') || Boolean(data.savedServices['Servicios fitosanitarios']?.active)}
         />
-        {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
       </>
     );
     footer = (
@@ -604,6 +629,9 @@ const ActivationWizardPage: React.FC = () => {
         notifySetupChanged();
         await setup.refresh();
         clearActivationProgress(user.id);
+        clearTeamDraft(user.id);
+        // Terminado: un paso que ya no depende del cuestionario (el carnet) no lo reabre (QA-196/QA-108).
+        markActivationDone(user.id);
         recordStep('done');
         setFinishPhase('done');
         window.scrollTo({ top: 0 });
@@ -615,8 +643,7 @@ const ActivationWizardPage: React.FC = () => {
     };
     body = (
       <>
-        <FinishStep phase={finishPhase} firstName={data.firstName} summary={summary} pending={pendingSteps} providerId={user.id} />
-        {serviceError && <p role="alert" className="mt-3 text-sm text-red-700">{serviceError}</p>}
+        <FinishStep phase={finishPhase} firstName={data.firstName} summary={summary} pending={pendingSteps} providerId={user.id} hasPhoto={Boolean(setup.status?.profile.has_photo)} />
       </>
     );
     footer =
@@ -645,12 +672,32 @@ const ActivationWizardPage: React.FC = () => {
     );
   }
 
+  // Lo que ha impedido seguir, SIEMPRE a la vista encima del botón (QA-025).
+  const scheduleProblemShown =
+    step === 'schedule' && !isTeam && scheduleTouched
+      ? scheduleProblem(week) || (notice === null || weeksAhead === null ? 'Elige la antelación y las semanas de agenda.' : '')
+      : '';
+  const footerError = serviceError || scheduleProblemShown || null;
+
   return (
     <ActivationShell
       stepLabel={stepLabel}
       percent={percent}
       onBack={back}
       onPause={step === 'finish' && finishPhase === 'done' ? undefined : pause}
+      error={footerError}
+      notice={
+        // Solo en la Bienvenida: repetido en cada paso quitaba al iPhone SE la mitad del espacio útil (OBS-ACT-01).
+        step !== 'welcome' ? null : (
+          <PendingRequestsNotice
+            count={pendingRequests}
+            onOpen={() => {
+              pauseActivation();
+              navigate(isTeam ? '/empresa/solicitudes' : '/dashboard?tab=requests');
+            }}
+          />
+        )
+      }
       footer={footer}
     >
       {body}

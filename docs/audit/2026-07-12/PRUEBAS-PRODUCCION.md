@@ -2042,6 +2042,38 @@ inglés). La web no necesita migración ni funciones.
 | 49.8 | Abre otra vez el mismo enlace | «Enlace caducado» con «Pedir un enlace nuevo» que lleva a recuperar contraseña |
 | 49.9 | Supabase → Authentication → SMTP / límites (decisión tuya) | Con anuncios en marcha, un remitente propio y un límite de correos por hora suficiente; con el de Supabase por defecto el límite es muy bajo |
 
+## Sección 50 — Activación del profesional: no se reabre en bucle y no esconde nada (FASE 4, paquete 1.12, 2026-11-19)
+
+Qué se arregló (QA-196, 197, 108, 062, 024, 025, 026, 200, 202): «Ir a mi panel» devolvía a la Bienvenida y el cuestionario volvía a
+abrirse en CADA inicio de sesión mientras faltara el carnet fitosanitario (algo que no depende del cuestionario sino de GarSer); el
+apartado «Completa tu cuenta profesional» se ocultaba justo cuando había algo obligatorio por hacer; nadie decía «te hemos aprobado»;
+los errores del Horario y del seguro quedaban fuera de vista; recargar borraba las invitaciones escritas; una solicitud de reserva
+sin responder solo se veía por la insignia del Chat.
+
+**Requisito previo:** este paquete corrige el cuestionario de la **sección 36** (rama `feat/activacion-profesional`, aún sin fusionar
+en `main` al escribir esto): fusionar primero esa rama y aplicar sus dos migraciones (`20261111120000`, `20261111130000`). Este
+paquete **no añade migración ni función**: solo web.
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 50.1 | Cuenta de profesional recién aprobada (alias nuevo): entra | Se abre «Activa tu cuenta» con la insignia «Te hemos aprobado» (QA-024) |
+| 50.2 | (el aviso solo sale en la Bienvenida, no en cada paso) Con esa cuenta y una solicitud de reserva sin responder (haz una reserva de prueba hacia ella desde otra cuenta de cliente) | En la Bienvenida sale el aviso amarillo «Tienes 1 solicitud de reserva sin responder» con «Verla»; «Verla» lleva a Solicitudes con la solicitud y NO la acepta sola (QA-062) |
+| 50.3 | «Horario» sin marcar ninguna hora → «Guardar horario y seguir» | El motivo («Marca al menos un día con horas de trabajo») sale en rojo JUNTO al botón, a la vista sin desplazar (QA-025) |
+| 50.4 | «Equipo» → «Sí» → un correo → sin marcar el seguro, «Enviar invitaciones y seguir» | «Para invitar a tu equipo, marca la declaración del seguro» sale junto al botón; al darle «Atrás» el aviso desaparece |
+| 50.5 | En «Equipo» con «Sí» y un correo escrito, recarga la página (cambia de app y vuelve, o tira para recargar) | «Sí», el correo, el nombre/servicios/horario de esa persona y la declaración siguen ahí (QA-026) |
+| 50.6 | Elige también «Servicios fitosanitarios», pulsa «Configurar fitosanitarios más tarde» y llega a «Activar mi cuenta» | Sale «Tu cuenta está casi lista» con el carnet pendiente; si ya tienes foto, NO te sugiere «Sube tu foto o tu logo» (QA-197) |
+| 50.7 | «Ir a mi panel» | Llega al PANEL (no a la Bienvenida) y arriba ves «Completa tu cuenta profesional» con el carnet como paso pendiente (QA-196, QA-197) |
+| 50.8 | Sal y vuelve a entrar con la misma cuenta; después recarga el panel | Entra directo al panel las dos veces; el cuestionario NO se vuelve a abrir (QA-108) |
+| 50.9 | Cuenta operativa que solo tiene el carnet «en revisión» (o «subir carnet») pendiente | Al entrar va al panel, no al cuestionario; en el paso fitosanitarios del cuestionario, tras enviar el carnet, el bloque ámbar «sube tu carnet» se sustituye por «Licencia en revisión» (QA-202) |
+| 50.10 | Con todo lo obligatorio hecho y sin foto/avisos | La tarjeta «Ya apareces…» lleva el título «Completa tu cuenta profesional» y, al abrir «Para conseguir más reservas», cada paso dice «Recomendado» (QA-200) |
+| 50.10b | Desde «Solicitudes» (también tras «Verla»), toca la pestaña «Panel» de abajo o «Dashboard» del menú | Vuelve al Panel (antes no hacía nada) |
+| 50.10c | Entra a Solicitudes con una sola solicitud | Pone «1 solicitud pendiente» (no «1 solicitudes») |
+| 50.11 | Siguen sin hacerse aquí (anotado para el Tramo 3) | «Activar avisos» no se puede completar desde Safari sin instalar la web en la pantalla de inicio (es de iOS; la tarjeta lo explica); la tarjeta «En revisión» del carnet no dice cuánto tarda ni deja cancelar; la Ayuda no explica el caso del cliente que repite (QA-200, QA-202) |
+
+> **Acción manual tuya (sección de acciones manuales):** ninguna de despliegue de base de datos ni funciones por este paquete. Sí: fusionar `feat/activacion-profesional` ANTES (y aplicar sus 2 migraciones) o este paquete no tiene a qué arreglar.
+
+---
+
 ## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
 
 Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.

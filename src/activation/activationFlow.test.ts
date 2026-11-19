@@ -3,7 +3,12 @@ import {
   blockNumber,
   clearActivationProgress,
   estimatedMinutes,
+  clearTeamDraft,
+  isActivationDoneLocally,
   isActivationPaused,
+  markActivationDone,
+  readTeamDraft,
+  writeTeamDraft,
   nextStep,
   pauseActivation,
   previousStep,
@@ -134,5 +139,63 @@ describe('servicios', () => {
       'Corte de césped',
       'Poda de palmeras',
     ]);
+  });
+});
+
+describe('QA-196/QA-108 · cuestionario terminado', () => {
+  it('se recuerda por persona y no cruza entre cuentas', () => {
+    const storage = memory();
+    expect(isActivationDoneLocally('u1', storage)).toBe(false);
+    markActivationDone('u1', storage);
+    expect(isActivationDoneLocally('u1', storage)).toBe(true);
+    expect(isActivationDoneLocally('u2', storage)).toBe(false);
+  });
+
+  it('sin almacenamiento no falla (queda lo que diga el servidor)', () => {
+    expect(() => markActivationDone('u1', null)).not.toThrow();
+    expect(isActivationDoneLocally('u1', null)).toBe(false);
+  });
+});
+
+describe('QA-026 · borrador de las invitaciones', () => {
+  const draft = {
+    team: {
+      answer: 'yes' as const,
+      emails: ['marta@ejemplo.es', ''],
+      presets: [{ name: 'Marta', serviceIds: ['s1'], schedule: 'company', days: [1], start: 8, end: 14, requestLicense: false }, null],
+      declared: true,
+    },
+    sent: [{ invitationId: 'i1', email: 'pepe@ejemplo.es', url: 'https://garser.es/invitacion?t=1', emailed: true }],
+  };
+
+  it('lo escrito sobrevive a recargar', () => {
+    const storage = memory();
+    writeTeamDraft('u1', draft, storage);
+    expect(readTeamDraft('u1', storage)).toEqual(draft);
+  });
+
+  it('pasadas dos semanas se olvida (son correos de otras personas)', () => {
+    const storage = memory();
+    writeTeamDraft('u1', draft, storage);
+    expect(readTeamDraft('u1', storage, Date.now() + 13 * 24 * 3600 * 1000)).not.toBeNull();
+    expect(readTeamDraft('u1', storage, Date.now() + 15 * 24 * 3600 * 1000)).toBeNull();
+  });
+
+  it('es de cada cuenta y se puede borrar', () => {
+    const storage = memory();
+    writeTeamDraft('u1', draft, storage);
+    expect(readTeamDraft('u2', storage)).toBeNull();
+    clearTeamDraft('u1', storage);
+    expect(readTeamDraft('u1', storage)).toBeNull();
+  });
+
+  it('un borrador estropeado se ignora', () => {
+    const storage = memory();
+    storage.setItem('garser:activation:team:u1', '{"team":{"emails":"no","presets":[]}}');
+    expect(readTeamDraft('u1', storage)).toBeNull();
+    storage.setItem('garser:activation:team:u1', 'basura{');
+    expect(readTeamDraft('u1', storage)).toBeNull();
+    storage.setItem('garser:activation:team:u1', JSON.stringify({ team: { answer: 'yes', emails: ['a@b.c'], presets: [] } }));
+    expect(readTeamDraft('u1', storage)).toBeNull(); // presets y correos deben ir a la par
   });
 });

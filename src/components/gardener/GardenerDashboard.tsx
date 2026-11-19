@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Calendar, MapPin, Clock, User, MessageCircle, Bell, Star, Megaphone } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Booking } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
@@ -44,6 +44,7 @@ const SETUP_INCOMPLETE_KEY = 'gardener_setup_incomplete';
 const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }) => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [bookings, setBookings] = useState<Booking[]>([]);
   // Evitar bloquear toda la UI: estado de carga sólo para reservas
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -52,6 +53,8 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
     // Se reabre donde se quedó... salvo mientras le falte algo por configurar: entonces, el panel, donde
     // está la guía de primeros pasos. Sin esto, quien dejó «Disponibilidad» abierta volvía a entrar DENTRO
     // de ella, sin ver qué le faltaba (2026-11-05).
+    // Salvo que se pida expresamente (`?tab=requests`, p. ej. el aviso de solicitudes del cuestionario «Activa tu cuenta»).
+    if (new URLSearchParams(window.location.search).get('tab') === 'requests') return 'requests';
     if (localStorage.getItem(SETUP_INCOMPLETE_KEY) === '1') return 'dashboard';
     const savedTab = localStorage.getItem('gardener_active_tab');
     return (savedTab as 'dashboard' | 'requests' | 'availability' | 'profile' | 'reviews' | 'marketing') || 'dashboard';
@@ -60,6 +63,16 @@ const GardenerDashboard: React.FC<GardenerDashboardProps> = ({ pending = false }
   useEffect(() => {
     localStorage.setItem('gardener_active_tab', activeTab);
   }, [activeTab]);
+
+  // Tocar «Panel» (o «Dashboard» del menú) estando dentro de Solicitudes, Horario…: la URL no cambia
+  // (/dashboard), pero cada toque trae una `location.key` nueva. Sin esto no pasaba nada y no había forma
+  // evidente de salir (OBS-ACT-03, QA-062). Un enlace con `?tab=` (Mi perfil, Solicitudes) no vuelve al panel.
+  const firstLocationKey = useRef(location.key);
+  useEffect(() => {
+    if (location.key === firstLocationKey.current) return;
+    firstLocationKey.current = location.key;
+    if (location.pathname === '/dashboard' && !new URLSearchParams(location.search).get('tab')) setActiveTab('dashboard');
+  }, [location.key, location.pathname, location.search]);
 
   // «Completa tu cuenta»: un único estado, compartido con la ayuda. Si falta algo obligatorio, la guía va
   // ARRIBA del panel (antes quedaba debajo de seis atajos, casi fuera de la pantalla).

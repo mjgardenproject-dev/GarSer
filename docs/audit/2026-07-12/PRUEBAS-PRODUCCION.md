@@ -2096,6 +2096,28 @@ herbicida salía bloqueado («licencia requerida») con el carnet aprobado si se
 
 ---
 
+## Sección 52 — Foto y nombre del alta llegan al perfil (FASE 4, paquete 1.14, 2026-11-19)
+
+Qué se arregló: (QA-014) la foto que se pide en el alta nunca llegaba a los clientes ni contaba como «foto» al aprobar (el
+profesional aprobado figuraba «sin foto» y «Mi cuenta» sin su nombre); (QA-023) un perfil sin foto pintaba un icono de imagen
+rota. Ahora, al aprobar, la foto (o el logo de una empresa) y el nombre del alta pasan al perfil (solo si estaban vacíos: lo que la
+persona ya tuviera no se pisa), y sin foto se ven las iniciales.
+
+**Acción manual tuya ANTES de desplegar el front:** aplicar la migración **`20261119120000_approval_photo_name.sql`**
+(reemplaza las dos funciones de aprobación y rellena a los ya aprobados que se quedaron sin foto/nombre).
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 52.0 | Tras aplicar la migración, en SQL: `select count(*) from gardener_profiles where avatar_url is null and professional_photo_url is not null;` | 0 |
+| 52.1 | Alta nueva de profesional (alias) con foto en el paso 1; el admin la aprueba | En «Profesionales» del admin ya no sale «Recomendado: Foto de perfil» para esa persona |
+| 52.2 | Entra con esa cuenta | «Mi cuenta» dice su nombre (no su correo) y enseña su foto; «Completa tu cuenta» no le pide la foto |
+| 52.3 | Como cliente (o sin sesión) abre su enlace /reservar/<id> y el listado de profesionales de una reserva | Se ve su foto |
+| 52.4 | Abre el perfil público de un profesional SIN foto | Círculo con sus iniciales (nunca un icono de imagen rota) |
+| 52.5 | Alta de una EMPRESA con logo; el admin la aprueba | El logo es su foto para los clientes y el nombre comercial sale en «Mi cuenta» |
+| 52.6 | Un profesional que ya había cambiado su foto/nombre en «Mi cuenta» antes de ser aprobado | La aprobación NO le pisa su foto ni su nombre |
+
+---
+
 ## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
 
 Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.

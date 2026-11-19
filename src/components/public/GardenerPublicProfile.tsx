@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import ProfileAvatar from '../common/ProfileAvatar';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { Star, MapPin, Leaf, Calendar } from 'lucide-react';
@@ -90,10 +91,11 @@ const GardenerPublicProfile: React.FC = () => {
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">Perfil público del profesional</h1>
 
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          <img
-            src={profile?.avatar_url || ''}
-            alt={profile?.full_name || 'Foto del profesional'}
-            className="w-32 h-32 sm:w-40 sm:h-40 rounded-full object-cover border-4 border-green-200"
+          <ProfileAvatar
+            url={profile?.avatar_url}
+            name={profile?.full_name}
+            className="w-32 h-32 sm:w-40 sm:h-40 border-4 border-green-200"
+            textClassName="text-4xl"
           />
           <div className="flex-1">
             <h2 className="text-xl sm:text-2xl font-semibold text-gray-900">{profile?.full_name || 'Profesional de GarSer'}</h2>

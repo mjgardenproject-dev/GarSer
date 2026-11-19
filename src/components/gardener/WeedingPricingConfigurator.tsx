@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { UnifiedNumericInput } from './UnifiedNumericInput';
 import { useManualSave, ManualSaveResult } from '../../hooks/useManualSave';
 import { AlertTriangle, Info } from 'lucide-react';
@@ -45,6 +45,15 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
   const [isHerbicideEnabled, setIsHerbicideEnabled] = useState<boolean>(() => {
     return (value?.precio_herbicida_m2 || 0) > 0;
   });
+  // El último precio de herbicida con valor: apagar el interruptor lo deja a 0 para guardar, y al volver a
+  // encenderlo debe volver ese precio, no quedarse a 0 (QA-050: guardado así se cobraría a 0 €/m²).
+  const lastHerbicidePrice = useRef<number | null>(
+    typeof value?.precio_herbicida_m2 === 'number' && value.precio_herbicida_m2 > 0 ? value.precio_herbicida_m2 : null,
+  );
+  useEffect(() => {
+    const price = value?.precio_herbicida_m2;
+    if (typeof price === 'number' && price > 0) lastHerbicidePrice.current = price;
+  }, [value?.precio_herbicida_m2]);
   // D3: sin licencia vigente no se puede ACTIVAR el herbicida — antes era solo un aviso
   // ("recuerda que debes subir tu carnet") que no impedía nada; el jardinero podía guardar
   // el precio de herbicida sin carnet y el motor lo cobraba igual.
@@ -301,6 +310,9 @@ const WeedingPricingConfigurator: React.FC<Props> = ({
                 setIsHerbicideEnabled(newVal);
                 if (!newVal) {
                   updateConfig({ precio_herbicida_m2: 0 });
+                } else {
+                  // Vuelve el precio que tenía; si nunca lo tuvo, queda vacío para escribirlo (guardar lo exige).
+                  updateConfig({ precio_herbicida_m2: (lastHerbicidePrice.current ?? '') as any });
                 }
               }}
               className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2 ${

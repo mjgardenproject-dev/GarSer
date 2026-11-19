@@ -82,6 +82,8 @@ tiene que estar desplegado antes de pasarla.
 | T3.10 | /terminos y la subida del carnet del profesional | Los términos tienen las secciones 8 y 9 de fitosanitarios y responsabilidad; la declaración del carnet nombra el RD 1311/2012. **Textos pendientes de revisión legal** | 1.8 |
 | T3.20 | Profesional recién aprobado entra; «Ir a mi panel» tras activar con el carnet pendiente; sal y vuelve a entrar | Ve «Te hemos aprobado»; «Ir a mi panel» lleva al panel con «Completa tu cuenta profesional»; el cuestionario NO se reabre solo (QA-196, QA-108, QA-024) | 1.12 |
 | T3.21 | En el cuestionario: errores del Horario y del seguro; recargar con invitaciones escritas; solicitud de reserva sin responder | El motivo sale junto al botón; lo escrito sigue tras recargar; el aviso «Tienes N solicitudes…» lleva a verlas (QA-025, QA-026, QA-062) | 1.12 |
+| T3.22 | Profesional con un día bloqueado y horas extra en su agenda cambia SOLO la antelación en «Horario fijo» | El aviso dice que la agenda no se toca y el bloqueo y las horas extra siguen después de guardar (QA-043) | 1.13 |
+| T3.23 | Desbroce: apagar y volver a encender el herbicida, con el carnet aprobado | El precio vuelve al de antes, no queda a 0 (QA-050) | 1.13 |
 
 ## 4. Cancelar y devolver
 

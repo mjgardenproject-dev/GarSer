@@ -2074,6 +2074,28 @@ paquete **no añade migración ni función**: solo web.
 
 ---
 
+## Sección 51 — Datos que se perdían o se ponían a cero (FASE 4, paquete 1.13, 2026-11-19)
+
+Qué se arregló: (QA-043) guardar en «Horario fijo» solo la antelación mínima regeneraba toda la agenda y borraba los días
+bloqueados y las horas extra del profesional (riesgo de reservas en un día que había cerrado); (QA-050) apagar y volver a
+encender el herbicida del desbroce dejaba su precio a 0 (guardado así, se cobraría a 0 €/m²). Además: el interruptor del
+herbicida salía bloqueado («licencia requerida») con el carnet aprobado si se abría «Servicios» sin pasar antes por «Personal».
+**Sin migración ni función: solo web.**
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 51.1 | Cuenta de profesional con horario fijo. En «Ajustes puntuales» bloquea un día futuro y añade horas extra otro día | Quedan puestos |
+| 51.2 | «Horario fijo»: cambia SOLO la antelación y «Guardar cambios» | El aviso dice «¿Guardar los cambios?» y que tu agenda no se toca; tras confirmar, el día bloqueado y las horas extra SIGUEN en «Ajustes puntuales» (y en BD, `availability`, no se rehacen) |
+| 51.3 | «Horario fijo»: añade semanas (p. ej. de 4 a 8) sin tocar las horas | Las semanas nuevas aparecen con tu horario y lo anterior (bloqueos, extras) no cambia |
+| 51.4 | «Horario fijo»: cambia una hora o REDUCE las semanas | Sigue saliendo «¿Confirmar nuevo horario fijo?» avisando de que se pierden las excepciones, y se regenera |
+| 51.5 | Mi perfil → Servicios (sin abrir «Personal») → Desbroce → Configurar, con el carnet aprobado | «Aplicación de herbicida» está activo con su precio y NO sale «Licencia fitosanitaria requerida» |
+| 51.5b | En el iPhone SE (y con la barra de Safari), abre el aviso «¿Confirmar nuevo horario fijo?» | «Sí, aplicar cambios» y «Cancelar» se ven enteros o se desplazan dentro del aviso, sin quedar cortados |
+| 51.6 | Apaga y vuelve a encender el herbicida | El precio vuelve a ser el que tenía (p. ej. 0,15); si nunca tuvo precio, el campo sale vacío y «Guardar» exige escribirlo |
+
+> **Acción manual tuya:** ninguna (sin migración ni función).
+
+---
+
 ## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
 
 Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.

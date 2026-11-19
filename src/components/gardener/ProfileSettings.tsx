@@ -18,6 +18,7 @@ import {
   WeedingPricingConfig,
 } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { useOwnPhytoLicenseStatus } from '../../hooks/useOwnPhytoLicenseStatus';
 import toast from 'react-hot-toast';
 import { TreePruningServiceConfig } from '../../types/treePruning';
 import UnsavedChangesModal from '../common/UnsavedChangesModal';
@@ -110,7 +111,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [shrubConfig, setShrubConfig] = useState<ShrubPricingConfig | undefined>(undefined);
   const [phytosanitaryConfig, setPhytosanitaryConfig] = useState<PhytosanitaryPricingConfig | undefined>(undefined);
   const [weedingConfig, setWeedingConfig] = useState<WeedingPricingConfig | undefined>(undefined);
-  const [licenseStatus, setLicenseStatus] = useState<'pending' | 'approved' | 'rejected' | 'expired' | null>(null);
+  // El carnet se lee aquí, no solo al abrir «Personal» (QA-050). El equipo no lo usa: cada persona tiene el suyo.
+  const [licenseStatus, setLicenseStatus] = useOwnPhytoLicenseStatus(!isTeam);
 
   // Refactor State
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(() => {

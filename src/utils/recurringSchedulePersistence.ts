@@ -32,9 +32,33 @@ export function matrixToRules(matrix: ScheduleMatrix): ScheduleRule[] {
   return rules;
 }
 
+export type ScheduleSaveSnapshot = { matrix: ScheduleMatrix; weeks: number };
+
+const matrixKey = (matrix: ScheduleMatrix) =>
+  Object.keys(matrix)
+    .map(Number)
+    .sort((x, y) => x - y)
+    .map((day) => `${day}:${Array.from(matrix[day] || []).sort((x, y) => x - y).join(',')}`)
+    .filter((entry) => !entry.endsWith(':'))
+    .join('|');
+
+/**
+ * Qué hay que rehacer al guardar (QA-043). Regenerar la agenda BORRA las excepciones del profesional
+ * (un día bloqueado, unas horas extra), así que solo se hace si cambió lo que las genera:
+ *  · `settings_only`: mismas horas y mismas semanas (solo cambió la antelación, que se comprueba al reservar).
+ *  · `extend`: mismas horas y MÁS semanas: se añaden las semanas nuevas sin tocar las que ya hay.
+ *  · `full`: cualquier otro caso (o no hay horario anterior con el que comparar).
+ */
+export function planScheduleSave(previous: ScheduleSaveSnapshot | undefined, next: ScheduleSaveSnapshot): 'full' | 'extend' | 'settings_only' {
+  if (!previous || matrixKey(previous.matrix) !== matrixKey(next.matrix)) return 'full';
+  if (next.weeks === previous.weeks) return 'settings_only';
+  return next.weeks > previous.weeks ? 'extend' : 'full';
+}
+
 /**
  * Guarda las reglas de agenda (semanas que se abren y, si se da, la antelación mínima), sustituye el
  * horario semanal y regenera las horas reservables (RPC y, como siempre, también en el navegador).
+ * Con `previous` (lo que había cargado) solo regenera si cambió algo que lo exige: ver `planScheduleSave`.
  * Lanza el error si algo falla.
  */
 export async function saveOwnRecurringSchedule(params: {
@@ -42,8 +66,10 @@ export async function saveOwnRecurringSchedule(params: {
   matrix: ScheduleMatrix;
   weeks: number;
   minNoticeHours: number | null;
+  previous?: ScheduleSaveSnapshot;
 }): Promise<void> {
-  const { userId, matrix, weeks, minNoticeHours } = params;
+  const { userId, matrix, weeks, minNoticeHours, previous } = params;
+  const plan = planScheduleSave(previous, { matrix, weeks });
 
   const { error: settError } = await supabase.from('recurring_availability_settings').upsert({
     gardener_id: userId,
@@ -53,6 +79,15 @@ export async function saveOwnRecurringSchedule(params: {
     updated_at: new Date().toISOString(),
   });
   if (settError) throw settError;
+
+  if (plan === 'settings_only') return;
+
+  if (plan === 'extend') {
+    // Sin forzar: solo genera desde donde se quedó la última vez; no borra lo que ya hay.
+    const { error: extendError } = await supabase.rpc('generate_recurring_slots', { target_gardener_id: userId, force_regenerate: false });
+    if (extendError) throw extendError;
+    return;
+  }
 
   const { error: delError } = await supabase.from('recurring_schedules').delete().eq('gardener_id', userId);
   if (delError) throw delError;

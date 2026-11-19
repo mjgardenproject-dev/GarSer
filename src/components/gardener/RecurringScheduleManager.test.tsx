@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   settingsData: null as any,
   toastError: vi.fn(),
   upserts: [] as any[],
+  deletes: [] as string[],
 }));
 
 vi.mock('../../contexts/AuthContext', () => ({
@@ -27,7 +28,7 @@ vi.mock('../../lib/supabase', () => {
     const builder: any = {
       select: vi.fn(() => builder),
       eq: vi.fn(() => builder),
-      delete: vi.fn(() => builder),
+      delete: vi.fn(() => { mocks.deletes.push(table); return builder; }),
       insert: vi.fn(() => Promise.resolve({ error: null })),
       upsert: vi.fn((row: unknown) => { mocks.upserts.push(row); return Promise.resolve({ error: null }); }),
       maybeSingle: vi.fn(() => Promise.resolve({ data: mocks.settingsData, error: null })),
@@ -66,6 +67,7 @@ describe('RecurringScheduleManager — estado vacío por defecto', () => {
     mocks.schedulesData = [];
     mocks.settingsData = null;
     mocks.upserts = [];
+    mocks.deletes = [];
   });
 
   afterEach(() => {
@@ -199,6 +201,40 @@ describe('RecurringScheduleManager — sin valores preconfigurados', () => {
     await screen.findByTitle('Lunes');
     expect(await save()).toBe(false);
     expect(mocks.upserts).toHaveLength(0);
+  });
+
+  it('QA-043 · con un horario ya guardado, cambiar SOLO la antelación no borra la agenda y el aviso lo dice', async () => {
+    mocks.schedulesData = [{ day_of_week: 1, start_time: '08:00:00', end_time: '12:00:00' }];
+    mocks.settingsData = { weeks_to_maintain: 8, min_notice_hours: 24 };
+    let trigger: () => void = () => {};
+    let save: () => Promise<boolean> = async () => true;
+    render(<RecurringScheduleManager registerExplicitSaveTrigger={(fn) => { trigger = fn; }} registerSaveHandler={(fn) => { save = fn; }} />);
+    await screen.findByTitle('Lunes');
+    await waitFor(() => expect(selects()[2].value).toBe('8'));
+    fireEvent.change(selects()[3], { target: { value: '48' } });
+    act(() => trigger());
+    expect(await screen.findByText('¿Guardar los cambios?')).toBeTruthy();
+    expect(screen.getByText(/no se toca/)).toBeTruthy();
+    expect(screen.queryByText(/se perderán/)).toBeNull();
+    expect(await save()).toBe(true);
+    expect(mocks.upserts[0]).toMatchObject({ weeks_to_maintain: 8, min_notice_hours: 48 });
+    expect(mocks.deletes).not.toContain('recurring_schedules');
+  });
+
+  it('QA-043 · si cambian las horas, el aviso sigue advirtiendo de que se pierden las excepciones y se regenera', async () => {
+    mocks.schedulesData = [{ day_of_week: 1, start_time: '08:00:00', end_time: '12:00:00' }];
+    mocks.settingsData = { weeks_to_maintain: 8, min_notice_hours: 24 };
+    let trigger: () => void = () => {};
+    let save: () => Promise<boolean> = async () => true;
+    render(<RecurringScheduleManager registerExplicitSaveTrigger={(fn) => { trigger = fn; }} registerSaveHandler={(fn) => { save = fn; }} />);
+    await screen.findByTitle('Lunes');
+    await waitFor(() => expect(selects()[2].value).toBe('8'));
+    fireEvent.change(selects()[1], { target: { value: '14' } });
+    act(() => trigger());
+    expect(await screen.findByText('¿Confirmar nuevo horario fijo?')).toBeTruthy();
+    expect(screen.getByText(/se perderán/)).toBeTruthy();
+    expect(await save()).toBe(true);
+    expect(mocks.deletes).toContain('recurring_schedules');
   });
 
   it('con las reglas elegidas, guardar abre la confirmación y guarda lo ELEGIDO, no un valor por defecto', async () => {

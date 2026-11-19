@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { matrixToRules, saveOwnRecurringSchedule } from '../../utils/recurringSchedulePersistence';
+import { matrixToRules, planScheduleSave, saveOwnRecurringSchedule, type ScheduleSaveSnapshot } from '../../utils/recurringSchedulePersistence';
 import { Clock, Calendar, AlertTriangle, CheckCircle2, Info, History, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { notifySetupChanged } from '../../utils/setupEvents';
@@ -84,6 +84,9 @@ export default function RecurringScheduleManager({
     weeks_to_maintain: null,
     min_notice_hours: null,
   });
+  // Lo último guardado (horas y semanas): permite saber si un guardado exige regenerar la agenda o solo
+  // cambia la antelación (QA-043: regenerar borra las excepciones del calendario).
+  const savedRef = useRef<ScheduleSaveSnapshot | undefined>(undefined);
   // Tras intentar guardar con reglas sin elegir, se marcan en rojo.
   const [showRuleErrors, setShowRuleErrors] = useState(false);
 
@@ -198,6 +201,9 @@ export default function RecurringScheduleManager({
         });
       }
       setScheduleMatrix(matrix);
+      savedRef.current = !member && settData?.weeks_to_maintain
+        ? { matrix: Object.fromEntries(Object.entries(matrix).map(([d, set]) => [d, new Set(set)])), weeks: settData.weeks_to_maintain }
+        : undefined;
 
       // 4. Sincronizar los controles del generador con los datos cargados
       const activeDays = DAYS_OF_WEEK.map(d => d.value).filter(day => (matrix[day]?.size ?? 0) > 0);
@@ -292,7 +298,9 @@ export default function RecurringScheduleManager({
         matrix: scheduleMatrix,
         weeks,
         minNoticeHours: settings.min_notice_hours,
+        previous: savedRef.current,
       });
+      savedRef.current = { matrix: Object.fromEntries(Object.entries(scheduleMatrix).map(([d, set]) => [d, new Set(set)])), weeks };
 
       toast.success('Horario fijo guardado y aplicado correctamente');
       notifySetupChanged();
@@ -326,6 +334,12 @@ export default function RecurringScheduleManager({
     setShowConfirmation(false);
     await commitSave();
   };
+
+  // QA-043: si solo cambia la antelación (o se alargan las semanas) no se regenera la agenda: el aviso debe decirlo.
+  const savePlan = !member && settings.weeks_to_maintain
+    ? planScheduleSave(savedRef.current, { matrix: scheduleMatrix, weeks: settings.weeks_to_maintain })
+    : 'full';
+  const keepsAgenda = savePlan !== 'full';
 
   if (loading) {
     return (
@@ -694,16 +708,34 @@ export default function RecurringScheduleManager({
       {/* Modal de Confirmación */}
       {showConfirmation && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[85dvh] overflow-y-auto">
             <div className="flex flex-col items-center">
               <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-6 shrink-0">
                 <AlertTriangle className="w-8 h-8 text-yellow-600" />
               </div>
               
               <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">
-                ¿Confirmar nuevo horario fijo?
+                {keepsAgenda ? '¿Guardar los cambios?' : '¿Confirmar nuevo horario fijo?'}
               </h3>
-              
+
+              {keepsAgenda ? (
+                <div className="bg-emerald-50 rounded-xl p-4 mb-6 w-full">
+                  <ul className="space-y-3 text-sm text-gray-700">
+                    <li className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                      <span>
+                        {savePlan === 'extend'
+                          ? 'Se abren las semanas nuevas con tu horario de siempre.'
+                          : 'Solo cambian tus reglas de reserva (antelación mínima).'}
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                      <span>Tu agenda <strong>no se toca</strong>: los días bloqueados y las horas extra que hayas puesto se quedan como están.</span>
+                    </li>
+                  </ul>
+                </div>
+              ) : (
               <div className="bg-yellow-50 rounded-xl p-4 mb-6 w-full">
                 <ul className="space-y-3 text-sm text-gray-700">
                   <li className="flex items-start gap-3">
@@ -720,6 +752,7 @@ export default function RecurringScheduleManager({
                   </li>
                 </ul>
               </div>
+              )}
 
               <div className="flex flex-col gap-3 w-full">
                 <button

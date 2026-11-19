@@ -57,6 +57,25 @@ describe('Navbar · etiqueta y menú según el modo (D31)', () => {
     expect(screen.getAllByText('Valoraciones').length).toBeGreaterThan(0);
   });
 
+  it('QA-030 · un empleado solo ve lo suyo (Mi trabajo, Mi horario, Mi cuenta), nada de cliente', () => {
+    mocks.role = 'employee';
+    at('/mi-trabajo', null);
+    fireEvent.click(screen.getByRole('button', { name: /menú|Menu/i }));
+    for (const label of ['Mi trabajo', 'Mi horario', 'Mi Cuenta']) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    }
+    for (const label of ['Dashboard', 'Reservas', 'Chat', 'Valoraciones']) {
+      expect(screen.queryByText(label)).toBeNull();
+    }
+  });
+
+  it('QA-030 · las rutas del empleado llevan a su sitio', () => {
+    mocks.role = 'employee';
+    at('/mi-trabajo', null);
+    fireEvent.click(screen.getByRole('button', { name: /menú|Menu/i }));
+    expect(screen.getAllByText('Mi horario').length).toBeGreaterThan(0);
+  });
+
   it('con equipo, «Dashboard» queda marcado también estando en /empresa', () => {
     mocks.isTeam = true;
     at('/empresa/configuracion');

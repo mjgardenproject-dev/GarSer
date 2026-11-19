@@ -85,6 +85,7 @@ tiene que estar desplegado antes de pasarla.
 | T3.22 | Profesional con un día bloqueado y horas extra en su agenda cambia SOLO la antelación en «Horario fijo» | El aviso dice que la agenda no se toca y el bloqueo y las horas extra siguen después de guardar (QA-043) | 1.13 |
 | T3.23 | Desbroce: apagar y volver a encender el herbicida, con el carnet aprobado | El precio vuelve al de antes, no queda a 0 (QA-050) | 1.13 |
 | T3.24 | El admin aprueba una solicitud con foto; mira el perfil del profesional (Mi cuenta, perfil público, «Completa tu cuenta») | Tiene su foto y su nombre en los tres sitios y no se la vuelve a pedir (QA-014); sin foto salen sus iniciales, nunca una imagen rota (QA-023) | 1.14 |
+| T3.25 | Una empleada entra y mira su menú; un cliente abre /mi-trabajo/bienvenida | La empleada solo ve Mi trabajo, Mi horario y Mi cuenta; el cliente no ve «Tu empresa te ha añadido…» (QA-030, QA-003) | 1.15 |
 
 ## 4. Cancelar y devolver
 

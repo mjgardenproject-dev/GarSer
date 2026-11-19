@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { CalendarClock, Loader2, Wrench } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAccount } from '../../contexts/AccountContext';
 import { supabase } from '../../lib/supabase';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import PushNotificationsCard from '../../components/account/PushNotificationsCard';
@@ -22,6 +23,7 @@ const inputClass =
 
 const EmployeeWelcomePage: React.FC = () => {
   const { user } = useAuth();
+  const { role, loading: roleLoading } = useAccount();
   const navigate = useNavigate();
   const [membership, setMembership] = useState<Membership | null>(null);
   const [fullName, setFullName] = useState('');
@@ -61,6 +63,10 @@ const EmployeeWelcomePage: React.FC = () => {
     navigate('/mi-trabajo', { replace: true });
   };
 
+  // QA-003: solo la ve un empleado con empresa; cualquier otra cuenta, a su inicio (como /mi-trabajo).
+  if (roleLoading) return null;
+  if (role !== 'employee') return <Navigate to="/dashboard" replace />;
+
   if (loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center" role="status">
@@ -70,7 +76,9 @@ const EmployeeWelcomePage: React.FC = () => {
     );
   }
 
-  const company = membership?.company_name || 'Tu empresa';
+  if (!membership) return <Navigate to="/dashboard" replace />;
+
+  const company = membership.company_name || 'Tu empresa';
 
   return (
     <div className="mx-auto w-full max-w-xl px-1 pb-28 pt-4 sm:px-4">

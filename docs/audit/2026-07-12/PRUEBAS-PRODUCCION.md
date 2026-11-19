@@ -2118,6 +2118,25 @@ persona ya tuviera no se pisa), y sin foto se ven las iniciales.
 
 ---
 
+## Sección 53 — El empleado ve solo sus pantallas (FASE 4, paquete 1.15, 2026-11-19)
+
+Qué se arregló: (QA-030) una empleada veía el menú y las pantallas de CLIENTE (Reservas con «Empezar la primera», que abría el
+embudo de reserva, Chat y Valoraciones); (QA-003) `/mi-trabajo/bienvenida` decía «Tu empresa te ha añadido a su equipo» a un
+cliente, a un profesional o a un admin. **Sin migración ni función: solo web.**
+**Requisito previo:** la bienvenida del empleado es de la **sección 36** (rama `feat/activacion-profesional`, aún sin fusionar).
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 53.1 | Entra con una cuenta de EMPLEADO (invitación aceptada) y abre el menú ☰ | Solo «Mi trabajo», «Mi horario» y «Mi Cuenta»; ni «Dashboard», «Reservas», «Chat» ni «Valoraciones»; la barra inferior tiene las mismas tres |
+| 53.2 | Como empleado, abre /bookings y /valoraciones escribiendo la dirección | Te lleva a «Mi trabajo», no al embudo de reserva |
+| 53.3 | Como cliente, profesional y admin, abre /mi-trabajo/bienvenida | Cada uno va a su inicio; nadie ve «Tu empresa te ha añadido a su equipo» |
+| 53.4 | Acepta una invitación nueva con una cuenta nueva | Pasa a la bienvenida con el nombre de su empresa (no rebota al inicio) |
+| 53.5 | El menú de un cliente y de un profesional | Siguen iguales (cliente: Dashboard, Reservas, Chat, Valoraciones, Mi Cuenta) |
+
+> **Acción manual tuya:** ninguna (sin migración ni función).
+
+---
+
 ## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
 
 Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.

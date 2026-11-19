@@ -55,6 +55,15 @@ describe('InstallAppPrompt', () => {
     expect(screen.getByText('Añadir a pantalla de inicio')).toBeTruthy();
   });
 
+  it('los pasos son una lista numerada que conserva sus números (un <li> con display:flex los pierde)', () => {
+    setUserAgent(IOS_UA);
+    setStandalone(false);
+    const { container } = render(<InstallAppPrompt />);
+    const items = Array.from(container.querySelectorAll('ol > li'));
+    expect(items).toHaveLength(3);
+    for (const li of items) expect(li.className).not.toMatch(/\bflex\b/);
+  });
+
   it('en Android con beforeinstallprompt disponible, el botón dispara el evento nativo', async () => {
     setUserAgent(ANDROID_UA);
     setStandalone(false);

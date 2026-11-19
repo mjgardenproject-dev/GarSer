@@ -493,7 +493,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           path="/valoraciones"
           element={
             <ProtectedRoute>
-              <ClientReviews />
+              {accountRole === 'employee' ? <Navigate to="/mi-trabajo" replace /> : <ClientReviews />}
             </ProtectedRoute>
           }
         />
@@ -505,6 +505,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
               {(() => {
                 if (accountRole === 'admin') {
                   return <Navigate to="/admin/dashboard" replace />;
+                }
+                // QA-030: un empleado no tiene «reservas» de cliente: su trabajo está en /mi-trabajo.
+                if (accountRole === 'employee') {
+                  return <Navigate to="/mi-trabajo" replace />;
                 }
                 if (isGardenerAccount) {
                   if (applicationStatus !== 'active') {

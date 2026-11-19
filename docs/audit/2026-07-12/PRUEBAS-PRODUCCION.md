@@ -2159,6 +2159,26 @@ queda justo encima), el pie ya no es fijo y la cabecera es más compacta; la con
 
 ---
 
+## Sección 55 — Una visita de plan no choca con otra reserva del cliente (FASE 4, paquete 1.17, 2026-11-19)
+
+Qué se arregló (QA-127): la propuesta de visita de un plan de mantenimiento solo miraba si el PROFESIONAL tenía hueco. Un cliente con
+otra reserva a la misma hora (con otra persona) recibía igualmente la propuesta y, al confirmarla, se quedaba con dos reservas a la
+vez, cada una con su cobro. Ahora la propuesta salta los huecos en los que el cliente tiene una reserva viva (pendiente, confirmada o
+en disputa), un pago en curso o otra visita propuesta de otro plan suyo, y prueba otra hora u otro de los tres días que ya probaba.
+
+**Acción manual tuya ANTES de desplegar:** aplicar la migración **`20261119130000_maintenance_slot_client_conflicts.sql`**
+(función nueva `client_slot_is_busy` y `maintenance_find_slot` actualizada). No hay funciones de Edge ni cambios web.
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 55.0 | Tras aplicar la migración, en SQL: `select to_regprocedure('public.client_slot_is_busy(uuid,date,integer,integer,uuid)');` | Devuelve la función (no null) |
+| 55.1 | Con un cliente con un plan de mantenimiento, crea con ese cliente una reserva (con otro profesional) justo a la hora en que su visita se propondría; deja correr el reloj de propuestas (o `select generate_maintenance_proposals();`) | La visita propuesta cae en otra hora o día, nunca solapada con la otra reserva |
+| 55.2 | Cancela esa otra reserva y repite con un plan nuevo | Vuelve a proponerse a la hora preferida del plan |
+| 55.3 | Cliente en pleno pago de otra reserva en ese tramo | No se propone la visita encima de ese hueco |
+| 55.4 | Sigue sin cubrirse (anotado) | Una reserva que el cliente haga DESPUÉS de recibir la propuesta y antes de confirmarla no se vuelve a comprobar al confirmar (hasta 72 h) |
+
+---
+
 ## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
 
 Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.

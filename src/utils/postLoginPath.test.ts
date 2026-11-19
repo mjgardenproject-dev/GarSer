@@ -21,6 +21,14 @@ describe('postLoginPath (R-01b)', () => {
     expect(postLoginPath('admin', '/admin/solicitudes')).toBe('/admin/solicitudes');
   });
 
+  it('nunca vuelve a una pantalla de un solo uso (recuperar contraseña, retorno de Google): tras cambiar la clave, el inicio', () => {
+    expect(safeRedirectPath('/reset-password')).toBeNull();
+    expect(safeRedirectPath('/reset-password#access_token=x')).toBeNull();
+    expect(safeRedirectPath('/auth/callback?code=1')).toBeNull();
+    expect(postLoginPath('client', '/reset-password')).toBe('/dashboard');
+    expect(postLoginPath('client', '/reset-password', { redirectUserId: 'a', userId: 'a' })).toBe('/dashboard');
+  });
+
   it('rechaza rutas de vuelta que saldrían de la web', () => {
     expect(safeRedirectPath('//evil.example')).toBeNull();
     expect(safeRedirectPath('https://evil.example')).toBeNull();

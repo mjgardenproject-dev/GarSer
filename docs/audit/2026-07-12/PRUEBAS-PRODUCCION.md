@@ -2021,6 +2021,27 @@ Hazlo en UN mismo móvil con dos cuentas de prueba (A y B).
 | 48.5 | Con la sesión iniciada, abre garser.es/auth o pulsa «Atrás» hasta llegar a /auth | Va al inicio, no al formulario «Entra en tu cuenta» |
 | 48.6 | Cierra sesión con A y entra con B (cierre normal, no forzado) | B va a su inicio |
 
+## Sección 49 — Registro y contraseña en español, con reenvío (FASE 4, paquete 1.11, 2026-11-18)
+
+Qué se arregló: entrar con un correo sin confirmar decía «Email not confirmed» en inglés, sin explicación y sin forma de
+reenviar el correo; la pantalla de nueva contraseña no decía de qué cuenta era ni qué iba a pasar y sus errores salían en
+carteles de 5 s; la ventana del alta tenía la X cortada y «Entendido» dejaba el formulario vacío (QA-039, QA-040, QA-041).
+**Antes de empezar, hazlo tú una vez (ver `docs/auth/plantillas-correo-es.md`): pega en Supabase producción → Authentication
+→ Emails → Templates los seis textos en español de `supabase/templates/`** (si no, los correos seguirán llegando en
+inglés). La web no necesita migración ni funciones.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 49.1 | Crea una cuenta nueva con un correo tuyo y NO confirmes | La ventana «¡Registro Exitoso!» con la X visible y de tamaño táctil; «Reenviar el correo» funciona; «Entendido» vuelve a «Entrar» con tu correo ya escrito |
+| 49.2 | Mira el correo que llega | «Confirma tu correo en GarSer», en español, con el botón «Confirmar mi correo» y sin restos en inglés |
+| 49.3 | «Entrar» con esa cuenta sin confirmar | Mensaje en español junto al formulario con tu correo y el botón «Reenviar el correo de confirmación»; al pulsarlo llega otro correo y el botón cuenta atrás ~1 min |
+| 49.4 | Confirma con el enlace del correo | Entras en tu cuenta sin errores |
+| 49.5 | «¿Has olvidado tu contraseña?» con tu correo | Llega «Cambia tu contraseña de GarSer» en español |
+| 49.6 | Abre el enlace del correo de recuperación | «Elige tu nueva contraseña» con TU correo, «al menos 8 caracteres» y que se cerrarán las otras sesiones; los errores salen junto al campo |
+| 49.7 | Guarda una contraseña nueva | Entras a tu inicio con «Contraseña cambiada. Ya has entrado con la nueva.»; la sesión de otro dispositivo se cierra; entras con la nueva y la vieja ya no vale |
+| 49.8 | Abre otra vez el mismo enlace | «Enlace caducado» con «Pedir un enlace nuevo» que lleva a recuperar contraseña |
+| 49.9 | Supabase → Authentication → SMTP / límites (decisión tuya) | Con anuncios en marcha, un remitente propio y un límite de correos por hora suficiente; con el de Supabase por defecto el límite es muy bajo |
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:

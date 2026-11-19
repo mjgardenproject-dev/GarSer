@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Te han invitado a GarSer</title></head>
+<body style="margin:0;background:#f6f7f9;font-family:Inter,Arial,sans-serif;color:#171c2b;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7f9;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:16px;padding:28px;">
+        <tr><td style="font-size:22px;font-weight:700;color:#171c2b;">Gar<span style="color:#24a54c;">Ser</span>.es</td></tr>
+        <tr><td style="padding-top:20px;font-size:20px;font-weight:700;">Te han invitado a GarSer</td></tr>
+        <tr><td style="padding-top:12px;font-size:15px;line-height:24px;color:#3b4252;">Te han invitado a crear tu cuenta en GarSer. Pulsa el botón para aceptarla.</td></tr>
+        <tr><td style="padding:24px 0;"><a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#24a54c;color:#ffffff;text-decoration:none;font-weight:700;border-radius:999px;padding:14px 28px;">Aceptar la invitación</a></td></tr>
+        <tr><td style="font-size:13px;line-height:20px;color:#6b7280;">Si no esperabas esta invitación, puedes ignorarla.</td></tr>
+        <tr><td style="padding-top:16px;font-size:12px;line-height:18px;color:#9ca3af;">Si el botón no funciona, copia este enlace en tu navegador:<br><span style="word-break:break-all;">{{ .ConfirmationURL }}</span></td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

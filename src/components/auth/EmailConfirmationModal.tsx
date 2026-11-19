@@ -5,24 +5,32 @@ interface EmailConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
   email: string;
+  /** Pide otro correo de confirmación (QA-039). */
+  onResend?: () => void;
+  /** Segundos que faltan para poder pedirlo otra vez. */
+  resendWait?: number;
 }
 
 const EmailConfirmationModal: React.FC<EmailConfirmationModalProps> = ({
   isOpen,
   onClose,
-  email
+  email,
+  onResend,
+  resendWait = 0,
 }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-in fade-in duration-300">
-        {/* Botón de cerrar */}
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black bg-opacity-50 p-4 sm:items-center">
+      <div role="dialog" aria-modal="true" aria-label="Registro completado" className="relative my-auto max-h-full w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in duration-300 sm:p-8">
+        {/* Botón de cerrar: 44 pt y dentro de la ventana (antes quedaba cortado en el móvil). */}
         <button
+          type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+          aria-label="Cerrar"
+          className="absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500"
         >
-          <X className="w-6 h-6" />
+          <X className="w-6 h-6" aria-hidden="true" />
         </button>
 
         {/* Icono principal */}
@@ -72,6 +80,16 @@ const EmailConfirmationModal: React.FC<EmailConfirmationModalProps> = ({
           >
             Entendido
           </button>
+          {onResend ? (
+            <button
+              type="button"
+              onClick={onResend}
+              disabled={resendWait > 0}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resendWait > 0 ? `Reenviar en ${resendWait} s` : 'Reenviar el correo'}
+            </button>
+          ) : null}
           <button
             onClick={() => window.open(`https://${email.split('@')[1]}`, '_blank')}
             className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-semibold hover:bg-gray-200 transition-colors"
@@ -83,8 +101,8 @@ const EmailConfirmationModal: React.FC<EmailConfirmationModalProps> = ({
         {/* Nota adicional */}
         <div className="mt-6 p-4 bg-blue-50 rounded-lg">
           <p className="text-xs text-blue-700 text-center">
-            <strong>Nota:</strong> Si no recibes el email en unos minutos, 
-            revisa tu carpeta de spam o intenta registrarte nuevamente.
+            <strong>Nota:</strong> Si no recibes el email en unos minutos, revisa tu carpeta de spam o
+            pulsa «Reenviar el correo».
           </p>
         </div>
       </div>

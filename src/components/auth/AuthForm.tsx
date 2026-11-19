@@ -19,6 +19,7 @@ import { LegalConsentNote, OrWithEmail } from './SocialAuthBits';
 import { welcomeMessage, type OAuthSignInResult } from '../../lib/oauthAccount';
 import { getGoogleClientId } from '../../utils/googleIdentity';
 import { getPendingAuthStep, setPendingAuthStep, usePendingAuthStep } from '../../lib/pendingAuthStep';
+import { classifyAuthError } from '../../utils/authErrors';
 
 // Pantalla de acceso (/auth), pensada primero para el móvil (2026-11-04).
 //
@@ -118,7 +119,8 @@ const AuthForm = () => {
   const requestedRole: AccountType | undefined = parseAccountType(requestedRoleRaw);
 
   const [view, setView] = useState<View>(() =>
-    requestedInitialMode === 'signup' || (requestedRole && requestedRole !== 'client') ? 'signup' : 'login');
+    requestedInitialMode === 'forgot' ? 'forgot'
+      : requestedInitialMode === 'signup' || (requestedRole && requestedRole !== 'client') ? 'signup' : 'login');
   // Sin tipo elegido (null) se enseña la pregunta. Nunca hay uno por defecto: tiene que elegirlo.
   const [role, setRole] = useState<AccountType | null>(() => (forceClientOnly ? 'client' : requestedRole ?? null));
   const [showPassword, setShowPassword] = useState(false);
@@ -127,6 +129,10 @@ const AuthForm = () => {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  // QA-039: correo sin confirmar → aviso junto al formulario con «Reenviar»; una pausa evita pedir el correo en bucle.
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
+  const [resendWait, setResendWait] = useState(0);
+  const [resending, setResending] = useState(false);
   const [loading, setLoading] = useState(false);
   // El aviso de después de Google vive FUERA del componente (src/lib/pendingAuthStep.ts): al iniciar
   // sesión, App.tsx enseña «Cargando…» y desmonta esta pantalla, y el estado local se perdía.
@@ -139,7 +145,7 @@ const AuthForm = () => {
 
   const showGoogle = Boolean(getGoogleClientId());
 
-  const { register, handleSubmit, reset, clearErrors, setError, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, setValue, getValues, clearErrors, setError, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
     defaultValues: { email: '', password: '', confirmPassword: '' },
   });
@@ -196,6 +202,14 @@ const AuthForm = () => {
     headingRef.current?.focus();
   }, [focusKey]);
 
+  // QA-040: el correo que ya escribió en «Entrar» pasa a «Recuperar contraseña» (no se vuelve a teclear).
+  const openForgot = () => {
+    const typed = String(getValues('email') ?? '').trim();
+    if (typed && !forgotEmail.trim()) setForgotEmail(typed);
+    clearErrors();
+    setView('forgot');
+  };
+
   const changeView = (next: View) => {
     if (next === view) return;
     clearErrors();
@@ -235,7 +249,7 @@ const AuthForm = () => {
       // AuthContext manejará la redirección a /reset-password al detectar el evento PASSWORD_RECOVERY.
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, { redirectTo: window.location.origin });
       if (error) throw error;
-      toast.success('Email de recuperación enviado');
+      toast.success(`Te hemos enviado un enlace a ${forgotEmail.trim()}. Mira también en spam.`, { duration: 8000 });
       setShowForgotModal(false);
       setView('login');
     } catch (e: any) {
@@ -245,12 +259,36 @@ const AuthForm = () => {
     }
   };
 
+  useEffect(() => {
+    if (resendWait <= 0) return;
+    const timer = window.setTimeout(() => setResendWait((n) => n - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendWait]);
+
+  const resendConfirmation = async (email: string) => {
+    if (resending || resendWait > 0) return;
+    setResending(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: window.location.origin } });
+      if (error) throw error;
+      toast.success(`Te hemos reenviado el correo a ${email}. Mira también en spam.`);
+      setResendWait(60);
+    } catch (e) {
+      const { kind, message } = classifyAuthError(e);
+      toast.error(message);
+      if (kind === 'rate_limited') setResendWait(60);
+    } finally {
+      setResending(false);
+    }
+  };
+
   const onSubmit = async (data: FormData) => {
     if (view === 'signup' && !role) return;
     setLoading(true);
     try {
       if (view === 'login') {
         const accountRole = await signIn(data.email, data.password);
+        setUnconfirmedEmail(null);
         toast.success('¡Bienvenido de vuelta!');
         navigate(postLoginPath(accountRole, redirectTo, (redirectUserId ? await redirectContext(redirectUserId) : {})));
       } else {
@@ -269,13 +307,15 @@ const AuthForm = () => {
       }
     } catch (error: any) {
       console.error('❌ Error en acceso:', error);
-      let message = error.message || 'Ha ocurrido un error';
-      if (message.includes('Invalid login credentials')) {
-        message = 'Este correo electrónico no parece estar registrado o la contraseña es incorrecta. Si aún no tienes cuenta, por favor regístrate.';
-      } else if (message.includes('User already registered')) {
-        message = 'Esta cuenta ya está registrada. Por favor, inicia sesión simplemente.';
+      const { kind, message } = classifyAuthError(error);
+      if (kind === 'email_not_confirmed') {
+        // Un aviso junto al formulario (no un cartel de 5 s) con la forma de pedir otro correo. Si ya
+        // estaba, se queda: quitarlo y volver a ponerlo mueve la pantalla bajo el dedo.
+        setUnconfirmedEmail(data.email);
+      } else {
+        setUnconfirmedEmail(null);
+        toast.error(message);
       }
-      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -426,6 +466,22 @@ const AuthForm = () => {
               </>
             )}
 
+            {unconfirmedEmail && view === 'login' && (
+              <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p>
+                  Todavía tienes que confirmar tu correo (<strong className="break-all">{unconfirmedEmail}</strong>). Ábrelo y pulsa el enlace que te enviamos al registrarte. Mira también en spam.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void resendConfirmation(unconfirmedEmail)}
+                  disabled={resending || resendWait > 0}
+                  className="mt-2 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {resendWait > 0 ? `Reenviar en ${resendWait} s` : resending ? 'Enviando…' : 'Reenviar el correo de confirmación'}
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <Field
                 id="auth-email"
@@ -451,7 +507,7 @@ const AuthForm = () => {
                 />
                 {view === 'login' && (
                   <div className="mt-1 flex justify-end">
-                    <button type="button" onClick={() => setView('forgot')} className={`${LINK} text-sm`}>
+                    <button type="button" onClick={openForgot} className={`${LINK} text-sm`}>
                       ¿Has olvidado tu contraseña?
                     </button>
                   </div>
@@ -522,7 +578,11 @@ const AuthForm = () => {
           onClose={() => {
             setShowEmailModal(false);
             setView('login'); // Tras cerrar el aviso, a entrar con la cuenta recién creada.
+            // QA-041: el correo ya escrito, para no tener que teclearlo otra vez.
+            setValue('email', registeredEmail);
           }}
+          onResend={() => resendConfirmation(registeredEmail)}
+          resendWait={resendWait}
           email={registeredEmail}
         />
 

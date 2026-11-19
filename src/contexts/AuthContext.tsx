@@ -242,7 +242,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!verified) {
           markIntentionalSignOut();
           await supabase.auth.signOut(SIGN_OUT_LOCAL);
-          throw new Error('Verifica tu correo para continuar.');
+          throw Object.assign(new Error('Verifica tu correo para continuar.'), { code: 'email_not_confirmed' });
         }
         let accountRole: string | null = null;
         try {

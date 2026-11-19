@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   loading: false,
   authUserId: undefined as string | undefined,
   getUserCalls: vi.fn(),
+  resend: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
   signOut: vi.fn(async () => ({ error: null })),
@@ -22,7 +23,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, loading: mocks.loading, signIn: mocks.signIn, signUp: mocks.signUp, signOut: mocks.signOut }) }));
 vi.mock('../../contexts/AccountContext', () => ({ useAccount: () => ({ refresh: mocks.refreshAccount }) }));
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }));
-vi.mock('../../lib/supabase', () => ({ supabase: { auth: { getUser: (...a: unknown[]) => { mocks.getUserCalls(...a); return Promise.resolve({ data: { user: mocks.authUserId ? { id: mocks.authUserId } : null } }); } } } }));
+vi.mock('../../lib/supabase', () => ({ supabase: { auth: { resend: (...a: unknown[]) => mocks.resend(...a), resetPasswordForEmail: vi.fn(async () => ({ error: null })), getUser: (...a: unknown[]) => { mocks.getUserCalls(...a); return Promise.resolve({ data: { user: mocks.authUserId ? { id: mocks.authUserId } : null } }); } } } }));
 vi.mock('../../lib/oauthAccount', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/oauthAccount')>()),
   declareSignupRoleIfNeeded: mocks.declare,
@@ -76,6 +77,93 @@ describe('AuthForm · acceso y registro', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllEnvs();
+  });
+
+  describe('correo sin confirmar (QA-039)', () => {
+    const fill = () => {
+      fireEvent.change(screen.getByLabelText('Correo electrónico'), { target: { value: 'ana@ejemplo.com' } });
+      fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'secreto1' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+    };
+
+    it('lo explica en español, junto al formulario, y ofrece reenviar el correo (nunca «Email not confirmed»)', async () => {
+      mocks.signIn.mockRejectedValue(Object.assign(new Error('Email not confirmed'), { code: 'email_not_confirmed' }));
+      renderAuth();
+      fill();
+      const notice = await screen.findByRole('alert');
+      expect(notice.textContent).toContain('confirmar tu correo');
+      expect(notice.textContent).toContain('ana@ejemplo.com');
+      expect(document.body.textContent).not.toMatch(/Email not confirmed/i);
+      expect(mocks.toast.error).not.toHaveBeenCalledWith('Email not confirmed');
+      expect(within(notice).getByRole('button', { name: 'Reenviar el correo de confirmación' })).toBeTruthy();
+    });
+
+    it('«Reenviar» pide a Supabase otro correo de confirmación, lo dice y espera un minuto antes de poder repetir', async () => {
+      mocks.signIn.mockRejectedValue(new Error('Email not confirmed'));
+      mocks.resend.mockResolvedValue({ error: null });
+      renderAuth();
+      fill();
+      fireEvent.click(await screen.findByRole('button', { name: 'Reenviar el correo de confirmación' }));
+      await waitFor(() => expect(mocks.resend).toHaveBeenCalledTimes(1));
+      expect(mocks.resend).toHaveBeenCalledWith(expect.objectContaining({ type: 'signup', email: 'ana@ejemplo.com' }));
+      expect(mocks.toast.success).toHaveBeenCalledWith('Te hemos reenviado el correo a ana@ejemplo.com. Mira también en spam.');
+      const again = await screen.findByRole('button', { name: /Reenviar en \d+ s/ });
+      expect((again as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(again);
+      expect(mocks.resend).toHaveBeenCalledTimes(1);
+    });
+
+    it('si Supabase limita los reenvíos, lo dice en español', async () => {
+      mocks.signIn.mockRejectedValue(new Error('Email not confirmed'));
+      mocks.resend.mockResolvedValue({ error: { message: 'email rate limit exceeded', code: 'over_email_send_rate_limit', status: 429 } });
+      renderAuth();
+      fill();
+      fireEvent.click(await screen.findByRole('button', { name: 'Reenviar el correo de confirmación' }));
+      await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled());
+      const text = String(mocks.toast.error.mock.calls[0][0]);
+      expect(text).toContain('Espera');
+      expect(text).not.toMatch(/rate limit/i);
+    });
+
+    it('pulsar «Entrar» otra vez NO quita y vuelve a poner el aviso (la pantalla no baila bajo el dedo)', async () => {
+      mocks.signIn.mockRejectedValue(new Error('Email not confirmed'));
+      renderAuth();
+      fill();
+      const notice = await screen.findByRole('alert');
+      fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+      // El mismo aviso sigue en su sitio mientras se comprueba.
+      expect(screen.getByRole('alert')).toBe(notice);
+      await waitFor(() => expect(mocks.signIn).toHaveBeenCalledTimes(2));
+      expect(screen.getByRole('alert')).toBe(notice);
+    });
+
+    it('«¿Has olvidado tu contraseña?» arrastra el correo ya escrito y avisa en español con «spam»', async () => {
+      renderAuth();
+      fireEvent.change(screen.getByLabelText('Correo electrónico'), { target: { value: 'ana@ejemplo.com' } });
+      fireEvent.click(screen.getByRole('button', { name: '¿Has olvidado tu contraseña?' }));
+      expect((screen.getByLabelText('Correo electrónico') as HTMLInputElement).value).toBe('ana@ejemplo.com');
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar enlace' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }));
+      await waitFor(() => expect(mocks.toast.success).toHaveBeenCalled());
+      expect(String(mocks.toast.success.mock.calls[0][0])).toBe('Te hemos enviado un enlace a ana@ejemplo.com. Mira también en spam.');
+    });
+
+    it('al volver a intentar entrar, el aviso desaparece', async () => {
+      mocks.signIn.mockRejectedValueOnce(new Error('Email not confirmed')).mockResolvedValueOnce('client');
+      renderAuth();
+      fill();
+      await screen.findByRole('alert');
+      fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
+      expect(await screen.findByText('Panel del cliente')).toBeTruthy();
+    });
+
+    it('otros errores de acceso salen en español, nunca el texto crudo', async () => {
+      mocks.signIn.mockRejectedValue(new Error('email rate limit exceeded'));
+      renderAuth();
+      fill();
+      await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled());
+      expect(String(mocks.toast.error.mock.calls[0][0])).toContain('demasiados intentos');
+    });
   });
 
   describe('a dónde vuelve quien entra (QA-155, QA-085, QA-012)', () => {
@@ -296,6 +384,21 @@ describe('AuthForm · acceso y registro', () => {
       fireEvent.change(screen.getByLabelText('Repite la contraseña'), { target: { value: 'secreto1' } });
       fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }));
       await waitFor(() => expect(mocks.signUp).toHaveBeenCalledWith('pepe@ejemplo.com', 'secreto1', 'gardener'));
+    });
+
+    it('QA-041 · tras «Entendido» vuelve a «Entrar» con el correo YA escrito, y puede reenviar el correo desde el aviso', async () => {
+      mocks.signUp.mockResolvedValue(undefined);
+      mocks.resend.mockResolvedValue({ error: null });
+      renderAuth('/auth?mode=signup&role=client');
+      fireEvent.change(screen.getByLabelText('Correo electrónico'), { target: { value: 'pepe@ejemplo.com' } });
+      fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'secreto1' } });
+      fireEvent.change(screen.getByLabelText('Repite la contraseña'), { target: { value: 'secreto1' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Reenviar el correo' }));
+      await waitFor(() => expect(mocks.resend).toHaveBeenCalledWith(expect.objectContaining({ type: 'signup', email: 'pepe@ejemplo.com' })));
+      fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+      expect((screen.getByLabelText('Correo electrónico') as HTMLInputElement).value).toBe('pepe@ejemplo.com');
+      expect(screen.getByRole('tab', { name: 'Entrar' }).getAttribute('aria-selected')).toBe('true');
     });
 
     it('si las contraseñas no coinciden, lo dice junto al campo y no crea la cuenta', async () => {

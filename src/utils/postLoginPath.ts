@@ -10,6 +10,9 @@ export function safeRedirectPath(path: unknown): string | null {
   const trimmed = path.trim();
   if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) return null;
   if (trimmed === '/auth' || trimmed.startsWith('/auth?')) return null;
+  // Pantallas de un solo uso: volver a ellas no tiene sentido (el enlace ya se gastó) y confundía a quien
+  // acababa de cambiar su contraseña (volvía a «Elige tu nueva contraseña»).
+  if (/^\/(reset-password|auth\/callback)(\/|\?|#|$)/.test(trimmed)) return null;
   return trimmed;
 }
 

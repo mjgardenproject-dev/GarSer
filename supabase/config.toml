@@ -86,3 +86,30 @@ verify_jwt = false
 # solo actúa sobre él.
 [functions.account-closure]
 verify_jwt = false
+
+# Plantillas de los correos de acceso, en español (QA-039). En producción se pegan en Supabase → Authentication →
+# Emails → Templates (o `supabase config push`); ver docs/auth/plantillas-correo-es.md.
+[auth.email.template.confirmation]
+subject = "Confirma tu correo en GarSer"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Cambia tu contraseña de GarSer"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.magic_link]
+subject = "Tu enlace para entrar en GarSer"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.email_change]
+subject = "Confirma tu nuevo correo en GarSer"
+content_path = "./supabase/templates/email_change.html"
+
+[auth.email.template.invite]
+subject = "Te han invitado a GarSer"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.reauthentication]
+subject = "Tu código de GarSer"
+content_path = "./supabase/templates/reauthentication.html"
+

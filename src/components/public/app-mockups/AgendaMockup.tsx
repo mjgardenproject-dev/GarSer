@@ -1,19 +1,12 @@
 import React from 'react';
 
+import { exampleDates } from '../../../utils/exampleDates';
 import MockupFrame from './MockupFrame';
 
 /** Estados de una hora en la rejilla «Horario» del jardinero (mismos colores que AvailabilityManager). */
 type Slot = 'free' | 'booked' | 'pending' | 'off';
 
-const DAYS = [
-  { letter: 'L', date: '13' },
-  { letter: 'M', date: '14' },
-  { letter: 'X', date: '15' },
-  { letter: 'J', date: '16' },
-  { letter: 'V', date: '17' },
-  { letter: 'S', date: '18' },
-  { letter: 'D', date: '19' },
-];
+const LETTERS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
 // Filas = horas (9h a 12h); columnas = días de la semana. Datos de ejemplo.
 const WEEK: { hour: number; slots: Slot[] }[] = [
@@ -31,12 +24,16 @@ const SLOT_CLASS: Record<Slot, string> = {
 };
 
 /** Semana del jardinero: horas libres, reservadas y solicitadas (imita la vista móvil de AvailabilityManager). */
-const AgendaMockup: React.FC = () => (
+const AgendaMockup: React.FC = () => {
+  // La semana siguiente, calculada (antes un rango de octubre escrito a mano).
+  const { week, weekRange } = exampleDates();
+  const DAYS = LETTERS.map((letter, i) => ({ letter, date: String(week[i].getDate()) }));
+  return (
   <MockupFrame
     screenTitle="Horario"
     label="Captura de ejemplo de la app: el horario semanal del jardinero, con horas disponibles, horas reservadas y solicitudes pendientes."
   >
-    <p className="text-center text-xs font-semibold text-gray-900">13 oct - 19 oct</p>
+    <p className="text-center text-xs font-semibold text-gray-900">{weekRange}</p>
 
     <div className="mt-2 grid grid-cols-7 gap-1">
       {DAYS.map((day) => (
@@ -63,6 +60,7 @@ const AgendaMockup: React.FC = () => (
       <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm border border-amber-400 bg-amber-100" />Solicitada</span>
     </div>
   </MockupFrame>
-);
+  );
+};
 
 export default AgendaMockup;

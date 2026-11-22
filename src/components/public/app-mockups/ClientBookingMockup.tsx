@@ -1,17 +1,12 @@
 import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 
+import { exampleDates } from '../../../utils/exampleDates';
 import MockupFrame from './MockupFrame';
 
-const DAYS = [
-  { letter: 'L', date: '13', disabled: true },
-  { letter: 'M', date: '14', disabled: false },
-  { letter: 'X', date: '15', disabled: true },
-  { letter: 'J', date: '16', disabled: false },
-  { letter: 'V', date: '17', disabled: false },
-  { letter: 'S', date: '18', disabled: false, selected: true },
-  { letter: 'D', date: '19', disabled: true },
-];
+const LETTERS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+// Lunes, miércoles y domingo sin hueco, como en el ejemplo; además, lo que ya pasó no se puede elegir.
+const OFF_DAYS = new Set([0, 2, 6]);
 
 const HOURS = [
   { label: '09:00', selected: true },
@@ -20,7 +15,16 @@ const HOURS = [
 ];
 
 /** El cliente, en el móvil, eligiendo día y hora con su jardinero (imita el paso 4 de ProvidersPage). */
-const ClientBookingMockup: React.FC = () => (
+const ClientBookingMockup: React.FC = () => {
+  // La semana del sábado de ejemplo, calculada (antes «13 a 19», fijo y ya pasado: QA-204).
+  const today = new Date();
+  const days = exampleDates(today).requestWeek.map((date, i) => ({
+    letter: LETTERS[i],
+    date: String(date.getDate()),
+    disabled: OFF_DAYS.has(i) || date.getTime() < new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime(),
+    selected: i === 5,
+  }));
+  return (
   <MockupFrame
     screenTitle="Reserva del cliente"
     label="Captura de ejemplo del móvil de un cliente reservando: paso 4 de 5, con su jardinero ya elegido, el precio, el día y las horas libres, y el botón Confirmar profesional."
@@ -50,7 +54,7 @@ const ClientBookingMockup: React.FC = () => (
     </div>
 
     <div className="mt-3 grid grid-cols-7 gap-1 text-center">
-      {DAYS.map((day) => (
+      {days.map((day) => (
         <span
           key={day.date}
           className={`flex flex-col items-center rounded-full border py-1 text-[10px] font-semibold ${
@@ -84,6 +88,7 @@ const ClientBookingMockup: React.FC = () => (
       Confirmar profesional
     </span>
   </MockupFrame>
-);
+  );
+};
 
 export default ClientBookingMockup;

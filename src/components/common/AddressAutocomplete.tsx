@@ -15,6 +15,12 @@ interface AddressAutocompleteProps {
   error?: string;
 }
 
+// Lo que lee el CLIENTE si las sugerencias fallan (QA-121, QA-068). Antes salía el aviso técnico de Google
+// («Activa la facturación…», con enlaces a Google Cloud): no es suyo ni puede arreglarlo. El motivo técnico va
+// a la consola; en pantalla, qué puede hacer: escribirla entera, que se comprueba al continuar.
+const SUGGESTIONS_UNAVAILABLE =
+  'No hemos podido cargar las sugerencias de direcciones. Escribe la dirección completa (calle, número y ciudad) y la comprobaremos al continuar.';
+
 const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   id,
   name,
@@ -113,12 +119,12 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             setIsOpen(false);
             const s = String(status || '');
             console.log('No predictions found or error:', s);
-            if (s === 'REQUEST_DENIED') {
-              setApiHint('La API de Google Places rechazó la solicitud. Activa la facturación y habilita las APIs requeridas en tu proyecto de Google Cloud.');
-            } else if (s === 'OVER_QUERY_LIMIT') {
-              setApiHint('Has excedido el límite de solicitudes de la API de Google Places. Inténtalo de nuevo más tarde.');
+            // ZERO_RESULTS no es un fallo: simplemente no hay coincidencias todavía.
+            if (s !== 'ZERO_RESULTS') {
+              console.warn('[AddressAutocomplete] Places no devolvió sugerencias:', s);
+              setApiHint(SUGGESTIONS_UNAVAILABLE);
             } else {
-              setApiHint('No se pudieron obtener sugerencias de direcciones en este momento.');
+              setApiHint('');
             }
           }
         });
@@ -161,7 +167,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           setLoading(false);
           setSuggestions([]);
           setIsOpen(false);
-          setApiHint('El Autocompletado de Google Maps no está disponible. Verifica tu clave y permisos.');
+          setApiHint(SUGGESTIONS_UNAVAILABLE);
         }
       }
     } catch (error) {
@@ -169,7 +175,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       setLoading(false);
       setSuggestions([]);
       setIsOpen(false);
-      setApiHint('Error al buscar direcciones. Revisa la configuración de Google Maps.');
+      setApiHint(SUGGESTIONS_UNAVAILABLE);
     }
   };
 
@@ -337,26 +343,7 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
       )}
 
       {apiHint && (
-        <p className="mt-1 text-xs sm:text-sm text-yellow-700" aria-live="polite">
-          {apiHint} {" "}
-          <a
-            href="https://console.cloud.google.com/project/_/billing/enable"
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            Activar facturación
-          </a>
-          {" • "}
-          <a
-            href="https://developers.google.com/maps/gmp-get-started"
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            Guía de Google Maps
-          </a>
-        </p>
+        <p className="mt-1 text-xs sm:text-sm text-yellow-700" aria-live="polite">{apiHint}</p>
       )}
 
       {isOpen && suggestions.length > 0 && (

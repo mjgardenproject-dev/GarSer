@@ -1,13 +1,17 @@
 import React from 'react';
 import { Calendar, Check, Clock, MapPin, User, X } from 'lucide-react';
 
+import { exampleDates, longDayEs } from '../../../utils/exampleDates';
 import MockupFrame from './MockupFrame';
 
 /** Solicitud nueva tal como la ve el jardinero (imita BookingRequestsManager + GardenerBookingAmount). */
-const BookingRequestMockup: React.FC = () => (
+const BookingRequestMockup: React.FC = () => {
+  // Fecha calculada (siempre futura), no escrita a mano.
+  const saturday = longDayEs(exampleDates().requestSaturday);
+  return (
   <MockupFrame
     screenTitle="Solicitudes"
-    label="Captura de ejemplo de la app: solicitud nueva de corte de césped para el sábado 18 de octubre, de 9:00 a 11:00. Cobrarás 48 €, íntegro para ti, con los botones Rechazar y Aceptar."
+    label={`Captura de ejemplo de la app: solicitud nueva de corte de césped para el ${saturday.replace(',', '')}, de 9:00 a 11:00. Cobrarás 48 €, íntegro para ti, con los botones Rechazar y Aceptar.`}
   >
     <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -33,7 +37,7 @@ const BookingRequestMockup: React.FC = () => (
       <div className="mt-3 space-y-1.5 text-xs text-gray-600">
         <p className="flex items-center gap-1.5">
           <Calendar className="h-3.5 w-3.5" />
-          sábado, 18 de octubre
+          {saturday}
         </p>
         <p className="flex items-center gap-1.5">
           <Clock className="h-3.5 w-3.5" />
@@ -59,6 +63,7 @@ const BookingRequestMockup: React.FC = () => (
       </div>
     </div>
   </MockupFrame>
-);
+  );
+};
 
 export default BookingRequestMockup;

@@ -2179,6 +2179,33 @@ en disputa), un pago en curso o otra visita propuesta de otro plan suyo, y prueb
 
 ---
 
+## Sección 56 — Landing de los anuncios sin restos internos (FASE 4, paquete 1.18, 2026-11-19)
+
+Qué se arregló: (QA-204, QA-011) las maquetas de la app de /para-jardineros llevaban fechas de octubre escritas a mano («sábado,
+18 de octubre», «13 oct - 19 oct», «Jueves 16 de octubre»): ahora se calculan a partir de hoy y siempre son futuras; (QA-008,
+QA-094) el pie de las páginas públicas hablaba con lenguaje de diseño interno («una web pensada para clientes reales… pantallas
+técnicas») y en /para-jardineros hablaba a clientes: ahora el pie es para el público y, en esa página, para profesionales;
+(QA-121, QA-068) si fallan las sugerencias de direcciones el cliente veía «Activa la facturación… Guía de Google Maps»: ahora lee
+«No hemos podido cargar las sugerencias… escribe la dirección completa y la comprobaremos al continuar» (la dirección escrita se
+valida con el mapa al continuar, como ya hacía). QA-243: el texto «Slot listo para foto real / Path: …» solo sale en desarrollo
+(import.meta.env.DEV), nunca en producción. **Sin migración ni función: solo web.**
+
+| # | Qué haces (móvil, sin sesión) | Debe pasar |
+|---|---|---|
+| 56.1 | Abre /para-jardineros y mira las tres maquetas de la app | Fechas futuras de la semana próxima (nunca meses pasados); el sábado de la solicitud, la semana de la agenda y el jueves del equipo salen con fechas de ese mes |
+| 56.2 | Vuelve a abrirla dentro de un mes | Las fechas se han movido solas |
+| 56.3 | Lee el pie de /para-jardineros y el de la portada, /marbella y /costa-del-sol | Portada y ciudades: «Jardinería profesional en la Costa del Sol, a un clic»; /para-jardineros: «Haz crecer tu negocio de jardinería con GarSer». Ningún «clientes reales» ni «pantallas técnicas» |
+| 56.4 | Portada pública: baja hasta la tarjeta de servicios | Imágenes reales o un degradado de marca; nunca «Slot listo para foto real», «Path:» ni un icono de imagen rota |
+| 56.5 | Reserva → dirección: escribe una dirección | Salen sugerencias; si no salen, el aviso amarillo no menciona facturación, Google Cloud ni API |
+
+> **Acción manual tuya (importante para los anuncios):** en Google Cloud Console, comprueba que el proyecto de la **clave de Maps
+> de producción** (la de `VITE_GOOGLE_MAPS_API_KEY` en Vercel) tiene la **facturación activada** y las APIs **Places API** y
+> **Geocoding API** (y Maps JavaScript API) habilitadas, con la restricción de dominio `garser.es`. Sin eso, las sugerencias fallan
+> en intermitencia (QA-121). Prueba 56.5 en https://garser.es tras comprobarlo. Las imágenes de los servicios de la portada
+> (`home/services/*.webp`) siguen siendo un pendiente manual tuyo (subirlas a Storage); sin ellas se ve el degradado.
+
+---
+
 ## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
 
 Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.

@@ -119,6 +119,7 @@ tiene que estar desplegado antes de pasarla.
 | T6.6 | Marketing del profesional y FAQ de /para-jardineros | Ningún flyer ni mensaje promete «pagas al terminar»; la FAQ no dice «GarSer no toca tu dinero» (sección 45) | 1.7 |
 | T6.4 | Ningún extra con coste llega marcado de antemano | «Retirar restos» sin marcar en la reserva a mano (no deja seguir sin elegir) y apagado en la de fotos; sin elegir no se cobra (QA-065, sección 44) | 1.6 |
 | T6.5 | Valorar un trabajo terminado | Las estrellas empiezan vacías y no se puede enviar sin puntuar; después se puede abrir y corregir (QA-116) | 1.6 |
+| T6.7 | Dirección de la reserva con las sugerencias de Google caídas o sin facturación | El aviso no habla de facturación ni de Google Cloud; escribir la dirección completa y continuar la valida con el mapa (QA-121, QA-068) | 1.18 |
 
 ## Criterio para subir
 

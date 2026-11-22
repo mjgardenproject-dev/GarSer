@@ -170,7 +170,7 @@ const CustomerExperienceSections: React.FC<CustomerExperienceSectionsProps> = ({
             <>
               <p className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-50">
                 <CheckCircle2 className="h-4 w-4" />
-                Reserva más clara
+                Reserva en pocos pasos
               </p>
               <h2 className="mt-5 text-3xl font-semibold tracking-tight">{localContent.finalCtaTitle}</h2>
               <p className="mt-4 max-w-xl text-base leading-7 text-emerald-50">{localContent.finalCtaDescription}</p>

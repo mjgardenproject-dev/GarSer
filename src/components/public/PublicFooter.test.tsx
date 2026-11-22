@@ -27,6 +27,20 @@ describe('PublicFooter', () => {
     expect(email.getAttribute('href')).toBe('mailto:info@garser.es');
   });
 
+  it('QA-008 · el texto del pie es para el público: sin lenguaje de diseño interno («clientes reales», «pantallas técnicas»)', () => {
+    const { container } = render(<MemoryRouter><PublicFooter /></MemoryRouter>);
+    expect(container.textContent).not.toMatch(/clientes reales|pantallas técnicas|zona de cliente comparten/i);
+    expect(screen.getByRole('heading', { name: /Jardinería profesional/ })).toBeTruthy();
+  });
+
+  it('QA-094 · en la página para jardineros el pie habla a profesionales, no a clientes', () => {
+    const { container } = render(<MemoryRouter><PublicFooter audience="professionals" /></MemoryRouter>);
+    expect(screen.getByRole('heading', { name: /Haz crecer tu negocio de jardinería/ })).toBeTruthy();
+    expect(container.textContent).not.toMatch(/Reserva servicios de jardinería|clientes reales/i);
+    // Los enlaces útiles siguen.
+    expect(screen.getByRole('link', { name: 'Privacidad' })).toBeTruthy();
+  });
+
   it('enlaza la Política de privacidad y los Términos', () => {
     render(
       <MemoryRouter>

@@ -165,6 +165,8 @@ export interface SerializableBookingData {
     acceptedAt: string;
     declaredVariables: Record<string, unknown>;
   };
+  /** QA-170: registro del aviso de tratamiento con producto fitosanitario aceptado por el cliente. */
+  phytosanitaryAck?: { legalVersion: string; legalHash: string; acceptedText: string; acceptedAt: string };
   wasteRemoval?: boolean;
   aiQuantity?: number;
   lawnSpecies?: string;
@@ -1164,7 +1166,9 @@ export function buildAuthoritativeBookingQuote(params: {
 }): BookingQuoteResult {
   const { bookingData, providerConfig } = params;
   const config = providerConfig;
-  const globalWaste = bookingData.wasteRemoval !== undefined ? bookingData.wasteRemoval : true;
+  // QA-065: la retirada de restos tiene coste y solo se cobra si el cliente la ha elegido (true).
+  // Antes, sin respuesta, se cobraba.
+  const globalWaste = bookingData.wasteRemoval === true;
   const breakdown: BookingQuoteLine[] = [];
   const warnings: BookingQuoteWarning[] = [];
   let metadata = buildDefaultQuoteMetadata();

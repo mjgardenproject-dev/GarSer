@@ -19,6 +19,7 @@ import { PartialServiceModal } from './PartialServiceModal';
 import {
   fetchProviderMonthDays,
   fetchProviderValidHours,
+  isBookingAuthorityError,
   previewProviderQuotes,
   type ProviderMonthDay,
   type ProviderQuotePreview,
@@ -33,7 +34,8 @@ import {
   type ProviderLinkBlockReason,
 } from '../../utils/providerLink';
 import ProviderLinkBlockedState from './ProviderLinkBlockedState';
-import StaleProviderLinkNotice from './StaleProviderLinkNotice';
+import BookingRateNotice from './BookingRateNotice';
+import { describeBookingRateNotice } from '../../utils/bookingRateNotice';
 
 // provider_kind (GarSer Empresas F4): 'company' pinta el distintivo «Empresa».
 interface ProviderProfile { user_id: string; full_name: string; avatar_url?: string; rating_average?: number; rating_count?: number; provider_kind?: string | null }
@@ -90,6 +92,7 @@ const ProvidersPage: React.FC = () => {
   const [previewQuotes, setPreviewQuotes] = useState<Record<string, ProviderQuotePreview>>({});
   const [earliestByProvider, setEarliestByProvider] = useState<Record<string, { date: string; startHour: number } | null>>({});
   const [loadError, setLoadError] = useState('');
+  const [serviceUnavailable, setServiceUnavailable] = useState('');
   const [availabilityError, setAvailabilityError] = useState('');
   const [providersReloadToken, setProvidersReloadToken] = useState(0);
   const [emptyStateHint, setEmptyStateHint] = useState('');
@@ -454,6 +457,7 @@ const ProvidersPage: React.FC = () => {
     const fetchProviders = async () => {
       setLoading(true);
       setLoadError('');
+      setServiceUnavailable('');
       setEmptyStateHint('');
       setLinkBlock(null);
       try {
@@ -629,7 +633,14 @@ const ProvidersPage: React.FC = () => {
         setPreviewQuotes({});
         setEarliestByProvider({});
         setEmptyStateHint('');
-        setLoadError('No se pudieron cargar los profesionales. Reintenta.');
+        // QA-181: si el administrador desactivó el servicio, reintentar no sirve: se dice y se ofrece otro.
+        if (isBookingAuthorityError(e) && e.code === 'service_unavailable') {
+          setServiceUnavailable(e.backendMessage || e.message || 'Este servicio ya no se puede reservar.');
+          setLoadError('');
+        } else {
+          setServiceUnavailable('');
+          setLoadError('No se pudieron cargar los profesionales. Reintenta.');
+        }
       } finally {
         setLoading(false);
       }
@@ -714,16 +725,19 @@ const ProvidersPage: React.FC = () => {
     setProvidersReloadToken((prev) => prev + 1);
   };
 
-  // La clave del enlace que traía el cliente ya no vale (el profesional la cambió o el enlace está
-  // incompleto): se le explica por qué paga gastos de gestión. Solo si traía una clave (si no, no se le
-  // ha prometido nada) y si de verdad hay gastos que pagar.
+  // Por qué el profesional del enlace sale con la tarifa que sale cuando el cliente podría esperar
+  // otra (QA-100 / QA-102): otra reserva en curso con tarifa de primera, clave antigua o ausente, o
+  // cliente que ya llegó por GarSer.
   const linkedEconomics = linkedProviderId ? previewQuotes[linkedProviderId]?.economics : undefined;
-  const showStaleLinkNotice = Boolean(
-    linkedProviderId
-    && bookingData.providerLinkCode
-    && linkedEconomics?.commission?.linkClaim === 'rejected'
-    && Number(linkedEconomics.managementFee) > 0,
-  );
+  const linkRateNotice = linkedEconomics
+    ? describeBookingRateNotice({
+        commission: linkedEconomics.commission ?? null,
+        managementFee: Number(linkedEconomics.managementFee),
+        cameFromProviderLink: true,
+        hadLinkCode: Boolean(bookingData.providerLinkCode),
+        providerName: linkedProfile?.fullName,
+      })
+    : null;
 
   const handleRetryAvailability = () => {
     if (!selectedProvider) return;
@@ -804,6 +818,20 @@ const ProvidersPage: React.FC = () => {
       <main className="mx-auto w-full px-4 py-6 pb-24 sm:max-w-md" id="providers-main">
         {/* Carrusel de jardineros */}
       <div className="mb-4">
+        {serviceUnavailable && (
+          <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-medium text-red-900">Este servicio ya no se puede reservar</p>
+            <p className="mt-1">{serviceUnavailable}</p>
+            <button
+              type="button"
+              onClick={() => { setBookingData({ serviceIds: [] }); setCurrentStep(1); }}
+              className="mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium text-red-800 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+            >
+              Elegir otro servicio
+            </button>
+          </div>
+        )}
+
         {loadError && (
           <div aria-live="polite" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             <p className="font-medium text-red-900">No se ha podido cargar la lista de profesionales.</p>
@@ -833,7 +861,14 @@ const ProvidersPage: React.FC = () => {
             </div>
         )}
 
-        {showStaleLinkNotice && <StaleProviderLinkNotice providerName={linkedProfile?.fullName} />}
+        <BookingRateNotice notice={linkRateNotice} className="mb-4" />
+
+        {/* QA-055: antes de elegir, qué son los gastos de gestión y que no se cobran si no acepta. */}
+        {Object.values(previewQuotes).some((q) => Number(q?.economics?.managementFee) > 0) && (
+          <p className="mb-3 text-xs leading-5 text-gray-500">
+            Los gastos de gestión de GarSer se retienen en tu tarjeta al enviar la solicitud y solo se cobran si el profesional acepta; si no, se liberan sin cobrarte nada.
+          </p>
+        )}
 
         {/* Primera carga: esqueleto sólo en el hueco de la lista, con la misma forma que
             las tarjetas reales para que no salte el layout al llegar los datos. */}
@@ -980,7 +1015,7 @@ const ProvidersPage: React.FC = () => {
                               </div>
                             ) : paymentSummary ? (
                               <div className="mt-1 text-xs text-gray-500">
-                                Pagas hoy {formatEuro(paymentSummary.managementFee)} de gastos de gestión ·{' '}
+                                Hoy se retienen {formatEuro(paymentSummary.managementFee)} de gastos de gestión ·{' '}
                                 {formatEuro(paymentSummary.pendingToGardener)} al profesional
                               </div>
                             ) : null}

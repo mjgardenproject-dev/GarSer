@@ -58,6 +58,8 @@ export interface Service {
   image_id?: string; // ID de imagen opcional
   image_url?: string;
   created_at: string;
+  /** false = el administrador lo ha desactivado: nadie puede reservarlo (QA-181). */
+  is_active?: boolean | null;
 }
 
 export interface Availability {

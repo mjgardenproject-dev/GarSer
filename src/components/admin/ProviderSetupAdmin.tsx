@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { ACTIVATION_STEP_LABEL, type RecordedActivationStep } from '../../activation/activationFlow';
 import { ChevronDown, Mail, Phone, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { SetupStep } from '../../shared/providerSetup';
@@ -23,7 +24,10 @@ function daysSince(iso: string): string {
   return `Alta hace ${days} ${days === 1 ? 'día' : 'días'}`;
 }
 
-const ProviderRow: React.FC<{ entry: AdminProviderEntry }> = ({ entry }) => {
+/** Progreso del cuestionario «Activa tu cuenta» de cada profesional (2026-11-11). */
+type ActivationProgressRow = { provider_id: string; step: RecordedActivationStep; at: string };
+
+const ProviderRow: React.FC<{ entry: AdminProviderEntry; activation?: ActivationProgressRow }> = ({ entry, activation }) => {
   const [open, setOpen] = useState(false);
   const { summary } = entry;
   const missing = (summary?.required ?? []).filter((s) => s.state !== 'done' && s.state !== 'blocked');
@@ -65,6 +69,11 @@ const ProviderRow: React.FC<{ entry: AdminProviderEntry }> = ({ entry }) => {
         <p className="mt-1 text-xs text-gray-500">Recomendado: {extras.map((s) => s.title).join(', ')}</p>
       )}
       <p className="mt-1 text-xs text-gray-500">{marketingLine(entry.marketing)}</p>
+      {activation && (
+        <p className="mt-1 text-xs text-gray-600">
+          Cuestionario de activación: <span className="font-semibold">{ACTIVATION_STEP_LABEL[activation.step] ?? activation.step}</span> · {daysSince(activation.at)}
+        </p>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-2">
         {entry.phone && (
@@ -112,6 +121,7 @@ const ProviderSetupAdmin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('hidden');
+  const [activation, setActivation] = useState<Record<string, ActivationProgressRow>>({});
 
   const load = async () => {
     setLoading(true);
@@ -126,6 +136,13 @@ const ProviderSetupAdmin: React.FC = () => {
   };
 
   useEffect(() => { void load(); }, []);
+  // Aparte de la lista: si falla, la lista sale igual (solo sin la línea del cuestionario).
+  useEffect(() => {
+    void supabase.rpc('admin_activation_progress').then(({ data }) => {
+      const list = Array.isArray(data) ? (data as unknown as ActivationProgressRow[]) : [];
+      setActivation(Object.fromEntries(list.filter((r) => r && typeof r.provider_id === 'string' && r.step in ACTIVATION_STEP_LABEL).map((r) => [r.provider_id, r])));
+    }, () => undefined);
+  }, []);
 
   const entries = useMemo(() => buildAdminProviderEntries(rows ?? []), [rows]);
   const counts = useMemo(() => ({
@@ -189,7 +206,7 @@ const ProviderSetupAdmin: React.FC = () => {
             </p>
           ) : (
             <ul className="space-y-3">
-              {shown.map((entry) => <ProviderRow key={entry.user_id} entry={entry} />)}
+              {shown.map((entry) => <ProviderRow key={entry.user_id} entry={entry} activation={activation[entry.user_id]} />)}
             </ul>
           )}
         </>

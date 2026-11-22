@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionEndedUserId, signedOutByUser } = useAuth();
   const location = useLocation();
 
   // Bloquea siempre mientras la autenticación esté cargando
@@ -23,6 +23,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <>{children}</>;
   }
 
+  // Acaba de pulsar «Salir» aquí: el cierre de sesión recarga /auth por su cuenta. No se guarda esta página
+  // como «enlace de vuelta»: esa ruta sobrevivía a la recarga y la heredaba la SIGUIENTE persona (QA-155).
+  if (signedOutByUser) return null;
+
   // Si no hay usuario, redirigir de forma estable a /auth
   if (location.pathname !== '/auth') {
     // Al volver a entrar, a la misma página (R-06: también cuando la sesión se cerró desde fuera).
@@ -30,7 +34,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
       <Navigate
         to="/auth"
         replace
-        state={{ from: location, initialMode: 'login', redirectTo: `${location.pathname}${location.search}` }}
+        state={{ from: location, initialMode: 'login', redirectTo: `${location.pathname}${location.search}`, redirectUserId: sessionEndedUserId ?? undefined }}
       />
     );
   }

@@ -62,10 +62,80 @@ describe('AuthContext: cierre de sesión (R-06)', () => {
     expect(ctx.sessionEndedAt).toBeNull();
   });
 
+  it('QA-155 · tras «Cerrar sesión» queda marcado que lo pidió el usuario (las páginas protegidas no deben «recordar» su ruta), hasta que alguien entra', async () => {
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+    expect(ctx.signedOutByUser).toBe(false);
+    await act(async () => { await ctx.signOut(); });
+    await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+    expect(ctx.signedOutByUser).toBe(true);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u2' } }); });
+    expect(ctx.signedOutByUser).toBe(false);
+  });
+
+  it('QA-155 · si la sesión se cierra sola NO se marca como pedida por el usuario', async () => {
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+    await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+    expect(ctx.signedOutByUser).toBe(false);
+  });
+
+  it('QA-155 · recuerda DE QUIÉN era la sesión cerrada, para que otra cuenta no herede su página', async () => {
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+    await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+    expect(ctx.sessionEndedAt).toBe('/empresa/solicitudes?x=1');
+    expect(ctx.sessionEndedUserId).toBe('u1');
+    // Quitar el aviso no borra de quién era: la pantalla de entrar lo lee después.
+    await act(async () => { ctx.clearSessionEnded(); });
+    expect(ctx.sessionEndedAt).toBeNull();
+    expect(ctx.sessionEndedUserId).toBe('u1');
+    // Hasta que alguien entra.
+    await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'otra' } }); });
+    expect(ctx.sessionEndedUserId).toBeNull();
+  });
+
   it('sin nadie dentro, un SIGNED_OUT no avisa', async () => {
     render(<AuthProvider><Probe /></AuthProvider>);
     await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
     expect(ctx.sessionEndedAt).toBeNull();
+  });
+
+  describe('clave del enlace de un profesional (QA-101)', () => {
+    const KEY = 'garser.providerLinkCodes.v1';
+    const PRO = '11111111-1111-4111-8111-111111111111';
+    const CODE = '0123456789abcdef0123456789abcdef';
+    beforeEach(() => localStorage.clear());
+
+    it('«Cerrar sesión» la olvida', async () => {
+      localStorage.setItem(KEY, JSON.stringify({ [PRO]: { code: CODE, at: Date.now(), userId: 'u1' } }));
+      render(<AuthProvider><Probe /></AuthProvider>);
+      await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+      await act(async () => { await ctx.signOut(); });
+      await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+      expect(localStorage.getItem(KEY)).toBeNull();
+    });
+
+    it('si la sesión caduca sola, se conserva ligada a su cuenta', async () => {
+      localStorage.setItem(KEY, JSON.stringify({ [PRO]: { code: CODE, at: Date.now(), userId: 'u1' } }));
+      render(<AuthProvider><Probe /></AuthProvider>);
+      await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+      await act(async () => { mocks.listener?.('SIGNED_OUT', null); });
+      expect(JSON.parse(localStorage.getItem(KEY) as string)[PRO].userId).toBe('u1');
+    });
+
+    it('al entrar, la de un visitante pasa a la cuenta y la de otra cuenta se olvida', async () => {
+      const OTHER = '22222222-2222-4222-8222-222222222222';
+      localStorage.setItem(KEY, JSON.stringify({
+        [PRO]: { code: CODE, at: Date.now(), userId: null },
+        [OTHER]: { code: CODE, at: Date.now(), userId: 'u9' },
+      }));
+      render(<AuthProvider><Probe /></AuthProvider>);
+      await act(async () => { mocks.listener?.('SIGNED_IN', { user: { id: 'u1' } }); });
+      const stored = JSON.parse(localStorage.getItem(KEY) as string);
+      expect(stored[PRO].userId).toBe('u1');
+      expect(stored).not.toHaveProperty(OTHER);
+    });
   });
 
   it('PH-35: si la sesión se cerró en otro dispositivo, al volver a la app sale solo aquí y avisa', async () => {

@@ -351,7 +351,7 @@ const GardenersLandingPage: React.FC = () => {
         </section>
       </main>
 
-      <PublicFooter />
+      <PublicFooter audience="professionals" />
     </div>
   );
 };

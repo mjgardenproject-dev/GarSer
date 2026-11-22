@@ -20,6 +20,7 @@ vi.mock('../../utils/bookingAuthorityService', () => ({
   previewProviderQuotes: mocks.previewProviderQuotes,
   fetchProviderMonthDays: mocks.fetchProviderMonthDays,
   fetchProviderValidHours: mocks.fetchProviderValidHours,
+  isBookingAuthorityError: (error: unknown) => Boolean(error && (error as { isAuthority?: boolean }).isAuthority),
 }));
 
 vi.mock('react-hot-toast', () => ({
@@ -216,9 +217,34 @@ describe('ProvidersPage', () => {
     // Ya desde la elección de profesional se separan los dos importes: antes solo se decía
     // "Incluye tarifa de reserva de X", sin indicar cuánto acababa cobrando el jardinero.
     const rendered = document.body.textContent || '';
-    expect(rendered).toContain('Pagas hoy 19,75 € de gastos de gestión');
+    expect(rendered).toContain('Hoy se retienen 19,75 € de gastos de gestión');
+    // QA-055: antes de pagar se explica qué son y que se liberan si no acepta.
+    expect(rendered).toContain('solo se cobran si el profesional acepta');
     expect(rendered).toContain('158,00 € al profesional');
     expect(rendered).not.toContain('Incluye tarifa de reserva');
+  });
+
+  it('QA-181: servicio desactivado por el admin: lo explica y ofrece elegir otro (no «Reintentar»)', async () => {
+    mocks.previewProviderQuotes.mockRejectedValue(Object.assign(new Error('«Poda de palmeras» ya no se puede reservar. Elige otro servicio.'), {
+      isAuthority: true,
+      code: 'service_unavailable',
+      status: 409,
+      backendMessage: '«Poda de palmeras» ya no se puede reservar. Elige otro servicio.',
+    }));
+    render(<ProvidersPage />);
+    expect(await screen.findByText('Este servicio ya no se puede reservar')).toBeTruthy();
+    expect(screen.getByText(/«Poda de palmeras» ya no se puede reservar/)).toBeTruthy();
+    expect(screen.queryByText('Reintentar carga')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir otro servicio' }));
+    expect(setBookingData).toHaveBeenCalledWith({ serviceIds: [] });
+    expect(setCurrentStep).toHaveBeenCalledWith(1);
+  });
+
+  it('un fallo de red sigue ofreciendo «Reintentar carga»', async () => {
+    mocks.previewProviderQuotes.mockRejectedValue(new Error('Failed to fetch'));
+    render(<ProvidersPage />);
+    expect(await screen.findByText('Reintentar carga')).toBeTruthy();
+    expect(screen.queryByText('Este servicio ya no se puede reservar')).toBeNull();
   });
 
   it('consume el preview backend sin reenviar minimos globales legacy', async () => {

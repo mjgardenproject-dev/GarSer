@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cancellationConfirmMessage,
   clientAmountsNote,
+  managementFeeExplanation,
   feeWaiverReasonFromSource,
   feeWaiverReasonText,
   formatEuro,
@@ -128,6 +129,9 @@ describe('getBookingAmounts', () => {
     ['completed', 'charged'],
     ['cancelled', 'void'],
     ['rejected', 'void'],
+    ['expired', 'released'],
+    ['no_show_gardener', 'refunded'],
+    ['no_show_client', 'kept'],
   ])('deriva el estado del cargo desde el estado de la reserva (%s)', (status, expected) => {
     expect(getBookingAmounts({ total_price: 158, management_fee: 19.75, management_fee_source: 'payment_attempt', status }).feeState).toBe(expected);
   });
@@ -303,8 +307,35 @@ describe('reservas sin gastos de gestión (lanzamiento)', () => {
   it('explica el motivo al cliente, con o sin el nombre del profesional', () => {
     expect(feeWaiverReasonText('provider_link', 'Miguel')).toBe('Reservas con Miguel desde su enlace: sin gastos de gestión.');
     expect(feeWaiverReasonText('returning_client', '')).toBe('Ya has trabajado con este profesional: sin gastos de gestión.');
+    // QA-100: 0 € porque hay otra reserva en curso, no porque ya haya trabajado con él.
+    expect(feeWaiverReasonText('returning_client', 'Antonio', { firstRateInUse: true })).toBe('Esta reserva con Antonio no lleva gastos de gestión.');
+    expect(feeWaiverReasonText('returning_client', 'Antonio', { firstRateInUse: true })).not.toContain('Ya has trabajado');
     expect(feeWaiverReasonText('maintenance_plan')).toBe('Visita de tu plan de mantenimiento: sin gastos de gestión.');
     expect(feeWaiverReasonText('zero_commission')).toBe('Esta reserva va sin gastos de gestión.');
     expect(feeWaiverReasonText(null)).toBe('');
+  });
+});
+
+describe('managementFeeExplanation (QA-055 / QA-084: qué son los gastos antes de pagar)', () => {
+  const econ = (overrides: Record<string, unknown> = {}) => ({
+    managementFee: 22.5, commission: { ratePercent: 12.5, adjustment: null }, ...overrides,
+  });
+  it('dice el porcentaje, que se retienen y que se liberan si no acepta', () => {
+    const text = managementFeeExplanation(econ(), 'Antonio') || '';
+    expect(text).toContain('12,5 % del precio del servicio');
+    expect(text).toContain('se retienen en tu tarjeta');
+    expect(text).toContain('solo se cobran si Antonio la acepta');
+    expect(text).toContain('se liberan sin cobrarte nada');
+  });
+  it('con el mínimo de Stripe lo dice', () => {
+    expect(managementFeeExplanation(econ({ managementFee: 0.5, commission: { ratePercent: 3, adjustment: 'minimum_charge' } }))).toContain('el mínimo es 0,50 €');
+  });
+  it('sin porcentaje conocido da el importe', () => {
+    expect(managementFeeExplanation(econ({ commission: null }))).toContain('son 22,50 €');
+  });
+  it('sin gastos no explica nada', () => {
+    expect(managementFeeExplanation(econ({ managementFee: 0 }))).toBeNull();
+    expect(managementFeeExplanation(econ({ feeWaiver: { reason: 'provider_link' } }))).toBeNull();
+    expect(managementFeeExplanation(null)).toBeNull();
   });
 });

@@ -98,3 +98,16 @@ describe('«Mi cuenta»: el enlace de reserva directo', () => {
     expect(screen.queryByText('Enlace de reserva directo')).toBeNull();
   });
 });
+
+describe('«Mi cuenta»: cookies (QA-007)', () => {
+  afterEach(() => { cleanup(); vi.unstubAllEnvs(); window.localStorage.clear(); });
+
+  it('lleva «Configurar cookies» y los enlaces a privacidad y cookies', async () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    const { CookieConsentProvider } = await import('../../contexts/CookieConsentContext');
+    render(<MemoryRouter><CookieConsentProvider><MyAccount /></CookieConsentProvider></MemoryRouter>);
+    expect(await screen.findByRole('button', { name: 'Configurar cookies' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Política de privacidad' }).getAttribute('href')).toBe('/privacidad');
+    expect(screen.getByRole('link', { name: 'Política de cookies' }).getAttribute('href')).toBe('/cookies');
+  });
+});

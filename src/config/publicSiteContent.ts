@@ -112,11 +112,11 @@ export const serviceHighlights: HighlightedService[] = [
 export const generalHomeFaqs: FaqItem[] = [
   {
     question: '¿Cómo empiezo una reserva en GarSer?',
-    answer: 'Indicas tu dirección, eliges el servicio y avanzas por un proceso guiado hasta confirmar la reserva.',
+    answer: 'Indicas tu dirección, eliges el servicio, el día y el profesional, y confirmas la reserva en pocos pasos.',
   },
   {
     question: '¿Puedo continuar una reserva que dejé a medias?',
-    answer: 'Si existe un borrador guardado, la portada te muestra la opción de continuar desde el mismo flujo.',
+    answer: 'Sí. Si dejas una reserva a medias, al volver a la portada puedes continuar justo donde la dejaste.',
   },
   {
     question: '¿En qué zonas trabaja GarSer?',
@@ -131,11 +131,11 @@ export const generalHomeFaqs: FaqItem[] = [
 export const marbellaFaqs: FaqItem[] = [
   {
     question: '¿Buscáis jardineros en Marbella para trabajos puntuales?',
-    answer: 'Sí. La página de Marbella está pensada para clientes que quieren reservar trabajos concretos de jardinería en la zona.',
+    answer: 'Sí. Puedes reservar en Marbella trabajos concretos de jardinería (césped, setos, poda, palmeras…) con profesionales de la zona.',
   },
   {
     question: '¿Puedo reservar mantenimiento de jardín en Marbella?',
-    answer: 'Puedes iniciar una reserva desde la propia landing y completar el flujo con los detalles de tu jardín.',
+    answer: 'Sí. Empiezas la reserva desde esta misma página y describes tu jardín en unos pocos pasos.',
   },
   {
     question: '¿GarSer trabaja solo en Marbella?',
@@ -153,8 +153,8 @@ export const costaDelSolFaqs: FaqItem[] = [
     answer: 'No hay una tarifa única: cada jardinero configura sus precios. Al describir tu jardín con fotos o medidas, GarSer te muestra el precio calculado con las tarifas reales de los profesionales disponibles en tu zona, antes de reservar y sin compromiso.',
   },
   {
-    question: '¿Qué diferencia hay entre esta página y la de Marbella?',
-    answer: 'Esta página cubre toda la Costa del Sol. Si tu vivienda está en Marbella, la página específica de Marbella tiene la información centrada en ese municipio.',
+    question: '¿Cubrís toda la Costa del Sol?',
+    answer: 'Trabajamos con profesionales de toda la Costa del Sol. Al indicar tu dirección te mostramos los que llegan hasta tu jardín.',
   },
   {
     question: '¿Puedo reservar si no estoy en la vivienda?',
@@ -209,11 +209,11 @@ export const generalHomeContent = {
     },
     {
       title: 'Elige disponibilidad',
-      description: 'El flujo te lleva hasta fecha, horario y profesional disponible sin tener que improvisar pasos.',
+      description: 'Eliges fecha, horario y profesional disponible, con el precio a la vista.',
     },
     {
       title: 'Confirma la reserva',
-      description: 'Terminas la reserva dentro del mismo proceso y mantienes el seguimiento desde tu cuenta si ya eres cliente.',
+      description: 'Confirmas la reserva y sigues su estado desde tu cuenta.',
     },
   ],
   faqTitle: 'Preguntas frecuentes',
@@ -228,13 +228,13 @@ export const marbellaContent = {
   eyebrow: 'Jardinería en Marbella',
   title: 'Reserva servicios de jardinería en Marbella con una experiencia clara',
   description:
-    'Una página pensada para propietarios de viviendas que buscan resolver mantenimiento, poda o trabajos de jardín en Marbella sin perder tiempo.',
-  highlightTitle: 'Una landing específica para quien busca jardinería en Marbella',
+    'Mantenimiento puntual, poda o trabajos de jardín en Marbella: describes tu jardín, ves el precio y eliges día y profesional.',
+  highlightTitle: 'Jardinería en Marbella, sin complicaciones',
   highlightDescription:
-    'El objetivo aquí no es vender humo. Es dejar claro que puedes empezar una reserva, describir tu caso y avanzar por un proceso sencillo desde el móvil.',
+    'Empiezas la reserva desde el móvil, describes tu caso y avanzas paso a paso hasta confirmar.',
   finalCtaTitle: 'Si necesitas un trabajo de jardinería en Marbella, empieza por aquí',
   finalCtaDescription:
-    'Desde esta página puedes ir directo al flujo de reserva o volver a la portada general si prefieres una vista más amplia de GarSer.',
+    'Empieza tu reserva ahora o vuelve a la portada para ver todos los servicios de GarSer.',
 };
 
 export const costaDelSolContent = {

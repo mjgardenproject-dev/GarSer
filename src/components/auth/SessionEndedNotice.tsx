@@ -13,7 +13,7 @@ export const SESSION_ENDED_MESSAGE =
   'Tu sesión se ha cerrado (por ejemplo, desde otro dispositivo). Vuelve a entrar para continuar.';
 
 const SessionEndedNotice: React.FC = () => {
-  const { sessionEndedAt, clearSessionEnded } = useAuth();
+  const { sessionEndedAt, sessionEndedUserId, clearSessionEnded } = useAuth();
   const navigate = useNavigate();
 
   // PH-01: quien acaba de cerrar su cuenta llega aquí tras la recarga a /auth.
@@ -27,9 +27,10 @@ const SessionEndedNotice: React.FC = () => {
     toast(SESSION_ENDED_MESSAGE, { id: 'session-ended', duration: 8000, icon: '🔒' });
     navigate('/auth', {
       replace: true,
-      state: { initialMode: 'login', redirectTo: safeRedirectPath(sessionEndedAt) ?? undefined },
+      // QA-155: la ruta de vuelta es de ESTA cuenta; si entra otra persona en el mismo móvil, no la hereda.
+      state: { initialMode: 'login', redirectTo: safeRedirectPath(sessionEndedAt) ?? undefined, redirectUserId: sessionEndedUserId ?? undefined },
     });
-  }, [sessionEndedAt, clearSessionEnded, navigate]);
+  }, [sessionEndedAt, sessionEndedUserId, clearSessionEnded, navigate]);
 
   return null;
 };

@@ -29,7 +29,8 @@ interface Props {
 
 const ReviewModal = ({ bookingId, gardenerId, gardenerName, onClose, onSaved }: Props) => {
   const { user } = useAuth();
-  const [rating, setRating] = useState(5);
+  // QA-116: sin nota de partida (0 = sin puntuar). Antes llegaba con 5 y se podía enviar sin tocar.
+  const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [existingId, setExistingId] = useState<string | null>(null);
   const [editable, setEditable] = useState(false);
@@ -69,7 +70,7 @@ const ReviewModal = ({ bookingId, gardenerId, gardenerName, onClose, onSaved }: 
   }, [onClose, saving]);
 
   const submit = async () => {
-    if (!user?.id) return;
+    if (!user?.id || rating < 1) return;
     setSaving(true);
     try {
       if (existingId) {
@@ -100,7 +101,8 @@ const ReviewModal = ({ bookingId, gardenerId, gardenerName, onClose, onSaved }: 
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-[1000]"
+      // QA-116 (R3-1.6, OBS-06): sin zoom de Safari por un doble toque en la hoja.
+      className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-[1000] [touch-action:manipulation]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="review-modal-title"
@@ -137,31 +139,34 @@ const ReviewModal = ({ bookingId, gardenerId, gardenerName, onClose, onSaved }: 
                 {[1, 2, 3, 4, 5].map((position) => {
                   const filled = Math.max(Math.min(rating - (position - 1), 1), 0);
                   return (
-                    <div key={position} className="relative w-9 h-9">
-                      <Star className="absolute inset-0 w-9 h-9 text-gray-300" aria-hidden="true" />
+                    <div key={position} className="relative w-11 h-11">
+                      <Star className="absolute inset-0 w-11 h-11 text-gray-300" aria-hidden="true" />
                       <div className="absolute inset-0 overflow-hidden" style={{ width: `${filled * 100}%` }}>
-                        <Star className="w-9 h-9 text-yellow-500 fill-current" aria-hidden="true" />
+                        <Star className="w-11 h-11 text-yellow-500 fill-current" aria-hidden="true" />
                       </div>
-                      {/* Dos mitades por estrella: medio punto es la precisión que admite el esquema. */}
-                      <button
-                        type="button"
-                        onClick={() => !isReadOnly && setRating(position - 0.5)}
-                        disabled={isReadOnly}
-                        className="absolute left-0 top-0 h-full w-1/2 disabled:cursor-default"
-                        aria-label={`${position - 0.5} estrellas`}
-                      />
+                      {/* Dos mitades por estrella: medio punto es la precisión que admite el esquema.
+                          La primera estrella es entera: la nota mínima es 1 (reviews_rating_half_step). */}
+                      {position > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => !isReadOnly && setRating(position - 0.5)}
+                          disabled={isReadOnly}
+                          className="absolute left-0 top-0 h-full w-1/2 disabled:cursor-default"
+                          aria-label={`${String(position - 0.5).replace('.', ',')} estrellas`}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => !isReadOnly && setRating(position)}
                         disabled={isReadOnly}
-                        className="absolute right-0 top-0 h-full w-1/2 disabled:cursor-default"
-                        aria-label={`${position} estrellas`}
+                        className={`absolute top-0 h-full disabled:cursor-default ${position > 1 ? 'right-0 w-1/2' : 'left-0 w-full'}`}
+                        aria-label={position === 1 ? '1 estrella' : `${position} estrellas`}
                       />
                     </div>
                   );
                 })}
                 <span className="ml-2 text-sm text-gray-600 tabular-nums">
-                  {rating.toFixed(1).replace('.', ',')} / 5
+                  {rating >= 1 ? `${rating.toFixed(1).replace('.', ',')} / 5` : 'Sin puntuar'}
                 </span>
               </div>
             </div>
@@ -196,14 +201,21 @@ const ReviewModal = ({ bookingId, gardenerId, gardenerName, onClose, onSaved }: 
                 Cerrar
               </button>
             ) : (
+              <>
+              {/* El hueco se queda aunque ya haya nota: si desaparece, la hoja (anclada abajo) baja y
+                  un segundo toque rápido cae en otra estrella (OBS-07). */}
+              <p aria-hidden={rating >= 1} className={`mb-2 text-center text-xs text-gray-500 ${rating >= 1 ? 'invisible' : ''}`}>
+                Toca las estrellas para puntuar (de 1 a 5).
+              </p>
               <button
                 type="button"
                 onClick={() => void submit()}
-                disabled={saving}
+                disabled={saving || rating < 1}
                 className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 transition-colors"
               >
                 {saving ? 'Guardando…' : existingId ? 'Guardar cambios' : 'Enviar valoración'}
               </button>
+              </>
             )}
           </>
         )}

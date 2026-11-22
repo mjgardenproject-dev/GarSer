@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { applyRecurringSchedule } from '../../utils/availabilityService';
+import { matrixToRules, planScheduleSave, saveOwnRecurringSchedule, type ScheduleSaveSnapshot } from '../../utils/recurringSchedulePersistence';
 import { Clock, Calendar, AlertTriangle, CheckCircle2, Info, History, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { notifySetupChanged } from '../../utils/setupEvents';
@@ -49,23 +49,8 @@ interface RecurringScheduleManagerProps {
   member?: { memberId: string; userId: string; name: string };
 }
 
-/** Matriz día → horas a reglas {day_of_week, start_time, end_time} agrupando horas seguidas. */
-function matrixToRules(matrix: Record<number, Set<number>>) {
-  const rules: Array<{ day_of_week: number; start_time: string; end_time: string }> = [];
-  const hh = (h: number) => `${String(h).padStart(2, '0')}:00:00`;
-  Object.entries(matrix).forEach(([day, set]) => {
-    const hours = Array.from(set || []).sort((a, b) => a - b);
-    let from: number | null = null;
-    hours.forEach((h, i) => {
-      if (from === null) from = h;
-      if (hours[i + 1] !== h + 1) {
-        rules.push({ day_of_week: Number(day), start_time: hh(from), end_time: hh(h + 1) });
-        from = null;
-      }
-    });
-  });
-  return rules;
-}
+// matrixToRules y el guardado del horario propio viven en utils/recurringSchedulePersistence.ts (los usa
+// también el cuestionario «Activa tu cuenta»).
 
 export default function RecurringScheduleManager({
   onChangePending,
@@ -99,6 +84,9 @@ export default function RecurringScheduleManager({
     weeks_to_maintain: null,
     min_notice_hours: null,
   });
+  // Lo último guardado (horas y semanas): permite saber si un guardado exige regenerar la agenda o solo
+  // cambia la antelación (QA-043: regenerar borra las excepciones del calendario).
+  const savedRef = useRef<ScheduleSaveSnapshot | undefined>(undefined);
   // Tras intentar guardar con reglas sin elegir, se marcan en rojo.
   const [showRuleErrors, setShowRuleErrors] = useState(false);
 
@@ -213,6 +201,9 @@ export default function RecurringScheduleManager({
         });
       }
       setScheduleMatrix(matrix);
+      savedRef.current = !member && settData?.weeks_to_maintain
+        ? { matrix: Object.fromEntries(Object.entries(matrix).map(([d, set]) => [d, new Set(set)])), weeks: settData.weeks_to_maintain }
+        : undefined;
 
       // 4. Sincronizar los controles del generador con los datos cargados
       const activeDays = DAYS_OF_WEEK.map(d => d.value).filter(day => (matrix[day]?.size ?? 0) > 0);
@@ -300,92 +291,16 @@ export default function RecurringScheduleManager({
         return true;
       }
 
-      // 1. Guardar Configuración
-      const { error: settError } = await supabase
-        .from('recurring_availability_settings')
-        .upsert({
-          gardener_id: user.id,
-          weeks_to_maintain: weeks,
-          // En el horario del propio profesional la antelación está elegida (lo exige ensureRulesChosen).
-          // Un empleado no la elige (la decide su empresa): entonces no se envía y no se toca la fila.
-          ...(settings.min_notice_hours !== null ? { min_notice_hours: settings.min_notice_hours } : {}),
-          updated_at: new Date().toISOString()
-        });
-
-      if (settError) throw settError;
-
-      // 2. Eliminar horarios recurrentes anteriores
-      const { error: delError } = await supabase
-        .from('recurring_schedules')
-        .delete()
-        .eq('gardener_id', user.id);
-
-      if (delError) throw delError;
-
-      // 3. Generar nuevas filas para recurring_schedules
-      // Agrupamos horas contiguas para minimizar filas
-      const newRows = [];
-      
-      for (const dayObj of DAYS_OF_WEEK) {
-        const day = dayObj.value;
-        const hours = Array.from(scheduleMatrix[day] || []).sort((a, b) => a - b);
-        
-        if (hours.length === 0) continue;
-
-        let rangeStart = hours[0];
-        let prevHour = hours[0];
-
-        for (let i = 1; i < hours.length; i++) {
-          const currentHour = hours[i];
-          if (currentHour !== prevHour + 1) {
-            // Fin de bloque
-            newRows.push({
-              gardener_id: user.id,
-              day_of_week: day,
-              start_time: `${rangeStart.toString().padStart(2, '0')}:00:00`,
-              end_time: `${(prevHour + 1).toString().padStart(2, '0')}:00:00`
-            });
-            rangeStart = currentHour;
-          }
-          prevHour = currentHour;
-        }
-        // Último bloque
-        newRows.push({
-          gardener_id: user.id,
-          day_of_week: day,
-          start_time: `${rangeStart.toString().padStart(2, '0')}:00:00`,
-          end_time: `${(prevHour + 1).toString().padStart(2, '0')}:00:00`
-        });
-      }
-
-      if (newRows.length > 0) {
-        const { error: insError } = await supabase
-          .from('recurring_schedules')
-          .insert(newRows);
-        
-        if (insError) throw insError;
-      }
-
-      // 4. Regenerar disponibilidad futura
-      // Intentamos usar RPC primero
-      const { error: rpcError } = await supabase.rpc('generate_recurring_slots', {
-        target_gardener_id: user.id,
-        force_regenerate: true 
+      // Reglas de agenda + horario semanal + horas reservables (mismo guardado que el cuestionario de activación).
+      // En el horario del propio profesional la antelación está elegida (lo exige ensureRulesChosen).
+      await saveOwnRecurringSchedule({
+        userId: user.id,
+        matrix: scheduleMatrix,
+        weeks,
+        minNoticeHours: settings.min_notice_hours,
+        previous: savedRef.current,
       });
-
-      if (rpcError) {
-        console.warn('RPC generate_recurring_slots failed or not found, using client-side fallback', rpcError);
-      }
-
-      // SIEMPRE ejecutamos la lógica del cliente para asegurar que se aplica correctamente
-      // y para cubrir el caso donde el RPC no existe o está desactualizado.
-      try {
-        await applyRecurringSchedule(user.id, scheduleMatrix, weeks);
-      } catch (clientError) {
-        console.error('Client-side generation failed:', clientError);
-        // Si el RPC también falló, lanzamos error
-        if (rpcError) throw clientError;
-      }
+      savedRef.current = { matrix: Object.fromEntries(Object.entries(scheduleMatrix).map(([d, set]) => [d, new Set(set)])), weeks };
 
       toast.success('Horario fijo guardado y aplicado correctamente');
       notifySetupChanged();
@@ -419,6 +334,12 @@ export default function RecurringScheduleManager({
     setShowConfirmation(false);
     await commitSave();
   };
+
+  // QA-043: si solo cambia la antelación (o se alargan las semanas) no se regenera la agenda: el aviso debe decirlo.
+  const savePlan = !member && settings.weeks_to_maintain
+    ? planScheduleSave(savedRef.current, { matrix: scheduleMatrix, weeks: settings.weeks_to_maintain })
+    : 'full';
+  const keepsAgenda = savePlan !== 'full';
 
   if (loading) {
     return (
@@ -787,16 +708,34 @@ export default function RecurringScheduleManager({
       {/* Modal de Confirmación */}
       {showConfirmation && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in fade-in zoom-in duration-200 max-h-[85dvh] overflow-y-auto">
             <div className="flex flex-col items-center">
               <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-6 shrink-0">
                 <AlertTriangle className="w-8 h-8 text-yellow-600" />
               </div>
               
               <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">
-                ¿Confirmar nuevo horario fijo?
+                {keepsAgenda ? '¿Guardar los cambios?' : '¿Confirmar nuevo horario fijo?'}
               </h3>
-              
+
+              {keepsAgenda ? (
+                <div className="bg-emerald-50 rounded-xl p-4 mb-6 w-full">
+                  <ul className="space-y-3 text-sm text-gray-700">
+                    <li className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                      <span>
+                        {savePlan === 'extend'
+                          ? 'Se abren las semanas nuevas con tu horario de siempre.'
+                          : 'Solo cambian tus reglas de reserva (antelación mínima).'}
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                      <span>Tu agenda <strong>no se toca</strong>: los días bloqueados y las horas extra que hayas puesto se quedan como están.</span>
+                    </li>
+                  </ul>
+                </div>
+              ) : (
               <div className="bg-yellow-50 rounded-xl p-4 mb-6 w-full">
                 <ul className="space-y-3 text-sm text-gray-700">
                   <li className="flex items-start gap-3">
@@ -813,6 +752,7 @@ export default function RecurringScheduleManager({
                   </li>
                 </ul>
               </div>
+              )}
 
               <div className="flex flex-col gap-3 w-full">
                 <button

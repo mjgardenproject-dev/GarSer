@@ -15,6 +15,10 @@ import { AlertTriangle } from 'lucide-react';
  * opción segura y semántica de diálogo para lectores de pantalla.
  */
 
+// Tiempo mínimo entre abrir el diálogo (o marcar la casilla) y aceptar la confirmación de una acción
+// con doble comprobación. Una persona tarda más; un toque fantasma o un doble toque, menos.
+export const CONFIRM_GUARD_MS = 800;
+
 export type ConfirmTone = 'danger' | 'warning' | 'phytosanitary_warning';
 
 export interface ConfirmConfig {
@@ -23,6 +27,9 @@ export interface ConfirmConfig {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: ConfirmTone;
+  /** Doble comprobación (QA-189): si se da, el diálogo pide marcar esta casilla antes de dejar
+   * confirmar. Para acciones que mueven dinero y no se pueden deshacer. */
+  acknowledgement?: string;
   onConfirm: () => void | Promise<void>;
   /** Se ejecuta al pulsar la opción "cancelar"/segura. Por defecto solo cierra el
    * diálogo; algunos flujos (p. ej. "salir sin guardar") necesitan que cancelar
@@ -43,6 +50,7 @@ const CLOSED: ConfirmState = {
   confirmLabel: 'Confirmar',
   cancelLabel: 'Cancelar',
   tone: 'warning',
+  acknowledgement: '',
   onConfirm: null,
   onCancel: null,
 };
@@ -56,6 +64,18 @@ const CLOSED: ConfirmState = {
 export function useConfirmDialog() {
   const [state, setState] = useState<ConfirmState>(CLOSED);
   const [busy, setBusy] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
+  // Si se ignora un toque por ser demasiado rápido, se dice: si no, parece que el botón no funciona.
+  const [guardHint, setGuardHint] = useState(false);
+  // El estado `busy` tarda un render en llegar al botón: dos toques en el mismo instante pasaban
+  // los dos. La referencia se comprueba y se marca en el acto.
+  const busyRef = useRef(false);
+  // QA-189 (prueba en el iPhone SE): un único toque sobre el botón todavía desactivado acabó con la
+  // casilla marcada Y la devolución hecha. Para que una acción que mueve dinero no pueda salir de un
+  // toque fantasma, de un doble toque o de un toque durante la animación, se ignora la confirmación
+  // en la primera fracción de segundo tras abrir el diálogo o tras marcar la casilla.
+  const openedAtRef = useRef(0);
+  const acknowledgedAtRef = useRef(0);
   const safeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const openConfirm = useCallback((config: ConfirmConfig) => {
@@ -66,9 +86,14 @@ export function useConfirmDialog() {
       confirmLabel: config.confirmLabel || 'Confirmar',
       cancelLabel: config.cancelLabel || 'Cancelar',
       tone: config.tone || 'warning',
+      acknowledgement: config.acknowledgement || '',
       onConfirm: config.onConfirm,
       onCancel: config.onCancel || null,
     });
+    setAcknowledged(false);
+    setGuardHint(false);
+    openedAtRef.current = Date.now();
+    acknowledgedAtRef.current = 0;
   }, []);
 
   const closeConfirm = useCallback(() => {
@@ -76,17 +101,27 @@ export function useConfirmDialog() {
   }, []);
 
   const handleConfirm = useCallback(async () => {
-    if (!state.onConfirm) return;
+    if (!state.onConfirm || busyRef.current) return;
+    if (state.acknowledgement && !acknowledged) return;
+    if (state.acknowledgement) {
+      const now = Date.now();
+      if (now - openedAtRef.current < CONFIRM_GUARD_MS || now - acknowledgedAtRef.current < CONFIRM_GUARD_MS) {
+        setGuardHint(true);
+        return;
+      }
+    }
+    busyRef.current = true;
     // Bloqueo mientras la acción está en curso: sin esto, un doble toque en móvil dispara dos
     // cancelaciones o dos cobros.
     setBusy(true);
     try {
       await state.onConfirm();
     } finally {
+      busyRef.current = false;
       setBusy(false);
       setState((prev) => ({ ...prev, isOpen: false, onConfirm: null, onCancel: null }));
     }
-  }, [state]);
+  }, [state, acknowledged]);
 
   const handleCancel = useCallback(async () => {
     const { onCancel } = state;
@@ -124,11 +159,37 @@ export function useConfirmDialog() {
               <h3 id="confirm-dialog-title" className="text-lg font-bold text-gray-900 mb-2">
                 {state.title}
               </h3>
+              {/* La casilla va ARRIBA, separada del botón de confirmar por el texto: juntas, un
+                  toque en el botón apagado podía caer en ella. */}
+              {state.acknowledgement ? (
+                <label className="mb-4 mt-1 flex w-full items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-left text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={acknowledged}
+                    onChange={(event) => {
+                      setAcknowledged(event.target.checked);
+                      acknowledgedAtRef.current = Date.now();
+                    }}
+                    disabled={busy}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-700"
+                  />
+                  <span>{state.acknowledgement}</span>
+                </label>
+              ) : null}
+
               {/* `whitespace-pre-line`: hay avisos que enumeran consecuencias en varias líneas
                   y sin esto se aplastaban en un párrafo corrido. */}
               <p id="confirm-dialog-message" className="text-gray-500 text-center mb-6 text-sm whitespace-pre-line">
                 {state.message}
               </p>
+
+
+
+              {guardHint ? (
+                <p role="status" className="mb-3 text-sm font-medium text-gray-700">
+                  Comprueba los datos y vuelve a pulsar para confirmar.
+                </p>
+              ) : null}
 
               <div className="flex flex-col gap-3 w-full">
                 {state.tone === 'phytosanitary_warning' ? (
@@ -147,8 +208,8 @@ export function useConfirmDialog() {
                     <button
                       type="button"
                       onClick={() => void handleConfirm()}
-                      disabled={busy}
-                      className="w-full bg-white text-red-600 border border-red-200 hover:bg-red-50 py-3 px-4 rounded-xl font-bold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                      disabled={busy || (Boolean(state.acknowledgement) && !acknowledged)}
+                      className="w-full disabled:pointer-events-none bg-white text-red-600 border border-red-200 hover:bg-red-50 py-3 px-4 rounded-xl font-bold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                     >
                       {busy ? 'Un momento…' : state.confirmLabel}
                     </button>
@@ -158,8 +219,8 @@ export function useConfirmDialog() {
                     <button
                       type="button"
                       onClick={() => void handleConfirm()}
-                      disabled={busy}
-                      className={`w-full text-white py-3 px-4 rounded-xl font-bold transition-colors flex items-center justify-center disabled:opacity-60 focus-visible:outline-none focus-visible:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 ${
+                      disabled={busy || (Boolean(state.acknowledgement) && !acknowledged)}
+                      className={`w-full disabled:pointer-events-none text-white py-3 px-4 rounded-xl font-bold transition-colors flex items-center justify-center disabled:opacity-60 focus-visible:outline-none focus-visible:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 ${
                         state.tone === 'danger'
                           ? 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-600/20 focus-visible:ring-red-500'
                           : 'bg-amber-600 hover:bg-amber-700 shadow-lg shadow-amber-600/20 focus-visible:ring-amber-500'

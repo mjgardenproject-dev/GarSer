@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogOut, User, Calendar, MessageCircle, Menu, Shield, Settings, Star } from 'lucide-react';
+import { LogOut, User, Calendar, CalendarClock, Briefcase, MessageCircle, Menu, Shield, Settings, Star } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { isAdminRole } from '../../lib/adminAccess';
 import { useAccount } from '../../contexts/AccountContext';
@@ -83,7 +83,15 @@ const Navbar: React.FC<NavbarProps> = ({ applicationStatus: propStatus }) => {
     navigate(user ? '/dashboard' : '/');
   };
 
-  const navItems = user && !shouldHideNav ? [
+  // Un empleado solo ve lo suyo (QA-030): antes el menú era el del cliente, con «Reservas → Empezar la primera»
+  // que abría el embudo de reserva, Chat y Valoraciones. Es el mismo menú que su barra inferior (BottomNav).
+  const employeeItems = [
+    { path: '/mi-trabajo', label: 'Mi trabajo', icon: Briefcase },
+    { path: '/mi-trabajo/horario', label: 'Mi horario', icon: CalendarClock },
+    { path: '/account', label: 'Mi Cuenta', icon: Settings },
+  ];
+
+  const navItems = user && !shouldHideNav && isEmployee ? employeeItems : user && !shouldHideNav ? [
     { path: '/dashboard', label: 'Dashboard', icon: User },
     { path: '/bookings', label: 'Reservas', icon: Calendar },
     { path: '/chat', label: 'Chat', icon: MessageCircle, badge: unreadChats },

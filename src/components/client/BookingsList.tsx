@@ -221,6 +221,7 @@ const BookingsList = () => {
             ...payload,
             rebookReviewPending: true,
             rebookSourceDate: booking.date,
+            rebookSourceStatus: booking.status,
             rebookSourceService: booking.services?.name,
             rebookSourceGardener: booking.gardener_profile?.full_name,
           },

@@ -82,3 +82,24 @@ export function hasRebookBreakdown(payload: Record<string, unknown>): boolean {
     return Array.isArray(value) && value.length > 0;
   });
 }
+
+/**
+ * La línea de fecha del resumen «Repetir este servicio». Solo una reserva COMPLETADA se «contrató»
+ * (R3-1.7 OBS-02): una solicitud caducada o cancelada nunca se hizo, y decirlo confunde justo donde
+ * el cliente mira el dinero. `formattedDate` ya viene escrita («1 de diciembre de 2026»).
+ */
+export function describeRebookSource(status: string | null | undefined, formattedDate: string | null): string | null {
+  if (!formattedDate) return null;
+  switch (String(status || '').toLowerCase()) {
+    case 'completed':
+      return `Lo contrataste el ${formattedDate}`;
+    case 'expired':
+      return `La solicitud (para el ${formattedDate}) caducó sin respuesta del profesional`;
+    case 'cancelled':
+    case 'canceled':
+    case 'rejected':
+      return `La reserva (para el ${formattedDate}) no llegó a hacerse`;
+    default:
+      return `Reserva del ${formattedDate}`;
+  }
+}

@@ -313,9 +313,108 @@ export function validateBookingStripeMetadataIntegrity(params: {
   };
 }
 
+// ── Pago que acaba SIN reserva (QA-139) ─────────────────────────────────────────────────────
+// El servidor deja el intento en `reconciliation_required` y anula en el acto la retención de la
+// tarjeta (booking-payment / webhook / reloj). El cliente tiene que leer qué ha pasado y que no se
+// le cobra nada; «Pago en revisión» no decía ninguna de las dos cosas.
+const UNBOOKED_TIME_EXPIRED_CODES = new Set([
+  'hold_unavailable_after_payment',
+  'payment_expired',
+  'payment_expired_client_poll',
+  'payment_expired_before_prepare',
+]);
+const UNBOOKED_SLOT_TAKEN_CODES = new Set([
+  'availability_conflict_after_payment',
+  'conflicting_hold_after_payment',
+]);
+const UNBOOKED_REVIEW_CODES = new Set([
+  'stripe_metadata_incomplete',
+  'stripe_metadata_mismatch',
+  'stripe_payment_intent_binding_mismatch',
+]);
+
+export type UnbookedPaymentCopy = {
+  kind: 'time_expired' | 'slot_taken' | 'review' | 'generic';
+  title: string;
+  detail: string;
+  moneyLine: string;
+  canChooseAnotherSlot: boolean;
+};
+
+export function getUnbookedPaymentCopy(
+  lastErrorCode: string | null | undefined,
+  amountLabel: string,
+): UnbookedPaymentCopy {
+  const code = String(lastErrorCode || '');
+  const released =
+    `No se te ha cobrado nada: hemos anulado la retención de ${amountLabel} en tu tarjeta. ` +
+    'Según tu banco, puede seguir viéndose unos días hasta que desaparezca sola.';
+
+  if (UNBOOKED_TIME_EXPIRED_CODES.has(code)) {
+    return {
+      kind: 'time_expired',
+      title: 'Se acabó el tiempo para este horario',
+      detail: `Tu pago llegó cuando el horario ya no estaba guardado para ti (se guarda ${BOOKING_PAYMENT_HOLD_MINUTES} minutos desde que abres el pago), así que no hemos creado la reserva.`,
+      moneyLine: released,
+      canChooseAnotherSlot: true,
+    };
+  }
+  if (UNBOOKED_SLOT_TAKEN_CODES.has(code)) {
+    return {
+      kind: 'slot_taken',
+      title: 'Ese horario se ha ocupado mientras pagabas',
+      detail: 'Otra reserva ha ocupado ese horario antes de que terminaras el pago, así que no hemos creado la tuya.',
+      moneyLine: released,
+      canChooseAnotherSlot: true,
+    };
+  }
+  if (UNBOOKED_REVIEW_CODES.has(code)) {
+    return {
+      kind: 'review',
+      title: 'Estamos revisando tu pago',
+      detail: 'Algo no cuadra en los datos del pago y lo estamos revisando.',
+      moneyLine: `No repitas el pago. Si no se crea la reserva, anularemos la retención de ${amountLabel} en tu tarjeta.`,
+      canChooseAnotherSlot: false,
+    };
+  }
+  // Motivo genérico: puede venir de después del pago o de antes (al revalidar el horario al preparar
+  // el pago), así que el texto no da por hecho que se llegara a pagar.
+  return {
+    kind: 'generic',
+    title: 'No hemos podido crear la reserva',
+    detail: 'Algo ha fallado al guardar la reserva y no se ha creado.',
+    moneyLine:
+      `No se te ha cobrado nada. Si tu banco muestra una retención de ${amountLabel}, ya la hemos anulado ` +
+      'y desaparecerá sola en unos días.',
+    canChooseAnotherSlot: true,
+  };
+}
+
+// Margen para no lanzar un pago que el servidor ya no podría convertir en reserva: el reloj del
+// móvil y el del servidor no son idénticos y la confirmación con el banco tarda unos segundos.
+export const PAYMENT_HOLD_SAFETY_MARGIN_MS = 20_000;
+
+export function isPaymentHoldExpiringSoon(
+  holdExpiresAt: string | null | undefined,
+  nowMs: number = Date.now(),
+  marginMs: number = PAYMENT_HOLD_SAFETY_MARGIN_MS,
+): boolean {
+  const expiresMs = Date.parse(String(holdExpiresAt || ''));
+  if (!Number.isFinite(expiresMs)) return false;
+  return expiresMs - nowMs < marginMs;
+}
+
+// Estados del intento que el resumen tiene que EXPLICAR en su tarjeta (no basta con cambiar el botón).
+// QA-139: «sin reserva» faltaba aquí y el cliente solo veía «Elegir otro horario», sin saber qué pasó
+// con su dinero.
+export function paymentStatusNeedsExplanation(status: BookingPaymentAttemptStatus | string | null | undefined): boolean {
+  return ['processing', 'failed', 'cancelled', 'expired', 'reconciliation_required'].includes(String(status || ''));
+}
+
 export function getBookingPaymentStatusCopy(
   status: BookingPaymentAttemptStatus | string | null | undefined,
   lastErrorMessage?: string | null,
+  lastErrorCode?: string | null,
 ): BookingPaymentStatusCopy {
   switch (String(status || '')) {
     case 'created':
@@ -353,11 +452,13 @@ export function getBookingPaymentStatusCopy(
         title: 'Pago expirado',
         detail: lastErrorMessage || 'La retención de agenda ha caducado. Debes preparar un nuevo pago para volver a intentarlo.',
       };
-    case 'reconciliation_required':
+    case 'reconciliation_required': {
+      const unbooked = getUnbookedPaymentCopy(lastErrorCode, 'los gastos de gestión');
       return {
-        title: 'Pago en revisión',
-        detail: lastErrorMessage || 'El pago requiere revisión manual antes de confirmar la reserva.',
+        title: unbooked.title,
+        detail: `${unbooked.detail} ${unbooked.moneyLine}`,
       };
+    }
     default:
       return {
         title: 'Pago pendiente',

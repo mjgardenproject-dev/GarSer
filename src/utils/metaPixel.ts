@@ -6,6 +6,7 @@
 // desactivado (un caso casi inexistente en el móvil) y sería otra vía de carga sin consentimiento.
 
 import { getMetaPixelId, metaPixelConfigured } from '../config/analytics';
+import { deleteTrackingCookies } from './trackingCookies';
 
 type FbqFn = {
   (...args: unknown[]): void;
@@ -24,6 +25,10 @@ declare global {
 }
 
 let loaded = false;
+// El script de Meta, una vez descargado, no se puede «desinstalar»: tras retirar el consentimiento se
+// queda en memoria pero mudo (consent revoke + no se le manda nada). Si se vuelve a aceptar, se concede
+// otra vez en lugar de descargarlo de nuevo.
+let revoked = false;
 
 /** El código base de Meta, adaptado: sin el IIFE con nombres de una letra, mismo comportamiento. */
 function installBaseCode(): void {
@@ -49,9 +54,28 @@ function installBaseCode(): void {
 export function loadMetaPixel(): void {
   if (loaded || !metaPixelConfigured()) return;
   installBaseCode();
+  if (revoked) {
+    window.fbq?.('consent', 'grant');
+    revoked = false;
+  }
   window.fbq?.('init', getMetaPixelId());
   window.fbq?.('track', 'PageView');
   loaded = true;
+}
+
+/**
+ * Retirar el consentimiento de «Publicidad» (QA-007): Meta deja de recibir eventos en el acto
+ * (`consent revoke`, y `trackMetaEvent` no manda nada) y se borran sus cookies (`_fbp`, `_fbc`).
+ * Si el píxel nunca se cargó, no hace nada.
+ */
+export function revokeMetaPixel(): void {
+  if (!loaded && !window.fbq) return;
+  if (loaded) {
+    window.fbq?.('consent', 'revoke');
+    revoked = true;
+  }
+  loaded = false;
+  deleteTrackingCookies();
 }
 
 export function isMetaPixelLoaded(): boolean {
@@ -74,6 +98,7 @@ export function trackMetaEvent(eventName: string, params?: Record<string, unknow
 /** Solo para los tests: vuelve a dejar el módulo como si no se hubiera cargado nunca. */
 export function resetMetaPixelForTests(): void {
   loaded = false;
+  revoked = false;
   delete window.fbq;
   delete window._fbq;
 }

@@ -18,7 +18,8 @@ import { NewAccountChooser, RoleProblemPanel } from './GoogleAccountPanels';
 import { LegalConsentNote, OrWithEmail } from './SocialAuthBits';
 import { welcomeMessage, type OAuthSignInResult } from '../../lib/oauthAccount';
 import { getGoogleClientId } from '../../utils/googleIdentity';
-import { setPendingAuthStep, usePendingAuthStep } from '../../lib/pendingAuthStep';
+import { getPendingAuthStep, setPendingAuthStep, usePendingAuthStep } from '../../lib/pendingAuthStep';
+import { classifyAuthError } from '../../utils/authErrors';
 
 // Pantalla de acceso (/auth), pensada primero para el móvil (2026-11-04).
 //
@@ -82,23 +83,44 @@ const Field: React.FC<FieldProps> = ({ id, label, error, registration, type = 't
   </div>
 );
 
+/** La cuenta que acaba de entrar, leída de la sesión; undefined si no se puede saber (la ruta de vuelta de
+ * una sesión anterior entonces se ignora: es más seguro que mandar a ciegas a otra persona a la página de otra). */
+async function currentUserId(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data?.user?.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Para la ruta de vuelta: solo hace falta saber QUIÉN entró cuando esa ruta viene de la sesión de otra cuenta.
+ * En el caso normal (nada que comprobar) NO se espera nada: navegar justo al iniciar sesión, sin una
+ * petición de por medio, es lo que hacía antes (con la espera, el panel del profesional salía en blanco). */
+async function redirectContext(redirectUserId: string): Promise<{ redirectUserId?: string | null; userId?: string | null }> {
+  return { redirectUserId, userId: await currentUserId() };
+}
+
 const AuthForm = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user, signIn, signUp, signOut } = useAuth();
+  const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
   const { refresh: refreshAccount } = useAccount();
 
-  const state = (location.state ?? {}) as { forceClientOnly?: boolean; redirectTo?: unknown; initialMode?: string; preselectedRole?: unknown };
+  const state = (location.state ?? {}) as { forceClientOnly?: boolean; redirectTo?: unknown; redirectUserId?: unknown; initialMode?: string; preselectedRole?: unknown };
   const forceClientOnly = Boolean(state.forceClientOnly);
   const redirectTo: string | null = typeof state.redirectTo === 'string' ? state.redirectTo : null;
+  // La cuenta de la sesión anterior de la que viene la ruta de vuelta (QA-155); null = no es de una sesión.
+  const redirectUserId: string | null = typeof state.redirectUserId === 'string' ? state.redirectUserId : null;
   const requestedInitialMode = state.initialMode ?? searchParams.get('mode') ?? undefined;
   const requestedRoleRaw = state.preselectedRole ?? searchParams.get('role');
   // Un enlace antiguo con ?role=company se registra como profesional (D31).
   const requestedRole: AccountType | undefined = parseAccountType(requestedRoleRaw);
 
   const [view, setView] = useState<View>(() =>
-    requestedInitialMode === 'signup' || (requestedRole && requestedRole !== 'client') ? 'signup' : 'login');
+    requestedInitialMode === 'forgot' ? 'forgot'
+      : requestedInitialMode === 'signup' || (requestedRole && requestedRole !== 'client') ? 'signup' : 'login');
   // Sin tipo elegido (null) se enseña la pregunta. Nunca hay uno por defecto: tiene que elegirlo.
   const [role, setRole] = useState<AccountType | null>(() => (forceClientOnly ? 'client' : requestedRole ?? null));
   const [showPassword, setShowPassword] = useState(false);
@@ -107,6 +129,10 @@ const AuthForm = () => {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
+  // QA-039: correo sin confirmar → aviso junto al formulario con «Reenviar»; una pausa evita pedir el correo en bucle.
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
+  const [resendWait, setResendWait] = useState(0);
+  const [resending, setResending] = useState(false);
   const [loading, setLoading] = useState(false);
   // El aviso de después de Google vive FUERA del componente (src/lib/pendingAuthStep.ts): al iniciar
   // sesión, App.tsx enseña «Cargando…» y desmonta esta pantalla, y el estado local se perdía.
@@ -119,7 +145,7 @@ const AuthForm = () => {
 
   const showGoogle = Boolean(getGoogleClientId());
 
-  const { register, handleSubmit, reset, clearErrors, setError, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, setValue, getValues, clearErrors, setError, formState: { errors } } = useForm<FormData>({
     resolver: yupResolver(schema),
     defaultValues: { email: '', password: '', confirmPassword: '' },
   });
@@ -127,6 +153,17 @@ const AuthForm = () => {
   useEffect(() => {
     if (!user) setPendingAuthStep(null);
   }, [user]);
+
+  // QA-012: quien llega a /auth (con «Atrás», un favorito…) cuando YA tiene la sesión iniciada va a su
+  // inicio y no al formulario de entrar. Solo cuenta la sesión que ya existía al abrir la pantalla: si
+  // la sesión se inicia aquí (Google, alta nueva), el flujo sigue su curso y decide a dónde ir.
+  const initialSessionChecked = useRef(false);
+  useEffect(() => {
+    if (authLoading || initialSessionChecked.current) return;
+    initialSessionChecked.current = true;
+    if (user && !getPendingAuthStep()) navigate('/dashboard', { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading]);
 
   useEffect(() => {
     const flag = localStorage.getItem('passwordChanged');
@@ -165,6 +202,14 @@ const AuthForm = () => {
     headingRef.current?.focus();
   }, [focusKey]);
 
+  // QA-040: el correo que ya escribió en «Entrar» pasa a «Recuperar contraseña» (no se vuelve a teclear).
+  const openForgot = () => {
+    const typed = String(getValues('email') ?? '').trim();
+    if (typed && !forgotEmail.trim()) setForgotEmail(typed);
+    clearErrors();
+    setView('forgot');
+  };
+
   const changeView = (next: View) => {
     if (next === view) return;
     clearErrors();
@@ -187,7 +232,7 @@ const AuthForm = () => {
     if (result.requestedRole) await refreshAccount().catch(() => undefined);
     setGoogleOutcome(null);
     toast.success(welcomeMessage(result));
-    navigate(postLoginPath(result.role, redirectTo));
+    navigate(postLoginPath(result.role, redirectTo, (redirectUserId ? await redirectContext(redirectUserId) : {})));
   };
 
   // «Usar otro correo»: cierre de sesión de verdad (el de AuthContext: no sale el aviso de «sesión
@@ -204,7 +249,7 @@ const AuthForm = () => {
       // AuthContext manejará la redirección a /reset-password al detectar el evento PASSWORD_RECOVERY.
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, { redirectTo: window.location.origin });
       if (error) throw error;
-      toast.success('Email de recuperación enviado');
+      toast.success(`Te hemos enviado un enlace a ${forgotEmail.trim()}. Mira también en spam.`, { duration: 8000 });
       setShowForgotModal(false);
       setView('login');
     } catch (e: any) {
@@ -214,14 +259,38 @@ const AuthForm = () => {
     }
   };
 
+  useEffect(() => {
+    if (resendWait <= 0) return;
+    const timer = window.setTimeout(() => setResendWait((n) => n - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendWait]);
+
+  const resendConfirmation = async (email: string) => {
+    if (resending || resendWait > 0) return;
+    setResending(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: window.location.origin } });
+      if (error) throw error;
+      toast.success(`Te hemos reenviado el correo a ${email}. Mira también en spam.`);
+      setResendWait(60);
+    } catch (e) {
+      const { kind, message } = classifyAuthError(e);
+      toast.error(message);
+      if (kind === 'rate_limited') setResendWait(60);
+    } finally {
+      setResending(false);
+    }
+  };
+
   const onSubmit = async (data: FormData) => {
     if (view === 'signup' && !role) return;
     setLoading(true);
     try {
       if (view === 'login') {
         const accountRole = await signIn(data.email, data.password);
+        setUnconfirmedEmail(null);
         toast.success('¡Bienvenido de vuelta!');
-        navigate(postLoginPath(accountRole, redirectTo));
+        navigate(postLoginPath(accountRole, redirectTo, (redirectUserId ? await redirectContext(redirectUserId) : {})));
       } else {
         if (!data.confirmPassword || data.confirmPassword !== data.password) {
           setError('confirmPassword', { type: 'validate', message: 'Las contraseñas no coinciden' });
@@ -238,13 +307,15 @@ const AuthForm = () => {
       }
     } catch (error: any) {
       console.error('❌ Error en acceso:', error);
-      let message = error.message || 'Ha ocurrido un error';
-      if (message.includes('Invalid login credentials')) {
-        message = 'Este correo electrónico no parece estar registrado o la contraseña es incorrecta. Si aún no tienes cuenta, por favor regístrate.';
-      } else if (message.includes('User already registered')) {
-        message = 'Esta cuenta ya está registrada. Por favor, inicia sesión simplemente.';
+      const { kind, message } = classifyAuthError(error);
+      if (kind === 'email_not_confirmed') {
+        // Un aviso junto al formulario (no un cartel de 5 s) con la forma de pedir otro correo. Si ya
+        // estaba, se queda: quitarlo y volver a ponerlo mueve la pantalla bajo el dedo.
+        setUnconfirmedEmail(data.email);
+      } else {
+        setUnconfirmedEmail(null);
+        toast.error(message);
       }
-      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -282,10 +353,10 @@ const AuthForm = () => {
         <RoleProblemPanel
           result={googleOutcome.result}
           onResolved={(result) => void finishGoogle(result, true)}
-          onContinue={() => {
+          onContinue={async () => {
             setGoogleOutcome(null);
             toast.success(welcomeMessage(googleOutcome.result));
-            navigate(postLoginPath(googleOutcome.result.role, redirectTo));
+            navigate(postLoginPath(googleOutcome.result.role, redirectTo, (redirectUserId ? await redirectContext(redirectUserId) : {})));
           }}
           onSwitchAccount={switchGoogleAccount}
         />
@@ -395,6 +466,22 @@ const AuthForm = () => {
               </>
             )}
 
+            {unconfirmedEmail && view === 'login' && (
+              <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p>
+                  Todavía tienes que confirmar tu correo (<strong className="break-all">{unconfirmedEmail}</strong>). Ábrelo y pulsa el enlace que te enviamos al registrarte. Mira también en spam.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void resendConfirmation(unconfirmedEmail)}
+                  disabled={resending || resendWait > 0}
+                  className="mt-2 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {resendWait > 0 ? `Reenviar en ${resendWait} s` : resending ? 'Enviando…' : 'Reenviar el correo de confirmación'}
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <Field
                 id="auth-email"
@@ -420,7 +507,7 @@ const AuthForm = () => {
                 />
                 {view === 'login' && (
                   <div className="mt-1 flex justify-end">
-                    <button type="button" onClick={() => setView('forgot')} className={`${LINK} text-sm`}>
+                    <button type="button" onClick={openForgot} className={`${LINK} text-sm`}>
                       ¿Has olvidado tu contraseña?
                     </button>
                   </div>
@@ -491,7 +578,11 @@ const AuthForm = () => {
           onClose={() => {
             setShowEmailModal(false);
             setView('login'); // Tras cerrar el aviso, a entrar con la cuenta recién creada.
+            // QA-041: el correo ya escrito, para no tener que teclearlo otra vez.
+            setValue('email', registeredEmail);
           }}
+          onResend={() => resendConfirmation(registeredEmail)}
+          resendWait={resendWait}
           email={registeredEmail}
         />
 

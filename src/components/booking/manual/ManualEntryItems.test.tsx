@@ -37,6 +37,7 @@ describe('elemento fantasma (P-01)', () => {
     expect(heading()).toBe('¿Quieres añadir más?');
     expect(screen.getByText('Has añadido 1 árbol.')).toBeTruthy();
     click('Continuar');
+    pick('Sí, que se lleven los restos');
     click('Revisar mis datos');
     expect(document.querySelectorAll('[data-manual-review-item]')).toHaveLength(1);
     fireEvent.click(screen.getByRole('checkbox'));
@@ -139,28 +140,84 @@ describe('revisión', () => {
         requireConsent={false}
         submitLabel="Recalcular precio"
         initialItems={[{ superficie_m2: 80, estado_jardin: 'normal' }]}
+        initialWasteRemoval={false}
         initialPhase="summary"
       />,
     );
     expect(screen.queryByRole('checkbox')).toBeNull();
     click('Recalcular precio');
-    expect(onSubmit).toHaveBeenCalledWith({ items: [{ superficie_m2: 80, estado_jardin: 'normal' }], wasteRemoval: true });
+    // Arranca con lo que declaró el cliente (aquí «no»), no con un «sí» que nadie eligió.
+    expect(onSubmit).toHaveBeenCalledWith({ items: [{ superficie_m2: 80, estado_jardin: 'normal' }], wasteRemoval: false });
+  });
+
+  it('sin la retirada contestada, confirmar lleva a la pregunta en vez de enviar', () => {
+    const onSubmit = vi.fn();
+    render(
+      <ManualEntryWizard
+        survey={MANUAL_ENTRY_SURVEYS.lawn}
+        onSubmit={onSubmit}
+        requireConsent={false}
+        submitLabel="Recalcular precio"
+        initialItems={[{ superficie_m2: 80, estado_jardin: 'normal' }]}
+        initialPhase="summary"
+      />,
+    );
+    click('Recalcular precio');
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(heading()).toBe('¿Quieres que retiremos los restos?');
   });
 });
 
-describe('retirada de restos como elección (D-09)', () => {
-  it('dos opciones, «sí» por defecto, y cambia el mismo booleano', () => {
-    const onDraftChange = vi.fn();
+describe('retirada de restos como elección (D-09, QA-065/QA-086: nada con coste marcado de antemano)', () => {
+  const toWaste = (onDraftChange = vi.fn(), onSubmit = vi.fn()) => {
     render(
-      <ManualEntryWizard survey={MANUAL_ENTRY_SURVEYS.lawn} onSubmit={vi.fn()} onDraftChange={onDraftChange} initialItems={[{ superficie_m2: 80, estado_jardin: 'normal' }]} />,
+      <ManualEntryWizard survey={MANUAL_ENTRY_SURVEYS.lawn} onSubmit={onSubmit} onDraftChange={onDraftChange} initialItems={[{ superficie_m2: 80, estado_jardin: 'normal' }]} />,
     );
     click('Siguiente');
     click('Siguiente');
     expect(heading()).toBe('¿Quieres que retiremos los restos?');
-    const yes = screen.getAllByRole('radio').find((r) => r.textContent?.startsWith('Sí, que se lleven los restos'))!;
-    expect(yes.getAttribute('aria-checked')).toBe('true');
+    return { onDraftChange, onSubmit };
+  };
+
+  it('llega SIN ninguna opción marcada (puede costar más: lo elige el cliente)', () => {
+    toWaste();
+    for (const radio of screen.getAllByRole('radio')) expect(radio.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByText('Puede tener un coste adicional según el profesional.')).toBeTruthy();
+  });
+
+  it('«Continuar» sin elegir no avanza y pide que elija', () => {
+    toWaste();
+    click('Revisar mis datos');
+    expect(heading()).toBe('¿Quieres que retiremos los restos?');
+    expect(screen.getByText('Elige si quieres que retiremos los restos.')).toBeTruthy();
+  });
+
+  it('elegir «sí» o «no» cambia el booleano y deja seguir', () => {
+    const { onDraftChange } = toWaste();
     pick('No, me encargo yo');
     expect(lastDraft(onDraftChange).wasteRemoval).toBe(false);
+    pick('Sí, que se lleven los restos');
+    expect(lastDraft(onDraftChange).wasteRemoval).toBe(true);
+    click('Revisar mis datos');
+    expect(heading()).toBe('Revisa tus datos antes de continuar');
+  });
+});
+
+describe('«Siguiente» sin elegir no avanza (QA-138 / QA-172)', () => {
+  it('césped: sin marcar el estado sigue en la misma pregunta y dice qué falta', () => {
+    render(<ManualEntryWizard survey={MANUAL_ENTRY_SURVEYS.lawn} onSubmit={vi.fn()} initialItems={[{ superficie_m2: 80 }]} />);
+    click('Siguiente');
+    expect(heading()).toBe('¿En qué estado está el césped?');
+    for (const radio of screen.getAllByRole('radio')) expect(radio.getAttribute('aria-checked')).toBe('false');
+    click('Siguiente');
+    expect(heading()).toBe('¿En qué estado está el césped?');
+    expect(screen.getByRole('radiogroup').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('fitosanitarios: la primera pregunta no avanza sin elegir', () => {
+    render(<ManualEntryWizard survey={MANUAL_ENTRY_SURVEYS.phytosanitary} onSubmit={vi.fn()} />);
+    const first = heading();
+    click('Siguiente');
+    expect(heading()).toBe(first);
   });
 });

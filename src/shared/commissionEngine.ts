@@ -81,6 +81,9 @@ export function readCommissionFromEconomics(economics: unknown): BookingQuoteCom
   // Las comisiones firmadas antes de la clave del enlace no traen este dato: valen como «sin declarar».
   const linkClaim = c.linkClaim ?? null;
   if (linkClaim !== null && linkClaim !== 'verified' && linkClaim !== 'rejected') return null;
+  // QA-100: solo puede venir a true, y solo con una regla de «posterior» (lo mismo que exige SQL).
+  const firstRateInUse = c.firstRateInUse ?? null;
+  if (firstRateInUse !== null && (firstRateInUse !== true || (c.rule !== 'garser_repeat' && c.rule !== 'link_repeat'))) return null;
   return {
     rule: c.rule,
     rateBps: c.rateBps as number,
@@ -90,6 +93,7 @@ export function readCommissionFromEconomics(economics: unknown): BookingQuoteCom
     claimedOrigin: claimed as 'provider_link' | null,
     linkClaim: linkClaim as 'verified' | 'rejected' | null,
     isFirstBooking: c.isFirstBooking,
+    ...(firstRateInUse ? { firstRateInUse: true } : {}),
     baseAmount: c.baseAmount,
     calculatedAmount: c.calculatedAmount,
     amount: c.amount,

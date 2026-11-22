@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { exampleDates, longDayEs } from '../../../utils/exampleDates';
 import MockupFrame from './MockupFrame';
 
 // Horas de la franja diaria, de 7:00 a 19:00 (como CompanyAgenda).
@@ -29,12 +30,14 @@ const MEMBERS: Member[] = [
 ];
 
 /** Agenda del equipo en vista «Día», una franja por persona (imita DayView de CompanyAgenda). */
-const TeamScheduleMockup: React.FC = () => (
+const TeamScheduleMockup: React.FC = () => {
+  const day = longDayEs(exampleDates().teamThursday, { capital: true });
+  return (
   <MockupFrame
     screenTitle="Agenda del equipo"
     label="Captura de ejemplo de la agenda de una empresa: el día de dos empleados, Ana con una poda de setos de 9:00 a 12:00 y Luis con un corte de césped por aceptar de 16:00 a 18:00."
   >
-    <p className="text-xs font-semibold text-gray-900">Jueves 16 de octubre</p>
+    <p className="text-xs font-semibold text-gray-900">{day}</p>
 
     <div className="mt-2 space-y-2">
       {MEMBERS.map((member) => (
@@ -61,6 +64,7 @@ const TeamScheduleMockup: React.FC = () => (
       ))}
     </div>
   </MockupFrame>
-);
+  );
+};
 
 export default TeamScheduleMockup;

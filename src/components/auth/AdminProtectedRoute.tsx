@@ -9,7 +9,7 @@ interface AdminProtectedRouteProps {
 }
 
 const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionEndedUserId, signedOutByUser } = useAuth();
   const location = useLocation();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(true);
@@ -18,7 +18,10 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
     let mounted = true;
 
     const checkAdmin = async () => {
-      if (!user) {
+      // Acaba de pulsar «Salir» (QA-155): no se recuerda esta página como enlace de vuelta.
+  if (!user && signedOutByUser) return null;
+
+  if (!user) {
         setIsAdmin(false);
         setChecking(false);
         return;
@@ -64,7 +67,7 @@ const AdminProtectedRoute: React.FC<AdminProtectedRouteProps> = ({ children }) =
       <Navigate
         to="/auth"
         replace
-        state={{ initialMode: 'login', redirectTo: `${location.pathname}${location.search}` }}
+        state={{ initialMode: 'login', redirectTo: `${location.pathname}${location.search}`, redirectUserId: sessionEndedUserId ?? undefined }}
       />
     );
   }

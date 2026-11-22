@@ -670,8 +670,25 @@ Deno.serve(async (req: Request) => {
     const requiresLicense = [bookingInput, ...extraItems.map((item) => item.bookingInput)].some(bookingRequiresPhytosanitaryLicense);
     const serviceNames: Record<string, string> = {};
     {
-      const { data: serviceRows } = await admin.from('services').select('id, name').in('id', [serviceId, ...extraServiceIds]);
-      ((serviceRows || []) as { id: string; name: string }[]).forEach((row) => { serviceNames[String(row.id)] = String(row.name || ''); });
+      const { data: serviceRows } = await admin.from('services').select('id, name, is_active').in('id', [serviceId, ...extraServiceIds]);
+      const rows = (serviceRows || []) as { id: string; name: string; is_active: boolean | null }[];
+      rows.forEach((row) => { serviceNames[String(row.id)] = String(row.name || ''); });
+      // QA-181: un servicio que el administrador ha desactivado no se cotiza ni se firma (la base de
+      // datos lo impide también al guardar). Solo se deja recalcular una reserva YA hecha.
+      if (action !== 'recalculate_correction') {
+        const activeIds = new Set(rows.filter((row) => row.is_active === true).map((row) => String(row.id)));
+        const unavailable = [serviceId, ...extraServiceIds].filter((id) => !activeIds.has(id));
+        if (unavailable.length > 0) {
+          const names = unavailable.map((id) => serviceNames[id]).filter(Boolean);
+          return buildErrorResponse(
+            409,
+            'service_unavailable',
+            names.length === 1
+              ? `«${names[0]}» ya no se puede reservar. Elige otro servicio.`
+              : 'Alguno de los servicios elegidos ya no se puede reservar. Elige otro servicio.',
+          );
+        }
+      }
     }
     // F8: las tarifas de cada profesional para los demás servicios (alineadas con extraItems).
     const extrasFor = (providerId: string, extraPriceRows: Array<Record<string, PriceRow>>): ExtraService[] =>

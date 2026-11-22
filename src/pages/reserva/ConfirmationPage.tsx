@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import PaymentSheetShell from '../../components/booking/PaymentSheetShell';
+import EmbeddedStripePaymentForm, { type EmbeddedStripePaymentFormHandle } from '../../components/booking/EmbeddedStripePaymentForm';
 import { useBooking } from "../../contexts/BookingContext";
 import {
   MapPin,
@@ -42,7 +44,9 @@ import type {
   BookingQuoteEconomicBreakdown,
   BookingQuoteSlotSelection,
 } from '../../shared/bookingQuoteCore';
-import { BOOKING_AMOUNT_LABELS, feeWaiverReasonText, formatEuro, getQuoteAmounts } from '../../shared/bookingAmounts';
+import { BOOKING_AMOUNT_LABELS, feeWaiverReasonText, formatEuro, getQuoteAmounts, managementFeeExplanation } from '../../shared/bookingAmounts';
+import BookingRateNotice from './BookingRateNotice';
+import { describeBookingRateNotice } from '../../utils/bookingRateNotice';
 import {
   buildAuthoritativeQuoteSnapshot,
   hasAuthoritativeQuoteSnapshot,
@@ -50,9 +54,10 @@ import {
 } from '../../shared/bookingAuthoritativeSnapshot';
 import type { BookingPaymentAttemptSummary } from '../../shared/bookingPaymentCore';
 import {
-  buildBookingPaymentReturnUrl,
   getBookingPaymentStatusCopy,
+  getUnbookedPaymentCopy,
   isInFlightPaymentAttemptStatus,
+  paymentStatusNeedsExplanation,
 } from '../../shared/bookingPaymentCore';
 import { describeJobShape } from '../../utils/jobShape';
 
@@ -78,9 +83,12 @@ type PaymentExperienceState = {
   actions: PaymentExperienceAction[];
   eyebrow?: string;
   meta?: string;
+  // Qué pasa con el dinero del cliente. Se pinta siempre que exista, en negrita, bajo el detalle
+  // (QA-139/QA-140: «no se te ha cobrado nada» no puede quedar escondido en una instrucción).
+  moneyNote?: string;
 };
 
-type PreCheckoutFailureCta = 'retry' | 'refresh' | 'reload' | 'slots';
+type PreCheckoutFailureCta = 'retry' | 'refresh' | 'reload' | 'slots' | 'services';
 
 type PreCheckoutFailureState = {
   tone: Extract<PaymentExperienceTone, 'amber' | 'red'>;
@@ -93,101 +101,7 @@ type PreCheckoutFailureState = {
   meta?: string;
 };
 
-type EmbeddedStripePaymentFormProps = {
-  attemptId: string;
-  disabled?: boolean;
-  onSubmittingChange: (value: boolean) => void;
-  onReadyChange: (value: boolean) => void;
-  onConfirmed: () => Promise<void>;
-};
-
-type EmbeddedStripePaymentFormHandle = {
-  submitPayment: () => Promise<void>;
-};
-
-const EmbeddedStripePaymentForm = React.forwardRef<EmbeddedStripePaymentFormHandle, EmbeddedStripePaymentFormProps>(({
-  attemptId,
-  disabled = false,
-  onSubmittingChange,
-  onReadyChange,
-  onConfirmed,
-}, ref) => {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [submitError, setSubmitError] = useState('');
-  const [isElementReady, setIsElementReady] = useState(false);
-
-  useEffect(() => {
-    onReadyChange(false);
-    return () => onReadyChange(false);
-  }, [onReadyChange]);
-
-  const submitPayment = async () => {
-    if (disabled) {
-      return;
-    }
-    if (!stripe || !elements) {
-      setSubmitError('Stripe aun no ha terminado de cargar el formulario de pago.');
-      return;
-    }
-
-    setSubmitError('');
-    onSubmittingChange(true);
-
-    try {
-      const submitted = await elements.submit();
-      if (submitted.error) {
-        throw new Error(submitted.error.message || 'No se pudo validar el formulario de pago.');
-      }
-
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: buildBookingPaymentReturnUrl({
-            appBaseUrl: window.location.origin,
-            attemptId,
-          }),
-        },
-        redirect: 'if_required',
-      });
-
-      if (result.error) {
-        throw new Error(result.error.message || 'Stripe no ha podido confirmar el pago.');
-      }
-
-      await onConfirmed();
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'No se pudo confirmar el pago.');
-    } finally {
-      onSubmittingChange(false);
-    }
-  };
-
-  useEffect(() => {
-    onReadyChange(isElementReady);
-  }, [isElementReady, onReadyChange]);
-
-  useImperativeHandle(ref, () => ({
-    submitPayment,
-  }), [submitPayment]);
-
-  return (
-    <div className="space-y-4">
-      <PaymentElement
-        options={{ layout: 'tabs' }}
-        onReady={() => setIsElementReady(true)}
-      />
-
-      {submitError ? (
-        <div className="text-sm text-red-700" aria-live="polite">
-          {submitError}
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
-EmbeddedStripePaymentForm.displayName = 'EmbeddedStripePaymentForm';
+// El formulario de Stripe vive en su propio componente (probado en EmbeddedStripePaymentForm.test.tsx).
 
 const parseIsoTimestamp = (value?: string | null) => {
   const normalized = String(value || '').trim();
@@ -289,6 +203,23 @@ const ConfirmationPage: React.FC = () => {
     () => authoritativeQuoteSnapshot?.economics || null,
     [authoritativeQuoteSnapshot],
   );
+  // QA-100 / QA-102: por qué esta reserva lleva la tarifa que lleva, si el cliente podría esperar otra.
+  const rateNotice = useMemo(
+    () => describeBookingRateNotice({
+      commission: quoteEconomics?.commission ?? null,
+      managementFee: Number(quoteEconomics?.managementFee ?? 0),
+      cameFromProviderLink: Boolean(bookingData.restrictedGardenerId)
+        && bookingData.restrictedGardenerId === bookingData.providerId,
+      hadLinkCode: Boolean(bookingData.providerLinkCode),
+      providerName: gardenerName,
+    }),
+    [quoteEconomics, bookingData.restrictedGardenerId, bookingData.providerId, bookingData.providerLinkCode, gardenerName],
+  );
+  // QA-055 / QA-084 / QA-129: qué son los gastos de gestión, su porcentaje y que se retienen, ANTES de pagar.
+  const feeExplanation = useMemo(
+    () => managementFeeExplanation(quoteEconomics, gardenerName),
+    [quoteEconomics, gardenerName],
+  );
   const authoritativeSnapshotReady = Boolean(
     bookingData.providerId &&
     bookingData.serviceIds?.[0] &&
@@ -296,9 +227,21 @@ const ConfirmationPage: React.FC = () => {
   );
   const quoteExpiresAt = authoritativeQuoteSnapshot?.expiresAt || bookingData.quoteExpiresAt;
   const quoteExpired = authoritativeSnapshotReady && isExpiredTimestamp(quoteExpiresAt);
+  // `holdExpired` se calcula con la hora del render: este temporizador fuerza un render justo al
+  // caducar el horario, para que la pantalla cambie aunque el cliente no toque nada.
+  const [, forceExpiryRender] = useReducer((value: number) => value + 1, 0);
+  useEffect(() => {
+    const expiresMs = parseIsoTimestamp(paymentAttempt?.holdExpiresAt);
+    if (expiresMs === null || paymentAttempt?.status === 'booking_created') return;
+    const delay = expiresMs - Date.now();
+    if (delay <= 0) return;
+    const timeoutId = window.setTimeout(forceExpiryRender, Math.min(delay + 250, 2_147_000_000));
+    return () => window.clearTimeout(timeoutId);
+  }, [paymentAttempt?.holdExpiresAt, paymentAttempt?.status]);
   const holdExpired =
     paymentAttempt?.status !== 'booking_created' &&
     Boolean(paymentAttempt?.holdExpiresAt && isExpiredTimestamp(paymentAttempt.holdExpiresAt));
+  const [isFinalizingBooking, setIsFinalizingBooking] = useState(false);
   const successfulPaymentReturn = paymentReturnRequested && Boolean(paymentReturnAttemptId);
 
   useEffect(() => {
@@ -371,12 +314,27 @@ const ConfirmationPage: React.FC = () => {
 
     bookingCreatedHandledRef.current = dedupeKey;
     clearBookingResumeStorage({ userId: user?.id, includeAnonFallback: true, includeLegacy: true });
-    toast.success(feeWaivedRef.current ? 'Reserva enviada al profesional' : 'Pago confirmado y reserva creada correctamente');
+    toast.success(feeWaivedRef.current ? 'Reserva enviada al profesional' : 'Solicitud enviada. Los gastos de gestión quedan retenidos hasta que el profesional acepte.');
   };
 
   const resolvePreCheckoutFailure = (error: unknown): PreCheckoutFailureState | null => {
     const message = error instanceof Error ? error.message.trim() : '';
     const lowerMessage = message.toLowerCase();
+
+    // QA-181: el administrador desactivó el servicio mientras el cliente reservaba. Ni el horario ni
+    // reintentar lo arreglan: hay que elegir otro servicio.
+    const failureCode = String((error as { code?: unknown } | null)?.code || '').trim().toLowerCase();
+    if ((isBookingAuthorityError(error) || isBookingPaymentError(error)) && failureCode === 'service_unavailable') {
+      const backend = String((error as { backendMessage?: unknown }).backendMessage || message).trim();
+      return {
+        tone: 'red',
+        title: 'Este servicio ya no se puede reservar',
+        detail: backend || 'El servicio que elegiste ya no está disponible.',
+        instructions: ['No se te ha cobrado nada.', 'Elige otro servicio para continuar.'],
+        toastMessage: 'Este servicio ya no se puede reservar. No se te ha cobrado nada.',
+        preferredCta: 'services',
+      };
+    }
 
     if (isBookingAuthorityError(error)) {
       const status = error.status;
@@ -821,12 +779,14 @@ const ConfirmationPage: React.FC = () => {
         return;
       }
 
-      if (latest.status === 'processing' || latest.status === 'reconciliation_required') {
+      if (latest.status === 'processing') {
         toast.success('Seguimos comprobando el cobro y consolidando la reserva.');
         return;
       }
 
-      toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage).detail);
+      const statusCopy = getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage, latest.lastErrorCode);
+      // «Sin reserva»: el resumen ya lo explica entero; el aviso solo da el titular.
+      toast.error(latest.status === 'reconciliation_required' ? statusCopy.title : statusCopy.detail);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo actualizar el estado del pago.';
       console.warn('Error refreshing payment status:', message);
@@ -1203,9 +1163,14 @@ const ConfirmationPage: React.FC = () => {
     paymentAttempt?.status === 'payment_pending' &&
     !quoteExpired &&
     !holdExpired;
+  // El formulario de Stripe sigue montado mientras haya un pago en marcha aunque el horario caduque
+  // en ese momento: el resultado (reserva creada o pago sin reserva) se enseña al terminar.
+  const keepPaymentFormMounted =
+    showInlinePaymentForm ||
+    (Boolean(paymentClientSecret) && (isSubmittingInlinePayment || isFinalizingBooking));
   const stripePromise = useMemo(
-    () => (showInlinePaymentForm ? getStripePromise({ publishableKey: paymentPublishableKey }) : null),
-    [paymentPublishableKey, showInlinePaymentForm]
+    () => (keepPaymentFormMounted ? getStripePromise({ publishableKey: paymentPublishableKey }) : null),
+    [paymentPublishableKey, keepPaymentFormMounted]
   );
   const stripeElementsOptions = useMemo(
     () =>
@@ -1226,7 +1191,14 @@ const ConfirmationPage: React.FC = () => {
         : null,
     [paymentClientSecret]
   );
-  const canClosePaymentSheet = !isSubmittingInlinePayment && !isResolvingPaymentReturn && !isPaymentSheetSuccess;
+  // QA-136: al cerrarse la hoja de pago con la reserva creada, la confirmación salía desplazada a mitad de
+  // página (con «Salir» flotando sobre la tarjeta) y hacían falta dos desplazamientos para llegar a
+  // «Ir a mis reservas». La confirmación empieza arriba.
+  useEffect(() => {
+    if (paymentAttempt?.status === 'booking_created' && !isPaymentSheetOpen) window.scrollTo({ top: 0 });
+  }, [paymentAttempt?.status, isPaymentSheetOpen]);
+
+  const canClosePaymentSheet = !isSubmittingInlinePayment && !isFinalizingBooking && !isResolvingPaymentReturn && !isPaymentSheetSuccess;
 
   const closePaymentSheet = () => {
     if (!canClosePaymentSheet) return;
@@ -1280,10 +1252,13 @@ const ConfirmationPage: React.FC = () => {
 
   useEffect(() => {
     if (showInlinePaymentForm || !isPaymentSheetOpen || isPaymentSheetSuccess || isPreparingPayment) return;
+    // Nunca se cierra con un pago en marcha (p. ej. el horario caduca durante el paso del banco):
+    // desmontar el formulario a mitad dejaría al cliente sin saber qué ha pasado.
+    if (isSubmittingInlinePayment || isFinalizingBooking) return;
     if (paymentAttempt?.status === 'booking_created') return;
     setIsPaymentSheetOpen(false);
     setIsPaymentFormReady(false);
-  }, [isPaymentSheetOpen, isPaymentSheetSuccess, isPreparingPayment, paymentAttempt?.status, showInlinePaymentForm]);
+  }, [isFinalizingBooking, isPaymentSheetOpen, isPaymentSheetSuccess, isPreparingPayment, isSubmittingInlinePayment, paymentAttempt?.status, showInlinePaymentForm]);
 
   useEffect(() => {
     if (!isPaymentSheetOpen || paymentAttempt?.status !== 'booking_created' || !paymentAttempt?.bookingId) {
@@ -1312,6 +1287,14 @@ const ConfirmationPage: React.FC = () => {
     // en /reserva/confirmacion, una ruta AUTÓNOMA que pinta esta pantalla directamente y no
     // mira `currentStep`: allí el botón cambiaba el estado sin cambiar nada en pantalla, así
     // que parecía roto justo después de un pago fallido, que es el peor momento posible.
+    if (location.pathname.startsWith('/reserva/confirmacion')) {
+      navigate('/reservar');
+    }
+  };
+
+  const goBackToServiceSelection = () => {
+    setBookingData({ serviceIds: [] });
+    setCurrentStep(1);
     if (location.pathname.startsWith('/reserva/confirmacion')) {
       navigate('/reservar');
     }
@@ -1370,6 +1353,12 @@ const ConfirmationPage: React.FC = () => {
               onClick: reloadCurrentPage,
               variant: 'primary',
             }
+          : preCheckoutFailure.preferredCta === 'services'
+            ? {
+                label: 'Elegir otro servicio',
+                onClick: goBackToServiceSelection,
+                variant: 'primary',
+              }
           : preCheckoutFailure.preferredCta === 'slots'
             ? {
                 label: 'Elegir otro horario',
@@ -1397,6 +1386,38 @@ const ConfirmationPage: React.FC = () => {
         detail: preCheckoutFailure.detail,
         instructions: preCheckoutFailure.instructions.slice(0, 2),
         actions: [action],
+      };
+    }
+
+    if (paymentAttempt?.status === 'reconciliation_required') {
+      // QA-139: pagado pero sin reserva. El servidor ya ha anulado la retención de la tarjeta. Va antes
+      // que «presupuesto caducado»: si pagó tarde, lo primero que necesita saber es qué pasó con su dinero.
+      const unbooked = getUnbookedPaymentCopy(
+        paymentAttempt.lastErrorCode,
+        formatEuro(paymentAttempt.payableNowAmount),
+      );
+      return {
+        tone: unbooked.kind === 'review' ? 'amber' : 'red',
+        eyebrow: 'Reserva no creada',
+        title: unbooked.title,
+        detail: unbooked.detail,
+        instructions: [unbooked.moneyLine],
+        moneyNote: unbooked.moneyLine,
+        actions: unbooked.canChooseAnotherSlot
+          ? [
+              {
+                label: 'Elegir otro horario',
+                onClick: goBackToSlotSelection,
+                variant: 'primary',
+              },
+            ]
+          : [
+              {
+                label: 'Ver mis reservas',
+                onClick: handleGoToBookings,
+                variant: 'primary',
+              },
+            ],
       };
     }
 
@@ -1525,6 +1546,7 @@ const ConfirmationPage: React.FC = () => {
         instructions: [
           'Si este horario ya no encaja, vuelve a elegir otro.',
         ],
+        moneyNote: 'No se te ha cobrado nada.',
         actions: [
           {
             label: 'Actualizar reserva',
@@ -1555,6 +1577,7 @@ const ConfirmationPage: React.FC = () => {
         eyebrow: 'Pago listo',
         title: 'Tu pago sigue preparado',
         detail: 'Puedes volver al formulario seguro sin recargar ni iniciar otro intento.',
+        moneyNote: 'Aún no se te ha cobrado nada.',
         instructions: [
           paymentHoldLabel
             ? `Reabre el pago antes del ${paymentHoldLabel} para mantener este horario.`
@@ -1631,6 +1654,8 @@ const ConfirmationPage: React.FC = () => {
   }, [
     authoritativeSnapshotReady,
     goBackToSlotSelection,
+    paymentAttempt?.lastErrorCode,
+    paymentAttempt?.payableNowAmount,
     handleGoToBookings,
     handleRefreshPaymentStatus,
     handleRefreshQuote,
@@ -1709,11 +1734,10 @@ const ConfirmationPage: React.FC = () => {
     Boolean(preCheckoutFailure) ||
     quoteExpired ||
     isResolvingPaymentReturn ||
-    paymentAttempt?.status === 'processing' ||
-    paymentAttempt?.status === 'failed' ||
-    paymentAttempt?.status === 'cancelled' ||
-    paymentAttempt?.status === 'expired' ||
+    paymentStatusNeedsExplanation(paymentAttempt?.status) ||
     holdExpired ||
+    // QA-140: con la hoja cerrada y el pago preparado, el cliente tiene que leer que aún no ha pagado.
+    (showInlinePaymentForm && !isPaymentSheetOpen) ||
     isPostPaymentSettlementPending;
   const showSuccessView = paymentAttempt?.status === 'booking_created' && !isPaymentSheetOpen;
   const paymentActionLabel = primaryFooterAction?.label
@@ -1728,8 +1752,14 @@ const ConfirmationPage: React.FC = () => {
     ? 'Reserva completada'
     : feeWaived && isPreparingPayment
       ? 'Enviando reserva…'
+    // QA-137: tras el banco hay unos segundos hasta que la reserva queda creada; se dice qué pasa.
+    : isFinalizingBooking
+      ? 'Creando tu reserva…'
+    : isSubmittingInlinePayment
+      ? 'Confirmando el pago…'
     : showPaymentSheetPayAction
-      ? `Pagar ${payableNowLabel}`
+      // QA-088: es una retención, no un cobro: el botón lo dice.
+      ? `Retener ${payableNowLabel} y enviar`
       : isPreparingPayment && isPaymentSheetOpen
         ? 'Preparando pago…'
       : isSubmittingInlinePayment
@@ -1739,6 +1769,7 @@ const ConfirmationPage: React.FC = () => {
     (showPaymentSheetPayAction ? !isPaymentFormReady : (!primaryFooterAction || Boolean(primaryFooterAction.disabled))) ||
     isPreparingPayment ||
     isSubmittingInlinePayment ||
+    isFinalizingBooking ||
     isRefreshingQuote ||
     isResolvingPaymentReturn ||
     isPaymentSheetSuccess;
@@ -1800,7 +1831,7 @@ const ConfirmationPage: React.FC = () => {
                 <CheckCircle2 aria-hidden="true" className="h-9 w-9 text-emerald-600" />
               </div>
               <p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
-                {feeWaived ? 'Reserva enviada' : 'Pago confirmado'}
+                {feeWaived ? 'Reserva enviada' : 'Solicitud enviada · importe retenido'}
               </p>
               <h1 id="booking-success-title" className="mt-3 text-2xl font-semibold text-gray-950 text-balance">
                 Hemos enviado tu reserva al profesional
@@ -1990,9 +2021,9 @@ const ConfirmationPage: React.FC = () => {
                     </p>
                     <p className="mt-2 max-w-[22rem] text-xs leading-5 text-gray-500">
                       {customerPaymentSummary?.feeWaived
-                        ? `${feeWaiverReasonText(customerPaymentSummary.feeWaiverReason, gardenerName)} Se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
+                        ? `${feeWaiverReasonText(customerPaymentSummary.feeWaiverReason, gardenerName, { firstRateInUse: Boolean(quoteEconomics?.commission?.firstRateInUse) })} Se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
                         : customerPaymentSummary
-                        ? `Ahora pagas ${formatEuro(customerPaymentSummary.managementFee)} de gastos de gestión. El resto se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
+                        ? `Ahora se retienen ${formatEuro(customerPaymentSummary.managementFee)} de gastos de gestión. El resto se lo abonas directamente al profesional al completar el servicio, de la manera que acordéis.`
                         : 'El profesional cobrará este importe al completar el servicio de la manera que acordéis.'}
                     </p>
                   </div>
@@ -2001,6 +2032,10 @@ const ConfirmationPage: React.FC = () => {
                   </p>
                 </div>
               </div>
+              {feeExplanation ? (
+                <p className="rounded-xl bg-gray-50 p-3 text-xs leading-5 text-gray-600">{feeExplanation}</p>
+              ) : null}
+              <BookingRateNotice notice={rateNotice} />
             </div>
           </div>
         </div>
@@ -2109,6 +2144,9 @@ const ConfirmationPage: React.FC = () => {
                 ) : null}
                 <p className={`mt-2 text-sm font-semibold ${paymentExperienceStyle.title}`}>{paymentExperience.title}</p>
                 <p className={`mt-1 text-sm ${paymentExperienceStyle.detail}`}>{paymentExperience.detail}</p>
+                {paymentExperience.moneyNote ? (
+                  <p className={`mt-2 text-sm font-semibold ${paymentExperienceStyle.title}`}>{paymentExperience.moneyNote}</p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -2127,7 +2165,7 @@ const ConfirmationPage: React.FC = () => {
       </main>
 
       {showStickyFooter ? (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-3 pb-[calc(0.875rem+env(safe-area-inset-bottom))] z-50">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] z-50">
           <div className="mx-auto w-full sm:max-w-lg">
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
@@ -2139,7 +2177,11 @@ const ConfirmationPage: React.FC = () => {
                 )}
               </div>
               <p className="max-w-[12rem] text-right text-xs text-gray-500">
-                {feeWaived ? 'No pagas nada online' : 'Pago seguro con Stripe dentro de GarSer'}
+                {feeWaived
+                  ? 'No pagas nada online'
+                  : paymentAttempt?.status === 'reconciliation_required'
+                    ? 'No se ha cobrado: la reserva no se creó'
+                    : 'Se retienen ahora; solo se cobran si el profesional acepta'}
               </p>
             </div>
             <button
@@ -2176,43 +2218,40 @@ const ConfirmationPage: React.FC = () => {
             onClick={closePaymentSheet}
             className="fixed inset-0 z-40 hidden bg-gray-950/16 backdrop-blur-[2px] sm:block"
           />
-          <div className="fixed inset-0 z-50 bg-white sm:bg-transparent sm:p-4">
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="payment-sheet-title"
-              className="mx-auto flex h-full max-w-lg flex-col bg-white overscroll-contain sm:max-h-[calc(100vh-2rem)] sm:overflow-hidden sm:rounded-[32px] sm:shadow-2xl"
-            >
-              <div className="border-b border-gray-100 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] sm:px-5 sm:pt-4">
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    ref={paymentSheetCloseButtonRef}
-                    type="button"
-                    onClick={closePaymentSheet}
-                    aria-label="Cerrar pago"
-                    disabled={!canClosePaymentSheet}
-                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
-                  >
-                    <X aria-hidden="true" className="h-5 w-5" />
-                  </button>
-                  <p id="payment-sheet-title" className="min-w-0 flex-1 text-center text-base font-semibold text-gray-950 text-balance">
-                    Pago seguro
-                  </p>
-                  <div aria-hidden="true" className="h-9 w-9 shrink-0" />
-                </div>
-
-                <div className="mt-4 flex items-end justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Gastos de gestión</p>
-                    <p className="mt-1 text-4xl font-bold leading-none text-gray-950 tabular-nums">{payableNowLabel}</p>
-                  </div>
-                  <p className="max-w-[9rem] text-right text-xs leading-5 text-gray-500" translate="no">
-                    Pago procesado con Stripe
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-4 pb-32 pt-5 sm:px-5">
+          <PaymentSheetShell
+            title="Pago seguro"
+            amountCaption="Gastos de gestión"
+            amount={payableNowLabel}
+            amountNote="Se retiene con Stripe y solo se cobra si el profesional acepta"
+            onClose={closePaymentSheet}
+            canClose={canClosePaymentSheet}
+            closeButtonRef={paymentSheetCloseButtonRef}
+            footer={
+              <>
+                <button
+                  type="button"
+                  onClick={ctaOnClick}
+                  disabled={ctaDisabled}
+                  className="w-full rounded-2xl bg-emerald-700 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 group-data-[compact=true]:py-2.5 group-data-[compact=true]:text-base hover:scale-[1.01] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
+                >
+                  {isPaymentSheetSuccess ? (
+                    <div className="flex items-center justify-center gap-2" aria-live="polite" role="status">
+                      <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
+                      {footerActionLabel}
+                    </div>
+                  ) : isPreparingPayment || isRefreshingQuote || isResolvingPaymentReturn || isSubmittingInlinePayment || isFinalizingBooking ? (
+                    <div className="flex items-center justify-center" aria-live="polite" role="status">
+                      <div className="mr-2 h-5 w-5 animate-spin rounded-full border-b-2 border-white" />
+                      {footerActionLabel}
+                    </div>
+                  ) : (
+                    footerActionLabel
+                  )}
+                </button>
+              
+              </>
+            }
+          >
                 {isPreparingPayment && !showInlinePaymentForm ? (
                   <div className="flex min-h-[16rem] items-center justify-center">
                     <div className="flex items-center gap-3 text-sm text-gray-600" aria-live="polite" role="status">
@@ -2222,7 +2261,7 @@ const ConfirmationPage: React.FC = () => {
                   </div>
                 ) : null}
 
-                {showInlinePaymentForm && stripePromise && stripeElementsOptions && paymentAttempt?.attemptId ? (
+                {keepPaymentFormMounted && stripePromise && stripeElementsOptions && paymentAttempt?.attemptId ? (
                   <div className="mx-auto max-w-md pt-1">
                     <Elements key={paymentClientSecret || 'stripe-elements'} stripe={stripePromise} options={stripeElementsOptions}>
                       <EmbeddedStripePaymentForm
@@ -2231,7 +2270,15 @@ const ConfirmationPage: React.FC = () => {
                         disabled={isPreparingPayment || isResolvingPaymentReturn || isPaymentSheetSuccess}
                         onReadyChange={setIsPaymentFormReady}
                         onSubmittingChange={setIsSubmittingInlinePayment}
+                        holdExpiresAt={paymentAttempt.holdExpiresAt}
+                        onHoldExpired={() => {
+                          // QA-139: no se lanza un pago que ya no podría convertirse en reserva. El
+                          // temporizador de caducidad cierra la hoja y el resumen ofrece otro horario.
+                          forceExpiryRender();
+                        }}
                         onConfirmed={async () => {
+                          setIsFinalizingBooking(true);
+                          try {
                           const latest = await resolveAttemptStatus(paymentAttempt.attemptId, true, true);
                           setPaymentAttempt(latest);
                           if (!latest || latest.status !== 'payment_pending') {
@@ -2249,8 +2296,16 @@ const ConfirmationPage: React.FC = () => {
                             return;
                           }
 
+                          if (latest?.status === 'reconciliation_required') {
+                            // Pagado pero sin reserva: el servidor ya ha anulado la retención. La
+                            // hoja se cierra y el resumen explica qué ha pasado y qué hacer.
+                            toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage, latest.lastErrorCode).title);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            return;
+                          }
+
                           if (latest?.status && latest.status !== 'payment_pending') {
-                            toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage).detail);
+                            toast.error(getBookingPaymentStatusCopy(latest.status, latest.lastErrorMessage, latest.lastErrorCode).detail);
                             return;
                           }
 
@@ -2268,37 +2323,16 @@ const ConfirmationPage: React.FC = () => {
                               { icon: 'ℹ️', duration: 6000 },
                             );
                           }
+                          } finally {
+                            setIsFinalizingBooking(false);
+                          }
                         }}
                       />
                     </Elements>
                   </div>
                 ) : null}
-              </div>
-
-              <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-100 bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:static sm:px-5">
-                <button
-                  type="button"
-                  onClick={ctaOnClick}
-                  disabled={ctaDisabled}
-                  className="w-full rounded-2xl bg-emerald-700 px-6 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-[1.01] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 [touch-action:manipulation]"
-                >
-                  {isPaymentSheetSuccess ? (
-                    <div className="flex items-center justify-center gap-2" aria-live="polite" role="status">
-                      <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
-                      {footerActionLabel}
-                    </div>
-                  ) : isPreparingPayment || isRefreshingQuote || isResolvingPaymentReturn || isSubmittingInlinePayment ? (
-                    <div className="flex items-center justify-center" aria-live="polite" role="status">
-                      <div className="mr-2 h-5 w-5 animate-spin rounded-full border-b-2 border-white" />
-                      {footerActionLabel}
-                    </div>
-                  ) : (
-                    footerActionLabel
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
+              
+          </PaymentSheetShell>
         </>
       ) : null}
     </div>

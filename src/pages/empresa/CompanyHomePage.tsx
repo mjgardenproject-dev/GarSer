@@ -10,12 +10,18 @@ import AssignmentModeCard from '../../components/empresa/AssignmentModeCard';
 import CompanyAgenda from '../../components/empresa/planner/CompanyAgenda';
 import MemberSetupNotices from '../../components/empresa/MemberSetupNotices';
 import SuspendedProviderNotice from '../../components/common/SuspendedProviderNotice';
+import OpenIncidentsNotice from '../../components/provider/OpenIncidentsNotice';
+import { useTeamUpcomingJobs } from '../../hooks/useTeamUpcomingJobs';
 import InviteMemberCard from '../../components/empresa/InviteMemberCard';
 import MinNoticeCard from '../../components/empresa/MinNoticeCard';
 import PhytosanitaryLicenseUpload from '../../components/gardener/PhytosanitaryLicenseUpload';
 import TeamMemberCard from '../../components/empresa/TeamMemberCard';
 import MarketingHub from '../../components/marketing/MarketingHub';
 import ProviderSetupChecklist from '../../components/provider/ProviderSetupChecklist';
+import ActivationResumeCard from '../../components/activation/ActivationResumeCard';
+import ProfessionalHelpSheet, { HelpButton } from '../../components/provider/ProfessionalHelpSheet';
+import { useActivationAutoOpen } from '../../activation/useActivationAutoOpen';
+import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import type { SetupTarget } from '../../shared/providerSetup';
 import { useCompanyOnboarding } from '../../hooks/useCompanyOnboarding';
 import { useProviderMode } from '../../hooks/useProviderMode';
@@ -50,7 +56,13 @@ const CompanyPanel: React.FC = () => {
   const [tab, setTab] = useState<Tab>(() => (TABS.includes(params.get('tab') as Tab) ? (params.get('tab') as Tab) : 'agenda'));
   const [showFormer, setShowFormer] = useState(false);
   const { user } = useAuth();
+  // QA-070: quién va a qué, también en la pestaña «Equipo» (antes solo en la agenda).
+  const upcomingByPerson = useTeamUpcomingJobs(user?.id);
   const navigate = useNavigate();
+  // «Activa tu cuenta» (2026-11-11): el mismo estado que la guía; si falta algo por hacer, abre el cuestionario.
+  const setup = useProviderSetupStatus();
+  const activationPending = useActivationAutoOpen(setup.status);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
 
   // Solicitudes de reserva por responder (F4): la empresa es el proveedor de sus reservas.
@@ -158,7 +170,7 @@ const CompanyPanel: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AppHeader title={c.commercial_name || 'Tu empresa'}>
+      <AppHeader title={c.commercial_name || 'Tu empresa'} rightSlot={<HelpButton onClick={() => setHelpOpen(true)} />}>
         <div role="tablist" aria-label="Secciones del panel" className="flex gap-1 rounded-xl bg-gray-100 p-1">
           {([['agenda', 'Agenda'], ['team', 'Equipo'], ['marketing', 'Marketing'], ['company', 'Tu empresa']] as const).map(([key, label]) => (
             <button
@@ -181,8 +193,11 @@ const CompanyPanel: React.FC = () => {
       {/* Marketing usa todo el ancho en escritorio (materiales y mensajes en columnas). */}
       <main className={`mx-auto w-full space-y-4 px-4 py-4 ${tab === 'marketing' ? 'sm:max-w-5xl' : 'sm:max-w-xl'}`}>
         <SuspendedProviderNotice />
+        {/* QA-192: también en el panel de empresa (el dueño responde por su equipo). */}
+        {tab === 'agenda' && <OpenIncidentsNotice userId={user?.id} />}
         {/* Lo que le falta para aparecer a los clientes (dinámico: lo calcula el servidor). */}
-        {tab === 'agenda' && <ProviderSetupChecklist onNavigate={handleSetupNavigate} />}
+        {tab === 'agenda' && activationPending && <ActivationResumeCard />}
+        {tab === 'agenda' && !activationPending && <ProviderSetupChecklist onNavigate={handleSetupNavigate} setup={setup} />}
         {(tab === 'agenda' || tab === 'team') && (
           <MemberSetupNotices
             members={data.members}
@@ -247,6 +262,7 @@ const CompanyPanel: React.FC = () => {
                     offersChemical={offersChemical}
                     onChanged={() => void refresh()}
                     onAskDeactivate={askDeactivate}
+                    upcoming={upcomingByPerson[m.user_id] ?? null}
                   />
                 ))}
               </ul>
@@ -328,6 +344,7 @@ const CompanyPanel: React.FC = () => {
         )}
       </main>
       {confirmDialog}
+      <ProfessionalHelpSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 };

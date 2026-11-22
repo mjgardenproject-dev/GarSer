@@ -170,6 +170,16 @@ export function classifyBookingPaymentError(error: unknown, fallbackStatus = 500
   if (normalizedText.includes('estado invalido del intento')) {
     return new BookingPaymentHttpError({ status: 409, code: 'invalid_attempt_state', message, details: upstreamDetails });
   }
+  // QA-181: el administrador desactivó el servicio después de firmar el presupuesto.
+  if (normalizedText.includes('service_unavailable')) {
+    const clean = message.replace(/^.*service_unavailable:\s*/i, '').trim();
+    return new BookingPaymentHttpError({
+      status: 409,
+      code: 'service_unavailable',
+      message: `${clean || 'Este servicio ya no se puede reservar.'} No se te ha cobrado nada. Elige otro servicio.`,
+      details: upstreamDetails,
+    });
+  }
   if (normalizedText.includes('ha expirado') && normalizedText.includes('presupuesto')) {
     return new BookingPaymentHttpError({ status: 409, code: 'quote_expired', message, details: upstreamDetails });
   }

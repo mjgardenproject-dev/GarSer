@@ -412,12 +412,16 @@ BEGIN
 
   -- Vuelve por el enlace de v_pro: NO cambia su origen (decisión 2) ni concede el 0 %.
   r := public.resolve_booking_commission(v_cli, v_pro, 'provider_link', p_link_code => v_code_pro);
-  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first' AND r ->> 'origin' = 'garser',
+  -- (Con la primera aún en curso, esta segunda lleva la regla de «posterior»: QA-100, una a la vez.)
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_repeat' AND r ->> 'origin' = 'garser'
+    AND (r ->> 'firstRateInUse')::boolean,
     'E8: volver por el enlace (con su clave) cambia el origen o concede el 0 %: ' || r::text);
-  -- Una reserva solo aceptada NO es «ya contrató antes».
+  -- Una reserva solo aceptada NO es «ya contrató antes», pero ocupa la tarifa de primera (QA-100).
   UPDATE public.bookings SET status = 'confirmed' WHERE id = v_booking;
   r := public.resolve_booking_commission(v_cli, v_pro, NULL);
-  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first', 'E9: una reserva solo aceptada cuenta como contratación');
+  PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_repeat' AND (r ->> 'firstRateInUse')::boolean
+    AND NOT (r ->> 'isFirstBooking')::boolean,
+    'E9: con la primera aceptada y sin completar, la segunda vuelve a llevar tarifa de primera: ' || r::text);
   UPDATE public.bookings SET status = 'cancelled' WHERE id = v_booking;
   r := public.resolve_booking_commission(v_cli, v_pro, NULL);
   PERFORM pg_temp.check_that(r ->> 'rule' = 'garser_first', 'E10: una reserva cancelada cuenta como contratación');

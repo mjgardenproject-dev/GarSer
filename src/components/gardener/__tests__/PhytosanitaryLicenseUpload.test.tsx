@@ -114,6 +114,34 @@ describe('PhytosanitaryLicenseUpload', () => {
     expect(mocks.rpc).not.toHaveBeenCalledWith('my_phyto_license');
   });
 
+  it('QA-170 · la declaración dice que cumple el RD 1311/2012 y que responde de la aplicación; GarSer solo gestiona la reserva', async () => {
+    mocks.rpc.mockImplementation(async (fn: string) => (fn === 'my_phyto_license'
+      ? { data: { status: null, active: false }, error: null }
+      : { data: { licenseId: 'x' }, error: null }));
+    render(<PhytosanitaryLicenseUpload />);
+    await screen.findByRole('button', { name: /Elegir archivo/ });
+    chooseFile(new File(['%PDF'], 'carnet.pdf', { type: 'application/pdf' }));
+    await screen.findByRole('checkbox');
+    const text = document.body.textContent || '';
+    expect(text).toContain('Real Decreto 1311/2012');
+    expect(text).toContain('respondo de los tratamientos que aplique');
+    expect(text).toContain('producto, dosis y plazos de seguridad');
+    expect(text).toContain('GarSer solo gestiona la reserva');
+  });
+
+  it('QA-170 · en nombre de un miembro del equipo: esa persona responde de lo que aplique', () => {
+    render(
+      <PhytosanitaryLicenseUpload
+        forMember={{ memberId: 'member-9', userId: 'employee-9', name: 'Ana López' }}
+        summary={{ status: 'rejected', active: false, rejection_reason: 'No se lee', renewal: null }}
+      />,
+    );
+    chooseFile(new File(['img'], 'foto.jpg', { type: 'image/jpeg' }));
+    const text = document.body.textContent || '';
+    expect(text).toContain('Ana López responde de los tratamientos que aplique');
+    expect(text).toContain('GarSer solo gestiona la reserva');
+  });
+
   it('si el servidor lo rechaza, enseña su mensaje', async () => {
     mocks.rpc.mockImplementation(async (fn: string) => (fn === 'my_phyto_license'
       ? { data: { status: null, active: false }, error: null }

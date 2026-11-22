@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { missingLegalFields, type LegalInfo } from '../../../config/legal';
+import { CookieConsentProvider } from '../../../contexts/CookieConsentContext';
 
 vi.mock('../../../hooks/useAppSettings', () => ({ useAppSettings: () => ({ settings: { contactEmail: 'info@garser.es', contactPhone: '' } }) }));
 
@@ -40,6 +41,20 @@ describe('páginas legales', () => {
     expect(screen.getByRole('link', { name: 'Política de privacidad' }).getAttribute('href')).toBe('/privacidad');
   });
 
+  it('términos: tratamientos con fitosanitarios y el papel de intermediario de GarSer (QA-170)', () => {
+    renderPage(<TermsPage />);
+    expect(screen.getByRole('heading', { name: '8. Tratamientos con productos fitosanitarios' })).toBeTruthy();
+    const text = document.body.textContent || '';
+    expect(text).toContain('carnet de aplicador');
+    expect(text).toContain('Real Decreto 1311/2012');
+    expect(text).toContain('la dosis, las precauciones, los plazos de seguridad');
+    expect(text).toContain('servicio de intermediación de la sociedad de la información');
+    expect(text).toContain('Ley 34/2002');
+    expect(text).toContain('no es parte del contrato de servicio');
+    // Sigue sin limitar los derechos del consumidor.
+    expect(text).toContain('Nada de lo dicho limita los derechos que te da la ley como consumidor');
+  });
+
   it('ya no se enseña el nombre, el NIF ni el domicilio del titular', () => {
     renderPage(<PrivacyPage />);
     expect(screen.queryByText(/\[Completar:/)).toBeNull();
@@ -48,6 +63,20 @@ describe('páginas legales', () => {
 
     renderPage(<TermsPage />);
     expect(screen.queryByRole('heading', { name: /Quiénes somos/ })).toBeNull();
+  });
+
+  it('QA-007 · cookies: explica cómo cambiar o retirar lo aceptado y ofrece «Configurar cookies»', async () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '2034090553963036');
+    render(
+      <MemoryRouter>
+        <CookieConsentProvider><CookiesPage /></CookieConsentProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('heading', { name: '4. Cómo cambiar tu decisión' })).toBeTruthy();
+    expect(document.body.textContent).toContain('cuando quieras, en cualquier momento');
+    expect(document.body.textContent).toContain('borramos las que ya se hubieran guardado');
+    expect((await screen.findAllByRole('button', { name: 'Configurar cookies' })).length).toBeGreaterThan(0);
+    vi.unstubAllEnvs();
   });
 
   it('cookies: explica las dos categorías y enlaza a privacidad', () => {

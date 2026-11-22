@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { clearBookingResumeStorage } from '../utils/bookingResumeStorage';
+import { bindProviderLinkCodesToUser, clearProviderLinkCodes } from '../utils/providerLinkCode';
 import { fetchCurrentUserProfileRole } from '../lib/adminAccess';
 import { forgetThisDevicePush } from '../utils/pushNotifications';
 import { startSessionLiveness } from '../utils/sessionLiveness';
@@ -23,6 +24,10 @@ interface AuthContextType {
    * volver a ella al entrar. La consume <SessionEndedNotice/>, que vive dentro del router.
    */
   sessionEndedAt: string | null;
+  /** La cuenta cuya sesión se cerró: la ruta de vuelta solo vale si entra esa misma cuenta (QA-155). */
+  sessionEndedUserId: string | null;
+  /** La sesión se cerró porque el usuario pulsó «Salir» (no sola): las páginas protegidas no deben guardar su ruta como «enlace de vuelta». */
+  signedOutByUser: boolean;
   clearSessionEnded: () => void;
 }
 
@@ -53,6 +58,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [sessionEndedAt, setSessionEndedAt] = useState<string | null>(null);
+  const [sessionEndedUserId, setSessionEndedUserId] = useState<string | null>(null);
+  const [signedOutByUser, setSignedOutByUser] = useState(false);
   const ts = () => new Date().toISOString();
 
   const clearAuthStorage = () => {
@@ -138,6 +145,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Entrar con Google (2026-10-21): completa nombre y foto de un cliente si están vacíos.
           // Vale para el botón de la web y para la redirección; una vez por sesión.
           if (event === 'SIGNED_IN' && u) void syncProfileFromGoogle(u);
+          // Alguien ha entrado: la sesión cerrada de antes ya no importa (QA-155).
+          if (u && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) setSessionEndedUserId(null);
+          if (u) setSignedOutByUser(false);
+          // QA-101: la clave del enlace de un profesional es de quien llegó con ella. Al entrar, las
+          // de visitante pasan a esta cuenta y las de otra cuenta se olvidan.
+          if (u && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) bindProviderLinkCodesToUser(u.id);
           lastKnownUserId = u?.id ?? null;
           // Una marca de cierre que no llegó a consumirse (p. ej. el signOut falló) no puede
           // tapar un cierre inesperado posterior.
@@ -159,7 +172,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // devuelve luego a la misma página, en vez de sacarle sin explicación.
           if (!intentionalSignOut && lastKnownUserId) {
             setSessionEndedAt(`${window.location.pathname}${window.location.search}`);
+            setSessionEndedUserId(lastKnownUserId);
           }
+          const signOutWasRequested = intentionalSignOut;
+          // QA-155: se marca ANTES de poner user a null, para que la página protegida donde estaba no mande a
+          // /auth «recordándose» como si fuera un enlace (esa ruta sobrevivía a la recarga y la heredaba el siguiente).
+          setSignedOutByUser(signOutWasRequested);
           intentionalSignOut = false;
           
           // Limpiar progreso del wizard de jardineros
@@ -174,6 +192,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             keysToRemove.forEach(k => localStorage.removeItem(k));
             
             clearBookingResumeStorage({ userId: lastKnownUserId, flow: 'wizard', includeAnonFallback: true });
+            // QA-101: «Cerrar sesión» olvida las claves de enlace. Si la sesión caduca sola (p. ej. al
+            // abrir la web por el enlace con una sesión vieja) se conservan: siguen ligadas a su
+            // cuenta y no valen para otra.
+            if (signOutWasRequested) clearProviderLinkCodes();
           } catch (e) {
             console.error('Error cleaning up wizard progress:', e);
           }
@@ -220,7 +242,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!verified) {
           markIntentionalSignOut();
           await supabase.auth.signOut(SIGN_OUT_LOCAL);
-          throw new Error('Verifica tu correo para continuar.');
+          throw Object.assign(new Error('Verifica tu correo para continuar.'), { code: 'email_not_confirmed' });
         }
         let accountRole: string | null = null;
         try {
@@ -244,6 +266,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         setUser(fresh);
         setSessionEndedAt(null);
+        setSessionEndedUserId(null);
+        setSignedOutByUser(false);
         debugLog('✅ Signed in');
         // La navegación la decide el componente (postLoginPath).
         return accountRole;
@@ -283,6 +307,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       markIntentionalSignOut();
       setSessionEndedAt(null);
+      setSessionEndedUserId(null);
       // F7: un dispositivo compartido no debe seguir recibiendo los avisos de esta cuenta. Como
       // mucho 1,5 s: cerrar sesión no espera a la red.
       await Promise.race([forgetThisDevicePush(), new Promise((resolve) => setTimeout(resolve, 1500))]);
@@ -291,12 +316,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.auth.signOut({ scope });
       clearAuthStorage();
       clearBookingResumeStorage({ userId: user?.id, flow: 'wizard', includeAnonFallback: true });
+      clearProviderLinkCodes();
       try { localStorage.removeItem('gardenerApplicationStatus'); localStorage.removeItem('gardenerApplicationJustSubmitted'); } catch {}
       setUser(null);
       debugLog('✅ Signed out');
       window.location.assign('/auth');
     } catch (e: any) {
       console.error('Error on signOut:', e?.message || e);
+      // Si no llegó a cerrarse, no se deja la pantalla en blanco esperando la recarga a /auth.
+      setSignedOutByUser(false);
     } finally {
       setLoading(false);
     }
@@ -304,10 +332,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = () => endSession('local');
   const signOutEverywhere = () => endSession('global');
+  // Solo se borra el aviso. La cuenta de la sesión cerrada se queda (hasta que alguien entre) porque la
+  // pantalla de entrar la lee DESPUÉS: si se borrara aquí, la ruta de vuelta perdería a su dueño (QA-155).
   const clearSessionEnded = () => setSessionEndedAt(null);
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, signOutEverywhere, sessionEndedAt, clearSessionEnded }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, signOutEverywhere, sessionEndedAt, sessionEndedUserId, signedOutByUser, clearSessionEnded }}>
       {children}
     </AuthContext.Provider>
   );

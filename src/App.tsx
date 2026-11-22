@@ -9,6 +9,7 @@ import ResetPassword from './components/auth/ResetPassword';
 import AdminRoute from './components/auth/AdminRoute';
 import Navbar from './components/layout/Navbar';
 import BottomNav from './components/layout/BottomNav';
+import { isAdminPath, isApplyPath, isAuthPath, isBookingPath, isFocusedTaskPath, isMarketingPath, shouldShowBottomNav } from './utils/bottomNavVisibility';
 import SessionEndedNotice from './components/auth/SessionEndedNotice';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import ScrollToTop from './components/common/ScrollToTop';
@@ -59,6 +60,8 @@ const IncidentsManagement = lazy(() => import('./pages/admin/IncidentsManagement
 const GardenerDashboard = lazy(() => import('./components/gardener/GardenerDashboard'));
 const GardenerBookings = lazy(() => import('./components/gardener/GardenerBookings'));
 const GardenerApplicationWizard = lazy(() => import('./components/gardener/GardenerApplicationWizard'));
+// Cuestionario «Activa tu cuenta» del profesional (2026-11-11).
+const ActivationWizardPage = lazy(() => import('./pages/activacion/ActivationWizardPage'));
 const GardenerStatusPage = lazy(() => import('./components/gardener/GardenerStatusPage'));
 // GarSer Empresas (F3.2): alta y panel de empresa.
 const CompanyApplicationPage = lazy(() => import('./pages/empresa/CompanyApplicationPage'));
@@ -74,6 +77,8 @@ const CompanyMemberSchedulePage = lazy(() => import('./pages/empresa/CompanyMemb
 const EmployeeSchedulePage = lazy(() => import('./pages/empleado/EmployeeSchedulePage'));
 const InvitationAcceptPage = lazy(() => import('./pages/empleado/InvitationAcceptPage'));
 const EmployeeHomePage = lazy(() => import('./pages/empleado/EmployeeHomePage'));
+// Bienvenida del empleado al aceptar la invitación (2026-11-11).
+const EmployeeWelcomePage = lazy(() => import('./pages/empleado/EmployeeWelcomePage'));
 
 // Funnel de reserva (el más pesado: análisis con IA, wizards manuales y checkout)
 const BookingFlow = lazy(() => import('./pages/reserva/BookingFlow'));
@@ -125,19 +130,13 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
     const { isTeam } = useProviderMode();
     const location = useLocation();
     const navigate = useNavigate();
-    const isAuthPage = location.pathname === '/auth' || location.pathname === '/auth/callback' || location.pathname === '/confirmar-servicio' || location.pathname === '/invitacion';
-    const isBookingPage = location.pathname.startsWith('/reserva') || location.pathname.startsWith('/reservar');
+    // Qué tipo de pantalla es: fuente única en utils/bottomNavVisibility (también decide la barra inferior).
+    const isAuthPage = isAuthPath(location.pathname);
+    const isBookingPage = isBookingPath(location.pathname);
     // Páginas de alta (jardinero o empresa): sin menú inferior, como /apply.
-    const isApplyPage = location.pathname === '/apply' || location.pathname === '/empresa/solicitud' || location.pathname === '/empresa/estado';
-    const isAdminPage = location.pathname.startsWith('/admin');
-    const isMarketingPage =
-      location.pathname === '/' ||
-      location.pathname === '/marbella' ||
-      location.pathname === '/costa-del-sol' ||
-      location.pathname === '/para-jardineros' ||
-      location.pathname === '/privacidad' ||
-      location.pathname === '/terminos' ||
-      location.pathname === '/cookies';
+    const isApplyPage = isApplyPath(location.pathname);
+    const isAdminPage = isAdminPath(location.pathname);
+    const isMarketingPage = isMarketingPath(location.pathname);
   
   const [applicationStatus, setApplicationStatus] = useState<null | 'pending' | 'active' | 'denied'>(null);
   const [denialReason, setDenialReason] = useState<string>('');
@@ -290,6 +289,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
             // blanca bajo el pie en el móvil.
             isMarketingPage
               ? 'w-full'
+              // Incidencia (QA-187): sin barra inferior, así que tampoco su hueco de 64 px.
+              : isFocusedTaskPath(location.pathname)
+                ? 'mx-auto max-w-full px-3 sm:max-w-7xl sm:px-6 lg:px-8'
               : isBookingPage || isAuthPage
                 ? 'w-full pb-16 sm:pb-0'
                 : isApplyPage
@@ -491,7 +493,7 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
           path="/valoraciones"
           element={
             <ProtectedRoute>
-              <ClientReviews />
+              {accountRole === 'employee' ? <Navigate to="/mi-trabajo" replace /> : <ClientReviews />}
             </ProtectedRoute>
           }
         />
@@ -503,6 +505,10 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
               {(() => {
                 if (accountRole === 'admin') {
                   return <Navigate to="/admin/dashboard" replace />;
+                }
+                // QA-030: un empleado no tiene «reservas» de cliente: su trabajo está en /mi-trabajo.
+                if (accountRole === 'employee') {
+                  return <Navigate to="/mi-trabajo" replace />;
                 }
                 if (isGardenerAccount) {
                   if (applicationStatus !== 'active') {
@@ -553,7 +559,9 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         <Route path="/mi-trabajo/horario" element={<ProtectedRoute><EmployeeSchedulePage /></ProtectedRoute>} />
         {/* Pública a propósito: quien recibe la invitación puede no tener cuenta todavía. */}
         <Route path="/invitacion" element={<InvitationAcceptPage />} />
+        <Route path="/mi-trabajo/bienvenida" element={<ProtectedRoute><EmployeeWelcomePage /></ProtectedRoute>} />
         <Route path="/mi-trabajo" element={<ProtectedRoute><EmployeeHomePage /></ProtectedRoute>} />
+        <Route path="/activar" element={<ProtectedRoute><ActivationWizardPage /></ProtectedRoute>} />
         <Route 
           path="/apply" 
           element={
@@ -597,7 +605,8 @@ const toUiStatus = (db: any): 'pending'|'active'|'denied'|null => {
         </Suspense>
         </main>
       )}
-      {!isAuthPage && !isBookingPage && !isApplyPage && !isAdminPage && !isMarketingPage && user && <BottomNav />}
+      {/* QA-187: tampoco sobre la incidencia (formulario de un solo paso con su propio botón de enviar). */}
+      {shouldShowBottomNav(location.pathname, Boolean(user)) && <BottomNav />}
     </div>
   );
 };

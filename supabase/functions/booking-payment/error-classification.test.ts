@@ -76,4 +76,11 @@ describe('booking-payment error classification', () => {
       message: 'duplicate key value violates unique constraint',
     });
   });
+  it('QA-181: un servicio desactivado tras firmar el presupuesto se explica y dice que no se ha cobrado', () => {
+    const error = Object.assign(new Error('service_unavailable: Poda de palmeras ya no se puede reservar.'), { code: '23514' });
+    const classified = classifyBookingPaymentError(error);
+    expect(classified.status).toBe(409);
+    expect(classified.code).toBe('service_unavailable');
+    expect(classified.message).toBe('Poda de palmeras ya no se puede reservar. No se te ha cobrado nada. Elige otro servicio.');
+  });
 });

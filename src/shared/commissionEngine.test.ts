@@ -175,6 +175,22 @@ describe('readCommissionFromEconomics', () => {
   );
 });
 
+describe('readCommissionFromEconomics: otra reserva en curso con tarifa de primera (QA-100)', () => {
+  it('lee el motivo con una regla de «posterior»', () => {
+    const c = readCommissionFromEconomics(signed({ commission: { rule: 'garser_repeat', rateBps: 300, ratePercent: 3, isFirstBooking: false, firstRateInUse: true } }));
+    expect(c?.firstRateInUse).toBe(true);
+  });
+  it('sin el motivo no lo inventa', () => {
+    expect(readCommissionFromEconomics(signed())?.firstRateInUse).toBeUndefined();
+  });
+  it.each([
+    ['con una regla de primera', { rule: 'garser_first', firstRateInUse: true }],
+    ['con un valor que no es true', { rule: 'garser_repeat', rateBps: 300, ratePercent: 3, firstRateInUse: 'sí' }],
+  ])('lo rechaza %s (igual que SQL)', (_label, commission) => {
+    expect(readCommissionFromEconomics(signed({ commission }))).toBeNull();
+  });
+});
+
 describe('commissionMismatch (el pago revalida lo firmado)', () => {
   it('coincide cuando la regla, el porcentaje, la versión y el importe son los mismos', () => {
     expect(commissionMismatch(signed(), signed())).toBeNull();

@@ -6,8 +6,25 @@ import { PUBLIC_CONTACT_ANCHOR, PUBLIC_WHATSAPP_NUMBER, PUBLIC_WHATSAPP_URL } fr
 import { COOKIES_PATH, PRIVACY_PATH, TERMS_PATH } from '../../config/legal';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { clearWizardDraftsForFreshStart } from '../../utils/bookingResumeStorage';
+import CookieSettingsButton from '../common/CookieSettingsButton';
 
-const PublicFooter: React.FC = () => {
+interface PublicFooterProps {
+  /** A quién habla el pie: al público general (por defecto) o a profesionales (/para-jardineros, QA-094). */
+  audience?: 'clients' | 'professionals';
+}
+
+const FOOTER_COPY = {
+  clients: {
+    title: 'Jardinería profesional en la Costa del Sol, a un clic.',
+    text: 'Elige el servicio, ve el precio antes de pagar y reserva con profesionales de tu zona. Si la dejas a medias, puedes retomar tu reserva donde la dejaste.',
+  },
+  professionals: {
+    title: 'Haz crecer tu negocio de jardinería con GarSer.',
+    text: 'Recibe solicitudes de clientes de tu zona y gestiona tus tarifas, tu agenda y tu equipo desde el móvil.',
+  },
+} as const;
+
+const PublicFooter: React.FC<PublicFooterProps> = ({ audience = 'clients' }) => {
   const { settings } = useAppSettings();
   const navigate = useNavigate();
   // Por defecto info@garser.es (PUBLIC_CONTACT_EMAIL); el admin puede cambiarlo en Ajustes.
@@ -25,10 +42,8 @@ const PublicFooter: React.FC = () => {
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1.3fr,1fr,0.8fr] lg:gap-8 lg:px-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">GarSer</p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">Reserva servicios de jardinería con una web pensada para clientes reales.</h2>
-          <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">
-            La portada pública y la zona de cliente comparten una misma idea: empezar una reserva rápido, retomarla si ya la dejaste abierta y no perderte entre pantallas técnicas.
-          </p>
+          <h2 className="mt-3 text-2xl font-semibold text-white">{FOOTER_COPY[audience].title}</h2>
+          <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">{FOOTER_COPY[audience].text}</p>
         </div>
 
         {/* scroll-mt: que la cabecera fija (hasta ~150 px en el móvil) no tape el título al llegar desde «Ayuda». */}
@@ -93,6 +108,8 @@ const PublicFooter: React.FC = () => {
             <Link to={COOKIES_PATH} className="hover:text-white">
               Cookies
             </Link>
+            {/* QA-007: siempre a mano, para cambiar o retirar lo que se aceptó. */}
+            <CookieSettingsButton className="min-h-[44px] text-left hover:text-white" />
           </div>
         </div>
       </div>

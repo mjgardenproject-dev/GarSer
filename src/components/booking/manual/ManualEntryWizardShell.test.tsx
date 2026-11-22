@@ -27,6 +27,7 @@ describe('carcasa del asistente (F2)', () => {
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('¿Quieres que retiremos los restos?');
     expect(eyebrow()).toBe('Corte de césped · Pregunta 3 de 3');
 
+    fireEvent.click(screen.getByText('Sí, que se lleven los restos'));
     fireEvent.click(screen.getByRole('button', { name: 'Revisar mis datos' }));
     expect(eyebrow()).toBe('Corte de césped · Revisión');
   });

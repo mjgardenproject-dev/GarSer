@@ -183,6 +183,11 @@ export interface BookingQuoteCommission {
    */
   linkClaim: 'verified' | 'rejected' | null;
   isFirstBooking: boolean;
+  /**
+   * QA-100: el cliente ya tiene otra reserva viva con ese profesional con la tarifa de primera
+   * reserva (vale para una sola a la vez), y por eso esta lleva la de «posterior». Ausente = no.
+   */
+  firstRateInUse?: boolean;
   /** Precio del servicio con IVA sobre el que se calculó. */
   baseAmount: number;
   /** Base × porcentaje, redondeado al céntimo. */

@@ -6,6 +6,7 @@ import { ManualEntryWizard, type ManualWizardSubmitPayload } from '../ManualEntr
 import { MANUAL_ENTRY_SURVEYS } from '../../../../shared/manualEntry/manualEntrySchema';
 import { MANUAL_PARITY_FIXTURES } from '../../../../pages/reserva/manualEntryParityFixtures';
 import { buildManualBookingPatch } from '../../../../pages/reserva/manualEntryBuilders';
+import { PHYTOSANITARY_ACK_TEXT } from '../../../../shared/manualEntry/legalCopy';
 
 afterEach(() => cleanup());
 
@@ -61,7 +62,7 @@ describe('desbroce · opciones del servicio (herbicida + retirada)', () => {
     return onStepComplete;
   };
 
-  it('una pantalla con el coste dicho una vez: herbicida apagado y retirada en «Sí»', () => {
+  it('una pantalla con el coste dicho una vez: herbicida apagado y retirada SIN marcar (QA-065)', () => {
     toOptions();
     expect(heading()).toBe('Opciones del servicio');
     expect(eyebrow()).toBe('Desbroce de malas hierbas · Pregunta 3 de 3');
@@ -70,13 +71,14 @@ describe('desbroce · opciones del servicio (herbicida + retirada)', () => {
     expect(herbicide.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByText('Se aplica sobre toda la superficie desbrozada.')).toBeTruthy();
     const waste = Array.from(group('Retirada de restos').querySelectorAll('[role="radio"]'));
-    expect(waste.map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    expect(waste.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'false']);
     // El botón lleva directamente a la revisión: ya no hay pantalla aparte de retirada.
     expect(screen.getByRole('button', { name: 'Revisar mis datos' })).toBeTruthy();
   });
 
   it('emite area, state y herbicide como antes (la retirada nunca emitió stepId)', () => {
     const onStepComplete = toOptions();
+    fireEvent.click(Array.from(group('Retirada de restos').querySelectorAll('[role="radio"]'))[0]);
     click('Revisar mis datos');
     expect(onStepComplete.mock.calls.map((call) => call[0])).toEqual(['area', 'state', 'herbicide']);
     expect(heading()).toBe('Revisa tus datos antes de continuar');
@@ -126,7 +128,10 @@ describe('desbroce · recorridos de referencia por la interfaz', () => {
       click('Siguiente');
       pickIn('Dificultad del desbroce', STATE_LABEL[item.state as string]);
       click('Siguiente');
-      if (item.applyHerbicide) fireEvent.click(screen.getByRole('switch', { name: 'Aplicar herbicida' }));
+      if (item.applyHerbicide) {
+        fireEvent.click(screen.getByRole('switch', { name: 'Aplicar herbicida' }));
+        fireEvent.click(screen.getByLabelText(PHYTOSANITARY_ACK_TEXT)); // QA-170
+      }
       pickIn('Retirada de restos', fixture.wasteRemoval ? 'Sí, que se lleven' : 'No, me encargo');
       click('Revisar mis datos');
       fireEvent.click(screen.getByRole('checkbox'));

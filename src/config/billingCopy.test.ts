@@ -85,6 +85,13 @@ describe('cada afirmación solo sale cuando los ajustes la cumplen (1024 combina
     // Ningún texto cita un porcentaje.
     expect(all.replace(/100 %/g, '')).not.toMatch(/\d\s*%/);
 
+    // QA-087: «¿Cómo me pagan mis clientes?» no dice que GarSer no toca el dinero si algún cliente
+    // paga gastos de gestión a GarSer: entonces lo explica.
+    const howPaid = faqs.find((f) => f.question === '¿Cómo me pagan mis clientes?')?.answer || '';
+    expect(howPaid).not.toMatch(/no toca tu dinero/);
+    const someoneMayPay = [t.garserFirst, t.linkFirst, t.garserRepeat, t.linkRepeat, t.maintenanceVisit].some((l) => l !== 'none');
+    expect(/gastos de gestión/.test(howPaid), howPaid).toBe(someoneMayPay);
+
     // «Tus clientes reservan sin gastos de gestión» (a secas) ⇒ los dos casos del enlace a 0 % y planes a 0 %.
     for (const text of [ownClientsHighlight(t), ownClientsLine(t)]) {
       if (/sin gastos de gestión/.test(text)) {

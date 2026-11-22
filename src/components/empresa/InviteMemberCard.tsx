@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Copy, Loader2, Mail, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { supabase } from '../../lib/supabase';
+import { createTeamInvitation } from '../../utils/teamInvitations';
 
 // Invitar a una persona al equipo (GarSer Empresas F3.3, A-22). El servidor genera el token y
 // solo guarda su huella; aquí se recibe UNA vez: para pedir el correo de invitación (F3.4, que
@@ -35,23 +35,8 @@ const InviteMemberCard: React.FC<Props> = ({ onInvited, requireLiability = false
     if (requireLiability && !declared) return;
     setSending(true);
     try {
-      const { data, error } = await supabase.rpc(
-        'create_company_invitation',
-        requireLiability ? { p_email: email, p_liability_declared: true } : { p_email: email },
-      );
-      if (error) throw error;
-      const result = data as { invitation_id: string; token: string; email: string };
-      // El único correo que sigue saliendo del navegador (prueba real F3): lleva el código de la
-      // invitación en claro, que la base de datos solo guarda cifrado. Un reintento si falla la
-      // red; si aun así no sale, el dueño tiene el enlace para copiarlo aquí mismo.
-      let mailError: unknown = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        ({ error: mailError } = await supabase.functions.invoke('send-email-notification', {
-          body: { type: 'company_invitation', invitationId: result.invitation_id, token: result.token },
-        }));
-        if (!mailError) break;
-      }
-      setLink({ url: `${window.location.origin}/invitacion?token=${result.token}`, email: result.email, emailed: !mailError });
+      // Crear la invitación y mandar el correo (utils/teamInvitations.ts, también lo usa «Activa tu cuenta»).
+      setLink(await createTeamInvitation(email, requireLiability));
       setCopied(false);
       setEmail('');
       onInvited();

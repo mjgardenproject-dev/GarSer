@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProviderSetupStatus } from '../../hooks/useProviderSetupStatus';
 import { useProviderMode } from '../../hooks/useProviderMode';
 import { useForm, FormProvider } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -17,6 +18,7 @@ import {
   WeedingPricingConfig,
 } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { useOwnPhytoLicenseStatus } from '../../hooks/useOwnPhytoLicenseStatus';
 import toast from 'react-hot-toast';
 import { TreePruningServiceConfig } from '../../types/treePruning';
 import UnsavedChangesModal from '../common/UnsavedChangesModal';
@@ -36,7 +38,6 @@ import {
 // import { isTreePruningConfigValid } from '../../domain/treePruning';
 import { ensurePhytosanitaryPersistedConfig, normalizePhytosanitaryPricingConfig } from '../../utils/phytosanitaryConfig';
 import { notifySetupChanged } from '../../utils/setupEvents';
-import SetupGuideBanner from '../provider/SetupGuideBanner';
 import { getCoordinatesFromAddress } from '../../utils/geolocation';
 import { getProviderCoordinates } from '../../shared/bookingEligibilityCore';
 
@@ -98,6 +99,9 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [gardenerProfile, setGardenerProfile] = useState<GardenerProfile | null>(null);
   // En equipo el carnet es de cada persona, no del titular (se sube desde «Equipo»): D4.
   const { isTeam } = useProviderMode();
+  // QA-044: qué servicios activos no puede hacer nadie del equipo (el servidor cuenta quién trabaja).
+  const { status: setupStatus } = useProviderSetupStatus({ enabled: isTeam });
+  const uncoveredServiceIds = isTeam ? (setupStatus?.services || []).filter((s) => s.workers === 0).map((s) => s.id) : [];
   
   // Configurations State
   const [palmConfig, setPalmConfig] = useState<PalmPricingConfig | undefined>(undefined);
@@ -107,7 +111,8 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   const [shrubConfig, setShrubConfig] = useState<ShrubPricingConfig | undefined>(undefined);
   const [phytosanitaryConfig, setPhytosanitaryConfig] = useState<PhytosanitaryPricingConfig | undefined>(undefined);
   const [weedingConfig, setWeedingConfig] = useState<WeedingPricingConfig | undefined>(undefined);
-  const [licenseStatus, setLicenseStatus] = useState<'pending' | 'approved' | 'rejected' | 'expired' | null>(null);
+  // El carnet se lee aquí, no solo al abrir «Personal» (QA-050). El equipo no lo usa: cada persona tiene el suyo.
+  const [licenseStatus, setLicenseStatus] = useOwnPhytoLicenseStatus(!isTeam);
 
   // Refactor State
   const [expandedServiceId, setExpandedServiceId] = useState<string | null>(() => {
@@ -725,17 +730,10 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
   // Sort services: Active first, then inactive
   // We use useMemo with gardenerProfile dependency to ensure sorting only happens on load/refresh
   // and NOT when user toggles checkboxes (watchedServices changes).
-  const sortedServices = useMemo(() => {
-      return [...services].sort((a, b) => {
-          const aActive = watchedServices.includes(a.id);
-          const bActive = watchedServices.includes(b.id);
-          
-          if (aActive && !bActive) return -1;
-          if (!aActive && bActive) return 1;
-          
-          return a.name.localeCompare(b.name); // Keep alphabetical within groups
-      });
-  }, [services, watchedServices]);
+  // Orden alfabético FIJO (prueba en el iPhone SE, paquete 1.3): antes iban primero los activos y la
+  // lista se reordenaba con cada toque; la tarjeta activada saltaba y bajo el dedo quedaba el botón
+  // «Activado» de otro servicio, que un segundo toque desactivaba sin querer.
+  const sortedServices = useMemo(() => [...services].sort((a, b) => a.name.localeCompare(b.name)), [services]);
 
   const handleTabChange = (tab: string) => {
     setSearchParams({ tab });
@@ -782,10 +780,6 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
 
         {/* Tab Content Area */}
         <div className="flex-1 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
-          {/* «Paso X de N» si llega desde los primeros pasos (Servicios y Zona). */}
-          {onBack && (activeTab === 'services' || activeTab === 'coverage') && (
-            <SetupGuideBanner stepId={activeTab} onBack={onBack} className="mb-5" />
-          )}
           <FormProvider {...methods}>
             <form onSubmit={handleSubmit((formData) => onSaveProfileInfo(formData), onError)}>
               {activeTab === 'personal' && (
@@ -814,6 +808,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({ onBack }) => {
                     watchedServices={watchedServices}
                     expandedServiceId={expandedServiceId}
                     handleToggleService={handleToggleService}
+                    uncoveredServiceIds={uncoveredServiceIds}
                     canActivateService={(serviceId) => {
                       const svc = services.find((candidate) => candidate.id === serviceId);
                       return svc ? isServiceConfigValid(svc) : false;

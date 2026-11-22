@@ -1,6 +1,7 @@
+import type { MemberUpcomingJobs } from '../../utils/teamUpcomingJobs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, BadgeCheck, CalendarClock, Clock, Loader2, Phone, Send, ShieldAlert, Upload, UserMinus, Wrench, X } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, CalendarClock, Clock, Loader2, Phone, Send, ShieldAlert, Upload, UserMinus, Wrench, X, CalendarDays } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { PHYTO_SERVICE_NAME, type TeamMember, type TeamService } from '../../hooks/useCompanyTeam';
@@ -30,6 +31,8 @@ interface Props {
   offersChemical?: boolean;
   onChanged: () => void;
   onAskDeactivate: (member: TeamMember) => void;
+  /** QA-070: sus próximos trabajos asignados (de la agenda). Sin dato, no se enseña la línea. */
+  upcoming?: MemberUpcomingJobs | null;
 }
 
 const LICENSE_ICON: Record<LicenseTone, React.ReactNode> = {
@@ -40,6 +43,17 @@ const LICENSE_ICON: Record<LicenseTone, React.ReactNode> = {
   none: <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />,
 };
 
+const upcomingDateFmt = new Intl.DateTimeFormat('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+
+function describeUpcoming(upcoming: MemberUpcomingJobs | null): string {
+  if (!upcoming || upcoming.count === 0 || !upcoming.next) return 'Sin trabajos asignados próximamente';
+  const when = `${upcomingDateFmt.format(new Date(`${upcoming.next.date}T12:00:00`))} a las ${upcoming.next.startTime}`;
+  const what = upcoming.next.serviceName ? ` (${upcoming.next.serviceName})` : '';
+  return upcoming.count === 1
+    ? `1 trabajo próximo: ${when}${what}`
+    : `${upcoming.count} trabajos próximos · el siguiente, ${when}${what}`;
+}
+
 const LICENSE_LABEL: Record<string, string> = {
   approved: 'Carnet aprobado',
   pending: 'Carnet en revisión',
@@ -47,7 +61,7 @@ const LICENSE_LABEL: Record<string, string> = {
   expired: 'Carnet caducado',
 };
 
-const TeamMemberCard: React.FC<Props> = ({ member, offeredServices, offersChemical, onChanged, onAskDeactivate }) => {
+const TeamMemberCard: React.FC<Props> = ({ member, offeredServices, offersChemical, onChanged, onAskDeactivate, upcoming }) => {
   const isOwner = member.role === 'owner';
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<string[]>(member.services.map((s) => s.id));
@@ -140,6 +154,12 @@ const TeamMemberCard: React.FC<Props> = ({ member, offeredServices, offersChemic
             <a href={`tel:${member.phone}`} className="mt-0.5 inline-flex items-center gap-1 text-sm text-emerald-700">
               <Phone className="h-3.5 w-3.5" /> {member.phone}
             </a>
+          )}
+          {upcoming !== undefined && (
+            <p className="mt-1 flex items-start gap-1.5 text-sm text-gray-700">
+              <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" aria-hidden="true" />
+              <span>{describeUpcoming(upcoming)}</span>
+            </p>
           )}
         </div>
         {isOwner && offersPhyto && canHaveServices && (

@@ -148,6 +148,9 @@ describe('contenido', () => {
         ...clientMessages({ kind, link: 'L', date: new Date('2026-10-20') }).map((m) => m.text),
       ].join('\n').toLowerCase();
       expect(everything).not.toMatch(/gesti[oó]n|comisi[oó]n|gratis|gratuit|sin coste|sin cargo|descuento|%/);
+      // QA-096: tampoco promete cuándo o a quién se paga: con gastos de gestión el cliente paga
+      // una parte online al reservar, y un flyer impreso no se puede corregir si cambian los ajustes.
+      expect(everything).not.toMatch(/pagas|pagar|al terminar/);
     }
   });
 
@@ -199,7 +202,7 @@ describe('contenido', () => {
     const solo = clientMessages({ kind: 'solo', link: 'L', date: new Date('2026-10-20') });
     expect(solo.map((m) => m.id)).toEqual(['online', 'season', 'thanks']);
     expect(solo[0].text).toContain('reservar conmigo');
-    expect(solo[0].text).toContain('directamente a mí');
+    expect(solo[0].text).toContain('ves el precio antes de reservar');
     expect(solo[1].text).toContain('poner tu jardín a punto este otoño');
     solo.forEach((m) => expect(m.text.endsWith('L')).toBe(true));
     const company = clientMessages({ kind: 'company', link: 'L', date: new Date('2026-10-20') });

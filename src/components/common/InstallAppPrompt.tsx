@@ -99,12 +99,12 @@ const InstallAppPrompt: React.FC<InstallAppPromptProps> = ({ className }) => {
             oficial y sin la barra de Safari:
           </p>
           <ol className="list-decimal space-y-1.5 pl-5">
-            <li className="flex flex-wrap items-center gap-1">
-              Toca <Share2 className="h-4 w-4 text-gray-500" aria-hidden="true" />
+            <li>
+              Toca <Share2 className="inline h-4 w-4 align-text-bottom text-gray-500" aria-hidden="true" />
               <span className="font-medium text-gray-800">Compartir</span> en la barra de Safari.
             </li>
-            <li className="flex flex-wrap items-center gap-1">
-              Elige <PlusSquare className="h-4 w-4 text-gray-500" aria-hidden="true" />
+            <li>
+              Elige <PlusSquare className="inline h-4 w-4 align-text-bottom text-gray-500" aria-hidden="true" />
               <span className="font-medium text-gray-800">Añadir a pantalla de inicio</span>.
             </li>
             <li>
@@ -131,8 +131,8 @@ const InstallAppPrompt: React.FC<InstallAppPromptProps> = ({ className }) => {
             </button>
           ) : (
             <ol className="list-decimal space-y-1.5 pl-5 text-sm text-gray-600">
-              <li className="flex flex-wrap items-center gap-1">
-                Toca <MoreVertical className="h-4 w-4 text-gray-500" aria-hidden="true" /> el
+              <li>
+                Toca <MoreVertical className="inline h-4 w-4 align-text-bottom text-gray-500" aria-hidden="true" /> el
                 menú de Chrome (arriba a la derecha).
               </li>
               <li>

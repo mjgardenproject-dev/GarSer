@@ -50,7 +50,8 @@ const VALUE_LABELS: Record<string, string> = {
   estructural: 'Poda estructural', formacion: 'Poda de formación',
   normal: 'Normal', descuidado: 'Descuidado', 'muy descuidado': 'Muy descuidado',
   descuidada: 'Descuidada', 'muy descuidada': 'Muy descuidada',
-  media: 'Dificultad media', alta: 'Dificultad alta',
+  media: 'Dificultad media', alta: 'Dificultad alta', baja: 'Dificultad baja',
+  'dificultad media': 'Dificultad media', 'dificultad alta': 'Dificultad alta', 'dificultad baja': 'Dificultad baja',
   preventive: 'Preventivo', curative: 'Curativo', weed_control: 'Herbicida',
   insects: 'Insectos', fungus: 'Hongos', both: 'Insectos y hongos',
   chemical: 'Químico', ecological: 'Ecológico',
@@ -88,7 +89,11 @@ const SECTION_KEYS = Object.keys(SECTION_TITLES) as Array<keyof typeof SECTION_T
 
 const prettyValue = (raw: unknown): string => {
   const s = String(raw).replace(/_/g, ' ').toLowerCase();
-  return VALUE_LABELS[s] || VALUE_LABELS[String(raw)] || String(raw);
+  const known = VALUE_LABELS[s] || VALUE_LABELS[String(raw)];
+  if (known) return known;
+  // Una clave interna desconocida (otro_valor) nunca se enseña con guiones bajos.
+  const plain = String(raw).replace(/_/g, ' ').trim();
+  return plain ? plain.charAt(0).toUpperCase() + plain.slice(1) : String(raw);
 };
 
 export interface DetailRow {

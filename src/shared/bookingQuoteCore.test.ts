@@ -309,7 +309,7 @@ describe('buildAuthoritativeBookingQuote', () => {
       suplementos: { dificultad_media: 20, dificultad_alta: 50, retirada_restos: 50 },
       importe_minimo: 0,
     };
-    const build = (wasteRemoval: boolean) => buildAuthoritativeBookingQuote({
+    const build = (wasteRemoval: boolean | undefined) => buildAuthoritativeBookingQuote({
       bookingData: {
         serviceIds: ['svc-weeding'],
         weedingZones: [{ id: 'weed-1', area: 400, state: 'normal', applyHerbicide: false }],
@@ -320,6 +320,10 @@ describe('buildAuthoritativeBookingQuote', () => {
 
     const withoutWaste = build(false);
     const withWaste = build(true);
+    // QA-065: sin respuesta NO se cobra la retirada (antes se cobraba como si la hubiera elegido).
+    const unanswered = build(undefined);
+    expect(unanswered.totalPrice).toBe(withoutWaste.totalPrice);
+    expect(unanswered.estimatedHours).toBe(withoutWaste.estimatedHours);
 
     // Precio: 400 m² × 1 €/m² = 400 €; con retirada +50% → 600 €.
     expect(withoutWaste.totalPrice).toBe(400);

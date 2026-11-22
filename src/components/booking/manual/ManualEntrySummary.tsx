@@ -20,7 +20,10 @@ import { ReviewList, type ReviewSection } from './ui/ReviewList';
 interface Props {
   survey: ManualServiceSurvey;
   items: ManualAnswers[];
-  wasteRemoval: boolean;
+  /** null = aún sin contestar (QA-065). */
+  wasteRemoval: boolean | null;
+  /** QA-170: la frase corta de los tratamientos con producto fitosanitario (null = no aplica). */
+  phytosanitaryNote?: string | null;
   /** «Cambiar» de una fila: el elemento y la pantalla (de sus pantallas visibles) a la que ir. */
   onChangeAnswer: (itemIndex: number, screenIndex: number) => void;
   onChangeWaste: () => void;
@@ -44,6 +47,7 @@ export const ManualEntrySummary: React.FC<Props> = ({
   survey,
   items,
   wasteRemoval,
+  phytosanitaryNote,
   onChangeAnswer,
   onChangeWaste,
   onRemoveItem,
@@ -84,7 +88,9 @@ export const ManualEntrySummary: React.FC<Props> = ({
         {
           key: 'waste',
           label: MANUAL_GLOBAL_WASTE_FIELD.label,
-          value: wasteRemoval ? MANUAL_ENTRY_STRINGS.waste.yes.label : MANUAL_ENTRY_STRINGS.waste.no.label,
+          value: wasteRemoval === null
+            ? MANUAL_ENTRY_STRINGS.waste.unanswered
+            : wasteRemoval ? MANUAL_ENTRY_STRINGS.waste.yes.label : MANUAL_ENTRY_STRINGS.waste.no.label,
           onChange: onChangeWaste,
         },
       ],
@@ -100,6 +106,9 @@ export const ManualEntrySummary: React.FC<Props> = ({
         </div>
       ) : null}
       <ReviewList sections={sections} />
+      {phytosanitaryNote ? (
+        <p className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm leading-6 text-gray-700">{phytosanitaryNote}</p>
+      ) : null}
       {requireConsent ? <ConsentRow checked={consentChecked} onChange={(checked) => onConsentChange?.(checked)} /> : null}
     </div>
   );

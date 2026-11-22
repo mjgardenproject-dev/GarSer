@@ -51,6 +51,7 @@ describe('césped · superficie', () => {
     expect(heading()).toBe('¿En qué estado está el césped?');
     pickIn('Estado del césped', 'Normal');
     click('Siguiente');
+    pickIn('Retirada de restos', 'No, me encargo yo');
     click('Revisar mis datos');
     expect(screen.getByText('1.200 m²')).toBeTruthy();
   });

@@ -1837,6 +1837,392 @@ Requisitos previos: **migración `20261109120000_alta_jardinero_equipo_estimado.
 
 ---
 
+## Sección 39 — Pago con el horario caducado y tarjeta rechazada (FASE 4, paquete 1.1, QA-139, 2026-11-17)
+
+Qué se arregló: si un pago llega cuando el horario ya no está guardado (30 min), o el hueco se ocupa mientras se paga,
+no hay reserva y **la retención de la tarjeta se anula en el acto** (antes quedaba retenida hasta 7 días); una tarjeta
+rechazada ya no suelta el horario (antes, probar otra tarjeta en el mismo formulario dejaba el dinero retenido sin
+reserva); desde el navegador ya no se pueden liberar pagos ajenos. Antes de empezar: migración `20261117120000` aplicada
+y funciones `booking-payment`, `booking-payment-webhook` y `booking-lifecycle-tick` desplegadas.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 39.1 | En el editor SQL de Supabase: `select has_function_privilege('authenticated', 'public.release_booking_payment_attempt(uuid, text, text, text, jsonb)', 'EXECUTE');` | `false` |
+| 39.2 | En el editor SQL: `select count(*) from public.list_orphan_payment_authorizations(200);` justo después del despliegue y otra vez a la hora | La primera vez puede dar >0 (pagos antiguos que se quedaron retenidos); a la hora, **0** (el reloj los ha anulado) |
+| 39.3 | En Stripe → Desarrolladores → Webhooks → el endpoint de `booking-payment-webhook`: eventos suscritos | Incluye `payment_intent.payment_failed` y `payment_intent.canceled` además de `amount_capturable_updated` y `succeeded` |
+| 39.4 | En el móvil, como cliente: llega al resumen, pulsa pagar, escribe una tarjeta y **cierra la hoja con la X** | Recuadro «Pago listo · Tu pago sigue preparado» con «**Aún no se te ha cobrado nada.**» |
+| 39.5 | Igual, pero deja la hoja de pago abierta sin pagar **31 minutos** | La hoja se cierra sola y sale «Tiempo agotado · El horario ya no está retenido · **No se te ha cobrado nada.**» con «Actualizar reserva»; en tu banco no aparece ningún cargo ni retención |
+| 39.6 | (Si tienes una tarjeta que el banco rechace, p. ej. una virtual sin saldo) paga con ella y después, en el mismo formulario, con una buena | Con la rechazada: aviso arriba «No se ha completado el pago… No se te ha cobrado nada»; con la buena: «Pago confirmado y reserva creada» y la reserva aparece **una sola vez** en «Mis reservas» |
+| 39.7 | Pulsa «Pagar» dos veces muy seguidas en un pago real | Una sola reserva y un solo PaymentIntent en Stripe |
+| 39.8 | 48 h después de publicar, en Stripe → Pagos, filtro «No capturados»: cada uno debe tener reserva | Ningún pago autorizado sin reserva de más de 10 minutos (si hay alguno, el editor SQL de 39.2 lo debe listar y el reloj anularlo) |
+
+La prueba de «pagar justo después de caducar» (el cliente paga y el servidor ya no tiene el horario) no se puede forzar en
+producción sin tocar la base de datos: está cubierta en local con Stripe de pruebas (`scripts/qa/verify-orphan-payments.mjs`,
+9/9) y con un agente en el iPhone SE.
+
+## Sección 40 — Incidencias desde el móvil, aviso al profesional y doble comprobación (FASE 4, paquete 1.2, 2026-11-17)
+
+Qué se arregló: el botón «Enviar incidencia» quedaba tapado por la barra inferior en cualquier móvil en vertical (QA-187);
+el profesional no se enteraba de que le habían abierto una incidencia (QA-192); el admin devolvía dinero en Stripe al
+primer toque (QA-189); y el diálogo de confirmación de toda la web ejecutaba dos veces la acción con un doble toque.
+Antes de empezar: migración `20261117130000` aplicada y funciones `send-email-notification` y `notification-dispatch`
+desplegadas (la primera redacta el aviso nuevo).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 40.1 | En un iPhone en vertical, como cliente, abre una incidencia sobre una reserva terminada y envíala sin girar el móvil | No hay barra inferior en esa pantalla; «Enviar incidencia» se ve entero y se pulsa a la primera, también con el teclado abierto |
+| 40.2 | Al profesional de esa reserva | Le llega el correo «Un cliente ha abierto una incidencia sobre tu trabajo» con el motivo y lo que cuenta el cliente, y la notificación push si la tiene activada |
+| 40.3 | El profesional entra en la app | En el Panel ve «Un cliente ha abierto una incidencia sobre tu trabajo» con «Contar mi versión», que le lleva a la reserva; al enviar su versión el aviso desaparece |
+| 40.4 | Como admin, en Incidencias, pulsa «Aceptar y devolver» sin nota | No hace nada salvo pedir la nota |
+| 40.5 | Con nota, «Aceptar y devolver» | Diálogo con la reserva, el importe y el cliente; el botón de devolver está desactivado hasta marcar «He revisado el importe, el cliente y la reserva»; «No, volver» no mueve nada |
+| 40.6 | Marca la casilla y pulsa «Devolver …» dos veces seguidas | En Stripe aparece UNA sola devolución por el importe de los gastos; la incidencia pasa a «Resuelta · devuelta» y al cliente le llega el correo |
+| 40.7 | «Resolver sin acción» y «Rechazar» | Piden confirmación con la nota que verá el cliente; no se devuelve dinero |
+
+## Sección 41 — Servicios en cuentas con equipo y perfiles públicos de solo lectura (FASE 4, paquete 1.3, 2026-11-17)
+
+Qué se arregló: en una cuenta con equipo, activar un servicio lo dejaba invisible (nadie asignado) mientras la web decía que
+se podía reservar (QA-044); la pestaña «Equipo» no decía quién iba a qué (QA-070); y **cualquier usuario con sesión podía
+reescribir el perfil público de cualquier profesional** a través de la vista `public_gardener_directory` (QA-215, seguridad).
+Antes de empezar: migración `20261117140000` aplicada (no hay funciones que desplegar).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 41.1 | Editor SQL: `select has_table_privilege('authenticated', 'public.public_gardener_directory', 'UPDATE'), has_table_privilege('anon', 'public.public_gardener_directory', 'SELECT');` | `false`, `true` |
+| 41.2 | En el móvil, sin sesión, abre el perfil público de un profesional y la búsqueda de profesionales de la reserva | Se ven igual que antes (la vista sigue leyéndose) |
+| 41.3 | Con una cuenta de equipo cuyo titular trabaja, activa un servicio que nadie del equipo hacía | En «Equipo» aparece marcado para el titular; la fila del servicio dice «Activado: los clientes pueden reservarlo» y un cliente lo encuentra con horas |
+| 41.4 | Activa fitosanitarios en una cuenta de equipo sin nadie con carnet aprobado | La fila dice que nadie del equipo lo hace y que hay que asignarlo; el perfil público NO lo lista |
+| 41.5 | Pestaña «Equipo» | Cada persona muestra sus próximos trabajos o «Sin trabajos asignados próximamente» |
+
+## Sección 42 — Primera reserva una a la vez y clave del enlace (FASE 4, paquete 1.4, 2026-11-17)
+
+Qué se arregló: la tarifa de «primera reserva» se aplicaba a todas las reservas de un cliente con un profesional hasta que
+una se completaba (QA-100); la clave `?c=` del enlace se guardaba 180 días en el navegador y valía para cualquier cuenta
+de ese móvil (QA-101); y un enlace sin clave o con una clave antigua cambiaba el precio sin explicación (QA-102).
+Antes de empezar: migración `20261117150000` aplicada **después** de comprobar 42.0, y desplegados `booking-payment` y
+`booking-authority` (`--use-api`). Ten a mano los porcentajes de Admin → Ajustes → Comisiones: los importes esperados
+salen de ellos («primera por GarSer», «primera por enlace», «siguientes»).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 42.0 | ANTES de aplicar la migración, editor SQL: `select client_id, gardener_id, count(*) from bookings where status in ('pending','confirmed','disputed') and commission_rule in ('garser_first','link_first') group by 1,2 having count(*) > 1;` | Ninguna fila. Si sale alguna, no apliques la migración y avisa (son reservas que hoy llevan dos veces la tarifa de primera) |
+| 42.1 | Editor SQL tras aplicarla: `select indexname from pg_indexes where indexname = 'bookings_one_live_first_rate_per_client_provider';` | Una fila |
+| 42.2 | Cliente nuevo, por GarSer: reserva y paga con un profesional; sin que la acepte, haz otra con el mismo profesional | La primera lleva «primera por GarSer»; la segunda lleva «siguientes» y, antes de pagar, el aviso «Ya tienes otra reserva en curso con …» |
+| 42.3 | Cancela la primera y empieza otra (sin pagar) | Vuelve la tarifa de primera y desaparece el aviso |
+| 42.4 | Cliente nuevo que abre el enlace con clave **sin sesión** y entra al reservar | Lleva «primera por enlace»; en `client_provider_relationships` queda `origin = provider_link` |
+| 42.5 | Ese cliente, desde OTRO dispositivo y sin la clave, reserva con el mismo profesional | Sigue con la tarifa del enlace (la relación está en su cuenta); si la primera aún está en curso, «siguientes por enlace» con el aviso |
+| 42.6 | En el mismo móvil: «Cerrar sesión», entra con otra cuenta de cliente y abre la dirección del profesional sin `?c=` | Paga «primera por GarSer» y ve el aviso «Esta dirección no es el enlace personal de reserva de …» |
+| 42.7 | El profesional pulsa «Cambiar mi enlace»; un cliente nuevo abre el enlace ANTIGUO | Aviso «Este enlace ya no es el vigente de …» y tarifa de GarSer; con el enlace nuevo, tarifa del enlace sin aviso |
+| 42.8 | Stripe → Pagos: los gastos retenidos de 42.2 y 42.4 | Cada importe es exactamente el porcentaje de su regla sobre el precio del servicio |
+
+## Sección 43 — Un servicio desactivado no se puede reservar (FASE 4, paquete 1.5, 2026-11-18)
+
+Qué se arregló: desactivar un servicio en Admin → Servicios solo lo ocultaba en la web; el servidor seguía ofreciendo
+profesionales, firmando presupuestos y dejando pagar ese servicio (QA-181). Antes de empezar: migración `20261118120000`
+aplicada y `booking-authority` y `booking-payment` desplegadas (`--use-api`). Usa un servicio poco usado y **reactívalo al
+terminar**.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 43.1 | Como cliente, deja una reserva de ese servicio en la pantalla de «Continuar al pago», sin pagar | — |
+| 43.2 | Como admin, desactiva el servicio. El cliente pulsa «Continuar al pago» | «Este servicio ya no se puede reservar», «No se te ha cobrado nada» y botón «Elegir otro servicio»; en Stripe no aparece ningún pago nuevo |
+| 43.3 | «Elegir otro servicio» y el perfil público de un profesional que lo tenía | El servicio no aparece en ninguno de los dos |
+| 43.4 | El profesional abre sus servicios | La fila dice «GarSer ha pausado este servicio: ahora mismo los clientes no pueden reservarlo» |
+| 43.5 | Editor SQL: `select public.generate_maintenance_proposals();` | Responde sin error aunque haya planes de ese servicio (se saltan) |
+| 43.6 | Reactiva el servicio | Vuelve a salir al cliente y se puede llegar a la confirmación con un profesional |
+
+## Sección 44 — Nada con coste marcado de antemano y valoración sin nota puesta (FASE 4, paquete 1.6, 2026-11-18)
+
+Qué se arregló: «Retirar restos» (puede costar más) llegaba marcado en la reserva con datos a mano y se cobraba sin
+preguntar en césped y setos por fotos; el motor de precios lo cobraba si la respuesta faltaba (QA-065, QA-086); la
+valoración arrancaba con 5 estrellas puestas y no se podía volver a abrir (QA-116). Antes de empezar: desplegadas
+`booking-authority` y `booking-payment` (`--use-api`; usan el motor de precios). No hay migración.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 44.1 | Reserva de césped con datos a mano hasta la pregunta de los restos | Ninguna opción marcada; «Revisar mis datos» sin elegir dice «Elige si quieres que retiremos los restos.» y no avanza |
+| 44.2 | Elige «No» y mira el precio; vuelve y elige «Sí» | Con «Sí» el precio de cada profesional sube (si cobra la retirada); con «No», no |
+| 44.3 | Reserva de césped o setos con fotos | El interruptor «Incluir retirada de restos» aparece apagado y dice que puede tener coste |
+| 44.4 | En la pregunta del estado, «Siguiente» sin elegir | No avanza |
+| 44.5 | Valorar un trabajo terminado | Estrellas vacías («Sin puntuar»), «Enviar valoración» desactivado hasta tocar una estrella; la nota mínima es 1 |
+| 44.6 | Tras enviarla, «Ver o editar mi valoración» en la tarjeta | Se abre con la nota y el comentario; dentro de 48 h se puede cambiar y la tarjeta lo refleja |
+
+## Sección 45 — El dinero explicado antes de pagar y sin promesas falsas (FASE 4, paquete 1.7, 2026-11-18)
+
+Qué se arregló: antes de pagar no se explicaba qué son los gastos de gestión ni que se retienen (QA-055, QA-084, QA-129);
+tras pagar ponía «Pago confirmado» aunque solo se retiene (QA-088); las tarjetas de «Mis reservas» decían «Pagado al
+profesional» en una completada (QA-067, QA-118), dinero pendiente en una caducada sin salida (QA-161) o en una en la que nadie
+se presentó, y cambiaban de forma con 0 % (QA-095); los flyers y el mensaje de WhatsApp prometían «pagas al terminar» (QA-096)
+y la FAQ «GarSer no toca tu dinero» (QA-087). Antes de empezar: desplegadas `send-email-notification` y
+`booking-confirmation-email` (`--use-api`; comparten las etiquetas de importes). No hay migración.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 45.1 | Paso «Elige profesional» de una reserva con gastos | «Hoy se retienen X € de gastos de gestión» y la línea «…se retienen en tu tarjeta… solo se cobran si el profesional acepta…» |
+| 45.2 | Confirmación antes de pagar | Dice el porcentaje que fijan los Ajustes y que se retienen y se liberan si no acepta; el botón de la hoja es «Retener X € y enviar» |
+| 45.3 | Tras enviar | «Solicitud enviada · importe retenido»; en ningún sitio «Pago confirmado» |
+| 45.4 | «Mis reservas»: una caducada | «…no se llegaron a cobrar…», sin «Pendiente de pagar al profesional» y con «Volver a reservar» |
+| 45.5 | «Mis reservas»: una completada | «Precio del servicio (al profesional)» y la nota de que ese pago es fuera de GarSer; nunca «Pagado al profesional» |
+| 45.6 | Profesional → Marketing (flyers y mensajes) | Ninguno dice «pagas al terminar»; el tercer paso del flyer es «Ves el precio antes de reservar» |
+| 45.7 | /para-jardineros → «¿Cómo me pagan mis clientes?» | Sin «GarSer no toca tu dinero»; dice que los gastos de gestión, cuando los hay, los paga el cliente aparte a GarSer |
+
+## Sección 46 — Avisos legales de los tratamientos con producto fitosanitario (FASE 4, paquete 1.8, 2026-11-18)
+
+Qué se arregló: en todo el flujo no había ni una palabra sobre carnet, plazos de seguridad ni responsabilidad en los
+tratamientos con producto convencional ni con herbicida (QA-170, QA-168). Decisión del dueño (2026-11-17): GarSer es una
+plataforma de gestión de reservas, no un inspector; el producto, la dosis y los plazos los asume el profesional con carnet.
+**Los textos se escriben para revisarlos con un abogado antes (o justo después) de publicar:** están en
+`src/shared/manualEntry/legalCopy.ts` (aviso y casilla), `PhytosanitaryLicenseUpload.tsx` (declaración del profesional) y
+`TermsPage.tsx` (secciones 8 y 9). Antes de empezar: desplegadas `booking-confirmation-email` y `send-email-notification`
+(`--use-api`). No hay migración.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 46.1 | Fitosanitarios a mano, producto «Convencional» | Aviso «Tratamiento con producto fitosanitario» con la casilla SIN marcar; sin marcarla no se avanza y lo dice; con «Ecológico» no hay aviso |
+| 46.2 | La revisión final de ese tratamiento | Lleva la frase «Tratamiento aplicado por un profesional con carnet fitosanitario, que responde del producto, la dosis y los plazos de seguridad. GarSer solo gestiona la reserva.» |
+| 46.3 | Desbroce, «Aplicar herbicida» | Mismo aviso, con «Aplicar herbicida encarece el servicio…»; no deja pasar a la revisión sin marcar la casilla |
+| 46.4 | Fitosanitarios por FOTOS con una zona convencional | El aviso sale encima de «Continuar» y «Continuar» no pasa sin marcarlo |
+| 46.5 | Correo de confirmación de una reserva de fitosanitarios | La nota del pie incluye la frase corta |
+| 46.6 | /terminos | Sección «8. Tratamientos con productos fitosanitarios» y «9. Responsabilidad» (servicio de intermediación; no es parte del contrato de servicio) |
+| 46.7 | Profesional → subir el carnet fitosanitario | La declaración nombra el Real Decreto 1311/2012 y que responde de los tratamientos que aplique |
+| 46.8 | Editor SQL: `select input_payload -> 'phytosanitaryAck' ->> 'legalVersion' from booking_quotes where service_id in (select id from services where name ilike '%fitosanit%') order by generated_at desc limit 1;` | `phytosanitary_notice_v1` para una reserva nueva con producto convencional (el registro de lo aceptado viaja con el presupuesto) |
+
+## Sección 47 — Cambiar o retirar el consentimiento de cookies (FASE 4, paquete 1.9, 2026-11-18)
+
+Qué se arregló: una vez aceptado o rechazado el aviso de cookies no había forma de cambiarlo (la política mandaba borrar los
+datos del navegador) y «Aceptar» estaba resaltado sobre «Rechazar» (QA-007). Con anuncios en marcha es obligatorio poder
+retirar el consentimiento tan fácil como se da. No hay migración ni funciones. Haz estas pruebas en un navegador **sin**
+decisión guardada, desde el móvil, y con las herramientas de desarrollo del navegador abiertas si puedes (Application →
+Cookies y Network).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 47.1 | Primera visita a garser.es | Sale el aviso; «Rechazar todo» y «Aceptar todo» son iguales (mismo color y tamaño); antes de decidir no hay cookies `_fbp` ni `_gcl_*` ni peticiones a facebook.com/googletagmanager.com |
+| 47.2 | «Aceptar todo» | El aviso desaparece; ahora sí aparece `_fbp` y se cargan Meta/Google |
+| 47.3 | Pie de la portada → «Configurar cookies» | Se abre el panel desplegado con «Cookies de publicidad» ENCENDIDO y una X para cerrar sin cambiar nada |
+| 47.4 | Apaga «Cookies de publicidad» → «Guardar preferencias» | El panel se cierra; las cookies `_fbp`, `_fbc` y `_gcl_*` desaparecen en el acto y NO sale ninguna petición nueva a Meta ni a Google al navegar (sin recargar) |
+| 47.5 | Recarga y vuelve a abrir «Configurar cookies» | El interruptor sigue apagado; no se vuelve a cargar el píxel |
+| 47.6 | /cookies → sección 4 | Explica cómo cambiarlo cuando quieras y tiene el botón «Configurar cookies» |
+| 47.7 | Facebook Events Manager (o Test Events) con una cuenta nueva que rechace | Ningún evento de ese navegador llega a Meta tras rechazar, tampoco por la vía del servidor (Conversions API) |
+
+## Sección 48 — Entrar con el usuario correcto (FASE 4, paquete 1.10, 2026-11-18)
+
+Qué se arregló: la web recordaba la página de la sesión anterior y la usaba tras el siguiente inicio de sesión aunque entrara
+OTRA persona en el mismo móvil: el profesional aterrizaba en «Mis chats» o «Solicitudes» de otro, el cliente en «Mis
+reservas» o «Mi cuenta», y un cliente veía «Acceso denegado» al caer en una página de administración (QA-155, QA-085,
+QA-122, QA-130); y con la sesión iniciada, «Atrás» llevaba al formulario de entrar (QA-012). Solo web, sin migración.
+Hazlo en UN mismo móvil con dos cuentas de prueba (A y B).
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 48.1 | Entra con A (profesional), abre «Chat» o «Solicitudes», y desde otro dispositivo pulsa «Cerrar todas» en «Mi cuenta» (o cierra la sesión de A en Supabase). Vuelve al móvil, que muestra «Tu sesión se ha cerrado…». Entra con B | B va a SU inicio, no a la página de A |
+| 48.2 | Lo mismo pero entra de nuevo con A | A vuelve a la página en la que estaba |
+| 48.3 | Sin sesión, abre garser.es/admin/dashboard y entra con una cuenta de cliente | Va al inicio del cliente; nunca «Acceso denegado» |
+| 48.4 | Sin sesión, abre garser.es/bookings y entra | Vuelve a «Mis reservas» (la misma persona sigue a donde iba) |
+| 48.5 | Con la sesión iniciada, abre garser.es/auth o pulsa «Atrás» hasta llegar a /auth | Va al inicio, no al formulario «Entra en tu cuenta» |
+| 48.6 | Cierra sesión con A y entra con B (cierre normal, no forzado) | B va a su inicio |
+
+## Sección 49 — Registro y contraseña en español, con reenvío (FASE 4, paquete 1.11, 2026-11-18)
+
+Qué se arregló: entrar con un correo sin confirmar decía «Email not confirmed» en inglés, sin explicación y sin forma de
+reenviar el correo; la pantalla de nueva contraseña no decía de qué cuenta era ni qué iba a pasar y sus errores salían en
+carteles de 5 s; la ventana del alta tenía la X cortada y «Entendido» dejaba el formulario vacío (QA-039, QA-040, QA-041).
+**Antes de empezar, hazlo tú una vez (ver `docs/auth/plantillas-correo-es.md`): pega en Supabase producción → Authentication
+→ Emails → Templates los seis textos en español de `supabase/templates/`** (si no, los correos seguirán llegando en
+inglés). La web no necesita migración ni funciones.
+
+| # | Prueba | Resultado esperado |
+|---|---|---|
+| 49.1 | Crea una cuenta nueva con un correo tuyo y NO confirmes | La ventana «¡Registro Exitoso!» con la X visible y de tamaño táctil; «Reenviar el correo» funciona; «Entendido» vuelve a «Entrar» con tu correo ya escrito |
+| 49.2 | Mira el correo que llega | «Confirma tu correo en GarSer», en español, con el botón «Confirmar mi correo» y sin restos en inglés |
+| 49.3 | «Entrar» con esa cuenta sin confirmar | Mensaje en español junto al formulario con tu correo y el botón «Reenviar el correo de confirmación»; al pulsarlo llega otro correo y el botón cuenta atrás ~1 min |
+| 49.4 | Confirma con el enlace del correo | Entras en tu cuenta sin errores |
+| 49.5 | «¿Has olvidado tu contraseña?» con tu correo | Llega «Cambia tu contraseña de GarSer» en español |
+| 49.6 | Abre el enlace del correo de recuperación | «Elige tu nueva contraseña» con TU correo, «al menos 8 caracteres» y que se cerrarán las otras sesiones; los errores salen junto al campo |
+| 49.7 | Guarda una contraseña nueva | Entras a tu inicio con «Contraseña cambiada. Ya has entrado con la nueva.»; la sesión de otro dispositivo se cierra; entras con la nueva y la vieja ya no vale |
+| 49.8 | Abre otra vez el mismo enlace | «Enlace caducado» con «Pedir un enlace nuevo» que lleva a recuperar contraseña |
+| 49.9 | Supabase → Authentication → SMTP / límites (decisión tuya) | Con anuncios en marcha, un remitente propio y un límite de correos por hora suficiente; con el de Supabase por defecto el límite es muy bajo |
+
+## Sección 50 — Activación del profesional: no se reabre en bucle y no esconde nada (FASE 4, paquete 1.12, 2026-11-19)
+
+Qué se arregló (QA-196, 197, 108, 062, 024, 025, 026, 200, 202): «Ir a mi panel» devolvía a la Bienvenida y el cuestionario volvía a
+abrirse en CADA inicio de sesión mientras faltara el carnet fitosanitario (algo que no depende del cuestionario sino de GarSer); el
+apartado «Completa tu cuenta profesional» se ocultaba justo cuando había algo obligatorio por hacer; nadie decía «te hemos aprobado»;
+los errores del Horario y del seguro quedaban fuera de vista; recargar borraba las invitaciones escritas; una solicitud de reserva
+sin responder solo se veía por la insignia del Chat.
+
+**Requisito previo:** este paquete corrige el cuestionario de la **sección 36** (rama `feat/activacion-profesional`, aún sin fusionar
+en `main` al escribir esto): fusionar primero esa rama y aplicar sus dos migraciones (`20261111120000`, `20261111130000`). Este
+paquete **no añade migración ni función**: solo web.
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 50.1 | Cuenta de profesional recién aprobada (alias nuevo): entra | Se abre «Activa tu cuenta» con la insignia «Te hemos aprobado» (QA-024) |
+| 50.2 | (el aviso solo sale en la Bienvenida, no en cada paso) Con esa cuenta y una solicitud de reserva sin responder (haz una reserva de prueba hacia ella desde otra cuenta de cliente) | En la Bienvenida sale el aviso amarillo «Tienes 1 solicitud de reserva sin responder» con «Verla»; «Verla» lleva a Solicitudes con la solicitud y NO la acepta sola (QA-062) |
+| 50.3 | «Horario» sin marcar ninguna hora → «Guardar horario y seguir» | El motivo («Marca al menos un día con horas de trabajo») sale en rojo JUNTO al botón, a la vista sin desplazar (QA-025) |
+| 50.4 | «Equipo» → «Sí» → un correo → sin marcar el seguro, «Enviar invitaciones y seguir» | «Para invitar a tu equipo, marca la declaración del seguro» sale junto al botón; al darle «Atrás» el aviso desaparece |
+| 50.5 | En «Equipo» con «Sí» y un correo escrito, recarga la página (cambia de app y vuelve, o tira para recargar) | «Sí», el correo, el nombre/servicios/horario de esa persona y la declaración siguen ahí (QA-026) |
+| 50.6 | Elige también «Servicios fitosanitarios», pulsa «Configurar fitosanitarios más tarde» y llega a «Activar mi cuenta» | Sale «Tu cuenta está casi lista» con el carnet pendiente; si ya tienes foto, NO te sugiere «Sube tu foto o tu logo» (QA-197) |
+| 50.7 | «Ir a mi panel» | Llega al PANEL (no a la Bienvenida) y arriba ves «Completa tu cuenta profesional» con el carnet como paso pendiente (QA-196, QA-197) |
+| 50.8 | Sal y vuelve a entrar con la misma cuenta; después recarga el panel | Entra directo al panel las dos veces; el cuestionario NO se vuelve a abrir (QA-108) |
+| 50.9 | Cuenta operativa que solo tiene el carnet «en revisión» (o «subir carnet») pendiente | Al entrar va al panel, no al cuestionario; en el paso fitosanitarios del cuestionario, tras enviar el carnet, el bloque ámbar «sube tu carnet» se sustituye por «Licencia en revisión» (QA-202) |
+| 50.10 | Con todo lo obligatorio hecho y sin foto/avisos | La tarjeta «Ya apareces…» lleva el título «Completa tu cuenta profesional» y, al abrir «Para conseguir más reservas», cada paso dice «Recomendado» (QA-200) |
+| 50.10b | Desde «Solicitudes» (también tras «Verla»), toca la pestaña «Panel» de abajo o «Dashboard» del menú | Vuelve al Panel (antes no hacía nada) |
+| 50.10c | Entra a Solicitudes con una sola solicitud | Pone «1 solicitud pendiente» (no «1 solicitudes») |
+| 50.11 | Siguen sin hacerse aquí (anotado para el Tramo 3) | «Activar avisos» no se puede completar desde Safari sin instalar la web en la pantalla de inicio (es de iOS; la tarjeta lo explica); la tarjeta «En revisión» del carnet no dice cuánto tarda ni deja cancelar; la Ayuda no explica el caso del cliente que repite (QA-200, QA-202) |
+
+> **Acción manual tuya (sección de acciones manuales):** ninguna de despliegue de base de datos ni funciones por este paquete. Sí: fusionar `feat/activacion-profesional` ANTES (y aplicar sus 2 migraciones) o este paquete no tiene a qué arreglar.
+
+---
+
+## Sección 51 — Datos que se perdían o se ponían a cero (FASE 4, paquete 1.13, 2026-11-19)
+
+Qué se arregló: (QA-043) guardar en «Horario fijo» solo la antelación mínima regeneraba toda la agenda y borraba los días
+bloqueados y las horas extra del profesional (riesgo de reservas en un día que había cerrado); (QA-050) apagar y volver a
+encender el herbicida del desbroce dejaba su precio a 0 (guardado así, se cobraría a 0 €/m²). Además: el interruptor del
+herbicida salía bloqueado («licencia requerida») con el carnet aprobado si se abría «Servicios» sin pasar antes por «Personal».
+**Sin migración ni función: solo web.**
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 51.1 | Cuenta de profesional con horario fijo. En «Ajustes puntuales» bloquea un día futuro y añade horas extra otro día | Quedan puestos |
+| 51.2 | «Horario fijo»: cambia SOLO la antelación y «Guardar cambios» | El aviso dice «¿Guardar los cambios?» y que tu agenda no se toca; tras confirmar, el día bloqueado y las horas extra SIGUEN en «Ajustes puntuales» (y en BD, `availability`, no se rehacen) |
+| 51.3 | «Horario fijo»: añade semanas (p. ej. de 4 a 8) sin tocar las horas | Las semanas nuevas aparecen con tu horario y lo anterior (bloqueos, extras) no cambia |
+| 51.4 | «Horario fijo»: cambia una hora o REDUCE las semanas | Sigue saliendo «¿Confirmar nuevo horario fijo?» avisando de que se pierden las excepciones, y se regenera |
+| 51.5 | Mi perfil → Servicios (sin abrir «Personal») → Desbroce → Configurar, con el carnet aprobado | «Aplicación de herbicida» está activo con su precio y NO sale «Licencia fitosanitaria requerida» |
+| 51.5b | En el iPhone SE (y con la barra de Safari), abre el aviso «¿Confirmar nuevo horario fijo?» | «Sí, aplicar cambios» y «Cancelar» se ven enteros o se desplazan dentro del aviso, sin quedar cortados |
+| 51.6 | Apaga y vuelve a encender el herbicida | El precio vuelve a ser el que tenía (p. ej. 0,15); si nunca tuvo precio, el campo sale vacío y «Guardar» exige escribirlo |
+
+> **Acción manual tuya:** ninguna (sin migración ni función).
+
+---
+
+## Sección 52 — Foto y nombre del alta llegan al perfil (FASE 4, paquete 1.14, 2026-11-19)
+
+Qué se arregló: (QA-014) la foto que se pide en el alta nunca llegaba a los clientes ni contaba como «foto» al aprobar (el
+profesional aprobado figuraba «sin foto» y «Mi cuenta» sin su nombre); (QA-023) un perfil sin foto pintaba un icono de imagen
+rota. Ahora, al aprobar, la foto (o el logo de una empresa) y el nombre del alta pasan al perfil (solo si estaban vacíos: lo que la
+persona ya tuviera no se pisa), y sin foto se ven las iniciales.
+
+**Acción manual tuya ANTES de desplegar el front:** aplicar la migración **`20261119120000_approval_photo_name.sql`**
+(reemplaza las dos funciones de aprobación y rellena a los ya aprobados que se quedaron sin foto/nombre).
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 52.0 | Tras aplicar la migración, en SQL: `select count(*) from gardener_profiles where avatar_url is null and professional_photo_url is not null;` | 0 |
+| 52.1 | Alta nueva de profesional (alias) con foto en el paso 1; el admin la aprueba | En «Profesionales» del admin ya no sale «Recomendado: Foto de perfil» para esa persona |
+| 52.2 | Entra con esa cuenta | «Mi cuenta» dice su nombre (no su correo) y enseña su foto; «Completa tu cuenta» no le pide la foto |
+| 52.3 | Como cliente (o sin sesión) abre su enlace /reservar/<id> y el listado de profesionales de una reserva | Se ve su foto |
+| 52.4 | Abre el perfil público de un profesional SIN foto | Círculo con sus iniciales (nunca un icono de imagen rota) |
+| 52.5 | Alta de una EMPRESA con logo; el admin la aprueba | El logo es su foto para los clientes y el nombre comercial sale en «Mi cuenta» |
+| 52.6 | Un profesional que ya había cambiado su foto/nombre en «Mi cuenta» antes de ser aprobado | La aprobación NO le pisa su foto ni su nombre |
+
+---
+
+## Sección 53 — El empleado ve solo sus pantallas (FASE 4, paquete 1.15, 2026-11-19)
+
+Qué se arregló: (QA-030) una empleada veía el menú y las pantallas de CLIENTE (Reservas con «Empezar la primera», que abría el
+embudo de reserva, Chat y Valoraciones); (QA-003) `/mi-trabajo/bienvenida` decía «Tu empresa te ha añadido a su equipo» a un
+cliente, a un profesional o a un admin. **Sin migración ni función: solo web.**
+**Requisito previo:** la bienvenida del empleado es de la **sección 36** (rama `feat/activacion-profesional`, aún sin fusionar).
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 53.1 | Entra con una cuenta de EMPLEADO (invitación aceptada) y abre el menú ☰ | Solo «Mi trabajo», «Mi horario» y «Mi Cuenta»; ni «Dashboard», «Reservas», «Chat» ni «Valoraciones»; la barra inferior tiene las mismas tres |
+| 53.2 | Como empleado, abre /bookings y /valoraciones escribiendo la dirección | Te lleva a «Mi trabajo», no al embudo de reserva |
+| 53.3 | Como cliente, profesional y admin, abre /mi-trabajo/bienvenida | Cada uno va a su inicio; nadie ve «Tu empresa te ha añadido a su equipo» |
+| 53.4 | Acepta una invitación nueva con una cuenta nueva | Pasa a la bienvenida con el nombre de su empresa (no rebota al inicio) |
+| 53.5 | El menú de un cliente y de un profesional | Siguen iguales (cliente: Dashboard, Reservas, Chat, Valoraciones, Mi Cuenta) |
+
+> **Acción manual tuya:** ninguna (sin migración ni función).
+
+---
+
+## Sección 54 — Pagar en el iPhone SE sin que estorbe Safari (FASE 4, paquete 1.16, 2026-11-19)
+
+Qué se arregló: (QA-103) el botón fijo inferior de la confirmación quedaba parcialmente bajo la barra de Safari y un toque en su
+parte baja abría el menú «…» en vez de pagar; (QA-135) la hoja «Pago seguro» dejaba ~320 pt útiles: los errores de caducidad y
+CVC quedaban tapados por el pie y con el teclado abierto «Pagar» desaparecía hasta cerrarlo; (QA-136) la confirmación aparecía
+desplazada a mitad de página. Ahora: más margen bajo el botón; la hoja mide lo que el cliente ve (el teclado la encoge y el pie
+queda justo encima), el pie ya no es fijo y la cabecera es más compacta; la confirmación empieza arriba.
+**Sin migración ni función: solo web.**
+
+| # | Qué haces (en un iPhone pequeño, Safari, barra inferior visible; luego en uno grande) | Debe pasar |
+|---|---|---|
+| 54.1 | Llega a la confirmación de una reserva con gastos de gestión | El botón de pago se ve entero por encima de la barra de Safari; pulsar su borde inferior paga/continúa, no abre el menú «…» |
+| 54.2 | Pulsa «Continuar al pago» | La hoja «Pago seguro» deja sitio al formulario (cabecera compacta) y «Pagar» está visible |
+| 54.3 | Toca el número de tarjeta con el teclado abierto | «Pagar» sigue visible justo encima del teclado y el campo que escribes también |
+| 54.4 | Caducidad pasada o CVC incompleto | El error se ve entero, no queda bajo el pie ni el teclado |
+| 54.5 | Paga con la tarjeta de prueba 4242 4242 4242 4242 | La confirmación sale arriba del todo (título a la vista) y «Ir a mis reservas» se alcanza sin dos desplazamientos |
+| 54.6 | Lo mismo en el ordenador | La hoja sigue siendo una ventana centrada; nada cambia |
+
+> **Acción manual tuya:** ninguna (sin migración ni función).
+
+---
+
+## Sección 55 — Una visita de plan no choca con otra reserva del cliente (FASE 4, paquete 1.17, 2026-11-19)
+
+Qué se arregló (QA-127): la propuesta de visita de un plan de mantenimiento solo miraba si el PROFESIONAL tenía hueco. Un cliente con
+otra reserva a la misma hora (con otra persona) recibía igualmente la propuesta y, al confirmarla, se quedaba con dos reservas a la
+vez, cada una con su cobro. Ahora la propuesta salta los huecos en los que el cliente tiene una reserva viva (pendiente, confirmada o
+en disputa), un pago en curso o otra visita propuesta de otro plan suyo, y prueba otra hora u otro de los tres días que ya probaba.
+
+**Acción manual tuya ANTES de desplegar:** aplicar la migración **`20261119130000_maintenance_slot_client_conflicts.sql`**
+(función nueva `client_slot_is_busy` y `maintenance_find_slot` actualizada). No hay funciones de Edge ni cambios web.
+
+| # | Qué haces | Debe pasar |
+|---|---|---|
+| 55.0 | Tras aplicar la migración, en SQL: `select to_regprocedure('public.client_slot_is_busy(uuid,date,integer,integer,uuid)');` | Devuelve la función (no null) |
+| 55.1 | Con un cliente con un plan de mantenimiento, crea con ese cliente una reserva (con otro profesional) justo a la hora en que su visita se propondría; deja correr el reloj de propuestas (o `select generate_maintenance_proposals();`) | La visita propuesta cae en otra hora o día, nunca solapada con la otra reserva |
+| 55.2 | Cancela esa otra reserva y repite con un plan nuevo | Vuelve a proponerse a la hora preferida del plan |
+| 55.3 | Cliente en pleno pago de otra reserva en ese tramo | No se propone la visita encima de ese hueco |
+| 55.4 | Sigue sin cubrirse (anotado) | Una reserva que el cliente haga DESPUÉS de recibir la propuesta y antes de confirmarla no se vuelve a comprobar al confirmar (hasta 72 h) |
+
+---
+
+## Sección 56 — Landing de los anuncios sin restos internos (FASE 4, paquete 1.18, 2026-11-19)
+
+Qué se arregló: (QA-204, QA-011) las maquetas de la app de /para-jardineros llevaban fechas de octubre escritas a mano («sábado,
+18 de octubre», «13 oct - 19 oct», «Jueves 16 de octubre»): ahora se calculan a partir de hoy y siempre son futuras; (QA-008,
+QA-094) el pie de las páginas públicas hablaba con lenguaje de diseño interno («una web pensada para clientes reales… pantallas
+técnicas») y en /para-jardineros hablaba a clientes: ahora el pie es para el público y, en esa página, para profesionales;
+(QA-121, QA-068) si fallan las sugerencias de direcciones el cliente veía «Activa la facturación… Guía de Google Maps»: ahora lee
+«No hemos podido cargar las sugerencias… escribe la dirección completa y la comprobaremos al continuar» (la dirección escrita se
+valida con el mapa al continuar, como ya hacía). QA-243: el texto «Slot listo para foto real / Path: …» solo sale en desarrollo
+(import.meta.env.DEV), nunca en producción. **Sin migración ni función: solo web.**
+
+| # | Qué haces (móvil, sin sesión) | Debe pasar |
+|---|---|---|
+| 56.1 | Abre /para-jardineros y mira las tres maquetas de la app | Fechas futuras de la semana próxima (nunca meses pasados); el sábado de la solicitud, la semana de la agenda y el jueves del equipo salen con fechas de ese mes |
+| 56.2 | Vuelve a abrirla dentro de un mes | Las fechas se han movido solas |
+| 56.3 | Lee el pie de /para-jardineros y el de la portada, /marbella y /costa-del-sol | Portada y ciudades: «Jardinería profesional en la Costa del Sol, a un clic»; /para-jardineros: «Haz crecer tu negocio de jardinería con GarSer». Ningún «clientes reales» ni «pantallas técnicas» |
+| 56.4 | Portada pública: baja hasta la tarjeta de servicios | Imágenes reales o un degradado de marca; nunca «Slot listo para foto real», «Path:» ni un icono de imagen rota |
+| 56.5 | Reserva → dirección: escribe una dirección | Salen sugerencias; si no salen, el aviso amarillo no menciona facturación, Google Cloud ni API |
+
+> **Acción manual tuya (importante para los anuncios):** en Google Cloud Console, comprueba que el proyecto de la **clave de Maps
+> de producción** (la de `VITE_GOOGLE_MAPS_API_KEY` en Vercel) tiene la **facturación activada** y las APIs **Places API** y
+> **Geocoding API** (y Maps JavaScript API) habilitadas, con la restricción de dominio `garser.es`. Sin eso, las sugerencias fallan
+> en intermitencia (QA-121). Prueba 56.5 en https://garser.es tras comprobarlo. Las imágenes de los servicios de la portada
+> (`home/services/*.webp`) siguen siendo un pendiente manual tuyo (subirlas a Storage); sin ellas se ve el degradado.
+
+---
+
+## Sección 36 — Cuestionario «Activa tu cuenta» y bienvenida del empleado (2026-11-11)
+
+Requisitos previos: migraciones **`20261111120000_invitacion_preconfigurada.sql`** y **`20261111130000_progreso_activacion.sql`** aplicadas ANTES del front. Una cuenta **nueva** de profesional aprobada (alias, p. ej. `tucorreo+activa@gmail.com`) y otra para el empleado (`tucorreo+empleado@gmail.com`). Diseño: `docs/activacion-profesional/01-diseno-cuestionarios.md`.
+
+- [ ] **36.1 — Se abre solo (bloqueante).** Entra con la cuenta aprobada sin configurar. ✅ Se abre «Activa tu cuenta» con «Hola {nombre}…». «Seguir luego» vuelve al panel con «Te falta poco… Continuar donde lo dejé» y lo retoma en el mismo paso.
+- [ ] **36.2 — Zona.** Dirección + 30 km. ✅ En «Mi perfil → Cobertura» sale la misma dirección y radio, confirmada.
+- [ ] **36.3 — Tarifas (bloqueante).** Marca césped y setos y contesta. ✅ El resumen «Así le saldría a un cliente» da precios coherentes; en «Mi perfil → Servicios» salen los mismos valores y «Guardar cambios» está desactivado (sin diferencias).
+- [ ] **36.4 — Horario.** Plantilla «Lunes a viernes, 8-14 y 16-19», 24 h, 4 semanas. ✅ En «Horario» salen esas horas.
+- [ ] **36.5 — Equipo.** Invita a `+empleado` con «Configurar a esta persona» (nombre, césped, mismo horario). ✅ Llega el correo de invitación.
+- [ ] **36.6 — Activar (bloqueante).** «Activar mi cuenta». ✅ «¡Listo! Ya apareces a los clientes»; una reserva de prueba en tu zona te encuentra.
+- [ ] **36.7 — Empleado.** Acepta la invitación con `+empleado`. ✅ Va a la bienvenida con su nombre, césped asignado y el horario de la empresa; «Empezar» lleva a «Mi trabajo».
+- [ ] **36.8 — Ayuda y admin.** «Ayuda» en el panel abre contacto y preguntas. Como admin, «Profesionales» enseña «Cuestionario de activación: …».
+
+> **Comprobado ya en local (2026-11-11):** 202 archivos y 2998 tests; build; SQL `invitation_preset.test.sql` y `activation_progress.test.sql` (con mutación) + `professional_mode`, `phyto_licenses_for_teams`, `provider_setup_status`; flujo completo a 390 px con cuentas de prueba locales.
+
+---
+
 ## Criterio de GO definitivo
 
 La web sale a producción **solo si**:
@@ -1856,6 +2242,7 @@ La web sale a producción **solo si**:
 | [ ] | Sección 33 verde — alta y primeros pasos en el móvil (33.1 y 33.2, con el iPhone, son bloqueantes: un profesional no puede quedarse sin ver su progreso ni su estado) |
 | [ ] | Sección 34 verde — cuenta de profesional única y dinámica (34.4 y 34.6 son bloqueantes: al pasar a equipo y al volver no se puede perder ni cambiar nada: reservas, reseñas, enlace, precios) |
 | [ ] | Sección 35 verde — alta de jardinero: sin preguntas de empleado y con el nº de personas (35.2 y 35.4 son bloqueantes: sin ese dato el admin decide a ciegas) |
+| [ ] | Sección 36 verde — cuestionario de activación (36.1, 36.3 y 36.6 son bloqueantes: un profesional nuevo tiene que poder activarse solo y cobrar lo que configuró) |
 | [ ] | Sección 13 completa — tus tareas manuales |
 | [ ] | Sección 14 vuelta 1 completa, y vuelta 2 correcta |
 

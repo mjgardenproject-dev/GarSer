@@ -82,15 +82,26 @@ const TermsPage: React.FC = () => {
         </ul>
       </Section>
 
-      <Section id="responsabilidad" title="8. Responsabilidad">
-        <p>GarSer pone los medios para que la plataforma funcione bien y con seguridad, pero no presta los servicios de jardinería: de cada trabajo responde el profesional que lo hace. Nada de lo dicho limita los derechos que te da la ley como consumidor.</p>
+      {/* ⚠️ Revisión por un abogado recomendada (decisión del dueño, 2026-11-17, QA-170): GarSer limita al
+          máximo su responsabilidad como plataforma de intermediación. Los textos son fáciles de cambiar. */}
+      <Section id="fitosanitarios" title="8. Tratamientos con productos fitosanitarios">
+        <ul className="list-disc space-y-2 pl-5">
+          <li>Los tratamientos con productos fitosanitarios (insecticidas, fungicidas, herbicidas y similares) los aplica un profesional con carnet de aplicador en vigor, y cumpliendo el Real Decreto 1311/2012 sobre el uso sostenible de estos productos.</li>
+          <li>El producto que se usa, la dosis, las precauciones, los plazos de seguridad y la forma de aplicarlo los decide y los asume el profesional que hace el tratamiento. GarSer no los decide, no los supervisa y no inspecciona el trabajo.</li>
+          <li>GarSer solo gestiona la reserva y comprueba que el profesional ha subido un carnet que parece vigente; eso no es una garantía sobre cómo se aplica el tratamiento.</li>
+          <li>Si te preocupa algún producto (mascotas, niños, huerto, personas sensibles), díselo al profesional antes y pregúntale por el producto y por cuándo puedes volver a usar la zona.</li>
+        </ul>
       </Section>
 
-      <Section id="datos" title="9. Tus datos">
+      <Section id="responsabilidad" title="9. Responsabilidad">
+        <p>GarSer es un servicio de intermediación de la sociedad de la información (Ley 34/2002): pone en contacto a clientes y profesionales y gestiona la reserva. No presta los servicios de jardinería y no es parte del contrato de servicio entre el cliente y el profesional: de cada trabajo, de su resultado, de los productos usados y de los daños que pudiera causar responde el profesional que lo hace. GarSer pone los medios para que la plataforma funcione bien y con seguridad. Nada de lo dicho limita los derechos que te da la ley como consumidor.</p>
+      </Section>
+
+      <Section id="datos" title="10. Tus datos">
         <p>Cómo tratamos tus datos está en la <Link className="font-semibold text-emerald-700 underline" to={PRIVACY_PATH}>Política de privacidad</Link>.</p>
       </Section>
 
-      <Section id="ley" title="10. Cambios y ley aplicable">
+      <Section id="ley" title="11. Cambios y ley aplicable">
         <p>Si cambiamos estas condiciones, actualizaremos la fecha de arriba y te avisaremos si el cambio es importante. Se rigen por la ley española. Si eres consumidor, puedes reclamar ante los tribunales de tu domicilio.</p>
       </Section>
     </LegalLayout>
